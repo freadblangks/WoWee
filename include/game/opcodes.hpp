@@ -6,6 +6,8 @@ namespace wowee {
 namespace game {
 
 // World of Warcraft 3.3.5a opcodes
+// Values derived from community reverse-engineering efforts
+// Reference: https://wowdev.wiki/World_Packet
 enum class Opcode : uint16_t {
     // Client to Server
     CMSG_PING = 0x1DC,

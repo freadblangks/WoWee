@@ -147,6 +147,7 @@ struct ADTTerrain {
  * ADT terrain loader
  *
  * Loads WoW 3.3.5a ADT (Azeroth Data Tile) terrain files
+ * Format specification: https://wowdev.wiki/ADT
  */
 class ADTLoader {
 public:

@@ -14,6 +14,7 @@ namespace pipeline {
  *
  * DBC files store game database tables (spells, items, maps, creatures, etc.)
  * Format: Fixed header + fixed-size records + string block
+ * Format specification: https://wowdev.wiki/DBC
  */
 class DBCFile {
 public:

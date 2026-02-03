@@ -50,6 +50,7 @@ struct BLPImage {
  *
  * Supports BLP0, BLP1, BLP2 formats
  * Handles DXT1/3/5 compression and palette formats
+ * Format specification: https://wowdev.wiki/BLP
  */
 class BLPLoader {
 public:

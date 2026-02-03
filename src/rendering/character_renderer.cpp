@@ -72,7 +72,9 @@ bool CharacterRenderer::initialize() {
             vec4 worldPos = uModel * skinnedPos;
 
             FragPos = worldPos.xyz;
-            Normal = mat3(transpose(inverse(uModel * boneTransform))) * aNormal;
+            // Use mat3 directly - avoid expensive inverse() in shader
+            // Works correctly for uniform scaling; normalize in fragment shader handles the rest
+            Normal = mat3(uModel) * mat3(boneTransform) * aNormal;
             TexCoord = aTexCoord;
 
             gl_Position = uProjection * uView * worldPos;
@@ -984,11 +986,10 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
             : getModelMatrix(instance);
         characterShader->setUniform("uModel", modelMat);
 
-        // Set bone matrices
+        // Set bone matrices (upload all at once for performance)
         int numBones = std::min(static_cast<int>(instance.boneMatrices.size()), MAX_BONES);
-        for (int i = 0; i < numBones; i++) {
-            std::string uniformName = "uBones[" + std::to_string(i) + "]";
-            characterShader->setUniform(uniformName, instance.boneMatrices[i]);
+        if (numBones > 0) {
+            characterShader->setUniformMatrixArray("uBones[0]", instance.boneMatrices.data(), numBones);
         }
 
         // Bind VAO and draw

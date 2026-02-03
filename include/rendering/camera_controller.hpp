@@ -10,6 +10,7 @@ namespace rendering {
 
 class TerrainManager;
 class WMORenderer;
+class M2Renderer;
 class WaterRenderer;
 
 class CameraController {
@@ -25,6 +26,7 @@ public:
     void setEnabled(bool enabled) { this->enabled = enabled; }
     void setTerrainManager(TerrainManager* tm) { terrainManager = tm; }
     void setWMORenderer(WMORenderer* wmo) { wmoRenderer = wmo; }
+    void setM2Renderer(M2Renderer* m2) { m2Renderer = m2; }
     void setWaterRenderer(WaterRenderer* wr) { waterRenderer = wr; }
 
     void processMouseWheel(float delta);
@@ -54,6 +56,7 @@ private:
     Camera* camera;
     TerrainManager* terrainManager = nullptr;
     WMORenderer* wmoRenderer = nullptr;
+    M2Renderer* m2Renderer = nullptr;
     WaterRenderer* waterRenderer = nullptr;
 
     // Stored rotation (avoids lossy forward-vector round-trip)
@@ -82,7 +85,7 @@ private:
     // Gravity / grounding
     float verticalVelocity = 0.0f;
     bool grounded = false;
-    float eyeHeight = 5.0f;
+    float eyeHeight = 1.8f;  // WoW human eye height (~2 yard tall character)
     float lastGroundZ = 0.0f;  // Last known ground height (fallback when no terrain)
     static constexpr float GRAVITY = -30.0f;
     static constexpr float JUMP_VELOCITY = 15.0f;
@@ -112,11 +115,11 @@ private:
     // Movement callback
     MovementCallback movementCallback;
 
-    // WoW-correct speeds
+    // Movement speeds (scaled up for better feel)
     bool useWoWSpeed = false;
-    static constexpr float WOW_RUN_SPEED = 7.0f;
-    static constexpr float WOW_WALK_SPEED = 2.5f;
-    static constexpr float WOW_BACK_SPEED = 4.5f;
+    static constexpr float WOW_RUN_SPEED = 14.0f;   // Double base WoW speed for responsiveness
+    static constexpr float WOW_WALK_SPEED = 5.0f;   // Walk (hold Shift)
+    static constexpr float WOW_BACK_SPEED = 9.0f;   // Backpedal
     static constexpr float WOW_GRAVITY = -19.29f;
     static constexpr float WOW_JUMP_VELOCITY = 7.96f;
 

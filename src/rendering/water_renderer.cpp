@@ -44,7 +44,8 @@ bool WaterRenderer::initialize() {
             vec3 pos = aPos;
 
             FragPos = vec3(model * vec4(pos, 1.0));
-            Normal = mat3(transpose(inverse(model))) * aNormal;
+            // Use mat3(model) directly - avoids expensive inverse() per vertex
+            Normal = mat3(model) * aNormal;
             TexCoord = aTexCoord;
             WaveOffset = 0.0;
 

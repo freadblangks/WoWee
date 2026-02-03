@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
 #include <GL/glew.h>
 #include <glm/glm.hpp>
 
@@ -25,6 +26,7 @@ public:
     void setUniform(const std::string& name, const glm::vec4& value);
     void setUniform(const std::string& name, const glm::mat3& value);
     void setUniform(const std::string& name, const glm::mat4& value);
+    void setUniformMatrixArray(const std::string& name, const glm::mat4* matrices, int count);
 
     GLuint getProgram() const { return program; }
 
@@ -35,6 +37,9 @@ private:
     GLuint program = 0;
     GLuint vertexShader = 0;
     GLuint fragmentShader = 0;
+
+    // Cache uniform locations to avoid expensive glGetUniformLocation calls
+    mutable std::unordered_map<std::string, GLint> uniformLocationCache;
 };
 
 } // namespace rendering

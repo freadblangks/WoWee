@@ -116,6 +116,23 @@ public:
      */
     void clear();
 
+    /**
+     * Remove models that have no instances referencing them
+     * Call periodically to free GPU memory
+     */
+    void cleanupUnusedModels();
+
+    /**
+     * Check collision with M2 objects and adjust position
+     * @param from Starting position
+     * @param to Desired position
+     * @param adjustedPos Output adjusted position
+     * @param playerRadius Collision radius of player
+     * @return true if collision occurred
+     */
+    bool checkCollision(const glm::vec3& from, const glm::vec3& to,
+                        glm::vec3& adjustedPos, float playerRadius = 0.5f) const;
+
     // Stats
     uint32_t getModelCount() const { return static_cast<uint32_t>(models.size()); }
     uint32_t getInstanceCount() const { return static_cast<uint32_t>(instances.size()); }

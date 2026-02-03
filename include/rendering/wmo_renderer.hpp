@@ -103,6 +103,12 @@ public:
     uint32_t getInstanceCount() const { return instances.size(); }
 
     /**
+     * Remove models that have no instances referencing them
+     * Call periodically to free GPU memory
+     */
+    void cleanupUnusedModels();
+
+    /**
      * Get total triangle count (all instances)
      */
     uint32_t getTotalTriangleCount() const;

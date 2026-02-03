@@ -51,10 +51,10 @@ bool Application::initialize() {
 
     // Create window
     WindowConfig windowConfig;
-    windowConfig.title = "Wowser - World of Warcraft Client";
-    windowConfig.width = 1920;
-    windowConfig.height = 1080;
-    windowConfig.vsync = true;
+    windowConfig.title = "Wowee";
+    windowConfig.width = 1280;
+    windowConfig.height = 720;
+    windowConfig.vsync = false;
 
     window = std::make_unique<Window>(windowConfig);
     if (!window->initialize()) {

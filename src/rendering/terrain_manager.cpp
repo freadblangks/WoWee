@@ -627,6 +627,14 @@ void TerrainManager::unloadTile(int x, int y) {
     }
 
     loadedTiles.erase(it);
+
+    // Clean up any models that are no longer referenced
+    if (m2Renderer) {
+        m2Renderer->cleanupUnusedModels();
+    }
+    if (wmoRenderer) {
+        wmoRenderer->cleanupUnusedModels();
+    }
 }
 
 void TerrainManager::unloadAll() {

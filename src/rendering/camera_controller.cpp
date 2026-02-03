@@ -1,6 +1,7 @@
 #include "rendering/camera_controller.hpp"
 #include "rendering/terrain_manager.hpp"
 #include "rendering/wmo_renderer.hpp"
+#include "rendering/m2_renderer.hpp"
 #include "rendering/water_renderer.hpp"
 #include "game/opcodes.hpp"
 #include "core/logger.hpp"
@@ -152,7 +153,7 @@ void CameraController::update(float deltaTime) {
             targetPos.z += verticalVelocity * deltaTime;
         }
 
-        // Wall collision for character
+        // Wall collision for character (WMO buildings)
         if (wmoRenderer) {
             glm::vec3 feetPos = targetPos;
             glm::vec3 oldFeetPos = *followTarget;
@@ -161,6 +162,15 @@ void CameraController::update(float deltaTime) {
                 targetPos.x = adjusted.x;
                 targetPos.y = adjusted.y;
                 targetPos.z = adjusted.z;
+            }
+        }
+
+        // Collision with M2 doodads (fences, boxes, etc.)
+        if (m2Renderer) {
+            glm::vec3 adjusted;
+            if (m2Renderer->checkCollision(*followTarget, targetPos, adjusted)) {
+                targetPos.x = adjusted.x;
+                targetPos.y = adjusted.y;
             }
         }
 

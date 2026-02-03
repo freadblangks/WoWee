@@ -18,8 +18,8 @@ void main() {
     vec4 worldPos = uModel * vec4(aPosition, 1.0);
     FragPos = worldPos.xyz;
 
-    // Transform normal to world space
-    Normal = mat3(transpose(inverse(uModel))) * aNormal;
+    // Terrain uses identity model matrix, so normal passes through directly
+    Normal = aNormal;
 
     TexCoord = aTexCoord;
     LayerUV = aLayerUV;

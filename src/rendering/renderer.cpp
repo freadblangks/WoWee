@@ -84,7 +84,7 @@ bool Renderer::initialize(core::Window* win) {
 
     // Create camera controller
     cameraController = std::make_unique<CameraController>(camera.get());
-    cameraController->setMovementSpeed(100.0f);  // Fast movement for terrain exploration
+    cameraController->setUseWoWSpeed(true);  // Use realistic WoW movement speed
     cameraController->setMouseSensitivity(0.15f);
 
     // Create scene
@@ -767,6 +767,9 @@ bool Renderer::loadTestTerrain(pipeline::AssetManager* assetManager, const std::
             if (wmoRenderer) {
                 cameraController->setWMORenderer(wmoRenderer.get());
             }
+            if (m2Renderer) {
+                cameraController->setM2Renderer(m2Renderer.get());
+            }
             if (waterRenderer) {
                 cameraController->setWaterRenderer(waterRenderer.get());
             }
@@ -876,9 +879,12 @@ bool Renderer::loadTerrainArea(const std::string& mapName, int centerX, int cent
         }
     }
 
-    // Wire WMO and water renderer to camera controller
+    // Wire WMO, M2, and water renderer to camera controller
     if (cameraController && wmoRenderer) {
         cameraController->setWMORenderer(wmoRenderer.get());
+    }
+    if (cameraController && m2Renderer) {
+        cameraController->setM2Renderer(m2Renderer.get());
     }
     if (cameraController && waterRenderer) {
         cameraController->setWaterRenderer(waterRenderer.get());

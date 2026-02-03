@@ -548,7 +548,7 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                         chatText = emoteText;
                     }
                 } else {
-                    chatText = emoteText;
+                    chatText = command + ".";  // First person: "You wave."
                 }
 
                 // Add local chat message

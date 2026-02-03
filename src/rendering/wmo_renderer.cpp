@@ -1,6 +1,7 @@
 #include "rendering/wmo_renderer.hpp"
 #include "rendering/shader.hpp"
 #include "rendering/camera.hpp"
+#include "rendering/frustum.hpp"
 #include "pipeline/wmo_loader.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "core/logger.hpp"
@@ -8,6 +9,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <algorithm>
+#include <unordered_set>
 
 namespace wowee {
 namespace rendering {
@@ -44,7 +46,9 @@ bool WMORenderer::initialize(pipeline::AssetManager* assets) {
         void main() {
             vec4 worldPos = uModel * vec4(aPos, 1.0);
             FragPos = worldPos.xyz;
-            Normal = mat3(transpose(inverse(uModel))) * aNormal;
+            // Use mat3(uModel) directly - avoids expensive inverse() per vertex
+            // This works correctly for uniform scale transforms
+            Normal = mat3(uModel) * aNormal;
             TexCoord = aTexCoord;
             VertexColor = aColor;
 
@@ -257,6 +261,31 @@ void WMORenderer::unloadModel(uint32_t id) {
     core::Logger::getInstance().info("WMO model ", id, " unloaded");
 }
 
+void WMORenderer::cleanupUnusedModels() {
+    // Build set of model IDs that are still referenced by instances
+    std::unordered_set<uint32_t> usedModelIds;
+    for (const auto& instance : instances) {
+        usedModelIds.insert(instance.modelId);
+    }
+
+    // Find and remove models with no instances
+    std::vector<uint32_t> toRemove;
+    for (const auto& [id, model] : loadedModels) {
+        if (usedModelIds.find(id) == usedModelIds.end()) {
+            toRemove.push_back(id);
+        }
+    }
+
+    // Delete GPU resources and remove from map
+    for (uint32_t id : toRemove) {
+        unloadModel(id);
+    }
+
+    if (!toRemove.empty()) {
+        core::Logger::getInstance().info("WMO cleanup: removed ", toRemove.size(), " unused models, ", loadedModels.size(), " remaining");
+    }
+}
+
 uint32_t WMORenderer::createInstance(uint32_t modelId, const glm::vec3& position,
                                      const glm::vec3& rotation, float scale) {
     // Check if model is loaded
@@ -319,8 +348,23 @@ void WMORenderer::render(const Camera& camera, const glm::mat4& view, const glm:
     // Disable backface culling for WMOs (some faces may have wrong winding)
     glDisable(GL_CULL_FACE);
 
-    // Render all instances
+    // Extract frustum planes for proper culling
+    Frustum frustum;
+    frustum.extractFromMatrix(projection * view);
+
+    // Render all instances with instance-level culling
+    const glm::vec3 camPos = camera.getPosition();
+    const float maxRenderDistance = 1500.0f;  // Don't render WMOs beyond this distance
+    const float maxRenderDistanceSq = maxRenderDistance * maxRenderDistance;
+
     for (const auto& instance : instances) {
+        // Instance-level distance culling
+        glm::vec3 toCam = instance.position - camPos;
+        float distSq = glm::dot(toCam, toCam);
+        if (distSq > maxRenderDistanceSq) {
+            continue;  // Skip instances that are too far
+        }
+
         auto modelIt = loadedModels.find(instance.modelId);
         if (modelIt == loadedModels.end()) {
             continue;
@@ -331,9 +375,17 @@ void WMORenderer::render(const Camera& camera, const glm::mat4& view, const glm:
 
         // Render all groups
         for (const auto& group : model.groups) {
-            // Frustum culling
-            if (frustumCulling && !isGroupVisible(group, instance.modelMatrix, camera)) {
-                continue;
+            // Proper frustum culling using AABB test
+            if (frustumCulling) {
+                // Transform group bounding box to world space
+                glm::vec3 worldMin = glm::vec3(instance.modelMatrix * glm::vec4(group.boundingBoxMin, 1.0f));
+                glm::vec3 worldMax = glm::vec3(instance.modelMatrix * glm::vec4(group.boundingBoxMax, 1.0f));
+                // Ensure min/max are correct after transform (rotation can swap them)
+                glm::vec3 actualMin = glm::min(worldMin, worldMax);
+                glm::vec3 actualMax = glm::max(worldMin, worldMax);
+                if (!frustum.intersectsAABB(actualMin, actualMax)) {
+                    continue;
+                }
             }
 
             renderGroup(group, model, instance.modelMatrix, view, projection);
@@ -727,8 +779,8 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
     float moveDistXY = glm::length(glm::vec2(moveDir.x, moveDir.y));
     if (moveDistXY < 0.001f) return false;
 
-    // Player collision radius
-    const float PLAYER_RADIUS = 2.5f;
+    // Player collision radius (WoW character is about 0.5 yards wide)
+    const float PLAYER_RADIUS = 0.5f;
 
     for (const auto& instance : instances) {
         auto it = loadedModels.find(instance.modelId);

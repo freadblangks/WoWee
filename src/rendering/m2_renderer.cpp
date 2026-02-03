@@ -7,6 +7,8 @@
 #include "core/logger.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <unordered_set>
+#include <algorithm>
 
 namespace wowee {
 namespace rendering {
@@ -53,7 +55,8 @@ bool M2Renderer::initialize(pipeline::AssetManager* assets) {
         void main() {
             vec4 worldPos = uModel * vec4(aPos, 1.0);
             FragPos = worldPos.xyz;
-            Normal = mat3(transpose(inverse(uModel))) * aNormal;
+            // Use mat3(uModel) directly - avoids expensive inverse() per vertex
+            Normal = mat3(uModel) * aNormal;
             TexCoord = aTexCoord;
 
             gl_Position = uProjection * uView * worldPos;
@@ -340,6 +343,11 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
 
     lastDrawCallCount = 0;
 
+    // Distance-based culling threshold for M2 models
+    const float maxRenderDistance = 500.0f;  // Don't render small doodads beyond this
+    const float maxRenderDistanceSq = maxRenderDistance * maxRenderDistance;
+    const glm::vec3 camPos = camera.getPosition();
+
     for (const auto& instance : instances) {
         auto it = models.find(instance.modelId);
         if (it == models.end()) continue;
@@ -347,8 +355,17 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
         const M2ModelGPU& model = it->second;
         if (!model.isValid()) continue;
 
-        // Frustum cull: test bounding sphere in world space
+        // Distance culling for small objects (scaled by object size)
+        glm::vec3 toCam = instance.position - camPos;
+        float distSq = glm::dot(toCam, toCam);
         float worldRadius = model.boundRadius * instance.scale;
+        // Cull small objects (radius < 20) at distance, keep larger objects visible longer
+        float effectiveMaxDistSq = maxRenderDistanceSq * std::max(1.0f, worldRadius / 10.0f);
+        if (distSq > effectiveMaxDistSq) {
+            continue;
+        }
+
+        // Frustum cull: test bounding sphere in world space
         if (worldRadius > 0.0f && !frustum.intersectsSphere(instance.position, worldRadius)) {
             continue;
         }
@@ -414,6 +431,37 @@ void M2Renderer::clear() {
     instances.clear();
 }
 
+void M2Renderer::cleanupUnusedModels() {
+    // Build set of model IDs that are still referenced by instances
+    std::unordered_set<uint32_t> usedModelIds;
+    for (const auto& instance : instances) {
+        usedModelIds.insert(instance.modelId);
+    }
+
+    // Find and remove models with no instances
+    std::vector<uint32_t> toRemove;
+    for (const auto& [id, model] : models) {
+        if (usedModelIds.find(id) == usedModelIds.end()) {
+            toRemove.push_back(id);
+        }
+    }
+
+    // Delete GPU resources and remove from map
+    for (uint32_t id : toRemove) {
+        auto it = models.find(id);
+        if (it != models.end()) {
+            if (it->second.vao != 0) glDeleteVertexArrays(1, &it->second.vao);
+            if (it->second.vbo != 0) glDeleteBuffers(1, &it->second.vbo);
+            if (it->second.ebo != 0) glDeleteBuffers(1, &it->second.ebo);
+            models.erase(it);
+        }
+    }
+
+    if (!toRemove.empty()) {
+        LOG_INFO("M2 cleanup: removed ", toRemove.size(), " unused models, ", models.size(), " remaining");
+    }
+}
+
 GLuint M2Renderer::loadTexture(const std::string& path) {
     // Check cache
     auto it = textureCache.find(path);
@@ -460,6 +508,61 @@ uint32_t M2Renderer::getTotalTriangleCount() const {
         }
     }
     return total;
+}
+
+bool M2Renderer::checkCollision(const glm::vec3& from, const glm::vec3& to,
+                                 glm::vec3& adjustedPos, float playerRadius) const {
+    adjustedPos = to;
+    bool collided = false;
+
+    // Check against all M2 instances using their bounding boxes
+    for (const auto& instance : instances) {
+        auto it = models.find(instance.modelId);
+        if (it == models.end()) continue;
+
+        const M2ModelGPU& model = it->second;
+
+        // Transform model bounds to world space (approximate with scaled AABB)
+        glm::vec3 worldMin = instance.position + model.boundMin * instance.scale;
+        glm::vec3 worldMax = instance.position + model.boundMax * instance.scale;
+
+        // Ensure min/max are correct
+        glm::vec3 actualMin = glm::min(worldMin, worldMax);
+        glm::vec3 actualMax = glm::max(worldMin, worldMax);
+
+        // Expand bounds by player radius
+        actualMin -= glm::vec3(playerRadius);
+        actualMax += glm::vec3(playerRadius);
+
+        // Check if player position is inside expanded bounds (XY only for walking)
+        if (adjustedPos.x >= actualMin.x && adjustedPos.x <= actualMax.x &&
+            adjustedPos.y >= actualMin.y && adjustedPos.y <= actualMax.y &&
+            adjustedPos.z >= actualMin.z && adjustedPos.z <= actualMax.z) {
+
+            // Push player out of the object
+            // Find the shortest push direction (XY only)
+            float pushLeft = adjustedPos.x - actualMin.x;
+            float pushRight = actualMax.x - adjustedPos.x;
+            float pushBack = adjustedPos.y - actualMin.y;
+            float pushFront = actualMax.y - adjustedPos.y;
+
+            float minPush = std::min({pushLeft, pushRight, pushBack, pushFront});
+
+            if (minPush == pushLeft) {
+                adjustedPos.x = actualMin.x - 0.01f;
+            } else if (minPush == pushRight) {
+                adjustedPos.x = actualMax.x + 0.01f;
+            } else if (minPush == pushBack) {
+                adjustedPos.y = actualMin.y - 0.01f;
+            } else {
+                adjustedPos.y = actualMax.y + 0.01f;
+            }
+
+            collided = true;
+        }
+    }
+
+    return collided;
 }
 
 } // namespace rendering

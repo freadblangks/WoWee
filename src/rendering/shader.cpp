@@ -92,7 +92,16 @@ void Shader::unuse() const {
 }
 
 GLint Shader::getUniformLocation(const std::string& name) const {
-    return glGetUniformLocation(program, name.c_str());
+    // Check cache first
+    auto it = uniformLocationCache.find(name);
+    if (it != uniformLocationCache.end()) {
+        return it->second;
+    }
+
+    // Look up and cache
+    GLint location = glGetUniformLocation(program, name.c_str());
+    uniformLocationCache[name] = location;
+    return location;
 }
 
 void Shader::setUniform(const std::string& name, int value) {
@@ -121,6 +130,10 @@ void Shader::setUniform(const std::string& name, const glm::mat3& value) {
 
 void Shader::setUniform(const std::string& name, const glm::mat4& value) {
     glUniformMatrix4fv(getUniformLocation(name), 1, GL_FALSE, &value[0][0]);
+}
+
+void Shader::setUniformMatrixArray(const std::string& name, const glm::mat4* matrices, int count) {
+    glUniformMatrix4fv(getUniformLocation(name), count, GL_FALSE, &matrices[0][0][0]);
 }
 
 } // namespace rendering

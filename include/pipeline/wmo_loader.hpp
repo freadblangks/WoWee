@@ -149,8 +149,9 @@ struct WMOGroup {
 
 // Complete WMO Model
 struct WMOModel {
-    // Root WMO data
+    // Root WMO data (from MOHD chunk)
     uint32_t version;
+    uint32_t nTextures;  // Added - was missing, caused offset issues
     uint32_t nGroups;
     uint32_t nPortals;
     uint32_t nLights;

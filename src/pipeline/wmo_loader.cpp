@@ -99,7 +99,8 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
             }
 
             case MOHD: {
-                // Header
+                // Header - SMOHeader structure (WotLK 3.3.5a)
+                model.nTextures = read<uint32_t>(wmoData, offset);   // Was missing!
                 model.nGroups = read<uint32_t>(wmoData, offset);
                 model.nPortals = read<uint32_t>(wmoData, offset);
                 model.nLights = read<uint32_t>(wmoData, offset);
@@ -107,7 +108,7 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
                 model.nDoodadDefs = read<uint32_t>(wmoData, offset);
                 model.nDoodadSets = read<uint32_t>(wmoData, offset);
 
-                [[maybe_unused]] uint32_t ambColor = read<uint32_t>(wmoData, offset);  // Ambient color
+                [[maybe_unused]] uint32_t ambColor = read<uint32_t>(wmoData, offset);  // Ambient color (BGRA)
                 [[maybe_unused]] uint32_t wmoID = read<uint32_t>(wmoData, offset);
 
                 model.boundingBoxMin.x = read<float>(wmoData, offset);
@@ -118,7 +119,10 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
                 model.boundingBoxMax.y = read<float>(wmoData, offset);
                 model.boundingBoxMax.z = read<float>(wmoData, offset);
 
-                core::Logger::getInstance().info("WMO groups: ", model.nGroups);
+                // flags and numLod (uint16 each) - skip for now
+                offset += 4;
+
+                core::Logger::getInstance().info("WMO header: nTextures=", model.nTextures, " nGroups=", model.nGroups);
                 break;
             }
 
@@ -452,6 +456,7 @@ bool WMOLoader::loadGroup(const std::vector<uint8_t>& groupData,
                     uint32_t vertexCount = subChunkSize / 12; // 3 floats per vertex
                     for (uint32_t i = 0; i < vertexCount; i++) {
                         WMOVertex vertex;
+                        // Keep vertices in WoW model-local coords - coordinate swap done in model matrix
                         vertex.position.x = read<float>(groupData, mogpOffset);
                         vertex.position.y = read<float>(groupData, mogpOffset);
                         vertex.position.z = read<float>(groupData, mogpOffset);

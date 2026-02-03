@@ -8,6 +8,7 @@
 #include "core/logger.hpp"
 #include <glm/glm.hpp>
 #include <imgui.h>
+#include <cmath>
 
 namespace wowee {
 namespace rendering {
@@ -222,25 +223,39 @@ void CameraController::update(float deltaTime) {
             targetPos.z += verticalVelocity * deltaTime;
         }
 
-        // Wall collision for character (WMO buildings)
-        if (wmoRenderer) {
-            glm::vec3 feetPos = targetPos;
-            glm::vec3 oldFeetPos = *followTarget;
-            glm::vec3 adjusted;
-            if (wmoRenderer->checkWallCollision(oldFeetPos, feetPos, adjusted)) {
-                // Only apply horizontal adjustment (don't let wall collision change Z)
-                targetPos.x = adjusted.x;
-                targetPos.y = adjusted.y;
-            }
-        }
+        // Sweep collisions in small steps to reduce tunneling through thin walls/floors.
+        {
+            glm::vec3 startPos = *followTarget;
+            glm::vec3 desiredPos = targetPos;
+            float moveDistXY = glm::length(glm::vec2(desiredPos.x - startPos.x, desiredPos.y - startPos.y));
+            int sweepSteps = std::max(1, std::min(6, static_cast<int>(std::ceil(moveDistXY / 0.4f))));
+            glm::vec3 stepPos = startPos;
+            glm::vec3 stepDelta = (desiredPos - startPos) / static_cast<float>(sweepSteps);
 
-        // Collision with M2 doodads (fences, boxes, etc.)
-        if (m2Renderer) {
-            glm::vec3 adjusted;
-            if (m2Renderer->checkCollision(*followTarget, targetPos, adjusted)) {
-                targetPos.x = adjusted.x;
-                targetPos.y = adjusted.y;
+            for (int i = 0; i < sweepSteps; i++) {
+                glm::vec3 candidate = stepPos + stepDelta;
+
+                if (wmoRenderer) {
+                    glm::vec3 adjusted;
+                    if (wmoRenderer->checkWallCollision(stepPos, candidate, adjusted)) {
+                        // Keep vertical motion from physics/grounding; only block horizontal wall penetration.
+                        candidate.x = adjusted.x;
+                        candidate.y = adjusted.y;
+                    }
+                }
+
+                if (m2Renderer) {
+                    glm::vec3 adjusted;
+                    if (m2Renderer->checkCollision(stepPos, candidate, adjusted)) {
+                        candidate.x = adjusted.x;
+                        candidate.y = adjusted.y;
+                    }
+                }
+
+                stepPos = candidate;
             }
+
+            targetPos = stepPos;
         }
 
         // WoW-style slope limiting (50 degrees, with sliding)
@@ -520,16 +535,25 @@ void CameraController::update(float deltaTime) {
             newPos.z += verticalVelocity * deltaTime;
         }
 
-        // Wall collision — push out of WMO walls before grounding
+        // Wall sweep collision before grounding (reduces tunneling at low FPS/high speed).
         if (wmoRenderer) {
-            glm::vec3 feetPos = newPos - glm::vec3(0, 0, eyeHeight);
-            glm::vec3 oldFeetPos = camera->getPosition() - glm::vec3(0, 0, eyeHeight);
-            glm::vec3 adjusted;
-            if (wmoRenderer->checkWallCollision(oldFeetPos, feetPos, adjusted)) {
-                newPos.x = adjusted.x;
-                newPos.y = adjusted.y;
-                newPos.z = adjusted.z + eyeHeight;
+            glm::vec3 startFeet = camera->getPosition() - glm::vec3(0, 0, eyeHeight);
+            glm::vec3 desiredFeet = newPos - glm::vec3(0, 0, eyeHeight);
+            float moveDistXY = glm::length(glm::vec2(desiredFeet.x - startFeet.x, desiredFeet.y - startFeet.y));
+            int sweepSteps = std::max(1, std::min(6, static_cast<int>(std::ceil(moveDistXY / 0.4f))));
+            glm::vec3 stepPos = startFeet;
+            glm::vec3 stepDelta = (desiredFeet - startFeet) / static_cast<float>(sweepSteps);
+
+            for (int i = 0; i < sweepSteps; i++) {
+                glm::vec3 candidate = stepPos + stepDelta;
+                glm::vec3 adjusted;
+                if (wmoRenderer->checkWallCollision(stepPos, candidate, adjusted)) {
+                    candidate = adjusted;
+                }
+                stepPos = candidate;
             }
+
+            newPos = stepPos + glm::vec3(0, 0, eyeHeight);
         }
 
         // Ground to terrain or WMO floor

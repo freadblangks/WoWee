@@ -100,6 +100,20 @@ struct WMOPortalPlane {
     float distance;
 };
 
+// WMO Liquid (MLIQ chunk data)
+struct WMOLiquid {
+    uint32_t xVerts = 0;        // Vertices in X direction
+    uint32_t yVerts = 0;        // Vertices in Y direction
+    uint32_t xTiles = 0;        // Tiles in X (= xVerts - 1)
+    uint32_t yTiles = 0;        // Tiles in Y (= yVerts - 1)
+    glm::vec3 basePosition;     // Corner position in model space
+    uint16_t materialId = 0;    // Liquid material/type
+    std::vector<float> heights; // Height per vertex (xVerts * yVerts)
+    std::vector<uint8_t> flags; // Flags per tile (xTiles * yTiles)
+
+    bool hasLiquid() const { return xVerts > 0 && yVerts > 0; }
+};
+
 // WMO Group Vertex
 struct WMOVertex {
     glm::vec3 position;
@@ -142,6 +156,9 @@ struct WMOGroup {
 
     // BSP tree (for collision - optional)
     std::vector<uint8_t> bspNodes;
+
+    // Liquid data (MLIQ chunk)
+    WMOLiquid liquid;
 
     std::string name;
     std::string description;

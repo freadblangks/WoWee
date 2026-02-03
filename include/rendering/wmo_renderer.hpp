@@ -221,6 +221,7 @@ private:
         glm::vec3 rotation;  // Euler angles (radians)
         float scale;
         glm::mat4 modelMatrix;
+        glm::mat4 invModelMatrix;  // Cached inverse for collision
 
         void updateModelMatrix();
     };

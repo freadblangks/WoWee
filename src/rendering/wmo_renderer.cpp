@@ -620,6 +620,9 @@ void WMORenderer::WMOInstance::updateModelMatrix() {
     modelMatrix = glm::rotate(modelMatrix, rotation.x, glm::vec3(1.0f, 0.0f, 0.0f));
 
     modelMatrix = glm::scale(modelMatrix, glm::vec3(scale));
+
+    // Cache inverse for collision detection
+    invModelMatrix = glm::inverse(modelMatrix);
 }
 
 GLuint WMORenderer::loadTexture(const std::string& path) {
@@ -728,10 +731,9 @@ std::optional<float> WMORenderer::getFloorHeight(float glX, float glY, float glZ
 
         const ModelData& model = it->second;
 
-        // Transform ray into model-local space
-        glm::mat4 invModel = glm::inverse(instance.modelMatrix);
-        glm::vec3 localOrigin = glm::vec3(invModel * glm::vec4(worldOrigin, 1.0f));
-        glm::vec3 localDir = glm::normalize(glm::vec3(invModel * glm::vec4(worldDir, 0.0f)));
+        // Use cached inverse matrix
+        glm::vec3 localOrigin = glm::vec3(instance.invModelMatrix * glm::vec4(worldOrigin, 1.0f));
+        glm::vec3 localDir = glm::normalize(glm::vec3(instance.invModelMatrix * glm::vec4(worldDir, 0.0f)));
 
         for (const auto& group : model.groups) {
             // Quick bounding box check: does the ray intersect this group's AABB?
@@ -785,10 +787,9 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
         if (it == loadedModels.end()) continue;
 
         const ModelData& model = it->second;
-        glm::mat4 invModel = glm::inverse(instance.modelMatrix);
 
-        // Transform positions into local space
-        glm::vec3 localTo = glm::vec3(invModel * glm::vec4(to, 1.0f));
+        // Transform positions into local space using cached inverse
+        glm::vec3 localTo = glm::vec3(instance.invModelMatrix * glm::vec4(to, 1.0f));
 
         for (const auto& group : model.groups) {
             // Quick bounding box check
@@ -865,8 +866,7 @@ bool WMORenderer::isInsideWMO(float glX, float glY, float glZ, uint32_t* outMode
         if (it == loadedModels.end()) continue;
 
         const ModelData& model = it->second;
-        glm::mat4 invModel = glm::inverse(instance.modelMatrix);
-        glm::vec3 localPos = glm::vec3(invModel * glm::vec4(glX, glY, glZ, 1.0f));
+        glm::vec3 localPos = glm::vec3(instance.invModelMatrix * glm::vec4(glX, glY, glZ, 1.0f));
 
         // Check if inside any group's bounding box
         for (const auto& group : model.groups) {
@@ -890,10 +890,9 @@ float WMORenderer::raycastBoundingBoxes(const glm::vec3& origin, const glm::vec3
 
         const ModelData& model = it->second;
 
-        // Transform ray into local space
-        glm::mat4 invModel = glm::inverse(instance.modelMatrix);
-        glm::vec3 localOrigin = glm::vec3(invModel * glm::vec4(origin, 1.0f));
-        glm::vec3 localDir = glm::normalize(glm::vec3(invModel * glm::vec4(direction, 0.0f)));
+        // Use cached inverse matrix
+        glm::vec3 localOrigin = glm::vec3(instance.invModelMatrix * glm::vec4(origin, 1.0f));
+        glm::vec3 localDir = glm::normalize(glm::vec3(instance.invModelMatrix * glm::vec4(direction, 0.0f)));
 
         for (const auto& group : model.groups) {
             // Ray-AABB intersection (slab method)

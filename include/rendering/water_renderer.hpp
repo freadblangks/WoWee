@@ -9,6 +9,7 @@ namespace wowee {
 namespace pipeline {
     struct ADTTerrain;
     struct LiquidData;
+    struct WMOLiquid;
 }
 
 namespace rendering {
@@ -27,6 +28,9 @@ struct WaterSurface {
 
     // Owning tile coordinates (for per-tile removal)
     int tileX = -1, tileY = -1;
+
+    // Owning WMO instance ID (for WMO liquid removal, 0 = terrain water)
+    uint32_t wmoId = 0;
 
     // Water layer dimensions within chunk (0-7 offset, 1-8 size)
     uint8_t xOffset = 0;
@@ -72,6 +76,20 @@ public:
      */
     void loadFromTerrain(const pipeline::ADTTerrain& terrain, bool append = false,
                          int tileX = -1, int tileY = -1);
+
+    /**
+     * Load water surface from WMO liquid data
+     * @param liquid WMO liquid data from MLIQ chunk
+     * @param modelMatrix WMO instance model matrix for transforming to world space
+     * @param wmoId WMO instance ID for tracking ownership
+     */
+    void loadFromWMO(const pipeline::WMOLiquid& liquid, const glm::mat4& modelMatrix, uint32_t wmoId);
+
+    /**
+     * Remove all water surfaces belonging to a specific WMO instance
+     * @param wmoId WMO instance ID
+     */
+    void removeWMO(uint32_t wmoId);
 
     /**
      * Remove all water surfaces belonging to a specific tile

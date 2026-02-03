@@ -469,14 +469,36 @@ void TerrainManager::finalizeTile(std::unique_ptr<PendingTile> pending) {
         }
 
         int loadedWMOs = 0;
+        int loadedLiquids = 0;
         for (auto& wmoReady : pending->wmoModels) {
             if (wmoRenderer->loadModel(wmoReady.model, wmoReady.modelId)) {
                 uint32_t wmoInstId = wmoRenderer->createInstance(wmoReady.modelId, wmoReady.position, wmoReady.rotation);
                 if (wmoInstId) {
                     wmoInstanceIds.push_back(wmoInstId);
                     loadedWMOs++;
+
+                    // Load WMO liquids (canals, pools, etc.)
+                    if (waterRenderer) {
+                        // Compute the same model matrix as WMORenderer uses
+                        glm::mat4 modelMatrix = glm::mat4(1.0f);
+                        modelMatrix = glm::translate(modelMatrix, wmoReady.position);
+                        modelMatrix = glm::rotate(modelMatrix, wmoReady.rotation.z, glm::vec3(0.0f, 0.0f, 1.0f));
+                        modelMatrix = glm::rotate(modelMatrix, wmoReady.rotation.y, glm::vec3(0.0f, 1.0f, 0.0f));
+                        modelMatrix = glm::rotate(modelMatrix, wmoReady.rotation.x, glm::vec3(1.0f, 0.0f, 0.0f));
+
+                        // Load liquids from each WMO group
+                        for (const auto& group : wmoReady.model.groups) {
+                            if (group.liquid.hasLiquid()) {
+                                waterRenderer->loadFromWMO(group.liquid, modelMatrix, wmoInstId);
+                                loadedLiquids++;
+                            }
+                        }
+                    }
                 }
             }
+        }
+        if (loadedLiquids > 0) {
+            LOG_INFO("  Loaded WMO liquids for tile [", x, ",", y, "]: ", loadedLiquids);
         }
 
         // Upload WMO doodad M2 models
@@ -608,9 +630,13 @@ void TerrainManager::unloadTile(int x, int y) {
         LOG_DEBUG("  Removed ", tile->m2InstanceIds.size(), " M2 instances");
     }
 
-    // Remove WMO instances
+    // Remove WMO instances and their liquids
     if (wmoRenderer) {
         for (uint32_t id : tile->wmoInstanceIds) {
+            // Remove WMO liquids associated with this instance
+            if (waterRenderer) {
+                waterRenderer->removeWMO(id);
+            }
             wmoRenderer->removeInstance(id);
         }
         LOG_DEBUG("  Removed ", tile->wmoInstanceIds.size(), " WMO instances");

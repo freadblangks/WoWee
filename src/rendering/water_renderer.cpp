@@ -2,6 +2,7 @@
 #include "rendering/shader.hpp"
 #include "rendering/camera.hpp"
 #include "pipeline/adt_loader.hpp"
+#include "pipeline/wmo_loader.hpp"
 #include "core/logger.hpp"
 #include <GL/glew.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -207,6 +208,16 @@ void WaterRenderer::removeTile(int tileX, int tileY) {
     if (removed > 0) {
         LOG_DEBUG("Removed ", removed, " water surfaces for tile [", tileX, ",", tileY, "]");
     }
+}
+
+void WaterRenderer::loadFromWMO([[maybe_unused]] const pipeline::WMOLiquid& liquid,
+                                 [[maybe_unused]] const glm::mat4& modelMatrix,
+                                 [[maybe_unused]] uint32_t wmoId) {
+    // WMO liquid rendering not yet implemented
+}
+
+void WaterRenderer::removeWMO([[maybe_unused]] uint32_t wmoId) {
+    // WMO liquid rendering not yet implemented
 }
 
 void WaterRenderer::clear() {

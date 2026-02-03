@@ -133,6 +133,7 @@ set(WOWEE_SOURCES
     src/rendering/m2_renderer.cpp
     src/rendering/minimap.cpp
     src/rendering/swim_effects.cpp
+    src/rendering/loading_screen.cpp
 
     # UI
     src/ui/ui_manager.cpp
@@ -205,6 +206,7 @@ set(WOWEE_HEADERS
     include/rendering/swim_effects.hpp
     include/rendering/character_renderer.hpp
     include/rendering/wmo_renderer.hpp
+    include/rendering/loading_screen.hpp
 
     include/ui/ui_manager.hpp
     include/ui/auth_screen.hpp
@@ -221,6 +223,7 @@ add_executable(wowee ${WOWEE_SOURCES} ${WOWEE_HEADERS})
 target_include_directories(wowee PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/extern
 )
 
 # Link libraries
@@ -259,8 +262,8 @@ else()
     target_compile_options(wowee PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-# Copy shaders to build directory
-file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders
+# Copy assets to build directory
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/assets
      DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
 # Install targets

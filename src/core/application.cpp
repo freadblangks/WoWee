@@ -16,6 +16,7 @@
 #include "rendering/character_renderer.hpp"
 #include "rendering/wmo_renderer.hpp"
 #include "rendering/minimap.hpp"
+#include "rendering/loading_screen.hpp"
 #include <imgui.h>
 #include "pipeline/m2_loader.hpp"
 #include "pipeline/wmo_loader.hpp"
@@ -107,11 +108,42 @@ bool Application::initialize() {
 void Application::run() {
     LOG_INFO("Starting main loop");
 
-    // Auto-load terrain for testing
-    if (assetManager && assetManager->isInitialized() && renderer) {
-        renderer->loadTestTerrain(assetManager.get(), "World\\Maps\\Azeroth\\Azeroth_32_49.adt");
-        // Spawn player character with third-person camera
-        spawnPlayerCharacter();
+    // Show loading screen while loading initial data
+    rendering::LoadingScreen loadingScreen;
+    if (loadingScreen.initialize()) {
+        // Render loading screen
+        loadingScreen.setStatus("Initializing...");
+        loadingScreen.render();
+        window->swapBuffers();
+
+        // Load terrain data
+        if (assetManager && assetManager->isInitialized() && renderer) {
+            loadingScreen.setStatus("Loading terrain...");
+            loadingScreen.render();
+            window->swapBuffers();
+
+            renderer->loadTestTerrain(assetManager.get(), "World\\Maps\\Azeroth\\Azeroth_32_49.adt");
+
+            loadingScreen.setStatus("Spawning character...");
+            loadingScreen.render();
+            window->swapBuffers();
+
+            // Spawn player character with third-person camera
+            spawnPlayerCharacter();
+        }
+
+        loadingScreen.setStatus("Ready!");
+        loadingScreen.render();
+        window->swapBuffers();
+        SDL_Delay(500);  // Brief pause to show "Ready!"
+
+        loadingScreen.shutdown();
+    } else {
+        // Fallback: load without loading screen
+        if (assetManager && assetManager->isInitialized() && renderer) {
+            renderer->loadTestTerrain(assetManager.get(), "World\\Maps\\Azeroth\\Azeroth_32_49.adt");
+            spawnPlayerCharacter();
+        }
     }
 
     auto lastTime = std::chrono::high_resolution_clock::now();
@@ -452,146 +484,7 @@ void Application::run() {
                         LOG_INFO("Minimap ", renderer->getMinimap()->isEnabled() ? "enabled" : "disabled");
                     }
                 }
-                // O: Spawn test WMO building at camera position
-                // Shift+O: Load real WMO from MPQ
-                else if (event.key.keysym.scancode == SDL_SCANCODE_O) {
-                    // Check if Shift is held for real WMO loading
-                    bool shiftHeld = (event.key.keysym.mod & KMOD_SHIFT) != 0;
-
-                    if (shiftHeld && assetManager && assetManager->isInitialized() &&
-                        renderer && renderer->getWMORenderer() && renderer->getCamera()) {
-                        // Load a real WMO from MPQ (try a simple mailbox)
-                        auto* wmoRenderer = renderer->getWMORenderer();
-                        auto* camera = renderer->getCamera();
-
-                        // Try to load a simple WMO - mailbox is small and common
-                        const char* wmoPath = "World\\wmo\\Azeroth\\Buildings\\Human_Mailbox\\Human_Mailbox.wmo";
-                        LOG_INFO("Loading real WMO from MPQ: ", wmoPath);
-
-                        auto wmoData = assetManager->readFile(wmoPath);
-                        if (wmoData.empty()) {
-                            LOG_WARNING("Failed to load WMO file from MPQ. Trying alternative path...");
-                            // Try alternative path
-                            wmoPath = "World\\wmo\\Dungeon\\LD_Prison\\LD_Prison_Cell01.wmo";
-                            wmoData = assetManager->readFile(wmoPath);
-                        }
-
-                        if (!wmoData.empty()) {
-                            // Parse WMO
-                            pipeline::WMOModel wmoModel = pipeline::WMOLoader::load(wmoData);
-
-                            if (wmoModel.isValid()) {
-                                // Use unique model ID (2 for real WMOs)
-                                static uint32_t nextModelId = 2;
-                                uint32_t modelId = nextModelId++;
-
-                                if (wmoRenderer->loadModel(wmoModel, modelId)) {
-                                    // Spawn WMO in front of camera
-                                    glm::vec3 spawnPos = camera->getPosition() + camera->getForward() * 20.0f;
-                                    uint32_t instanceId = wmoRenderer->createInstance(modelId, spawnPos);
-
-                                    if (instanceId > 0) {
-                                        LOG_INFO("Spawned real WMO (", wmoModel.groups.size(), " groups) at (",
-                                                static_cast<int>(spawnPos.x), ", ",
-                                                static_cast<int>(spawnPos.y), ", ",
-                                                static_cast<int>(spawnPos.z), ")");
-                                        LOG_INFO("WMO has ", wmoModel.materials.size(), " materials, ",
-                                                wmoModel.textures.size(), " textures");
-                                    }
-                                } else {
-                                    LOG_ERROR("Failed to load WMO model into renderer");
-                                }
-                            } else {
-                                LOG_ERROR("Failed to parse WMO file");
-                            }
-                        } else {
-                            LOG_WARNING("WMO file not found in MPQ archives");
-                            LOG_INFO("Make sure WOW_DATA_PATH environment variable points to valid WoW 3.3.5a installation");
-                        }
-                    }
-                    else if (renderer && renderer->getWMORenderer() && renderer->getCamera()) {
-                        auto* wmoRenderer = renderer->getWMORenderer();
-                        auto* camera = renderer->getCamera();
-
-                        // Create a simple cube building as placeholder WMO
-                        // (Real WMO would be loaded from MPQ)
-                        pipeline::WMOModel testWMO;
-                        testWMO.version = 17;
-                        testWMO.nGroups = 1;
-
-                        // Create a single group with cube geometry
-                        pipeline::WMOGroup group;
-                        group.flags = 0;
-                        group.groupId = 0;
-
-                        // Cube building vertices (larger than character cube)
-                        float size = 5.0f;
-                        std::vector<glm::vec3> cubePos = {
-                            {-size, -size, -size}, { size, -size, -size},
-                            { size,  size, -size}, {-size,  size, -size},
-                            {-size, -size,  size}, { size, -size,  size},
-                            { size,  size,  size}, {-size,  size,  size}
-                        };
-
-                        for (const auto& pos : cubePos) {
-                            pipeline::WMOVertex v;
-                            v.position = pos;
-                            v.normal = glm::normalize(pos);
-                            v.texCoord = glm::vec2(0.5f);
-                            v.color = glm::vec4(0.8f, 0.7f, 0.6f, 1.0f);  // Stone color
-                            group.vertices.push_back(v);
-                        }
-
-                        // Cube indices (12 triangles, 36 indices)
-                        uint16_t cubeIndices[] = {
-                            0,1,2, 0,2,3,  // Front
-                            4,6,5, 4,7,6,  // Back
-                            0,4,5, 0,5,1,  // Bottom
-                            2,6,7, 2,7,3,  // Top
-                            0,3,7, 0,7,4,  // Left
-                            1,5,6, 1,6,2   // Right
-                        };
-                        for (uint16_t idx : cubeIndices) {
-                            group.indices.push_back(idx);
-                        }
-
-                        // Bounding box
-                        group.boundingBoxMin = glm::vec3(-size);
-                        group.boundingBoxMax = glm::vec3(size);
-
-                        // Single batch (no materials for now)
-                        pipeline::WMOBatch batch;
-                        batch.startIndex = 0;
-                        batch.indexCount = 36;
-                        batch.startVertex = 0;
-                        batch.lastVertex = 7;
-                        batch.materialId = 0;
-                        group.batches.push_back(batch);
-
-                        testWMO.groups.push_back(group);
-                        testWMO.boundingBoxMin = glm::vec3(-size);
-                        testWMO.boundingBoxMax = glm::vec3(size);
-
-                        // Load WMO model (reuse ID 1 for simplicity)
-                        static bool wmoModelLoaded = false;
-                        if (!wmoModelLoaded) {
-                            wmoRenderer->loadModel(testWMO, 1);
-                            wmoModelLoaded = true;
-                        }
-
-                        // Spawn WMO in front of camera
-                        glm::vec3 spawnPos = camera->getPosition() + camera->getForward() * 20.0f;
-                        uint32_t instanceId = wmoRenderer->createInstance(1, spawnPos);
-
-                        if (instanceId > 0) {
-                            LOG_INFO("Spawned test WMO building at (",
-                                    static_cast<int>(spawnPos.x), ", ",
-                                    static_cast<int>(spawnPos.y), ", ",
-                                    static_cast<int>(spawnPos.z), ")");
-                        }
-                    }
-                }
-                // P: Remove all WMO buildings
+                // P: Remove all WMO buildings (O key removed)
                 else if (event.key.keysym.scancode == SDL_SCANCODE_P) {
                     if (renderer && renderer->getWMORenderer()) {
                         renderer->getWMORenderer()->clearInstances();

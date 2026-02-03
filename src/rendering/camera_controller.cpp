@@ -12,6 +12,27 @@
 namespace wowee {
 namespace rendering {
 
+namespace {
+
+std::optional<float> selectReachableFloor(const std::optional<float>& terrainH,
+                                          const std::optional<float>& wmoH,
+                                          float refZ,
+                                          float maxStepUp) {
+    std::optional<float> best;
+    auto consider = [&](const std::optional<float>& h) {
+        if (!h) return;
+        if (*h > refZ + maxStepUp) return;  // Ignore roofs/floors too far above us.
+        if (!best || *h > *best) {
+            best = *h;  // Choose highest reachable floor.
+        }
+    };
+    consider(terrainH);
+    consider(wmoH);
+    return best;
+}
+
+} // namespace
+
 CameraController::CameraController(Camera* cam) : camera(cam) {
     yaw = defaultYaw;
     pitch = defaultPitch;
@@ -29,11 +50,46 @@ void CameraController::update(float deltaTime) {
     bool uiWantsKeyboard = ImGui::GetIO().WantCaptureKeyboard;
 
     // Determine current key states
-    bool nowForward = !uiWantsKeyboard && !sitting && input.isKeyPressed(SDL_SCANCODE_W);
-    bool nowBackward = !uiWantsKeyboard && !sitting && input.isKeyPressed(SDL_SCANCODE_S);
-    bool nowStrafeLeft = !uiWantsKeyboard && !sitting && input.isKeyPressed(SDL_SCANCODE_A);
-    bool nowStrafeRight = !uiWantsKeyboard && !sitting && input.isKeyPressed(SDL_SCANCODE_D);
+    bool keyW = !uiWantsKeyboard && !sitting && input.isKeyPressed(SDL_SCANCODE_W);
+    bool keyS = !uiWantsKeyboard && !sitting && input.isKeyPressed(SDL_SCANCODE_S);
+    bool keyA = !uiWantsKeyboard && !sitting && input.isKeyPressed(SDL_SCANCODE_A);
+    bool keyD = !uiWantsKeyboard && !sitting && input.isKeyPressed(SDL_SCANCODE_D);
+    bool keyQ = !uiWantsKeyboard && !sitting && input.isKeyPressed(SDL_SCANCODE_Q);
+    bool keyE = !uiWantsKeyboard && !sitting && input.isKeyPressed(SDL_SCANCODE_E);
+    bool shiftDown = !uiWantsKeyboard && (input.isKeyPressed(SDL_SCANCODE_LSHIFT) || input.isKeyPressed(SDL_SCANCODE_RSHIFT));
+    bool ctrlDown = !uiWantsKeyboard && (input.isKeyPressed(SDL_SCANCODE_LCTRL) || input.isKeyPressed(SDL_SCANCODE_RCTRL));
     bool nowJump = !uiWantsKeyboard && !sitting && input.isKeyPressed(SDL_SCANCODE_SPACE);
+
+    bool mouseAutorun = !uiWantsKeyboard && !sitting && leftMouseDown && rightMouseDown;
+    bool nowForward = keyW || mouseAutorun;
+    bool nowBackward = keyS;
+    bool nowStrafeLeft = false;
+    bool nowStrafeRight = false;
+    bool nowTurnLeft = false;
+    bool nowTurnRight = false;
+
+    // WoW-like third-person keyboard behavior:
+    // - RMB held: A/D strafe
+    // - RMB released: A/D turn character+camera, Q/E strafe
+    if (thirdPerson && !rightMouseDown) {
+        nowTurnLeft = keyA;
+        nowTurnRight = keyD;
+        nowStrafeLeft = keyQ;
+        nowStrafeRight = keyE;
+    } else {
+        nowStrafeLeft = keyA || keyQ;
+        nowStrafeRight = keyD || keyE;
+    }
+
+    // Keyboard turning updates camera yaw (character follows yaw in renderer)
+    if (nowTurnLeft && !nowTurnRight) {
+        yaw += WOW_TURN_SPEED * deltaTime;
+    } else if (nowTurnRight && !nowTurnLeft) {
+        yaw -= WOW_TURN_SPEED * deltaTime;
+    }
+    if (nowTurnLeft || nowTurnRight) {
+        camera->setRotation(yaw, pitch);
+    }
 
     // Select physics constants based on mode
     float gravity = useWoWSpeed ? WOW_GRAVITY : GRAVITY;
@@ -42,25 +98,32 @@ void CameraController::update(float deltaTime) {
     // Calculate movement speed based on direction and modifiers
     float speed;
     if (useWoWSpeed) {
-        // Movement speeds (Shift = sprint, Ctrl = walk)
+        // Movement speeds (WoW-like: Ctrl walk, default run, backpedal slower)
         if (nowBackward && !nowForward) {
             speed = WOW_BACK_SPEED;
-        } else if (!uiWantsKeyboard && (input.isKeyPressed(SDL_SCANCODE_LSHIFT) || input.isKeyPressed(SDL_SCANCODE_RSHIFT))) {
-            speed = WOW_SPRINT_SPEED;  // Shift = sprint (faster)
-        } else if (!uiWantsKeyboard && (input.isKeyPressed(SDL_SCANCODE_LCTRL) || input.isKeyPressed(SDL_SCANCODE_RCTRL))) {
-            speed = WOW_WALK_SPEED;    // Ctrl = walk (slower)
+        } else if (ctrlDown) {
+            speed = WOW_WALK_SPEED;
         } else {
-            speed = WOW_RUN_SPEED;     // Normal run
+            speed = WOW_RUN_SPEED;
         }
     } else {
         // Exploration mode (original behavior)
         speed = movementSpeed;
-        if (!uiWantsKeyboard && (input.isKeyPressed(SDL_SCANCODE_LSHIFT) || input.isKeyPressed(SDL_SCANCODE_RSHIFT))) {
+        if (shiftDown) {
             speed *= sprintMultiplier;
         }
-        if (!uiWantsKeyboard && (input.isKeyPressed(SDL_SCANCODE_LCTRL) || input.isKeyPressed(SDL_SCANCODE_RCTRL))) {
+        if (ctrlDown) {
             speed *= slowMultiplier;
         }
+    }
+
+    bool hasMoveInput = nowForward || nowBackward || nowStrafeLeft || nowStrafeRight;
+    if (useWoWSpeed) {
+        // "Sprinting" flag drives run animation/stronger footstep set.
+        // In WoW mode this means running pace (not walk/backpedal), not Shift.
+        runPace = hasMoveInput && !ctrlDown && !nowBackward;
+    } else {
+        runPace = hasMoveInput && shiftDown;
     }
 
     // Get camera axes — project forward onto XY plane for walking
@@ -189,17 +252,15 @@ void CameraController::update(float deltaTime) {
 
             // Helper to get ground height at a position
             auto getGroundAt = [&](float x, float y) -> std::optional<float> {
-                std::optional<float> h;
+                std::optional<float> terrainH;
+                std::optional<float> wmoH;
                 if (terrainManager) {
-                    h = terrainManager->getHeightAt(x, y);
+                    terrainH = terrainManager->getHeightAt(x, y);
                 }
                 if (wmoRenderer) {
-                    auto wh = wmoRenderer->getFloorHeight(x, y, targetPos.z + 5.0f);
-                    if (wh && (!h || *wh > *h)) {
-                        h = wh;
-                    }
+                    wmoH = wmoRenderer->getFloorHeight(x, y, targetPos.z + 5.0f);
                 }
-                return h;
+                return selectReachableFloor(terrainH, wmoH, targetPos.z, 1.0f);
             };
 
             // Get ground height at target position
@@ -274,35 +335,17 @@ void CameraController::update(float deltaTime) {
                 wmoH = wmoRenderer->getFloorHeight(targetPos.x, targetPos.y, targetPos.z + eyeHeight);
             }
 
-            std::optional<float> groundH;
-            if (terrainH && wmoH) {
-                groundH = std::max(*terrainH, *wmoH);
-            } else if (terrainH) {
-                groundH = terrainH;
-            } else if (wmoH) {
-                groundH = wmoH;
-            }
+            std::optional<float> groundH = selectReachableFloor(terrainH, wmoH, targetPos.z, 1.0f);
 
             if (groundH) {
                 float groundDiff = *groundH - lastGroundZ;
-                float currentFeetZ = targetPos.z;
-
-                // Only consider floors that are:
-                // 1. Below us (we can fall onto them)
-                // 2. Slightly above us (we can step up onto them, max 1 unit)
-                // Don't teleport to roofs/floors that are way above us
-                bool floorIsReachable = (*groundH <= currentFeetZ + 1.0f);
-
-                if (floorIsReachable) {
-                    if (std::abs(groundDiff) < 2.0f) {
-                        // Small height difference - smooth it
-                        lastGroundZ += groundDiff * std::min(1.0f, deltaTime * 15.0f);
-                    } else {
-                        // Large height difference - snap (for falling onto ledges)
-                        lastGroundZ = *groundH;
-                    }
+                if (std::abs(groundDiff) < 2.0f) {
+                    // Small height difference - smooth it
+                    lastGroundZ += groundDiff * std::min(1.0f, deltaTime * 15.0f);
+                } else {
+                    // Large height difference - snap (for falling onto ledges)
+                    lastGroundZ = *groundH;
                 }
-                // If floor is way above us (roof), ignore it and keep lastGroundZ
 
                 if (targetPos.z <= lastGroundZ + 0.1f) {
                     targetPos.z = lastGroundZ;
@@ -334,26 +377,21 @@ void CameraController::update(float deltaTime) {
         float zoomLerp = 1.0f - std::exp(-ZOOM_SMOOTH_SPEED * deltaTime);
         currentDistance += (userTargetDistance - currentDistance) * zoomLerp;
 
-        // Desired camera position (before collision)
-        glm::vec3 desiredCam = pivot + camDir * currentDistance;
-
         // ===== Camera collision (sphere sweep approximation) =====
         // Find max safe distance using raycast + sphere radius
         collisionDistance = currentDistance;
 
         // Helper to get floor height
         auto getFloorAt = [&](float x, float y, float z) -> std::optional<float> {
-            std::optional<float> h;
+            std::optional<float> terrainH;
+            std::optional<float> wmoH;
             if (terrainManager) {
-                h = terrainManager->getHeightAt(x, y);
+                terrainH = terrainManager->getHeightAt(x, y);
             }
             if (wmoRenderer) {
-                auto wh = wmoRenderer->getFloorHeight(x, y, z + 5.0f);
-                if (wh && (!h || *wh > *h)) {
-                    h = wh;
-                }
+                wmoH = wmoRenderer->getFloorHeight(x, y, z + 5.0f);
             }
-            return h;
+            return selectReachableFloor(terrainH, wmoH, z, 0.5f);
         };
 
         // Raycast against WMO bounding boxes
@@ -409,7 +447,7 @@ void CameraController::update(float deltaTime) {
         // After smoothing, ensure camera is above the floor at its final position
         // This prevents camera clipping through ground in Stormwind and similar areas
         constexpr float MIN_FLOOR_CLEARANCE = 0.20f;  // Keep camera at least 20cm above floor
-        auto finalFloorH = getFloorAt(smoothedCamPos.x, smoothedCamPos.y, smoothedCamPos.z + 5.0f);
+        auto finalFloorH = getFloorAt(smoothedCamPos.x, smoothedCamPos.y, smoothedCamPos.z);
         if (finalFloorH && smoothedCamPos.z < *finalFloorH + MIN_FLOOR_CLEARANCE) {
             smoothedCamPos.z = *finalFloorH + MIN_FLOOR_CLEARANCE;
         }
@@ -506,14 +544,7 @@ void CameraController::update(float deltaTime) {
                 wmoH = wmoRenderer->getFloorHeight(newPos.x, newPos.y, newPos.z);
             }
 
-            std::optional<float> groundH;
-            if (terrainH && wmoH) {
-                groundH = std::max(*terrainH, *wmoH);
-            } else if (terrainH) {
-                groundH = terrainH;
-            } else if (wmoH) {
-                groundH = wmoH;
-            }
+            std::optional<float> groundH = selectReachableFloor(terrainH, wmoH, newPos.z - eyeHeight, 1.0f);
 
             if (groundH) {
                 lastGroundZ = *groundH;
@@ -565,6 +596,19 @@ void CameraController::update(float deltaTime) {
             }
         }
 
+        // Turning
+        if (nowTurnLeft && !wasTurningLeft) {
+            movementCallback(static_cast<uint32_t>(game::Opcode::CMSG_MOVE_START_TURN_LEFT));
+        }
+        if (nowTurnRight && !wasTurningRight) {
+            movementCallback(static_cast<uint32_t>(game::Opcode::CMSG_MOVE_START_TURN_RIGHT));
+        }
+        if ((!nowTurnLeft && wasTurningLeft) || (!nowTurnRight && wasTurningRight)) {
+            if (!nowTurnLeft && !nowTurnRight) {
+                movementCallback(static_cast<uint32_t>(game::Opcode::CMSG_MOVE_STOP_TURN));
+            }
+        }
+
         // Jump
         if (nowJump && !wasJumping && grounded) {
             movementCallback(static_cast<uint32_t>(game::Opcode::CMSG_MOVE_JUMP));
@@ -591,13 +635,17 @@ void CameraController::update(float deltaTime) {
     wasMovingBackward = nowBackward;
     wasStrafingLeft = nowStrafeLeft;
     wasStrafingRight = nowStrafeRight;
+    wasTurningLeft = nowTurnLeft;
+    wasTurningRight = nowTurnRight;
     wasJumping = nowJump;
     wasFalling = !grounded && verticalVelocity <= 0.0f;
 
-    // Reset camera (R key)
-    if (!uiWantsKeyboard && input.isKeyPressed(SDL_SCANCODE_R)) {
+    // Reset camera/character (R key, edge-triggered)
+    bool rDown = !uiWantsKeyboard && input.isKeyPressed(SDL_SCANCODE_R);
+    if (rDown && !rKeyWasDown) {
         reset();
     }
+    rKeyWasDown = rDown;
 }
 
 void CameraController::processMouseMotion(const SDL_MouseMotionEvent& event) {
@@ -648,7 +696,20 @@ void CameraController::reset() {
     yaw = defaultYaw;
     pitch = defaultPitch;
     verticalVelocity = 0.0f;
-    grounded = false;
+    grounded = true;
+    swimming = false;
+    sitting = false;
+
+    // Clear edge-state so movement packets can re-start cleanly after respawn.
+    wasMovingForward = false;
+    wasMovingBackward = false;
+    wasStrafingLeft = false;
+    wasStrafingRight = false;
+    wasTurningLeft = false;
+    wasTurningRight = false;
+    wasJumping = false;
+    wasFalling = false;
+    wasSwimming = false;
 
     glm::vec3 spawnPos = defaultPosition;
 
@@ -665,11 +726,32 @@ void CameraController::reset() {
     }
     if (h) {
         lastGroundZ = *h;
-        spawnPos.z = *h + eyeHeight;
+        spawnPos.z = *h;
     }
 
-    camera->setPosition(spawnPos);
     camera->setRotation(yaw, pitch);
+    glm::vec3 forward3D = camera->getForward();
+
+    if (thirdPerson && followTarget) {
+        // In follow mode, respawn the character (feet position), then place camera behind it.
+        *followTarget = spawnPos;
+
+        currentDistance = userTargetDistance;
+        collisionDistance = currentDistance;
+
+        glm::vec3 pivot = spawnPos + glm::vec3(0.0f, 0.0f, PIVOT_HEIGHT);
+        glm::vec3 camDir = -forward3D;
+        glm::vec3 camPos = pivot + camDir * currentDistance;
+        smoothedCamPos = camPos;
+        camera->setPosition(camPos);
+    } else {
+        // Free-fly mode keeps camera eye-height above ground.
+        if (h) {
+            spawnPos.z += eyeHeight;
+        }
+        smoothedCamPos = spawnPos;
+        camera->setPosition(spawnPos);
+    }
 
     LOG_INFO("Camera reset to default position");
 }
@@ -701,22 +783,24 @@ bool CameraController::isMoving() const {
     }
 
     auto& input = core::Input::getInstance();
+    bool keyW = input.isKeyPressed(SDL_SCANCODE_W);
+    bool keyS = input.isKeyPressed(SDL_SCANCODE_S);
+    bool keyA = input.isKeyPressed(SDL_SCANCODE_A);
+    bool keyD = input.isKeyPressed(SDL_SCANCODE_D);
+    bool keyQ = input.isKeyPressed(SDL_SCANCODE_Q);
+    bool keyE = input.isKeyPressed(SDL_SCANCODE_E);
 
-    return input.isKeyPressed(SDL_SCANCODE_W) ||
-           input.isKeyPressed(SDL_SCANCODE_S) ||
-           input.isKeyPressed(SDL_SCANCODE_A) ||
-           input.isKeyPressed(SDL_SCANCODE_D);
+    // In third-person without RMB, A/D are turn keys (not movement).
+    if (thirdPerson && !rightMouseDown) {
+        return keyW || keyS || keyQ || keyE;
+    }
+
+    bool mouseAutorun = leftMouseDown && rightMouseDown;
+    return keyW || keyS || keyA || keyD || keyQ || keyE || mouseAutorun;
 }
 
 bool CameraController::isSprinting() const {
-    if (!enabled || !camera) {
-        return false;
-    }
-    if (ImGui::GetIO().WantCaptureKeyboard) {
-        return false;
-    }
-    auto& input = core::Input::getInstance();
-    return isMoving() && (input.isKeyPressed(SDL_SCANCODE_LSHIFT) || input.isKeyPressed(SDL_SCANCODE_RSHIFT));
+    return enabled && camera && runPace;
 }
 
 } // namespace rendering

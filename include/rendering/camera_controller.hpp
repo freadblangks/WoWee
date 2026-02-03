@@ -122,12 +122,16 @@ private:
     bool enabled = true;
     bool sitting = false;
     bool xKeyWasDown = false;
+    bool rKeyWasDown = false;
+    bool runPace = false;
 
     // Movement state tracking (for sending opcodes on state change)
     bool wasMovingForward = false;
     bool wasMovingBackward = false;
     bool wasStrafingLeft = false;
     bool wasStrafingRight = false;
+    bool wasTurningLeft = false;
+    bool wasTurningRight = false;
     bool wasJumping = false;
     bool wasFalling = false;
 
@@ -136,10 +140,11 @@ private:
 
     // Movement speeds
     bool useWoWSpeed = false;
-    static constexpr float WOW_RUN_SPEED = 14.0f;    // Normal run (WASD)
-    static constexpr float WOW_SPRINT_SPEED = 28.0f; // Sprint (hold Shift)
-    static constexpr float WOW_WALK_SPEED = 5.0f;    // Walk (hold Ctrl)
-    static constexpr float WOW_BACK_SPEED = 9.0f;    // Backpedal
+    static constexpr float WOW_RUN_SPEED = 7.0f;     // Normal run (WotLK)
+    static constexpr float WOW_SPRINT_SPEED = 10.5f; // Optional fast mode (not default WoW behavior)
+    static constexpr float WOW_WALK_SPEED = 2.5f;    // Walk
+    static constexpr float WOW_BACK_SPEED = 4.5f;    // Backpedal
+    static constexpr float WOW_TURN_SPEED = 180.0f;  // Keyboard turn deg/sec
     static constexpr float WOW_GRAVITY = -19.29f;
     static constexpr float WOW_JUMP_VELOCITY = 7.96f;
 

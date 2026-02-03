@@ -21,6 +21,66 @@
 namespace wowee {
 namespace rendering {
 
+namespace {
+
+bool decodeLayerAlpha(const pipeline::MapChunk& chunk, size_t layerIdx, std::vector<uint8_t>& outAlpha) {
+    if (layerIdx >= chunk.layers.size()) return false;
+    const auto& layer = chunk.layers[layerIdx];
+    if (!layer.useAlpha() || layer.offsetMCAL >= chunk.alphaMap.size()) return false;
+
+    size_t offset = layer.offsetMCAL;
+    size_t layerSize = chunk.alphaMap.size() - offset;
+    for (size_t j = layerIdx + 1; j < chunk.layers.size(); j++) {
+        if (chunk.layers[j].useAlpha()) {
+            layerSize = chunk.layers[j].offsetMCAL - offset;
+            break;
+        }
+    }
+
+    outAlpha.assign(4096, 255);
+
+    if (layer.compressedAlpha()) {
+        size_t readPos = offset;
+        size_t writePos = 0;
+        while (writePos < 4096 && readPos < chunk.alphaMap.size()) {
+            uint8_t cmd = chunk.alphaMap[readPos++];
+            bool fill = (cmd & 0x80) != 0;
+            int count = (cmd & 0x7F) + 1;
+
+            if (fill) {
+                if (readPos >= chunk.alphaMap.size()) break;
+                uint8_t val = chunk.alphaMap[readPos++];
+                for (int i = 0; i < count && writePos < 4096; i++) {
+                    outAlpha[writePos++] = val;
+                }
+            } else {
+                for (int i = 0; i < count && writePos < 4096 && readPos < chunk.alphaMap.size(); i++) {
+                    outAlpha[writePos++] = chunk.alphaMap[readPos++];
+                }
+            }
+        }
+        return true;
+    }
+
+    if (layerSize >= 4096) {
+        std::copy(chunk.alphaMap.begin() + offset, chunk.alphaMap.begin() + offset + 4096, outAlpha.begin());
+        return true;
+    }
+
+    if (layerSize >= 2048) {
+        for (size_t i = 0; i < 2048; i++) {
+            uint8_t v = chunk.alphaMap[offset + i];
+            outAlpha[i * 2] = (v & 0x0F) * 17;
+            outAlpha[i * 2 + 1] = (v >> 4) * 17;
+        }
+        return true;
+    }
+
+    return false;
+}
+
+} // namespace
+
 TerrainManager::TerrainManager() {
 }
 
@@ -800,6 +860,69 @@ std::optional<float> TerrainManager::getHeightAt(float glX, float glY) const {
                           h11 * tx * ty;
 
                 return chunk.position[2] + h;
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::optional<std::string> TerrainManager::getDominantTextureAt(float glX, float glY) const {
+    const float unitSize = CHUNK_SIZE / 8.0f;
+    std::vector<uint8_t> alphaScratch;
+
+    for (const auto& [coord, tile] : loadedTiles) {
+        (void)coord;
+        if (!tile || !tile->loaded) continue;
+
+        for (int cy = 0; cy < 16; cy++) {
+            for (int cx = 0; cx < 16; cx++) {
+                const auto& chunk = tile->terrain.getChunk(cx, cy);
+                if (!chunk.hasHeightMap() || chunk.layers.empty()) continue;
+
+                float chunkMaxX = chunk.position[0];
+                float chunkMinX = chunk.position[0] - 8.0f * unitSize;
+                float chunkMaxY = chunk.position[1];
+                float chunkMinY = chunk.position[1] - 8.0f * unitSize;
+                if (glX < chunkMinX || glX > chunkMaxX || glY < chunkMinY || glY > chunkMaxY) {
+                    continue;
+                }
+
+                float fracY = (chunk.position[0] - glX) / unitSize;
+                float fracX = (chunk.position[1] - glY) / unitSize;
+                fracX = glm::clamp(fracX, 0.0f, 8.0f);
+                fracY = glm::clamp(fracY, 0.0f, 8.0f);
+
+                int alphaX = glm::clamp(static_cast<int>((fracX / 8.0f) * 63.0f), 0, 63);
+                int alphaY = glm::clamp(static_cast<int>((fracY / 8.0f) * 63.0f), 0, 63);
+                int alphaIndex = alphaY * 64 + alphaX;
+
+                std::vector<int> weights(chunk.layers.size(), 0);
+                int accum = 0;
+                for (size_t layerIdx = 1; layerIdx < chunk.layers.size(); layerIdx++) {
+                    int alpha = 0;
+                    if (decodeLayerAlpha(chunk, layerIdx, alphaScratch) && alphaIndex < static_cast<int>(alphaScratch.size())) {
+                        alpha = alphaScratch[alphaIndex];
+                    }
+                    weights[layerIdx] = alpha;
+                    accum += alpha;
+                }
+                weights[0] = glm::clamp(255 - accum, 0, 255);
+
+                size_t bestLayer = 0;
+                int bestWeight = weights[0];
+                for (size_t i = 1; i < weights.size(); i++) {
+                    if (weights[i] > bestWeight) {
+                        bestWeight = weights[i];
+                        bestLayer = i;
+                    }
+                }
+
+                uint32_t texId = chunk.layers[bestLayer].textureId;
+                if (texId < tile->terrain.textures.size()) {
+                    return tile->terrain.textures[texId];
+                }
+                return std::nullopt;
             }
         }
     }

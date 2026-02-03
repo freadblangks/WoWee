@@ -1141,6 +1141,30 @@ void CharacterRenderer::removeInstance(uint32_t instanceId) {
     instances.erase(instanceId);
 }
 
+bool CharacterRenderer::getAnimationState(uint32_t instanceId, uint32_t& animationId,
+                                          float& animationTimeMs, float& animationDurationMs) const {
+    auto it = instances.find(instanceId);
+    if (it == instances.end()) {
+        return false;
+    }
+
+    const CharacterInstance& instance = it->second;
+    auto modelIt = models.find(instance.modelId);
+    if (modelIt == models.end()) {
+        return false;
+    }
+
+    const auto& sequences = modelIt->second.data.sequences;
+    if (instance.currentSequenceIndex < 0 || instance.currentSequenceIndex >= static_cast<int>(sequences.size())) {
+        return false;
+    }
+
+    animationId = instance.currentAnimationId;
+    animationTimeMs = instance.animationTime;
+    animationDurationMs = static_cast<float>(sequences[instance.currentSequenceIndex].duration);
+    return true;
+}
+
 bool CharacterRenderer::attachWeapon(uint32_t charInstanceId, uint32_t attachmentId,
                                       const pipeline::M2Model& weaponModel, uint32_t weaponModelId,
                                       const std::string& texturePath) {

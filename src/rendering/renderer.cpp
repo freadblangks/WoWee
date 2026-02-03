@@ -27,11 +27,14 @@
 #include "game/world.hpp"
 #include "game/zone_manager.hpp"
 #include "audio/music_manager.hpp"
+#include "audio/footstep_manager.hpp"
 #include <GL/glew.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/euler_angles.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <cctype>
+#include <cmath>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -185,6 +188,7 @@ bool Renderer::initialize(core::Window* win) {
 
     // Create music manager (initialized later with asset manager)
     musicManager = std::make_unique<audio::MusicManager>();
+    footstepManager = std::make_unique<audio::FootstepManager>();
 
     LOG_INFO("Renderer initialized");
     return true;
@@ -256,6 +260,10 @@ void Renderer::shutdown() {
     if (musicManager) {
         musicManager->shutdown();
         musicManager.reset();
+    }
+    if (footstepManager) {
+        footstepManager->shutdown();
+        footstepManager.reset();
     }
 
     zoneManager.reset();
@@ -492,6 +500,87 @@ bool Renderer::isMoving() const {
     return cameraController && cameraController->isMoving();
 }
 
+bool Renderer::isFootstepAnimationState() const {
+    return charAnimState == CharAnimState::WALK || charAnimState == CharAnimState::RUN;
+}
+
+bool Renderer::shouldTriggerFootstepEvent(uint32_t animationId, float animationTimeMs, float animationDurationMs) {
+    if (animationDurationMs <= 1.0f) {
+        footstepNormInitialized = false;
+        return false;
+    }
+
+    float norm = std::fmod(animationTimeMs, animationDurationMs) / animationDurationMs;
+    if (norm < 0.0f) norm += 1.0f;
+
+    if (animationId != footstepLastAnimationId) {
+        footstepLastAnimationId = animationId;
+        footstepLastNormTime = norm;
+        footstepNormInitialized = true;
+        return false;
+    }
+
+    if (!footstepNormInitialized) {
+        footstepNormInitialized = true;
+        footstepLastNormTime = norm;
+        return false;
+    }
+
+    auto crossed = [&](float eventNorm) {
+        if (footstepLastNormTime <= norm) {
+            return footstepLastNormTime < eventNorm && eventNorm <= norm;
+        }
+        return footstepLastNormTime < eventNorm || eventNorm <= norm;
+    };
+
+    bool trigger = crossed(0.22f) || crossed(0.72f);
+    footstepLastNormTime = norm;
+    return trigger;
+}
+
+audio::FootstepSurface Renderer::resolveFootstepSurface() const {
+    if (!cameraController || !cameraController->isThirdPerson()) {
+        return audio::FootstepSurface::STONE;
+    }
+
+    const glm::vec3& p = characterPosition;
+
+    if (cameraController->isSwimming()) {
+        return audio::FootstepSurface::WATER;
+    }
+
+    if (waterRenderer) {
+        auto waterH = waterRenderer->getWaterHeightAt(p.x, p.y);
+        if (waterH && p.z < (*waterH + 0.25f)) {
+            return audio::FootstepSurface::WATER;
+        }
+    }
+
+    if (wmoRenderer) {
+        auto wmoFloor = wmoRenderer->getFloorHeight(p.x, p.y, p.z + 1.5f);
+        auto terrainFloor = terrainManager ? terrainManager->getHeightAt(p.x, p.y) : std::nullopt;
+        if (wmoFloor && (!terrainFloor || *wmoFloor >= *terrainFloor - 0.1f)) {
+            return audio::FootstepSurface::STONE;
+        }
+    }
+
+    if (terrainManager) {
+        auto texture = terrainManager->getDominantTextureAt(p.x, p.y);
+        if (texture) {
+            std::string t = *texture;
+            for (char& c : t) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (t.find("snow") != std::string::npos || t.find("ice") != std::string::npos) return audio::FootstepSurface::SNOW;
+            if (t.find("grass") != std::string::npos || t.find("moss") != std::string::npos || t.find("leaf") != std::string::npos) return audio::FootstepSurface::GRASS;
+            if (t.find("sand") != std::string::npos || t.find("dirt") != std::string::npos || t.find("mud") != std::string::npos) return audio::FootstepSurface::DIRT;
+            if (t.find("wood") != std::string::npos || t.find("timber") != std::string::npos) return audio::FootstepSurface::WOOD;
+            if (t.find("metal") != std::string::npos || t.find("iron") != std::string::npos) return audio::FootstepSurface::METAL;
+            if (t.find("stone") != std::string::npos || t.find("rock") != std::string::npos || t.find("cobble") != std::string::npos || t.find("brick") != std::string::npos) return audio::FootstepSurface::STONE;
+        }
+    }
+
+    return audio::FootstepSurface::STONE;
+}
+
 void Renderer::update(float deltaTime) {
     if (cameraController) {
         cameraController->update(deltaTime);
@@ -567,6 +656,25 @@ void Renderer::update(float deltaTime) {
     // Update character animations
     if (characterRenderer) {
         characterRenderer->update(deltaTime);
+    }
+
+    // Footsteps: animation-event driven + surface query at event time.
+    if (footstepManager) {
+        footstepManager->update(deltaTime);
+        if (characterRenderer && characterInstanceId > 0 &&
+            cameraController && cameraController->isThirdPerson() &&
+            isFootstepAnimationState() && cameraController->isGrounded() &&
+            !cameraController->isSwimming()) {
+            uint32_t animId = 0;
+            float animTimeMs = 0.0f;
+            float animDurationMs = 0.0f;
+            if (characterRenderer->getAnimationState(characterInstanceId, animId, animTimeMs, animDurationMs) &&
+                shouldTriggerFootstepEvent(animId, animTimeMs, animDurationMs)) {
+                footstepManager->playFootstep(resolveFootstepSurface(), cameraController->isSprinting());
+            }
+        } else {
+            footstepNormInitialized = false;
+        }
     }
 
     // Update M2 doodad animations
@@ -820,6 +928,9 @@ bool Renderer::loadTestTerrain(pipeline::AssetManager* assetManager, const std::
     // Initialize music manager with asset manager
     if (musicManager && assetManager && !cachedAssetManager) {
         musicManager->initialize(assetManager);
+        if (footstepManager) {
+            footstepManager->initialize(assetManager);
+        }
         cachedAssetManager = assetManager;
     }
 
@@ -881,6 +992,11 @@ bool Renderer::loadTerrainArea(const std::string& mapName, int centerX, int cent
     if (musicManager && cachedAssetManager) {
         if (!musicManager->isInitialized()) {
             musicManager->initialize(cachedAssetManager);
+        }
+    }
+    if (footstepManager && cachedAssetManager) {
+        if (!footstepManager->isInitialized()) {
+            footstepManager->initialize(cachedAssetManager);
         }
     }
 

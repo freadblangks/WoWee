@@ -96,6 +96,7 @@ set(WOWEE_SOURCES
 
     # Audio
     src/audio/music_manager.cpp
+    src/audio/footstep_manager.cpp
 
     # Pipeline (asset loaders)
     src/pipeline/mpq_manager.cpp
@@ -174,6 +175,7 @@ set(WOWEE_HEADERS
     include/game/inventory.hpp
 
     include/audio/music_manager.hpp
+    include/audio/footstep_manager.hpp
 
     include/pipeline/mpq_manager.hpp
     include/pipeline/blp_loader.hpp

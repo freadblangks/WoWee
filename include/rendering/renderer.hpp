@@ -8,7 +8,7 @@
 namespace wowee {
 namespace core { class Window; }
 namespace game { class World; class ZoneManager; }
-namespace audio { class MusicManager; }
+namespace audio { class MusicManager; class FootstepManager; enum class FootstepSurface : uint8_t; }
 namespace pipeline { class AssetManager; }
 
 namespace rendering {
@@ -142,6 +142,7 @@ private:
     std::unique_ptr<M2Renderer> m2Renderer;
     std::unique_ptr<Minimap> minimap;
     std::unique_ptr<audio::MusicManager> musicManager;
+    std::unique_ptr<audio::FootstepManager> footstepManager;
     std::unique_ptr<game::ZoneManager> zoneManager;
 
     pipeline::AssetManager* cachedAssetManager = nullptr;
@@ -157,6 +158,9 @@ private:
     enum class CharAnimState { IDLE, WALK, RUN, JUMP_START, JUMP_MID, JUMP_END, SIT_DOWN, SITTING, EMOTE, SWIM_IDLE, SWIM };
     CharAnimState charAnimState = CharAnimState::IDLE;
     void updateCharacterAnimation();
+    bool isFootstepAnimationState() const;
+    bool shouldTriggerFootstepEvent(uint32_t animationId, float animationTimeMs, float animationDurationMs);
+    audio::FootstepSurface resolveFootstepSurface() const;
 
     // Emote state
     bool emoteActive = false;
@@ -165,6 +169,11 @@ private:
 
     // Target facing
     const glm::vec3* targetPosition = nullptr;
+
+    // Footstep event tracking (animation-driven)
+    uint32_t footstepLastAnimationId = 0;
+    float footstepLastNormTime = 0.0f;
+    bool footstepNormInitialized = false;
 
     bool terrainEnabled = true;
     bool terrainLoaded = false;

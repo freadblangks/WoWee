@@ -173,6 +173,12 @@ public:
     std::optional<float> getHeightAt(float glX, float glY) const;
 
     /**
+     * Get dominant terrain texture name at a GL position.
+     * Returns empty if terrain is not loaded at that position.
+     */
+    std::optional<std::string> getDominantTextureAt(float glX, float glY) const;
+
+    /**
      * Get statistics
      */
     int getLoadedTileCount() const { return static_cast<int>(loadedTiles.size()); }

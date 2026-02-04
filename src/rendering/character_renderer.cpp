@@ -27,6 +27,7 @@
 #include <glm/gtx/quaternion.hpp>
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 
 namespace wowee {
 namespace rendering {
@@ -317,7 +318,7 @@ GLuint CharacterRenderer::compositeTextures(const std::vector<std::string>& laye
 
         // Debug: save overlay to disk
         {
-            std::string fname = "/tmp/overlay_debug_" + std::to_string(layer) + ".rgba";
+            std::string fname = (std::filesystem::temp_directory_path() / ("overlay_debug_" + std::to_string(layer) + ".rgba")).string();
             FILE* f = fopen(fname.c_str(), "wb");
             if (f) {
                 fwrite(&overlay.width, 4, 1, f);
@@ -394,14 +395,15 @@ GLuint CharacterRenderer::compositeTextures(const std::vector<std::string>& laye
 
     // Debug: save composite as raw RGBA file
     {
-        FILE* f = fopen("/tmp/composite_debug.rgba", "wb");
+        std::string dbgPath = (std::filesystem::temp_directory_path() / "composite_debug.rgba").string();
+        FILE* f = fopen(dbgPath.c_str(), "wb");
         if (f) {
             // Write width, height as 4 bytes each, then pixel data
             fwrite(&width, 4, 1, f);
             fwrite(&height, 4, 1, f);
             fwrite(composite.data(), 1, composite.size(), f);
             fclose(f);
-            core::Logger::getInstance().info("DEBUG: saved composite to /tmp/composite_debug.rgba");
+            core::Logger::getInstance().info("DEBUG: saved composite to ", dbgPath);
         }
     }
 

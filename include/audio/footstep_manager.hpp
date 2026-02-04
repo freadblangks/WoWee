@@ -1,10 +1,10 @@
 #pragma once
 
+#include "platform/process.hpp"
 #include <cstdint>
 #include <random>
 #include <string>
 #include <vector>
-#include <sys/types.h>
 #include <chrono>
 
 namespace wowee {
@@ -56,8 +56,8 @@ private:
     SurfaceSamples surfaces[7];
     size_t sampleCount = 0;
 
-    std::string tempFilePath = "/tmp/wowee_footstep.wav";
-    pid_t playerPid = -1;
+    std::string tempFilePath = platform::getTempFilePath("wowee_footstep.wav");
+    ProcessHandle playerPid = INVALID_PROCESS;
     std::chrono::steady_clock::time_point lastPlayTime = std::chrono::steady_clock::time_point{};
 
     std::mt19937 rng;

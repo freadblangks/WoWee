@@ -1,14 +1,8 @@
 #include "network/world_socket.hpp"
 #include "network/packet.hpp"
+#include "network/net_platform.hpp"
 #include "auth/crypto.hpp"
 #include "core/logger.hpp"
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <netdb.h>
-#include <cstring>
 
 namespace wowee {
 namespace network {
@@ -24,7 +18,9 @@ static const uint8_t DECRYPT_KEY[] = {
     0x12, 0xDD, 0xC0, 0x93, 0x42, 0x91, 0x53, 0x57
 };
 
-WorldSocket::WorldSocket() = default;
+WorldSocket::WorldSocket() {
+    net::ensureInit();
+}
 
 WorldSocket::~WorldSocket() {
     disconnect();
@@ -35,21 +31,20 @@ bool WorldSocket::connect(const std::string& host, uint16_t port) {
 
     // Create socket
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0) {
+    if (sockfd == INVALID_SOCK) {
         LOG_ERROR("Failed to create socket");
         return false;
     }
 
     // Set non-blocking
-    int flags = fcntl(sockfd, F_GETFL, 0);
-    fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);
+    net::setNonBlocking(sockfd);
 
     // Resolve host
     struct hostent* server = gethostbyname(host.c_str());
     if (server == nullptr) {
         LOG_ERROR("Failed to resolve host: ", host);
-        close(sockfd);
-        sockfd = -1;
+        net::closeSocket(sockfd);
+        sockfd = INVALID_SOCK;
         return false;
     }
 
@@ -61,11 +56,14 @@ bool WorldSocket::connect(const std::string& host, uint16_t port) {
     serverAddr.sin_port = htons(port);
 
     int result = ::connect(sockfd, (struct sockaddr*)&serverAddr, sizeof(serverAddr));
-    if (result < 0 && errno != EINPROGRESS) {
-        LOG_ERROR("Failed to connect: ", strerror(errno));
-        close(sockfd);
-        sockfd = -1;
-        return false;
+    if (result < 0) {
+        int err = net::lastError();
+        if (!net::isInProgress(err)) {
+            LOG_ERROR("Failed to connect: ", net::errorString(err));
+            net::closeSocket(sockfd);
+            sockfd = INVALID_SOCK;
+            return false;
+        }
     }
 
     connected = true;
@@ -74,9 +72,9 @@ bool WorldSocket::connect(const std::string& host, uint16_t port) {
 }
 
 void WorldSocket::disconnect() {
-    if (sockfd >= 0) {
-        close(sockfd);
-        sockfd = -1;
+    if (sockfd != INVALID_SOCK) {
+        net::closeSocket(sockfd);
+        sockfd = INVALID_SOCK;
     }
     connected = false;
     encryptionEnabled = false;
@@ -122,9 +120,9 @@ void WorldSocket::send(const Packet& packet) {
               " size=", size, " bytes (", sendData.size(), " total)");
 
     // Send complete packet
-    ssize_t sent = ::send(sockfd, sendData.data(), sendData.size(), 0);
+    ssize_t sent = net::portableSend(sockfd, sendData.data(), sendData.size());
     if (sent < 0) {
-        LOG_ERROR("Send failed: ", strerror(errno));
+        LOG_ERROR("Send failed: ", net::errorString(net::lastError()));
     } else if (static_cast<size_t>(sent) != sendData.size()) {
         LOG_WARNING("Partial send: ", sent, " of ", sendData.size(), " bytes");
     }
@@ -135,7 +133,7 @@ void WorldSocket::update() {
 
     // Receive data into buffer
     uint8_t buffer[4096];
-    ssize_t received = recv(sockfd, buffer, sizeof(buffer), 0);
+    ssize_t received = net::portableRecv(sockfd, buffer, sizeof(buffer));
 
     if (received > 0) {
         LOG_DEBUG("Received ", received, " bytes from world server");
@@ -148,9 +146,12 @@ void WorldSocket::update() {
         LOG_INFO("World server connection closed");
         disconnect();
     }
-    else if (errno != EAGAIN && errno != EWOULDBLOCK) {
-        LOG_ERROR("Receive failed: ", strerror(errno));
-        disconnect();
+    else {
+        int err = net::lastError();
+        if (!net::isWouldBlock(err)) {
+            LOG_ERROR("Receive failed: ", net::errorString(err));
+            disconnect();
+        }
     }
 }
 

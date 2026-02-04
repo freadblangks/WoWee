@@ -1,13 +1,11 @@
 #include "audio/footstep_manager.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "core/logger.hpp"
+#include "platform/process.hpp"
 #include <algorithm>
-#include <csignal>
 #include <cstdio>
 #include <fstream>
 #include <string>
-#include <sys/wait.h>
-#include <unistd.h>
 
 namespace wowee {
 namespace audio {
@@ -114,24 +112,14 @@ void FootstepManager::preloadSurface(FootstepSurface surface, const std::vector<
 }
 
 void FootstepManager::stopCurrentProcess() {
-    if (playerPid > 0) {
-        kill(-playerPid, SIGTERM);
-        kill(playerPid, SIGTERM);
-        int status = 0;
-        waitpid(playerPid, &status, 0);
-        playerPid = -1;
-    }
+    platform::killProcess(playerPid);
 }
 
 void FootstepManager::reapFinishedProcess() {
-    if (playerPid <= 0) {
+    if (playerPid == INVALID_PROCESS) {
         return;
     }
-    int status = 0;
-    pid_t result = waitpid(playerPid, &status, WNOHANG);
-    if (result == playerPid) {
-        playerPid = -1;
-    }
+    platform::isProcessRunning(playerPid);
 }
 
 bool FootstepManager::playRandomStep(FootstepSurface surface, bool sprinting) {
@@ -153,7 +141,7 @@ bool FootstepManager::playRandomStep(FootstepSurface surface, bool sprinting) {
     }
 
     // Keep one active step at a time to avoid ffplay process buildup.
-    if (playerPid > 0) {
+    if (playerPid != INVALID_PROCESS) {
         return false;
     }
 
@@ -178,18 +166,12 @@ bool FootstepManager::playRandomStep(FootstepSurface surface, bool sprinting) {
     std::string filter = "asetrate=44100*" + std::to_string(pitch) +
                          ",aresample=44100,volume=" + std::to_string(volume);
 
-    pid_t pid = fork();
-    if (pid == 0) {
-        setpgid(0, 0);
-        FILE* outFile = freopen("/dev/null", "w", stdout);
-        FILE* errFile = freopen("/dev/null", "w", stderr);
-        (void)outFile;
-        (void)errFile;
-        execlp("ffplay", "ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet",
-               "-af", filter.c_str(), tempFilePath.c_str(), nullptr);
-        _exit(1);
-    } else if (pid > 0) {
-        playerPid = pid;
+    playerPid = platform::spawnProcess({
+        "-nodisp", "-autoexit", "-loglevel", "quiet",
+        "-af", filter, tempFilePath
+    });
+
+    if (playerPid != INVALID_PROCESS) {
         lastPlayTime = now;
         return true;
     }

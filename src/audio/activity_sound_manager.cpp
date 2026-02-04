@@ -1,13 +1,11 @@
 #include "audio/activity_sound_manager.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "core/logger.hpp"
+#include "platform/process.hpp"
 #include <algorithm>
-#include <csignal>
 #include <cstdio>
 #include <fstream>
 #include <cctype>
-#include <sys/wait.h>
-#include <unistd.h>
 
 namespace wowee {
 namespace audio {
@@ -193,7 +191,7 @@ void ActivitySoundManager::rebuildHardLandClipsForProfile(const std::string& rac
 bool ActivitySoundManager::playOneShot(const std::vector<Sample>& clips, float volume, float pitchLo, float pitchHi) {
     if (clips.empty()) return false;
     reapProcesses();
-    if (oneShotPid > 0) return false;
+    if (oneShotPid != INVALID_PROCESS) return false;
 
     std::uniform_int_distribution<size_t> clipDist(0, clips.size() - 1);
     const Sample& sample = clips[clipDist(rng)];
@@ -209,24 +207,16 @@ bool ActivitySoundManager::playOneShot(const std::vector<Sample>& clips, float v
     std::string filter = "asetrate=44100*" + std::to_string(pitch) +
                          ",aresample=44100,volume=" + std::to_string(volume);
 
-    pid_t pid = fork();
-    if (pid == 0) {
-        setpgid(0, 0);
-        FILE* outFile = freopen("/dev/null", "w", stdout);
-        FILE* errFile = freopen("/dev/null", "w", stderr);
-        (void)outFile; (void)errFile;
-        execlp("ffplay", "ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet",
-               "-af", filter.c_str(), oneShotTempPath.c_str(), nullptr);
-        _exit(1);
-    } else if (pid > 0) {
-        oneShotPid = pid;
-        return true;
-    }
-    return false;
+    oneShotPid = platform::spawnProcess({
+        "-nodisp", "-autoexit", "-loglevel", "quiet",
+        "-af", filter, oneShotTempPath
+    });
+
+    return oneShotPid != INVALID_PROCESS;
 }
 
 void ActivitySoundManager::startSwimLoop() {
-    if (swimLoopPid > 0 || swimLoopClips.empty()) return;
+    if (swimLoopPid != INVALID_PROCESS || swimLoopClips.empty()) return;
     std::uniform_int_distribution<size_t> clipDist(0, swimLoopClips.size() - 1);
     const Sample& sample = swimLoopClips[clipDist(rng)];
 
@@ -238,50 +228,26 @@ void ActivitySoundManager::startSwimLoop() {
     float volume = swimMoving ? 0.85f : 0.65f;
     std::string filter = "volume=" + std::to_string(volume);
 
-    pid_t pid = fork();
-    if (pid == 0) {
-        setpgid(0, 0);
-        FILE* outFile = freopen("/dev/null", "w", stdout);
-        FILE* errFile = freopen("/dev/null", "w", stderr);
-        (void)outFile; (void)errFile;
-        execlp("ffplay", "ffplay", "-nodisp", "-autoexit", "-loop", "0", "-loglevel", "quiet",
-               "-af", filter.c_str(), loopTempPath.c_str(), nullptr);
-        _exit(1);
-    } else if (pid > 0) {
-        swimLoopPid = pid;
-    }
+    swimLoopPid = platform::spawnProcess({
+        "-nodisp", "-autoexit", "-loop", "0", "-loglevel", "quiet",
+        "-af", filter, loopTempPath
+    });
 }
 
 void ActivitySoundManager::stopSwimLoop() {
-    if (swimLoopPid > 0) {
-        kill(-swimLoopPid, SIGTERM);
-        kill(swimLoopPid, SIGTERM);
-        int status = 0;
-        waitpid(swimLoopPid, &status, 0);
-        swimLoopPid = -1;
-    }
+    platform::killProcess(swimLoopPid);
 }
 
 void ActivitySoundManager::stopOneShot() {
-    if (oneShotPid > 0) {
-        kill(-oneShotPid, SIGTERM);
-        kill(oneShotPid, SIGTERM);
-        int status = 0;
-        waitpid(oneShotPid, &status, 0);
-        oneShotPid = -1;
-    }
+    platform::killProcess(oneShotPid);
 }
 
 void ActivitySoundManager::reapProcesses() {
-    if (oneShotPid > 0) {
-        int status = 0;
-        pid_t result = waitpid(oneShotPid, &status, WNOHANG);
-        if (result == oneShotPid) oneShotPid = -1;
+    if (oneShotPid != INVALID_PROCESS) {
+        platform::isProcessRunning(oneShotPid);
     }
-    if (swimLoopPid > 0) {
-        int status = 0;
-        pid_t result = waitpid(swimLoopPid, &status, WNOHANG);
-        if (result == swimLoopPid) swimLoopPid = -1;
+    if (swimLoopPid != INVALID_PROCESS) {
+        platform::isProcessRunning(swimLoopPid);
     }
 }
 

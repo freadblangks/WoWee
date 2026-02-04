@@ -1,5 +1,6 @@
 #pragma once
 
+#include "platform/process.hpp"
 #include <string>
 #include <vector>
 
@@ -31,7 +32,7 @@ private:
     pipeline::AssetManager* assetManager = nullptr;
     std::string currentTrack;
     std::string tempFilePath;
-    pid_t playerPid = -1;
+    ProcessHandle playerPid = INVALID_PROCESS;
     bool playing = false;
 
     // Crossfade state

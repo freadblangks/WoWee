@@ -1,17 +1,14 @@
 #include "audio/music_manager.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "core/logger.hpp"
+#include "platform/process.hpp"
 #include <fstream>
-#include <cstdlib>
-#include <csignal>
-#include <sys/wait.h>
-#include <unistd.h>
 
 namespace wowee {
 namespace audio {
 
 MusicManager::MusicManager() {
-    tempFilePath = "/tmp/wowee_music.mp3";
+    tempFilePath = platform::getTempFilePath("wowee_music.mp3");
 }
 
 MusicManager::~MusicManager() {
@@ -54,29 +51,24 @@ void MusicManager::playMusic(const std::string& mpqPath, bool loop) {
     out.close();
 
     // Play with ffplay in background
-    pid_t pid = fork();
-    if (pid == 0) {
-        // Child process — create new process group so we can kill all children
-        setpgid(0, 0);
-        // Redirect output to /dev/null
-        freopen("/dev/null", "w", stdout);
-        freopen("/dev/null", "w", stderr);
+    std::vector<std::string> args;
+    args.push_back("-nodisp");
+    args.push_back("-autoexit");
+    if (loop) {
+        args.push_back("-loop");
+        args.push_back("0");
+    }
+    args.push_back("-volume");
+    args.push_back("30");
+    args.push_back(tempFilePath);
 
-        if (loop) {
-            execlp("ffplay", "ffplay", "-nodisp", "-autoexit", "-loop", "0",
-                   "-volume", "30", tempFilePath.c_str(), nullptr);
-        } else {
-            execlp("ffplay", "ffplay", "-nodisp", "-autoexit",
-                   "-volume", "30", tempFilePath.c_str(), nullptr);
-        }
-        _exit(1);  // exec failed
-    } else if (pid > 0) {
-        playerPid = pid;
+    playerPid = platform::spawnProcess(args);
+    if (playerPid != INVALID_PROCESS) {
         playing = true;
         currentTrack = mpqPath;
         LOG_INFO("Music: Playing ", mpqPath);
     } else {
-        LOG_ERROR("Music: fork() failed");
+        LOG_ERROR("Music: Failed to spawn ffplay process");
     }
 }
 
@@ -104,12 +96,8 @@ void MusicManager::crossfadeTo(const std::string& mpqPath, float fadeMs) {
 
 void MusicManager::update(float deltaTime) {
     // Check if player process is still running
-    if (playerPid > 0) {
-        int status;
-        pid_t result = waitpid(playerPid, &status, WNOHANG);
-        if (result == playerPid) {
-            // Process ended
-            playerPid = -1;
+    if (playerPid != INVALID_PROCESS) {
+        if (!platform::isProcessRunning(playerPid)) {
             playing = false;
         }
     }
@@ -127,13 +115,8 @@ void MusicManager::update(float deltaTime) {
 }
 
 void MusicManager::stopCurrentProcess() {
-    if (playerPid > 0) {
-        // Kill the entire process group (ffplay may spawn children)
-        kill(-playerPid, SIGTERM);
-        kill(playerPid, SIGTERM);
-        int status;
-        waitpid(playerPid, &status, 0);
-        playerPid = -1;
+    if (playerPid != INVALID_PROCESS) {
+        platform::killProcess(playerPid);
         playing = false;
     }
 }

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "network/socket.hpp"
-#include <sys/socket.h>
+#include "network/net_platform.hpp"
 
 namespace wowee {
 namespace network {
@@ -22,7 +22,7 @@ private:
     void tryParsePackets();
     size_t getExpectedPacketSize(uint8_t opcode);
 
-    int sockfd = -1;
+    socket_t sockfd = INVALID_SOCK;
     bool connected = false;
     std::vector<uint8_t> receiveBuffer;
 };

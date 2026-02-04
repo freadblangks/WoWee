@@ -2,6 +2,7 @@
 
 #include "network/socket.hpp"
 #include "network/packet.hpp"
+#include "network/net_platform.hpp"
 #include "auth/rc4.hpp"
 #include <functional>
 #include <vector>
@@ -73,7 +74,7 @@ private:
      */
     void tryParsePackets();
 
-    int sockfd = -1;
+    socket_t sockfd = INVALID_SOCK;
     bool connected = false;
     bool encryptionEnabled = false;
 

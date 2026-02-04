@@ -158,6 +158,10 @@ set(WOWEE_HEADERS
     include/network/socket.hpp
     include/network/packet.hpp
     include/network/tcp_socket.hpp
+    include/network/world_socket.hpp
+    include/network/net_platform.hpp
+
+    include/platform/process.hpp
 
     include/auth/auth_handler.hpp
     include/auth/auth_opcodes.hpp
@@ -239,6 +243,15 @@ target_link_libraries(wowee PRIVATE
     OpenSSL::Crypto
     Threads::Threads
 )
+
+# Platform-specific libraries
+if(WIN32)
+    target_link_libraries(wowee PRIVATE ws2_32)
+    # SDL2main provides WinMain entry point on Windows
+    if(TARGET SDL2::SDL2main)
+        target_link_libraries(wowee PRIVATE SDL2::SDL2main)
+    endif()
+endif()
 
 # Link StormLib if found
 if(STORMLIB_LIBRARY AND STORMLIB_INCLUDE_DIR)

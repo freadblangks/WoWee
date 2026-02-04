@@ -1,6 +1,7 @@
 #pragma once
 
 #include "audio/footstep_manager.hpp"
+#include "platform/process.hpp"
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -51,10 +52,10 @@ private:
 
     bool swimmingActive = false;
     bool swimMoving = false;
-    pid_t swimLoopPid = -1;
-    pid_t oneShotPid = -1;
-    std::string loopTempPath = "/tmp/wowee_swim_loop.wav";
-    std::string oneShotTempPath = "/tmp/wowee_activity.wav";
+    ProcessHandle swimLoopPid = INVALID_PROCESS;
+    ProcessHandle oneShotPid = INVALID_PROCESS;
+    std::string loopTempPath = platform::getTempFilePath("wowee_swim_loop.wav");
+    std::string oneShotTempPath = platform::getTempFilePath("wowee_activity.wav");
     std::mt19937 rng;
 
     std::chrono::steady_clock::time_point lastJumpAt{};

@@ -19,26 +19,37 @@ network::Packet LogonChallengePacket::build(const std::string& account, const Cl
 
     network::Packet packet(static_cast<uint16_t>(AuthOpcode::LOGON_CHALLENGE));
 
-    // Protocol version (real WoW 3.3.5a client sends 3)
-    packet.writeUInt8(0x03);
+    // Protocol version (WoW 3.3.5a build 12340 uses protocol version 8)
+    packet.writeUInt8(0x08);
 
     // Payload size
     packet.writeUInt16(payloadSize);
 
-    // Helper: write a FourCC string as reversed bytes (little-endian FourCC)
-    // Real WoW client stores FourCC as big-endian uint32, written in LE byte order
-    auto writeFourCC = [&packet](const std::string& str) {
+    // Write a FourCC string in little-endian wire format:
+    // Reverse the characters, then null-pad to 4 bytes at the end.
+    // e.g. "x86" → "68x\0", "Win" → "niW\0", "enUS" → "SUne"
+    auto writeFourCCLE = [&packet](const std::string& str) {
         uint8_t buf[4] = {0, 0, 0, 0};
-        for (size_t i = 0; i < std::min<size_t>(4, str.length()); ++i) {
-            buf[i] = static_cast<uint8_t>(str[i]);
+        size_t len = std::min<size_t>(4, str.length());
+        for (size_t i = 0; i < len; ++i) {
+            buf[i] = static_cast<uint8_t>(str[len - 1 - i]);
         }
-        for (int i = 3; i >= 0; --i) {
+        for (int i = 0; i < 4; ++i) {
             packet.writeUInt8(buf[i]);
         }
     };
 
-    // Game name (4 bytes, reversed FourCC)
-    writeFourCC(info.game);
+    // Game name (4 bytes, big-endian FourCC — NOT reversed)
+    // "WoW" → "WoW\0" on the wire
+    {
+        uint8_t buf[4] = {0, 0, 0, 0};
+        for (size_t i = 0; i < std::min<size_t>(4, info.game.length()); ++i) {
+            buf[i] = static_cast<uint8_t>(info.game[i]);
+        }
+        for (int i = 0; i < 4; ++i) {
+            packet.writeUInt8(buf[i]);
+        }
+    }
 
     // Version (3 bytes)
     packet.writeUInt8(info.majorVersion);
@@ -48,14 +59,14 @@ network::Packet LogonChallengePacket::build(const std::string& account, const Cl
     // Build (2 bytes)
     packet.writeUInt16(info.build);
 
-    // Platform (4 bytes, reversed FourCC)
-    writeFourCC(info.platform);
+    // Platform (4 bytes, little-endian FourCC)
+    writeFourCCLE(info.platform);
 
-    // OS (4 bytes, reversed FourCC)
-    writeFourCC(info.os);
+    // OS (4 bytes, little-endian FourCC)
+    writeFourCCLE(info.os);
 
-    // Locale (4 bytes, reversed FourCC)
-    writeFourCC(info.locale);
+    // Locale (4 bytes, little-endian FourCC)
+    writeFourCCLE(info.locale);
 
     // Timezone
     packet.writeUInt32(info.timezone);

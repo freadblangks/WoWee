@@ -1,6 +1,7 @@
 #pragma once
 
 #include "auth/auth_handler.hpp"
+#include "rendering/video_player.hpp"
 #include <string>
 #include <functional>
 
@@ -83,6 +84,10 @@ private:
     void loadLoginInfo();
     static std::string getConfigPath();
     bool loginInfoLoaded = false;
+
+    // Background video
+    bool videoInitAttempted = false;
+    rendering::VideoPlayer backgroundVideo;
 };
 
 }} // namespace wowee::ui

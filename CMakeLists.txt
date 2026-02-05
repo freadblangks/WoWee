@@ -21,6 +21,8 @@ find_package(GLEW REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
 find_package(SQLite3 REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(FFMPEG REQUIRED libavformat libavcodec libswscale libavutil)
 
 # GLM (header-only math library)
 find_package(glm QUIET)
@@ -139,6 +141,7 @@ set(WOWEE_SOURCES
     src/rendering/world_map.cpp
     src/rendering/swim_effects.cpp
     src/rendering/loading_screen.cpp
+    src/rendering/video_player.cpp
 
     # UI
     src/ui/ui_manager.cpp
@@ -226,6 +229,7 @@ set(WOWEE_HEADERS
     include/rendering/character_preview.hpp
     include/rendering/wmo_renderer.hpp
     include/rendering/loading_screen.hpp
+    include/rendering/video_player.hpp
 
     include/ui/ui_manager.hpp
     include/ui/auth_screen.hpp
@@ -245,6 +249,7 @@ target_include_directories(wowee PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/extern
+    ${FFMPEG_INCLUDE_DIRS}
 )
 
 # Link libraries
@@ -263,6 +268,11 @@ if (TARGET SQLite::SQLite3)
 else()
     target_include_directories(wowee PRIVATE ${SQLite3_INCLUDE_DIRS})
     target_link_libraries(wowee PRIVATE ${SQLite3_LIBRARIES})
+endif()
+
+target_link_libraries(wowee PRIVATE ${FFMPEG_LIBRARIES})
+if (FFMPEG_LIBRARY_DIRS)
+    target_link_directories(wowee PRIVATE ${FFMPEG_LIBRARY_DIRS})
 endif()
 
 # Platform-specific libraries

@@ -38,6 +38,39 @@ void AuthScreen::render(auth::AuthHandler& authHandler) {
         loginInfoLoaded = true;
     }
 
+    if (!videoInitAttempted) {
+        videoInitAttempted = true;
+        backgroundVideo.open("assets/startscreen.mp4");
+    }
+    backgroundVideo.update(ImGui::GetIO().DeltaTime);
+    if (backgroundVideo.isReady()) {
+        ImVec2 screen = ImGui::GetIO().DisplaySize;
+        float screenW = screen.x;
+        float screenH = screen.y;
+        float videoW = static_cast<float>(backgroundVideo.getWidth());
+        float videoH = static_cast<float>(backgroundVideo.getHeight());
+        if (videoW > 0.0f && videoH > 0.0f) {
+            float screenAspect = screenW / screenH;
+            float videoAspect = videoW / videoH;
+            ImVec2 uv0(0.0f, 0.0f);
+            ImVec2 uv1(1.0f, 1.0f);
+            if (videoAspect > screenAspect) {
+                float scale = screenAspect / videoAspect;
+                float crop = (1.0f - scale) * 0.5f;
+                uv0.x = crop;
+                uv1.x = 1.0f - crop;
+            } else if (videoAspect < screenAspect) {
+                float scale = videoAspect / screenAspect;
+                float crop = (1.0f - scale) * 0.5f;
+                uv0.y = crop;
+                uv1.y = 1.0f - crop;
+            }
+            ImDrawList* bg = ImGui::GetBackgroundDrawList();
+            bg->AddImage(static_cast<ImTextureID>(static_cast<uintptr_t>(backgroundVideo.getTextureId())),
+                         ImVec2(0, 0), ImVec2(screenW, screenH), uv0, uv1);
+        }
+    }
+
     ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiCond_FirstUseEver);
     ImGui::Begin("WoW 3.3.5a Authentication", nullptr, ImGuiWindowFlags_NoCollapse);
 

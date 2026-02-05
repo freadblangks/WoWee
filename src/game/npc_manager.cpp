@@ -589,7 +589,8 @@ std::vector<NpcSpawnDef> NpcManager::loadSpawnDefsFromAzerothCoreDb(
                 float o = std::stof(cols[10]);
                 uint32_t curhealth = static_cast<uint32_t>(std::stoul(cols[14]));
 
-                glm::vec3 canonical = core::coords::serverToCanonical(glm::vec3(sx, sy, sz));
+                // AzerothCore DB uses client/canonical coordinates.
+                glm::vec3 canonical = glm::vec3(sx, sy, sz);
                 float dx = canonical.x - playerCanonical.x;
                 float dy = canonical.y - playerCanonical.y;
                 if (dx * dx + dy * dy > kRadius * kRadius) return true;

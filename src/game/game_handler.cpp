@@ -1597,11 +1597,10 @@ bool GameHandler::loadSinglePlayerCharacterState(uint64_t guid) {
     localPlayerMaxHealth_ = std::max<uint32_t>(localPlayerHealth_, maxHealth);
     playerNextLevelXp_ = xpForLevel(localPlayerLevel_);
 
-    // Seed movement info for spawn
-    glm::vec3 canonical = core::coords::serverToCanonical(glm::vec3(posX, posY, posZ));
-    movementInfo.x = canonical.x;
-    movementInfo.y = canonical.y;
-    movementInfo.z = canonical.z;
+    // Seed movement info for spawn (canonical coords in DB)
+    movementInfo.x = posX;
+    movementInfo.y = posY;
+    movementInfo.z = posZ;
     movementInfo.orientation = orientation;
 
     spLastDirtyX_ = movementInfo.x;
@@ -1631,6 +1630,7 @@ void GameHandler::applySinglePlayerStartData(Race race, Class cls) {
 
     uint8_t raceVal = static_cast<uint8_t>(race);
     uint8_t classVal = static_cast<uint8_t>(cls);
+    bool addedItem = false;
 
     for (const auto& row : startDb.items) {
         if (row.itemId == 0 || row.amount == 0) continue;
@@ -1655,7 +1655,9 @@ void GameHandler::applySinglePlayerStartData(Race race, Class cls) {
             def.name = "Item " + std::to_string(row.itemId);
         }
 
-        inventory.addItem(def);
+        if (inventory.addItem(def)) {
+            addedItem = true;
+        }
     }
 
     for (const auto& row : startDb.items) {
@@ -1663,6 +1665,10 @@ void GameHandler::applySinglePlayerStartData(Race race, Class cls) {
         if (row.race != 0 && row.race != raceVal) continue;
         if (row.cls != 0 && row.cls != classVal) continue;
         removeItemsFromInventory(inventory, row.itemId, static_cast<uint32_t>(-row.amount));
+    }
+
+    if (!addedItem && startDb.items.empty()) {
+        addSystemChatMessage("No starting items found in playercreateinfo_item.sql.");
     }
 
     uint32_t raceMask = 1u << (raceVal > 0 ? (raceVal - 1) : 0);
@@ -1738,10 +1744,9 @@ void GameHandler::saveSinglePlayerCharacterState(bool force) {
         sqlite3_bind_int(stmt, 1, static_cast<int>(localPlayerLevel_));
         sqlite3_bind_int(stmt, 2, static_cast<int>(active->zoneId));
         sqlite3_bind_int(stmt, 3, static_cast<int>(active->mapId));
-        glm::vec3 serverPos = core::coords::canonicalToServer(glm::vec3(movementInfo.x, movementInfo.y, movementInfo.z));
-        sqlite3_bind_double(stmt, 4, serverPos.x);
-        sqlite3_bind_double(stmt, 5, serverPos.y);
-        sqlite3_bind_double(stmt, 6, serverPos.z);
+        sqlite3_bind_double(stmt, 4, movementInfo.x);
+        sqlite3_bind_double(stmt, 5, movementInfo.y);
+        sqlite3_bind_double(stmt, 6, movementInfo.z);
         sqlite3_bind_double(stmt, 7, movementInfo.orientation);
         sqlite3_bind_int64(stmt, 8, static_cast<sqlite3_int64>(playerMoneyCopper_));
         sqlite3_bind_int(stmt, 9, static_cast<int>(playerXp_));
@@ -1901,13 +1906,12 @@ void GameHandler::saveSinglePlayerCharacterState(bool force) {
     spPeriodicTimer_ = 0.0f;
 
     // Update cached character list position/level for UI.
-    glm::vec3 serverPos = core::coords::canonicalToServer(glm::vec3(movementInfo.x, movementInfo.y, movementInfo.z));
     for (auto& ch : characters) {
         if (ch.guid == activeCharacterGuid_) {
             ch.level = static_cast<uint8_t>(localPlayerLevel_);
-            ch.x = serverPos.x;
-            ch.y = serverPos.y;
-            ch.z = serverPos.z;
+            ch.x = movementInfo.x;
+            ch.y = movementInfo.y;
+            ch.z = movementInfo.z;
             break;
         }
     }

@@ -1058,7 +1058,7 @@ void Application::startSinglePlayer() {
     spClass_ = activeChar->characterClass;
     spMapId_ = activeChar->mapId;
     spZoneId_ = activeChar->zoneId;
-    spSpawnCanonical_ = core::coords::serverToCanonical(glm::vec3(activeChar->x, activeChar->y, activeChar->z));
+    spSpawnCanonical_ = glm::vec3(activeChar->x, activeChar->y, activeChar->z);
     spYawDeg_ = 0.0f;
     spPitchDeg_ = -5.0f;
 
@@ -1077,7 +1077,7 @@ void Application::startSinglePlayer() {
             if (hasCreate) {
                 spMapId_ = createInfo.mapId;
                 spZoneId_ = createInfo.zoneId;
-                spSpawnCanonical_ = core::coords::serverToCanonical(glm::vec3(createInfo.x, createInfo.y, createInfo.z));
+                spSpawnCanonical_ = glm::vec3(createInfo.x, createInfo.y, createInfo.z);
                 spYawDeg_ = glm::degrees(createInfo.orientation);
                 spPitchDeg_ = -5.0f;
                 spawnSnapToGround = true;

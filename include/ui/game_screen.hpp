@@ -7,6 +7,7 @@
 #include "ui/spellbook_screen.hpp"
 #include <imgui.h>
 #include <string>
+#include <unordered_map>
 
 namespace wowee { namespace ui {
 
@@ -129,6 +130,10 @@ private:
     InventoryScreen inventoryScreen;
     SpellbookScreen spellbookScreen;
     rendering::WorldMap worldMap;
+
+    bool actionSpellDbAttempted = false;
+    bool actionSpellDbLoaded = false;
+    std::unordered_map<uint32_t, std::string> actionSpellNames;
 };
 
 }} // namespace wowee::ui

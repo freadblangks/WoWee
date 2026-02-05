@@ -1020,6 +1020,7 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
     auto* window = core::Application::getInstance().getWindow();
     float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
     float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
+    auto* assetMgr = core::Application::getInstance().getAssetManager();
 
     float slotSize = 48.0f;
     float spacing = 4.0f;
@@ -1060,9 +1061,51 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.5f, 0.9f));
             }
 
+            auto getSpellName = [&](uint32_t spellId) -> std::string {
+                if (!actionSpellDbAttempted) {
+                    actionSpellDbAttempted = true;
+                    if (assetMgr && assetMgr->isInitialized()) {
+                        auto dbc = assetMgr->loadDBC("Spell.dbc");
+                        if (dbc && dbc->isLoaded()) {
+                            uint32_t fieldCount = dbc->getFieldCount();
+                            uint32_t nameField = 136;
+                            if (fieldCount < 137) {
+                                if (fieldCount > 10) {
+                                    nameField = fieldCount > 140 ? 136 : 1;
+                                } else {
+                                    nameField = 1;
+                                }
+                            }
+                            uint32_t count = dbc->getRecordCount();
+                            actionSpellNames.reserve(count);
+                            for (uint32_t i = 0; i < count; ++i) {
+                                uint32_t id = dbc->getUInt32(i, 0);
+                                std::string name = dbc->getString(i, nameField);
+                                if (!name.empty() && id > 0) {
+                                    actionSpellNames[id] = name;
+                                }
+                            }
+                            actionSpellDbLoaded = true;
+                        }
+                    }
+                }
+                auto it = actionSpellNames.find(spellId);
+                if (it != actionSpellNames.end()) return it->second;
+                return "Spell #" + std::to_string(spellId);
+            };
+
             char label[32];
+            std::string spellName;
             if (slot.type == game::ActionBarSlot::SPELL) {
-                snprintf(label, sizeof(label), "S%u", slot.id);
+                spellName = getSpellName(slot.id);
+                if (spellName.size() > 6) {
+                    spellName = spellName.substr(0, 6);
+                }
+                snprintf(label, sizeof(label), "%s", spellName.c_str());
+            } else if (slot.type == game::ActionBarSlot::ITEM) {
+                snprintf(label, sizeof(label), "Item");
+            } else if (slot.type == game::ActionBarSlot::MACRO) {
+                snprintf(label, sizeof(label), "Macro");
             } else {
                 snprintf(label, sizeof(label), "--");
             }
@@ -1074,6 +1117,14 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
                 }
             }
             ImGui::PopStyleColor();
+
+            if (ImGui::IsItemHovered() && slot.type == game::ActionBarSlot::SPELL && slot.id != 0) {
+                std::string fullName = getSpellName(slot.id);
+                ImGui::BeginTooltip();
+                ImGui::Text("%s", fullName.c_str());
+                ImGui::TextDisabled("Spell ID: %u", slot.id);
+                ImGui::EndTooltip();
+            }
 
             // Cooldown overlay text
             if (onCooldown) {

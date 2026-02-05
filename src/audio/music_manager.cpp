@@ -72,6 +72,33 @@ void MusicManager::playMusic(const std::string& mpqPath, bool loop) {
     }
 }
 
+void MusicManager::playFilePath(const std::string& filePath, bool loop) {
+    if (filePath.empty()) return;
+    if (filePath == currentTrack && playing) return;
+
+    stopCurrentProcess();
+
+    std::vector<std::string> args;
+    args.push_back("-nodisp");
+    args.push_back("-autoexit");
+    if (loop) {
+        args.push_back("-loop");
+        args.push_back("0");
+    }
+    args.push_back("-volume");
+    args.push_back("30");
+    args.push_back(filePath);
+
+    playerPid = platform::spawnProcess(args);
+    if (playerPid != INVALID_PROCESS) {
+        playing = true;
+        currentTrack = filePath;
+        LOG_INFO("Music: Playing file ", filePath);
+    } else {
+        LOG_ERROR("Music: Failed to spawn ffplay process");
+    }
+}
+
 void MusicManager::stopMusic(float fadeMs) {
     (void)fadeMs;  // ffplay doesn't support fade easily
     stopCurrentProcess();

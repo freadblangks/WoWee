@@ -37,6 +37,8 @@ public:
      */
     bool isAuthenticating() const { return authenticating; }
 
+    void stopLoginMusic();
+
     /**
      * Get status message
      */
@@ -88,6 +90,9 @@ private:
     // Background video
     bool videoInitAttempted = false;
     rendering::VideoPlayer backgroundVideo;
+
+    bool musicInitAttempted = false;
+    bool musicPlaying = false;
 };
 
 }} // namespace wowee::ui

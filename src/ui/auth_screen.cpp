@@ -1,6 +1,10 @@
 #include "ui/auth_screen.hpp"
 #include "auth/crypto.hpp"
+#include "core/application.hpp"
 #include "core/logger.hpp"
+#include "rendering/renderer.hpp"
+#include "pipeline/asset_manager.hpp"
+#include "audio/music_manager.hpp"
 #include <imgui.h>
 #include <sstream>
 #include <fstream>
@@ -68,6 +72,23 @@ void AuthScreen::render(auth::AuthHandler& authHandler) {
             ImDrawList* bg = ImGui::GetBackgroundDrawList();
             bg->AddImage(static_cast<ImTextureID>(static_cast<uintptr_t>(backgroundVideo.getTextureId())),
                          ImVec2(0, 0), ImVec2(screenW, screenH), uv0, uv1);
+        }
+    }
+
+    if (!musicInitAttempted) {
+        musicInitAttempted = true;
+        auto& app = core::Application::getInstance();
+        auto* renderer = app.getRenderer();
+        auto* assets = app.getAssetManager();
+        if (renderer) {
+            auto* music = renderer->getMusicManager();
+            if (music && assets && assets->isInitialized() && !music->isInitialized()) {
+                music->initialize(assets);
+            }
+            if (music && !musicPlaying) {
+                music->playFilePath("assets/20-taverns.mp3", true);
+                musicPlaying = true;
+            }
         }
     }
 
@@ -195,6 +216,17 @@ void AuthScreen::render(auth::AuthHandler& authHandler) {
     ImGui::TextWrapped("Default port is 3724.");
 
     ImGui::End();
+}
+
+void AuthScreen::stopLoginMusic() {
+    if (!musicPlaying) return;
+    auto& app = core::Application::getInstance();
+    auto* renderer = app.getRenderer();
+    if (!renderer) return;
+    auto* music = renderer->getMusicManager();
+    if (!music) return;
+    music->stopMusic(500.0f);
+    musicPlaying = false;
 }
 
 void AuthScreen::attemptAuth(auth::AuthHandler& authHandler) {

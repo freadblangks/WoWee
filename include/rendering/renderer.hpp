@@ -130,6 +130,7 @@ public:
     double getLastTerrainRenderMs() const { return lastTerrainRenderMs; }
     double getLastWMORenderMs() const { return lastWMORenderMs; }
     double getLastM2RenderMs() const { return lastM2RenderMs; }
+    audio::MusicManager* getMusicManager() { return musicManager.get(); }
 
 private:
     core::Window* window = nullptr;

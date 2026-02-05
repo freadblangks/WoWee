@@ -18,6 +18,7 @@ public:
     void shutdown();
 
     void playMusic(const std::string& mpqPath, bool loop = true);
+    void playFilePath(const std::string& filePath, bool loop = true);
     void stopMusic(float fadeMs = 2000.0f);
     void crossfadeTo(const std::string& mpqPath, float fadeMs = 3000.0f);
     void update(float deltaTime);

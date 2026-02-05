@@ -97,30 +97,35 @@ void UIManager::render(core::AppState appState, auth::AuthHandler* authHandler, 
             break;
 
         case core::AppState::REALM_SELECTION:
+            authScreen->stopLoginMusic();
             if (authHandler) {
                 realmScreen->render(*authHandler);
             }
             break;
 
         case core::AppState::CHARACTER_CREATION:
+            authScreen->stopLoginMusic();
             if (gameHandler) {
                 characterCreateScreen->render(*gameHandler);
             }
             break;
 
         case core::AppState::CHARACTER_SELECTION:
+            authScreen->stopLoginMusic();
             if (gameHandler) {
                 characterScreen->render(*gameHandler);
             }
             break;
 
         case core::AppState::IN_GAME:
+            authScreen->stopLoginMusic();
             if (gameHandler) {
                 gameScreen->render(*gameHandler);
             }
             break;
 
         case core::AppState::DISCONNECTED:
+            authScreen->stopLoginMusic();
             // Show disconnected message
             ImGui::SetNextWindowSize(ImVec2(400, 150), ImGuiCond_Always);
             ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f - 200,

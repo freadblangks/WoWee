@@ -66,6 +66,7 @@ public:
     void removeInstance(uint32_t instanceId);
     bool getAnimationState(uint32_t instanceId, uint32_t& animationId, float& animationTimeMs, float& animationDurationMs) const;
     bool hasAnimation(uint32_t instanceId, uint32_t animationId) const;
+    bool getAnimationSequences(uint32_t instanceId, std::vector<pipeline::M2Sequence>& out) const;
     bool getInstanceModelName(uint32_t instanceId, std::string& modelName) const;
 
     /** Attach a weapon model to a character instance at the given attachment point. */

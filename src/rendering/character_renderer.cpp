@@ -1404,6 +1404,22 @@ bool CharacterRenderer::hasAnimation(uint32_t instanceId, uint32_t animationId) 
     return false;
 }
 
+bool CharacterRenderer::getAnimationSequences(uint32_t instanceId, std::vector<pipeline::M2Sequence>& out) const {
+    out.clear();
+    auto it = instances.find(instanceId);
+    if (it == instances.end()) {
+        return false;
+    }
+
+    auto modelIt = models.find(it->second.modelId);
+    if (modelIt == models.end()) {
+        return false;
+    }
+
+    out = modelIt->second.data.sequences;
+    return !out.empty();
+}
+
 bool CharacterRenderer::getInstanceModelName(uint32_t instanceId, std::string& modelName) const {
     auto it = instances.find(instanceId);
     if (it == instances.end()) {

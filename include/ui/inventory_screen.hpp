@@ -8,7 +8,7 @@ namespace ui {
 
 class InventoryScreen {
 public:
-    void render(game::Inventory& inventory);
+    void render(game::Inventory& inventory, uint64_t moneyCopper);
     bool isOpen() const { return open; }
     void toggle() { open = !open; }
     void setOpen(bool o) { open = o; }

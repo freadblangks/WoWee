@@ -18,6 +18,8 @@
 #include "rendering/m2_renderer.hpp"
 #include "rendering/minimap.hpp"
 #include "rendering/shader.hpp"
+#include "pipeline/m2_loader.hpp"
+#include <algorithm>
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/m2_loader.hpp"
 #include "pipeline/wmo_loader.hpp"
@@ -362,6 +364,79 @@ void Renderer::setCharacterFollow(uint32_t instanceId) {
     }
 }
 
+uint32_t Renderer::resolveMeleeAnimId() {
+    if (!characterRenderer || characterInstanceId == 0) {
+        meleeAnimId = 0;
+        meleeAnimDurationMs = 0.0f;
+        return 0;
+    }
+
+    if (meleeAnimId != 0 && characterRenderer->hasAnimation(characterInstanceId, meleeAnimId)) {
+        return meleeAnimId;
+    }
+
+    std::vector<pipeline::M2Sequence> sequences;
+    if (!characterRenderer->getAnimationSequences(characterInstanceId, sequences)) {
+        meleeAnimId = 0;
+        meleeAnimDurationMs = 0.0f;
+        return 0;
+    }
+
+    auto findDuration = [&](uint32_t id) -> float {
+        for (const auto& seq : sequences) {
+            if (seq.id == id && seq.duration > 0) {
+                return static_cast<float>(seq.duration);
+            }
+        }
+        return 0.0f;
+    };
+
+    const uint32_t attackCandidates[] = {16, 17, 18, 19, 20, 21};
+    for (uint32_t id : attackCandidates) {
+        if (characterRenderer->hasAnimation(characterInstanceId, id)) {
+            meleeAnimId = id;
+            meleeAnimDurationMs = findDuration(id);
+            return meleeAnimId;
+        }
+    }
+
+    const uint32_t avoidIds[] = {0, 1, 4, 5, 11, 12, 13, 37, 38, 39, 41, 42, 97};
+    auto isAvoid = [&](uint32_t id) -> bool {
+        for (uint32_t avoid : avoidIds) {
+            if (id == avoid) return true;
+        }
+        return false;
+    };
+
+    uint32_t bestId = 0;
+    uint32_t bestDuration = 0;
+    for (const auto& seq : sequences) {
+        if (seq.duration == 0) continue;
+        if (isAvoid(seq.id)) continue;
+        if (seq.movingSpeed > 0.1f) continue;
+        if (seq.duration < 150 || seq.duration > 2000) continue;
+        if (bestId == 0 || seq.duration < bestDuration) {
+            bestId = seq.id;
+            bestDuration = seq.duration;
+        }
+    }
+
+    if (bestId == 0) {
+        for (const auto& seq : sequences) {
+            if (seq.duration == 0) continue;
+            if (isAvoid(seq.id)) continue;
+            if (bestId == 0 || seq.duration < bestDuration) {
+                bestId = seq.id;
+                bestDuration = seq.duration;
+            }
+        }
+    }
+
+    meleeAnimId = bestId;
+    meleeAnimDurationMs = static_cast<float>(bestDuration);
+    return meleeAnimId;
+}
+
 void Renderer::updateCharacterAnimation() {
     // WoW WotLK AnimationData.dbc IDs
     constexpr uint32_t ANIM_STAND      = 0;
@@ -394,8 +469,9 @@ void Renderer::updateCharacterAnimation() {
     bool sprinting = cameraController->isSprinting();
     bool sitting = cameraController->isSitting();
     bool swim = cameraController->isSwimming();
+    bool forceMelee = meleeSwingTimer > 0.0f && grounded && !swim;
 
-    switch (charAnimState) {
+    if (!forceMelee) switch (charAnimState) {
         case CharAnimState::IDLE:
             if (swim) {
                 newState = moving ? CharAnimState::SWIM : CharAnimState::SWIM_IDLE;
@@ -517,6 +593,28 @@ void Renderer::updateCharacterAnimation() {
                 newState = CharAnimState::SWIM_IDLE;
             }
             break;
+
+        case CharAnimState::MELEE_SWING:
+            if (swim) {
+                newState = CharAnimState::SWIM_IDLE;
+            } else if (!grounded && jumping) {
+                newState = CharAnimState::JUMP_START;
+            } else if (!grounded) {
+                newState = CharAnimState::JUMP_MID;
+            } else if (moving && sprinting) {
+                newState = CharAnimState::RUN;
+            } else if (moving) {
+                newState = CharAnimState::WALK;
+            } else if (sitting) {
+                newState = CharAnimState::SIT_DOWN;
+            } else {
+                newState = CharAnimState::IDLE;
+            }
+            break;
+    }
+
+    if (forceMelee) {
+        newState = CharAnimState::MELEE_SWING;
     }
 
     if (newState != charAnimState) {
@@ -569,6 +667,13 @@ void Renderer::updateCharacterAnimation() {
         case CharAnimState::EMOTE:      animId = emoteAnimId;     loop = emoteLoop; break;
         case CharAnimState::SWIM_IDLE:  animId = ANIM_SWIM_IDLE;  loop = true;  break;
         case CharAnimState::SWIM:       animId = ANIM_SWIM;       loop = true;  break;
+        case CharAnimState::MELEE_SWING:
+            animId = resolveMeleeAnimId();
+            if (animId == 0) {
+                animId = ANIM_STAND;
+            }
+            loop = false;
+            break;
     }
 
     uint32_t currentAnimId = 0;
@@ -599,6 +704,23 @@ void Renderer::cancelEmote() {
     emoteActive = false;
     emoteAnimId = 0;
     emoteLoop = false;
+}
+
+void Renderer::triggerMeleeSwing() {
+    if (!characterRenderer || characterInstanceId == 0) return;
+    if (meleeSwingCooldown > 0.0f) return;
+    if (emoteActive) {
+        cancelEmote();
+    }
+    resolveMeleeAnimId();
+    meleeSwingCooldown = 0.1f;
+    float durationSec = meleeAnimDurationMs > 0.0f ? meleeAnimDurationMs / 1000.0f : 0.6f;
+    if (durationSec < 0.25f) durationSec = 0.25f;
+    if (durationSec > 1.0f) durationSec = 1.0f;
+    meleeSwingTimer = durationSec;
+    if (activitySoundManager) {
+        activitySoundManager->playMeleeSwing();
+    }
 }
 
 std::string Renderer::getEmoteText(const std::string& emoteName) {
@@ -714,6 +836,13 @@ void Renderer::update(float deltaTime) {
 
     // Sync character model position/rotation and animation with follow target
     if (characterInstanceId > 0 && characterRenderer && cameraController && cameraController->isThirdPerson()) {
+        if (meleeSwingCooldown > 0.0f) {
+            meleeSwingCooldown = std::max(0.0f, meleeSwingCooldown - deltaTime);
+        }
+        if (meleeSwingTimer > 0.0f) {
+            meleeSwingTimer = std::max(0.0f, meleeSwingTimer - deltaTime);
+        }
+
         characterRenderer->setInstancePosition(characterInstanceId, characterPosition);
         if (activitySoundManager) {
             std::string modelName;

@@ -30,6 +30,12 @@ void Packet::writeUInt64(uint64_t value) {
     writeUInt32((value >> 32) & 0xFFFFFFFF);
 }
 
+void Packet::writeFloat(float value) {
+    uint32_t bits = 0;
+    std::memcpy(&bits, &value, sizeof(float));
+    writeUInt32(bits);
+}
+
 void Packet::writeString(const std::string& value) {
     for (char c : value) {
         data.push_back(static_cast<uint8_t>(c));

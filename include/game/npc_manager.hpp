@@ -16,6 +16,7 @@ class EntityManager;
 
 struct NpcSpawnDef {
     std::string mapName;
+    uint32_t entry = 0;
     std::string name;
     std::string m2Path;
     uint32_t level;

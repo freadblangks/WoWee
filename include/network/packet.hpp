@@ -17,6 +17,7 @@ public:
     void writeUInt16(uint16_t value);
     void writeUInt32(uint32_t value);
     void writeUInt64(uint64_t value);
+    void writeFloat(float value);
     void writeString(const std::string& value);
     void writeBytes(const uint8_t* data, size_t length);
 

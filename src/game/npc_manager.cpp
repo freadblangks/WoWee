@@ -594,19 +594,21 @@ std::vector<NpcSpawnDef> NpcManager::loadSpawnDefsFromAzerothCoreDb(
                 float dy = canonical.y - playerCanonical.y;
                 if (dx * dx + dy * dy > kRadius * kRadius) return true;
 
-                NpcSpawnDef def;
-                def.mapName = mapName;
-                auto it = templates.find(entry);
-                if (it != templates.end()) {
-                    def.name = it->second.name;
-                    def.level = it->second.level;
-                    def.health = std::max(it->second.health, curhealth);
-                    def.m2Path = it->second.m2Path;
-                } else {
-                    def.name = "Creature " + std::to_string(entry);
-                    def.level = 1;
-                    def.health = std::max(100u, curhealth);
-                }
+            NpcSpawnDef def;
+            def.mapName = mapName;
+            auto it = templates.find(entry);
+            if (it != templates.end()) {
+                def.entry = entry;
+                def.name = it->second.name;
+                def.level = it->second.level;
+                def.health = std::max(it->second.health, curhealth);
+                def.m2Path = it->second.m2Path;
+            } else {
+                def.entry = entry;
+                def.name = "Creature " + std::to_string(entry);
+                def.level = 1;
+                def.health = std::max(100u, curhealth);
+            }
                 if (def.m2Path.empty()) {
                     def.m2Path = "Creature\\HumanMalePeasant\\HumanMalePeasant.m2";
                 }
@@ -672,21 +674,21 @@ void NpcManager::initialize(pipeline::AssetManager* am,
     if (spawnDefs.empty()) {
         LOG_WARNING("NpcManager: using built-in NPC spawns (assets/npcs/singleplayer_spawns.csv missing)");
         spawnDefs = {
-            {"Azeroth", "Innkeeper Farley", "Creature\\HumanMalePeasant\\HumanMalePeasant.m2",
+            {"Azeroth", 0, "Innkeeper Farley", "Creature\\HumanMalePeasant\\HumanMalePeasant.m2",
              30, 5000, glm::vec3(76.0f, -9468.0f, 205.0f), false, 3.1f, 1.0f, false},
-            {"Azeroth", "Bernard Gump", "Creature\\HumanMalePeasant\\HumanMalePeasant.m2",
+            {"Azeroth", 0, "Bernard Gump", "Creature\\HumanMalePeasant\\HumanMalePeasant.m2",
              25, 4200, glm::vec3(92.0f, -9478.0f, 205.0f), false, 1.2f, 1.0f, false},
-            {"Azeroth", "Stormwind Guard", "Creature\\HumanMaleGuard\\HumanMaleGuard.m2",
+            {"Azeroth", 0, "Stormwind Guard", "Creature\\HumanMaleGuard\\HumanMaleGuard.m2",
              60, 42000, glm::vec3(86.0f, -9478.0f, 205.0f), false, 0.1f, 1.0f, false},
-            {"Azeroth", "Stormwind Guard", "Creature\\HumanMaleGuard\\HumanMaleGuard.m2",
+            {"Azeroth", 0, "Stormwind Guard", "Creature\\HumanMaleGuard\\HumanMaleGuard.m2",
              60, 42000, glm::vec3(37.0f, -9440.0f, 205.0f), false, 2.8f, 1.0f, false},
-            {"Azeroth", "Stormwind Citizen", "Creature\\HumanFemalePeasant\\HumanFemalePeasant.m2",
+            {"Azeroth", 0, "Stormwind Citizen", "Creature\\HumanFemalePeasant\\HumanFemalePeasant.m2",
              5, 1200, glm::vec3(62.0f, -9468.0f, 205.0f), false, 3.5f, 1.0f, false},
-            {"Azeroth", "Stormwind Citizen", "Creature\\HumanMalePeasant\\HumanMalePeasant.m2",
+            {"Azeroth", 0, "Stormwind Citizen", "Creature\\HumanMalePeasant\\HumanMalePeasant.m2",
              5, 1200, glm::vec3(23.0f, -9518.0f, 205.0f), false, 1.8f, 1.0f, false},
-            {"Azeroth", "Chicken", "Creature\\Chicken\\Chicken.m2",
+            {"Azeroth", 0, "Chicken", "Creature\\Chicken\\Chicken.m2",
              1, 10, glm::vec3(58.0f, -9534.0f, 205.0f), false, 2.0f, 1.0f, true},
-            {"Azeroth", "Cat", "Creature\\Cat\\Cat.m2",
+            {"Azeroth", 0, "Cat", "Creature\\Cat\\Cat.m2",
              1, 42, glm::vec3(90.0f, -9446.0f, 205.0f), false, 4.5f, 1.0f, true}
         };
     }
@@ -763,6 +765,9 @@ void NpcManager::initialize(pipeline::AssetManager* am,
         unit->setLevel(s.level);
         unit->setHealth(s.health);
         unit->setMaxHealth(s.health);
+        if (s.entry != 0) {
+            unit->setEntry(s.entry);
+        }
 
         // Store canonical WoW coordinates for targeting/server compatibility
         glm::vec3 spawnCanonical = core::coords::renderToCanonical(glPos);

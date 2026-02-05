@@ -159,6 +159,9 @@ public:
      */
     void addLocalChatMessage(const MessageChatData& msg);
 
+    // Money (copper)
+    uint64_t getMoneyCopper() const { return playerMoneyCopper_; }
+
     // Inventory
     Inventory& getInventory() { return inventory; }
     const Inventory& getInventory() const { return inventory; }
@@ -211,6 +214,10 @@ public:
     // NPC death callback (single-player)
     using NpcDeathCallback = std::function<void(uint64_t guid)>;
     void setNpcDeathCallback(NpcDeathCallback cb) { npcDeathCallback_ = std::move(cb); }
+
+    // Melee swing callback (for driving animation/SFX)
+    using MeleeSwingCallback = std::function<void()>;
+    void setMeleeSwingCallback(MeleeSwingCallback cb) { meleeSwingCallback_ = std::move(cb); }
 
     // Local player stats (single-player)
     uint32_t getLocalPlayerHealth() const { return localPlayerHealth_; }
@@ -378,6 +385,12 @@ private:
     void handleGossipMessage(network::Packet& packet);
     void handleGossipComplete(network::Packet& packet);
     void handleListInventory(network::Packet& packet);
+    LootResponseData generateLocalLoot(uint64_t guid);
+    void simulateLootResponse(const LootResponseData& data);
+    void simulateLootRelease();
+    void simulateLootRemove(uint8_t slotIndex);
+    void simulateXpGain(uint64_t victimGuid, uint32_t totalXp);
+    void addMoneyCopper(uint32_t amount);
 
     void addCombatText(CombatTextEntry::Type type, int32_t amount, uint32_t spellId, bool isPlayerSource);
     void addSystemChatMessage(const std::string& message);
@@ -484,6 +497,12 @@ private:
     // ---- Phase 5: Loot ----
     bool lootWindowOpen = false;
     LootResponseData currentLoot;
+    struct LocalLootState {
+        LootResponseData data;
+        bool moneyTaken = false;
+    };
+    std::unordered_map<uint64_t, LocalLootState> localLootState_;
+    uint64_t playerMoneyCopper_ = 0;
 
     // Gossip
     bool gossipWindowOpen = false;
@@ -501,7 +520,7 @@ private:
     uint32_t playerXp_ = 0;
     uint32_t playerNextLevelXp_ = 0;
     uint32_t serverPlayerLevel_ = 1;
-    void awardLocalXp(uint32_t victimLevel);
+    void awardLocalXp(uint64_t victimGuid, uint32_t victimLevel);
     void levelUp();
     static uint32_t xpForLevel(uint32_t level);
     static uint32_t killXp(uint32_t playerLevel, uint32_t victimLevel);
@@ -511,6 +530,7 @@ private:
     float swingTimer_ = 0.0f;
     static constexpr float SWING_SPEED = 2.0f;
     NpcDeathCallback npcDeathCallback_;
+    MeleeSwingCallback meleeSwingCallback_;
     uint32_t localPlayerHealth_ = 0;
     uint32_t localPlayerMaxHealth_ = 0;
     uint32_t localPlayerLevel_ = 1;

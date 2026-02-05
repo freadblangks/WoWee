@@ -121,6 +121,7 @@ public:
     // Targeting support
     void setTargetPosition(const glm::vec3* pos);
     bool isMoving() const;
+    void triggerMeleeSwing();
 
     // CPU timing stats (milliseconds, last frame).
     double getLastUpdateMs() const { return lastUpdateMs; }
@@ -198,12 +199,13 @@ private:
     float characterYaw = 0.0f;
 
     // Character animation state
-    enum class CharAnimState { IDLE, WALK, RUN, JUMP_START, JUMP_MID, JUMP_END, SIT_DOWN, SITTING, EMOTE, SWIM_IDLE, SWIM };
+    enum class CharAnimState { IDLE, WALK, RUN, JUMP_START, JUMP_MID, JUMP_END, SIT_DOWN, SITTING, EMOTE, SWIM_IDLE, SWIM, MELEE_SWING };
     CharAnimState charAnimState = CharAnimState::IDLE;
     void updateCharacterAnimation();
     bool isFootstepAnimationState() const;
     bool shouldTriggerFootstepEvent(uint32_t animationId, float animationTimeMs, float animationDurationMs);
     audio::FootstepSurface resolveFootstepSurface() const;
+    uint32_t resolveMeleeAnimId();
 
     // Emote state
     bool emoteActive = false;
@@ -222,6 +224,11 @@ private:
     bool sfxPrevJumping = false;
     bool sfxPrevFalling = false;
     bool sfxPrevSwimming = false;
+
+    float meleeSwingTimer = 0.0f;
+    float meleeSwingCooldown = 0.0f;
+    float meleeAnimDurationMs = 0.0f;
+    uint32_t meleeAnimId = 0;
 
     bool terrainEnabled = true;
     bool terrainLoaded = false;

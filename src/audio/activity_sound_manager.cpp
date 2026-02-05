@@ -53,6 +53,21 @@ bool ActivitySoundManager::initialize(pipeline::AssetManager* assets) {
     preloadLandingSet(FootstepSurface::WATER, "Water");
     preloadLandingSet(FootstepSurface::SNOW, "Snow");
 
+    preloadCandidates(meleeSwingClips, {
+        "Sound\\Item\\Weapons\\Sword\\SwordSwing1.wav",
+        "Sound\\Item\\Weapons\\Sword\\SwordSwing2.wav",
+        "Sound\\Item\\Weapons\\Sword\\SwordSwing3.wav",
+        "Sound\\Item\\Weapons\\Sword\\SwordHit1.wav",
+        "Sound\\Item\\Weapons\\Sword\\SwordHit2.wav",
+        "Sound\\Item\\Weapons\\Sword\\SwordHit3.wav",
+        "Sound\\Item\\Weapons\\OneHanded\\Sword\\SwordSwing1.wav",
+        "Sound\\Item\\Weapons\\OneHanded\\Sword\\SwordSwing2.wav",
+        "Sound\\Item\\Weapons\\OneHanded\\Sword\\SwordSwing3.wav",
+        "Sound\\Item\\Weapons\\Melee\\MeleeSwing1.wav",
+        "Sound\\Item\\Weapons\\Melee\\MeleeSwing2.wav",
+        "Sound\\Item\\Weapons\\Melee\\MeleeSwing3.wav"
+    });
+
     initialized = true;
     core::Logger::getInstance().info("Activity SFX loaded: jump=", jumpClips.size(),
                                      " splash=", splashEnterClips.size(),
@@ -71,6 +86,7 @@ void ActivitySoundManager::shutdown() {
     splashExitClips.clear();
     swimLoopClips.clear();
     hardLandClips.clear();
+    meleeSwingClips.clear();
     swimmingActive = false;
     swimMoving = false;
     initialized = false;
@@ -272,6 +288,23 @@ void ActivitySoundManager::playLanding(FootstepSurface surface, bool hardLanding
     }
     if (hardLanding) {
         playOneShot(hardLandClips, 0.84f, 0.97f, 1.03f);
+    }
+}
+
+void ActivitySoundManager::playMeleeSwing() {
+    if (meleeSwingClips.empty()) {
+        if (!meleeSwingWarned) {
+            core::Logger::getInstance().warning("No melee swing SFX found in assets");
+            meleeSwingWarned = true;
+        }
+        return;
+    }
+    auto now = std::chrono::steady_clock::now();
+    if (lastMeleeSwingAt.time_since_epoch().count() != 0) {
+        if (std::chrono::duration<float>(now - lastMeleeSwingAt).count() < 0.12f) return;
+    }
+    if (playOneShot(meleeSwingClips, 0.80f, 0.96f, 1.04f)) {
+        lastMeleeSwingAt = now;
     }
 }
 

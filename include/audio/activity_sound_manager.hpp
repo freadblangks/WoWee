@@ -29,6 +29,7 @@ public:
     void setCharacterVoiceProfile(const std::string& modelName);
     void playWaterEnter();
     void playWaterExit();
+    void playMeleeSwing();
 
 private:
     struct Sample {
@@ -48,6 +49,7 @@ private:
     std::vector<Sample> splashExitClips;
     std::vector<Sample> swimLoopClips;
     std::vector<Sample> hardLandClips;
+    std::vector<Sample> meleeSwingClips;
     std::array<SurfaceLandingSet, 7> landingSets;
 
     bool swimmingActive = false;
@@ -61,6 +63,8 @@ private:
     std::chrono::steady_clock::time_point lastJumpAt{};
     std::chrono::steady_clock::time_point lastLandAt{};
     std::chrono::steady_clock::time_point lastSplashAt{};
+    std::chrono::steady_clock::time_point lastMeleeSwingAt{};
+    bool meleeSwingWarned = false;
     std::string voiceProfileKey;
 
     void preloadCandidates(std::vector<Sample>& out, const std::vector<std::string>& candidates);

@@ -220,7 +220,7 @@ void InventoryScreen::renderHeldItem() {
     }
 }
 
-void InventoryScreen::render(game::Inventory& inventory) {
+void InventoryScreen::render(game::Inventory& inventory, uint64_t moneyCopper) {
     // B key toggle (edge-triggered)
     bool uiWantsKeyboard = ImGui::GetIO().WantCaptureKeyboard;
     bool bDown = !uiWantsKeyboard && core::Input::getInstance().isKeyPressed(SDL_SCANCODE_B);
@@ -269,6 +269,14 @@ void InventoryScreen::render(game::Inventory& inventory) {
     renderBackpackPanel(inventory);
     ImGui::EndChild();
 
+    ImGui::Separator();
+    uint64_t gold = moneyCopper / 10000;
+    uint64_t silver = (moneyCopper / 100) % 100;
+    uint64_t copper = moneyCopper % 100;
+    ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.0f, 1.0f), "%llug %llus %lluc",
+                       static_cast<unsigned long long>(gold),
+                       static_cast<unsigned long long>(silver),
+                       static_cast<unsigned long long>(copper));
     ImGui::End();
 
     // Draw held item at cursor (on top of everything)

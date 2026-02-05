@@ -5,12 +5,321 @@
 #include "core/coordinates.hpp"
 #include "core/logger.hpp"
 #include <algorithm>
+#include <cmath>
 #include <cctype>
 #include <random>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <unordered_map>
+#include <functional>
+#include <cstdlib>
 
 namespace wowee {
 namespace game {
+
+namespace {
+
+struct LootEntryRow {
+    uint32_t item = 0;
+    float chance = 0.0f;
+    uint16_t lootmode = 0;
+    uint8_t groupid = 0;
+    int32_t mincountOrRef = 0;
+    uint8_t maxcount = 1;
+};
+
+struct CreatureTemplateRow {
+    uint32_t lootId = 0;
+    uint32_t minGold = 0;
+    uint32_t maxGold = 0;
+};
+
+struct ItemTemplateRow {
+    uint32_t itemId = 0;
+    std::string name;
+    uint32_t displayId = 0;
+    uint8_t quality = 0;
+    uint8_t inventoryType = 0;
+    int32_t maxStack = 1;
+};
+
+struct SinglePlayerLootDb {
+    bool loaded = false;
+    std::string basePath;
+    std::unordered_map<uint32_t, CreatureTemplateRow> creatureTemplates;
+    std::unordered_map<uint32_t, std::vector<LootEntryRow>> creatureLoot;
+    std::unordered_map<uint32_t, std::vector<LootEntryRow>> referenceLoot;
+    std::unordered_map<uint32_t, ItemTemplateRow> itemTemplates;
+};
+
+static std::string trimSql(const std::string& s) {
+    size_t b = 0;
+    while (b < s.size() && std::isspace(static_cast<unsigned char>(s[b]))) b++;
+    size_t e = s.size();
+    while (e > b && std::isspace(static_cast<unsigned char>(s[e - 1]))) e--;
+    return s.substr(b, e - b);
+}
+
+static bool parseInsertTuples(const std::string& line, std::vector<std::string>& outTuples) {
+    outTuples.clear();
+    size_t valuesPos = line.find("VALUES");
+    if (valuesPos == std::string::npos) valuesPos = line.find("values");
+    if (valuesPos == std::string::npos) return false;
+
+    bool inQuote = false;
+    int depth = 0;
+    size_t tupleStart = std::string::npos;
+    for (size_t i = valuesPos; i < line.size(); i++) {
+        char c = line[i];
+        if (c == '\'' && (i == 0 || line[i - 1] != '\\')) inQuote = !inQuote;
+        if (inQuote) continue;
+        if (c == '(') {
+            if (depth == 0) tupleStart = i + 1;
+            depth++;
+        } else if (c == ')') {
+            depth--;
+            if (depth == 0 && tupleStart != std::string::npos && i > tupleStart) {
+                outTuples.push_back(line.substr(tupleStart, i - tupleStart));
+                tupleStart = std::string::npos;
+            }
+        }
+    }
+    return !outTuples.empty();
+}
+
+static std::vector<std::string> splitCsvTuple(const std::string& tuple) {
+    std::vector<std::string> cols;
+    std::string cur;
+    bool inQuote = false;
+    for (size_t i = 0; i < tuple.size(); i++) {
+        char c = tuple[i];
+        if (c == '\'' && (i == 0 || tuple[i - 1] != '\\')) {
+            inQuote = !inQuote;
+            cur.push_back(c);
+            continue;
+        }
+        if (c == ',' && !inQuote) {
+            cols.push_back(trimSql(cur));
+            cur.clear();
+            continue;
+        }
+        cur.push_back(c);
+    }
+    if (!cur.empty()) cols.push_back(trimSql(cur));
+    return cols;
+}
+
+static std::string unquoteSqlString(const std::string& s) {
+    if (s.size() >= 2 && s.front() == '\'' && s.back() == '\'') {
+        return s.substr(1, s.size() - 2);
+    }
+    return s;
+}
+
+static std::vector<std::string> loadCreateTableColumns(const std::filesystem::path& path) {
+    std::vector<std::string> columns;
+    std::ifstream in(path);
+    if (!in) return columns;
+    std::string line;
+    bool inCreate = false;
+    while (std::getline(in, line)) {
+        if (!inCreate) {
+            if (line.find("CREATE TABLE") != std::string::npos ||
+                line.find("create table") != std::string::npos) {
+                inCreate = true;
+            }
+            continue;
+        }
+        auto trimmed = trimSql(line);
+        if (trimmed.empty()) continue;
+        if (trimmed[0] == ')') break;
+        size_t b = trimmed.find('`');
+        if (b == std::string::npos) continue;
+        size_t e = trimmed.find('`', b + 1);
+        if (e == std::string::npos) continue;
+        columns.push_back(trimmed.substr(b + 1, e - b - 1));
+    }
+    return columns;
+}
+
+static int columnIndex(const std::vector<std::string>& cols, const std::string& name) {
+    for (size_t i = 0; i < cols.size(); i++) {
+        if (cols[i] == name) return static_cast<int>(i);
+    }
+    return -1;
+}
+
+static std::filesystem::path resolveDbBasePath() {
+    if (const char* dbBase = std::getenv("WOW_DB_BASE_PATH")) {
+        std::filesystem::path base(dbBase);
+        if (std::filesystem::exists(base)) return base;
+    }
+    if (std::filesystem::exists("assets/sql")) {
+        return std::filesystem::path("assets/sql");
+    }
+    return {};
+}
+
+static void processInsertStatements(
+    std::ifstream& in,
+    const std::function<void(const std::vector<std::string>&)>& onTuple) {
+    std::string line;
+    std::string stmt;
+    std::vector<std::string> tuples;
+    while (std::getline(in, line)) {
+        if (stmt.empty()) {
+            if (line.find("INSERT INTO") == std::string::npos &&
+                line.find("insert into") == std::string::npos) {
+                continue;
+            }
+        }
+        if (!stmt.empty()) stmt.push_back('\n');
+        stmt += line;
+        if (line.find(';') == std::string::npos) continue;
+
+        if (parseInsertTuples(stmt, tuples)) {
+            for (const auto& t : tuples) {
+                onTuple(splitCsvTuple(t));
+            }
+        }
+        stmt.clear();
+    }
+}
+
+static SinglePlayerLootDb& getSinglePlayerLootDb() {
+    static SinglePlayerLootDb db;
+    if (db.loaded) return db;
+
+    auto base = resolveDbBasePath();
+    if (base.empty()) {
+        db.loaded = true;
+        return db;
+    }
+
+    std::filesystem::path basePath = base;
+    std::filesystem::path creatureTemplatePath = basePath / "creature_template.sql";
+    std::filesystem::path creatureLootPath = basePath / "creature_loot_template.sql";
+    std::filesystem::path referenceLootPath = basePath / "reference_loot_template.sql";
+    std::filesystem::path itemTemplatePath = basePath / "item_template.sql";
+
+    if (!std::filesystem::exists(creatureTemplatePath)) {
+        auto alt = basePath / "base";
+        if (std::filesystem::exists(alt / "creature_template.sql")) {
+            basePath = alt;
+            creatureTemplatePath = basePath / "creature_template.sql";
+            creatureLootPath = basePath / "creature_loot_template.sql";
+            referenceLootPath = basePath / "reference_loot_template.sql";
+            itemTemplatePath = basePath / "item_template.sql";
+        }
+    }
+
+    db.basePath = basePath.string();
+
+    // creature_template: entry, lootid, mingold, maxgold
+    {
+        auto cols = loadCreateTableColumns(creatureTemplatePath);
+        int idxEntry = columnIndex(cols, "entry");
+        int idxLoot = columnIndex(cols, "lootid");
+        int idxMinGold = columnIndex(cols, "mingold");
+        int idxMaxGold = columnIndex(cols, "maxgold");
+        if (idxEntry >= 0 && std::filesystem::exists(creatureTemplatePath)) {
+            std::ifstream in(creatureTemplatePath);
+            processInsertStatements(in, [&](const std::vector<std::string>& row) {
+                if (idxEntry >= static_cast<int>(row.size())) return;
+                try {
+                    uint32_t entry = static_cast<uint32_t>(std::stoul(row[idxEntry]));
+                    CreatureTemplateRow tr;
+                    if (idxLoot >= 0 && idxLoot < static_cast<int>(row.size())) {
+                        tr.lootId = static_cast<uint32_t>(std::stoul(row[idxLoot]));
+                    }
+                    if (idxMinGold >= 0 && idxMinGold < static_cast<int>(row.size())) {
+                        tr.minGold = static_cast<uint32_t>(std::stoul(row[idxMinGold]));
+                    }
+                    if (idxMaxGold >= 0 && idxMaxGold < static_cast<int>(row.size())) {
+                        tr.maxGold = static_cast<uint32_t>(std::stoul(row[idxMaxGold]));
+                    }
+                    db.creatureTemplates[entry] = tr;
+                } catch (const std::exception&) {
+                }
+            });
+        }
+    }
+
+    auto loadLootTable = [&](const std::filesystem::path& path,
+                             std::unordered_map<uint32_t, std::vector<LootEntryRow>>& out) {
+        if (!std::filesystem::exists(path)) return;
+        std::ifstream in(path);
+        processInsertStatements(in, [&](const std::vector<std::string>& row) {
+            if (row.size() < 7) return;
+            try {
+                uint32_t entry = static_cast<uint32_t>(std::stoul(row[0]));
+                LootEntryRow lr;
+                lr.item = static_cast<uint32_t>(std::stoul(row[1]));
+                lr.chance = std::stof(row[2]);
+                lr.lootmode = static_cast<uint16_t>(std::stoul(row[3]));
+                lr.groupid = static_cast<uint8_t>(std::stoul(row[4]));
+                lr.mincountOrRef = static_cast<int32_t>(std::stol(row[5]));
+                lr.maxcount = static_cast<uint8_t>(std::stoul(row[6]));
+                out[entry].push_back(lr);
+            } catch (const std::exception&) {
+            }
+        });
+    };
+
+    loadLootTable(creatureLootPath, db.creatureLoot);
+    loadLootTable(referenceLootPath, db.referenceLoot);
+
+    // item_template
+    {
+        auto cols = loadCreateTableColumns(itemTemplatePath);
+        int idxEntry = columnIndex(cols, "entry");
+        int idxName = columnIndex(cols, "name");
+        int idxDisplay = columnIndex(cols, "displayid");
+        int idxQuality = columnIndex(cols, "Quality");
+        int idxInvType = columnIndex(cols, "InventoryType");
+        int idxStack = columnIndex(cols, "stackable");
+        if (idxEntry >= 0 && std::filesystem::exists(itemTemplatePath)) {
+            std::ifstream in(itemTemplatePath);
+            processInsertStatements(in, [&](const std::vector<std::string>& row) {
+                if (idxEntry >= static_cast<int>(row.size())) return;
+                try {
+                    ItemTemplateRow ir;
+                    ir.itemId = static_cast<uint32_t>(std::stoul(row[idxEntry]));
+                    if (idxName >= 0 && idxName < static_cast<int>(row.size())) {
+                        ir.name = unquoteSqlString(row[idxName]);
+                    }
+                    if (idxDisplay >= 0 && idxDisplay < static_cast<int>(row.size())) {
+                        ir.displayId = static_cast<uint32_t>(std::stoul(row[idxDisplay]));
+                    }
+                    if (idxQuality >= 0 && idxQuality < static_cast<int>(row.size())) {
+                        ir.quality = static_cast<uint8_t>(std::stoul(row[idxQuality]));
+                    }
+                    if (idxInvType >= 0 && idxInvType < static_cast<int>(row.size())) {
+                        ir.inventoryType = static_cast<uint8_t>(std::stoul(row[idxInvType]));
+                    }
+                    if (idxStack >= 0 && idxStack < static_cast<int>(row.size())) {
+                        ir.maxStack = static_cast<int32_t>(std::stol(row[idxStack]));
+                        if (ir.maxStack <= 0) ir.maxStack = 1;
+                    }
+                    db.itemTemplates[ir.itemId] = std::move(ir);
+                } catch (const std::exception&) {
+                }
+            });
+        }
+    }
+
+    db.loaded = true;
+    LOG_INFO("Single-player loot DB loaded from ", db.basePath,
+             " (creatures=", db.creatureTemplates.size(),
+             ", loot=", db.creatureLoot.size(),
+             ", reference=", db.referenceLoot.size(),
+             ", items=", db.itemTemplates.size(), ")");
+    return db;
+}
+
+} // namespace
 
 GameHandler::GameHandler() {
     LOG_DEBUG("GameHandler created");
@@ -1218,6 +1527,9 @@ void GameHandler::handleAttackerStateUpdate(network::Packet& packet) {
 
     bool isPlayerAttacker = (data.attackerGuid == playerGuid);
     bool isPlayerTarget = (data.targetGuid == playerGuid);
+    if (isPlayerAttacker && meleeSwingCallback_) {
+        meleeSwingCallback_();
+    }
 
     if (data.isMiss()) {
         addCombatText(CombatTextEntry::MISS, 0, 0, isPlayerAttacker);
@@ -1558,12 +1870,71 @@ void GameHandler::handlePartyCommandResult(network::Packet& packet) {
 // ============================================================
 
 void GameHandler::lootTarget(uint64_t guid) {
+    if (singlePlayerMode_) {
+        auto entity = entityManager.getEntity(guid);
+        if (!entity || entity->getType() != ObjectType::UNIT) return;
+        auto unit = std::static_pointer_cast<Unit>(entity);
+        if (unit->getHealth() != 0) return;
+
+        auto it = localLootState_.find(guid);
+        if (it == localLootState_.end()) {
+            LocalLootState state;
+            state.data = generateLocalLoot(guid);
+            it = localLootState_.emplace(guid, std::move(state)).first;
+        }
+        simulateLootResponse(it->second.data);
+        return;
+    }
+
     if (state != WorldState::IN_WORLD || !socket) return;
     auto packet = LootPacket::build(guid);
     socket->send(packet);
 }
 
 void GameHandler::lootItem(uint8_t slotIndex) {
+    if (singlePlayerMode_) {
+        if (!lootWindowOpen) return;
+        auto it = std::find_if(currentLoot.items.begin(), currentLoot.items.end(),
+                               [slotIndex](const LootItem& item) { return item.slotIndex == slotIndex; });
+        if (it == currentLoot.items.end()) return;
+
+        auto& db = getSinglePlayerLootDb();
+        ItemDef def;
+        def.itemId = it->itemId;
+        def.stackCount = it->count;
+        def.maxStack = it->count;
+
+        auto itTpl = db.itemTemplates.find(it->itemId);
+        if (itTpl != db.itemTemplates.end()) {
+            def.name = itTpl->second.name.empty()
+                ? ("Item " + std::to_string(it->itemId))
+                : itTpl->second.name;
+            def.quality = static_cast<ItemQuality>(itTpl->second.quality);
+            def.inventoryType = itTpl->second.inventoryType;
+            def.maxStack = std::max(def.maxStack, static_cast<uint32_t>(itTpl->second.maxStack));
+        } else {
+            def.name = "Item " + std::to_string(it->itemId);
+        }
+
+        if (inventory.addItem(def)) {
+            simulateLootRemove(slotIndex);
+            addSystemChatMessage("You receive item: " + def.name + " x" + std::to_string(def.stackCount) + ".");
+            if (currentLoot.lootGuid != 0) {
+                auto st = localLootState_.find(currentLoot.lootGuid);
+                if (st != localLootState_.end()) {
+                    auto& items = st->second.data.items;
+                    items.erase(std::remove_if(items.begin(), items.end(),
+                                               [slotIndex](const LootItem& item) {
+                                                   return item.slotIndex == slotIndex;
+                                               }),
+                                items.end());
+                }
+            }
+        } else {
+            addSystemChatMessage("Inventory is full.");
+        }
+        return;
+    }
     if (state != WorldState::IN_WORLD || !socket) return;
     auto packet = AutostoreLootItemPacket::build(slotIndex);
     socket->send(packet);
@@ -1572,6 +1943,19 @@ void GameHandler::lootItem(uint8_t slotIndex) {
 void GameHandler::closeLoot() {
     if (!lootWindowOpen) return;
     lootWindowOpen = false;
+    if (singlePlayerMode_ && currentLoot.lootGuid != 0) {
+        auto st = localLootState_.find(currentLoot.lootGuid);
+        if (st != localLootState_.end()) {
+            if (!st->second.moneyTaken && st->second.data.gold > 0) {
+                addMoneyCopper(st->second.data.gold);
+                st->second.moneyTaken = true;
+                st->second.data.gold = 0;
+            }
+        }
+        currentLoot.gold = 0;
+        simulateLootRelease();
+        return;
+    }
     if (state == WorldState::IN_WORLD && socket) {
         auto packet = LootReleasePacket::build(currentLoot.lootGuid);
         socket->send(packet);
@@ -1699,6 +2083,10 @@ void GameHandler::performPlayerSwing() {
     auto unit = std::static_pointer_cast<Unit>(entity);
     if (unit->getHealth() == 0) return;
 
+    if (meleeSwingCallback_) {
+        meleeSwingCallback_();
+    }
+
     // Aggro the target
     aggroNpc(autoAttackTarget);
 
@@ -1737,7 +2125,7 @@ void GameHandler::handleNpcDeath(uint64_t guid) {
     auto entity = entityManager.getEntity(guid);
     if (entity && entity->getType() == ObjectType::UNIT) {
         auto unit = std::static_pointer_cast<Unit>(entity);
-        awardLocalXp(unit->getLevel());
+        awardLocalXp(guid, unit->getLevel());
     }
 
     // Remove from aggro list
@@ -1890,7 +2278,7 @@ uint32_t GameHandler::killXp(uint32_t playerLevel, uint32_t victimLevel) {
     return static_cast<uint32_t>(baseXp * multiplier);
 }
 
-void GameHandler::awardLocalXp(uint32_t victimLevel) {
+void GameHandler::awardLocalXp(uint64_t victimGuid, uint32_t victimLevel) {
     if (localPlayerLevel_ >= 80) return; // Level cap
 
     uint32_t xp = killXp(localPlayerLevel_, victimLevel);
@@ -1900,6 +2288,7 @@ void GameHandler::awardLocalXp(uint32_t victimLevel) {
 
     // Show XP gain in combat text as a heal-type (gold text)
     addCombatText(CombatTextEntry::HEAL, static_cast<int32_t>(xp), 0, true);
+    simulateXpGain(victimGuid, xp);
 
     LOG_INFO("XP gained: +", xp, " (total: ", playerXp_, "/", playerNextLevelXp_, ")");
 
@@ -1942,6 +2331,174 @@ void GameHandler::handleXpGain(network::Packet& packet) {
     if (data.groupBonus > 0) {
         msg += " (+" + std::to_string(data.groupBonus) + " group bonus)";
     }
+    addSystemChatMessage(msg);
+}
+
+LootResponseData GameHandler::generateLocalLoot(uint64_t guid) {
+    LootResponseData data;
+    data.lootGuid = guid;
+    data.lootType = 0;
+    auto entity = entityManager.getEntity(guid);
+    if (!entity || entity->getType() != ObjectType::UNIT) return data;
+    auto unit = std::static_pointer_cast<Unit>(entity);
+    uint32_t entry = unit->getEntry();
+    if (entry == 0) return data;
+
+    auto& db = getSinglePlayerLootDb();
+
+    uint32_t lootId = entry;
+    auto itTemplate = db.creatureTemplates.find(entry);
+    if (itTemplate != db.creatureTemplates.end()) {
+        if (itTemplate->second.lootId != 0) lootId = itTemplate->second.lootId;
+        if (itTemplate->second.maxGold > 0) {
+            std::uniform_int_distribution<uint32_t> goldDist(
+                itTemplate->second.minGold, itTemplate->second.maxGold);
+            static std::mt19937 rng(std::random_device{}());
+            data.gold = goldDist(rng);
+        }
+    }
+
+    auto itLoot = db.creatureLoot.find(lootId);
+    if (itLoot == db.creatureLoot.end() && lootId != entry) {
+        itLoot = db.creatureLoot.find(entry);
+    }
+    if (itLoot == db.creatureLoot.end()) return data;
+
+    std::unordered_map<uint8_t, std::vector<LootEntryRow>> groups;
+    std::vector<LootEntryRow> ungroupped;
+    for (const auto& row : itLoot->second) {
+        if (row.groupid == 0) {
+            ungroupped.push_back(row);
+        } else {
+            groups[row.groupid].push_back(row);
+        }
+    }
+
+    static std::mt19937 rng(std::random_device{}());
+    std::uniform_real_distribution<float> roll(0.0f, 100.0f);
+
+    auto addItem = [&](uint32_t itemId, uint32_t count) {
+        LootItem li;
+        li.slotIndex = static_cast<uint8_t>(data.items.size());
+        li.itemId = itemId;
+        li.count = count;
+        auto itItem = db.itemTemplates.find(itemId);
+        if (itItem != db.itemTemplates.end()) {
+            li.displayInfoId = itItem->second.displayId;
+        }
+        data.items.push_back(li);
+    };
+
+    std::function<void(const std::vector<LootEntryRow>&, bool)> processLootTable;
+    processLootTable = [&](const std::vector<LootEntryRow>& rows, bool grouped) {
+        if (rows.empty()) return;
+        if (grouped) {
+            float total = 0.0f;
+            for (const auto& r : rows) total += std::abs(r.chance);
+            if (total <= 0.0f) return;
+            float r = roll(rng);
+            if (total < 100.0f && r > total) return;
+            float pick = (total < 100.0f)
+                ? r
+                : std::uniform_real_distribution<float>(0.0f, total)(rng);
+            float acc = 0.0f;
+            for (const auto& row : rows) {
+                acc += std::abs(row.chance);
+                if (pick <= acc) {
+                    if (row.mincountOrRef < 0) {
+                        auto refIt = db.referenceLoot.find(static_cast<uint32_t>(-row.mincountOrRef));
+                        if (refIt != db.referenceLoot.end()) {
+                            processLootTable(refIt->second, false);
+                        }
+                    } else {
+                        uint32_t minc = static_cast<uint32_t>(std::max(1, row.mincountOrRef));
+                        uint32_t maxc = std::max(minc, static_cast<uint32_t>(row.maxcount));
+                        std::uniform_int_distribution<uint32_t> cnt(minc, maxc);
+                        addItem(row.item, cnt(rng));
+                    }
+                    break;
+                }
+            }
+            return;
+        }
+
+        for (const auto& row : rows) {
+            float chance = std::abs(row.chance);
+            if (chance <= 0.0f) continue;
+            if (roll(rng) > chance) continue;
+            if (row.mincountOrRef < 0) {
+                auto refIt = db.referenceLoot.find(static_cast<uint32_t>(-row.mincountOrRef));
+                if (refIt != db.referenceLoot.end()) {
+                    processLootTable(refIt->second, false);
+                }
+                continue;
+            }
+            uint32_t minc = static_cast<uint32_t>(std::max(1, row.mincountOrRef));
+            uint32_t maxc = std::max(minc, static_cast<uint32_t>(row.maxcount));
+            std::uniform_int_distribution<uint32_t> cnt(minc, maxc);
+            addItem(row.item, cnt(rng));
+        }
+    };
+
+    processLootTable(ungroupped, false);
+    for (const auto& [gid, rows] : groups) {
+        processLootTable(rows, true);
+    }
+
+    return data;
+}
+
+void GameHandler::simulateLootResponse(const LootResponseData& data) {
+    network::Packet packet(static_cast<uint16_t>(Opcode::SMSG_LOOT_RESPONSE));
+    packet.writeUInt64(data.lootGuid);
+    packet.writeUInt8(data.lootType);
+    packet.writeUInt32(data.gold);
+    packet.writeUInt8(static_cast<uint8_t>(data.items.size()));
+    for (const auto& item : data.items) {
+        packet.writeUInt8(item.slotIndex);
+        packet.writeUInt32(item.itemId);
+        packet.writeUInt32(item.count);
+        packet.writeUInt32(item.displayInfoId);
+        packet.writeUInt32(item.randomSuffix);
+        packet.writeUInt32(item.randomPropertyId);
+        packet.writeUInt8(item.lootSlotType);
+    }
+    handleLootResponse(packet);
+}
+
+void GameHandler::simulateLootRelease() {
+    network::Packet packet(static_cast<uint16_t>(Opcode::SMSG_LOOT_RELEASE_RESPONSE));
+    handleLootReleaseResponse(packet);
+    currentLoot = LootResponseData{};
+}
+
+void GameHandler::simulateLootRemove(uint8_t slotIndex) {
+    if (!lootWindowOpen) return;
+    network::Packet packet(static_cast<uint16_t>(Opcode::SMSG_LOOT_REMOVED));
+    packet.writeUInt8(slotIndex);
+    handleLootRemoved(packet);
+}
+
+void GameHandler::simulateXpGain(uint64_t victimGuid, uint32_t totalXp) {
+    network::Packet packet(static_cast<uint16_t>(Opcode::SMSG_LOG_XPGAIN));
+    packet.writeUInt64(victimGuid);
+    packet.writeUInt32(totalXp);
+    packet.writeUInt8(0); // kill XP
+    packet.writeFloat(0.0f);
+    packet.writeUInt32(0); // group bonus
+    handleXpGain(packet);
+}
+
+void GameHandler::addMoneyCopper(uint32_t amount) {
+    if (amount == 0) return;
+    playerMoneyCopper_ += amount;
+    uint32_t gold = amount / 10000;
+    uint32_t silver = (amount / 100) % 100;
+    uint32_t copper = amount % 100;
+    std::string msg = "You receive ";
+    msg += std::to_string(gold) + "g ";
+    msg += std::to_string(silver) + "s ";
+    msg += std::to_string(copper) + "c.";
     addSystemChatMessage(msg);
 }
 

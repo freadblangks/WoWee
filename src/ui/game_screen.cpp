@@ -92,7 +92,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     spellbookScreen.render(gameHandler, core::Application::getInstance().getAssetManager());
 
     // Inventory (B key toggle handled inside)
-    inventoryScreen.render(gameHandler.getInventory());
+    inventoryScreen.render(gameHandler.getInventory(), gameHandler.getMoneyCopper());
 
     if (inventoryScreen.consumeEquipmentDirty()) {
         updateCharacterGeosets(gameHandler.getInventory());

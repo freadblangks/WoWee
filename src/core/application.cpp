@@ -311,6 +311,13 @@ void Application::setState(AppState newState) {
                 // Keep player locomotion WoW-like in both single-player and online modes.
                 cc->setUseWoWSpeed(true);
             }
+            if (gameHandler) {
+                gameHandler->setMeleeSwingCallback([this]() {
+                    if (renderer) {
+                        renderer->triggerMeleeSwing();
+                    }
+                });
+            }
             break;
         case AppState::DISCONNECTED:
             // Back to auth

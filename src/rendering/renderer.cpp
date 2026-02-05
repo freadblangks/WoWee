@@ -1749,7 +1749,13 @@ void Renderer::renderShadowPass() {
 
     // Render characters into shadow map
     if (characterRenderer) {
-        characterRenderer->renderShadow(shadowShaderProgram);
+        // Character shadows need less caster bias to avoid "floating" away from feet.
+        glDisable(GL_POLYGON_OFFSET_FILL);
+        glCullFace(GL_BACK);
+        characterRenderer->renderShadow(lightSpaceMatrix);
+        glCullFace(GL_FRONT);
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        glPolygonOffset(2.0f, 4.0f);
     }
 
     // Restore state

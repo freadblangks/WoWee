@@ -170,6 +170,82 @@ bool CharacterRenderer::initialize() {
         return false;
     }
 
+    const char* shadowVertSrc = R"(
+        #version 330 core
+        layout (location = 0) in vec3 aPos;
+        layout (location = 1) in vec4 aBoneWeights;
+        layout (location = 2) in ivec4 aBoneIndices;
+        layout (location = 4) in vec2 aTexCoord;
+
+        uniform mat4 uLightSpaceMatrix;
+        uniform mat4 uModel;
+        uniform mat4 uBones[200];
+
+        out vec2 vTexCoord;
+
+        void main() {
+            mat4 boneTransform = mat4(0.0);
+            boneTransform += uBones[aBoneIndices.x] * aBoneWeights.x;
+            boneTransform += uBones[aBoneIndices.y] * aBoneWeights.y;
+            boneTransform += uBones[aBoneIndices.z] * aBoneWeights.z;
+            boneTransform += uBones[aBoneIndices.w] * aBoneWeights.w;
+            vec4 skinnedPos = boneTransform * vec4(aPos, 1.0);
+            vTexCoord = aTexCoord;
+            gl_Position = uLightSpaceMatrix * uModel * skinnedPos;
+        }
+    )";
+
+    const char* shadowFragSrc = R"(
+        #version 330 core
+        in vec2 vTexCoord;
+        uniform sampler2D uTexture;
+        uniform bool uAlphaTest;
+        void main() {
+            if (uAlphaTest && texture(uTexture, vTexCoord).a < 0.5) discard;
+        }
+    )";
+
+    auto compileStage = [](GLenum type, const char* src) -> GLuint {
+        GLuint shader = glCreateShader(type);
+        glShaderSource(shader, 1, &src, nullptr);
+        glCompileShader(shader);
+        GLint ok = 0;
+        glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
+        if (!ok) {
+            char log[512];
+            glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
+            LOG_ERROR("Character shadow shader compile error: ", log);
+            glDeleteShader(shader);
+            return 0;
+        }
+        return shader;
+    };
+
+    GLuint shVs = compileStage(GL_VERTEX_SHADER, shadowVertSrc);
+    GLuint shFs = compileStage(GL_FRAGMENT_SHADER, shadowFragSrc);
+    if (!shVs || !shFs) {
+        if (shVs) glDeleteShader(shVs);
+        if (shFs) glDeleteShader(shFs);
+        return false;
+    }
+
+    shadowCasterProgram = glCreateProgram();
+    glAttachShader(shadowCasterProgram, shVs);
+    glAttachShader(shadowCasterProgram, shFs);
+    glLinkProgram(shadowCasterProgram);
+    GLint linked = 0;
+    glGetProgramiv(shadowCasterProgram, GL_LINK_STATUS, &linked);
+    glDeleteShader(shVs);
+    glDeleteShader(shFs);
+    if (!linked) {
+        char log[512];
+        glGetProgramInfoLog(shadowCasterProgram, sizeof(log), nullptr, log);
+        LOG_ERROR("Character shadow shader link error: ", log);
+        glDeleteProgram(shadowCasterProgram);
+        shadowCasterProgram = 0;
+        return false;
+    }
+
     // Create 1x1 white fallback texture
     uint8_t white[] = { 255, 255, 255, 255 };
     glGenTextures(1, &whiteTexture);
@@ -215,6 +291,10 @@ void CharacterRenderer::shutdown() {
     models.clear();
     instances.clear();
     characterShader.reset();
+    if (shadowCasterProgram) {
+        glDeleteProgram(shadowCasterProgram);
+        shadowCasterProgram = 0;
+    }
 }
 
 GLuint CharacterRenderer::loadTexture(const std::string& path) {
@@ -1151,25 +1231,26 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
     glEnable(GL_CULL_FACE);  // Restore culling for other renderers
 }
 
-void CharacterRenderer::renderShadow(GLuint shadowShaderProgram) {
-    if (instances.empty() || shadowShaderProgram == 0) {
+void CharacterRenderer::renderShadow(const glm::mat4& lightSpaceMatrix) {
+    if (instances.empty() || shadowCasterProgram == 0) {
         return;
     }
 
-    GLint modelLoc = glGetUniformLocation(shadowShaderProgram, "uModel");
-    GLint useTexLoc = glGetUniformLocation(shadowShaderProgram, "uUseTexture");
-    GLint texLoc = glGetUniformLocation(shadowShaderProgram, "uTexture");
-    GLint alphaTestLoc = glGetUniformLocation(shadowShaderProgram, "uAlphaTest");
-    GLint opacityLoc = glGetUniformLocation(shadowShaderProgram, "uShadowOpacity");
-    GLint useBonesLoc = glGetUniformLocation(shadowShaderProgram, "uUseBones");
-    if (modelLoc < 0) {
+    glUseProgram(shadowCasterProgram);
+
+    GLint lightSpaceLoc = glGetUniformLocation(shadowCasterProgram, "uLightSpaceMatrix");
+    GLint modelLoc = glGetUniformLocation(shadowCasterProgram, "uModel");
+    GLint texLoc = glGetUniformLocation(shadowCasterProgram, "uTexture");
+    GLint alphaTestLoc = glGetUniformLocation(shadowCasterProgram, "uAlphaTest");
+    GLint bonesLoc = glGetUniformLocation(shadowCasterProgram, "uBones[0]");
+    if (lightSpaceLoc < 0 || modelLoc < 0) {
         return;
     }
 
-    if (useTexLoc >= 0) glUniform1i(useTexLoc, 0);
-    if (alphaTestLoc >= 0) glUniform1i(alphaTestLoc, 0);
-    if (opacityLoc >= 0) glUniform1f(opacityLoc, 1.0f);
-    if (useBonesLoc >= 0) glUniform1i(useBonesLoc, 0);
+    glUniformMatrix4fv(lightSpaceLoc, 1, GL_FALSE, &lightSpaceMatrix[0][0]);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_FRONT);
+
     if (texLoc >= 0) glUniform1i(texLoc, 0);
     glActiveTexture(GL_TEXTURE0);
 
@@ -1183,14 +1264,9 @@ void CharacterRenderer::renderShadow(GLuint shadowShaderProgram) {
             : getModelMatrix(instance);
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, &modelMat[0][0]);
 
-        bool useBones = !instance.boneMatrices.empty();
-        if (useBonesLoc >= 0) glUniform1i(useBonesLoc, useBones ? 1 : 0);
-        if (useBones) {
+        if (!instance.boneMatrices.empty() && bonesLoc >= 0) {
             int numBones = std::min(static_cast<int>(instance.boneMatrices.size()), MAX_BONES);
-            GLint bonesLoc = glGetUniformLocation(shadowShaderProgram, "uBones[0]");
-            if (bonesLoc >= 0) {
-                glUniformMatrix4fv(bonesLoc, numBones, GL_FALSE, &instance.boneMatrices[0][0][0]);
-            }
+            glUniformMatrix4fv(bonesLoc, numBones, GL_FALSE, &instance.boneMatrices[0][0][0]);
         }
 
         glBindVertexArray(gpuModel.vao);
@@ -1205,13 +1281,9 @@ void CharacterRenderer::renderShadow(GLuint shadowShaderProgram) {
                     }
                 }
 
-                bool useTexture = (texId != 0 && texId != whiteTexture);
-                if (useTexLoc >= 0) glUniform1i(useTexLoc, useTexture ? 1 : 0);
-                if (alphaTestLoc >= 0) glUniform1i(alphaTestLoc, useTexture ? 1 : 0);
-                if (opacityLoc >= 0) glUniform1f(opacityLoc, 1.0f);
-                if (useTexture) {
-                    glBindTexture(GL_TEXTURE_2D, texId);
-                }
+                bool alphaCutout = (texId != 0 && texId != whiteTexture);
+                if (alphaTestLoc >= 0) glUniform1i(alphaTestLoc, alphaCutout ? 1 : 0);
+                glBindTexture(GL_TEXTURE_2D, texId ? texId : whiteTexture);
 
                 glDrawElements(GL_TRIANGLES,
                                batch.indexCount,
@@ -1219,8 +1291,8 @@ void CharacterRenderer::renderShadow(GLuint shadowShaderProgram) {
                                (void*)(batch.indexStart * sizeof(uint16_t)));
             }
         } else {
-            if (useTexLoc >= 0) glUniform1i(useTexLoc, 0);
             if (alphaTestLoc >= 0) glUniform1i(alphaTestLoc, 0);
+            glBindTexture(GL_TEXTURE_2D, whiteTexture);
             glDrawElements(GL_TRIANGLES,
                            static_cast<GLsizei>(gpuModel.data.indices.size()),
                            GL_UNSIGNED_SHORT,
@@ -1229,6 +1301,7 @@ void CharacterRenderer::renderShadow(GLuint shadowShaderProgram) {
     }
 
     glBindVertexArray(0);
+    glCullFace(GL_BACK);
 }
 
 glm::mat4 CharacterRenderer::getModelMatrix(const CharacterInstance& instance) const {

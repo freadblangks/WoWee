@@ -57,7 +57,7 @@ public:
     void update(float deltaTime);
 
     void render(const Camera& camera, const glm::mat4& view, const glm::mat4& projection);
-    void renderShadow(GLuint shadowShaderProgram);
+    void renderShadow(const glm::mat4& lightSpaceMatrix);
 
     void setInstancePosition(uint32_t instanceId, const glm::vec3& position);
     void setInstanceRotation(uint32_t instanceId, const glm::vec3& rotation);
@@ -176,6 +176,7 @@ public:
 
 private:
     std::unique_ptr<Shader> characterShader;
+    GLuint shadowCasterProgram = 0;
     pipeline::AssetManager* assetManager = nullptr;
 
     // Fog parameters

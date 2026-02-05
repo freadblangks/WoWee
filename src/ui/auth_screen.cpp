@@ -56,7 +56,12 @@ void AuthScreen::render(auth::AuthHandler& authHandler) {
 
     // Connect button
     if (authenticating) {
-        ImGui::Text("Authenticating...");
+        authTimer += ImGui::GetIO().DeltaTime;
+
+        // Show progress with elapsed time
+        char progressBuf[128];
+        snprintf(progressBuf, sizeof(progressBuf), "Authenticating... (%.0fs)", authTimer);
+        ImGui::Text("%s", progressBuf);
 
         // Check authentication status
         auto state = authHandler.getState();
@@ -69,8 +74,16 @@ void AuthScreen::render(auth::AuthHandler& authHandler) {
                 onSuccess();
             }
         } else if (state == auth::AuthState::FAILED) {
-            setStatus("Authentication failed", true);
+            if (!failureReason.empty()) {
+                setStatus(failureReason, true);
+            } else {
+                setStatus("Authentication failed", true);
+            }
             authenticating = false;
+        } else if (authTimer >= AUTH_TIMEOUT) {
+            setStatus("Connection timed out - server did not respond", true);
+            authenticating = false;
+            authHandler.disconnect();
         }
     } else {
         if (ImGui::Button("Connect", ImVec2(120, 0))) {
@@ -131,14 +144,24 @@ void AuthScreen::attemptAuth(auth::AuthHandler& authHandler) {
     ss << "Connecting to " << hostname << ":" << port << "...";
     setStatus(ss.str(), false);
 
+    // Wire up failure callback to capture specific error reason
+    failureReason.clear();
+    authHandler.setOnFailure([this](const std::string& reason) {
+        failureReason = reason;
+    });
+
     if (authHandler.connect(hostname, static_cast<uint16_t>(port))) {
         authenticating = true;
+        authTimer = 0.0f;
         setStatus("Connected, authenticating...", false);
 
         // Send authentication credentials
         authHandler.authenticate(username, password);
     } else {
-        setStatus("Failed to connect to server", true);
+        std::stringstream errSs;
+        errSs << "Failed to connect to " << hostname << ":" << port
+              << " - check that the server is online and the address is correct";
+        setStatus(errSs.str(), true);
     }
 }
 

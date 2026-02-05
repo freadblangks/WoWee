@@ -53,6 +53,9 @@ private:
     // Status
     std::string statusMessage;
     bool statusIsError = false;
+    std::string failureReason;    // Specific reason from auth handler
+    float authTimer = 0.0f;       // Timeout tracker
+    static constexpr float AUTH_TIMEOUT = 10.0f;
 
     // Callbacks
     std::function<void()> onSuccess;

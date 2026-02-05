@@ -105,7 +105,7 @@ void AuthHandler::handleLogonChallengeResponse(network::Packet& packet) {
 
     LogonChallengeResponse response;
     if (!LogonChallengeResponseParser::parse(packet, response)) {
-        fail("Failed to parse LOGON_CHALLENGE response");
+        fail("Server sent an invalid response - it may use an incompatible protocol version");
         return;
     }
 
@@ -140,18 +140,18 @@ void AuthHandler::handleLogonProofResponse(network::Packet& packet) {
 
     LogonProofResponse response;
     if (!LogonProofResponseParser::parse(packet, response)) {
-        fail("Failed to parse LOGON_PROOF response");
+        fail("Server sent an invalid login response - it may use an incompatible protocol");
         return;
     }
 
     if (!response.isSuccess()) {
-        fail("LOGON_PROOF failed: invalid proof");
+        fail("Login failed - incorrect username or password");
         return;
     }
 
     // Verify server proof
     if (!srp->verifyServerProof(response.M2)) {
-        fail("Server proof verification failed");
+        fail("Server identity verification failed - the server may be running an incompatible version");
         return;
     }
 

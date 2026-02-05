@@ -660,7 +660,7 @@ void NpcManager::initialize(pipeline::AssetManager* am,
                  " offset=(", globalDx, ", ", globalDy, ")");
     }
 
-    std::vector<NpcSpawnDef> spawnDefs = loadSpawnDefsFromFile("assets/npcs/singleplayer_spawns.csv");
+    std::vector<NpcSpawnDef> spawnDefs;
     std::string dbBasePath;
     if (const char* dbBase = std::getenv("WOW_DB_BASE_PATH")) {
         dbBasePath = dbBase;
@@ -672,25 +672,7 @@ void NpcManager::initialize(pipeline::AssetManager* am,
         if (!dbDefs.empty()) spawnDefs = std::move(dbDefs);
     }
     if (spawnDefs.empty()) {
-        LOG_WARNING("NpcManager: using built-in NPC spawns (assets/npcs/singleplayer_spawns.csv missing)");
-        spawnDefs = {
-            {"Azeroth", 0, "Innkeeper Farley", "Creature\\HumanMalePeasant\\HumanMalePeasant.m2",
-             30, 5000, glm::vec3(76.0f, -9468.0f, 205.0f), false, 3.1f, 1.0f, false},
-            {"Azeroth", 0, "Bernard Gump", "Creature\\HumanMalePeasant\\HumanMalePeasant.m2",
-             25, 4200, glm::vec3(92.0f, -9478.0f, 205.0f), false, 1.2f, 1.0f, false},
-            {"Azeroth", 0, "Stormwind Guard", "Creature\\HumanMaleGuard\\HumanMaleGuard.m2",
-             60, 42000, glm::vec3(86.0f, -9478.0f, 205.0f), false, 0.1f, 1.0f, false},
-            {"Azeroth", 0, "Stormwind Guard", "Creature\\HumanMaleGuard\\HumanMaleGuard.m2",
-             60, 42000, glm::vec3(37.0f, -9440.0f, 205.0f), false, 2.8f, 1.0f, false},
-            {"Azeroth", 0, "Stormwind Citizen", "Creature\\HumanFemalePeasant\\HumanFemalePeasant.m2",
-             5, 1200, glm::vec3(62.0f, -9468.0f, 205.0f), false, 3.5f, 1.0f, false},
-            {"Azeroth", 0, "Stormwind Citizen", "Creature\\HumanMalePeasant\\HumanMalePeasant.m2",
-             5, 1200, glm::vec3(23.0f, -9518.0f, 205.0f), false, 1.8f, 1.0f, false},
-            {"Azeroth", 0, "Chicken", "Creature\\Chicken\\Chicken.m2",
-             1, 10, glm::vec3(58.0f, -9534.0f, 205.0f), false, 2.0f, 1.0f, true},
-            {"Azeroth", 0, "Cat", "Creature\\Cat\\Cat.m2",
-             1, 42, glm::vec3(90.0f, -9446.0f, 205.0f), false, 4.5f, 1.0f, true}
-        };
+        LOG_WARNING("NpcManager: no spawn defs found (DB required for single-player)");
     }
 
     // Spawn only nearby placements on current map.

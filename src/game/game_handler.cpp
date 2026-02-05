@@ -406,6 +406,14 @@ bool GameHandler::isConnected() const {
 }
 
 void GameHandler::update(float deltaTime) {
+    // Fire deferred char-create callback (outside ImGui render)
+    if (pendingCharCreateResult_) {
+        pendingCharCreateResult_ = false;
+        if (charCreateCallback_) {
+            charCreateCallback_(pendingCharCreateSuccess_, pendingCharCreateMsg_);
+        }
+    }
+
     if (!socket && !singlePlayerMode_) {
         return;
     }
@@ -852,9 +860,10 @@ void GameHandler::createCharacter(const CharCreateData& data) {
         characters.push_back(ch);
 
         LOG_INFO("Single-player character created: ", ch.name);
-        if (charCreateCallback_) {
-            charCreateCallback_(true, "Character created!");
-        }
+        // Defer callback to next update() so ImGui frame completes first
+        pendingCharCreateResult_ = true;
+        pendingCharCreateSuccess_ = true;
+        pendingCharCreateMsg_ = "Character created!";
         return;
     }
 

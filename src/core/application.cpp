@@ -344,11 +344,15 @@ void Application::update(float deltaTime) {
             break;
 
         case AppState::CHARACTER_CREATION:
-            // Character creation update
+            if (gameHandler) {
+                gameHandler->update(deltaTime);
+            }
             break;
 
         case AppState::CHARACTER_SELECTION:
-            // Character selection update
+            if (gameHandler) {
+                gameHandler->update(deltaTime);
+            }
             break;
 
         case AppState::IN_GAME:

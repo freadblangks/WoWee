@@ -525,6 +525,9 @@ private:
     WorldConnectSuccessCallback onSuccess;
     WorldConnectFailureCallback onFailure;
     CharCreateCallback charCreateCallback_;
+    bool pendingCharCreateResult_ = false;
+    bool pendingCharCreateSuccess_ = false;
+    std::string pendingCharCreateMsg_;
 
     // ---- XP tracking ----
     uint32_t playerXp_ = 0;

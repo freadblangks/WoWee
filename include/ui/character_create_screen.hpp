@@ -6,21 +6,27 @@
 #include <string>
 #include <functional>
 #include <vector>
+#include <memory>
 
 namespace wowee {
 namespace game { class GameHandler; }
+namespace pipeline { class AssetManager; }
+namespace rendering { class CharacterPreview; }
 
 namespace ui {
 
 class CharacterCreateScreen {
 public:
     CharacterCreateScreen();
+    ~CharacterCreateScreen();
 
     void render(game::GameHandler& gameHandler);
+    void update(float deltaTime);
     void setOnCreate(std::function<void(const game::CharCreateData&)> cb) { onCreate = std::move(cb); }
     void setOnCancel(std::function<void()> cb) { onCancel = std::move(cb); }
     void setStatus(const std::string& msg, bool isError = false);
     void reset();
+    void initializePreview(pipeline::AssetManager* am);
 
 private:
     char nameBuffer[13] = {};  // WoW max name = 12 chars + null
@@ -36,6 +42,20 @@ private:
 
     std::function<void(const game::CharCreateData&)> onCreate;
     std::function<void()> onCancel;
+
+    // 3D model preview
+    std::unique_ptr<rendering::CharacterPreview> preview_;
+    int prevRaceIndex_ = -1;
+    int prevGenderIndex_ = -1;
+    int prevSkin_ = -1;
+    int prevFace_ = -1;
+    int prevHairStyle_ = -1;
+    int prevHairColor_ = -1;
+    int prevFacialHair_ = -1;
+    bool draggingPreview_ = false;
+    float dragStartX_ = 0.0f;
+
+    void updatePreviewIfNeeded();
 };
 
 } // namespace ui

@@ -1,4 +1,5 @@
 #include "ui/character_create_screen.hpp"
+#include "rendering/character_preview.hpp"
 #include "game/game_handler.hpp"
 #include <imgui.h>
 #include <cstring>
@@ -28,6 +29,8 @@ CharacterCreateScreen::CharacterCreateScreen() {
     reset();
 }
 
+CharacterCreateScreen::~CharacterCreateScreen() = default;
+
 void CharacterCreateScreen::reset() {
     std::memset(nameBuffer, 0, sizeof(nameBuffer));
     raceIndex = 0;
@@ -41,6 +44,30 @@ void CharacterCreateScreen::reset() {
     statusMessage.clear();
     statusIsError = false;
     updateAvailableClasses();
+
+    // Reset preview tracking to force model reload on next render
+    prevRaceIndex_ = -1;
+    prevGenderIndex_ = -1;
+    prevSkin_ = -1;
+    prevFace_ = -1;
+    prevHairStyle_ = -1;
+    prevHairColor_ = -1;
+    prevFacialHair_ = -1;
+}
+
+void CharacterCreateScreen::initializePreview(pipeline::AssetManager* am) {
+    if (!preview_) {
+        preview_ = std::make_unique<rendering::CharacterPreview>();
+        preview_->initialize(am);
+    }
+    // Force model reload
+    prevRaceIndex_ = -1;
+}
+
+void CharacterCreateScreen::update(float deltaTime) {
+    if (preview_) {
+        preview_->update(deltaTime);
+    }
 }
 
 void CharacterCreateScreen::setStatus(const std::string& msg, bool isError) {
@@ -62,23 +89,98 @@ void CharacterCreateScreen::updateAvailableClasses() {
     }
 }
 
+void CharacterCreateScreen::updatePreviewIfNeeded() {
+    if (!preview_) return;
+
+    bool changed = (raceIndex != prevRaceIndex_ ||
+                    genderIndex != prevGenderIndex_ ||
+                    skin != prevSkin_ ||
+                    face != prevFace_ ||
+                    hairStyle != prevHairStyle_ ||
+                    hairColor != prevHairColor_ ||
+                    facialHair != prevFacialHair_);
+
+    if (changed) {
+        preview_->loadCharacter(
+            allRaces[raceIndex],
+            static_cast<game::Gender>(genderIndex),
+            static_cast<uint8_t>(skin),
+            static_cast<uint8_t>(face),
+            static_cast<uint8_t>(hairStyle),
+            static_cast<uint8_t>(hairColor),
+            static_cast<uint8_t>(facialHair));
+
+        prevRaceIndex_ = raceIndex;
+        prevGenderIndex_ = genderIndex;
+        prevSkin_ = skin;
+        prevFace_ = face;
+        prevHairStyle_ = hairStyle;
+        prevHairColor_ = hairColor;
+        prevFacialHair_ = facialHair;
+    }
+}
+
 void CharacterCreateScreen::render(game::GameHandler& /*gameHandler*/) {
+    // Render the preview to FBO before the ImGui frame
+    if (preview_) {
+        updatePreviewIfNeeded();
+        preview_->render();
+    }
+
     ImVec2 displaySize = ImGui::GetIO().DisplaySize;
-    ImVec2 winSize(600, 520);
-    ImGui::SetNextWindowSize(winSize, ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowPos(ImVec2((displaySize.x - winSize.x) * 0.5f,
-                                    (displaySize.y - winSize.y) * 0.5f),
-                            ImGuiCond_FirstUseEver);
+    bool hasPreview = (preview_ && preview_->getTextureId() != 0);
+    float previewWidth = hasPreview ? 320.0f : 0.0f;
+    float controlsWidth = 540.0f;
+    float totalWidth = hasPreview ? (previewWidth + controlsWidth + 16.0f) : 600.0f;
+    float totalHeight = 580.0f;
 
-    ImGui::Begin("Create Character", nullptr, ImGuiWindowFlags_NoCollapse);
+    ImGui::SetNextWindowSize(ImVec2(totalWidth, totalHeight), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImVec2((displaySize.x - totalWidth) * 0.5f,
+                                    (displaySize.y - totalHeight) * 0.5f),
+                            ImGuiCond_Always);
 
-    ImGui::Text("Create Character");
-    ImGui::Separator();
-    ImGui::Spacing();
+    ImGui::Begin("Create Character", nullptr,
+        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize);
+
+    if (hasPreview) {
+        // Left panel: 3D preview
+        ImGui::BeginChild("##preview_panel", ImVec2(previewWidth, -40.0f), false);
+        {
+            // Display the FBO texture (flip Y for OpenGL)
+            float imgW = previewWidth - 8.0f;
+            float imgH = imgW * (static_cast<float>(preview_->getHeight()) /
+                                  static_cast<float>(preview_->getWidth()));
+            if (imgH > totalHeight - 80.0f) {
+                imgH = totalHeight - 80.0f;
+                imgW = imgH * (static_cast<float>(preview_->getWidth()) /
+                               static_cast<float>(preview_->getHeight()));
+            }
+
+            ImGui::Image(
+                static_cast<ImTextureID>(preview_->getTextureId()),
+                ImVec2(imgW, imgH),
+                ImVec2(0.0f, 1.0f),  // UV top-left (flipped Y)
+                ImVec2(1.0f, 0.0f)); // UV bottom-right (flipped Y)
+
+            // Mouse drag rotation on the preview image
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+                float deltaX = ImGui::GetIO().MouseDelta.x;
+                preview_->rotate(deltaX * 0.5f);
+            }
+
+            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Drag to rotate");
+        }
+        ImGui::EndChild();
+
+        ImGui::SameLine();
+
+        // Right panel: controls
+        ImGui::BeginChild("##controls_panel", ImVec2(0, -40.0f), false);
+    }
 
     // Name input
     ImGui::Text("Name:");
-    ImGui::SameLine(100);
+    ImGui::SameLine(80);
     ImGui::SetNextItemWidth(200);
     ImGui::InputText("##name", nameBuffer, sizeof(nameBuffer));
 
@@ -86,8 +188,8 @@ void CharacterCreateScreen::render(game::GameHandler& /*gameHandler*/) {
 
     // Race selection
     ImGui::Text("Race:");
-    ImGui::SameLine(100);
-    ImGui::BeginGroup();
+    ImGui::Spacing();
+    ImGui::Indent(10.0f);
     ImGui::TextColored(ImVec4(0.3f, 0.5f, 1.0f, 1.0f), "Alliance:");
     ImGui::SameLine();
     for (int i = 0; i < ALLIANCE_COUNT; ++i) {
@@ -120,13 +222,13 @@ void CharacterCreateScreen::render(game::GameHandler& /*gameHandler*/) {
         }
         if (selected) ImGui::PopStyleColor();
     }
-    ImGui::EndGroup();
+    ImGui::Unindent(10.0f);
 
     ImGui::Spacing();
 
     // Class selection
     ImGui::Text("Class:");
-    ImGui::SameLine(100);
+    ImGui::SameLine(80);
     if (!availableClasses.empty()) {
         ImGui::BeginGroup();
         for (int i = 0; i < static_cast<int>(availableClasses.size()); ++i) {
@@ -145,7 +247,7 @@ void CharacterCreateScreen::render(game::GameHandler& /*gameHandler*/) {
 
     // Gender
     ImGui::Text("Gender:");
-    ImGui::SameLine(100);
+    ImGui::SameLine(80);
     ImGui::RadioButton("Male", &genderIndex, 0);
     ImGui::SameLine();
     ImGui::RadioButton("Female", &genderIndex, 1);
@@ -161,10 +263,13 @@ void CharacterCreateScreen::render(game::GameHandler& /*gameHandler*/) {
     ImGui::Text("Appearance");
     ImGui::Spacing();
 
-    auto slider = [](const char* label, int* val, int maxVal) {
+    float sliderWidth = hasPreview ? 180.0f : 200.0f;
+    float labelCol = hasPreview ? 100.0f : 120.0f;
+
+    auto slider = [&](const char* label, int* val, int maxVal) {
         ImGui::Text("%s", label);
-        ImGui::SameLine(120);
-        ImGui::SetNextItemWidth(200);
+        ImGui::SameLine(labelCol);
+        ImGui::SetNextItemWidth(sliderWidth);
         char id[32];
         snprintf(id, sizeof(id), "##%s", label);
         ImGui::SliderInt(id, val, 0, maxVal);
@@ -177,17 +282,23 @@ void CharacterCreateScreen::render(game::GameHandler& /*gameHandler*/) {
     slider("Facial Feature", &facialHair, game::getMaxFacialFeature(currentRace, currentGender));
 
     ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
 
     // Status message
     if (!statusMessage.empty()) {
+        ImGui::Separator();
+        ImGui::Spacing();
         ImVec4 color = statusIsError ? ImVec4(1.0f, 0.3f, 0.3f, 1.0f) : ImVec4(0.3f, 1.0f, 0.3f, 1.0f);
         ImGui::TextColored(color, "%s", statusMessage.c_str());
-        ImGui::Spacing();
     }
 
-    // Buttons
+    if (hasPreview) {
+        ImGui::EndChild(); // controls_panel
+    }
+
+    // Bottom buttons (outside children)
+    ImGui::Separator();
+    ImGui::Spacing();
+
     if (ImGui::Button("Create", ImVec2(150, 35))) {
         std::string name(nameBuffer);
         if (name.empty()) {

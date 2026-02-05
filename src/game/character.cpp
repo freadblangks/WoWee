@@ -92,5 +92,52 @@ const char* getGenderName(Gender gender) {
     }
 }
 
+std::string getPlayerModelPath(Race race, Gender gender) {
+    switch (race) {
+        case Race::HUMAN:
+            return gender == Gender::FEMALE
+                ? "Character\\Human\\Female\\HumanFemale.m2"
+                : "Character\\Human\\Male\\HumanMale.m2";
+        case Race::ORC:
+            return gender == Gender::FEMALE
+                ? "Character\\Orc\\Female\\OrcFemale.m2"
+                : "Character\\Orc\\Male\\OrcMale.m2";
+        case Race::DWARF:
+            return gender == Gender::FEMALE
+                ? "Character\\Dwarf\\Female\\DwarfFemale.m2"
+                : "Character\\Dwarf\\Male\\DwarfMale.m2";
+        case Race::NIGHT_ELF:
+            return gender == Gender::FEMALE
+                ? "Character\\NightElf\\Female\\NightElfFemale.m2"
+                : "Character\\NightElf\\Male\\NightElfMale.m2";
+        case Race::UNDEAD:
+            return gender == Gender::FEMALE
+                ? "Character\\Scourge\\Female\\ScourgeFemale.m2"
+                : "Character\\Scourge\\Male\\ScourgeMale.m2";
+        case Race::TAUREN:
+            return gender == Gender::FEMALE
+                ? "Character\\Tauren\\Female\\TaurenFemale.m2"
+                : "Character\\Tauren\\Male\\TaurenMale.m2";
+        case Race::GNOME:
+            return gender == Gender::FEMALE
+                ? "Character\\Gnome\\Female\\GnomeFemale.m2"
+                : "Character\\Gnome\\Male\\GnomeMale.m2";
+        case Race::TROLL:
+            return gender == Gender::FEMALE
+                ? "Character\\Troll\\Female\\TrollFemale.m2"
+                : "Character\\Troll\\Male\\TrollMale.m2";
+        case Race::BLOOD_ELF:
+            return gender == Gender::FEMALE
+                ? "Character\\BloodElf\\Female\\BloodElfFemale.m2"
+                : "Character\\BloodElf\\Male\\BloodElfMale.m2";
+        case Race::DRAENEI:
+            return gender == Gender::FEMALE
+                ? "Character\\Draenei\\Female\\DraeneiFemale.m2"
+                : "Character\\Draenei\\Male\\DraeneiMale.m2";
+        default:
+            return "Character\\Human\\Male\\HumanMale.m2";
+    }
+}
+
 } // namespace game
 } // namespace wowee

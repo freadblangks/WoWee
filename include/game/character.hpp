@@ -133,5 +133,10 @@ const char* getClassName(Class characterClass);
  */
 const char* getGenderName(Gender gender);
 
+/**
+ * Get M2 model path for a given race and gender
+ */
+std::string getPlayerModelPath(Race race, Gender gender);
+
 } // namespace game
 } // namespace wowee

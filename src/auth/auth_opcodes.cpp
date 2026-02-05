@@ -1,13 +1,16 @@
 #include "auth/auth_opcodes.hpp"
+#include <cstdio>
 
 namespace wowee {
 namespace auth {
 
+static char authResultBuf[256];
+
 const char* getAuthResultString(AuthResult result) {
     switch (result) {
         case AuthResult::SUCCESS: return "Success";
-        case AuthResult::UNKNOWN0: return "Unknown error (0x01)";
-        case AuthResult::UNKNOWN1: return "Unknown error (0x02)";
+        case AuthResult::UNKNOWN0: return "Unknown server error (code 0x01)";
+        case AuthResult::UNKNOWN1: return "Unknown server error (code 0x02)";
         case AuthResult::ACCOUNT_BANNED: return "This account has been banned";
         case AuthResult::ACCOUNT_INVALID: return "Account not found - check your username";
         case AuthResult::PASSWORD_INVALID: return "Incorrect password";
@@ -28,7 +31,11 @@ const char* getAuthResultString(AuthResult result) {
         case AuthResult::LOCK_ENFORCED: return "Account locked - check your email";
         case AuthResult::TRIAL_EXPIRED: return "Trial period has expired";
         case AuthResult::BATTLE_NET: return "Battle.net error";
-        default: return "Unknown error";
+        default:
+            snprintf(authResultBuf, sizeof(authResultBuf),
+                     "Server rejected login (error code 0x%02X)",
+                     static_cast<unsigned>(result));
+            return authResultBuf;
     }
 }
 

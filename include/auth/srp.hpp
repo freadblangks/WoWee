@@ -18,6 +18,9 @@ public:
     // Initialize with username and password
     void initialize(const std::string& username, const std::string& password);
 
+    // Initialize with username and pre-computed auth hash (SHA1(UPPER(user):UPPER(pass)))
+    void initializeWithHash(const std::string& username, const std::vector<uint8_t>& authHash);
+
     // Feed server challenge data (B, g, N, salt)
     void feed(const std::vector<uint8_t>& B,
               const std::vector<uint8_t>& g,
@@ -67,6 +70,7 @@ private:
     // Stored credentials
     std::string stored_username;
     std::string stored_password;
+    std::vector<uint8_t> stored_auth_hash;  // Pre-computed SHA1(UPPER(user):UPPER(pass))
 
     bool initialized = false;
 };

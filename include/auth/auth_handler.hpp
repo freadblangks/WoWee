@@ -43,6 +43,7 @@ public:
 
     // Authentication
     void authenticate(const std::string& username, const std::string& password);
+    void authenticateWithHash(const std::string& username, const std::vector<uint8_t>& authHash);
 
     // Realm list
     void requestRealmList();

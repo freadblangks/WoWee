@@ -93,6 +93,32 @@ void AuthHandler::authenticate(const std::string& user, const std::string& pass)
     sendLogonChallenge();
 }
 
+void AuthHandler::authenticateWithHash(const std::string& user, const std::vector<uint8_t>& authHash) {
+    if (!isConnected()) {
+        LOG_ERROR("Cannot authenticate: not connected to auth server");
+        fail("Not connected");
+        return;
+    }
+
+    if (state != AuthState::CONNECTED) {
+        LOG_ERROR("Cannot authenticate: invalid state");
+        fail("Invalid state");
+        return;
+    }
+
+    LOG_INFO("Starting authentication for user (with hash): ", user);
+
+    username = user;
+    password.clear();
+
+    // Initialize SRP with pre-computed hash
+    srp = std::make_unique<SRP>();
+    srp->initializeWithHash(username, authHash);
+
+    // Send LOGON_CHALLENGE
+    sendLogonChallenge();
+}
+
 void AuthHandler::sendLogonChallenge() {
     LOG_DEBUG("Sending LOGON_CHALLENGE");
 

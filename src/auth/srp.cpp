@@ -19,9 +19,21 @@ void SRP::initialize(const std::string& username, const std::string& password) {
     // Store credentials for later use
     stored_username = username;
     stored_password = password;
+    stored_auth_hash.clear();
 
     initialized = true;
     LOG_DEBUG("SRP initialized");
+}
+
+void SRP::initializeWithHash(const std::string& username, const std::vector<uint8_t>& authHash) {
+    LOG_DEBUG("Initializing SRP with username and pre-computed hash: ", username);
+
+    stored_username = username;
+    stored_password.clear();
+    stored_auth_hash = authHash;
+
+    initialized = true;
+    LOG_DEBUG("SRP initialized with hash");
 }
 
 void SRP::feed(const std::vector<uint8_t>& B_bytes,
@@ -50,8 +62,10 @@ void SRP::feed(const std::vector<uint8_t>& B_bytes,
 
     // Now compute everything in sequence
 
-    // 1. Compute auth hash: H(I:P)
-    std::vector<uint8_t> auth_hash = computeAuthHash(stored_username, stored_password);
+    // 1. Compute auth hash: H(I:P) — use stored hash if available
+    std::vector<uint8_t> auth_hash = stored_auth_hash.empty()
+        ? computeAuthHash(stored_username, stored_password)
+        : stored_auth_hash;
 
     // 2. Compute x = H(s | H(I:P))
     std::vector<uint8_t> x_input;

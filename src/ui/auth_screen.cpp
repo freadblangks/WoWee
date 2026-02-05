@@ -1,12 +1,32 @@
 #include "ui/auth_screen.hpp"
+#include "auth/crypto.hpp"
 #include "core/logger.hpp"
 #include <imgui.h>
 #include <sstream>
 #include <fstream>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
+#include <algorithm>
+#include <iomanip>
 
 namespace wowee { namespace ui {
+
+static std::string hexEncode(const std::vector<uint8_t>& data) {
+    std::ostringstream ss;
+    for (uint8_t b : data)
+        ss << std::hex << std::setfill('0') << std::setw(2) << (int)b;
+    return ss.str();
+}
+
+static std::vector<uint8_t> hexDecode(const std::string& hex) {
+    std::vector<uint8_t> bytes;
+    for (size_t i = 0; i + 1 < hex.size(); i += 2) {
+        uint8_t b = static_cast<uint8_t>(std::stoul(hex.substr(i, 2), nullptr, 16));
+        bytes.push_back(b);
+    }
+    return bytes;
+}
 
 AuthScreen::AuthScreen() {
 }
@@ -79,6 +99,18 @@ void AuthScreen::render(auth::AuthHandler& authHandler) {
             setStatus("Authentication successful!", false);
             authenticating = false;
 
+            // Compute and save password hash if user typed a fresh password
+            if (!usingStoredHash) {
+                std::string upperUser = username;
+                std::string upperPass = password;
+                std::transform(upperUser.begin(), upperUser.end(), upperUser.begin(), ::toupper);
+                std::transform(upperPass.begin(), upperPass.end(), upperPass.begin(), ::toupper);
+                std::string combined = upperUser + ":" + upperPass;
+                auto hash = auth::Crypto::sha1(combined);
+                savedPasswordHash = hexEncode(hash);
+            }
+            saveLoginInfo();
+
             // Call success callback
             if (onSuccess) {
                 onSuccess();
@@ -139,7 +171,10 @@ void AuthScreen::attemptAuth(auth::AuthHandler& authHandler) {
         return;
     }
 
-    if (strlen(password) == 0) {
+    // Check if using stored hash (password field contains placeholder)
+    bool useHash = usingStoredHash && std::strcmp(password, PASSWORD_PLACEHOLDER) == 0;
+
+    if (!useHash && strlen(password) == 0) {
         setStatus("Password cannot be empty", true);
         return;
     }
@@ -169,7 +204,13 @@ void AuthScreen::attemptAuth(auth::AuthHandler& authHandler) {
         saveLoginInfo();
 
         // Send authentication credentials
-        authHandler.authenticate(username, password);
+        if (useHash) {
+            auto hashBytes = hexDecode(savedPasswordHash);
+            authHandler.authenticateWithHash(username, hashBytes);
+        } else {
+            usingStoredHash = false;
+            authHandler.authenticate(username, password);
+        }
     } else {
         std::stringstream errSs;
         errSs << "Failed to connect to " << hostname << ":" << port
@@ -210,6 +251,9 @@ void AuthScreen::saveLoginInfo() {
     out << "hostname=" << hostname << "\n";
     out << "port=" << port << "\n";
     out << "username=" << username << "\n";
+    if (!savedPasswordHash.empty()) {
+        out << "password_hash=" << savedPasswordHash << "\n";
+    }
 
     LOG_INFO("Login info saved to ", path);
 }
@@ -234,7 +278,16 @@ void AuthScreen::loadLoginInfo() {
         } else if (key == "username" && !val.empty()) {
             strncpy(username, val.c_str(), sizeof(username) - 1);
             username[sizeof(username) - 1] = '\0';
+        } else if (key == "password_hash" && !val.empty()) {
+            savedPasswordHash = val;
         }
+    }
+
+    // If we have a saved hash, fill password with placeholder
+    if (!savedPasswordHash.empty()) {
+        strncpy(password, PASSWORD_PLACEHOLDER, sizeof(password) - 1);
+        password[sizeof(password) - 1] = '\0';
+        usingStoredHash = true;
     }
 
     LOG_INFO("Login info loaded from ", path);

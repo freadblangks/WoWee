@@ -57,6 +57,11 @@ private:
     float authTimer = 0.0f;       // Timeout tracker
     static constexpr float AUTH_TIMEOUT = 10.0f;
 
+    // Saved password hash (SHA1(UPPER(user):UPPER(pass)) as hex)
+    std::string savedPasswordHash;
+    bool usingStoredHash = false;
+    static constexpr const char* PASSWORD_PLACEHOLDER = "\x01\x01\x01\x01\x01\x01\x01\x01";
+
     // Callbacks
     std::function<void()> onSuccess;
     std::function<void()> onSinglePlayer;

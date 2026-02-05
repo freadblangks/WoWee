@@ -1165,33 +1165,41 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
         glm::vec3 toCam = instance.position - camPos;
         float distSq = glm::dot(toCam, toCam);
         float worldRadius = model.boundRadius * instance.scale;
-        // Cull small objects (radius < 20) at distance, keep larger objects visible longer
-        float effectiveMaxDistSq = maxRenderDistanceSq * std::max(1.0f, worldRadius / 12.0f);
+        float cullRadius = worldRadius;
         if (model.disableAnimation) {
-            // Trees/foliage keep a larger horizon before culling.
-            effectiveMaxDistSq *= 1.8f;
+            // Many bushes/foliage M2s have conservative tiny bounds; pad to reduce pop-in.
+            cullRadius = std::max(cullRadius, 3.0f);
         }
-        if (worldRadius < 0.8f) {
-            effectiveMaxDistSq = std::min(effectiveMaxDistSq, 95.0f * 95.0f);
-        } else if (worldRadius < 1.5f) {
-            effectiveMaxDistSq = std::min(effectiveMaxDistSq, 140.0f * 140.0f);
+        // Cull small objects (radius < 20) at distance, keep larger objects visible longer
+        float effectiveMaxDistSq = maxRenderDistanceSq * std::max(1.0f, cullRadius / 12.0f);
+        if (model.disableAnimation) {
+            // Trees/foliage keep a much larger horizon before culling.
+            effectiveMaxDistSq *= 2.6f;
+        }
+        if (!model.disableAnimation) {
+            if (worldRadius < 0.8f) {
+                effectiveMaxDistSq = std::min(effectiveMaxDistSq, 95.0f * 95.0f);
+            } else if (worldRadius < 1.5f) {
+                effectiveMaxDistSq = std::min(effectiveMaxDistSq, 140.0f * 140.0f);
+            }
         }
         if (distSq > effectiveMaxDistSq) {
             continue;
         }
 
         // Frustum cull: test bounding sphere in world space
-        if (worldRadius > 0.0f && !frustum.intersectsSphere(instance.position, worldRadius)) {
+        if (cullRadius > 0.0f && !frustum.intersectsSphere(instance.position, cullRadius)) {
             continue;
         }
 
         // Distance-based fade alpha for smooth pop-in
         float fadeAlpha = 1.0f;
-        float fadeStartDistSq = effectiveMaxDistSq * fadeStartFraction * fadeStartFraction;
+        float fadeFrac = model.disableAnimation ? 0.55f : fadeStartFraction;
+        float fadeStartDistSq = effectiveMaxDistSq * fadeFrac * fadeFrac;
         if (distSq > fadeStartDistSq) {
             float dist = std::sqrt(distSq);
             float effectiveMaxDist = std::sqrt(effectiveMaxDistSq);
-            float fadeStartDist = effectiveMaxDist * fadeStartFraction;
+            float fadeStartDist = effectiveMaxDist * fadeFrac;
             fadeAlpha = std::clamp((effectiveMaxDist - dist) / (effectiveMaxDist - fadeStartDist), 0.0f, 1.0f);
         }
 

@@ -328,7 +328,9 @@ void Application::update(float deltaTime) {
             break;
 
         case AppState::REALM_SELECTION:
-            // Realm selection update
+            if (authHandler) {
+                authHandler->update(deltaTime);
+            }
             break;
 
         case AppState::CHARACTER_SELECTION:

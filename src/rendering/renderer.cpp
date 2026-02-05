@@ -1524,11 +1524,24 @@ uint32_t Renderer::compileShadowShader() {
         uniform mat4 uLightSpaceMatrix;
         uniform mat4 uModel;
         layout(location = 0) in vec3 aPos;
-        layout(location = 4) in vec2 aTexCoord;
+        layout(location = 2) in vec2 aTexCoord;
+        layout(location = 3) in vec4 aBoneWeights;
+        layout(location = 4) in vec4 aBoneIndicesF;
+        uniform bool uUseBones;
+        uniform mat4 uBones[200];
         out vec2 vTexCoord;
         void main() {
+            vec3 pos = aPos;
+            if (uUseBones) {
+                ivec4 bi = ivec4(aBoneIndicesF);
+                mat4 boneTransform = uBones[bi.x] * aBoneWeights.x
+                                   + uBones[bi.y] * aBoneWeights.y
+                                   + uBones[bi.z] * aBoneWeights.z
+                                   + uBones[bi.w] * aBoneWeights.w;
+                pos = vec3(boneTransform * vec4(aPos, 1.0));
+            }
             vTexCoord = aTexCoord;
-            gl_Position = uLightSpaceMatrix * uModel * vec4(aPos, 1.0);
+            gl_Position = uLightSpaceMatrix * uModel * vec4(pos, 1.0);
         }
     )";
     const char* fragSrc = R"(
@@ -1690,9 +1703,11 @@ void Renderer::renderShadowPass() {
     GLint texLoc = glGetUniformLocation(shadowShaderProgram, "uTexture");
     GLint alphaTestLoc = glGetUniformLocation(shadowShaderProgram, "uAlphaTest");
     GLint opacityLoc = glGetUniformLocation(shadowShaderProgram, "uShadowOpacity");
+    GLint useBonesLoc = glGetUniformLocation(shadowShaderProgram, "uUseBones");
     if (useTexLoc >= 0) glUniform1i(useTexLoc, 0);
     if (alphaTestLoc >= 0) glUniform1i(alphaTestLoc, 0);
     if (opacityLoc >= 0) glUniform1f(opacityLoc, 1.0f);
+    if (useBonesLoc >= 0) glUniform1i(useBonesLoc, 0);
     if (texLoc >= 0) glUniform1i(texLoc, 0);
 
     // Render terrain into shadow map
@@ -1730,6 +1745,11 @@ void Renderer::renderShadowPass() {
     // Render M2 doodads into shadow map
     if (m2Renderer) {
         m2Renderer->renderShadow(shadowShaderProgram);
+    }
+
+    // Render characters into shadow map
+    if (characterRenderer) {
+        characterRenderer->renderShadow(shadowShaderProgram);
     }
 
     // Restore state

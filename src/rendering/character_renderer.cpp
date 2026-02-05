@@ -1151,6 +1151,86 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
     glEnable(GL_CULL_FACE);  // Restore culling for other renderers
 }
 
+void CharacterRenderer::renderShadow(GLuint shadowShaderProgram) {
+    if (instances.empty() || shadowShaderProgram == 0) {
+        return;
+    }
+
+    GLint modelLoc = glGetUniformLocation(shadowShaderProgram, "uModel");
+    GLint useTexLoc = glGetUniformLocation(shadowShaderProgram, "uUseTexture");
+    GLint texLoc = glGetUniformLocation(shadowShaderProgram, "uTexture");
+    GLint alphaTestLoc = glGetUniformLocation(shadowShaderProgram, "uAlphaTest");
+    GLint opacityLoc = glGetUniformLocation(shadowShaderProgram, "uShadowOpacity");
+    GLint useBonesLoc = glGetUniformLocation(shadowShaderProgram, "uUseBones");
+    if (modelLoc < 0) {
+        return;
+    }
+
+    if (useTexLoc >= 0) glUniform1i(useTexLoc, 0);
+    if (alphaTestLoc >= 0) glUniform1i(alphaTestLoc, 0);
+    if (opacityLoc >= 0) glUniform1f(opacityLoc, 1.0f);
+    if (useBonesLoc >= 0) glUniform1i(useBonesLoc, 0);
+    if (texLoc >= 0) glUniform1i(texLoc, 0);
+    glActiveTexture(GL_TEXTURE0);
+
+    for (const auto& [_, instance] : instances) {
+        auto modelIt = models.find(instance.modelId);
+        if (modelIt == models.end()) continue;
+        const auto& gpuModel = modelIt->second;
+
+        glm::mat4 modelMat = instance.hasOverrideModelMatrix
+            ? instance.overrideModelMatrix
+            : getModelMatrix(instance);
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, &modelMat[0][0]);
+
+        bool useBones = !instance.boneMatrices.empty();
+        if (useBonesLoc >= 0) glUniform1i(useBonesLoc, useBones ? 1 : 0);
+        if (useBones) {
+            int numBones = std::min(static_cast<int>(instance.boneMatrices.size()), MAX_BONES);
+            GLint bonesLoc = glGetUniformLocation(shadowShaderProgram, "uBones[0]");
+            if (bonesLoc >= 0) {
+                glUniformMatrix4fv(bonesLoc, numBones, GL_FALSE, &instance.boneMatrices[0][0][0]);
+            }
+        }
+
+        glBindVertexArray(gpuModel.vao);
+
+        if (!gpuModel.data.batches.empty()) {
+            for (const auto& batch : gpuModel.data.batches) {
+                GLuint texId = whiteTexture;
+                if (batch.textureIndex < gpuModel.data.textureLookup.size()) {
+                    uint16_t lookupIdx = gpuModel.data.textureLookup[batch.textureIndex];
+                    if (lookupIdx < gpuModel.textureIds.size()) {
+                        texId = gpuModel.textureIds[lookupIdx];
+                    }
+                }
+
+                bool useTexture = (texId != 0 && texId != whiteTexture);
+                if (useTexLoc >= 0) glUniform1i(useTexLoc, useTexture ? 1 : 0);
+                if (alphaTestLoc >= 0) glUniform1i(alphaTestLoc, useTexture ? 1 : 0);
+                if (opacityLoc >= 0) glUniform1f(opacityLoc, 1.0f);
+                if (useTexture) {
+                    glBindTexture(GL_TEXTURE_2D, texId);
+                }
+
+                glDrawElements(GL_TRIANGLES,
+                               batch.indexCount,
+                               GL_UNSIGNED_SHORT,
+                               (void*)(batch.indexStart * sizeof(uint16_t)));
+            }
+        } else {
+            if (useTexLoc >= 0) glUniform1i(useTexLoc, 0);
+            if (alphaTestLoc >= 0) glUniform1i(alphaTestLoc, 0);
+            glDrawElements(GL_TRIANGLES,
+                           static_cast<GLsizei>(gpuModel.data.indices.size()),
+                           GL_UNSIGNED_SHORT,
+                           0);
+        }
+    }
+
+    glBindVertexArray(0);
+}
+
 glm::mat4 CharacterRenderer::getModelMatrix(const CharacterInstance& instance) const {
     glm::mat4 model = glm::mat4(1.0f);
 

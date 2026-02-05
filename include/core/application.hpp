@@ -58,6 +58,7 @@ public:
     // Single-player mode
     void startSinglePlayer();
     bool isSinglePlayer() const { return singlePlayerMode; }
+    void logoutToLogin();
 
     // Weapon loading (called at spawn and on equipment change)
     void loadEquippedWeapons();

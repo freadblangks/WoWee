@@ -650,6 +650,12 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
             // Convert to lowercase
             for (char& c : command) c = std::tolower(c);
 
+            if (command == "logout") {
+                core::Application::getInstance().logoutToLogin();
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
             std::string emoteText = rendering::Renderer::getEmoteText(command);
             if (!emoteText.empty()) {
                 // Play the emote animation

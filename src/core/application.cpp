@@ -19,6 +19,7 @@
 #include "rendering/wmo_renderer.hpp"
 #include "rendering/minimap.hpp"
 #include "rendering/loading_screen.hpp"
+#include "audio/music_manager.hpp"
 #include <imgui.h>
 #include "pipeline/m2_loader.hpp"
 #include "pipeline/wmo_loader.hpp"
@@ -344,6 +345,23 @@ void Application::setState(AppState newState) {
             // Back to auth
             break;
     }
+}
+
+void Application::logoutToLogin() {
+    LOG_INFO("Logout requested");
+    if (gameHandler) {
+        gameHandler->disconnect();
+        gameHandler->setSinglePlayerMode(false);
+    }
+    singlePlayerMode = false;
+    npcsSpawned = false;
+    world.reset();
+    if (renderer) {
+        if (auto* music = renderer->getMusicManager()) {
+            music->stopMusic(0.0f);
+        }
+    }
+    setState(AppState::AUTHENTICATION);
 }
 
 void Application::update(float deltaTime) {

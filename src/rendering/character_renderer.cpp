@@ -1272,17 +1272,33 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
                     }
                 }
 
-                // For body parts with white/fallback texture, use first valid texture
+                // For body parts with white/fallback texture, use skin (type 1) texture
                 // This handles humanoid models where some body parts use different texture slots
                 // that may not be set (e.g., baked NPC textures only set slot 0)
+                // Only apply to body skin slots (type 1), NOT hair (type 6) or other types
                 if (texId == whiteTexture) {
                     uint16_t group = batch.submeshId / 100;
                     if (group == 0) {
-                        // Find first non-white texture in the model
-                        for (GLuint tid : gpuModel.textureIds) {
-                            if (tid != whiteTexture && tid != 0) {
-                                texId = tid;
-                                break;
+                        // Check if this batch's texture slot is a body skin type
+                        uint32_t texType = 0;
+                        if (batch.textureIndex < gpuModel.data.textureLookup.size()) {
+                            uint16_t lk = gpuModel.data.textureLookup[batch.textureIndex];
+                            if (lk < gpuModel.data.textures.size()) {
+                                texType = gpuModel.data.textures[lk].type;
+                            }
+                        }
+                        // Only fall back for body skin (type 1), underwear (type 8), or cloak (type 2)
+                        // Do NOT apply skin composite to hair (type 6) batches
+                        if (texType != 6) {
+                            for (size_t ti = 0; ti < gpuModel.textureIds.size(); ti++) {
+                                if (gpuModel.textureIds[ti] != whiteTexture && gpuModel.textureIds[ti] != 0) {
+                                    // Only use type 1 (skin) textures as fallback
+                                    if (ti < gpuModel.data.textures.size() &&
+                                        (gpuModel.data.textures[ti].type == 1 || gpuModel.data.textures[ti].type == 11)) {
+                                        texId = gpuModel.textureIds[ti];
+                                        break;
+                                    }
+                                }
                             }
                         }
                     }

@@ -834,11 +834,38 @@ void Application::spawnPlayerCharacter() {
                         LOG_WARNING("Failed to load CharSections.dbc, using hardcoded textures");
                     }
 
+                    // Look up hair texture from CharSections.dbc section 3
+                    std::string hairTexturePath;
+                    if (gameHandler) {
+                        const game::Character* activeChar = gameHandler->getActiveCharacter();
+                        if (activeChar) {
+                            uint8_t hairStyleId = (activeChar->appearanceBytes >> 16) & 0xFF;
+                            uint8_t hairColorId = (activeChar->appearanceBytes >> 24) & 0xFF;
+                            for (uint32_t r = 0; r < charSectionsDbc->getRecordCount(); r++) {
+                                uint32_t raceId = charSectionsDbc->getUInt32(r, 1);
+                                uint32_t sexId = charSectionsDbc->getUInt32(r, 2);
+                                uint32_t section = charSectionsDbc->getUInt32(r, 3);
+                                uint32_t variation = charSectionsDbc->getUInt32(r, 8);
+                                uint32_t colorIdx = charSectionsDbc->getUInt32(r, 9);
+                                if (raceId != targetRaceId || sexId != targetSexId) continue;
+                                if (section != 3) continue;
+                                if (variation != hairStyleId) continue;
+                                if (colorIdx != hairColorId) continue;
+                                hairTexturePath = charSectionsDbc->getString(r, 4);
+                                LOG_INFO("  DBC hair texture: ", hairTexturePath,
+                                         " (style=", (int)hairStyleId, " color=", (int)hairColorId, ")");
+                                break;
+                            }
+                        }
+                    }
+
                     for (auto& tex : model.textures) {
                         if (tex.type == 1 && tex.filename.empty()) {
                             tex.filename = bodySkinPath;
                         } else if (tex.type == 6 && tex.filename.empty()) {
-                            tex.filename = "Character\\Human\\Hair00_00.blp";
+                            tex.filename = hairTexturePath.empty()
+                                ? "Character\\Human\\Hair00_00.blp"
+                                : hairTexturePath;
                         } else if (tex.type == 8 && tex.filename.empty()) {
                             if (!underwearPaths.empty()) {
                                 tex.filename = underwearPaths[0];

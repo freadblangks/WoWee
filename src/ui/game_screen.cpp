@@ -1709,7 +1709,7 @@ void GameScreen::renderLootWindow(game::GameHandler& gameHandler) {
     auto* window = core::Application::getInstance().getWindow();
     float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
 
-    ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 150, 200), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 150, 200), ImGuiCond_Appearing);
     ImGui::SetNextWindowSize(ImVec2(300, 0), ImGuiCond_Always);
 
     bool open = true;
@@ -1760,7 +1760,7 @@ void GameScreen::renderGossipWindow(game::GameHandler& gameHandler) {
     auto* window = core::Application::getInstance().getWindow();
     float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
 
-    ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 200, 150), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 200, 150), ImGuiCond_Appearing);
     ImGui::SetNextWindowSize(ImVec2(400, 0), ImGuiCond_Always);
 
     bool open = true;
@@ -1909,8 +1909,8 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
     auto* window = core::Application::getInstance().getWindow();
     float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
 
-    ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 200, 100), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(450, 400), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 200, 100), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(ImVec2(450, 400), ImGuiCond_Appearing);
 
     bool open = true;
     if (ImGui::Begin("Vendor", &open)) {

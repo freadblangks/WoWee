@@ -714,16 +714,16 @@ bool UpdateObjectParser::parseMovementBlock(network::Packet& packet, UpdateBlock
 
         // Spline data
         if (moveFlags & 0x08000000) { // MOVEMENTFLAG_SPLINE_ENABLED
-            // Skip spline data for now - complex structure
             uint32_t splineFlags = packet.readUInt32();
+            LOG_DEBUG("  Spline: flags=0x", std::hex, splineFlags, std::dec);
 
-            if (splineFlags & 0x00010000) { // has final point
+            if (splineFlags & 0x00010000) { // SPLINEFLAG_FINAL_POINT
                 /*float finalX =*/ packet.readFloat();
                 /*float finalY =*/ packet.readFloat();
                 /*float finalZ =*/ packet.readFloat();
-            } else if (splineFlags & 0x00020000) { // has final target
+            } else if (splineFlags & 0x00020000) { // SPLINEFLAG_FINAL_TARGET
                 /*uint64_t finalTarget =*/ packet.readUInt64();
-            } else if (splineFlags & 0x00040000) { // has final angle
+            } else if (splineFlags & 0x00040000) { // SPLINEFLAG_FINAL_ANGLE
                 /*float finalAngle =*/ packet.readFloat();
             }
 
@@ -735,10 +735,16 @@ bool UpdateObjectParser::parseMovementBlock(network::Packet& packet, UpdateBlock
             /*float durationModNext =*/ packet.readFloat();
 
             /*float verticalAccel =*/ packet.readFloat();
-
             /*uint32_t effectStartTime =*/ packet.readUInt32();
 
             uint32_t pointCount = packet.readUInt32();
+            if (pointCount > 256) {
+                LOG_WARNING("  Spline pointCount=", pointCount, " exceeds maximum, capping at 0 (readPos=",
+                            packet.getReadPos(), "/", packet.getSize(), ")");
+                pointCount = 0;
+            } else {
+                LOG_DEBUG("  Spline pointCount=", pointCount);
+            }
             for (uint32_t i = 0; i < pointCount; i++) {
                 /*float px =*/ packet.readFloat();
                 /*float py =*/ packet.readFloat();

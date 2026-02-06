@@ -386,12 +386,6 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
             }
         }
 
-        if (input.isKeyJustPressed(SDL_SCANCODE_F4)) {
-            auto* renderer = core::Application::getInstance().getRenderer();
-            if (renderer) {
-                renderer->setShadowsEnabled(!renderer->areShadowsEnabled());
-            }
-        }
     }
 
     // Slash key: focus chat input
@@ -1853,9 +1847,12 @@ void GameScreen::renderSettingsWindow() {
                 renderer->setShadowsEnabled(pendingShadows);
             }
         }
-        if (ImGui::Button("Close", ImVec2(-1, 0))) {
+        ImGui::Spacing();
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f, 10.0f));
+        if (ImGui::Button("Back to Game", ImVec2(-1, 0))) {
             showSettingsWindow = false;
         }
+        ImGui::PopStyleVar();
     }
     ImGui::End();
 }

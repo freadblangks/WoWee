@@ -800,7 +800,6 @@ void TerrainManager::getTileBounds(const TileCoord& coord, float& minX, float& m
 
 std::string TerrainManager::getADTPath(const TileCoord& coord) const {
     // Format: World\Maps\{MapName}\{MapName}_{X}_{Y}.adt
-    // Example: Azeroth_32_49.adt for tile at coord.x=32, coord.y=49
     return "World\\Maps\\" + mapName + "\\" + mapName + "_" +
            std::to_string(coord.x) + "_" + std::to_string(coord.y) + ".adt";
 }

@@ -80,6 +80,7 @@ private:
     void spawnNpcs();
     std::string getPlayerModelPath() const;
     static const char* mapIdToName(uint32_t mapId);
+    void loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float z);
 
     static Application* instance;
 

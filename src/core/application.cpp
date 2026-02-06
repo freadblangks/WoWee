@@ -615,6 +615,12 @@ void Application::setupUICallbacks() {
         }
     });
 
+    // World entry callback (online mode) - load terrain when entering world
+    gameHandler->setWorldEntryCallback([this](uint32_t mapId, float x, float y, float z) {
+        LOG_INFO("Online world entry: mapId=", mapId, " pos=(", x, ", ", y, ", ", z, ")");
+        loadOnlineWorldTerrain(mapId, x, y, z);
+    });
+
     // "Create Character" button on character screen
     uiManager->getCharacterScreen().setOnCreateCharacter([this]() {
         uiManager->getCharacterCreateScreen().reset();
@@ -1505,6 +1511,60 @@ void Application::teleportTo(int presetIndex) {
     }
 
     LOG_INFO("Teleport to ", preset.label, " complete");
+}
+
+void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float z) {
+    if (!renderer || !assetManager || !assetManager->isInitialized()) {
+        LOG_WARNING("Cannot load online terrain: renderer or assets not ready");
+        return;
+    }
+
+    std::string mapName = mapIdToName(mapId);
+    LOG_INFO("Loading online world terrain for map '", mapName, "' (ID ", mapId, ")");
+
+    // Convert server coordinates to canonical WoW coordinates
+    // Server sends: X=West (canonical.Y), Y=North (canonical.X), Z=Up
+    glm::vec3 spawnCanonical = core::coords::serverToCanonical(glm::vec3(x, y, z));
+    glm::vec3 spawnRender = core::coords::canonicalToRender(spawnCanonical);
+
+    // Set camera position
+    if (renderer->getCameraController()) {
+        renderer->getCameraController()->setDefaultSpawn(spawnRender, 0.0f, 15.0f);
+        renderer->getCameraController()->reset();
+    }
+
+    // Set map name for WMO renderer
+    if (renderer->getWMORenderer()) {
+        renderer->getWMORenderer()->setMapName(mapName);
+    }
+
+    // Set map name for terrain manager
+    if (renderer->getTerrainManager()) {
+        renderer->getTerrainManager()->setMapName(mapName);
+    }
+
+    // Compute ADT tile from canonical coordinates
+    auto [tileX, tileY] = core::coords::canonicalToTile(spawnCanonical.x, spawnCanonical.y);
+    std::string adtPath = "World\\Maps\\" + mapName + "\\" + mapName + "_" +
+                          std::to_string(tileX) + "_" + std::to_string(tileY) + ".adt";
+    LOG_INFO("Loading ADT tile [", tileX, ",", tileY, "] from canonical (",
+             spawnCanonical.x, ", ", spawnCanonical.y, ", ", spawnCanonical.z, ")");
+
+    // Load the initial terrain tile
+    bool terrainOk = renderer->loadTestTerrain(assetManager.get(), adtPath);
+    if (!terrainOk) {
+        LOG_WARNING("Could not load terrain for online world - atmospheric rendering only");
+    } else {
+        LOG_INFO("Online world terrain loading initiated");
+
+        // Trigger terrain streaming for surrounding tiles
+        if (renderer->getTerrainManager() && renderer->getCamera()) {
+            renderer->getTerrainManager()->update(*renderer->getCamera(), 1.0f);
+        }
+    }
+
+    // Set game state
+    setState(AppState::IN_GAME);
 }
 
 } // namespace core

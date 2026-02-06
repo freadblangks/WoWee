@@ -2102,6 +2102,11 @@ void GameHandler::handleLoginVerifyWorld(network::Packet& packet) {
         socket->send(activeMoverPacket);
         LOG_INFO("Sent CMSG_SET_ACTIVE_MOVER for player 0x", std::hex, playerGuid, std::dec);
     }
+
+    // Notify application to load terrain for this map/position (online mode)
+    if (worldEntryCallback_) {
+        worldEntryCallback_(data.mapId, data.x, data.y, data.z);
+    }
 }
 
 void GameHandler::handleAccountDataTimes(network::Packet& packet) {

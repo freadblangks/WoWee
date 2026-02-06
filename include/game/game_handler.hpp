@@ -271,6 +271,11 @@ public:
     using HearthstoneCallback = std::function<void()>;
     void setHearthstoneCallback(HearthstoneCallback cb) { hearthstoneCallback = std::move(cb); }
 
+    // World entry callback (online mode - triggered when entering world)
+    // Parameters: mapId, x, y, z (canonical WoW coordinates)
+    using WorldEntryCallback = std::function<void(uint32_t mapId, float x, float y, float z)>;
+    void setWorldEntryCallback(WorldEntryCallback cb) { worldEntryCallback_ = std::move(cb); }
+
     // Cooldowns
     float getSpellCooldown(uint32_t spellId) const;
 
@@ -523,6 +528,7 @@ private:
 
     // ---- Phase 3: Spells ----
     HearthstoneCallback hearthstoneCallback;
+    WorldEntryCallback worldEntryCallback_;
     std::vector<uint32_t> knownSpells;
     std::unordered_map<uint32_t, float> spellCooldowns;    // spellId -> remaining seconds
     uint8_t castCount = 0;

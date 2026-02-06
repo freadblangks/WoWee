@@ -34,6 +34,7 @@ private:
     int classIndex = 0;
     int genderIndex = 0;
     int skin = 0, face = 0, hairStyle = 0, hairColor = 0, facialHair = 0;
+    int maxSkin = 9, maxFace = 9, maxHairStyle = 11, maxHairColor = 9, maxFacialHair = 8;
     std::string statusMessage;
     bool statusIsError = false;
 
@@ -45,6 +46,7 @@ private:
 
     // 3D model preview
     std::unique_ptr<rendering::CharacterPreview> preview_;
+    pipeline::AssetManager* assetManager_ = nullptr;
     int prevRaceIndex_ = -1;
     int prevGenderIndex_ = -1;
     int prevSkin_ = -1;
@@ -52,10 +54,15 @@ private:
     int prevHairStyle_ = -1;
     int prevHairColor_ = -1;
     int prevFacialHair_ = -1;
+    int prevRangeRace_ = -1;
+    int prevRangeGender_ = -1;
+    int prevRangeSkin_ = -1;
+    int prevRangeHairStyle_ = -1;
     bool draggingPreview_ = false;
     float dragStartX_ = 0.0f;
 
     void updatePreviewIfNeeded();
+    void updateAppearanceRanges();
 };
 
 } // namespace ui

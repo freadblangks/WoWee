@@ -131,6 +131,7 @@ private:
     void renderBuffBar(game::GameHandler& gameHandler);
     void renderLootWindow(game::GameHandler& gameHandler);
     void renderGossipWindow(game::GameHandler& gameHandler);
+    void renderQuestDetailsWindow(game::GameHandler& gameHandler);
     void renderVendorWindow(game::GameHandler& gameHandler);
     void renderTeleporterPanel();
     void renderEscapeMenu();

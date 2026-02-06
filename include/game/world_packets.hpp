@@ -1182,6 +1182,24 @@ public:
     static network::Packet build(uint64_t npcGuid, uint32_t questId);
 };
 
+/** SMSG_QUESTGIVER_QUEST_DETAILS data (simplified) */
+struct QuestDetailsData {
+    uint64_t npcGuid = 0;
+    uint32_t questId = 0;
+    std::string title;
+    std::string details;      // Quest description text
+    std::string objectives;   // Objectives text
+    uint32_t suggestedPlayers = 0;
+    uint32_t rewardMoney = 0;
+    uint32_t rewardXp = 0;
+};
+
+/** SMSG_QUESTGIVER_QUEST_DETAILS parser */
+class QuestDetailsParser {
+public:
+    static bool parse(network::Packet& packet, QuestDetailsData& data);
+};
+
 // ============================================================
 // Phase 5: Vendor
 // ============================================================

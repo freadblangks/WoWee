@@ -322,16 +322,25 @@ public:
     void interactWithNpc(uint64_t guid);
     void selectGossipOption(uint32_t optionId);
     void selectGossipQuest(uint32_t questId);
+    void acceptQuest();
+    void declineQuest();
     void closeGossip();
     bool isGossipWindowOpen() const { return gossipWindowOpen; }
     const GossipMessageData& getCurrentGossip() const { return currentGossip; }
+    bool isQuestDetailsOpen() const { return questDetailsOpen; }
+    const QuestDetailsData& getQuestDetails() const { return currentQuestDetails; }
 
     // Vendor
     void openVendor(uint64_t npcGuid);
+    void closeVendor();
     void buyItem(uint64_t vendorGuid, uint32_t itemId, uint32_t slot, uint8_t count);
     void sellItem(uint64_t vendorGuid, uint64_t itemGuid, uint8_t count);
     bool isVendorWindowOpen() const { return vendorWindowOpen; }
     const ListInventoryData& getVendorItems() const { return currentVendorItems; }
+    const ItemQueryResponseData* getItemInfo(uint32_t itemId) const {
+        auto it = itemInfoCache_.find(itemId);
+        return (it != itemInfoCache_.end()) ? &it->second : nullptr;
+    }
 
     /**
      * Set callbacks
@@ -461,6 +470,7 @@ private:
     void handleLootRemoved(network::Packet& packet);
     void handleGossipMessage(network::Packet& packet);
     void handleGossipComplete(network::Packet& packet);
+    void handleQuestDetails(network::Packet& packet);
     void handleListInventory(network::Packet& packet);
     LootResponseData generateLocalLoot(uint64_t guid);
     void simulateLootResponse(const LootResponseData& data);
@@ -601,6 +611,10 @@ private:
     // Gossip
     bool gossipWindowOpen = false;
     GossipMessageData currentGossip;
+
+    // Quest details
+    bool questDetailsOpen = false;
+    QuestDetailsData currentQuestDetails;
 
     // Vendor
     bool vendorWindowOpen = false;

@@ -1092,6 +1092,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::MSG_RAID_TARGET_UPDATE:
         case Opcode::SMSG_QUESTGIVER_STATUS:
         case Opcode::SMSG_QUESTGIVER_QUEST_DETAILS:
+            handleQuestDetails(packet);
+            break;
         case Opcode::SMSG_QUESTGIVER_REQUEST_ITEMS:
         case Opcode::SMSG_QUESTGIVER_OFFER_REWARD:
         case Opcode::SMSG_QUESTGIVER_QUEST_COMPLETE:
@@ -3538,6 +3540,31 @@ void GameHandler::selectGossipQuest(uint32_t questId) {
     gossipWindowOpen = false;
 }
 
+void GameHandler::handleQuestDetails(network::Packet& packet) {
+    QuestDetailsData data;
+    if (!QuestDetailsParser::parse(packet, data)) {
+        LOG_WARNING("Failed to parse SMSG_QUESTGIVER_QUEST_DETAILS");
+        return;
+    }
+    currentQuestDetails = data;
+    questDetailsOpen = true;
+    gossipWindowOpen = false;
+}
+
+void GameHandler::acceptQuest() {
+    if (!questDetailsOpen || state != WorldState::IN_WORLD || !socket) return;
+    auto packet = QuestgiverAcceptQuestPacket::build(
+        currentQuestDetails.npcGuid, currentQuestDetails.questId);
+    socket->send(packet);
+    questDetailsOpen = false;
+    currentQuestDetails = QuestDetailsData{};
+}
+
+void GameHandler::declineQuest() {
+    questDetailsOpen = false;
+    currentQuestDetails = QuestDetailsData{};
+}
+
 void GameHandler::closeGossip() {
     gossipWindowOpen = false;
     currentGossip = GossipMessageData{};
@@ -3547,6 +3574,11 @@ void GameHandler::openVendor(uint64_t npcGuid) {
     if (state != WorldState::IN_WORLD || !socket) return;
     auto packet = ListInventoryPacket::build(npcGuid);
     socket->send(packet);
+}
+
+void GameHandler::closeVendor() {
+    vendorWindowOpen = false;
+    currentVendorItems = ListInventoryData{};
 }
 
 void GameHandler::buyItem(uint64_t vendorGuid, uint32_t itemId, uint32_t slot, uint8_t count) {
@@ -3605,6 +3637,11 @@ void GameHandler::handleListInventory(network::Packet& packet) {
     if (!ListInventoryParser::parse(packet, currentVendorItems)) return;
     vendorWindowOpen = true;
     gossipWindowOpen = false; // Close gossip if vendor opens
+
+    // Query item info for all vendor items so we can show names
+    for (const auto& item : currentVendorItems.items) {
+        queryItemInfo(item.itemId, 0);
+    }
 }
 
 // ============================================================

@@ -84,6 +84,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderBuffBar(gameHandler);
     renderLootWindow(gameHandler);
     renderGossipWindow(gameHandler);
+    renderQuestDetailsWindow(gameHandler);
     renderVendorWindow(gameHandler);
     renderEscapeMenu();
     renderSettingsWindow();
@@ -405,7 +406,8 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
     }
 
     // Left-click targeting (when mouse not captured by UI)
-    if (!io.WantCaptureMouse && input.isMouseButtonJustPressed(SDL_BUTTON_LEFT)) {
+    // Suppress when right button is held (both-button run)
+    if (!io.WantCaptureMouse && input.isMouseButtonJustPressed(SDL_BUTTON_LEFT) && !input.isMouseButtonPressed(SDL_BUTTON_RIGHT)) {
         auto* renderer = core::Application::getInstance().getRenderer();
         auto* camera = renderer ? renderer->getCamera() : nullptr;
         auto* window = core::Application::getInstance().getWindow();
@@ -445,7 +447,8 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
     }
 
     // Right-click on target for NPC interaction / loot / auto-attack
-    if (!io.WantCaptureMouse && input.isMouseButtonJustPressed(SDL_BUTTON_RIGHT)) {
+    // Suppress when left button is held (both-button run)
+    if (!io.WantCaptureMouse && input.isMouseButtonJustPressed(SDL_BUTTON_RIGHT) && !input.isMouseButtonPressed(SDL_BUTTON_LEFT)) {
         if (gameHandler.hasTarget()) {
             auto target = gameHandler.getTarget();
             if (target) {
@@ -1633,6 +1636,79 @@ void GameScreen::renderGossipWindow(game::GameHandler& gameHandler) {
 }
 
 // ============================================================
+// Quest Details Window
+// ============================================================
+
+void GameScreen::renderQuestDetailsWindow(game::GameHandler& gameHandler) {
+    if (!gameHandler.isQuestDetailsOpen()) return;
+
+    auto* window = core::Application::getInstance().getWindow();
+    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
+    float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
+
+    ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 225, screenH / 2 - 200), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(ImVec2(450, 400), ImGuiCond_Appearing);
+
+    bool open = true;
+    const auto& quest = gameHandler.getQuestDetails();
+    if (ImGui::Begin(quest.title.c_str(), &open)) {
+        // Quest description
+        if (!quest.details.empty()) {
+            ImGui::TextWrapped("%s", quest.details.c_str());
+        }
+
+        // Objectives
+        if (!quest.objectives.empty()) {
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 1.0f), "Objectives:");
+            ImGui::TextWrapped("%s", quest.objectives.c_str());
+        }
+
+        // Rewards
+        if (quest.rewardXp > 0 || quest.rewardMoney > 0) {
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 1.0f), "Rewards:");
+            if (quest.rewardXp > 0) {
+                ImGui::Text("  %u experience", quest.rewardXp);
+            }
+            if (quest.rewardMoney > 0) {
+                uint32_t gold = quest.rewardMoney / 10000;
+                uint32_t silver = (quest.rewardMoney % 10000) / 100;
+                uint32_t copper = quest.rewardMoney % 100;
+                if (gold > 0) ImGui::Text("  %ug %us %uc", gold, silver, copper);
+                else if (silver > 0) ImGui::Text("  %us %uc", silver, copper);
+                else ImGui::Text("  %uc", copper);
+            }
+        }
+
+        if (quest.suggestedPlayers > 1) {
+            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f),
+                "Suggested players: %u", quest.suggestedPlayers);
+        }
+
+        // Accept / Decline buttons
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+        float buttonW = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+        if (ImGui::Button("Accept", ImVec2(buttonW, 0))) {
+            gameHandler.acceptQuest();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Decline", ImVec2(buttonW, 0))) {
+            gameHandler.declineQuest();
+        }
+    }
+    ImGui::End();
+
+    if (!open) {
+        gameHandler.declineQuest();
+    }
+}
+
+// ============================================================
 // Vendor Window (Phase 5)
 // ============================================================
 
@@ -1649,6 +1725,14 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
     if (ImGui::Begin("Vendor", &open)) {
         const auto& vendor = gameHandler.getVendorItems();
 
+        // Show player money
+        uint64_t money = gameHandler.getMoneyCopper();
+        uint32_t mg = static_cast<uint32_t>(money / 10000);
+        uint32_t ms = static_cast<uint32_t>((money / 100) % 100);
+        uint32_t mc = static_cast<uint32_t>(money % 100);
+        ImGui::Text("Your money: %ug %us %uc", mg, ms, mc);
+        ImGui::Separator();
+
         if (vendor.items.empty()) {
             ImGui::TextDisabled("This vendor has nothing for sale.");
         } else {
@@ -1659,18 +1743,49 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
                 ImGui::TableSetupColumn("Buy", ImGuiTableColumnFlags_WidthFixed, 50.0f);
                 ImGui::TableHeadersRow();
 
+                // Quality colors (matching WoW)
+                static const ImVec4 qualityColors[] = {
+                    ImVec4(0.6f, 0.6f, 0.6f, 1.0f),  // 0 Poor (gray)
+                    ImVec4(1.0f, 1.0f, 1.0f, 1.0f),  // 1 Common (white)
+                    ImVec4(0.12f, 1.0f, 0.0f, 1.0f),  // 2 Uncommon (green)
+                    ImVec4(0.0f, 0.44f, 0.87f, 1.0f), // 3 Rare (blue)
+                    ImVec4(0.64f, 0.21f, 0.93f, 1.0f),// 4 Epic (purple)
+                    ImVec4(1.0f, 0.5f, 0.0f, 1.0f),   // 5 Legendary (orange)
+                };
+
                 for (const auto& item : vendor.items) {
                     ImGui::TableNextRow();
                     ImGui::PushID(static_cast<int>(item.slot));
 
                     ImGui::TableSetColumnIndex(0);
-                    ImGui::Text("Item %u", item.itemId);
+                    auto* info = gameHandler.getItemInfo(item.itemId);
+                    if (info && info->valid) {
+                        uint32_t q = info->quality < 6 ? info->quality : 1;
+                        ImGui::TextColored(qualityColors[q], "%s", info->name.c_str());
+                        // Tooltip with stats on hover
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::BeginTooltip();
+                            ImGui::TextColored(qualityColors[q], "%s", info->name.c_str());
+                            if (info->armor > 0) ImGui::Text("Armor: %d", info->armor);
+                            if (info->stamina > 0) ImGui::Text("+%d Stamina", info->stamina);
+                            if (info->strength > 0) ImGui::Text("+%d Strength", info->strength);
+                            if (info->agility > 0) ImGui::Text("+%d Agility", info->agility);
+                            if (info->intellect > 0) ImGui::Text("+%d Intellect", info->intellect);
+                            if (info->spirit > 0) ImGui::Text("+%d Spirit", info->spirit);
+                            ImGui::EndTooltip();
+                        }
+                    } else {
+                        ImGui::Text("Item %u", item.itemId);
+                    }
 
                     ImGui::TableSetColumnIndex(1);
                     uint32_t g = item.buyPrice / 10000;
                     uint32_t s = (item.buyPrice / 100) % 100;
                     uint32_t c = item.buyPrice % 100;
+                    bool canAfford = money >= item.buyPrice;
+                    if (!canAfford) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
                     ImGui::Text("%ug %us %uc", g, s, c);
+                    if (!canAfford) ImGui::PopStyleColor();
 
                     ImGui::TableSetColumnIndex(2);
                     if (item.maxCount < 0) {
@@ -1694,8 +1809,7 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
     ImGui::End();
 
     if (!open) {
-        // Close vendor - just hide UI, no server packet needed
-        // The vendor window state will be reset on next interaction
+        gameHandler.closeVendor();
     }
 }
 

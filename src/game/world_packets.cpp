@@ -1835,6 +1835,44 @@ network::Packet QuestgiverAcceptQuestPacket::build(uint64_t npcGuid, uint32_t qu
     return packet;
 }
 
+bool QuestDetailsParser::parse(network::Packet& packet, QuestDetailsData& data) {
+    if (packet.getSize() < 20) return false;
+    data.npcGuid = packet.readUInt64();
+    /*informUnit*/ packet.readUInt64();
+    data.questId = packet.readUInt32();
+    data.title = packet.readString();
+    data.details = packet.readString();
+    data.objectives = packet.readString();
+    /*activateAccept*/ packet.readUInt8();
+    /*flags*/ packet.readUInt32();
+    data.suggestedPlayers = packet.readUInt32();
+    /*isFinished*/ packet.readUInt8();
+
+    // Reward choice items
+    uint32_t choiceCount = packet.readUInt32();
+    for (uint32_t i = 0; i < choiceCount && i < 6; i++) {
+        packet.readUInt32(); // itemId
+        packet.readUInt32(); // count
+        packet.readUInt32(); // displayInfo
+    }
+
+    // Reward items
+    uint32_t rewardCount = packet.readUInt32();
+    for (uint32_t i = 0; i < rewardCount && i < 4; i++) {
+        packet.readUInt32(); // itemId
+        packet.readUInt32(); // count
+        packet.readUInt32(); // displayInfo
+    }
+
+    data.rewardMoney = packet.readUInt32();
+    if (packet.getReadPos() < packet.getSize()) {
+        data.rewardXp = packet.readUInt32();
+    }
+
+    LOG_INFO("Quest details: id=", data.questId, " title='", data.title, "'");
+    return true;
+}
+
 bool GossipMessageParser::parse(network::Packet& packet, GossipMessageData& data) {
     data.npcGuid = packet.readUInt64();
     data.menuId = packet.readUInt32();

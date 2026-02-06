@@ -53,6 +53,8 @@ private:
     bool showPlayerInfo = false;
     bool refocusChatInput = false;
     bool showTeleporter = false;
+    bool showEscapeMenu = false;
+    bool showEscapeSettingsNotice = false;
 
     /**
      * Render player info window
@@ -121,6 +123,7 @@ private:
     void renderGossipWindow(game::GameHandler& gameHandler);
     void renderVendorWindow(game::GameHandler& gameHandler);
     void renderTeleporterPanel();
+    void renderEscapeMenu();
 
     /**
      * Inventory screen

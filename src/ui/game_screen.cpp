@@ -81,6 +81,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderLootWindow(gameHandler);
     renderGossipWindow(gameHandler);
     renderVendorWindow(gameHandler);
+    renderEscapeMenu();
 
     // World map (M key toggle handled inside)
     renderWorldMap(gameHandler);
@@ -351,7 +352,10 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
         }
 
         if (input.isKeyJustPressed(SDL_SCANCODE_ESCAPE)) {
-            if (showTeleporter) {
+            if (showEscapeMenu) {
+                showEscapeMenu = false;
+                showEscapeSettingsNotice = false;
+            } else if (showTeleporter) {
                 showTeleporter = false;
             } else if (gameHandler.isCasting()) {
                 gameHandler.cancelCast();
@@ -360,7 +364,7 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
             } else if (gameHandler.isGossipWindowOpen()) {
                 gameHandler.closeGossip();
             } else {
-                gameHandler.clearTarget();
+                showEscapeMenu = true;
             }
         }
 
@@ -1720,6 +1724,48 @@ void GameScreen::renderTeleporterPanel() {
 
     ImGui::PopStyleColor();
     ImGui::PopStyleVar();
+}
+
+// ============================================================
+// Escape Menu
+// ============================================================
+
+void GameScreen::renderEscapeMenu() {
+    if (!showEscapeMenu) return;
+
+    ImGuiIO& io = ImGui::GetIO();
+    float screenW = io.DisplaySize.x;
+    float screenH = io.DisplaySize.y;
+    ImVec2 size(260.0f, 220.0f);
+    ImVec2 pos((screenW - size.x) * 0.5f, (screenH - size.y) * 0.5f);
+
+    ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(size, ImGuiCond_Always);
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                             ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar;
+
+    if (ImGui::Begin("##EscapeMenu", nullptr, flags)) {
+        ImGui::Text("Game Menu");
+        ImGui::Separator();
+
+        if (ImGui::Button("Logout", ImVec2(-1, 0))) {
+            core::Application::getInstance().logoutToLogin();
+            showEscapeMenu = false;
+            showEscapeSettingsNotice = false;
+        }
+        if (ImGui::Button("Quit", ImVec2(-1, 0))) {
+            core::Application::getInstance().shutdown();
+        }
+        if (ImGui::Button("Settings", ImVec2(-1, 0))) {
+            showEscapeSettingsNotice = true;
+        }
+
+        if (showEscapeSettingsNotice) {
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Settings not implemented yet.");
+        }
+    }
+    ImGui::End();
 }
 
 }} // namespace wowee::ui

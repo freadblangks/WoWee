@@ -227,6 +227,9 @@ public:
     bool loadFloorCache(const std::string& filepath);
     size_t getFloorCacheSize() const { return precomputedFloorGrid.size(); }
 
+    // Pre-compute floor cache for all loaded WMO instances
+    void precomputeFloorCache();
+
 private:
     /**
      * WMO group GPU resources

@@ -589,6 +589,54 @@ bool WMORenderer::loadFloorCache(const std::string& filepath) {
     return true;
 }
 
+void WMORenderer::precomputeFloorCache() {
+    if (instances.empty()) {
+        core::Logger::getInstance().info("precomputeFloorCache: no instances to precompute");
+        return;
+    }
+
+    size_t startSize = precomputedFloorGrid.size();
+    size_t samplesChecked = 0;
+
+    core::Logger::getInstance().info("Pre-computing floor cache for ", instances.size(), " WMO instances...");
+
+    for (const auto& instance : instances) {
+        // Get world bounds for this instance
+        const glm::vec3& boundsMin = instance.worldBoundsMin;
+        const glm::vec3& boundsMax = instance.worldBoundsMax;
+
+        // Sample reference Z is above the structure
+        float refZ = boundsMax.z + 10.0f;
+
+        // Iterate over grid points within the bounds
+        float startX = std::floor(boundsMin.x / FLOOR_GRID_CELL_SIZE) * FLOOR_GRID_CELL_SIZE;
+        float startY = std::floor(boundsMin.y / FLOOR_GRID_CELL_SIZE) * FLOOR_GRID_CELL_SIZE;
+
+        for (float x = startX; x <= boundsMax.x; x += FLOOR_GRID_CELL_SIZE) {
+            for (float y = startY; y <= boundsMax.y; y += FLOOR_GRID_CELL_SIZE) {
+                // Sample at grid cell center
+                float sampleX = x + FLOOR_GRID_CELL_SIZE * 0.5f;
+                float sampleY = y + FLOOR_GRID_CELL_SIZE * 0.5f;
+
+                // Check if already cached
+                uint64_t key = floorGridKey(sampleX, sampleY);
+                if (precomputedFloorGrid.find(key) != precomputedFloorGrid.end()) {
+                    continue;  // Already computed
+                }
+
+                samplesChecked++;
+
+                // getFloorHeight will compute and cache the result
+                getFloorHeight(sampleX, sampleY, refZ);
+            }
+        }
+    }
+
+    size_t newEntries = precomputedFloorGrid.size() - startSize;
+    core::Logger::getInstance().info("Floor cache precompute complete: ", samplesChecked, " samples checked, ",
+                                     newEntries, " new entries, total ", precomputedFloorGrid.size());
+}
+
 WMORenderer::GridCell WMORenderer::toCell(const glm::vec3& p) const {
     return GridCell{
         static_cast<int>(std::floor(p.x / SPATIAL_CELL_SIZE)),

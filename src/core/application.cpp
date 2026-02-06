@@ -1270,6 +1270,12 @@ void Application::startSinglePlayer() {
 
         LOG_INFO("Terrain streaming complete: ", terrainMgr->getLoadedTileCount(), " tiles loaded");
 
+        // Pre-compute floor cache if it wasn't loaded from file
+        if (renderer->getWMORenderer() && renderer->getWMORenderer()->getFloorCacheSize() == 0) {
+            showStatus("Pre-computing collision cache...");
+            renderer->getWMORenderer()->precomputeFloorCache();
+        }
+
         // Re-snap camera to ground now that all surrounding tiles are loaded
         // (the initial reset inside loadTestTerrain only had 1 tile).
         if (spawnSnapToGround && renderer->getCameraController()) {
@@ -1396,6 +1402,11 @@ void Application::teleportTo(int presetIndex) {
         }
 
         LOG_INFO("Teleport terrain streaming complete: ", terrainMgr->getLoadedTileCount(), " tiles loaded");
+
+        // Pre-compute floor cache for the new area
+        if (renderer->getWMORenderer()) {
+            renderer->getWMORenderer()->precomputeFloorCache();
+        }
     }
 
     // Floor-snapping presets use camera reset. WMO-floor presets keep explicit Z.

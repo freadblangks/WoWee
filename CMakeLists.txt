@@ -152,6 +152,7 @@ set(WOWEE_SOURCES
     src/ui/character_screen.cpp
     src/ui/game_screen.cpp
     src/ui/inventory_screen.cpp
+    src/ui/quest_log_screen.cpp
     src/ui/spellbook_screen.cpp
 
     # Main

@@ -192,6 +192,11 @@ private:
     float introEndPitch = -5.0f;
     float introStartDistance = 12.0f;
     float introEndDistance = 10.0f;
+
+    // Idle camera: triggers intro pan after IDLE_TIMEOUT seconds of no input
+    float idleTimer_ = 0.0f;
+    bool idleOrbit_ = false;  // true when current intro pan is an idle orbit (loops)
+    static constexpr float IDLE_TIMEOUT = 120.0f; // 2 minutes
 };
 
 } // namespace rendering

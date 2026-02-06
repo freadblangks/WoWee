@@ -444,6 +444,8 @@ void Application::update(float deltaTime) {
             if (!npcsSpawned && singlePlayerMode) {
                 spawnNpcs();
             }
+            // Process deferred online creature spawns (throttled)
+            processCreatureSpawnQueue();
             if (npcManager && renderer && renderer->getCharacterRenderer()) {
                 npcManager->update(deltaTime, renderer->getCharacterRenderer());
             }
@@ -626,12 +628,39 @@ void Application::setupUICallbacks() {
 
     // Creature spawn callback (online mode) - spawn creature models
     gameHandler->setCreatureSpawnCallback([this](uint64_t guid, uint32_t displayId, float x, float y, float z, float orientation) {
-        spawnOnlineCreature(guid, displayId, x, y, z, orientation);
+        // Queue spawns to avoid hanging when many creatures appear at once
+        pendingCreatureSpawns_.push_back({guid, displayId, x, y, z, orientation});
     });
 
     // Creature despawn callback (online mode) - remove creature models
     gameHandler->setCreatureDespawnCallback([this](uint64_t guid) {
         despawnOnlineCreature(guid);
+    });
+
+    // Creature move callback (online mode) - update creature positions
+    gameHandler->setCreatureMoveCallback([this](uint64_t guid, float x, float y, float z, uint32_t durationMs) {
+        auto it = creatureInstances_.find(guid);
+        if (it != creatureInstances_.end() && renderer && renderer->getCharacterRenderer()) {
+            glm::vec3 renderPos = core::coords::canonicalToRender(glm::vec3(x, y, z));
+            float durationSec = static_cast<float>(durationMs) / 1000.0f;
+            renderer->getCharacterRenderer()->moveInstanceTo(it->second, renderPos, durationSec);
+        }
+    });
+
+    // NPC death callback (online mode) - play death animation
+    gameHandler->setNpcDeathCallback([this](uint64_t guid) {
+        auto it = creatureInstances_.find(guid);
+        if (it != creatureInstances_.end() && renderer && renderer->getCharacterRenderer()) {
+            renderer->getCharacterRenderer()->playAnimation(it->second, 1, false); // Death
+        }
+    });
+
+    // NPC swing callback (online mode) - play attack animation
+    gameHandler->setNpcSwingCallback([this](uint64_t guid) {
+        auto it = creatureInstances_.find(guid);
+        if (it != creatureInstances_.end() && renderer && renderer->getCharacterRenderer()) {
+            renderer->getCharacterRenderer()->playAnimation(it->second, 16, false); // Attack
+        }
     });
 
     // "Create Character" button on character screen
@@ -1415,6 +1444,7 @@ void Application::startSinglePlayer() {
     // snap the third-person camera into the correct orbit position.
     if (spawnSnapToGround && renderer && renderer->getCameraController()) {
         renderer->getCameraController()->reset();
+        renderer->getCameraController()->startIntroPan(2.8f, 140.0f);
     }
 
     if (loadingScreenOk) {
@@ -1426,6 +1456,7 @@ void Application::startSinglePlayer() {
         auto* camCtrl = renderer->getCameraController();
         gameHandler->setHearthstoneCallback([camCtrl]() {
             camCtrl->reset();
+            camCtrl->startIntroPan(2.8f, 140.0f);
         });
     }
 
@@ -1549,6 +1580,7 @@ void Application::teleportTo(int presetIndex) {
     // Floor-snapping presets use camera reset. WMO-floor presets keep explicit Z.
     if (spawnSnapToGround && renderer && renderer->getCameraController()) {
         renderer->getCameraController()->reset();
+        renderer->getCameraController()->startIntroPan(2.8f, 140.0f);
     }
 
     if (!spawnSnapToGround && renderer) {
@@ -1592,6 +1624,7 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
     if (renderer->getCameraController()) {
         renderer->getCameraController()->setDefaultSpawn(spawnRender, 0.0f, 15.0f);
         renderer->getCameraController()->reset();
+        renderer->getCameraController()->startIntroPan(2.8f, 140.0f);
     }
 
     // Set map name for WMO renderer
@@ -1802,50 +1835,61 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
 
     auto* charRenderer = renderer->getCharacterRenderer();
 
-    // Load model if not already loaded for this displayId
-    uint32_t modelId = nextCreatureModelId_++;
+    // Check model cache - reuse if same displayId was already loaded
+    uint32_t modelId = 0;
+    bool modelCached = false;
+    auto cacheIt = displayIdModelCache_.find(displayId);
+    if (cacheIt != displayIdModelCache_.end()) {
+        modelId = cacheIt->second;
+        modelCached = true;
+    } else {
+        // Load model from disk (only once per displayId)
+        modelId = nextCreatureModelId_++;
 
-    auto m2Data = assetManager->readFile(m2Path);
-    if (m2Data.empty()) {
-        LOG_WARNING("Failed to read creature M2: ", m2Path);
-        return;
-    }
+        auto m2Data = assetManager->readFile(m2Path);
+        if (m2Data.empty()) {
+            LOG_WARNING("Failed to read creature M2: ", m2Path);
+            return;
+        }
 
-    pipeline::M2Model model = pipeline::M2Loader::load(m2Data);
-    if (model.vertices.empty()) {
-        LOG_WARNING("Failed to parse creature M2: ", m2Path);
-        return;
-    }
+        pipeline::M2Model model = pipeline::M2Loader::load(m2Data);
+        if (model.vertices.empty()) {
+            LOG_WARNING("Failed to parse creature M2: ", m2Path);
+            return;
+        }
 
-    // Load skin file
-    std::string skinPath = m2Path.substr(0, m2Path.size() - 3) + "00.skin";
-    auto skinData = assetManager->readFile(skinPath);
-    if (!skinData.empty()) {
-        pipeline::M2Loader::loadSkin(skinData, model);
-    }
+        // Load skin file
+        std::string skinPath = m2Path.substr(0, m2Path.size() - 3) + "00.skin";
+        auto skinData = assetManager->readFile(skinPath);
+        if (!skinData.empty()) {
+            pipeline::M2Loader::loadSkin(skinData, model);
+        }
 
-    // Load external .anim files for sequences without flag 0x20
-    std::string basePath = m2Path.substr(0, m2Path.size() - 3);
-    for (uint32_t si = 0; si < model.sequences.size(); si++) {
-        if (!(model.sequences[si].flags & 0x20)) {
-            char animFileName[256];
-            snprintf(animFileName, sizeof(animFileName), "%s%04u-%02u.anim",
-                basePath.c_str(), model.sequences[si].id, model.sequences[si].variationIndex);
-            auto animData = assetManager->readFile(animFileName);
-            if (!animData.empty()) {
-                pipeline::M2Loader::loadAnimFile(m2Data, animData, si, model);
+        // Load external .anim files for sequences without flag 0x20
+        std::string basePath = m2Path.substr(0, m2Path.size() - 3);
+        for (uint32_t si = 0; si < model.sequences.size(); si++) {
+            if (!(model.sequences[si].flags & 0x20)) {
+                char animFileName[256];
+                snprintf(animFileName, sizeof(animFileName), "%s%04u-%02u.anim",
+                    basePath.c_str(), model.sequences[si].id, model.sequences[si].variationIndex);
+                auto animData = assetManager->readFile(animFileName);
+                if (!animData.empty()) {
+                    pipeline::M2Loader::loadAnimFile(m2Data, animData, si, model);
+                }
             }
         }
+
+        if (!charRenderer->loadModel(model, modelId)) {
+            LOG_WARNING("Failed to load creature model: ", m2Path);
+            return;
+        }
+
+        displayIdModelCache_[displayId] = modelId;
     }
 
-    if (!charRenderer->loadModel(model, modelId)) {
-        LOG_WARNING("Failed to load creature model: ", m2Path);
-        return;
-    }
-
-    // Apply skin textures from CreatureDisplayInfo.dbc
+    // Apply skin textures from CreatureDisplayInfo.dbc (only for newly loaded models)
     auto itDisplayData = displayDataMap_.find(displayId);
-    if (itDisplayData != displayDataMap_.end()) {
+    if (!modelCached && itDisplayData != displayDataMap_.end()) {
         const auto& dispData = itDisplayData->second;
 
         // Get model directory for texture path construction
@@ -1858,9 +1902,17 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
         LOG_DEBUG("DisplayId ", displayId, " skins: '", dispData.skin1, "', '", dispData.skin2, "', '", dispData.skin3,
                   "' extraDisplayId=", dispData.extraDisplayId);
 
+        // Get model data from CharacterRenderer for texture iteration
+        const auto* modelData = charRenderer->getModelData(modelId);
+        if (!modelData) {
+            LOG_WARNING("Model data not found for modelId ", modelId);
+        }
+
         // Log texture types in the model
-        for (size_t ti = 0; ti < model.textures.size(); ti++) {
-            LOG_DEBUG("  Model texture ", ti, ": type=", model.textures[ti].type, " filename='", model.textures[ti].filename, "'");
+        if (modelData) {
+        for (size_t ti = 0; ti < modelData->textures.size(); ti++) {
+            LOG_DEBUG("  Model texture ", ti, ": type=", modelData->textures[ti].type, " filename='", modelData->textures[ti].filename, "'");
+        }
         }
 
         // Check if this is a humanoid NPC with extra display info
@@ -1885,9 +1937,9 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                     std::string bakePath = "Textures\\BakedNpcTextures\\" + extra.bakeName;
                     GLuint finalTex = charRenderer->loadTexture(bakePath);
 
-                    if (finalTex != 0) {
-                        for (size_t ti = 0; ti < model.textures.size(); ti++) {
-                            uint32_t texType = model.textures[ti].type;
+                    if (finalTex != 0 && modelData) {
+                        for (size_t ti = 0; ti < modelData->textures.size(); ti++) {
+                            uint32_t texType = modelData->textures[ti].type;
                             if (texType == 1 || texType == 2) {
                                 charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), finalTex);
                                 LOG_DEBUG("Applied baked NPC texture to slot ", ti, " (type ", texType, "): ", bakePath);
@@ -1926,9 +1978,9 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
 
                     if (!hairTexPath.empty()) {
                         GLuint hairTex = charRenderer->loadTexture(hairTexPath);
-                        if (hairTex != 0) {
-                            for (size_t ti = 0; ti < model.textures.size(); ti++) {
-                                if (model.textures[ti].type == 6) {
+                        if (hairTex != 0 && modelData) {
+                            for (size_t ti = 0; ti < modelData->textures.size(); ti++) {
+                                if (modelData->textures[ti].type == 6) {
                                     charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), hairTex);
                                     LOG_DEBUG("Applied hair texture to slot ", ti, ": ", hairTexPath);
                                 }
@@ -1942,9 +1994,9 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
         }
 
         // Apply creature skin textures (for non-humanoid creatures)
-        if (!hasHumanoidTexture) {
-            for (size_t ti = 0; ti < model.textures.size(); ti++) {
-                const auto& tex = model.textures[ti];
+        if (!hasHumanoidTexture && modelData) {
+            for (size_t ti = 0; ti < modelData->textures.size(); ti++) {
+                const auto& tex = modelData->textures[ti];
                 std::string skinPath;
 
                 // Creature skin types: 11 = skin1, 12 = skin2, 13 = skin3
@@ -2113,9 +2165,9 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
             }
 
             // Log model's actual submesh IDs for debugging geoset mismatches
-            {
+            if (auto* md = charRenderer->getModelData(modelId)) {
                 std::string batchIds;
-                for (const auto& b : model.batches) {
+                for (const auto& b : md->batches) {
                     if (!batchIds.empty()) batchIds += ",";
                     batchIds += std::to_string(b.submeshId);
                 }
@@ -2210,8 +2262,9 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
         }
     }
 
-    // Play idle animation
+    // Play idle animation and fade in
     charRenderer->playAnimation(instanceId, 0, true);
+    charRenderer->startFadeIn(instanceId, 0.5f);
 
     // Track instance
     creatureInstances_[guid] = instanceId;
@@ -2219,6 +2272,18 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
 
     LOG_INFO("Spawned creature: guid=0x", std::hex, guid, std::dec,
              " displayId=", displayId, " at (", x, ", ", y, ", ", z, ")");
+}
+
+void Application::processCreatureSpawnQueue() {
+    if (pendingCreatureSpawns_.empty()) return;
+
+    int spawned = 0;
+    while (!pendingCreatureSpawns_.empty() && spawned < MAX_SPAWNS_PER_FRAME) {
+        auto& s = pendingCreatureSpawns_.front();
+        spawnOnlineCreature(s.guid, s.displayId, s.x, s.y, s.z, s.orientation);
+        pendingCreatureSpawns_.erase(pendingCreatureSpawns_.begin());
+        spawned++;
+    }
 }
 
 void Application::despawnOnlineCreature(uint64_t guid) {

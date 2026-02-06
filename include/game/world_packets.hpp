@@ -740,6 +740,7 @@ struct ItemQueryResponseData {
     int32_t agility = 0;
     int32_t intellect = 0;
     int32_t spirit = 0;
+    uint32_t sellPrice = 0;
     std::string subclassName;
     bool valid = false;
 };
@@ -753,6 +754,25 @@ public:
 // ============================================================
 // Phase 2: Combat Core
 // ============================================================
+
+/** SMSG_MONSTER_MOVE data */
+struct MonsterMoveData {
+    uint64_t guid = 0;
+    float x = 0, y = 0, z = 0;  // Current position (server coords)
+    uint8_t moveType = 0;  // 0=Normal, 1=Stop, 2=FacingSpot, 3=FacingTarget, 4=FacingAngle
+    float facingAngle = 0;
+    uint64_t facingTarget = 0;
+    uint32_t splineFlags = 0;
+    uint32_t duration = 0;
+    // Destination (final point of the spline, server coords)
+    float destX = 0, destY = 0, destZ = 0;
+    bool hasDest = false;
+};
+
+class MonsterMoveParser {
+public:
+    static bool parse(network::Packet& packet, MonsterMoveData& data);
+};
 
 /** CMSG_ATTACKSWING packet builder */
 class AttackSwingPacket {

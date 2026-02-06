@@ -144,6 +144,22 @@ void WorldSocket::send(const Packet& packet) {
     LOG_DEBUG("Sending world packet: opcode=0x", std::hex, opcode, std::dec,
               " payload=", payloadLen, " bytes (", sendData.size(), " total)");
 
+    // Debug: dump first few movement packets
+    {
+        static int moveDump = 3;
+        bool isMove = (opcode >= 0xB5 && opcode <= 0xBE) || opcode == 0xC9 || opcode == 0xDA || opcode == 0xEE;
+        if (isMove && moveDump-- > 0) {
+            std::string hex = "MOVE PKT dump opcode=0x";
+            char buf[8]; snprintf(buf, sizeof(buf), "%03x", opcode); hex += buf;
+            hex += " payload=" + std::to_string(payloadLen) + " bytes: ";
+            for (size_t i = 6; i < sendData.size() && i < 6 + 48; i++) {
+                char b[4]; snprintf(b, sizeof(b), "%02x ", sendData[i]);
+                hex += b;
+            }
+            LOG_INFO(hex);
+        }
+    }
+
     // Debug: dump packet bytes for AUTH_SESSION
     if (opcode == 0x1ED) {
         std::string hexDump = "AUTH_SESSION raw bytes: ";

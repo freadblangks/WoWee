@@ -1,17 +1,35 @@
 #pragma once
 
 #include "game/inventory.hpp"
+#include "game/world_packets.hpp"
 #include <imgui.h>
+#include <functional>
 
 namespace wowee {
+namespace game { class GameHandler; }
 namespace ui {
 
 class InventoryScreen {
 public:
+    /// Render bags window (B key). Positioned at bottom of screen.
     void render(game::Inventory& inventory, uint64_t moneyCopper);
+
+    /// Render character screen (C key). Standalone equipment window.
+    void renderCharacterScreen(game::Inventory& inventory);
+
     bool isOpen() const { return open; }
     void toggle() { open = !open; }
     void setOpen(bool o) { open = o; }
+
+    bool isCharacterOpen() const { return characterOpen; }
+    void toggleCharacter() { characterOpen = !characterOpen; }
+    void setCharacterOpen(bool o) { characterOpen = o; }
+
+    /// Enable vendor mode: right-clicking bag items sells them.
+    void setVendorMode(bool enabled, game::GameHandler* handler) {
+        vendorMode_ = enabled;
+        gameHandler_ = handler;
+    }
 
     /// Returns true if equipment changed since last call, and clears the flag.
     bool consumeEquipmentDirty() { bool d = equipmentDirty; equipmentDirty = false; return d; }
@@ -20,9 +38,15 @@ public:
 
 private:
     bool open = false;
+    bool characterOpen = false;
     bool bKeyWasDown = false;
+    bool cKeyWasDown = false;
     bool equipmentDirty = false;
     bool inventoryDirty = false;
+
+    // Vendor sell mode
+    bool vendorMode_ = false;
+    game::GameHandler* gameHandler_ = nullptr;
 
     // Drag-and-drop held item state
     bool holdingItem = false;

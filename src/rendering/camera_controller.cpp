@@ -60,6 +60,7 @@ void CameraController::startIntroPan(float durationSec, float orbitDegrees) {
     if (!camera) return;
     introActive = true;
     introTimer = 0.0f;
+    idleTimer_ = 0.0f;
     introDuration = std::max(0.5f, durationSec);
     introStartYaw = facingYaw + orbitDegrees;
     introEndYaw = facingYaw;
@@ -96,9 +97,24 @@ void CameraController::update(float deltaTime) {
     bool ctrlDown = !uiWantsKeyboard && (input.isKeyPressed(SDL_SCANCODE_LCTRL) || input.isKeyPressed(SDL_SCANCODE_RCTRL));
     bool nowJump = !uiWantsKeyboard && !sitting && input.isKeyPressed(SDL_SCANCODE_SPACE);
 
+    // Idle camera: any input resets the timer; timeout triggers a slow orbit pan
+    bool anyInput = leftMouseDown || rightMouseDown || keyW || keyS || keyA || keyD || keyQ || keyE || nowJump;
+    if (anyInput) {
+        idleTimer_ = 0.0f;
+    } else if (!introActive) {
+        idleTimer_ += deltaTime;
+        if (idleTimer_ >= IDLE_TIMEOUT) {
+            idleTimer_ = 0.0f;
+            startIntroPan(6.0f, 360.0f); // Slow full orbit
+            idleOrbit_ = true;
+        }
+    }
+
     if (introActive) {
-        if (leftMouseDown || rightMouseDown || keyW || keyS || keyA || keyD || keyQ || keyE || nowJump) {
+        if (anyInput) {
             introActive = false;
+            idleOrbit_ = false;
+            idleTimer_ = 0.0f;
         } else {
             introTimer += deltaTime;
             float t = (introDuration > 0.0f) ? std::min(introTimer / introDuration, 1.0f) : 1.0f;
@@ -109,7 +125,13 @@ void CameraController::update(float deltaTime) {
             camera->setRotation(yaw, pitch);
             facingYaw = yaw;
             if (t >= 1.0f) {
-                introActive = false;
+                if (idleOrbit_) {
+                    // Loop: restart the slow orbit continuously
+                    startIntroPan(6.0f, 360.0f);
+                    idleOrbit_ = true;
+                } else {
+                    introActive = false;
+                }
             }
         }
         // Suppress player movement/input during intro.

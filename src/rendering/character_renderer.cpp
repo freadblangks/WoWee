@@ -102,6 +102,7 @@ bool CharacterRenderer::initialize() {
         uniform mat4 uLightSpaceMatrix;
         uniform int uShadowEnabled;
         uniform float uShadowStrength;
+        uniform float uOpacity;
 
         out vec4 FragColor;
 
@@ -154,8 +155,8 @@ bool CharacterRenderer::initialize() {
             float fogFactor = clamp((uFogEnd - fogDist) / (uFogEnd - uFogStart), 0.0, 1.0);
             result = mix(uFogColor, result, fogFactor);
 
-            // Force alpha=1 for opaque character rendering (baked NPC textures may have alpha=0)
-            FragColor = vec4(result, 1.0);
+            // Apply opacity (for fade-in effects)
+            FragColor = vec4(result, uOpacity);
         }
     )";
 
@@ -906,6 +907,35 @@ void CharacterRenderer::playAnimation(uint32_t instanceId, uint32_t animationId,
 }
 
 void CharacterRenderer::update(float deltaTime) {
+    // Update fade-in opacity
+    for (auto& [id, inst] : instances) {
+        if (inst.fadeInDuration > 0.0f && inst.opacity < 1.0f) {
+            inst.fadeInTime += deltaTime;
+            inst.opacity = std::min(1.0f, inst.fadeInTime / inst.fadeInDuration);
+            if (inst.opacity >= 1.0f) {
+                inst.fadeInDuration = 0.0f;
+            }
+        }
+    }
+
+    // Interpolate creature movement
+    for (auto& [id, inst] : instances) {
+        if (inst.isMoving) {
+            inst.moveElapsed += deltaTime;
+            float t = inst.moveElapsed / inst.moveDuration;
+            if (t >= 1.0f) {
+                inst.position = inst.moveEnd;
+                inst.isMoving = false;
+                // Return to idle when movement completes
+                if (inst.currentAnimationId == 4) {
+                    playAnimation(id, 0, true);
+                }
+            } else {
+                inst.position = glm::mix(inst.moveStart, inst.moveEnd, t);
+            }
+        }
+    }
+
     for (auto& pair : instances) {
         updateAnimation(pair.second, deltaTime);
     }
@@ -1123,6 +1153,8 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
 
     glEnable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);  // M2 models have mixed winding; render both sides
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     characterShader->use();
     characterShader->setUniform("uView", view);
@@ -1155,11 +1187,15 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
 
         const auto& gpuModel = models[instance.modelId];
 
+        // Skip fully transparent instances
+        if (instance.opacity <= 0.0f) continue;
+
         // Set model matrix (use override for weapon instances)
         glm::mat4 modelMat = instance.hasOverrideModelMatrix
             ? instance.overrideModelMatrix
             : getModelMatrix(instance);
         characterShader->setUniform("uModel", modelMat);
+        characterShader->setUniform("uOpacity", instance.opacity);
 
         // Set bone matrices (upload all at once for performance)
         int numBones = std::min(static_cast<int>(instance.boneMatrices.size()), MAX_BONES);
@@ -1273,6 +1309,7 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
     }
 
     glBindVertexArray(0);
+    glDisable(GL_BLEND);
     glEnable(GL_CULL_FACE);  // Restore culling for other renderers
 }
 
@@ -1377,6 +1414,55 @@ void CharacterRenderer::setInstanceRotation(uint32_t instanceId, const glm::vec3
     if (it != instances.end()) {
         it->second.rotation = rotation;
     }
+}
+
+void CharacterRenderer::moveInstanceTo(uint32_t instanceId, const glm::vec3& destination, float durationSeconds) {
+    auto it = instances.find(instanceId);
+    if (it == instances.end()) return;
+
+    auto& inst = it->second;
+    if (durationSeconds <= 0.0f) {
+        // Instant move (stop)
+        inst.position = destination;
+        inst.isMoving = false;
+        // Return to idle animation if currently walking
+        if (inst.currentAnimationId == 4) {
+            playAnimation(instanceId, 0, true);
+        }
+        return;
+    }
+
+    inst.moveStart = inst.position;
+    inst.moveEnd = destination;
+    inst.moveDuration = durationSeconds;
+    inst.moveElapsed = 0.0f;
+    inst.isMoving = true;
+
+    // Face toward destination (yaw around Z axis since Z is up)
+    glm::vec3 dir = destination - inst.position;
+    if (glm::length(glm::vec2(dir.x, dir.y)) > 0.001f) {
+        float angle = std::atan2(dir.y, dir.x);
+        inst.rotation.z = angle;
+    }
+
+    // Play walk animation (ID 4) while moving
+    if (inst.currentAnimationId == 0) {
+        playAnimation(instanceId, 4, true);
+    }
+}
+
+const pipeline::M2Model* CharacterRenderer::getModelData(uint32_t modelId) const {
+    auto it = models.find(modelId);
+    if (it == models.end()) return nullptr;
+    return &it->second.data;
+}
+
+void CharacterRenderer::startFadeIn(uint32_t instanceId, float durationSeconds) {
+    auto it = instances.find(instanceId);
+    if (it == instances.end()) return;
+    it->second.opacity = 0.0f;
+    it->second.fadeInTime = 0.0f;
+    it->second.fadeInDuration = durationSeconds;
 }
 
 void CharacterRenderer::setActiveGeosets(uint32_t instanceId, const std::unordered_set<uint16_t>& geosets) {

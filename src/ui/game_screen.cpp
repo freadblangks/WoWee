@@ -95,11 +95,25 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     // Teleporter panel (T key toggle handled in Application event loop)
     renderTeleporterPanel();
 
+    // Quest Log (L key toggle handled inside)
+    questLogScreen.render(gameHandler);
+
     // Spellbook (P key toggle handled inside)
     spellbookScreen.render(gameHandler, core::Application::getInstance().getAssetManager());
 
-    // Inventory (B key toggle handled inside)
+    // Set vendor mode before rendering inventory
+    inventoryScreen.setVendorMode(gameHandler.isVendorWindowOpen(), &gameHandler);
+
+    // Auto-open bags when vendor window opens
+    if (gameHandler.isVendorWindowOpen() && !inventoryScreen.isOpen()) {
+        inventoryScreen.setOpen(true);
+    }
+
+    // Bags (B key toggle handled inside)
     inventoryScreen.render(gameHandler.getInventory(), gameHandler.getMoneyCopper());
+
+    // Character screen (C key toggle handled inside render())
+    inventoryScreen.renderCharacterScreen(gameHandler.getInventory());
 
     if (inventoryScreen.consumeInventoryDirty()) {
         gameHandler.notifyInventoryChanged();
@@ -112,7 +126,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         gameHandler.notifyEquipmentChanged();
     }
 
-    // Update renderer face-target position
+    // Update renderer face-target position and selection circle
     auto* renderer = core::Application::getInstance().getRenderer();
     if (renderer) {
         static glm::vec3 targetGLPos;
@@ -121,11 +135,30 @@ void GameScreen::render(game::GameHandler& gameHandler) {
             if (target) {
                 targetGLPos = core::coords::canonicalToRender(glm::vec3(target->getX(), target->getY(), target->getZ()));
                 renderer->setTargetPosition(&targetGLPos);
+
+                // Selection circle color: red=hostile, green=friendly, gray=dead
+                glm::vec3 circleColor(1.0f, 1.0f, 0.3f); // default yellow
+                float circleRadius = 1.5f;
+                if (target->getType() == game::ObjectType::UNIT) {
+                    auto unit = std::static_pointer_cast<game::Unit>(target);
+                    if (unit->getHealth() == 0 && unit->getMaxHealth() > 0) {
+                        circleColor = glm::vec3(0.5f, 0.5f, 0.5f); // gray (dead)
+                    } else if (unit->isInteractable()) {
+                        circleColor = glm::vec3(0.3f, 1.0f, 0.3f); // green (friendly)
+                    } else {
+                        circleColor = glm::vec3(1.0f, 0.2f, 0.2f); // red (hostile)
+                    }
+                } else if (target->getType() == game::ObjectType::PLAYER) {
+                    circleColor = glm::vec3(0.3f, 1.0f, 0.3f); // green (player)
+                }
+                renderer->setSelectionCircle(targetGLPos, circleRadius, circleColor);
             } else {
                 renderer->setTargetPosition(nullptr);
+                renderer->clearSelectionCircle();
             }
         } else {
             renderer->setTargetPosition(nullptr);
+            renderer->clearSelectionCircle();
         }
     }
 }
@@ -422,16 +455,29 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
             float closestT = 1e30f;
             uint64_t closestGuid = 0;
 
+            const uint64_t myGuid = gameHandler.getPlayerGuid();
             for (const auto& [guid, entity] : gameHandler.getEntityManager().getEntities()) {
                 auto t = entity->getType();
                 if (t != game::ObjectType::UNIT && t != game::ObjectType::PLAYER) continue;
+                if (guid == myGuid) continue;  // Don't target self
+
+                // Scale hitbox based on entity type
+                float hitRadius = 1.5f;
+                float heightOffset = 1.5f;
+                if (t == game::ObjectType::UNIT) {
+                    auto unit = std::static_pointer_cast<game::Unit>(entity);
+                    // Critters have very low max health (< 100)
+                    if (unit->getMaxHealth() > 0 && unit->getMaxHealth() < 100) {
+                        hitRadius = 0.5f;
+                        heightOffset = 0.3f;
+                    }
+                }
 
                 glm::vec3 entityGL = core::coords::canonicalToRender(glm::vec3(entity->getX(), entity->getY(), entity->getZ()));
-                // Add half-height offset so we target the body center, not feet
-                entityGL.z += 3.0f;
+                entityGL.z += heightOffset;
 
                 float hitT;
-                if (raySphereIntersect(ray, entityGL, 3.0f, hitT)) {
+                if (raySphereIntersect(ray, entityGL, hitRadius, hitT)) {
                     if (hitT < closestT) {
                         closestT = hitT;
                         closestGuid = guid;
@@ -505,11 +551,11 @@ void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
 
         const auto& characters = gameHandler.getCharacters();
         if (!characters.empty()) {
-            // Use the first (or most recently selected) character
             const auto& ch = characters[0];
             playerName = ch.name;
-            playerLevel = ch.level;
-            // Characters don't store HP; use level-scaled estimate
+            // Use live server level if available, otherwise character struct
+            playerLevel = gameHandler.getPlayerLevel();
+            if (playerLevel == 0) playerLevel = ch.level;
             playerMaxHp = 20 + playerLevel * 10;
             playerHp = playerMaxHp;
         }
@@ -589,26 +635,30 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                              ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
                              ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_AlwaysAutoResize;
 
+    // Determine hostility color for border and name
+    ImVec4 hostileColor(0.7f, 0.7f, 0.7f, 1.0f);
+    if (target->getType() == game::ObjectType::PLAYER) {
+        hostileColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f);
+    } else if (target->getType() == game::ObjectType::UNIT) {
+        auto u = std::static_pointer_cast<game::Unit>(target);
+        if (u->getHealth() == 0 && u->getMaxHealth() > 0) {
+            hostileColor = ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
+        } else if (u->isInteractable()) {
+            hostileColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f);
+        } else {
+            hostileColor = ImVec4(1.0f, 0.2f, 0.2f, 1.0f);
+        }
+    }
+
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.1f, 0.1f, 0.1f, 0.85f));
-    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.4f, 0.4f, 0.4f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(hostileColor.x * 0.8f, hostileColor.y * 0.8f, hostileColor.z * 0.8f, 1.0f));
 
     if (ImGui::Begin("##TargetFrame", nullptr, flags)) {
         // Entity name and type
         std::string name = getEntityName(target);
 
-        ImVec4 nameColor;
-        switch (target->getType()) {
-            case game::ObjectType::PLAYER:
-                nameColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f);  // Green
-                break;
-            case game::ObjectType::UNIT:
-                nameColor = ImVec4(1.0f, 1.0f, 0.3f, 1.0f);  // Yellow
-                break;
-            default:
-                nameColor = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
-                break;
-        }
+        ImVec4 nameColor = hostileColor;
 
         ImGui::TextColored(nameColor, "%s", name.c_str());
 

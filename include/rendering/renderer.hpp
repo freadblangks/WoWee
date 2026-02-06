@@ -123,6 +123,10 @@ public:
     bool isMoving() const;
     void triggerMeleeSwing();
 
+    // Selection circle for targeted entity
+    void setSelectionCircle(const glm::vec3& pos, float radius, const glm::vec3& color);
+    void clearSelectionCircle();
+
     // CPU timing stats (milliseconds, last frame).
     double getLastUpdateMs() const { return lastUpdateMs; }
     double getLastRenderMs() const { return lastRenderMs; }
@@ -223,6 +227,18 @@ private:
 
     // Target facing
     const glm::vec3* targetPosition = nullptr;
+
+    // Selection circle rendering
+    uint32_t selCircleVAO = 0;
+    uint32_t selCircleVBO = 0;
+    uint32_t selCircleShader = 0;
+    int selCircleVertCount = 0;
+    void initSelectionCircle();
+    void renderSelectionCircle(const glm::mat4& view, const glm::mat4& projection);
+    glm::vec3 selCirclePos{0.0f};
+    glm::vec3 selCircleColor{1.0f, 0.0f, 0.0f};
+    float selCircleRadius = 1.5f;
+    bool selCircleVisible = false;
 
     // Footstep event tracking (animation-driven)
     uint32_t footstepLastAnimationId = 0;

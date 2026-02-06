@@ -575,11 +575,23 @@ network::Packet MovementPacket::build(Opcode opcode, const MovementInfo& info, u
         packet.writeBytes(reinterpret_cast<const uint8_t*>(&info.jumpXYSpeed), sizeof(float));
     }
 
-    static int mvLog = 10;
+    // Detailed hex dump for debugging
+    static int mvLog = 5;
     if (mvLog-- > 0) {
-        LOG_INFO("Movement pkt: opcode=0x", std::hex, static_cast<uint16_t>(opcode), std::dec,
-                 " size=", packet.getSize(), " flags=0x", std::hex, info.flags, std::dec,
-                 " pos=(", info.x, ",", info.y, ",", info.z, ")");
+        const auto& raw = packet.getData();
+        std::string hex;
+        for (size_t i = 0; i < raw.size(); i++) {
+            char b[4]; snprintf(b, sizeof(b), "%02x ", raw[i]);
+            hex += b;
+        }
+        LOG_INFO("MOVEPKT opcode=0x", std::hex, static_cast<uint16_t>(opcode), std::dec,
+                 " guid=0x", std::hex, playerGuid, std::dec,
+                 " payload=", raw.size(), " bytes",
+                 " flags=0x", std::hex, info.flags, std::dec,
+                 " flags2=0x", std::hex, info.flags2, std::dec,
+                 " pos=(", info.x, ",", info.y, ",", info.z, ",", info.orientation, ")",
+                 " fallTime=", info.fallTime);
+        LOG_INFO("MOVEPKT hex: ", hex);
     }
 
     return packet;
@@ -1288,7 +1300,7 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
     packet.readUInt32(); // Flags
     packet.readUInt32(); // Flags2
     packet.readUInt32(); // BuyPrice
-    packet.readUInt32(); // SellPrice
+    data.sellPrice = packet.readUInt32(); // SellPrice
 
     data.inventoryType = packet.readUInt32();
 
@@ -1336,6 +1348,118 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
     data.valid = !data.name.empty();
     LOG_INFO("Item query response: ", data.name, " (quality=", data.quality,
              " invType=", data.inventoryType, " stack=", data.maxStack, ")");
+    return true;
+}
+
+// ============================================================
+// Creature Movement
+// ============================================================
+
+bool MonsterMoveParser::parse(network::Packet& packet, MonsterMoveData& data) {
+    // PackedGuid
+    data.guid = UpdateObjectParser::readPackedGuid(packet);
+    if (data.guid == 0) return false;
+
+    // uint8 unk (toggle for MOVEMENTFLAG2_UNK7)
+    if (packet.getReadPos() >= packet.getSize()) return false;
+    packet.readUInt8();
+
+    // Current position (server coords: float x, y, z)
+    if (packet.getReadPos() + 12 > packet.getSize()) return false;
+    data.x = packet.readFloat();
+    data.y = packet.readFloat();
+    data.z = packet.readFloat();
+
+    // uint32 splineId
+    if (packet.getReadPos() + 4 > packet.getSize()) return false;
+    packet.readUInt32();
+
+    // uint8 moveType
+    if (packet.getReadPos() >= packet.getSize()) return false;
+    data.moveType = packet.readUInt8();
+
+    if (data.moveType == 1) {
+        // Stop - no more required data
+        data.destX = data.x;
+        data.destY = data.y;
+        data.destZ = data.z;
+        data.hasDest = false;
+        return true;
+    }
+
+    // Read facing data based on move type
+    if (data.moveType == 2) {
+        // FacingSpot: float x, y, z
+        if (packet.getReadPos() + 12 > packet.getSize()) return false;
+        packet.readFloat(); packet.readFloat(); packet.readFloat();
+    } else if (data.moveType == 3) {
+        // FacingTarget: uint64 guid
+        if (packet.getReadPos() + 8 > packet.getSize()) return false;
+        data.facingTarget = packet.readUInt64();
+    } else if (data.moveType == 4) {
+        // FacingAngle: float angle
+        if (packet.getReadPos() + 4 > packet.getSize()) return false;
+        data.facingAngle = packet.readFloat();
+    }
+
+    // uint32 splineFlags
+    if (packet.getReadPos() + 4 > packet.getSize()) return false;
+    data.splineFlags = packet.readUInt32();
+
+    // Check for animation flag (0x00000100)
+    if (data.splineFlags & 0x00000100) {
+        if (packet.getReadPos() + 8 > packet.getSize()) return false;
+        packet.readUInt32(); // animId
+        packet.readUInt32(); // effectStartTime
+    }
+
+    // uint32 duration
+    if (packet.getReadPos() + 4 > packet.getSize()) return false;
+    data.duration = packet.readUInt32();
+
+    // Check for parabolic flag (0x00000200)
+    if (data.splineFlags & 0x00000200) {
+        if (packet.getReadPos() + 8 > packet.getSize()) return false;
+        packet.readFloat(); // vertAccel
+        packet.readUInt32(); // effectStartTime
+    }
+
+    // uint32 pointCount
+    if (packet.getReadPos() + 4 > packet.getSize()) return false;
+    uint32_t pointCount = packet.readUInt32();
+
+    if (pointCount == 0) return true;
+
+    // Read destination point(s)
+    // If UncompressedPath flag (0x00040000): all points are full float x,y,z
+    // Otherwise: first is packed destination, rest are packed deltas
+    bool uncompressed = (data.splineFlags & 0x00040000) != 0;
+
+    if (uncompressed) {
+        // Read last point as destination
+        // Skip to last point: each point is 12 bytes
+        for (uint32_t i = 0; i < pointCount - 1; i++) {
+            if (packet.getReadPos() + 12 > packet.getSize()) return true;
+            packet.readFloat(); packet.readFloat(); packet.readFloat();
+        }
+        if (packet.getReadPos() + 12 > packet.getSize()) return true;
+        data.destX = packet.readFloat();
+        data.destY = packet.readFloat();
+        data.destZ = packet.readFloat();
+        data.hasDest = true;
+    } else {
+        // Compressed: first 3 floats are the destination (final point)
+        if (packet.getReadPos() + 12 > packet.getSize()) return true;
+        data.destX = packet.readFloat();
+        data.destY = packet.readFloat();
+        data.destZ = packet.readFloat();
+        data.hasDest = true;
+    }
+
+    LOG_DEBUG("MonsterMove: guid=0x", std::hex, data.guid, std::dec,
+              " type=", (int)data.moveType, " dur=", data.duration, "ms",
+              " dest=(", data.destX, ",", data.destY, ",", data.destZ, ")");
+
     return true;
 }
 

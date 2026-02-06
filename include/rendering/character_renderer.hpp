@@ -61,6 +61,9 @@ public:
 
     void setInstancePosition(uint32_t instanceId, const glm::vec3& position);
     void setInstanceRotation(uint32_t instanceId, const glm::vec3& rotation);
+    void moveInstanceTo(uint32_t instanceId, const glm::vec3& destination, float durationSeconds);
+    void startFadeIn(uint32_t instanceId, float durationSeconds);
+    const pipeline::M2Model* getModelData(uint32_t modelId) const;
     void setActiveGeosets(uint32_t instanceId, const std::unordered_set<uint16_t>& geosets);
     void setGroupTextureOverride(uint32_t instanceId, uint16_t geosetGroup, GLuint textureId);
     void setInstanceVisible(uint32_t instanceId, bool visible);
@@ -129,6 +132,18 @@ private:
 
         // Weapon attachments (weapons parented to this instance's bones)
         std::vector<WeaponAttachment> weaponAttachments;
+
+        // Opacity (for fade-in)
+        float opacity = 1.0f;
+        float fadeInTime = 0.0f;     // elapsed fade time (seconds)
+        float fadeInDuration = 0.0f; // total fade duration (0 = no fade)
+
+        // Movement interpolation
+        bool isMoving = false;
+        glm::vec3 moveStart{0.0f};
+        glm::vec3 moveEnd{0.0f};
+        float moveDuration = 0.0f;   // seconds
+        float moveElapsed = 0.0f;
 
         // Override model matrix (used for weapon instances positioned by parent bone)
         bool hasOverrideModelMatrix = false;

@@ -1,4 +1,5 @@
 #include "ui/inventory_screen.hpp"
+#include "game/game_handler.hpp"
 #include "core/input.hpp"
 #include <imgui.h>
 #include <SDL2/SDL.h>
@@ -32,13 +33,11 @@ game::EquipSlot InventoryScreen::getEquipSlotForType(uint8_t inventoryType, game
         case 9:  return game::EquipSlot::WRISTS;
         case 10: return game::EquipSlot::HANDS;
         case 11: {
-            // Ring: prefer empty slot, else RING1
             if (inv.getEquipSlot(game::EquipSlot::RING1).empty())
                 return game::EquipSlot::RING1;
             return game::EquipSlot::RING2;
         }
         case 12: {
-            // Trinket: prefer empty slot, else TRINKET1
             if (inv.getEquipSlot(game::EquipSlot::TRINKET1).empty())
                 return game::EquipSlot::TRINKET1;
             return game::EquipSlot::TRINKET2;
@@ -99,7 +98,6 @@ void InventoryScreen::placeInBackpack(game::Inventory& inv, int index) {
         game::ItemDef targetItem = target.item;
         inv.setBackpackSlot(index, heldItem);
         heldItem = targetItem;
-        // Keep holding the swapped item - update source to this backpack slot
         heldSource = HeldSource::BACKPACK;
         heldBackpackIndex = index;
     }
@@ -112,19 +110,18 @@ void InventoryScreen::placeInEquipment(game::Inventory& inv, game::EquipSlot slo
     // Validate: check if the held item can go in this slot
     if (heldItem.inventoryType > 0) {
         game::EquipSlot validSlot = getEquipSlotForType(heldItem.inventoryType, inv);
-        if (validSlot == game::EquipSlot::NUM_SLOTS) return; // Not equippable
+        if (validSlot == game::EquipSlot::NUM_SLOTS) return;
 
-        // For rings/trinkets, allow either slot
         bool valid = (slot == validSlot);
         if (!valid) {
-            if (heldItem.inventoryType == 11) // Ring
+            if (heldItem.inventoryType == 11)
                 valid = (slot == game::EquipSlot::RING1 || slot == game::EquipSlot::RING2);
-            else if (heldItem.inventoryType == 12) // Trinket
+            else if (heldItem.inventoryType == 12)
                 valid = (slot == game::EquipSlot::TRINKET1 || slot == game::EquipSlot::TRINKET2);
         }
         if (!valid) return;
     } else {
-        return; // No inventoryType means not equippable
+        return;
     }
 
     const auto& target = inv.getEquipSlot(slot);
@@ -132,7 +129,6 @@ void InventoryScreen::placeInEquipment(game::Inventory& inv, game::EquipSlot slo
         inv.setEquipSlot(slot, heldItem);
         holdingItem = false;
     } else {
-        // Swap
         game::ItemDef targetItem = target.item;
         inv.setEquipSlot(slot, heldItem);
         heldItem = targetItem;
@@ -163,13 +159,10 @@ void InventoryScreen::placeInEquipment(game::Inventory& inv, game::EquipSlot slo
 
 void InventoryScreen::cancelPickup(game::Inventory& inv) {
     if (!holdingItem) return;
-    // Return item to source
     if (heldSource == HeldSource::BACKPACK && heldBackpackIndex >= 0) {
-        // If source slot is still empty, put it back
         if (inv.getBackpackSlot(heldBackpackIndex).empty()) {
             inv.setBackpackSlot(heldBackpackIndex, heldItem);
         } else {
-            // Source was swapped into; find free slot
             inv.addItem(heldItem);
         }
     } else if (heldSource == HeldSource::EQUIPMENT && heldEquipSlot != game::EquipSlot::NUM_SLOTS) {
@@ -180,7 +173,6 @@ void InventoryScreen::cancelPickup(game::Inventory& inv) {
             inv.addItem(heldItem);
         }
     } else {
-        // Fallback: just add to inventory
         inv.addItem(heldItem);
     }
     holdingItem = false;
@@ -199,13 +191,11 @@ void InventoryScreen::renderHeldItem() {
     ImVec4 qColor = getQualityColor(heldItem.quality);
     ImU32 borderCol = ImGui::ColorConvertFloat4ToU32(qColor);
 
-    // Background
     drawList->AddRectFilled(pos, ImVec2(pos.x + size, pos.y + size),
                             IM_COL32(40, 35, 30, 200));
     drawList->AddRect(pos, ImVec2(pos.x + size, pos.y + size),
                       borderCol, 0.0f, 0, 2.0f);
 
-    // Item abbreviation
     char abbr[4] = {};
     if (!heldItem.name.empty()) {
         abbr[0] = heldItem.name[0];
@@ -215,7 +205,6 @@ void InventoryScreen::renderHeldItem() {
     drawList->AddText(ImVec2(pos.x + (size - textW) * 0.5f, pos.y + 2.0f),
                       ImGui::ColorConvertFloat4ToU32(qColor), abbr);
 
-    // Stack count
     if (heldItem.stackCount > 1) {
         char countStr[16];
         snprintf(countStr, sizeof(countStr), "%u", heldItem.stackCount);
@@ -224,6 +213,10 @@ void InventoryScreen::renderHeldItem() {
                           IM_COL32(255, 255, 255, 220), countStr);
     }
 }
+
+// ============================================================
+// Bags window (B key) — bottom of screen, no equipment panel
+// ============================================================
 
 void InventoryScreen::render(game::Inventory& inventory, uint64_t moneyCopper) {
     // B key toggle (edge-triggered)
@@ -234,8 +227,14 @@ void InventoryScreen::render(game::Inventory& inventory, uint64_t moneyCopper) {
     }
     bKeyWasDown = bDown;
 
+    // C key toggle for character screen (edge-triggered)
+    bool cDown = !uiWantsKeyboard && core::Input::getInstance().isKeyPressed(SDL_SCANCODE_C);
+    if (cDown && !cKeyWasDown) {
+        characterOpen = !characterOpen;
+    }
+    cKeyWasDown = cDown;
+
     if (!open) {
-        // Cancel held item if inventory closes
         if (holdingItem) cancelPickup(inventory);
         return;
     }
@@ -252,33 +251,42 @@ void InventoryScreen::render(game::Inventory& inventory, uint64_t moneyCopper) {
 
     ImGuiIO& io = ImGui::GetIO();
     float screenW = io.DisplaySize.x;
+    float screenH = io.DisplaySize.y;
 
-    // Position inventory window on the right side of the screen
-    ImGui::SetNextWindowPos(ImVec2(screenW - 520.0f, 80.0f), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(500.0f, 560.0f), ImGuiCond_FirstUseEver);
+    // Calculate bag window size
+    constexpr float slotSize = 40.0f;
+    constexpr int columns = 4;
+    int rows = (inventory.getBackpackSize() + columns - 1) / columns;
+    float bagContentH = rows * (slotSize + 4.0f) + 40.0f; // slots + header + money
 
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
-    if (!ImGui::Begin("Inventory", &open, flags)) {
+    // Check for extra bags and add space
+    for (int bag = 0; bag < game::Inventory::NUM_BAG_SLOTS; bag++) {
+        int bagSize = inventory.getBagSize(bag);
+        if (bagSize <= 0) continue;
+        int bagRows = (bagSize + columns - 1) / columns;
+        bagContentH += bagRows * (slotSize + 4.0f) + 30.0f; // slots + header
+    }
+
+    float windowW = columns * (slotSize + 4.0f) + 30.0f;
+    float windowH = bagContentH + 50.0f; // padding
+
+    // Position at bottom-right of screen
+    float posX = screenW - windowW - 10.0f;
+    float posY = screenH - windowH - 60.0f; // above action bar area
+
+    ImGui::SetNextWindowPos(ImVec2(posX, posY), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(windowW, windowH), ImGuiCond_Always);
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
+    if (!ImGui::Begin("Bags", &open, flags)) {
         ImGui::End();
         return;
     }
 
-    // Reserve space for money display at bottom
-    float moneyHeight = ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y;
-    float panelHeight = ImGui::GetContentRegionAvail().y - moneyHeight;
-
-    // Two-column layout: Equipment (left) | Backpack (right)
-    ImGui::BeginChild("EquipPanel", ImVec2(200.0f, panelHeight), true);
-    renderEquipmentPanel(inventory);
-    ImGui::EndChild();
-
-    ImGui::SameLine();
-
-    ImGui::BeginChild("BackpackPanel", ImVec2(0.0f, panelHeight), true);
     renderBackpackPanel(inventory);
-    ImGui::EndChild();
 
     // Money display
+    ImGui::Spacing();
     uint64_t gold = moneyCopper / 10000;
     uint64_t silver = (moneyCopper / 100) % 100;
     uint64_t copper = moneyCopper % 100;
@@ -288,8 +296,35 @@ void InventoryScreen::render(game::Inventory& inventory, uint64_t moneyCopper) {
                        static_cast<unsigned long long>(copper));
     ImGui::End();
 
-    // Draw held item at cursor (on top of everything)
+    // Draw held item at cursor
     renderHeldItem();
+}
+
+// ============================================================
+// Character screen (C key) — standalone equipment window
+// ============================================================
+
+void InventoryScreen::renderCharacterScreen(game::Inventory& inventory) {
+    if (!characterOpen) return;
+
+    ImGui::SetNextWindowPos(ImVec2(20.0f, 80.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(220.0f, 520.0f), ImGuiCond_FirstUseEver);
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
+    if (!ImGui::Begin("Character", &characterOpen, flags)) {
+        ImGui::End();
+        return;
+    }
+
+    renderEquipmentPanel(inventory);
+
+    ImGui::End();
+
+    // If both bags and character are open, allow drag-and-drop between them
+    // (held item rendering is handled in render())
+    if (open) {
+        renderHeldItem();
+    }
 }
 
 void InventoryScreen::renderEquipmentPanel(game::Inventory& inventory) {
@@ -312,10 +347,8 @@ void InventoryScreen::renderEquipmentPanel(game::Inventory& inventory) {
     constexpr float slotSize = 36.0f;
     constexpr float spacing = 4.0f;
 
-    // Two columns of equipment
     int rows = 8;
     for (int r = 0; r < rows; r++) {
-        // Left slot
         {
             const auto& slot = inventory.getEquipSlot(leftSlots[r]);
             const char* label = game::getEquipSlotName(leftSlots[r]);
@@ -329,7 +362,6 @@ void InventoryScreen::renderEquipmentPanel(game::Inventory& inventory) {
 
         ImGui::SameLine(slotSize + spacing + 60.0f);
 
-        // Right slot
         {
             const auto& slot = inventory.getEquipSlot(rightSlots[r]);
             const char* label = game::getEquipSlotName(rightSlots[r]);
@@ -420,7 +452,7 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
     bool validDrop = false;
     if (holdingItem) {
         if (kind == SlotKind::BACKPACK && backpackIndex >= 0) {
-            validDrop = true; // Can always drop in backpack
+            validDrop = true;
         } else if (kind == SlotKind::EQUIPMENT && heldItem.inventoryType > 0) {
             game::EquipSlot validSlot = getEquipSlotForType(heldItem.inventoryType, inventory);
             validDrop = (equipSlot == validSlot);
@@ -432,11 +464,9 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
     }
 
     if (isEmpty) {
-        // Empty slot: dark grey background
         ImU32 bgCol = IM_COL32(30, 30, 30, 200);
         ImU32 borderCol = IM_COL32(60, 60, 60, 200);
 
-        // Highlight valid drop targets
         if (validDrop) {
             bgCol = IM_COL32(20, 50, 20, 200);
             borderCol = IM_COL32(0, 180, 0, 200);
@@ -445,7 +475,6 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
         drawList->AddRectFilled(pos, ImVec2(pos.x + size, pos.y + size), bgCol);
         drawList->AddRect(pos, ImVec2(pos.x + size, pos.y + size), borderCol);
 
-        // Slot label for equipment slots
         if (label) {
             char abbr[4] = {};
             abbr[0] = label[0];
@@ -457,7 +486,6 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
 
         ImGui::InvisibleButton("slot", ImVec2(size, size));
 
-        // Click interactions
         if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && holdingItem && validDrop) {
             if (kind == SlotKind::BACKPACK && backpackIndex >= 0) {
                 placeInBackpack(inventory, backpackIndex);
@@ -466,7 +494,6 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
             }
         }
 
-        // Tooltip for empty equip slots
         if (label && ImGui::IsItemHovered()) {
             ImGui::BeginTooltip();
             ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "%s", label);
@@ -478,7 +505,6 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
         ImVec4 qColor = getQualityColor(item.quality);
         ImU32 borderCol = ImGui::ColorConvertFloat4ToU32(qColor);
 
-        // Highlight valid drop targets with green tint
         ImU32 bgCol = IM_COL32(40, 35, 30, 220);
         if (holdingItem && validDrop) {
             bgCol = IM_COL32(30, 55, 30, 220);
@@ -489,7 +515,6 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
         drawList->AddRect(pos, ImVec2(pos.x + size, pos.y + size),
                           borderCol, 0.0f, 0, 2.0f);
 
-        // Item abbreviation (first 2 letters)
         char abbr[4] = {};
         if (!item.name.empty()) {
             abbr[0] = item.name[0];
@@ -499,7 +524,6 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
         drawList->AddText(ImVec2(pos.x + (size - textW) * 0.5f, pos.y + 2.0f),
                           ImGui::ColorConvertFloat4ToU32(qColor), abbr);
 
-        // Stack count (bottom-right)
         if (item.stackCount > 1) {
             char countStr[16];
             snprintf(countStr, sizeof(countStr), "%u", item.stackCount);
@@ -513,14 +537,12 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
         // Left-click: pickup or place/swap
         if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
             if (!holdingItem) {
-                // Pick up this item
                 if (kind == SlotKind::BACKPACK && backpackIndex >= 0) {
                     pickupFromBackpack(inventory, backpackIndex);
                 } else if (kind == SlotKind::EQUIPMENT) {
                     pickupFromEquipment(inventory, equipSlot);
                 }
             } else {
-                // Holding an item - place or swap
                 if (kind == SlotKind::BACKPACK && backpackIndex >= 0) {
                     placeInBackpack(inventory, backpackIndex);
                 } else if (kind == SlotKind::EQUIPMENT && validDrop) {
@@ -529,9 +551,12 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
             }
         }
 
-        // Right-click: auto-equip from backpack, or unequip from equipment
+        // Right-click: vendor sell (if vendor mode) or auto-equip/unequip
         if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && !holdingItem) {
-            if (kind == SlotKind::EQUIPMENT) {
+            if (vendorMode_ && gameHandler_ && kind == SlotKind::BACKPACK && backpackIndex >= 0) {
+                // Sell to vendor
+                gameHandler_->sellItemBySlot(backpackIndex);
+            } else if (kind == SlotKind::EQUIPMENT) {
                 // Unequip: move to free backpack slot
                 int freeSlot = inventory.findFreeBackpackSlot();
                 if (freeSlot >= 0) {
@@ -541,8 +566,7 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
                     inventoryDirty = true;
                 }
             } else if (kind == SlotKind::BACKPACK && backpackIndex >= 0 && item.inventoryType > 0) {
-                // Auto-equip: find the right slot
-                // Capture type before swap (item ref may become stale)
+                // Auto-equip
                 uint8_t equippingType = item.inventoryType;
                 game::EquipSlot targetSlot = getEquipSlotForType(equippingType, inventory);
                 if (targetSlot != game::EquipSlot::NUM_SLOTS) {
@@ -551,12 +575,10 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
                         inventory.setEquipSlot(targetSlot, item);
                         inventory.clearBackpackSlot(backpackIndex);
                     } else {
-                        // Swap with equipped item
                         game::ItemDef equippedItem = eqSlot.item;
                         inventory.setEquipSlot(targetSlot, item);
                         inventory.setBackpackSlot(backpackIndex, equippedItem);
                     }
-                    // Two-handed weapon in main hand clears the off-hand
                     if (targetSlot == game::EquipSlot::MAIN_HAND && equippingType == 17) {
                         const auto& offHand = inventory.getEquipSlot(game::EquipSlot::OFF_HAND);
                         if (!offHand.empty()) {
@@ -564,7 +586,6 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
                             inventory.clearEquipSlot(game::EquipSlot::OFF_HAND);
                         }
                     }
-                    // Equipping off-hand unequips a 2H weapon from main hand
                     if (targetSlot == game::EquipSlot::OFF_HAND &&
                         inventory.getEquipSlot(game::EquipSlot::MAIN_HAND).item.inventoryType == 17) {
                         inventory.addItem(inventory.getEquipSlot(game::EquipSlot::MAIN_HAND).item);
@@ -643,6 +664,18 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item) {
     // Stack info
     if (item.maxStack > 1) {
         ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Stack: %u/%u", item.stackCount, item.maxStack);
+    }
+
+    // Sell price (when vendor is open)
+    if (vendorMode_ && gameHandler_) {
+        const auto* info = gameHandler_->getItemInfo(item.itemId);
+        if (info && info->sellPrice > 0) {
+            uint32_t g = info->sellPrice / 10000;
+            uint32_t s = (info->sellPrice / 100) % 100;
+            uint32_t c = info->sellPrice % 100;
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.0f, 1.0f), "Sell Price: %ug %us %uc", g, s, c);
+        }
     }
 
     ImGui::EndTooltip();

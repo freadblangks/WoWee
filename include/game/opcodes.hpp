@@ -68,6 +68,9 @@ enum class Opcode : uint16_t {
     // ---- XP ----
     SMSG_LOG_XPGAIN                  = 0x1D0,
 
+    // ---- Creature Movement ----
+    SMSG_MONSTER_MOVE                = 0x0DD,
+
     // ---- Phase 2: Combat Core ----
     CMSG_ATTACKSWING                 = 0x141,
     CMSG_ATTACKSTOP                  = 0x142,
@@ -146,6 +149,7 @@ enum class Opcode : uint16_t {
     SMSG_QUESTGIVER_OFFER_REWARD     = 0x18D,
     CMSG_QUESTGIVER_CHOOSE_REWARD    = 0x18E,
     SMSG_QUESTGIVER_QUEST_COMPLETE   = 0x191,
+    CMSG_QUESTLOG_REMOVE_QUEST       = 0x194,
 
     // ---- Phase 5: Vendor ----
     CMSG_LIST_INVENTORY              = 0x19E,

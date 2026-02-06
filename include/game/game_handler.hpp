@@ -294,6 +294,11 @@ public:
     using CreatureDespawnCallback = std::function<void(uint64_t guid)>;
     void setCreatureDespawnCallback(CreatureDespawnCallback cb) { creatureDespawnCallback_ = std::move(cb); }
 
+    // Creature move callback (online mode - triggered by SMSG_MONSTER_MOVE)
+    // Parameters: guid, x, y, z (canonical), duration_ms (0 = instant)
+    using CreatureMoveCallback = std::function<void(uint64_t guid, float x, float y, float z, uint32_t durationMs)>;
+    void setCreatureMoveCallback(CreatureMoveCallback cb) { creatureMoveCallback_ = std::move(cb); }
+
     // Cooldowns
     float getSpellCooldown(uint32_t spellId) const;
 
@@ -330,17 +335,33 @@ public:
     bool isQuestDetailsOpen() const { return questDetailsOpen; }
     const QuestDetailsData& getQuestDetails() const { return currentQuestDetails; }
 
+    // Quest log
+    struct QuestLogEntry {
+        uint32_t questId = 0;
+        std::string title;
+        std::string objectives;
+        bool complete = false;
+    };
+    const std::vector<QuestLogEntry>& getQuestLog() const { return questLog_; }
+    void abandonQuest(uint32_t questId);
+
     // Vendor
     void openVendor(uint64_t npcGuid);
     void closeVendor();
     void buyItem(uint64_t vendorGuid, uint32_t itemId, uint32_t slot, uint8_t count);
     void sellItem(uint64_t vendorGuid, uint64_t itemGuid, uint8_t count);
+    void sellItemBySlot(int backpackIndex);
     bool isVendorWindowOpen() const { return vendorWindowOpen; }
     const ListInventoryData& getVendorItems() const { return currentVendorItems; }
     const ItemQueryResponseData* getItemInfo(uint32_t itemId) const {
         auto it = itemInfoCache_.find(itemId);
         return (it != itemInfoCache_.end()) ? &it->second : nullptr;
     }
+    uint64_t getBackpackItemGuid(int index) const {
+        if (index < 0 || index >= static_cast<int>(backpackSlotGuids_.size())) return 0;
+        return backpackSlotGuids_[index];
+    }
+    uint64_t getVendorGuid() const { return currentVendorItems.vendorGuid; }
 
     /**
      * Set callbacks
@@ -464,6 +485,9 @@ private:
     // ---- XP handler ----
     void handleXpGain(network::Packet& packet);
 
+    // ---- Creature movement handler ----
+    void handleMonsterMove(network::Packet& packet);
+
     // ---- Phase 5 handlers ----
     void handleLootResponse(network::Packet& packet);
     void handleLootReleaseResponse(network::Packet& packet);
@@ -580,6 +604,7 @@ private:
     WorldEntryCallback worldEntryCallback_;
     CreatureSpawnCallback creatureSpawnCallback_;
     CreatureDespawnCallback creatureDespawnCallback_;
+    CreatureMoveCallback creatureMoveCallback_;
     std::vector<uint32_t> knownSpells;
     std::unordered_map<uint32_t, float> spellCooldowns;    // spellId -> remaining seconds
     uint8_t castCount = 0;
@@ -615,6 +640,9 @@ private:
     // Quest details
     bool questDetailsOpen = false;
     QuestDetailsData currentQuestDetails;
+
+    // Quest log
+    std::vector<QuestLogEntry> questLog_;
 
     // Vendor
     bool vendorWindowOpen = false;

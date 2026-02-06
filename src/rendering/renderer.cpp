@@ -391,7 +391,8 @@ uint32_t Renderer::resolveMeleeAnimId() {
         return 0.0f;
     };
 
-    const uint32_t attackCandidates[] = {16, 17, 18, 19, 20, 21};
+    // Prefer weapon attacks (1H=17, 2H=18) over unarmed (16); 19-21 are other variants
+    const uint32_t attackCandidates[] = {17, 18, 16, 19, 20, 21};
     for (uint32_t id : attackCandidates) {
         if (characterRenderer->hasAnimation(characterInstanceId, id)) {
             meleeAnimId = id;
@@ -1032,6 +1033,113 @@ void Renderer::update(float deltaTime) {
     lastUpdateMs = std::chrono::duration<double, std::milli>(updateEnd - updateStart).count();
 }
 
+// ============================================================
+// Selection Circle
+// ============================================================
+
+void Renderer::initSelectionCircle() {
+    if (selCircleVAO) return;
+
+    // Minimal shader: position + uniform MVP + color
+    const char* vsSrc = R"(
+        #version 330 core
+        layout(location = 0) in vec3 aPos;
+        uniform mat4 uMVP;
+        void main() {
+            gl_Position = uMVP * vec4(aPos, 1.0);
+        }
+    )";
+    const char* fsSrc = R"(
+        #version 330 core
+        uniform vec3 uColor;
+        out vec4 FragColor;
+        void main() {
+            FragColor = vec4(uColor, 0.6);
+        }
+    )";
+
+    auto compile = [](GLenum type, const char* src) -> GLuint {
+        GLuint s = glCreateShader(type);
+        glShaderSource(s, 1, &src, nullptr);
+        glCompileShader(s);
+        return s;
+    };
+
+    GLuint vs = compile(GL_VERTEX_SHADER, vsSrc);
+    GLuint fs = compile(GL_FRAGMENT_SHADER, fsSrc);
+    selCircleShader = glCreateProgram();
+    glAttachShader(selCircleShader, vs);
+    glAttachShader(selCircleShader, fs);
+    glLinkProgram(selCircleShader);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+
+    // Build ring vertices (two concentric circles forming a strip)
+    constexpr int SEGMENTS = 48;
+    constexpr float INNER = 0.85f;
+    constexpr float OUTER = 1.0f;
+    std::vector<float> verts;
+    for (int i = 0; i <= SEGMENTS; i++) {
+        float angle = 2.0f * 3.14159265f * static_cast<float>(i) / static_cast<float>(SEGMENTS);
+        float c = std::cos(angle), s = std::sin(angle);
+        // Outer vertex
+        verts.push_back(c * OUTER);
+        verts.push_back(s * OUTER);
+        verts.push_back(0.0f);
+        // Inner vertex
+        verts.push_back(c * INNER);
+        verts.push_back(s * INNER);
+        verts.push_back(0.0f);
+    }
+    selCircleVertCount = static_cast<int>((SEGMENTS + 1) * 2);
+
+    glGenVertexArrays(1, &selCircleVAO);
+    glGenBuffers(1, &selCircleVBO);
+    glBindVertexArray(selCircleVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, selCircleVBO);
+    glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(float), verts.data(), GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
+    glEnableVertexAttribArray(0);
+    glBindVertexArray(0);
+}
+
+void Renderer::setSelectionCircle(const glm::vec3& pos, float radius, const glm::vec3& color) {
+    selCirclePos = pos;
+    selCircleRadius = radius;
+    selCircleColor = color;
+    selCircleVisible = true;
+}
+
+void Renderer::clearSelectionCircle() {
+    selCircleVisible = false;
+}
+
+void Renderer::renderSelectionCircle(const glm::mat4& view, const glm::mat4& projection) {
+    if (!selCircleVisible) return;
+    initSelectionCircle();
+
+    glm::mat4 model = glm::translate(glm::mat4(1.0f), selCirclePos);
+    model = glm::scale(model, glm::vec3(selCircleRadius));
+
+    glm::mat4 mvp = projection * view * model;
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDisable(GL_CULL_FACE);
+    glDepthMask(GL_FALSE);
+
+    glUseProgram(selCircleShader);
+    glUniformMatrix4fv(glGetUniformLocation(selCircleShader, "uMVP"), 1, GL_FALSE, &mvp[0][0]);
+    glUniform3fv(glGetUniformLocation(selCircleShader, "uColor"), 1, &selCircleColor[0]);
+
+    glBindVertexArray(selCircleVAO);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, selCircleVertCount);
+    glBindVertexArray(0);
+
+    glDepthMask(GL_TRUE);
+    glEnable(GL_CULL_FACE);
+}
+
 void Renderer::renderWorld(game::World* world) {
     auto renderStart = std::chrono::steady_clock::now();
     lastTerrainRenderMs = 0.0;
@@ -1156,6 +1264,9 @@ void Renderer::renderWorld(game::World* world) {
     if (characterRenderer && camera) {
         characterRenderer->render(*camera, view, projection);
     }
+
+    // Render selection circle under targeted creature
+    renderSelectionCircle(view, projection);
 
     // Render WMO buildings (after characters, before UI)
     if (wmoRenderer && camera) {

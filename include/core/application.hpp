@@ -153,8 +153,19 @@ private:
     std::unordered_map<uint32_t, FacialHairGeosets> facialHairGeosetMap_;
     std::unordered_map<uint64_t, uint32_t> creatureInstances_;  // guid → render instanceId
     std::unordered_map<uint64_t, uint32_t> creatureModelIds_;   // guid → loaded modelId
+    std::unordered_map<uint32_t, uint32_t> displayIdModelCache_; // displayId → modelId (model caching)
     uint32_t nextCreatureModelId_ = 5000;  // Model IDs for online creatures
     bool creatureLookupsBuilt_ = false;
+
+    // Deferred creature spawn queue (throttles spawning to avoid hangs)
+    struct PendingCreatureSpawn {
+        uint64_t guid;
+        uint32_t displayId;
+        float x, y, z, orientation;
+    };
+    std::vector<PendingCreatureSpawn> pendingCreatureSpawns_;
+    static constexpr int MAX_SPAWNS_PER_FRAME = 2;
+    void processCreatureSpawnQueue();
 };
 
 } // namespace core

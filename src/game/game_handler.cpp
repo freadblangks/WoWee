@@ -840,6 +840,28 @@ void GameHandler::update(float deltaTime) {
             updateLocalCombat(deltaTime);
             updateNpcAggro(deltaTime);
         }
+
+        // Online mode: maintain auto-attack by periodically re-sending CMSG_ATTACKSWING
+        if (!singlePlayerMode_ && autoAttacking && autoAttackTarget != 0 && socket) {
+            auto target = entityManager.getEntity(autoAttackTarget);
+            if (!target) {
+                // Target gone
+                stopAutoAttack();
+            } else if (target->getType() == ObjectType::UNIT) {
+                auto unit = std::static_pointer_cast<Unit>(target);
+                if (unit->getHealth() == 0) {
+                    stopAutoAttack();
+                } else {
+                    // Re-send attack swing every 2 seconds to keep server combat alive
+                    swingTimer_ += deltaTime;
+                    if (swingTimer_ >= 2.0f) {
+                        auto pkt = AttackSwingPacket::build(autoAttackTarget);
+                        socket->send(pkt);
+                        swingTimer_ = 0.0f;
+                    }
+                }
+            }
+        }
     }
 
     if (singlePlayerMode_) {
@@ -982,6 +1004,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
             handleXpGain(packet);
             break;
 
+        // ---- Creature Movement ----
+        case Opcode::SMSG_MONSTER_MOVE:
+            handleMonsterMove(packet);
+            break;
+
         // ---- Phase 2: Combat ----
         case Opcode::SMSG_ATTACKSTART:
             handleAttackStart(packet);
@@ -1082,7 +1109,15 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_PERIODICAURALOG:
         case Opcode::SMSG_SPELLENERGIZELOG:
         case Opcode::SMSG_ENVIRONMENTALDAMAGELOG:
-        case Opcode::SMSG_LOOT_MONEY_NOTIFY:
+        case Opcode::SMSG_LOOT_MONEY_NOTIFY: {
+            // uint32 money + uint8 soleLooter
+            if (packet.getSize() - packet.getReadPos() >= 4) {
+                uint32_t amount = packet.readUInt32();
+                playerMoneyCopper_ += amount;
+                LOG_INFO("Looted ", amount, " copper (total: ", playerMoneyCopper_, ")");
+            }
+            break;
+        }
         case Opcode::SMSG_LOOT_CLEAR_MONEY:
         case Opcode::SMSG_NPC_TEXT_UPDATE:
         case Opcode::SMSG_SELL_ITEM:
@@ -1091,12 +1126,26 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_GAMEOBJECT_QUERY_RESPONSE:
         case Opcode::MSG_RAID_TARGET_UPDATE:
         case Opcode::SMSG_QUESTGIVER_STATUS:
+            LOG_DEBUG("Ignoring SMSG_QUESTGIVER_STATUS");
+            break;
         case Opcode::SMSG_QUESTGIVER_QUEST_DETAILS:
             handleQuestDetails(packet);
             break;
+        case Opcode::SMSG_QUESTGIVER_QUEST_COMPLETE: {
+            // Mark quest as complete in local log
+            if (packet.getSize() - packet.getReadPos() >= 4) {
+                uint32_t questId = packet.readUInt32();
+                for (auto& q : questLog_) {
+                    if (q.questId == questId) {
+                        q.complete = true;
+                        break;
+                    }
+                }
+            }
+            break;
+        }
         case Opcode::SMSG_QUESTGIVER_REQUEST_ITEMS:
         case Opcode::SMSG_QUESTGIVER_OFFER_REWARD:
-        case Opcode::SMSG_QUESTGIVER_QUEST_COMPLETE:
         case Opcode::SMSG_GROUP_SET_LEADER:
             LOG_DEBUG("Ignoring known opcode: 0x", std::hex, opcode, std::dec);
             break;
@@ -2478,7 +2527,12 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     for (const auto& [key, val] : block.fields) {
                         if (key == 634) { playerXp_ = val; }                // PLAYER_XP
                         else if (key == 635) { playerNextLevelXp_ = val; }  // PLAYER_NEXT_LEVEL_XP
-                        else if (key == 54) { serverPlayerLevel_ = val; }   // UNIT_FIELD_LEVEL
+                        else if (key == 54) {
+                            serverPlayerLevel_ = val;                        // UNIT_FIELD_LEVEL
+                            for (auto& ch : characters) {
+                                if (ch.guid == playerGuid) { ch.level = val; break; }
+                            }
+                        }
                         else if (key == 632) { playerMoneyCopper_ = val; }  // PLAYER_FIELD_COINAGE
                         else if (key >= 322 && key <= 367) {
                             // PLAYER_FIELD_INV_SLOT_HEAD: equipment slots (23 slots × 2 fields)
@@ -2522,8 +2576,14 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             switch (key) {
                                 case 24:
                                     unit->setHealth(val);
-                                    if (val == 0 && block.guid == autoAttackTarget) {
-                                        stopAutoAttack();
+                                    if (val == 0) {
+                                        if (block.guid == autoAttackTarget) {
+                                            stopAutoAttack();
+                                        }
+                                        // Trigger death animation for NPC units
+                                        if (entity->getType() == ObjectType::UNIT && npcDeathCallback_) {
+                                            npcDeathCallback_(block.guid);
+                                        }
                                     }
                                     break;
                                 case 25: unit->setPower(val); break;
@@ -2540,10 +2600,29 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     if (block.guid == playerGuid) {
                         bool slotsChanged = false;
                         for (const auto& [key, val] : block.fields) {
-                            if (key == 634) { playerXp_ = val; }
-                            else if (key == 635) { playerNextLevelXp_ = val; }
-                            else if (key == 54) { serverPlayerLevel_ = val; }
-                            else if (key == 632) { playerMoneyCopper_ = val; }
+                            if (key == 634) {
+                                playerXp_ = val;
+                                LOG_INFO("XP updated: ", val);
+                            }
+                            else if (key == 635) {
+                                playerNextLevelXp_ = val;
+                                LOG_INFO("Next level XP updated: ", val);
+                            }
+                            else if (key == 54) {
+                                serverPlayerLevel_ = val;
+                                LOG_INFO("Level updated: ", val);
+                                // Update Character struct for character selection screen
+                                for (auto& ch : characters) {
+                                    if (ch.guid == playerGuid) {
+                                        ch.level = val;
+                                        break;
+                                    }
+                                }
+                            }
+                            else if (key == 632) {
+                                playerMoneyCopper_ = val;
+                                LOG_INFO("Money updated via VALUES: ", val, " copper");
+                            }
                             else if (key >= 322 && key <= 367) {
                                 int slotIndex = (key - 322) / 2;
                                 bool isLow = ((key - 322) % 2 == 0);
@@ -2795,6 +2874,7 @@ void GameHandler::tabTarget(float playerX, float playerY, float playerZ) {
         for (const auto& [guid, entity] : entityManager.getEntities()) {
             auto t = entity->getType();
             if (t != ObjectType::UNIT && t != ObjectType::PLAYER) continue;
+            if (guid == playerGuid) continue;  // Don't tab-target self
             float dx = entity->getX() - playerX;
             float dy = entity->getY() - playerY;
             float dz = entity->getZ() - playerZ;
@@ -3063,9 +3143,75 @@ void GameHandler::handleAttackStop(network::Packet& packet) {
     AttackStopData data;
     if (!AttackStopParser::parse(packet, data)) return;
 
+    // Don't clear autoAttacking on SMSG_ATTACKSTOP - the server sends this
+    // when the attack loop pauses (out of range, etc). The player's intent
+    // to attack persists until target dies or player explicitly cancels.
+    // We'll re-send CMSG_ATTACKSWING periodically in the update loop.
     if (data.attackerGuid == playerGuid) {
-        autoAttacking = false;
-        autoAttackTarget = 0;
+        LOG_DEBUG("SMSG_ATTACKSTOP received (keeping auto-attack intent)");
+    }
+}
+
+void GameHandler::handleMonsterMove(network::Packet& packet) {
+    MonsterMoveData data;
+    if (!MonsterMoveParser::parse(packet, data)) {
+        LOG_WARNING("Failed to parse SMSG_MONSTER_MOVE");
+        return;
+    }
+
+    // Update entity position in entity manager
+    auto entity = entityManager.getEntity(data.guid);
+    if (entity) {
+        if (data.hasDest) {
+            // Convert destination from server to canonical coords
+            glm::vec3 destCanonical = core::coords::serverToCanonical(
+                glm::vec3(data.destX, data.destY, data.destZ));
+
+            // Calculate facing angle
+            float orientation = entity->getOrientation();
+            if (data.moveType == 4) {
+                // FacingAngle - server specifies exact angle
+                orientation = data.facingAngle;
+            } else if (data.moveType == 3) {
+                // FacingTarget - face toward the target entity
+                auto target = entityManager.getEntity(data.facingTarget);
+                if (target) {
+                    float dx = target->getX() - entity->getX();
+                    float dy = target->getY() - entity->getY();
+                    if (std::abs(dx) > 0.01f || std::abs(dy) > 0.01f) {
+                        orientation = std::atan2(dy, dx);
+                    }
+                }
+            } else {
+                // Normal move - face toward destination
+                float dx = destCanonical.x - entity->getX();
+                float dy = destCanonical.y - entity->getY();
+                if (std::abs(dx) > 0.01f || std::abs(dy) > 0.01f) {
+                    orientation = std::atan2(dy, dx);
+                }
+            }
+
+            // Set entity to destination for targeting/logic; renderer interpolates visually
+            entity->setPosition(destCanonical.x, destCanonical.y, destCanonical.z, orientation);
+
+            // Notify renderer to smoothly move the creature
+            if (creatureMoveCallback_) {
+                creatureMoveCallback_(data.guid,
+                    destCanonical.x, destCanonical.y, destCanonical.z,
+                    data.duration);
+            }
+        } else if (data.moveType == 1) {
+            // Stop at current position
+            glm::vec3 posCanonical = core::coords::serverToCanonical(
+                glm::vec3(data.x, data.y, data.z));
+            entity->setPosition(posCanonical.x, posCanonical.y, posCanonical.z,
+                                entity->getOrientation());
+
+            if (creatureMoveCallback_) {
+                creatureMoveCallback_(data.guid,
+                    posCanonical.x, posCanonical.y, posCanonical.z, 0);
+            }
+        }
     }
 }
 
@@ -3556,6 +3702,20 @@ void GameHandler::acceptQuest() {
     auto packet = QuestgiverAcceptQuestPacket::build(
         currentQuestDetails.npcGuid, currentQuestDetails.questId);
     socket->send(packet);
+
+    // Add to quest log
+    bool alreadyInLog = false;
+    for (const auto& q : questLog_) {
+        if (q.questId == currentQuestDetails.questId) { alreadyInLog = true; break; }
+    }
+    if (!alreadyInLog) {
+        QuestLogEntry entry;
+        entry.questId = currentQuestDetails.questId;
+        entry.title = currentQuestDetails.title;
+        entry.objectives = currentQuestDetails.objectives;
+        questLog_.push_back(entry);
+    }
+
     questDetailsOpen = false;
     currentQuestDetails = QuestDetailsData{};
 }
@@ -3563,6 +3723,23 @@ void GameHandler::acceptQuest() {
 void GameHandler::declineQuest() {
     questDetailsOpen = false;
     currentQuestDetails = QuestDetailsData{};
+}
+
+void GameHandler::abandonQuest(uint32_t questId) {
+    // Find the quest's index in our local log
+    for (size_t i = 0; i < questLog_.size(); i++) {
+        if (questLog_[i].questId == questId) {
+            // Tell server to remove it (slot index in server quest log)
+            // We send the local index; server maps it via PLAYER_QUEST_LOG fields
+            if (state == WorldState::IN_WORLD && socket) {
+                network::Packet pkt(static_cast<uint16_t>(Opcode::CMSG_QUESTLOG_REMOVE_QUEST));
+                pkt.writeUInt8(static_cast<uint8_t>(i));
+                socket->send(pkt);
+            }
+            questLog_.erase(questLog_.begin() + static_cast<ptrdiff_t>(i));
+            return;
+        }
+    }
 }
 
 void GameHandler::closeGossip() {
@@ -3591,6 +3768,28 @@ void GameHandler::sellItem(uint64_t vendorGuid, uint64_t itemGuid, uint8_t count
     if (state != WorldState::IN_WORLD || !socket) return;
     auto packet = SellItemPacket::build(vendorGuid, itemGuid, count);
     socket->send(packet);
+}
+
+void GameHandler::sellItemBySlot(int backpackIndex) {
+    if (backpackIndex < 0 || backpackIndex >= inventory.getBackpackSize()) return;
+    const auto& slot = inventory.getBackpackSlot(backpackIndex);
+    if (slot.empty()) return;
+
+    if (singlePlayerMode_) {
+        auto it = itemInfoCache_.find(slot.item.itemId);
+        if (it != itemInfoCache_.end() && it->second.sellPrice > 0) {
+            addMoneyCopper(it->second.sellPrice);
+            std::string msg = "You sold " + slot.item.name + ".";
+            addSystemChatMessage(msg);
+        }
+        inventory.clearBackpackSlot(backpackIndex);
+        notifyInventoryChanged();
+    } else {
+        uint64_t itemGuid = backpackSlotGuids_[backpackIndex];
+        if (itemGuid != 0 && currentVendorItems.vendorGuid != 0) {
+            sellItem(currentVendorItems.vendorGuid, itemGuid, 1);
+        }
+    }
 }
 
 void GameHandler::handleLootResponse(network::Packet& packet) {

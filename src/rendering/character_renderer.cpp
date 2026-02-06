@@ -1171,10 +1171,10 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
         glBindVertexArray(gpuModel.vao);
 
         if (!gpuModel.data.batches.empty()) {
-            // One-time debug dump of rendered batches
-            static bool dumpedBatches = false;
-            if (!dumpedBatches) {
-                dumpedBatches = true;
+            // One-time debug dump of rendered batches per model
+            static std::unordered_set<uint32_t> dumpedModels;
+            if (dumpedModels.find(instance.modelId) == dumpedModels.end()) {
+                dumpedModels.insert(instance.modelId);
                 int bIdx = 0;
                 int rendered = 0, skipped = 0;
                 for (const auto& b : gpuModel.data.batches) {

@@ -905,8 +905,8 @@ void Application::spawnPlayerCharacter() {
         // Default geosets for naked human male
         // Use actual submesh IDs from the model (logged at load time)
         std::unordered_set<uint16_t> activeGeosets;
-        // Body parts (group 0: IDs 0-18)
-        for (uint16_t i = 0; i <= 18; i++) {
+        // Body parts (group 0: IDs 0-99) - humanoid models may have many body submeshes
+        for (uint16_t i = 0; i < 100; i++) {
             activeGeosets.insert(i);
         }
         // Equipment groups: "01" = bare skin, "02" = first equipped variant
@@ -1893,8 +1893,8 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
             const auto& extra = itExtra->second;
             std::unordered_set<uint16_t> activeGeosets;
 
-            // Body parts (group 0: IDs 0-18)
-            for (uint16_t i = 0; i <= 18; i++) {
+            // Body parts (group 0: IDs 0-99) - humanoid models may have many body submeshes
+            for (uint16_t i = 0; i < 100; i++) {
                 activeGeosets.insert(i);
             }
 
@@ -1996,9 +1996,15 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                 activeGeosets.erase(static_cast<uint16_t>(101 + extra.hairStyleId));
             }
 
-            // TODO: Geoset filtering disabled - submesh IDs don't match expected geoset IDs
-            // charRenderer->setActiveGeosets(instanceId, activeGeosets);
-            LOG_DEBUG("Humanoid NPC geosets (disabled): hair=", hideHair ? 0 : (101 + extra.hairStyleId),
+            // Log what geosets we're setting for debugging
+            std::string geosetList;
+            for (uint16_t g : activeGeosets) {
+                if (!geosetList.empty()) geosetList += ",";
+                geosetList += std::to_string(g);
+            }
+            LOG_INFO("NPC geosets for instance ", instanceId, ": [", geosetList, "]");
+            charRenderer->setActiveGeosets(instanceId, activeGeosets);
+            LOG_DEBUG("Set humanoid geosets: hair=", hideHair ? 0 : (101 + extra.hairStyleId),
                       " facial=", 201 + extra.facialHairId,
                       " chest=", geosetChest, " pants=", geosetPants,
                       " boots=", geosetBoots, " gloves=", geosetGloves);

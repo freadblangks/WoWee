@@ -1996,8 +1996,9 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                 activeGeosets.erase(static_cast<uint16_t>(101 + extra.hairStyleId));
             }
 
-            charRenderer->setActiveGeosets(instanceId, activeGeosets);
-            LOG_DEBUG("Set humanoid geosets: hair=", hideHair ? 0 : (101 + extra.hairStyleId),
+            // TODO: Geoset filtering disabled - submesh IDs don't match expected geoset IDs
+            // charRenderer->setActiveGeosets(instanceId, activeGeosets);
+            LOG_DEBUG("Humanoid NPC geosets (disabled): hair=", hideHair ? 0 : (101 + extra.hairStyleId),
                       " facial=", 201 + extra.facialHairId,
                       " chest=", geosetChest, " pants=", geosetPants,
                       " boots=", geosetBoots, " gloves=", geosetGloves);

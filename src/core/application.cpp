@@ -171,6 +171,8 @@ bool Application::initialize() {
     LOG_INFO("Attempting to load WoW assets from: ", dataPath);
     if (assetManager->initialize(dataPath)) {
         LOG_INFO("Asset manager initialized successfully");
+        // Eagerly load creature display DBC lookups so first spawn doesn't stall
+        buildCreatureDisplayLookups();
     } else {
         LOG_WARNING("Failed to initialize asset manager - asset loading will be unavailable");
         LOG_WARNING("Set WOW_DATA_PATH environment variable to your WoW Data directory");
@@ -1842,10 +1844,8 @@ std::string Application::getModelPathForDisplayId(uint32_t displayId) const {
 void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x, float y, float z, float orientation) {
     if (!renderer || !renderer->getCharacterRenderer() || !assetManager) return;
 
-    // Build lookups on first creature spawn
-    if (!creatureLookupsBuilt_) {
-        buildCreatureDisplayLookups();
-    }
+    // Skip if lookups not yet built (asset manager not ready)
+    if (!creatureLookupsBuilt_) return;
 
     // Skip if already spawned
     if (creatureInstances_.count(guid)) return;

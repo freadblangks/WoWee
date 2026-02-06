@@ -125,7 +125,23 @@ private:
     uint32_t cloakTextureSlotIndex_ = 0;
 
     // Online creature model spawning
-    std::unordered_map<uint32_t, uint32_t> displayToModelId_;   // displayId → modelId (from CreatureDisplayInfo.dbc)
+    struct CreatureDisplayData {
+        uint32_t modelId = 0;
+        std::string skin1, skin2, skin3;  // Texture names from CreatureDisplayInfo.dbc
+        uint32_t extraDisplayId = 0;      // Link to CreatureDisplayInfoExtra.dbc
+    };
+    struct HumanoidDisplayExtra {
+        uint8_t raceId = 0;
+        uint8_t sexId = 0;
+        uint8_t skinId = 0;
+        uint8_t faceId = 0;
+        uint8_t hairStyleId = 0;
+        uint8_t hairColorId = 0;
+        uint8_t facialHairId = 0;
+        std::string bakeName;  // Pre-baked texture path if available
+    };
+    std::unordered_map<uint32_t, CreatureDisplayData> displayDataMap_;  // displayId → display data
+    std::unordered_map<uint32_t, HumanoidDisplayExtra> humanoidExtraMap_;  // extraDisplayId → humanoid data
     std::unordered_map<uint32_t, std::string> modelIdToPath_;   // modelId → M2 path (from CreatureModelData.dbc)
     std::unordered_map<uint64_t, uint32_t> creatureInstances_;  // guid → render instanceId
     std::unordered_map<uint64_t, uint32_t> creatureModelIds_;   // guid → loaded modelId

@@ -576,12 +576,14 @@ void Application::setupUICallbacks() {
     // Character selection callback
     uiManager->getCharacterScreen().setOnCharacterSelected([this](uint64_t characterGuid) {
         LOG_INFO("Character selected: GUID=0x", std::hex, characterGuid, std::dec);
+        // Always set the active character GUID
+        if (gameHandler) {
+            gameHandler->setActiveCharacterGuid(characterGuid);
+        }
         if (singlePlayerMode) {
-            if (gameHandler) {
-                gameHandler->setActiveCharacterGuid(characterGuid);
-            }
             startSinglePlayer();
         } else {
+            // Online mode - login will be handled by world entry callback
             setState(AppState::IN_GAME);
         }
     });
@@ -1573,6 +1575,34 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
         }
     }
 
+    // Spawn player model for online mode
+    if (gameHandler) {
+        const game::Character* activeChar = gameHandler->getActiveCharacter();
+        if (activeChar) {
+            // Set race/gender for player model loading
+            spRace_ = activeChar->race;
+            spGender_ = activeChar->gender;
+            spClass_ = activeChar->characterClass;
+
+            // Don't snap to ground - server provides exact position
+            spawnSnapToGround = false;
+
+            // Reset spawn flag and spawn the player character model
+            playerCharacterSpawned = false;
+            spawnPlayerCharacter();
+
+            // Explicitly set character position to match server coordinates
+            renderer->getCharacterPosition() = spawnRender;
+
+            LOG_INFO("Spawned online player model: ", activeChar->name,
+                     " (race=", static_cast<int>(spRace_),
+                     ", gender=", static_cast<int>(spGender_),
+                     ") at render pos (", spawnRender.x, ", ", spawnRender.y, ", ", spawnRender.z, ")");
+        } else {
+            LOG_WARNING("No active character found for player model spawning");
+        }
+    }
+
     // Set game state
     setState(AppState::IN_GAME);
 }
@@ -1582,12 +1612,54 @@ void Application::buildCreatureDisplayLookups() {
 
     LOG_INFO("Building creature display lookups from DBC files");
 
-    // CreatureDisplayInfo.dbc: displayId (col 0) → modelId (col 1)
+    // CreatureDisplayInfo.dbc structure (3.3.5a):
+    // Col 0: displayId
+    // Col 1: modelId
+    // Col 3: extendedDisplayInfoID (link to CreatureDisplayInfoExtra.dbc)
+    // Col 6: Skin1 (texture name)
+    // Col 7: Skin2
+    // Col 8: Skin3
     if (auto cdi = assetManager->loadDBC("CreatureDisplayInfo.dbc"); cdi && cdi->isLoaded()) {
         for (uint32_t i = 0; i < cdi->getRecordCount(); i++) {
-            displayToModelId_[cdi->getUInt32(i, 0)] = cdi->getUInt32(i, 1);
+            CreatureDisplayData data;
+            data.modelId = cdi->getUInt32(i, 1);
+            data.extraDisplayId = cdi->getUInt32(i, 3);
+            data.skin1 = cdi->getString(i, 6);
+            data.skin2 = cdi->getString(i, 7);
+            data.skin3 = cdi->getString(i, 8);
+            displayDataMap_[cdi->getUInt32(i, 0)] = data;
         }
-        LOG_INFO("Loaded ", displayToModelId_.size(), " display→model mappings");
+        LOG_INFO("Loaded ", displayDataMap_.size(), " display→model mappings");
+    }
+
+    // CreatureDisplayInfoExtra.dbc structure (3.3.5a):
+    // Col 0: ID
+    // Col 1: DisplayRaceID
+    // Col 2: DisplaySexID
+    // Col 3: SkinID
+    // Col 4: FaceID
+    // Col 5: HairStyleID
+    // Col 6: HairColorID
+    // Col 7: FacialHairID
+    // Col 8-18: Item display IDs (equipment slots)
+    // Col 19: Flags
+    // Col 20: BakeName (pre-baked texture path)
+    if (auto cdie = assetManager->loadDBC("CreatureDisplayInfoExtra.dbc"); cdie && cdie->isLoaded()) {
+        uint32_t withBakeName = 0;
+        for (uint32_t i = 0; i < cdie->getRecordCount(); i++) {
+            HumanoidDisplayExtra extra;
+            extra.raceId = static_cast<uint8_t>(cdie->getUInt32(i, 1));
+            extra.sexId = static_cast<uint8_t>(cdie->getUInt32(i, 2));
+            extra.skinId = static_cast<uint8_t>(cdie->getUInt32(i, 3));
+            extra.faceId = static_cast<uint8_t>(cdie->getUInt32(i, 4));
+            extra.hairStyleId = static_cast<uint8_t>(cdie->getUInt32(i, 5));
+            extra.hairColorId = static_cast<uint8_t>(cdie->getUInt32(i, 6));
+            extra.facialHairId = static_cast<uint8_t>(cdie->getUInt32(i, 7));
+            extra.bakeName = cdie->getString(i, 20);
+            if (!extra.bakeName.empty()) withBakeName++;
+            humanoidExtraMap_[cdie->getUInt32(i, 0)] = extra;
+        }
+        LOG_INFO("Loaded ", humanoidExtraMap_.size(), " humanoid display extra entries (", withBakeName, " with baked textures)");
     }
 
     // CreatureModelData.dbc: modelId (col 0) → modelPath (col 2, .mdx → .m2)
@@ -1608,10 +1680,10 @@ void Application::buildCreatureDisplayLookups() {
 }
 
 std::string Application::getModelPathForDisplayId(uint32_t displayId) const {
-    auto itModel = displayToModelId_.find(displayId);
-    if (itModel == displayToModelId_.end()) return "";
+    auto itData = displayDataMap_.find(displayId);
+    if (itData == displayDataMap_.end()) return "";
 
-    auto itPath = modelIdToPath_.find(itModel->second);
+    auto itPath = modelIdToPath_.find(itData->second.modelId);
     if (itPath == modelIdToPath_.end()) return "";
 
     return itPath->second;
@@ -1676,6 +1748,84 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
     if (!charRenderer->loadModel(model, modelId)) {
         LOG_WARNING("Failed to load creature model: ", m2Path);
         return;
+    }
+
+    // Apply skin textures from CreatureDisplayInfo.dbc
+    auto itDisplayData = displayDataMap_.find(displayId);
+    if (itDisplayData != displayDataMap_.end()) {
+        const auto& dispData = itDisplayData->second;
+
+        // Get model directory for texture path construction
+        std::string modelDir;
+        size_t lastSlash = m2Path.find_last_of("\\/");
+        if (lastSlash != std::string::npos) {
+            modelDir = m2Path.substr(0, lastSlash + 1);
+        }
+
+        LOG_DEBUG("DisplayId ", displayId, " skins: '", dispData.skin1, "', '", dispData.skin2, "', '", dispData.skin3,
+                  "' extraDisplayId=", dispData.extraDisplayId);
+
+        // Log texture types in the model
+        for (size_t ti = 0; ti < model.textures.size(); ti++) {
+            LOG_DEBUG("  Model texture ", ti, ": type=", model.textures[ti].type, " filename='", model.textures[ti].filename, "'");
+        }
+
+        // Check if this is a humanoid NPC with extra display info
+        bool hasHumanoidTexture = false;
+        if (dispData.extraDisplayId != 0) {
+            auto itExtra = humanoidExtraMap_.find(dispData.extraDisplayId);
+            if (itExtra != humanoidExtraMap_.end()) {
+                const auto& extra = itExtra->second;
+                LOG_DEBUG("  Found humanoid extra: raceId=", (int)extra.raceId, " sexId=", (int)extra.sexId,
+                          " bakeName='", extra.bakeName, "'");
+                // Use baked texture if available (bakeName already includes .blp extension)
+                if (!extra.bakeName.empty()) {
+                    std::string bakePath = "Textures\\BakedNpcTextures\\" + extra.bakeName;
+                    GLuint bakeTex = charRenderer->loadTexture(bakePath);
+                    if (bakeTex != 0) {
+                        // Apply to type-1 texture slot (body skin)
+                        for (size_t ti = 0; ti < model.textures.size(); ti++) {
+                            if (model.textures[ti].type == 1) {
+                                charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), bakeTex);
+                                LOG_DEBUG("Applied baked NPC texture: ", bakePath, " to slot ", ti);
+                                hasHumanoidTexture = true;
+                            }
+                        }
+                    } else {
+                        LOG_WARNING("Failed to load baked NPC texture: ", bakePath);
+                    }
+                } else {
+                    LOG_DEBUG("  Humanoid extra has empty bakeName, trying CharSections fallback");
+                }
+            } else {
+                LOG_WARNING("  extraDisplayId ", dispData.extraDisplayId, " not found in humanoidExtraMap");
+            }
+        }
+
+        // Apply creature skin textures (for non-humanoid creatures)
+        if (!hasHumanoidTexture) {
+            for (size_t ti = 0; ti < model.textures.size(); ti++) {
+                const auto& tex = model.textures[ti];
+                std::string skinPath;
+
+                // Creature skin types: 11 = skin1, 12 = skin2, 13 = skin3
+                if (tex.type == 11 && !dispData.skin1.empty()) {
+                    skinPath = modelDir + dispData.skin1 + ".blp";
+                } else if (tex.type == 12 && !dispData.skin2.empty()) {
+                    skinPath = modelDir + dispData.skin2 + ".blp";
+                } else if (tex.type == 13 && !dispData.skin3.empty()) {
+                    skinPath = modelDir + dispData.skin3 + ".blp";
+                }
+
+                if (!skinPath.empty()) {
+                    GLuint skinTex = charRenderer->loadTexture(skinPath);
+                    if (skinTex != 0) {
+                        charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), skinTex);
+                        LOG_DEBUG("Applied creature skin texture: ", skinPath, " to slot ", ti);
+                    }
+                }
+            }
+        }
     }
 
     // Convert canonical → render coordinates

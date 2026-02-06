@@ -428,7 +428,7 @@ private:
     bool frustumCulling = true;
     bool portalCulling = false;  // Disabled by default - needs debugging
     bool distanceCulling = false;  // Disabled - causes ground to disappear
-    bool occlusionCulling = true;  // GPU occlusion queries
+    bool occlusionCulling = false;  // GPU occlusion queries - disabled, adds overhead
     float maxGroupDistance = 500.0f;
     float maxGroupDistanceSq = 250000.0f;  // maxGroupDistance^2
     uint32_t lastDrawCalls = 0;

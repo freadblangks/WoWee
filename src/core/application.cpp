@@ -255,6 +255,14 @@ void Application::run() {
                         LOG_INFO("Performance HUD: ", enabled ? "ON" : "OFF");
                     }
                 }
+                // F4: Toggle shadows
+                else if (event.key.keysym.scancode == SDL_SCANCODE_F4) {
+                    if (renderer) {
+                        bool enabled = !renderer->areShadowsEnabled();
+                        renderer->setShadowsEnabled(enabled);
+                        LOG_INFO("Shadows: ", enabled ? "ON" : "OFF");
+                    }
+                }
                 // T: Toggle teleporter panel
                 else if (event.key.keysym.scancode == SDL_SCANCODE_T) {
                     if (state == AppState::IN_GAME && uiManager) {

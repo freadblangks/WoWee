@@ -184,7 +184,13 @@ private:
     glm::mat4 lightSpaceMatrix = glm::mat4(1.0f);
     glm::vec3 shadowCenter = glm::vec3(0.0f);
     bool shadowCenterInitialized = false;
+    bool shadowsEnabled = true;
 
+public:
+    void setShadowsEnabled(bool enabled) { shadowsEnabled = enabled; }
+    bool areShadowsEnabled() const { return shadowsEnabled; }
+
+private:
     void initShadowMap();
     void renderShadowPass();
     uint32_t compileShadowShader();

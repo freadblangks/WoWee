@@ -645,7 +645,7 @@ void WMORenderer::render(const Camera& camera, const glm::mat4& view, const glm:
                 continue;
             }
 
-            // Occlusion culling check (uses previous frame results)
+            // Occlusion culling check first (uses previous frame results)
             if (occlusionCulling && isGroupOccluded(instance.id, static_cast<uint32_t>(gi))) {
                 lastOcclusionCulledGroups++;
                 continue;
@@ -654,14 +654,12 @@ void WMORenderer::render(const Camera& camera, const glm::mat4& view, const glm:
             if (gi < instance.worldGroupBounds.size()) {
                 const auto& [gMin, gMax] = instance.worldGroupBounds[gi];
 
-                // Distance culling: skip groups whose center is too far
-                if (distanceCulling) {
-                    glm::vec3 groupCenter = (gMin + gMax) * 0.5f;
-                    float distSq = glm::dot(groupCenter - camPos, groupCenter - camPos);
-                    if (distSq > maxGroupDistanceSq) {
-                        lastDistanceCulledGroups++;
-                        continue;
-                    }
+                // Hard distance cutoff - skip groups entirely if closest point is too far
+                glm::vec3 closestPoint = glm::clamp(camPos, gMin, gMax);
+                float distSq = glm::dot(closestPoint - camPos, closestPoint - camPos);
+                if (distSq > 40000.0f) {  // Beyond 200 units - hard skip
+                    lastDistanceCulledGroups++;
+                    continue;
                 }
 
                 // Frustum culling

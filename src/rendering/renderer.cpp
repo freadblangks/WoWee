@@ -1039,8 +1039,14 @@ void Renderer::renderWorld(game::World* world) {
     lastM2RenderMs = 0.0;
 
     // Shadow pass (before main scene)
-    if (shadowFBO && shadowShaderProgram && terrainLoaded) {
+    if (shadowsEnabled && shadowFBO && shadowShaderProgram && terrainLoaded) {
         renderShadowPass();
+    } else {
+        // Clear shadow maps when disabled
+        if (terrainRenderer) terrainRenderer->clearShadowMap();
+        if (wmoRenderer) wmoRenderer->clearShadowMap();
+        if (m2Renderer) m2Renderer->clearShadowMap();
+        if (characterRenderer) characterRenderer->clearShadowMap();
     }
 
     // Bind HDR scene framebuffer for world rendering

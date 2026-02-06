@@ -214,10 +214,10 @@ void CharacterCreateScreen::updateAppearanceRanges() {
     auto facialDbc = assetManager_->loadDBC("CharacterFacialHairStyles.dbc");
     if (facialDbc) {
         for (uint32_t r = 0; r < facialDbc->getRecordCount(); r++) {
-            uint32_t raceId = facialDbc->getUInt32(r, 1);
-            uint32_t sexId = facialDbc->getUInt32(r, 2);
+            uint32_t raceId = facialDbc->getUInt32(r, 0);
+            uint32_t sexId = facialDbc->getUInt32(r, 1);
             if (raceId != targetRaceId || sexId != targetSexId) continue;
-            uint32_t variation = facialDbc->getUInt32(r, 3);
+            uint32_t variation = facialDbc->getUInt32(r, 2);
             facialMax = std::max(facialMax, static_cast<int>(variation));
         }
     }

@@ -1777,6 +1777,7 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
             if (itExtra != humanoidExtraMap_.end()) {
                 const auto& extra = itExtra->second;
                 LOG_DEBUG("  Found humanoid extra: raceId=", (int)extra.raceId, " sexId=", (int)extra.sexId,
+                          " hairStyle=", (int)extra.hairStyleId, " hairColor=", (int)extra.hairColorId,
                           " bakeName='", extra.bakeName, "'");
                 // Use baked texture if available (bakeName already includes .blp extension)
                 if (!extra.bakeName.empty()) {
@@ -1796,6 +1797,38 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                     }
                 } else {
                     LOG_DEBUG("  Humanoid extra has empty bakeName, trying CharSections fallback");
+                }
+
+                // Load hair texture from CharSections.dbc (section 3)
+                auto charSectionsDbc = assetManager->loadDBC("CharSections.dbc");
+                if (charSectionsDbc) {
+                    for (uint32_t r = 0; r < charSectionsDbc->getRecordCount(); r++) {
+                        uint32_t raceId = charSectionsDbc->getUInt32(r, 1);
+                        uint32_t sexId = charSectionsDbc->getUInt32(r, 2);
+                        uint32_t baseSection = charSectionsDbc->getUInt32(r, 3);
+                        uint32_t variationIndex = charSectionsDbc->getUInt32(r, 8);
+                        uint32_t colorIndex = charSectionsDbc->getUInt32(r, 9);
+
+                        // Section 3: Hair (variation = hair style, colorIndex = hair color)
+                        if (baseSection == 3 &&
+                            raceId == extra.raceId && sexId == extra.sexId &&
+                            variationIndex == extra.hairStyleId && colorIndex == extra.hairColorId) {
+                            std::string hairPath = charSectionsDbc->getString(r, 4);
+                            if (!hairPath.empty()) {
+                                GLuint hairTex = charRenderer->loadTexture(hairPath);
+                                if (hairTex != 0) {
+                                    // Apply to type-6 texture slot (hair)
+                                    for (size_t ti = 0; ti < model.textures.size(); ti++) {
+                                        if (model.textures[ti].type == 6) {
+                                            charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), hairTex);
+                                            LOG_DEBUG("Applied hair texture: ", hairPath, " to slot ", ti);
+                                        }
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                    }
                 }
             } else {
                 LOG_WARNING("  extraDisplayId ", dispData.extraDisplayId, " not found in humanoidExtraMap");
@@ -1838,6 +1871,39 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
     if (instanceId == 0) {
         LOG_WARNING("Failed to create creature instance for guid 0x", std::hex, guid, std::dec);
         return;
+    }
+
+    // Set geosets for humanoid NPCs based on CreatureDisplayInfoExtra
+    if (itDisplayData != displayDataMap_.end() && itDisplayData->second.extraDisplayId != 0) {
+        auto itExtra = humanoidExtraMap_.find(itDisplayData->second.extraDisplayId);
+        if (itExtra != humanoidExtraMap_.end()) {
+            const auto& extra = itExtra->second;
+            std::unordered_set<uint16_t> activeGeosets;
+
+            // Body parts (group 0: IDs 0-18)
+            for (uint16_t i = 0; i <= 18; i++) {
+                activeGeosets.insert(i);
+            }
+
+            // Hair style geoset: 100 + hairStyleId + 1 (101 = style 0, 102 = style 1, etc.)
+            activeGeosets.insert(static_cast<uint16_t>(101 + extra.hairStyleId));
+
+            // Facial hair geoset: 200 + facialHairId + 1 (201 = none/style 0, 202 = style 1, etc.)
+            activeGeosets.insert(static_cast<uint16_t>(201 + extra.facialHairId));
+
+            // Equipment groups: bare (no armor)
+            activeGeosets.insert(301);   // Gloves: bare hands
+            activeGeosets.insert(401);   // Boots: bare feet
+            activeGeosets.insert(501);   // Chest: bare
+            activeGeosets.insert(701);   // Ears: default
+            activeGeosets.insert(1301);  // Trousers: bare legs
+            activeGeosets.insert(1501);  // Back body (cloak=none)
+            // Note: Do NOT add 1703 (DK eye glow) for normal NPCs
+
+            charRenderer->setActiveGeosets(instanceId, activeGeosets);
+            LOG_DEBUG("Set humanoid geosets: hair=", 101 + extra.hairStyleId,
+                      " facial=", 201 + extra.facialHairId);
+        }
     }
 
     // Play idle animation

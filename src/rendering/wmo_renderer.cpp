@@ -1392,8 +1392,10 @@ std::optional<float> WMORenderer::getFloorHeight(float glX, float glY, float glZ
     auto gridIt = precomputedFloorGrid.find(gridKey);
     if (gridIt != precomputedFloorGrid.end()) {
         float cachedHeight = gridIt->second;
-        // Only use if cached height is below query point (not a ceiling)
-        if (cachedHeight <= glZ + 2.0f) {
+        // Only use cache if floor is close to query point (within ~4 units below).
+        // For multi-story buildings, the cache has the top floor - if we're on a
+        // lower floor, skip cache and do full raycast to find actual floor.
+        if (cachedHeight <= glZ + 2.0f && cachedHeight >= glZ - 4.0f) {
             return cachedHeight;
         }
     }

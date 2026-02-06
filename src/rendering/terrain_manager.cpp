@@ -661,6 +661,23 @@ void TerrainManager::processReadyTiles() {
     }
 }
 
+void TerrainManager::processAllReadyTiles() {
+    while (true) {
+        std::unique_ptr<PendingTile> pending;
+        {
+            std::lock_guard<std::mutex> lock(queueMutex);
+            if (readyQueue.empty()) break;
+            pending = std::move(readyQueue.front());
+            readyQueue.pop();
+        }
+        if (pending) {
+            TileCoord coord = pending->coord;
+            finalizeTile(std::move(pending));
+            pendingTiles.erase(coord);
+        }
+    }
+}
+
 void TerrainManager::unloadTile(int x, int y) {
     TileCoord coord = {x, y};
 

@@ -28,6 +28,16 @@ void RealmScreen::render(auth::AuthHandler& authHandler) {
     if (realms.empty()) {
         ImGui::Text("No realms available. Requesting realm list...");
         authHandler.requestRealmList();
+    } else if (realms.size() == 1 && !realmSelected && !realms[0].lock) {
+        // Auto-select the only available realm
+        selectedRealmIndex = 0;
+        realmSelected = true;
+        selectedRealmName = realms[0].name;
+        selectedRealmAddress = realms[0].address;
+        setStatus("Auto-selecting realm: " + realms[0].name);
+        if (onRealmSelected) {
+            onRealmSelected(selectedRealmName, selectedRealmAddress);
+        }
     } else {
         // Realm table
         if (ImGui::BeginTable("RealmsTable", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {

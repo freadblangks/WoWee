@@ -184,7 +184,13 @@ public:
      */
     int getLoadedTileCount() const { return static_cast<int>(loadedTiles.size()); }
     int getPendingTileCount() const { return static_cast<int>(pendingTiles.size()); }
+    int getReadyQueueCount() const { return static_cast<int>(readyQueue.size()); }
+    /** Total unfinished tiles (worker threads + ready queue) */
+    int getRemainingTileCount() const { return static_cast<int>(pendingTiles.size() + readyQueue.size()); }
     TileCoord getCurrentTile() const { return currentTile; }
+
+    /** Process all ready tiles immediately (use during loading screens) */
+    void processAllReadyTiles();
 
 private:
     /**

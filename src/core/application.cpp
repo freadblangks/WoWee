@@ -1434,9 +1434,9 @@ void Application::startSinglePlayer() {
         auto startTime = std::chrono::high_resolution_clock::now();
         const float maxWaitSeconds = 15.0f;
 
-        int initialPending = terrainMgr->getPendingTileCount();
+        int initialRemaining = terrainMgr->getRemainingTileCount();
 
-        while (terrainMgr->getPendingTileCount() > 0) {
+        while (terrainMgr->getRemainingTileCount() > 0) {
             // Poll events to keep window responsive
             SDL_Event event;
             while (SDL_PollEvent(&event)) {
@@ -1459,18 +1459,19 @@ void Application::startSinglePlayer() {
 
             // Process ready tiles from worker threads
             terrainMgr->update(*camera, 0.016f);
+            terrainMgr->processAllReadyTiles();
 
             // Update loading screen with tile progress (40% - 85% range)
             if (loadingScreenOk) {
                 int loaded = terrainMgr->getLoadedTileCount();
-                int pending = terrainMgr->getPendingTileCount();
-                float tileProgress = (initialPending > 0)
-                    ? static_cast<float>(initialPending - pending) / initialPending
+                int remaining = terrainMgr->getRemainingTileCount();
+                float tileProgress = (initialRemaining > 0)
+                    ? static_cast<float>(initialRemaining - remaining) / initialRemaining
                     : 1.0f;
                 float progress = 0.40f + tileProgress * 0.45f;
                 char buf[128];
                 snprintf(buf, sizeof(buf), "Loading terrain... %d tiles loaded, %d remaining",
-                         loaded, pending);
+                         loaded, remaining);
                 loadingScreen.setStatus(buf);
                 loadingScreen.setProgress(progress);
                 loadingScreen.render();
@@ -1616,7 +1617,7 @@ void Application::teleportTo(int presetIndex) {
         auto startTime = std::chrono::high_resolution_clock::now();
         const float maxWaitSeconds = 8.0f;
 
-        while (terrainMgr->getPendingTileCount() > 0) {
+        while (terrainMgr->getRemainingTileCount() > 0) {
             SDL_Event event;
             while (SDL_PollEvent(&event)) {
                 if (event.type == SDL_QUIT) {
@@ -1626,6 +1627,7 @@ void Application::teleportTo(int presetIndex) {
             }
 
             terrainMgr->update(*camera, 0.016f);
+            terrainMgr->processAllReadyTiles();
 
             auto elapsed = std::chrono::high_resolution_clock::now() - startTime;
             if (std::chrono::duration<float>(elapsed).count() > maxWaitSeconds) {
@@ -1785,13 +1787,16 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
         auto* terrainMgr = renderer->getTerrainManager();
         auto* camera = renderer->getCamera();
 
+        // Trigger tile streaming for surrounding area
         terrainMgr->update(*camera, 1.0f);
 
         auto startTime = std::chrono::high_resolution_clock::now();
-        const float maxWaitSeconds = 20.0f;
-        int initialPending = terrainMgr->getPendingTileCount();
+        const float maxWaitSeconds = 30.0f;
+        int initialRemaining = terrainMgr->getRemainingTileCount();
+        if (initialRemaining < 1) initialRemaining = 1;
 
-        while (terrainMgr->getPendingTileCount() > 0) {
+        // Wait until all pending + ready-queue tiles are finalized
+        while (terrainMgr->getRemainingTileCount() > 0) {
             SDL_Event event;
             while (SDL_PollEvent(&event)) {
                 if (event.type == SDL_QUIT) {
@@ -1811,18 +1816,19 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
                 }
             }
 
+            // Trigger new streaming and process ALL ready tiles (not just 2)
             terrainMgr->update(*camera, 0.016f);
+            terrainMgr->processAllReadyTiles();
 
             if (loadingScreenOk) {
+                int remaining = terrainMgr->getRemainingTileCount();
                 int loaded = terrainMgr->getLoadedTileCount();
-                int pending = terrainMgr->getPendingTileCount();
-                float tileProgress = (initialPending > 0)
-                    ? static_cast<float>(initialPending - pending) / initialPending
-                    : 1.0f;
+                float tileProgress = static_cast<float>(initialRemaining - remaining) / initialRemaining;
+                if (tileProgress < 0.0f) tileProgress = 0.0f;
                 float progress = 0.35f + tileProgress * 0.50f;
                 char buf[128];
                 snprintf(buf, sizeof(buf), "Loading terrain... %d tiles loaded, %d remaining",
-                         loaded, pending);
+                         loaded, remaining);
                 loadingScreen.setStatus(buf);
                 loadingScreen.setProgress(progress);
                 loadingScreen.render();

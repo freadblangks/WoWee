@@ -1792,16 +1792,19 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                           " cape=", extra.equipDisplayId[10]);
 
                 // Use baked texture as-is (baked textures already include full NPC appearance)
-                // Equipment component textures are only for player characters with CharComponentTextureSections UV layout
+                // Apply to all skin-related slots: type 1 (char skin), type 2 (object skin), type 6 (hair)
+                // This ensures all body part batches render with the baked texture
                 if (!extra.bakeName.empty()) {
                     std::string bakePath = "Textures\\BakedNpcTextures\\" + extra.bakeName;
                     GLuint finalTex = charRenderer->loadTexture(bakePath);
 
                     if (finalTex != 0) {
                         for (size_t ti = 0; ti < model.textures.size(); ti++) {
-                            if (model.textures[ti].type == 1) {
+                            uint32_t texType = model.textures[ti].type;
+                            // Apply baked texture to all skin-related slots
+                            if (texType == 1 || texType == 2 || texType == 6) {
                                 charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), finalTex);
-                                LOG_DEBUG("Applied baked NPC texture to slot ", ti, ": ", bakePath);
+                                LOG_DEBUG("Applied baked NPC texture to slot ", ti, " (type ", texType, "): ", bakePath);
                                 hasHumanoidTexture = true;
                             }
                         }
@@ -1810,38 +1813,6 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                     }
                 } else {
                     LOG_DEBUG("  Humanoid extra has empty bakeName, trying CharSections fallback");
-                }
-
-                // Load hair texture from CharSections.dbc (section 3)
-                auto charSectionsDbc = assetManager->loadDBC("CharSections.dbc");
-                if (charSectionsDbc) {
-                    for (uint32_t r = 0; r < charSectionsDbc->getRecordCount(); r++) {
-                        uint32_t raceId = charSectionsDbc->getUInt32(r, 1);
-                        uint32_t sexId = charSectionsDbc->getUInt32(r, 2);
-                        uint32_t baseSection = charSectionsDbc->getUInt32(r, 3);
-                        uint32_t variationIndex = charSectionsDbc->getUInt32(r, 8);
-                        uint32_t colorIndex = charSectionsDbc->getUInt32(r, 9);
-
-                        // Section 3: Hair (variation = hair style, colorIndex = hair color)
-                        if (baseSection == 3 &&
-                            raceId == extra.raceId && sexId == extra.sexId &&
-                            variationIndex == extra.hairStyleId && colorIndex == extra.hairColorId) {
-                            std::string hairPath = charSectionsDbc->getString(r, 4);
-                            if (!hairPath.empty()) {
-                                GLuint hairTex = charRenderer->loadTexture(hairPath);
-                                if (hairTex != 0) {
-                                    // Apply to type-6 texture slot (hair)
-                                    for (size_t ti = 0; ti < model.textures.size(); ti++) {
-                                        if (model.textures[ti].type == 6) {
-                                            charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), hairTex);
-                                            LOG_DEBUG("Applied hair texture: ", hairPath, " to slot ", ti);
-                                        }
-                                    }
-                                }
-                            }
-                            break;
-                        }
-                    }
                 }
             } else {
                 LOG_WARNING("  extraDisplayId ", dispData.extraDisplayId, " not found in humanoidExtraMap");

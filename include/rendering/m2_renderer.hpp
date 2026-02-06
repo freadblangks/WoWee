@@ -32,6 +32,7 @@ struct M2ModelGPU {
         uint32_t indexCount = 0;
         bool hasAlpha = false;
         uint16_t textureAnimIndex = 0xFFFF; // 0xFFFF = no texture animation
+        uint16_t blendMode = 0;   // 0=Opaque, 1=AlphaKey, 2=Alpha, 3=Add, etc.
     };
 
     GLuint vao = 0;

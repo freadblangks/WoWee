@@ -518,6 +518,20 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
         model.textureLookup = readArray<uint16_t>(m2Data, header.ofsTexLookup, header.nTexLookup);
     }
 
+    // Read render flags / materials (blend modes)
+    if (header.nRenderFlags > 0 && header.ofsRenderFlags > 0) {
+        struct M2MaterialDisk { uint16_t flags; uint16_t blendMode; };
+        auto diskMats = readArray<M2MaterialDisk>(m2Data, header.ofsRenderFlags, header.nRenderFlags);
+        model.materials.reserve(diskMats.size());
+        for (const auto& dm : diskMats) {
+            M2Material mat;
+            mat.flags = dm.flags;
+            mat.blendMode = dm.blendMode;
+            model.materials.push_back(mat);
+        }
+        core::Logger::getInstance().debug("  Materials: ", model.materials.size());
+    }
+
     // Read texture transforms (UV animation data)
     if (header.nUVAnimation > 0 && header.ofsUVAnimation > 0) {
         // Build per-sequence flags for skipping external .anim data

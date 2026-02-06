@@ -729,6 +729,11 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
                 gpuModel.hasTextureAnimation = true;
             }
 
+            // Store blend mode from material
+            if (batch.materialIndex < model.materials.size()) {
+                bgpu.blendMode = model.materials[batch.materialIndex].blendMode;
+            }
+
             // Resolve texture: batch.textureIndex → textureLookup → allTextures
             GLuint tex = whiteTexture;
             if (batch.textureIndex < model.textureLookup.size()) {
@@ -1253,9 +1258,49 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
             }
             shader->setUniform("uUVOffset", uvOffset);
 
+            // Apply per-batch blend mode from M2 material
+            // 0=Opaque, 1=AlphaKey, 2=Alpha, 3=Add, 4=Mod, 5=Mod2x, 6=BlendAdd, 7=Screen
+            bool batchTransparent = false;
+            switch (batch.blendMode) {
+                case 0: // Opaque
+                    glBlendFunc(GL_ONE, GL_ZERO);
+                    break;
+                case 1: // Alpha Key (alpha test, handled by uAlphaTest)
+                    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                    break;
+                case 2: // Alpha
+                    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                    batchTransparent = true;
+                    break;
+                case 3: // Additive
+                    glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+                    batchTransparent = true;
+                    break;
+                case 4: // Mod
+                    glBlendFunc(GL_DST_COLOR, GL_ZERO);
+                    batchTransparent = true;
+                    break;
+                case 5: // Mod2x
+                    glBlendFunc(GL_DST_COLOR, GL_SRC_COLOR);
+                    batchTransparent = true;
+                    break;
+                case 6: // BlendAdd
+                    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+                    batchTransparent = true;
+                    break;
+                default: // Fallback
+                    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                    break;
+            }
+
+            // Disable depth writes for transparent/additive batches
+            if (batchTransparent && fadeAlpha >= 1.0f) {
+                glDepthMask(GL_FALSE);
+            }
+
             bool hasTexture = (batch.texture != 0);
             shader->setUniform("uHasTexture", hasTexture);
-            shader->setUniform("uAlphaTest", batch.hasAlpha);
+            shader->setUniform("uAlphaTest", batch.blendMode == 1);
 
             if (hasTexture) {
                 glActiveTexture(GL_TEXTURE0);
@@ -1265,6 +1310,14 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
 
             glDrawElements(GL_TRIANGLES, batch.indexCount, GL_UNSIGNED_SHORT,
                            (void*)(batch.indexStart * sizeof(uint16_t)));
+
+            // Restore depth writes and blend func after transparent batch
+            if (batchTransparent && fadeAlpha >= 1.0f) {
+                glDepthMask(GL_TRUE);
+            }
+            if (batch.blendMode != 0 && batch.blendMode != 2) {
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            }
 
             lastDrawCallCount++;
         }

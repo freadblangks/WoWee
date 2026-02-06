@@ -109,6 +109,12 @@ struct M2Batch {
     uint16_t submeshLevel = 0;      // Submesh level (0=base, 1+=LOD/alternate mesh)
 };
 
+// Material / render flags (per-batch blend mode)
+struct M2Material {
+    uint16_t flags;       // Render flags (unlit, unfogged, two-sided, etc.)
+    uint16_t blendMode;   // 0=Opaque, 1=AlphaKey, 2=Alpha, 3=Add, 4=Mod, 5=Mod2x, 6=BlendAdd, 7=Screen
+};
+
 // Texture transform (UV animation) data
 struct M2TextureTransform {
     M2AnimationTrack translation;   // UV translation keyframes
@@ -145,6 +151,7 @@ struct M2Model {
     std::vector<M2Batch> batches;
     std::vector<M2Texture> textures;
     std::vector<uint16_t> textureLookup;  // Batch texture index lookup
+    std::vector<M2Material> materials;    // Render flags / blend modes
 
     // Texture transforms (UV animation)
     std::vector<M2TextureTransform> textureTransforms;

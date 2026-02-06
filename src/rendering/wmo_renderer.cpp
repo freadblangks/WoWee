@@ -1517,7 +1517,7 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
     // Player collision parameters
     const float PLAYER_RADIUS = 0.70f;      // Wider radius for better wall collision
     const float PLAYER_HEIGHT = 2.0f;       // Player height for wall checks
-    const float MAX_STEP_HEIGHT = 0.70f;    // Lower step height to catch more walls
+    const float MAX_STEP_HEIGHT = 1.0f;     // Allow stepping up stairs
 
     // Debug logging
     static int wallDebugCounter = 0;
@@ -1607,6 +1607,9 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
                 // Skip ramp surfaces (facing mostly upward) that are low
                 if (normal.z > 0.50f && triMaxZ <= localFeetZ + 1.2f) continue;
 
+                // Skip short vertical surfaces (stair risers) - real walls are tall
+                if (triHeight < 1.2f && triMaxZ <= localFeetZ + 1.5f) continue;
+
                 // Swept test: prevent tunneling when crossing a wall between frames.
                 if ((fromDist > PLAYER_RADIUS && toDist < -PLAYER_RADIUS) ||
                     (fromDist < -PLAYER_RADIUS && toDist > PLAYER_RADIUS)) {
@@ -1636,7 +1639,7 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
                 float horizDist = glm::length(glm::vec2(delta.x, delta.y));
                 if (horizDist <= PLAYER_RADIUS) {
                     wallsHit++;
-                    float pushDist = PLAYER_RADIUS - horizDist + 0.08f;  // More aggressive pushback
+                    float pushDist = PLAYER_RADIUS - horizDist + 0.04f;
                     glm::vec2 pushDir2;
                     if (horizDist > 1e-4f) {
                         pushDir2 = glm::normalize(glm::vec2(delta.x, delta.y));

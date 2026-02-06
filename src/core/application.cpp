@@ -20,6 +20,8 @@
 #include "rendering/minimap.hpp"
 #include "rendering/loading_screen.hpp"
 #include "audio/music_manager.hpp"
+#include "audio/footstep_manager.hpp"
+#include "audio/activity_sound_manager.hpp"
 #include <imgui.h>
 #include "pipeline/m2_loader.hpp"
 #include "pipeline/wmo_loader.hpp"

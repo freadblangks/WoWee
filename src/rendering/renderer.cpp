@@ -391,9 +391,26 @@ uint32_t Renderer::resolveMeleeAnimId() {
         return 0.0f;
     };
 
-    // Prefer weapon attacks (1H=17, 2H=18) over unarmed (16); 19-21 are other variants
-    const uint32_t attackCandidates[] = {17, 18, 16, 19, 20, 21};
-    for (uint32_t id : attackCandidates) {
+    // Select animation priority based on equipped weapon type
+    // WoW inventory types: 17 = 2H weapon, 13/21 = 1H, 0 = unarmed
+    // WoW anim IDs: 16 = unarmed, 17 = 1H attack, 18 = 2H attack
+    const uint32_t* attackCandidates;
+    size_t candidateCount;
+    static const uint32_t candidates2H[] = {18, 17, 16, 19, 20, 21};
+    static const uint32_t candidates1H[] = {17, 18, 16, 19, 20, 21};
+    static const uint32_t candidatesUnarmed[] = {16, 17, 18, 19, 20, 21};
+    if (equippedWeaponInvType_ == 17) { // INVTYPE_2HWEAPON
+        attackCandidates = candidates2H;
+        candidateCount = 6;
+    } else if (equippedWeaponInvType_ == 0) {
+        attackCandidates = candidatesUnarmed;
+        candidateCount = 6;
+    } else {
+        attackCandidates = candidates1H;
+        candidateCount = 6;
+    }
+    for (size_t ci = 0; ci < candidateCount; ci++) {
+        uint32_t id = attackCandidates[ci];
         if (characterRenderer->hasAnimation(characterInstanceId, id)) {
             meleeAnimId = id;
             meleeAnimDurationMs = findDuration(id);

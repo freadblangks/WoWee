@@ -3309,7 +3309,7 @@ void GameHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
 
     if (casting) return; // Already casting
 
-    uint64_t target = targetGuid != 0 ? targetGuid : targetGuid;
+    uint64_t target = targetGuid != 0 ? targetGuid : this->targetGuid;
     auto packet = CastSpellPacket::build(spellId, target, ++castCount);
     socket->send(packet);
     LOG_INFO("Casting spell: ", spellId, " on 0x", std::hex, target, std::dec);
@@ -3389,11 +3389,16 @@ void GameHandler::handleCastFailed(network::Packet& packet) {
     currentCastSpellId = 0;
     castTimeRemaining = 0.0f;
 
-    // Add system message about failed cast
+    // Add system message about failed cast with readable reason
+    const char* reason = getSpellCastResultString(data.result);
     MessageChatData msg;
     msg.type = ChatType::SYSTEM;
     msg.language = ChatLanguage::UNIVERSAL;
-    msg.message = "Spell cast failed (error " + std::to_string(data.result) + ")";
+    if (reason) {
+        msg.message = reason;
+    } else {
+        msg.message = "Spell cast failed (error " + std::to_string(data.result) + ")";
+    }
     addLocalChatMessage(msg);
 }
 
@@ -4310,8 +4315,8 @@ void GameHandler::simulateXpGain(uint64_t victimGuid, uint32_t totalXp) {
     packet.writeUInt64(victimGuid);
     packet.writeUInt32(totalXp);
     packet.writeUInt8(0); // kill XP
-    packet.writeFloat(0.0f);
-    packet.writeUInt32(0); // group bonus
+    packet.writeFloat(1.0f); // group rate (1.0 = solo, no bonus)
+    packet.writeUInt8(0);    // RAF flag
     handleXpGain(packet);
 }
 

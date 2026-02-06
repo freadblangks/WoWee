@@ -787,6 +787,21 @@ void Application::spawnPlayerCharacter() {
                 std::string faceLowerTexturePath;
                 std::vector<std::string> underwearPaths;
 
+                // Extract appearance bytes for texture lookups
+                uint8_t charSkinId = 0, charFaceId = 0, charHairStyleId = 0, charHairColorId = 0;
+                if (gameHandler) {
+                    const game::Character* activeChar = gameHandler->getActiveCharacter();
+                    if (activeChar) {
+                        charSkinId = activeChar->appearanceBytes & 0xFF;
+                        charFaceId = (activeChar->appearanceBytes >> 8) & 0xFF;
+                        charHairStyleId = (activeChar->appearanceBytes >> 16) & 0xFF;
+                        charHairColorId = (activeChar->appearanceBytes >> 24) & 0xFF;
+                        LOG_INFO("Appearance: skin=", (int)charSkinId, " face=", (int)charFaceId,
+                                 " hairStyle=", (int)charHairStyleId, " hairColor=", (int)charHairColorId);
+                    }
+                }
+
+                std::string hairTexturePath;
                 if (useCharSections) {
                     auto charSectionsDbc = assetManager->loadDBC("CharSections.dbc");
                     if (charSectionsDbc) {
@@ -794,6 +809,7 @@ void Application::spawnPlayerCharacter() {
                         bool foundSkin = false;
                         bool foundUnderwear = false;
                         bool foundFaceLower = false;
+                        bool foundHair = false;
                         for (uint32_t r = 0; r < charSectionsDbc->getRecordCount(); r++) {
                             uint32_t raceId = charSectionsDbc->getUInt32(r, 1);
                             uint32_t sexId = charSectionsDbc->getUInt32(r, 2);
@@ -803,23 +819,37 @@ void Application::spawnPlayerCharacter() {
 
                             if (raceId != targetRaceId || sexId != targetSexId) continue;
 
-                            if (baseSection == 0 && !foundSkin && variationIndex == 0 && colorIndex == 0) {
+                            // Section 0 = skin: match by colorIndex = skin byte
+                            if (baseSection == 0 && !foundSkin && colorIndex == charSkinId) {
                                 std::string tex1 = charSectionsDbc->getString(r, 4);
                                 if (!tex1.empty()) {
                                     bodySkinPath = tex1;
                                     foundSkin = true;
-                                    LOG_INFO("  DBC body skin: ", bodySkinPath);
+                                    LOG_INFO("  DBC body skin: ", bodySkinPath, " (skin=", (int)charSkinId, ")");
                                 }
-                            } else if (baseSection == 3 && colorIndex == 0) {
-                                (void)variationIndex;
-                            } else if (baseSection == 1 && !foundFaceLower && variationIndex == 0 && colorIndex == 0) {
+                            }
+                            // Section 3 = hair: match variation=hairStyle, color=hairColor
+                            else if (baseSection == 3 && !foundHair &&
+                                     variationIndex == charHairStyleId && colorIndex == charHairColorId) {
+                                hairTexturePath = charSectionsDbc->getString(r, 4);
+                                if (!hairTexturePath.empty()) {
+                                    foundHair = true;
+                                    LOG_INFO("  DBC hair texture: ", hairTexturePath,
+                                             " (style=", (int)charHairStyleId, " color=", (int)charHairColorId, ")");
+                                }
+                            }
+                            // Section 1 = face lower: match variation=faceId
+                            else if (baseSection == 1 && !foundFaceLower &&
+                                     variationIndex == charFaceId && colorIndex == charSkinId) {
                                 std::string tex1 = charSectionsDbc->getString(r, 4);
                                 if (!tex1.empty()) {
                                     faceLowerTexturePath = tex1;
                                     foundFaceLower = true;
                                     LOG_INFO("  DBC face texture: ", faceLowerTexturePath);
                                 }
-                            } else if (baseSection == 4 && !foundUnderwear && variationIndex == 0 && colorIndex == 0) {
+                            }
+                            // Section 4 = underwear
+                            else if (baseSection == 4 && !foundUnderwear && colorIndex == charSkinId) {
                                 for (int f = 4; f <= 6; f++) {
                                     std::string tex = charSectionsDbc->getString(r, f);
                                     if (!tex.empty()) {
@@ -829,34 +859,17 @@ void Application::spawnPlayerCharacter() {
                                 }
                                 foundUnderwear = true;
                             }
+
+                            if (foundSkin && foundHair && foundFaceLower && foundUnderwear) break;
+                        }
+
+                        if (!foundHair) {
+                            LOG_WARNING("No DBC hair match for style=", (int)charHairStyleId,
+                                        " color=", (int)charHairColorId,
+                                        " race=", targetRaceId, " sex=", targetSexId);
                         }
                     } else {
                         LOG_WARNING("Failed to load CharSections.dbc, using hardcoded textures");
-                    }
-
-                    // Look up hair texture from CharSections.dbc section 3
-                    std::string hairTexturePath;
-                    if (gameHandler) {
-                        const game::Character* activeChar = gameHandler->getActiveCharacter();
-                        if (activeChar) {
-                            uint8_t hairStyleId = (activeChar->appearanceBytes >> 16) & 0xFF;
-                            uint8_t hairColorId = (activeChar->appearanceBytes >> 24) & 0xFF;
-                            for (uint32_t r = 0; r < charSectionsDbc->getRecordCount(); r++) {
-                                uint32_t raceId = charSectionsDbc->getUInt32(r, 1);
-                                uint32_t sexId = charSectionsDbc->getUInt32(r, 2);
-                                uint32_t section = charSectionsDbc->getUInt32(r, 3);
-                                uint32_t variation = charSectionsDbc->getUInt32(r, 8);
-                                uint32_t colorIdx = charSectionsDbc->getUInt32(r, 9);
-                                if (raceId != targetRaceId || sexId != targetSexId) continue;
-                                if (section != 3) continue;
-                                if (variation != hairStyleId) continue;
-                                if (colorIdx != hairColorId) continue;
-                                hairTexturePath = charSectionsDbc->getString(r, 4);
-                                LOG_INFO("  DBC hair texture: ", hairTexturePath,
-                                         " (style=", (int)hairStyleId, " color=", (int)hairColorId, ")");
-                                break;
-                            }
-                        }
                     }
 
                     for (auto& tex : model.textures) {

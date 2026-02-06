@@ -642,7 +642,9 @@ void InventoryScreen::renderCharacterScreen(game::GameHandler& gameHandler) {
 
     // Stats panel
     ImGui::Spacing();
+    ImGui::Spacing();
     ImGui::Separator();
+    ImGui::Spacing();
     renderStatsPanel(inventory, gameHandler.getPlayerLevel());
 
     ImGui::End();

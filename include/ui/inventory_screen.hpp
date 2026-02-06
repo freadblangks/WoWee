@@ -76,7 +76,9 @@ private:
 
     // Item icon cache: displayInfoId -> GL texture
     std::unordered_map<uint32_t, GLuint> iconCache_;
+public:
     GLuint getItemIcon(uint32_t displayInfoId);
+private:
 
     // Character model preview
     std::unique_ptr<rendering::CharacterPreview> charPreview_;

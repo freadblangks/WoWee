@@ -1326,16 +1326,19 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
     data.containerSlots = packet.readUInt32();
 
     uint32_t statsCount = packet.readUInt32();
-    for (uint32_t i = 0; i < statsCount && i < 10; i++) {
+    // Server always sends 10 stat pairs; statsCount tells how many are meaningful
+    for (uint32_t i = 0; i < 10; i++) {
         uint32_t statType = packet.readUInt32();
         int32_t statValue = static_cast<int32_t>(packet.readUInt32());
-        switch (statType) {
-            case 3: data.agility = statValue; break;
-            case 4: data.strength = statValue; break;
-            case 5: data.intellect = statValue; break;
-            case 6: data.spirit = statValue; break;
-            case 7: data.stamina = statValue; break;
-            default: break;
+        if (i < statsCount) {
+            switch (statType) {
+                case 3: data.agility = statValue; break;
+                case 4: data.strength = statValue; break;
+                case 5: data.intellect = statValue; break;
+                case 6: data.spirit = statValue; break;
+                case 7: data.stamina = statValue; break;
+                default: break;
+            }
         }
     }
 
@@ -1585,9 +1588,13 @@ bool XpGainParser::parse(network::Packet& packet, XpGainData& data) {
     data.totalXp = packet.readUInt32();
     data.type = packet.readUInt8();
     if (data.type == 0) {
-        // Kill XP: has group bonus float (unused) + group bonus uint32
-        packet.readFloat();
-        data.groupBonus = packet.readUInt32();
+        // Kill XP: float groupRate (1.0 = solo) + uint8 RAF flag
+        float groupRate = packet.readFloat();
+        packet.readUInt8(); // RAF bonus flag
+        // Group bonus = total - (total / rate); only if grouped (rate > 1)
+        if (groupRate > 1.0f) {
+            data.groupBonus = data.totalXp - static_cast<uint32_t>(data.totalXp / groupRate);
+        }
     }
     LOG_INFO("XP gain: ", data.totalXp, " xp (type=", static_cast<int>(data.type), ")");
     return data.totalXp > 0;

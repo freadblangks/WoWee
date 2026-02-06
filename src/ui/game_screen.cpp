@@ -149,6 +149,12 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         core::Application::getInstance().loadEquippedWeapons();
         gameHandler.notifyEquipmentChanged();
         inventoryScreen.markPreviewDirty();
+        // Update renderer weapon type for animation selection
+        auto* r = core::Application::getInstance().getRenderer();
+        if (r) {
+            const auto& mh = gameHandler.getInventory().getEquipSlot(game::EquipSlot::MAIN_HAND);
+            r->setEquippedWeaponType(mh.empty() ? 0 : mh.item.inventoryType);
+        }
     }
 
     // Update renderer face-target position and selection circle
@@ -1723,14 +1729,73 @@ void GameScreen::renderLootWindow(game::GameHandler& gameHandler) {
             ImGui::Separator();
         }
 
-        // Items
+        // Items with icons and labels
+        constexpr float iconSize = 32.0f;
         for (const auto& item : loot.items) {
             ImGui::PushID(item.slotIndex);
-            char label[64];
-            snprintf(label, sizeof(label), "Item %u (x%u)", item.itemId, item.count);
-            if (ImGui::Selectable(label)) {
+
+            // Get item info for name and quality
+            const auto* info = gameHandler.getItemInfo(item.itemId);
+            std::string itemName = info && !info->name.empty()
+                ? info->name
+                : "Item #" + std::to_string(item.itemId);
+            game::ItemQuality quality = info
+                ? static_cast<game::ItemQuality>(info->quality)
+                : game::ItemQuality::COMMON;
+            ImVec4 qColor = InventoryScreen::getQualityColor(quality);
+
+            // Get item icon
+            uint32_t displayId = item.displayInfoId;
+            if (displayId == 0 && info) displayId = info->displayInfoId;
+            GLuint iconTex = inventoryScreen.getItemIcon(displayId);
+
+            ImVec2 cursor = ImGui::GetCursorScreenPos();
+            float rowH = std::max(iconSize, ImGui::GetTextLineHeight() * 2.0f);
+
+            // Invisible selectable for click handling
+            if (ImGui::Selectable("##loot", false, 0, ImVec2(0, rowH))) {
                 gameHandler.lootItem(item.slotIndex);
             }
+            bool hovered = ImGui::IsItemHovered();
+
+            ImDrawList* drawList = ImGui::GetWindowDrawList();
+
+            // Draw hover highlight
+            if (hovered) {
+                drawList->AddRectFilled(cursor,
+                    ImVec2(cursor.x + ImGui::GetContentRegionAvail().x + iconSize + 8.0f,
+                           cursor.y + rowH),
+                    IM_COL32(255, 255, 255, 30));
+            }
+
+            // Draw icon
+            if (iconTex) {
+                drawList->AddImage((ImTextureID)(uintptr_t)iconTex,
+                    cursor, ImVec2(cursor.x + iconSize, cursor.y + iconSize));
+                drawList->AddRect(cursor, ImVec2(cursor.x + iconSize, cursor.y + iconSize),
+                    ImGui::ColorConvertFloat4ToU32(qColor));
+            } else {
+                drawList->AddRectFilled(cursor,
+                    ImVec2(cursor.x + iconSize, cursor.y + iconSize),
+                    IM_COL32(40, 40, 50, 200));
+                drawList->AddRect(cursor, ImVec2(cursor.x + iconSize, cursor.y + iconSize),
+                    IM_COL32(80, 80, 80, 200));
+            }
+
+            // Draw item name
+            float textX = cursor.x + iconSize + 6.0f;
+            float textY = cursor.y + 2.0f;
+            drawList->AddText(ImVec2(textX, textY),
+                ImGui::ColorConvertFloat4ToU32(qColor), itemName.c_str());
+
+            // Draw count if > 1
+            if (item.count > 1) {
+                char countStr[32];
+                snprintf(countStr, sizeof(countStr), "x%u", item.count);
+                float countY = textY + ImGui::GetTextLineHeight();
+                drawList->AddText(ImVec2(textX, countY), IM_COL32(200, 200, 200, 220), countStr);
+            }
+
             ImGui::PopID();
         }
 
@@ -1922,6 +1987,9 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
         uint32_t ms = static_cast<uint32_t>((money / 100) % 100);
         uint32_t mc = static_cast<uint32_t>(money % 100);
         ImGui::Text("Your money: %ug %us %uc", mg, ms, mc);
+        ImGui::Separator();
+
+        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Right-click bag items to sell");
         ImGui::Separator();
 
         if (vendor.items.empty()) {

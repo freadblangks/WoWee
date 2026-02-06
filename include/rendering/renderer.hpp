@@ -122,6 +122,7 @@ public:
     void setTargetPosition(const glm::vec3* pos);
     bool isMoving() const;
     void triggerMeleeSwing();
+    void setEquippedWeaponType(uint32_t inventoryType) { equippedWeaponInvType_ = inventoryType; meleeAnimId = 0; }
 
     // Selection circle for targeted entity
     void setSelectionCircle(const glm::vec3& pos, float radius, const glm::vec3& color);
@@ -254,6 +255,7 @@ private:
     float meleeSwingCooldown = 0.0f;
     float meleeAnimDurationMs = 0.0f;
     uint32_t meleeAnimId = 0;
+    uint32_t equippedWeaponInvType_ = 0;
 
     bool terrainEnabled = true;
     bool terrainLoaded = false;

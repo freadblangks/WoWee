@@ -261,6 +261,7 @@ bool M2Renderer::initialize(pipeline::AssetManager* assets) {
         uniform sampler2D uTexture;
         uniform bool uHasTexture;
         uniform bool uAlphaTest;
+        uniform bool uUnlit;
         uniform float uFadeAlpha;
 
         uniform vec3 uFogColor;
@@ -291,6 +292,12 @@ bool M2Renderer::initialize(pipeline::AssetManager* assets) {
             float finalAlpha = texColor.a * uFadeAlpha;
             if (finalAlpha < 0.02) {
                 discard;
+            }
+
+            // Unlit path: emit texture color directly (glow effects, emissive surfaces)
+            if (uUnlit) {
+                FragColor = vec4(texColor.rgb, finalAlpha);
+                return;
             }
 
             vec3 normal = normalize(Normal);
@@ -729,9 +736,10 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
                 gpuModel.hasTextureAnimation = true;
             }
 
-            // Store blend mode from material
+            // Store blend mode and flags from material
             if (batch.materialIndex < model.materials.size()) {
                 bgpu.blendMode = model.materials[batch.materialIndex].blendMode;
+                bgpu.materialFlags = model.materials[batch.materialIndex].flags;
             }
 
             // Resolve texture: batch.textureIndex → textureLookup → allTextures
@@ -1297,6 +1305,10 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
             if (batchTransparent && fadeAlpha >= 1.0f) {
                 glDepthMask(GL_FALSE);
             }
+
+            // Unlit: material flag 0x01 or additive/mod blend modes
+            bool unlit = (batch.materialFlags & 0x01) != 0 || batch.blendMode >= 3;
+            shader->setUniform("uUnlit", unlit);
 
             bool hasTexture = (batch.texture != 0);
             shader->setUniform("uHasTexture", hasTexture);

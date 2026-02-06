@@ -55,6 +55,11 @@ private:
     bool showTeleporter = false;
     bool showEscapeMenu = false;
     bool showEscapeSettingsNotice = false;
+    bool showSettingsWindow = false;
+    bool settingsInit = false;
+    bool pendingFullscreen = false;
+    bool pendingVsync = false;
+    int pendingResIndex = 0;
 
     /**
      * Render player info window
@@ -124,6 +129,7 @@ private:
     void renderVendorWindow(game::GameHandler& gameHandler);
     void renderTeleporterPanel();
     void renderEscapeMenu();
+    void renderSettingsWindow();
 
     /**
      * Inventory screen

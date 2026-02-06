@@ -82,6 +82,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderGossipWindow(gameHandler);
     renderVendorWindow(gameHandler);
     renderEscapeMenu();
+    renderSettingsWindow();
 
     // World map (M key toggle handled inside)
     renderWorldMap(gameHandler);
@@ -355,6 +356,7 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
             if (showEscapeMenu) {
                 showEscapeMenu = false;
                 showEscapeSettingsNotice = false;
+                showSettingsWindow = false;
             } else if (showTeleporter) {
                 showTeleporter = false;
             } else if (gameHandler.isCasting()) {
@@ -1757,12 +1759,89 @@ void GameScreen::renderEscapeMenu() {
             core::Application::getInstance().shutdown();
         }
         if (ImGui::Button("Settings", ImVec2(-1, 0))) {
-            showEscapeSettingsNotice = true;
+            showEscapeSettingsNotice = false;
+            showSettingsWindow = true;
+            settingsInit = false;
         }
 
         if (showEscapeSettingsNotice) {
             ImGui::Spacing();
             ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Settings not implemented yet.");
+        }
+    }
+    ImGui::End();
+}
+
+// ============================================================
+// Settings Window
+// ============================================================
+
+void GameScreen::renderSettingsWindow() {
+    if (!showSettingsWindow) return;
+
+    auto* window = core::Application::getInstance().getWindow();
+    if (!window) return;
+
+    static const int kResolutions[][2] = {
+        {1280, 720},
+        {1600, 900},
+        {1920, 1080},
+        {2560, 1440},
+        {3840, 2160},
+    };
+    static const int kResCount = sizeof(kResolutions) / sizeof(kResolutions[0]);
+
+    if (!settingsInit) {
+        pendingFullscreen = window->isFullscreen();
+        pendingVsync = window->isVsyncEnabled();
+        pendingResIndex = 0;
+        int curW = window->getWidth();
+        int curH = window->getHeight();
+        for (int i = 0; i < kResCount; i++) {
+            if (kResolutions[i][0] == curW && kResolutions[i][1] == curH) {
+                pendingResIndex = i;
+                break;
+            }
+        }
+        settingsInit = true;
+    }
+
+    ImGuiIO& io = ImGui::GetIO();
+    float screenW = io.DisplaySize.x;
+    float screenH = io.DisplaySize.y;
+    ImVec2 size(360.0f, 240.0f);
+    ImVec2 pos((screenW - size.x) * 0.5f, (screenH - size.y) * 0.5f);
+
+    ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(size, ImGuiCond_Always);
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                             ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar;
+
+    if (ImGui::Begin("##SettingsWindow", nullptr, flags)) {
+        ImGui::Text("Settings");
+        ImGui::Separator();
+
+        ImGui::Text("Video");
+        ImGui::Checkbox("Fullscreen", &pendingFullscreen);
+        ImGui::Checkbox("VSync", &pendingVsync);
+
+        const char* resLabel = "Resolution";
+        const char* resItems[kResCount];
+        char resBuf[kResCount][16];
+        for (int i = 0; i < kResCount; i++) {
+            snprintf(resBuf[i], sizeof(resBuf[i]), "%dx%d", kResolutions[i][0], kResolutions[i][1]);
+            resItems[i] = resBuf[i];
+        }
+        ImGui::Combo(resLabel, &pendingResIndex, resItems, kResCount);
+
+        ImGui::Spacing();
+        if (ImGui::Button("Apply", ImVec2(-1, 0))) {
+            window->setVsync(pendingVsync);
+            window->setFullscreen(pendingFullscreen);
+            window->applyResolution(kResolutions[pendingResIndex][0], kResolutions[pendingResIndex][1]);
+        }
+        if (ImGui::Button("Close", ImVec2(-1, 0))) {
+            showSettingsWindow = false;
         }
     }
     ImGui::End();

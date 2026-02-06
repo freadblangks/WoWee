@@ -37,6 +37,11 @@ public:
     int getHeight() const { return height; }
     void setSize(int w, int h) { width = w; height = h; }
     float getAspectRatio() const { return static_cast<float>(width) / height; }
+    bool isFullscreen() const { return fullscreen; }
+    bool isVsyncEnabled() const { return vsync; }
+    void setFullscreen(bool enable);
+    void setVsync(bool enable);
+    void applyResolution(int w, int h);
 
     SDL_Window* getSDLWindow() const { return window; }
     SDL_GLContext getGLContext() const { return glContext; }
@@ -48,6 +53,10 @@ private:
 
     int width;
     int height;
+    int windowedWidth = 0;
+    int windowedHeight = 0;
+    bool fullscreen = false;
+    bool vsync = true;
     bool shouldCloseFlag = false;
 };
 

@@ -8,7 +8,11 @@ namespace core {
 Window::Window(const WindowConfig& config)
     : config(config)
     , width(config.width)
-    , height(config.height) {
+    , height(config.height)
+    , windowedWidth(config.width)
+    , windowedHeight(config.height)
+    , fullscreen(config.fullscreen)
+    , vsync(config.vsync) {
 }
 
 Window::~Window() {
@@ -68,6 +72,7 @@ bool Window::initialize() {
     if (SDL_GL_SetSwapInterval(config.vsync ? 1 : 0) != 0) {
         LOG_WARNING("Failed to set VSync: ", SDL_GetError());
     }
+    vsync = config.vsync;
 
     // Initialize GLEW
     glewExperimental = GL_TRUE;
@@ -131,6 +136,55 @@ void Window::pollEvents() {
             }
         }
     }
+}
+
+void Window::setFullscreen(bool enable) {
+    if (!window) return;
+    if (enable == fullscreen) return;
+    if (enable) {
+        windowedWidth = width;
+        windowedHeight = height;
+        if (SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP) != 0) {
+            LOG_WARNING("Failed to enter fullscreen: ", SDL_GetError());
+            return;
+        }
+        fullscreen = true;
+        SDL_GetWindowSize(window, &width, &height);
+    } else {
+        if (SDL_SetWindowFullscreen(window, 0) != 0) {
+            LOG_WARNING("Failed to exit fullscreen: ", SDL_GetError());
+            return;
+        }
+        fullscreen = false;
+        SDL_SetWindowSize(window, windowedWidth, windowedHeight);
+        width = windowedWidth;
+        height = windowedHeight;
+    }
+    glViewport(0, 0, width, height);
+}
+
+void Window::setVsync(bool enable) {
+    if (SDL_GL_SetSwapInterval(enable ? 1 : 0) != 0) {
+        LOG_WARNING("Failed to set VSync: ", SDL_GetError());
+        return;
+    }
+    vsync = enable;
+}
+
+void Window::applyResolution(int w, int h) {
+    if (!window) return;
+    if (w <= 0 || h <= 0) return;
+    if (fullscreen) {
+        windowedWidth = w;
+        windowedHeight = h;
+        return;
+    }
+    SDL_SetWindowSize(window, w, h);
+    width = w;
+    height = h;
+    windowedWidth = w;
+    windowedHeight = h;
+    glViewport(0, 0, width, height);
 }
 
 } // namespace core

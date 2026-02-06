@@ -61,3 +61,6 @@ Data/
 
 # Texture assets (not distributed - see README)
 assets/textures/
+
+# Runtime cache (floor heights, etc.)
+cache/

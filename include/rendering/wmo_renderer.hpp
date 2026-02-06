@@ -222,9 +222,11 @@ public:
     double getQueryTimeMs() const { return queryTimeMs; }
     uint32_t getQueryCallCount() const { return queryCallCount; }
 
-    // Floor cache persistence
-    bool saveFloorCache(const std::string& filepath) const;
-    bool loadFloorCache(const std::string& filepath);
+    // Floor cache persistence (zone-specific files)
+    void setMapName(const std::string& name) { mapName_ = name; }
+    const std::string& getMapName() const { return mapName_; }
+    bool saveFloorCache() const;  // Saves to cache/wmo_floor_<mapName>.bin
+    bool loadFloorCache();        // Loads from cache/wmo_floor_<mapName>.bin
     size_t getFloorCacheSize() const { return precomputedFloorGrid.size(); }
 
     // Pre-compute floor cache for all loaded WMO instances
@@ -427,6 +429,9 @@ private:
 
     // Asset manager for loading textures
     pipeline::AssetManager* assetManager = nullptr;
+
+    // Current map name for zone-specific floor cache
+    std::string mapName_;
 
     // Texture cache (path -> texture ID)
     std::unordered_map<std::string, GLuint> textureCache;

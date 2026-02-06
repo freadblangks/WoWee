@@ -514,7 +514,14 @@ void WMORenderer::resetQueryStats() {
     // Note: precomputedFloorGrid is persistent and not cleared per-frame
 }
 
-bool WMORenderer::saveFloorCache(const std::string& filepath) const {
+bool WMORenderer::saveFloorCache() const {
+    if (mapName_.empty()) {
+        core::Logger::getInstance().warning("Cannot save floor cache: no map name set");
+        return false;
+    }
+
+    std::string filepath = "cache/wmo_floor_" + mapName_ + ".bin";
+
     // Create directory if needed
     std::filesystem::path path(filepath);
     std::filesystem::path absPath = std::filesystem::absolute(path);
@@ -549,14 +556,21 @@ bool WMORenderer::saveFloorCache(const std::string& filepath) const {
         file.write(reinterpret_cast<const char*>(&height), sizeof(height));
     }
 
-    core::Logger::getInstance().info("Saved WMO floor cache: ", count, " entries to ", filepath);
+    core::Logger::getInstance().info("Saved WMO floor cache (", mapName_, "): ", count, " entries");
     return true;
 }
 
-bool WMORenderer::loadFloorCache(const std::string& filepath) {
+bool WMORenderer::loadFloorCache() {
+    if (mapName_.empty()) {
+        core::Logger::getInstance().warning("Cannot load floor cache: no map name set");
+        return false;
+    }
+
+    std::string filepath = "cache/wmo_floor_" + mapName_ + ".bin";
+
     std::ifstream file(filepath, std::ios::binary);
     if (!file) {
-        core::Logger::getInstance().info("No existing floor cache file: ", filepath);
+        core::Logger::getInstance().info("No existing floor cache for map: ", mapName_);
         return false;
     }
 
@@ -585,7 +599,7 @@ bool WMORenderer::loadFloorCache(const std::string& filepath) {
         precomputedFloorGrid[key] = height;
     }
 
-    core::Logger::getInstance().info("Loaded WMO floor cache: ", precomputedFloorGrid.size(), " entries from ", filepath);
+    core::Logger::getInstance().info("Loaded WMO floor cache (", mapName_, "): ", precomputedFloorGrid.size(), " entries");
     return true;
 }
 

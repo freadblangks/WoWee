@@ -146,11 +146,6 @@ bool Application::initialize() {
         return false;
     }
 
-    // Load cached floor heights for faster collision
-    if (renderer->getWMORenderer()) {
-        renderer->getWMORenderer()->loadFloorCache("cache/wmo_floor_cache.bin");
-    }
-
     // Create UI manager
     uiManager = std::make_unique<ui::UIManager>();
     if (!uiManager->initialize(window.get())) {
@@ -320,7 +315,7 @@ void Application::shutdown() {
         size_t cacheSize = renderer->getWMORenderer()->getFloorCacheSize();
         if (cacheSize > 0) {
             LOG_INFO("Saving WMO floor cache (", cacheSize, " entries)...");
-            renderer->getWMORenderer()->saveFloorCache("cache/wmo_floor_cache.bin");
+            renderer->getWMORenderer()->saveFloorCache();
         }
     }
 
@@ -1207,6 +1202,11 @@ void Application::startSinglePlayer() {
 
     showStatus("Loading terrain...");
 
+    // Set map name for zone-specific floor cache
+    if (renderer->getWMORenderer()) {
+        renderer->getWMORenderer()->setMapName(mapName);
+    }
+
     // Try to load test terrain if WOW_DATA_PATH is set
     bool terrainOk = false;
     if (renderer && assetManager && assetManager->isInitialized()) {
@@ -1270,10 +1270,13 @@ void Application::startSinglePlayer() {
 
         LOG_INFO("Terrain streaming complete: ", terrainMgr->getLoadedTileCount(), " tiles loaded");
 
-        // Pre-compute floor cache if it wasn't loaded from file
-        if (renderer->getWMORenderer() && renderer->getWMORenderer()->getFloorCacheSize() == 0) {
-            showStatus("Pre-computing collision cache...");
-            renderer->getWMORenderer()->precomputeFloorCache();
+        // Load zone-specific floor cache, or precompute if none exists
+        if (renderer->getWMORenderer()) {
+            renderer->getWMORenderer()->loadFloorCache();
+            if (renderer->getWMORenderer()->getFloorCacheSize() == 0) {
+                showStatus("Pre-computing collision cache...");
+                renderer->getWMORenderer()->precomputeFloorCache();
+            }
         }
 
         // Re-snap camera to ground now that all surrounding tiles are loaded
@@ -1348,6 +1351,14 @@ void Application::teleportTo(int presetIndex) {
         renderer->getCameraController()->setDefaultSpawn(spawnRender, preset.yawDeg, preset.pitchDeg);
     }
 
+    // Save current map's floor cache before unloading
+    if (renderer && renderer->getWMORenderer()) {
+        auto* wmo = renderer->getWMORenderer();
+        if (wmo->getFloorCacheSize() > 0) {
+            wmo->saveFloorCache();
+        }
+    }
+
     // Unload all current terrain
     if (renderer && renderer->getTerrainManager()) {
         renderer->getTerrainManager()->unloadAll();
@@ -1360,9 +1371,12 @@ void Application::teleportTo(int presetIndex) {
                           std::to_string(tileX) + "_" + std::to_string(tileY) + ".adt";
     LOG_INFO("Teleport ADT tile [", tileX, ",", tileY, "]");
 
-    // Set map name on terrain manager
+    // Set map name on terrain manager and WMO renderer
     if (renderer && renderer->getTerrainManager()) {
         renderer->getTerrainManager()->setMapName(mapName);
+    }
+    if (renderer && renderer->getWMORenderer()) {
+        renderer->getWMORenderer()->setMapName(mapName);
     }
 
     // Load the initial tile
@@ -1403,9 +1417,12 @@ void Application::teleportTo(int presetIndex) {
 
         LOG_INFO("Teleport terrain streaming complete: ", terrainMgr->getLoadedTileCount(), " tiles loaded");
 
-        // Pre-compute floor cache for the new area
+        // Load zone-specific floor cache, or precompute if none exists
         if (renderer->getWMORenderer()) {
-            renderer->getWMORenderer()->precomputeFloorCache();
+            renderer->getWMORenderer()->loadFloorCache();
+            if (renderer->getWMORenderer()->getFloorCacheSize() == 0) {
+                renderer->getWMORenderer()->precomputeFloorCache();
+            }
         }
     }
 

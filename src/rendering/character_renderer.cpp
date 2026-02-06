@@ -154,7 +154,8 @@ bool CharacterRenderer::initialize() {
             float fogFactor = clamp((uFogEnd - fogDist) / (uFogEnd - uFogStart), 0.0, 1.0);
             result = mix(uFogColor, result, fogFactor);
 
-            FragColor = vec4(result, texColor.a);
+            // Force alpha=1 for opaque character rendering (baked NPC textures may have alpha=0)
+            FragColor = vec4(result, 1.0);
         }
     )";
 

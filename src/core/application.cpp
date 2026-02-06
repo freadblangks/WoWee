@@ -317,7 +317,11 @@ void Application::shutdown() {
 
     // Save floor cache before renderer is destroyed
     if (renderer && renderer->getWMORenderer()) {
-        renderer->getWMORenderer()->saveFloorCache("cache/wmo_floor_cache.bin");
+        size_t cacheSize = renderer->getWMORenderer()->getFloorCacheSize();
+        if (cacheSize > 0) {
+            LOG_INFO("Saving WMO floor cache (", cacheSize, " entries)...");
+            renderer->getWMORenderer()->saveFloorCache("cache/wmo_floor_cache.bin");
+        }
     }
 
     // Stop renderer first: terrain streaming workers may still be reading via

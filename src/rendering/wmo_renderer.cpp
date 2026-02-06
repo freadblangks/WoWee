@@ -517,8 +517,15 @@ void WMORenderer::resetQueryStats() {
 bool WMORenderer::saveFloorCache(const std::string& filepath) const {
     // Create directory if needed
     std::filesystem::path path(filepath);
+    std::filesystem::path absPath = std::filesystem::absolute(path);
+    core::Logger::getInstance().info("Saving floor cache to: ", absPath.string());
+
     if (path.has_parent_path()) {
-        std::filesystem::create_directories(path.parent_path());
+        std::error_code ec;
+        std::filesystem::create_directories(path.parent_path(), ec);
+        if (ec) {
+            core::Logger::getInstance().error("Failed to create cache directory: ", ec.message());
+        }
     }
 
     std::ofstream file(filepath, std::ios::binary);

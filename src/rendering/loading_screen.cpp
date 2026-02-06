@@ -11,8 +11,8 @@ namespace rendering {
 
 LoadingScreen::LoadingScreen() {
     // Add loading screen image paths
-    imagePaths.push_back("assets/loading1.jpg");
-    imagePaths.push_back("assets/loading2.jpg");
+    imagePaths.push_back("assets/loading1.jpeg");
+    imagePaths.push_back("assets/loading2.jpeg");
 }
 
 LoadingScreen::~LoadingScreen() {

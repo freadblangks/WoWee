@@ -48,6 +48,7 @@ struct M2AnimationTrack {
         std::vector<uint32_t> timestamps;   // Milliseconds
         std::vector<glm::vec3> vec3Values;  // For translation/scale tracks
         std::vector<glm::quat> quatValues;  // For rotation tracks
+        std::vector<float> floatValues;     // For float tracks (particle emitters)
     };
     std::vector<SequenceKeys> sequences;    // One per animation sequence
 
@@ -129,6 +130,38 @@ struct M2Attachment {
     glm::vec3 position; // Offset from bone pivot
 };
 
+// FBlock: particle lifetime curve (color/alpha/scale over particle life)
+struct M2FBlock {
+    std::vector<float> timestamps;      // Normalized 0..1
+    std::vector<float> floatValues;     // For alpha/scale
+    std::vector<glm::vec3> vec3Values;  // For color RGB
+};
+
+// Particle emitter definition parsed from M2
+struct M2ParticleEmitter {
+    int32_t particleId;
+    uint32_t flags;
+    glm::vec3 position;
+    uint16_t bone;
+    uint16_t texture;
+    uint8_t blendingType;   // 0=opaque,1=alphakey,2=alpha,4=add
+    uint8_t emitterType;    // 1=plane,2=sphere,3=spline
+    M2AnimationTrack emissionSpeed;
+    M2AnimationTrack speedVariation;
+    M2AnimationTrack verticalRange;
+    M2AnimationTrack horizontalRange;
+    M2AnimationTrack gravity;
+    M2AnimationTrack lifespan;
+    M2AnimationTrack emissionRate;
+    M2AnimationTrack emissionAreaLength;
+    M2AnimationTrack emissionAreaWidth;
+    M2AnimationTrack deceleration;
+    M2FBlock particleColor;   // vec3 RGB at 3 timestamps
+    M2FBlock particleAlpha;   // float (from uint16/32767) at 3 timestamps
+    M2FBlock particleScale;   // float (x component of vec2) at 3 timestamps
+    bool enabled = true;
+};
+
 // Complete M2 model structure
 struct M2Model {
     // Model metadata
@@ -160,6 +193,9 @@ struct M2Model {
     // Attachment points (for weapon/effect anchoring)
     std::vector<M2Attachment> attachments;
     std::vector<uint16_t> attachmentLookup; // attachment ID → index
+
+    // Particle emitters
+    std::vector<M2ParticleEmitter> particleEmitters;
 
     // Flags
     uint32_t globalFlags;

@@ -34,6 +34,8 @@ struct M2ModelGPU {
         uint16_t textureAnimIndex = 0xFFFF; // 0xFFFF = no texture animation
         uint16_t blendMode = 0;   // 0=Opaque, 1=AlphaKey, 2=Alpha, 3=Add, etc.
         uint16_t materialFlags = 0; // M2 material flags (0x01=Unlit, 0x04=TwoSided, 0x10=NoDepthWrite)
+        glm::vec3 center = glm::vec3(0.0f); // Center of batch geometry (model space)
+        float glowSize = 1.0f;              // Approx radius of batch geometry
     };
 
     GLuint vao = 0;
@@ -66,12 +68,27 @@ struct M2ModelGPU {
     bool disableAnimation = false; // Keep foliage/tree doodads visually stable
     bool hasTextureAnimation = false; // True if any batch has UV animation
 
+    // Particle emitter data (kept from M2Model)
+    std::vector<pipeline::M2ParticleEmitter> particleEmitters;
+    std::vector<GLuint> particleTextures;  // Resolved GL textures per emitter
+
     // Texture transform data for UV animation
     std::vector<pipeline::M2TextureTransform> textureTransforms;
     std::vector<uint16_t> textureTransformLookup;
     std::vector<int> idleVariationIndices;  // Sequence indices for idle variations (animId 0)
 
     bool isValid() const { return vao != 0 && indexCount > 0; }
+};
+
+/**
+ * A single M2 particle emitted from a particle emitter
+ */
+struct M2Particle {
+    glm::vec3 position;
+    glm::vec3 velocity;
+    float life;        // current age in seconds
+    float maxLife;     // total lifespan
+    int emitterIndex;  // which emitter spawned this
 };
 
 /**
@@ -99,6 +116,10 @@ struct M2Instance {
     int idleSequenceIndex = 0;   // Default idle sequence index
     float variationTimer = 0.0f; // Time until next variation attempt (ms)
     bool playingVariation = false;// Currently playing a one-shot variation
+
+    // Particle emitter state
+    std::vector<float> emitterAccumulators;  // fractional particle counter per emitter
+    std::vector<M2Particle> particles;
 
     void updateModelMatrix();
 };
@@ -176,6 +197,11 @@ public:
      * Render smoke particles (call after render())
      */
     void renderSmokeParticles(const Camera& camera, const glm::mat4& view, const glm::mat4& projection);
+
+    /**
+     * Render M2 particle emitter particles (call after renderSmokeParticles())
+     */
+    void renderM2Particles(const glm::mat4& view, const glm::mat4& proj);
 
     /**
      * Remove a specific instance by ID
@@ -260,6 +286,7 @@ private:
     GLuint loadTexture(const std::string& path);
     std::unordered_map<std::string, GLuint> textureCache;
     GLuint whiteTexture = 0;
+    GLuint glowTexture = 0;  // Soft radial gradient for glow sprites
 
     // Lighting uniforms
     glm::vec3 lightDir = glm::vec3(0.5f, 0.5f, 1.0f);
@@ -319,6 +346,21 @@ private:
     static constexpr int MAX_SMOKE_PARTICLES = 1000;
     float smokeEmitAccum = 0.0f;
     std::mt19937 smokeRng{42};
+
+    // M2 particle emitter system
+    GLuint m2ParticleShader_ = 0;
+    GLuint m2ParticleVAO_ = 0;
+    GLuint m2ParticleVBO_ = 0;
+    static constexpr size_t MAX_M2_PARTICLES = 4000;
+    std::mt19937 particleRng_{123};
+
+    float interpFloat(const pipeline::M2AnimationTrack& track, float animTime, int seqIdx,
+                      const std::vector<pipeline::M2Sequence>& seqs,
+                      const std::vector<uint32_t>& globalSeqDurations);
+    float interpFBlockFloat(const pipeline::M2FBlock& fb, float lifeRatio);
+    glm::vec3 interpFBlockVec3(const pipeline::M2FBlock& fb, float lifeRatio);
+    void emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt);
+    void updateParticles(M2Instance& inst, float dt);
 };
 
 } // namespace rendering

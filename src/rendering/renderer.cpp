@@ -1170,6 +1170,7 @@ void Renderer::renderWorld(game::World* world) {
         auto m2Start = std::chrono::steady_clock::now();
         m2Renderer->render(*camera, view, projection);
         m2Renderer->renderSmokeParticles(*camera, view, projection);
+        m2Renderer->renderM2Particles(view, projection);
         auto m2End = std::chrono::steady_clock::now();
         lastM2RenderMs = std::chrono::duration<double, std::milli>(m2End - m2Start).count();
     }

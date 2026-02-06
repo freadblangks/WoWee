@@ -439,6 +439,74 @@ bool M2Renderer::initialize(pipeline::AssetManager* assets) {
         glBindVertexArray(0);
     }
 
+    // Create M2 particle emitter shader
+    {
+        const char* particleVertSrc = R"(
+            #version 330 core
+            layout (location = 0) in vec3 aPos;
+            layout (location = 1) in vec4 aColor;
+            layout (location = 2) in float aSize;
+
+            uniform mat4 uView;
+            uniform mat4 uProjection;
+
+            out vec4 vColor;
+
+            void main() {
+                vec4 viewPos = uView * vec4(aPos, 1.0);
+                gl_Position = uProjection * viewPos;
+                float dist = max(-viewPos.z, 1.0);
+                gl_PointSize = clamp(aSize * 800.0 / dist, 1.0, 256.0);
+                vColor = aColor;
+            }
+        )";
+
+        const char* particleFragSrc = R"(
+            #version 330 core
+            in vec4 vColor;
+            uniform sampler2D uTexture;
+            out vec4 FragColor;
+
+            void main() {
+                vec4 texColor = texture(uTexture, gl_PointCoord);
+                FragColor = texColor * vColor;
+                if (FragColor.a < 0.01) discard;
+            }
+        )";
+
+        GLuint vs = glCreateShader(GL_VERTEX_SHADER);
+        glShaderSource(vs, 1, &particleVertSrc, nullptr);
+        glCompileShader(vs);
+
+        GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
+        glShaderSource(fs, 1, &particleFragSrc, nullptr);
+        glCompileShader(fs);
+
+        m2ParticleShader_ = glCreateProgram();
+        glAttachShader(m2ParticleShader_, vs);
+        glAttachShader(m2ParticleShader_, fs);
+        glLinkProgram(m2ParticleShader_);
+        glDeleteShader(vs);
+        glDeleteShader(fs);
+
+        // Create particle VAO/VBO: 8 floats per particle (pos3 + rgba4 + size1)
+        glGenVertexArrays(1, &m2ParticleVAO_);
+        glGenBuffers(1, &m2ParticleVBO_);
+        glBindVertexArray(m2ParticleVAO_);
+        glBindBuffer(GL_ARRAY_BUFFER, m2ParticleVBO_);
+        glBufferData(GL_ARRAY_BUFFER, MAX_M2_PARTICLES * 8 * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+        // Position (3f)
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+        // Color (4f)
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+        // Size (1f)
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(7 * sizeof(float)));
+        glBindVertexArray(0);
+    }
+
     // Create white fallback texture
     uint8_t white[] = {255, 255, 255, 255};
     glGenTextures(1, &whiteTexture);
@@ -447,6 +515,35 @@ bool M2Renderer::initialize(pipeline::AssetManager* assets) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glBindTexture(GL_TEXTURE_2D, 0);
+
+    // Generate soft radial gradient glow texture for light sprites
+    {
+        static constexpr int SZ = 64;
+        std::vector<uint8_t> px(SZ * SZ * 4);
+        float half = SZ / 2.0f;
+        for (int y = 0; y < SZ; y++) {
+            for (int x = 0; x < SZ; x++) {
+                float dx = (x + 0.5f - half) / half;
+                float dy = (y + 0.5f - half) / half;
+                float r = std::sqrt(dx * dx + dy * dy);
+                float a = std::max(0.0f, 1.0f - r);
+                a = a * a; // Quadratic falloff
+                int idx = (y * SZ + x) * 4;
+                px[idx + 0] = 255;
+                px[idx + 1] = 255;
+                px[idx + 2] = 255;
+                px[idx + 3] = static_cast<uint8_t>(a * 255);
+            }
+        }
+        glGenTextures(1, &glowTexture);
+        glBindTexture(GL_TEXTURE_2D, glowTexture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, SZ, SZ, 0, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
 
     LOG_INFO("M2 renderer initialized");
     return true;
@@ -477,6 +574,10 @@ void M2Renderer::shutdown() {
         glDeleteTextures(1, &whiteTexture);
         whiteTexture = 0;
     }
+    if (glowTexture != 0) {
+        glDeleteTextures(1, &glowTexture);
+        glowTexture = 0;
+    }
 
     shader.reset();
 
@@ -485,6 +586,11 @@ void M2Renderer::shutdown() {
     if (smokeVBO != 0) { glDeleteBuffers(1, &smokeVBO); smokeVBO = 0; }
     smokeShader.reset();
     smokeParticles.clear();
+
+    // Clean up M2 particle resources
+    if (m2ParticleVAO_ != 0) { glDeleteVertexArrays(1, &m2ParticleVAO_); m2ParticleVAO_ = 0; }
+    if (m2ParticleVBO_ != 0) { glDeleteBuffers(1, &m2ParticleVBO_); m2ParticleVBO_ = 0; }
+    if (m2ParticleShader_ != 0) { glDeleteProgram(m2ParticleShader_); m2ParticleShader_ = 0; }
 }
 
 bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
@@ -718,6 +824,8 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
         }
     }
 
+    // Particle emitter data copy disabled (parsing disabled for now)
+
     // Copy texture transform data for UV animation
     gpuModel.textureTransforms = model.textureTransforms;
     gpuModel.textureTransformLookup = model.textureTransformLookup;
@@ -754,6 +862,36 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
             }
             bgpu.texture = tex;
             bgpu.hasAlpha = (tex != 0 && tex != whiteTexture);
+
+            // Compute batch center and radius for glow sprite positioning
+            if (bgpu.blendMode >= 3 && batch.indexCount > 0) {
+                glm::vec3 sum(0.0f);
+                uint32_t counted = 0;
+                for (uint32_t j = batch.indexStart; j < batch.indexStart + batch.indexCount; j++) {
+                    if (j < model.indices.size()) {
+                        uint16_t vi = model.indices[j];
+                        if (vi < model.vertices.size()) {
+                            sum += model.vertices[vi].position;
+                            counted++;
+                        }
+                    }
+                }
+                if (counted > 0) {
+                    bgpu.center = sum / static_cast<float>(counted);
+                    float maxDist = 0.0f;
+                    for (uint32_t j = batch.indexStart; j < batch.indexStart + batch.indexCount; j++) {
+                        if (j < model.indices.size()) {
+                            uint16_t vi = model.indices[j];
+                            if (vi < model.vertices.size()) {
+                                float d = glm::length(model.vertices[vi].position - bgpu.center);
+                                maxDist = std::max(maxDist, d);
+                            }
+                        }
+                    }
+                    bgpu.glowSize = std::max(maxDist, 0.5f);
+                }
+            }
+
             gpuModel.batches.push_back(bgpu);
         }
     } else {
@@ -1122,6 +1260,12 @@ void M2Renderer::update(float deltaTime) {
         }
 
         computeBoneMatrices(model, instance);
+
+        // M2 particle emitter update — disabled for now (too expensive with many instances)
+        // if (!model.particleEmitters.empty()) {
+        //     emitParticles(instance, model, deltaTime);
+        //     updateParticles(instance, deltaTime);
+        // }
     }
 }
 
@@ -1147,6 +1291,14 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
     // Build frustum for culling
     Frustum frustum;
     frustum.extractFromMatrix(projection * view);
+
+    // Collect glow sprites from additive/mod batches for deferred rendering
+    struct GlowSprite {
+        glm::vec3 worldPos;
+        glm::vec4 color; // RGBA
+        float size;
+    };
+    std::vector<GlowSprite> glowSprites;
 
     shader->use();
     shader->setUniform("uView", view);
@@ -1249,10 +1401,19 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
         for (const auto& batch : model.batches) {
             if (batch.indexCount == 0) continue;
 
-            // Skip additive/mod blend batches (glow halos, particle placeholders)
-            // These need a particle system to render properly; as raw geometry
-            // they appear as visible transparent discs.
-            if (batch.blendMode >= 3) continue;
+            // Additive/mod batches (glow halos, light effects): collect as glow sprites
+            // instead of rendering the mesh geometry which appears as flat orange disks.
+            if (batch.blendMode >= 3) {
+                if (distSq < 120.0f * 120.0f) { // Only render glow within 120 units
+                    glm::vec3 worldPos = glm::vec3(instance.modelMatrix * glm::vec4(batch.center, 1.0f));
+                    GlowSprite gs;
+                    gs.worldPos = worldPos;
+                    gs.color = glm::vec4(1.0f, 0.75f, 0.35f, 0.85f);
+                    gs.size = batch.glowSize * instance.scale;
+                    glowSprites.push_back(gs);
+                }
+                continue;
+            }
 
             // Compute UV offset for texture animation
             glm::vec2 uvOffset(0.0f, 0.0f);
@@ -1347,6 +1508,51 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
         }
     }
 
+    // Render glow sprites as billboarded additive point lights
+    if (!glowSprites.empty() && m2ParticleShader_ != 0 && m2ParticleVAO_ != 0) {
+        glUseProgram(m2ParticleShader_);
+
+        GLint viewLoc = glGetUniformLocation(m2ParticleShader_, "uView");
+        GLint projLoc = glGetUniformLocation(m2ParticleShader_, "uProjection");
+        GLint texLoc = glGetUniformLocation(m2ParticleShader_, "uTexture");
+        glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+        glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
+        glUniform1i(texLoc, 0);
+
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE); // Additive blending
+        glDepthMask(GL_FALSE);
+        glEnable(GL_PROGRAM_POINT_SIZE);
+        glDisable(GL_CULL_FACE);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, glowTexture);
+
+        // Build vertex data: pos(3) + color(4) + size(1) = 8 floats per sprite
+        std::vector<float> glowData;
+        glowData.reserve(glowSprites.size() * 8);
+        for (const auto& gs : glowSprites) {
+            glowData.push_back(gs.worldPos.x);
+            glowData.push_back(gs.worldPos.y);
+            glowData.push_back(gs.worldPos.z);
+            glowData.push_back(gs.color.r);
+            glowData.push_back(gs.color.g);
+            glowData.push_back(gs.color.b);
+            glowData.push_back(gs.color.a);
+            glowData.push_back(gs.size);
+        }
+
+        glBindVertexArray(m2ParticleVAO_);
+        glBindBuffer(GL_ARRAY_BUFFER, m2ParticleVBO_);
+        size_t uploadCount = std::min(glowSprites.size(), MAX_M2_PARTICLES);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, uploadCount * 8 * sizeof(float), glowData.data());
+        glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(uploadCount));
+        glBindVertexArray(0);
+
+        glDepthMask(GL_TRUE);
+        glDisable(GL_PROGRAM_POINT_SIZE);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
+
     // Restore state
     glDisable(GL_BLEND);
     glEnable(GL_CULL_FACE);
@@ -1402,6 +1608,265 @@ void M2Renderer::renderShadow(GLuint shadowShaderProgram) {
     }
 
     glBindVertexArray(0);
+}
+
+// --- M2 Particle Emitter Helpers ---
+
+float M2Renderer::interpFloat(const pipeline::M2AnimationTrack& track, float animTime,
+                                int seqIdx, const std::vector<pipeline::M2Sequence>& /*seqs*/,
+                                const std::vector<uint32_t>& globalSeqDurations) {
+    if (!track.hasData()) return 0.0f;
+    int si; float t;
+    resolveTrackTime(track, seqIdx, animTime, globalSeqDurations, si, t);
+    if (si < 0 || si >= static_cast<int>(track.sequences.size())) return 0.0f;
+    const auto& keys = track.sequences[si];
+    if (keys.timestamps.empty() || keys.floatValues.empty()) return 0.0f;
+    if (keys.floatValues.size() == 1) return keys.floatValues[0];
+    int idx = findKeyframeIndex(keys.timestamps, t);
+    if (idx < 0) return 0.0f;
+    size_t i0 = static_cast<size_t>(idx);
+    size_t i1 = std::min(i0 + 1, keys.floatValues.size() - 1);
+    if (i0 == i1) return keys.floatValues[i0];
+    float t0 = static_cast<float>(keys.timestamps[i0]);
+    float t1 = static_cast<float>(keys.timestamps[i1]);
+    float dur = t1 - t0;
+    float frac = (dur > 0.0f) ? glm::clamp((t - t0) / dur, 0.0f, 1.0f) : 0.0f;
+    return glm::mix(keys.floatValues[i0], keys.floatValues[i1], frac);
+}
+
+float M2Renderer::interpFBlockFloat(const pipeline::M2FBlock& fb, float lifeRatio) {
+    if (fb.floatValues.empty()) return 1.0f;
+    if (fb.floatValues.size() == 1 || fb.timestamps.empty()) return fb.floatValues[0];
+    lifeRatio = glm::clamp(lifeRatio, 0.0f, 1.0f);
+    // Find surrounding timestamps
+    for (size_t i = 0; i < fb.timestamps.size() - 1; i++) {
+        if (lifeRatio <= fb.timestamps[i + 1]) {
+            float t0 = fb.timestamps[i];
+            float t1 = fb.timestamps[i + 1];
+            float dur = t1 - t0;
+            float frac = (dur > 0.0f) ? (lifeRatio - t0) / dur : 0.0f;
+            size_t v0 = std::min(i, fb.floatValues.size() - 1);
+            size_t v1 = std::min(i + 1, fb.floatValues.size() - 1);
+            return glm::mix(fb.floatValues[v0], fb.floatValues[v1], frac);
+        }
+    }
+    return fb.floatValues.back();
+}
+
+glm::vec3 M2Renderer::interpFBlockVec3(const pipeline::M2FBlock& fb, float lifeRatio) {
+    if (fb.vec3Values.empty()) return glm::vec3(1.0f);
+    if (fb.vec3Values.size() == 1 || fb.timestamps.empty()) return fb.vec3Values[0];
+    lifeRatio = glm::clamp(lifeRatio, 0.0f, 1.0f);
+    for (size_t i = 0; i < fb.timestamps.size() - 1; i++) {
+        if (lifeRatio <= fb.timestamps[i + 1]) {
+            float t0 = fb.timestamps[i];
+            float t1 = fb.timestamps[i + 1];
+            float dur = t1 - t0;
+            float frac = (dur > 0.0f) ? (lifeRatio - t0) / dur : 0.0f;
+            size_t v0 = std::min(i, fb.vec3Values.size() - 1);
+            size_t v1 = std::min(i + 1, fb.vec3Values.size() - 1);
+            return glm::mix(fb.vec3Values[v0], fb.vec3Values[v1], frac);
+        }
+    }
+    return fb.vec3Values.back();
+}
+
+void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt) {
+    if (inst.emitterAccumulators.size() != gpu.particleEmitters.size()) {
+        inst.emitterAccumulators.resize(gpu.particleEmitters.size(), 0.0f);
+    }
+
+    std::uniform_real_distribution<float> dist01(0.0f, 1.0f);
+    std::uniform_real_distribution<float> distN(-1.0f, 1.0f);
+
+    for (size_t ei = 0; ei < gpu.particleEmitters.size(); ei++) {
+        const auto& em = gpu.particleEmitters[ei];
+        if (!em.enabled) continue;
+
+        float rate = interpFloat(em.emissionRate, inst.animTime, inst.currentSequenceIndex,
+                                  gpu.sequences, gpu.globalSequenceDurations);
+        float life = interpFloat(em.lifespan, inst.animTime, inst.currentSequenceIndex,
+                                  gpu.sequences, gpu.globalSequenceDurations);
+        if (rate <= 0.0f || life <= 0.0f) continue;
+
+        inst.emitterAccumulators[ei] += rate * dt;
+
+        while (inst.emitterAccumulators[ei] >= 1.0f && inst.particles.size() < MAX_M2_PARTICLES) {
+            inst.emitterAccumulators[ei] -= 1.0f;
+
+            M2Particle p;
+            p.emitterIndex = static_cast<int>(ei);
+            p.life = 0.0f;
+            p.maxLife = life;
+
+            // Position: emitter position transformed by bone matrix
+            glm::vec3 localPos = em.position;
+            glm::mat4 boneXform = glm::mat4(1.0f);
+            if (em.bone < inst.boneMatrices.size()) {
+                boneXform = inst.boneMatrices[em.bone];
+            }
+            glm::vec3 worldPos = glm::vec3(inst.modelMatrix * boneXform * glm::vec4(localPos, 1.0f));
+            p.position = worldPos;
+
+            // Velocity: emission speed in upward direction + random spread
+            float speed = interpFloat(em.emissionSpeed, inst.animTime, inst.currentSequenceIndex,
+                                       gpu.sequences, gpu.globalSequenceDurations);
+            float vRange = interpFloat(em.verticalRange, inst.animTime, inst.currentSequenceIndex,
+                                        gpu.sequences, gpu.globalSequenceDurations);
+            float hRange = interpFloat(em.horizontalRange, inst.animTime, inst.currentSequenceIndex,
+                                        gpu.sequences, gpu.globalSequenceDurations);
+
+            // Base direction: up in model space, transformed to world
+            glm::vec3 dir(0.0f, 0.0f, 1.0f);
+            // Add random spread
+            dir.x += distN(particleRng_) * hRange;
+            dir.y += distN(particleRng_) * hRange;
+            dir.z += distN(particleRng_) * vRange;
+            float len = glm::length(dir);
+            if (len > 0.001f) dir /= len;
+
+            // Transform direction by bone + model orientation (rotation only)
+            glm::mat3 rotMat = glm::mat3(inst.modelMatrix * boneXform);
+            p.velocity = rotMat * dir * speed;
+
+            inst.particles.push_back(p);
+        }
+        // Cap accumulator to avoid bursts after lag
+        if (inst.emitterAccumulators[ei] > 2.0f) {
+            inst.emitterAccumulators[ei] = 0.0f;
+        }
+    }
+}
+
+void M2Renderer::updateParticles(M2Instance& inst, float dt) {
+    auto it = models.find(inst.modelId);
+    if (it == models.end()) return;
+    const auto& gpu = it->second;
+
+    for (size_t i = 0; i < inst.particles.size(); ) {
+        auto& p = inst.particles[i];
+        p.life += dt;
+        if (p.life >= p.maxLife) {
+            // Swap-and-pop removal
+            inst.particles[i] = inst.particles.back();
+            inst.particles.pop_back();
+            continue;
+        }
+        // Apply gravity
+        if (p.emitterIndex >= 0 && p.emitterIndex < static_cast<int>(gpu.particleEmitters.size())) {
+            float grav = interpFloat(gpu.particleEmitters[p.emitterIndex].gravity,
+                                      inst.animTime, inst.currentSequenceIndex,
+                                      gpu.sequences, gpu.globalSequenceDurations);
+            p.velocity.z -= grav * dt;
+        }
+        p.position += p.velocity * dt;
+        i++;
+    }
+}
+
+void M2Renderer::renderM2Particles(const glm::mat4& view, const glm::mat4& proj) {
+    if (m2ParticleShader_ == 0 || m2ParticleVAO_ == 0) return;
+
+    // Collect all particles from all instances, grouped by texture+blend
+    struct ParticleGroup {
+        GLuint texture;
+        uint8_t blendType;
+        std::vector<float> vertexData;  // 8 floats per particle
+    };
+    std::unordered_map<uint64_t, ParticleGroup> groups;
+
+    size_t totalParticles = 0;
+    for (auto& inst : instances) {
+        if (inst.particles.empty()) continue;
+        auto it = models.find(inst.modelId);
+        if (it == models.end()) continue;
+        const auto& gpu = it->second;
+
+        for (const auto& p : inst.particles) {
+            if (p.emitterIndex < 0 || p.emitterIndex >= static_cast<int>(gpu.particleEmitters.size())) continue;
+            const auto& em = gpu.particleEmitters[p.emitterIndex];
+
+            float lifeRatio = p.life / std::max(p.maxLife, 0.001f);
+            glm::vec3 color = interpFBlockVec3(em.particleColor, lifeRatio);
+            float alpha = interpFBlockFloat(em.particleAlpha, lifeRatio);
+            float scale = interpFBlockFloat(em.particleScale, lifeRatio);
+
+            GLuint tex = whiteTexture;
+            if (p.emitterIndex < static_cast<int>(gpu.particleTextures.size())) {
+                tex = gpu.particleTextures[p.emitterIndex];
+            }
+
+            uint64_t key = (static_cast<uint64_t>(tex) << 8) | em.blendingType;
+            auto& group = groups[key];
+            group.texture = tex;
+            group.blendType = em.blendingType;
+
+            group.vertexData.push_back(p.position.x);
+            group.vertexData.push_back(p.position.y);
+            group.vertexData.push_back(p.position.z);
+            group.vertexData.push_back(color.r);
+            group.vertexData.push_back(color.g);
+            group.vertexData.push_back(color.b);
+            group.vertexData.push_back(alpha);
+            group.vertexData.push_back(scale);
+            totalParticles++;
+        }
+    }
+
+    if (totalParticles == 0) return;
+
+    // Set up GL state
+    glEnable(GL_BLEND);
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glEnable(GL_PROGRAM_POINT_SIZE);
+    glDisable(GL_CULL_FACE);
+
+    glUseProgram(m2ParticleShader_);
+
+    GLint viewLoc = glGetUniformLocation(m2ParticleShader_, "uView");
+    GLint projLoc = glGetUniformLocation(m2ParticleShader_, "uProjection");
+    GLint texLoc = glGetUniformLocation(m2ParticleShader_, "uTexture");
+    glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+    glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
+    glUniform1i(texLoc, 0);
+    glActiveTexture(GL_TEXTURE0);
+
+    glBindVertexArray(m2ParticleVAO_);
+
+    for (auto& [key, group] : groups) {
+        if (group.vertexData.empty()) continue;
+
+        // Set blend mode
+        if (group.blendType == 4) {
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE);  // Additive
+        } else {
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);  // Alpha
+        }
+
+        glBindTexture(GL_TEXTURE_2D, group.texture);
+
+        // Upload and draw in chunks of MAX_M2_PARTICLES
+        size_t count = group.vertexData.size() / 8;
+        size_t offset = 0;
+        while (offset < count) {
+            size_t batch = std::min(count - offset, MAX_M2_PARTICLES);
+            glBindBuffer(GL_ARRAY_BUFFER, m2ParticleVBO_);
+            glBufferSubData(GL_ARRAY_BUFFER, 0, batch * 8 * sizeof(float),
+                            &group.vertexData[offset * 8]);
+            glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(batch));
+            offset += batch;
+        }
+    }
+
+    glBindVertexArray(0);
+
+    // Restore state
+    glDepthMask(GL_TRUE);
+    glDisable(GL_PROGRAM_POINT_SIZE);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDisable(GL_BLEND);
+    glEnable(GL_CULL_FACE);
 }
 
 void M2Renderer::renderSmokeParticles(const Camera& /*camera*/, const glm::mat4& view, const glm::mat4& projection) {

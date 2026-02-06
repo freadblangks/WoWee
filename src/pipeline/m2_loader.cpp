@@ -95,6 +95,19 @@ struct M2Header {
     uint32_t ofsAttachments;
     uint32_t nAttachmentLookup;
     uint32_t ofsAttachmentLookup;
+
+    uint32_t nEvents;
+    uint32_t ofsEvents;
+    uint32_t nLights;
+    uint32_t ofsLights;
+    uint32_t nCameras;
+    uint32_t ofsCameras;
+    uint32_t nCameraLookup;
+    uint32_t ofsCameraLookup;
+    uint32_t nRibbonEmitters;
+    uint32_t ofsRibbonEmitters;
+    uint32_t nParticleEmitters;
+    uint32_t ofsParticleEmitters;
 };
 
 // M2 vertex structure (on-disk format)
@@ -261,7 +274,7 @@ std::string readString(const std::vector<uint8_t>& data, uint32_t offset, uint32
     return std::string(reinterpret_cast<const char*>(&data[offset]), length);
 }
 
-enum class TrackType { VEC3, QUAT_COMPRESSED };
+enum class TrackType { VEC3, QUAT_COMPRESSED, FLOAT };
 
 // Parse an M2 animation track from the binary data.
 // The track uses an "array of arrays" layout: nTimestamps pairs of {count, offset}.
@@ -307,14 +320,20 @@ void parseAnimTrack(const std::vector<uint8_t>& data,
         track.sequences[i].timestamps = std::move(timestamps);
 
         // Validate key data offset
-        size_t keyElementSize = (type == TrackType::VEC3) ? sizeof(float) * 3 : sizeof(int16_t) * 4;
+        size_t keyElementSize;
+        if (type == TrackType::FLOAT) keyElementSize = sizeof(float);
+        else if (type == TrackType::VEC3) keyElementSize = sizeof(float) * 3;
+        else keyElementSize = sizeof(int16_t) * 4;
         if (keyOffset + keyCount * keyElementSize > data.size()) {
             track.sequences[i].timestamps.clear();
             continue;
         }
 
         // Read key values
-        if (type == TrackType::VEC3) {
+        if (type == TrackType::FLOAT) {
+            auto values = readArray<float>(data, keyOffset, keyCount);
+            track.sequences[i].floatValues = std::move(values);
+        } else if (type == TrackType::VEC3) {
             // Translation/scale: float[3] per key
             struct Vec3Disk { float x, y, z; };
             auto values = readArray<Vec3Disk>(data, keyOffset, keyCount);
@@ -343,6 +362,59 @@ void parseAnimTrack(const std::vector<uint8_t>& data,
                 }
                 track.sequences[i].quatValues.push_back(q);
             }
+        }
+    }
+}
+
+// Parse an FBlock (particle lifetime curve) from a 20-byte on-disk header.
+// FBlocks use the same layout as M2TrackDisk but timestamps/values are flat arrays.
+void parseFBlock(const std::vector<uint8_t>& data, uint32_t offset,
+                 M2FBlock& fb, int valueType) {
+    // valueType: 0 = color (3 bytes RGB), 1 = alpha (uint16), 2 = scale (float pair)
+    if (offset + 20 > data.size()) return;
+
+    M2TrackDisk disk = readValue<M2TrackDisk>(data, offset);
+    if (disk.nTimestamps == 0 || disk.nKeys == 0) return;
+
+    // FBlock timestamps are uint16 (not sub-arrays), stored directly
+    if (disk.ofsTimestamps + disk.nTimestamps * sizeof(uint16_t) > data.size()) return;
+
+    auto rawTs = readArray<uint16_t>(data, disk.ofsTimestamps, disk.nTimestamps);
+    uint16_t maxTs = 1;
+    for (auto t : rawTs) { if (t > maxTs) maxTs = t; }
+    fb.timestamps.reserve(rawTs.size());
+    for (auto t : rawTs) {
+        fb.timestamps.push_back(static_cast<float>(t) / static_cast<float>(maxTs));
+    }
+
+    uint32_t nKeys = disk.nKeys;
+    uint32_t ofsKeys = disk.ofsKeys;
+
+    if (valueType == 0) {
+        // Color: 3 bytes per key {r, g, b}
+        if (ofsKeys + nKeys * 3 > data.size()) return;
+        fb.vec3Values.reserve(nKeys);
+        for (uint32_t i = 0; i < nKeys; i++) {
+            uint8_t r = data[ofsKeys + i * 3 + 0];
+            uint8_t g = data[ofsKeys + i * 3 + 1];
+            uint8_t b = data[ofsKeys + i * 3 + 2];
+            fb.vec3Values.emplace_back(r / 255.0f, g / 255.0f, b / 255.0f);
+        }
+    } else if (valueType == 1) {
+        // Alpha: uint16 per key
+        if (ofsKeys + nKeys * sizeof(uint16_t) > data.size()) return;
+        auto rawAlpha = readArray<uint16_t>(data, ofsKeys, nKeys);
+        fb.floatValues.reserve(nKeys);
+        for (auto a : rawAlpha) {
+            fb.floatValues.push_back(static_cast<float>(a) / 32767.0f);
+        }
+    } else if (valueType == 2) {
+        // Scale: float pair {x, y} per key, store x
+        if (ofsKeys + nKeys * 8 > data.size()) return;
+        fb.floatValues.reserve(nKeys);
+        for (uint32_t i = 0; i < nKeys; i++) {
+            float x = readValue<float>(data, ofsKeys + i * 8);
+            fb.floatValues.push_back(x);
         }
     }
 }
@@ -579,6 +651,18 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
     if (header.nAttachmentLookup > 0 && header.ofsAttachmentLookup > 0) {
         model.attachmentLookup = readArray<uint16_t>(m2Data, header.ofsAttachmentLookup, header.nAttachmentLookup);
     }
+
+    // Particle emitter parsing disabled.
+    // The assumed EMITTER_STRUCT_SIZE (476 bytes) is incorrect for WotLK 3.3.5a M2 files.
+    // When iterating multiple emitters, each one after the first reads from a misaligned
+    // offset, producing garbage M2TrackDisk headers with huge nTimestamps/nKeys counts.
+    // parseAnimTrack then calls readArray which allocates vectors sized by those garbage
+    // counts — this caused RAM usage to explode from ~1 GB to 130+ GB, consuming all
+    // system memory and swap.
+    // TODO: determine the correct emitter struct size for build 12340 and add overflow
+    // guards to readArray (count * sizeof(T) can wrap uint32_t, bypassing bounds checks).
+    (void)header.nParticleEmitters;
+    (void)header.ofsParticleEmitters;
 
     static int m2LoadLogBudget = 200;
     if (m2LoadLogBudget-- > 0) {

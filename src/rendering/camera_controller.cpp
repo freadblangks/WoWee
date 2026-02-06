@@ -396,9 +396,9 @@ void CameraController::update(float deltaTime) {
             glm::vec3 desiredPos = targetPos;
             float moveDist = glm::length(desiredPos - startPos);
             // Adaptive CCD: keep per-step movement short to avoid clipping through walls.
-            int sweepSteps = std::max(1, std::min(8, static_cast<int>(std::ceil(moveDist / 0.3f))));
+            int sweepSteps = std::max(1, std::min(12, static_cast<int>(std::ceil(moveDist / 0.20f))));
             if (deltaTime > 0.04f) {
-                sweepSteps = std::min(12, std::max(sweepSteps, static_cast<int>(std::ceil(deltaTime / 0.016f))));
+                sweepSteps = std::min(16, std::max(sweepSteps, static_cast<int>(std::ceil(deltaTime / 0.016f))));
             }
             glm::vec3 stepPos = startPos;
             glm::vec3 stepDelta = (desiredPos - startPos) / static_cast<float>(sweepSteps);
@@ -614,6 +614,14 @@ void CameraController::update(float deltaTime) {
         float zoomLerp = 1.0f - std::exp(-ZOOM_SMOOTH_SPEED * deltaTime);
         currentDistance += (userTargetDistance - currentDistance) * zoomLerp;
 
+        // Limit max zoom when inside a WMO (building interior)
+        static constexpr float WMO_MAX_DISTANCE = 15.0f;
+        if (wmoRenderer && wmoRenderer->isInsideWMO(targetPos.x, targetPos.y, targetPos.z + 1.0f, nullptr)) {
+            if (currentDistance > WMO_MAX_DISTANCE) {
+                currentDistance = WMO_MAX_DISTANCE;
+            }
+        }
+
         // ===== Camera collision (sphere sweep approximation) =====
         // Find max safe distance using raycast + sphere radius
         collisionDistance = currentDistance;
@@ -822,9 +830,9 @@ void CameraController::update(float deltaTime) {
             glm::vec3 desiredFeet = newPos - glm::vec3(0, 0, eyeHeight);
             float moveDist = glm::length(desiredFeet - startFeet);
             // Adaptive CCD: keep per-step movement short to avoid clipping through walls.
-            int sweepSteps = std::max(1, std::min(8, static_cast<int>(std::ceil(moveDist / 0.3f))));
+            int sweepSteps = std::max(1, std::min(12, static_cast<int>(std::ceil(moveDist / 0.20f))));
             if (deltaTime > 0.04f) {
-                sweepSteps = std::min(12, std::max(sweepSteps, static_cast<int>(std::ceil(deltaTime / 0.016f))));
+                sweepSteps = std::min(16, std::max(sweepSteps, static_cast<int>(std::ceil(deltaTime / 0.016f))));
             }
             glm::vec3 stepPos = startFeet;
             glm::vec3 stepDelta = (desiredFeet - startFeet) / static_cast<float>(sweepSteps);

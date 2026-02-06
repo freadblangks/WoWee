@@ -1515,9 +1515,9 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
     if (moveDistXY < 0.001f) return false;
 
     // Player collision parameters
-    const float PLAYER_RADIUS = 0.55f;      // Slightly wider for better wall collision
+    const float PLAYER_RADIUS = 0.70f;      // Wider radius for better wall collision
     const float PLAYER_HEIGHT = 2.0f;       // Player height for wall checks
-    const float MAX_STEP_HEIGHT = 0.85f;    // Balanced step-up without wall pass-through
+    const float MAX_STEP_HEIGHT = 0.70f;    // Lower step height to catch more walls
 
     // Debug logging
     static int wallDebugCounter = 0;
@@ -1636,7 +1636,7 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
                 float horizDist = glm::length(glm::vec2(delta.x, delta.y));
                 if (horizDist <= PLAYER_RADIUS) {
                     wallsHit++;
-                    float pushDist = PLAYER_RADIUS - horizDist + 0.02f;
+                    float pushDist = PLAYER_RADIUS - horizDist + 0.08f;  // More aggressive pushback
                     glm::vec2 pushDir2;
                     if (horizDist > 1e-4f) {
                         pushDir2 = glm::normalize(glm::vec2(delta.x, delta.y));

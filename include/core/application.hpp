@@ -146,6 +146,11 @@ private:
     std::unordered_map<uint32_t, CreatureDisplayData> displayDataMap_;  // displayId → display data
     std::unordered_map<uint32_t, HumanoidDisplayExtra> humanoidExtraMap_;  // extraDisplayId → humanoid data
     std::unordered_map<uint32_t, std::string> modelIdToPath_;   // modelId → M2 path (from CreatureModelData.dbc)
+    // CharHairGeosets.dbc: key = (raceId<<16)|(sexId<<8)|variationId → geosetId (skinSectionId)
+    std::unordered_map<uint32_t, uint16_t> hairGeosetMap_;
+    // CharFacialHairStyles.dbc: key = (raceId<<16)|(sexId<<8)|variationId → {geoset100, geoset300, geoset200}
+    struct FacialHairGeosets { uint16_t geoset100 = 0; uint16_t geoset300 = 0; uint16_t geoset200 = 0; };
+    std::unordered_map<uint32_t, FacialHairGeosets> facialHairGeosetMap_;
     std::unordered_map<uint64_t, uint32_t> creatureInstances_;  // guid → render instanceId
     std::unordered_map<uint64_t, uint32_t> creatureModelIds_;   // guid → loaded modelId
     uint32_t nextCreatureModelId_ = 5000;  // Model IDs for online creatures

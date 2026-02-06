@@ -1179,6 +1179,7 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
                 int rendered = 0, skipped = 0;
                 for (const auto& b : gpuModel.data.batches) {
                     bool filtered = !instance.activeGeosets.empty() &&
+                        (b.submeshId / 100 != 0) &&
                         instance.activeGeosets.find(b.submeshId) == instance.activeGeosets.end();
 
                     GLuint resolvedTex = whiteTexture;
@@ -1216,19 +1217,14 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
             }
 
             // Draw batches (submeshes) with per-batch textures
-            // Geoset filtering: Group = submeshId / 100, Variation = submeshId % 100
-            // Group 0 (body parts): always render all (different body parts, not variations)
-            // Other groups: render only if exact submeshId is in activeGeosets
+            // Geoset filtering: skip batches whose submeshId is not in activeGeosets.
+            // For character models, group 0 (body/scalp) is also filtered so that only
+            // the correct scalp mesh renders (not all overlapping variants).
             for (const auto& batch : gpuModel.data.batches) {
                 if (!instance.activeGeosets.empty()) {
-                    uint16_t group = batch.submeshId / 100;
-                    if (group != 0) {
-                        // Non-body groups: require exact match in activeGeosets
-                        if (instance.activeGeosets.find(batch.submeshId) == instance.activeGeosets.end()) {
-                            continue;
-                        }
+                    if (instance.activeGeosets.find(batch.submeshId) == instance.activeGeosets.end()) {
+                        continue;
                     }
-                    // Group 0 (body): always render
                 }
 
                 // Resolve texture for this batch
@@ -1387,6 +1383,13 @@ void CharacterRenderer::setActiveGeosets(uint32_t instanceId, const std::unorder
     auto it = instances.find(instanceId);
     if (it != instances.end()) {
         it->second.activeGeosets = geosets;
+    }
+}
+
+void CharacterRenderer::setGroupTextureOverride(uint32_t instanceId, uint16_t geosetGroup, GLuint textureId) {
+    auto it = instances.find(instanceId);
+    if (it != instances.end()) {
+        it->second.groupTextureOverrides[geosetGroup] = textureId;
     }
 }
 

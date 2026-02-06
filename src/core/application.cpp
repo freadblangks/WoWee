@@ -1681,6 +1681,46 @@ void Application::buildCreatureDisplayLookups() {
         LOG_INFO("Loaded ", modelIdToPath_.size(), " model→path mappings");
     }
 
+    // CharHairGeosets.dbc: maps (race, sex, hairStyleId) → skinSectionId for hair mesh
+    // Col 0: ID, Col 1: RaceID, Col 2: SexID, Col 3: VariationID, Col 4: GeosetID, Col 5: Showscalp
+    if (auto chg = assetManager->loadDBC("CharHairGeosets.dbc"); chg && chg->isLoaded()) {
+        for (uint32_t i = 0; i < chg->getRecordCount(); i++) {
+            uint32_t raceId = chg->getUInt32(i, 1);
+            uint32_t sexId = chg->getUInt32(i, 2);
+            uint32_t variation = chg->getUInt32(i, 3);
+            uint32_t geosetId = chg->getUInt32(i, 4);
+            uint32_t key = (raceId << 16) | (sexId << 8) | variation;
+            hairGeosetMap_[key] = static_cast<uint16_t>(geosetId);
+        }
+        LOG_INFO("Loaded ", hairGeosetMap_.size(), " hair geoset mappings from CharHairGeosets.dbc");
+        // Debug: dump Human Male (race=1, sex=0) hair geoset mappings
+        for (uint32_t v = 0; v < 20; v++) {
+            uint32_t k = (1u << 16) | (0u << 8) | v;
+            auto it = hairGeosetMap_.find(k);
+            if (it != hairGeosetMap_.end()) {
+                LOG_INFO("  HairGeoset Human Male style ", v, " → geosetId ", it->second);
+            }
+        }
+    }
+
+    // CharFacialHairStyles.dbc: maps (race, sex, facialHairId) → geoset IDs for groups 1xx, 3xx, 2xx
+    // Col 0: ID, Col 1: RaceID, Col 2: SexID, Col 3: VariationID
+    // Col 4: Geoset100, Col 5: Geoset300, Col 6: Geoset200
+    if (auto cfh = assetManager->loadDBC("CharacterFacialHairStyles.dbc"); cfh && cfh->isLoaded()) {
+        for (uint32_t i = 0; i < cfh->getRecordCount(); i++) {
+            uint32_t raceId = cfh->getUInt32(i, 1);
+            uint32_t sexId = cfh->getUInt32(i, 2);
+            uint32_t variation = cfh->getUInt32(i, 3);
+            uint32_t key = (raceId << 16) | (sexId << 8) | variation;
+            FacialHairGeosets fhg;
+            fhg.geoset100 = static_cast<uint16_t>(cfh->getUInt32(i, 4));
+            fhg.geoset300 = static_cast<uint16_t>(cfh->getUInt32(i, 5));
+            fhg.geoset200 = static_cast<uint16_t>(cfh->getUInt32(i, 6));
+            facialHairGeosetMap_[key] = fhg;
+        }
+        LOG_INFO("Loaded ", facialHairGeosetMap_.size(), " facial hair geoset mappings from CharFacialHairStyles.dbc");
+    }
+
     creatureLookupsBuilt_ = true;
 }
 
@@ -1791,9 +1831,8 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                           " hands=", extra.equipDisplayId[8], " tabard=", extra.equipDisplayId[9],
                           " cape=", extra.equipDisplayId[10]);
 
-                // Use baked texture as-is (baked textures already include full NPC appearance)
-                // Apply to all skin-related slots: type 1 (char skin), type 2 (object skin), type 6 (hair)
-                // This ensures all body part batches render with the baked texture
+                // Use baked texture for body skin only (types 1, 2)
+                // Type 6 (hair) needs its own texture from CharSections.dbc
                 if (!extra.bakeName.empty()) {
                     std::string bakePath = "Textures\\BakedNpcTextures\\" + extra.bakeName;
                     GLuint finalTex = charRenderer->loadTexture(bakePath);
@@ -1801,8 +1840,7 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                     if (finalTex != 0) {
                         for (size_t ti = 0; ti < model.textures.size(); ti++) {
                             uint32_t texType = model.textures[ti].type;
-                            // Apply baked texture to all skin-related slots
-                            if (texType == 1 || texType == 2 || texType == 6) {
+                            if (texType == 1 || texType == 2) {
                                 charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), finalTex);
                                 LOG_DEBUG("Applied baked NPC texture to slot ", ti, " (type ", texType, "): ", bakePath);
                                 hasHumanoidTexture = true;
@@ -1813,6 +1851,42 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                     }
                 } else {
                     LOG_DEBUG("  Humanoid extra has empty bakeName, trying CharSections fallback");
+                }
+
+                // Load hair texture from CharSections.dbc (section 3)
+                auto charSectionsDbc = assetManager->loadDBC("CharSections.dbc");
+                if (charSectionsDbc) {
+                    uint32_t targetRace = static_cast<uint32_t>(extra.raceId);
+                    uint32_t targetSex = static_cast<uint32_t>(extra.sexId);
+                    std::string hairTexPath;
+
+                    for (uint32_t r = 0; r < charSectionsDbc->getRecordCount(); r++) {
+                        uint32_t raceId = charSectionsDbc->getUInt32(r, 1);
+                        uint32_t sexId = charSectionsDbc->getUInt32(r, 2);
+                        uint32_t section = charSectionsDbc->getUInt32(r, 3);
+                        uint32_t variation = charSectionsDbc->getUInt32(r, 8);
+                        uint32_t colorIdx = charSectionsDbc->getUInt32(r, 9);
+
+                        if (raceId != targetRace || sexId != targetSex) continue;
+                        if (section != 3) continue;  // Section 3 = hair
+                        if (variation != static_cast<uint32_t>(extra.hairStyleId)) continue;
+                        if (colorIdx != static_cast<uint32_t>(extra.hairColorId)) continue;
+
+                        hairTexPath = charSectionsDbc->getString(r, 4);
+                        break;
+                    }
+
+                    if (!hairTexPath.empty()) {
+                        GLuint hairTex = charRenderer->loadTexture(hairTexPath);
+                        if (hairTex != 0) {
+                            for (size_t ti = 0; ti < model.textures.size(); ti++) {
+                                if (model.textures[ti].type == 6) {
+                                    charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), hairTex);
+                                    LOG_DEBUG("Applied hair texture to slot ", ti, ": ", hairTexPath);
+                                }
+                            }
+                        }
+                    }
                 }
             } else {
                 LOG_WARNING("  extraDisplayId ", dispData.extraDisplayId, " not found in humanoidExtraMap");
@@ -1864,16 +1938,37 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
             const auto& extra = itExtra->second;
             std::unordered_set<uint16_t> activeGeosets;
 
-            // Body parts (group 0: IDs 0-99) - humanoid models may have many body submeshes
-            for (uint16_t i = 0; i < 100; i++) {
-                activeGeosets.insert(i);
+            // Group 0: body base (id=0 always) + hair scalp mesh from CharHairGeosets.dbc
+            activeGeosets.insert(0);  // Body base mesh
+
+            // Hair: CharHairGeosets.dbc maps (race, sex, hairStyleId) → group 0 scalp submeshId
+            uint32_t hairKey = (static_cast<uint32_t>(extra.raceId) << 16) |
+                               (static_cast<uint32_t>(extra.sexId) << 8) |
+                               static_cast<uint32_t>(extra.hairStyleId);
+            auto itHairGeo = hairGeosetMap_.find(hairKey);
+            uint16_t hairScalpId = (itHairGeo != hairGeosetMap_.end()) ? itHairGeo->second : 0;
+            if (hairScalpId > 0) {
+                activeGeosets.insert(hairScalpId);                        // Group 0 scalp/hair mesh
+                activeGeosets.insert(static_cast<uint16_t>(100 + hairScalpId)); // Group 1 connector (if exists)
+            } else {
+                activeGeosets.insert(101);  // Bald — default group 1
             }
+            uint16_t hairGeoset = (hairScalpId > 0) ? hairScalpId : 0;  // For helmet hiding
 
-            // Hair style geoset: 100 + hairStyleId + 1 (101 = style 0, 102 = style 1, etc.)
-            activeGeosets.insert(static_cast<uint16_t>(101 + extra.hairStyleId));
-
-            // Facial hair geoset: 200 + facialHairId + 1 (201 = none/style 0, 202 = style 1, etc.)
-            activeGeosets.insert(static_cast<uint16_t>(201 + extra.facialHairId));
+            // Facial hair geosets from CharFacialHairStyles.dbc lookup
+            uint32_t facialKey = (static_cast<uint32_t>(extra.raceId) << 16) |
+                                 (static_cast<uint32_t>(extra.sexId) << 8) |
+                                 static_cast<uint32_t>(extra.facialHairId);
+            auto itFacial = facialHairGeosetMap_.find(facialKey);
+            if (itFacial != facialHairGeosetMap_.end()) {
+                const auto& fhg = itFacial->second;
+                if (fhg.geoset100 > 0) activeGeosets.insert(fhg.geoset100);
+                if (fhg.geoset300 > 0) activeGeosets.insert(fhg.geoset300);
+                if (fhg.geoset200 > 0) activeGeosets.insert(fhg.geoset200);
+            } else {
+                activeGeosets.insert(201); // Default: no facial hair
+                activeGeosets.insert(301); // Default facial group 3
+            }
 
             // Default equipment geosets (bare/no armor)
             uint16_t geosetGloves = 301;   // Bare hands
@@ -1885,26 +1980,28 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
             bool hideHair = false;
 
             // Load equipment geosets from ItemDisplayInfo.dbc
+            // DBC columns: 7=GeosetGroup[0], 8=GeosetGroup[1], 9=GeosetGroup[2]
             auto itemDisplayDbc = assetManager->loadDBC("ItemDisplayInfo.dbc");
             if (itemDisplayDbc) {
                 // Equipment slots: 0=helm, 1=shoulder, 2=shirt, 3=chest, 4=belt, 5=legs, 6=feet, 7=wrist, 8=hands, 9=tabard, 10=cape
-                // ItemDisplayInfo geoset columns: 5=GeosetGroup[0], 6=GeosetGroup[1], 7=GeosetGroup[2]
 
                 // Helm (slot 0) - may hide hair
                 if (extra.equipDisplayId[0] != 0) {
                     int32_t idx = itemDisplayDbc->findRecordById(extra.equipDisplayId[0]);
                     if (idx >= 0) {
-                        // Check helmet vis flags (col 12-13) or just hide hair if helm exists
                         hideHair = true;
                     }
                 }
 
-                // Chest (slot 3) - geoset group 5xx/8xx
+                // Chest (slot 3) - geoset group 5xx
                 if (extra.equipDisplayId[3] != 0) {
                     int32_t idx = itemDisplayDbc->findRecordById(extra.equipDisplayId[3]);
                     if (idx >= 0) {
-                        uint32_t geoGroup = itemDisplayDbc->getUInt32(static_cast<uint32_t>(idx), 5);
-                        if (geoGroup > 0) geosetChest = static_cast<uint16_t>(500 + geoGroup);
+                        uint32_t gg = itemDisplayDbc->getUInt32(static_cast<uint32_t>(idx), 7);
+                        if (gg > 0) geosetChest = static_cast<uint16_t>(501 + gg);
+                        // Robes: GeosetGroup[2] > 0 shows kilt legs
+                        uint32_t gg3 = itemDisplayDbc->getUInt32(static_cast<uint32_t>(idx), 9);
+                        if (gg3 > 0) geosetPants = static_cast<uint16_t>(1301 + gg3);
                     }
                 }
 
@@ -1912,8 +2009,8 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                 if (extra.equipDisplayId[5] != 0) {
                     int32_t idx = itemDisplayDbc->findRecordById(extra.equipDisplayId[5]);
                     if (idx >= 0) {
-                        uint32_t geoGroup = itemDisplayDbc->getUInt32(static_cast<uint32_t>(idx), 5);
-                        if (geoGroup > 0) geosetPants = static_cast<uint16_t>(1300 + geoGroup);
+                        uint32_t gg = itemDisplayDbc->getUInt32(static_cast<uint32_t>(idx), 7);
+                        if (gg > 0) geosetPants = static_cast<uint16_t>(1301 + gg);
                     }
                 }
 
@@ -1921,8 +2018,8 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                 if (extra.equipDisplayId[6] != 0) {
                     int32_t idx = itemDisplayDbc->findRecordById(extra.equipDisplayId[6]);
                     if (idx >= 0) {
-                        uint32_t geoGroup = itemDisplayDbc->getUInt32(static_cast<uint32_t>(idx), 5);
-                        if (geoGroup > 0) geosetBoots = static_cast<uint16_t>(400 + geoGroup);
+                        uint32_t gg = itemDisplayDbc->getUInt32(static_cast<uint32_t>(idx), 7);
+                        if (gg > 0) geosetBoots = static_cast<uint16_t>(401 + gg);
                     }
                 }
 
@@ -1930,8 +2027,8 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                 if (extra.equipDisplayId[8] != 0) {
                     int32_t idx = itemDisplayDbc->findRecordById(extra.equipDisplayId[8]);
                     if (idx >= 0) {
-                        uint32_t geoGroup = itemDisplayDbc->getUInt32(static_cast<uint32_t>(idx), 5);
-                        if (geoGroup > 0) geosetGloves = static_cast<uint16_t>(300 + geoGroup);
+                        uint32_t gg = itemDisplayDbc->getUInt32(static_cast<uint32_t>(idx), 7);
+                        if (gg > 0) geosetGloves = static_cast<uint16_t>(301 + gg);
                     }
                 }
 
@@ -1947,8 +2044,7 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                 if (extra.equipDisplayId[10] != 0) {
                     int32_t idx = itemDisplayDbc->findRecordById(extra.equipDisplayId[10]);
                     if (idx >= 0) {
-                        uint32_t geoGroup = itemDisplayDbc->getUInt32(static_cast<uint32_t>(idx), 5);
-                        if (geoGroup > 0) geosetCape = static_cast<uint16_t>(1500 + geoGroup);
+                        geosetCape = 1502;  // Show cloak mesh
                     }
                 }
             }
@@ -1962,9 +2058,23 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
             activeGeosets.insert(geosetTabard);
             activeGeosets.insert(701);  // Ears: default
 
-            // Hide hair if wearing helm
-            if (hideHair) {
-                activeGeosets.erase(static_cast<uint16_t>(101 + extra.hairStyleId));
+            // Hide hair if wearing helm: remove group 0 scalp mesh and group 1 connector
+            if (hideHair && hairScalpId > 0) {
+                activeGeosets.erase(hairScalpId);
+                activeGeosets.erase(static_cast<uint16_t>(100 + hairScalpId));
+                activeGeosets.insert(101);  // Show bald scalp instead
+                LOG_INFO("Hiding hair geoset ", hairScalpId, "/", (100 + hairScalpId),
+                         " (helmDisplayId=", extra.equipDisplayId[0], ")");
+            }
+
+            // Log model's actual submesh IDs for debugging geoset mismatches
+            {
+                std::string batchIds;
+                for (const auto& b : model.batches) {
+                    if (!batchIds.empty()) batchIds += ",";
+                    batchIds += std::to_string(b.submeshId);
+                }
+                LOG_INFO("Model batches submeshIds: [", batchIds, "]");
             }
 
             // Log what geosets we're setting for debugging
@@ -1975,8 +2085,7 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
             }
             LOG_INFO("NPC geosets for instance ", instanceId, ": [", geosetList, "]");
             charRenderer->setActiveGeosets(instanceId, activeGeosets);
-            LOG_DEBUG("Set humanoid geosets: hair=", hideHair ? 0 : (101 + extra.hairStyleId),
-                      " facial=", 201 + extra.facialHairId,
+            LOG_DEBUG("Set humanoid geosets: hair=", hideHair ? 0 : (int)hairGeoset,
                       " chest=", geosetChest, " pants=", geosetPants,
                       " boots=", geosetBoots, " gloves=", geosetGloves);
 

@@ -62,6 +62,7 @@ public:
     void setInstancePosition(uint32_t instanceId, const glm::vec3& position);
     void setInstanceRotation(uint32_t instanceId, const glm::vec3& rotation);
     void setActiveGeosets(uint32_t instanceId, const std::unordered_set<uint16_t>& geosets);
+    void setGroupTextureOverride(uint32_t instanceId, uint16_t geosetGroup, GLuint textureId);
     void setInstanceVisible(uint32_t instanceId, bool visible);
     void removeInstance(uint32_t instanceId);
     bool getAnimationState(uint32_t instanceId, uint32_t& animationId, float& animationTimeMs, float& animationDurationMs) const;
@@ -122,6 +123,9 @@ private:
         // Geoset visibility — which submesh IDs to render
         // Empty = render all (for non-character models)
         std::unordered_set<uint16_t> activeGeosets;
+
+        // Per-geoset-group texture overrides (group → GL texture ID)
+        std::unordered_map<uint16_t, GLuint> groupTextureOverrides;
 
         // Weapon attachments (weapons parented to this instance's bones)
         std::vector<WeaponAttachment> weaponAttachments;

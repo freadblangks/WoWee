@@ -30,6 +30,8 @@ public:
     void playWaterEnter();
     void playWaterExit();
     void playMeleeSwing();
+    void setVolumeScale(float scale) { volumeScale = scale; }
+    float getVolumeScale() const { return volumeScale; }
 
 private:
     struct Sample {
@@ -66,6 +68,7 @@ private:
     std::chrono::steady_clock::time_point lastMeleeSwingAt{};
     bool meleeSwingWarned = false;
     std::string voiceProfileKey;
+    float volumeScale = 1.0f;
 
     void preloadCandidates(std::vector<Sample>& out, const std::vector<std::string>& candidates);
     void preloadLandingSet(FootstepSurface surface, const std::string& material);

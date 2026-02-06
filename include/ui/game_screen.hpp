@@ -61,6 +61,8 @@ private:
     bool pendingVsync = false;
     int pendingResIndex = 0;
     bool pendingShadows = true;
+    int pendingMusicVolume = 30;
+    int pendingSfxVolume = 100;
 
     /**
      * Render player info window

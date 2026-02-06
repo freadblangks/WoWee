@@ -131,6 +131,8 @@ public:
     double getLastWMORenderMs() const { return lastWMORenderMs; }
     double getLastM2RenderMs() const { return lastM2RenderMs; }
     audio::MusicManager* getMusicManager() { return musicManager.get(); }
+    audio::FootstepManager* getFootstepManager() { return footstepManager.get(); }
+    audio::ActivitySoundManager* getActivitySoundManager() { return activitySoundManager.get(); }
 
 private:
     core::Window* window = nullptr;

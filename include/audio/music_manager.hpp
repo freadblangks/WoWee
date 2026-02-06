@@ -22,6 +22,8 @@ public:
     void stopMusic(float fadeMs = 2000.0f);
     void crossfadeTo(const std::string& mpqPath, float fadeMs = 3000.0f);
     void update(float deltaTime);
+    void setVolume(int volume);
+    int getVolume() const { return volumePercent; }
 
     bool isPlaying() const { return playing; }
     bool isInitialized() const { return assetManager != nullptr; }
@@ -32,9 +34,11 @@ private:
 
     pipeline::AssetManager* assetManager = nullptr;
     std::string currentTrack;
+    bool currentTrackIsFile = false;
     std::string tempFilePath;
     ProcessHandle playerPid = INVALID_PROCESS;
     bool playing = false;
+    int volumePercent = 30;
 
     // Crossfade state
     bool crossfading = false;

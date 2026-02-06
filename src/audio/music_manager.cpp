@@ -60,13 +60,14 @@ void MusicManager::playMusic(const std::string& mpqPath, bool loop) {
         args.push_back("0");
     }
     args.push_back("-volume");
-    args.push_back("30");
+    args.push_back(std::to_string(volumePercent));
     args.push_back(tempFilePath);
 
     playerPid = platform::spawnProcess(args);
     if (playerPid != INVALID_PROCESS) {
         playing = true;
         currentTrack = mpqPath;
+        currentTrackIsFile = false;
         LOG_INFO("Music: Playing ", mpqPath);
     } else {
         LOG_ERROR("Music: Failed to spawn ffplay process");
@@ -91,13 +92,14 @@ void MusicManager::playFilePath(const std::string& filePath, bool loop) {
         args.push_back("0");
     }
     args.push_back("-volume");
-    args.push_back("30");
+    args.push_back(std::to_string(volumePercent));
     args.push_back(filePath);
 
     playerPid = platform::spawnProcess(args);
     if (playerPid != INVALID_PROCESS) {
         playing = true;
         currentTrack = filePath;
+        currentTrackIsFile = true;
         LOG_INFO("Music: Playing file ", filePath);
     } else {
         LOG_ERROR("Music: Failed to spawn ffplay process");
@@ -109,6 +111,27 @@ void MusicManager::stopMusic(float fadeMs) {
     stopCurrentProcess();
     playing = false;
     currentTrack.clear();
+    currentTrackIsFile = false;
+}
+
+void MusicManager::setVolume(int volume) {
+    if (volume < 0) volume = 0;
+    if (volume > 100) volume = 100;
+    if (volumePercent == volume) return;
+    volumePercent = volume;
+    if (playing && !currentTrack.empty()) {
+        std::string track = currentTrack;
+        bool isFile = currentTrackIsFile;
+        stopCurrentProcess();
+        playing = false;
+        currentTrack.clear();
+        currentTrackIsFile = false;
+        if (isFile) {
+            playFilePath(track, true);
+        } else {
+            playMusic(track, true);
+        }
+    }
 }
 
 void MusicManager::crossfadeTo(const std::string& mpqPath, float fadeMs) {

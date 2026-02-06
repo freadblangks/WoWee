@@ -32,6 +32,8 @@ public:
 
     void update(float deltaTime);
     void playFootstep(FootstepSurface surface, bool sprinting);
+    void setVolumeScale(float scale) { volumeScale = scale; }
+    float getVolumeScale() const { return volumeScale; }
 
     bool isInitialized() const { return assetManager != nullptr; }
     bool hasAnySamples() const { return sampleCount > 0; }
@@ -61,6 +63,7 @@ private:
     std::chrono::steady_clock::time_point lastPlayTime = std::chrono::steady_clock::time_point{};
 
     std::mt19937 rng;
+    float volumeScale = 1.0f;
 };
 
 } // namespace audio

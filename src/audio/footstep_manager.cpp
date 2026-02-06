@@ -159,7 +159,7 @@ bool FootstepManager::playRandomStep(FootstepSurface surface, bool sprinting) {
     std::uniform_real_distribution<float> pitchDist(0.97f, 1.05f);
     std::uniform_real_distribution<float> volumeDist(0.92f, 1.00f);
     float pitch = pitchDist(rng);
-    float volume = volumeDist(rng) * (sprinting ? 1.0f : 0.88f);
+    float volume = volumeDist(rng) * (sprinting ? 1.0f : 0.88f) * volumeScale;
     if (volume > 1.0f) volume = 1.0f;
     if (volume < 0.1f) volume = 0.1f;
 

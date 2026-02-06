@@ -1807,6 +1807,22 @@ void GameScreen::renderSettingsWindow() {
         pendingFullscreen = window->isFullscreen();
         pendingVsync = window->isVsyncEnabled();
         pendingShadows = renderer ? renderer->areShadowsEnabled() : true;
+        if (renderer) {
+            if (auto* music = renderer->getMusicManager()) {
+                pendingMusicVolume = music->getVolume();
+            }
+            if (auto* footstep = renderer->getFootstepManager()) {
+                float scale = footstep->getVolumeScale();
+                pendingSfxVolume = static_cast<int>(scale * 100.0f + 0.5f);
+                if (pendingSfxVolume < 0) pendingSfxVolume = 0;
+                if (pendingSfxVolume > 100) pendingSfxVolume = 100;
+            } else if (auto* activity = renderer->getActivitySoundManager()) {
+                float scale = activity->getVolumeScale();
+                pendingSfxVolume = static_cast<int>(scale * 100.0f + 0.5f);
+                if (pendingSfxVolume < 0) pendingSfxVolume = 0;
+                if (pendingSfxVolume > 100) pendingSfxVolume = 100;
+            }
+        }
         pendingResIndex = 0;
         int curW = window->getWidth();
         int curH = window->getHeight();
@@ -1822,7 +1838,7 @@ void GameScreen::renderSettingsWindow() {
     ImGuiIO& io = ImGui::GetIO();
     float screenW = io.DisplaySize.x;
     float screenH = io.DisplaySize.y;
-    ImVec2 size(360.0f, 240.0f);
+    ImVec2 size(380.0f, 320.0f);
     ImVec2 pos((screenW - size.x) * 0.5f, (screenH - size.y) * 0.5f);
 
     ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
@@ -1849,12 +1865,32 @@ void GameScreen::renderSettingsWindow() {
         ImGui::Combo(resLabel, &pendingResIndex, resItems, kResCount);
 
         ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        ImGui::Text("Audio");
+        ImGui::SliderInt("Music Volume", &pendingMusicVolume, 0, 100, "%d");
+        ImGui::SliderInt("SFX Volume", &pendingSfxVolume, 0, 100, "%d");
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
         if (ImGui::Button("Apply", ImVec2(-1, 0))) {
             window->setVsync(pendingVsync);
             window->setFullscreen(pendingFullscreen);
             window->applyResolution(kResolutions[pendingResIndex][0], kResolutions[pendingResIndex][1]);
             if (renderer) {
                 renderer->setShadowsEnabled(pendingShadows);
+                if (auto* music = renderer->getMusicManager()) {
+                    music->setVolume(pendingMusicVolume);
+                }
+                float sfxScale = static_cast<float>(pendingSfxVolume) / 100.0f;
+                if (auto* footstep = renderer->getFootstepManager()) {
+                    footstep->setVolumeScale(sfxScale);
+                }
+                if (auto* activity = renderer->getActivitySoundManager()) {
+                    activity->setVolumeScale(sfxScale);
+                }
             }
         }
         ImGui::Spacing();

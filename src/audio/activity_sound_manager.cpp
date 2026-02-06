@@ -218,6 +218,7 @@ bool ActivitySoundManager::playOneShot(const std::vector<Sample>& clips, float v
 
     std::uniform_real_distribution<float> pitchDist(pitchLo, pitchHi);
     float pitch = pitchDist(rng);
+    volume *= volumeScale;
     if (volume < 0.1f) volume = 0.1f;
     if (volume > 1.2f) volume = 1.2f;
     std::string filter = "asetrate=44100*" + std::to_string(pitch) +
@@ -241,7 +242,7 @@ void ActivitySoundManager::startSwimLoop() {
     out.write(reinterpret_cast<const char*>(sample.data.data()), static_cast<std::streamsize>(sample.data.size()));
     out.close();
 
-    float volume = swimMoving ? 0.85f : 0.65f;
+    float volume = (swimMoving ? 0.85f : 0.65f) * volumeScale;
     std::string filter = "volume=" + std::to_string(volume);
 
     swimLoopPid = platform::spawnProcess({

@@ -518,9 +518,9 @@ void CameraController::update(float deltaTime) {
                 return base;
             };
 
-            // Sample center + small footprint to avoid slipping through narrow floor pieces.
+            // Sample center + footprint to avoid slipping through narrow floor pieces.
             std::optional<float> groundH;
-            constexpr float FOOTPRINT = 0.28f;
+            constexpr float FOOTPRINT = 0.4f;  // Larger footprint for better floor detection
             const glm::vec2 offsets[] = {
                 {0.0f, 0.0f},
                 {FOOTPRINT, 0.0f}, {-FOOTPRINT, 0.0f},
@@ -824,7 +824,7 @@ void CameraController::update(float deltaTime) {
             };
 
             std::optional<float> groundH;
-            constexpr float FOOTPRINT = 0.28f;
+            constexpr float FOOTPRINT = 0.4f;  // Larger footprint for better floor detection
             const glm::vec2 offsets[] = {
                 {0.0f, 0.0f}, {FOOTPRINT, 0.0f}, {-FOOTPRINT, 0.0f}, {0.0f, FOOTPRINT}, {0.0f, -FOOTPRINT}
             };

@@ -397,11 +397,20 @@ void CharacterCreateScreen::render(game::GameHandler& /*gameHandler*/) {
 
     if (ImGui::Button("Create", ImVec2(150, 35))) {
         std::string name(nameBuffer);
+        // Trim whitespace
+        size_t start = name.find_first_not_of(" \t\r\n");
+        size_t end = name.find_last_not_of(" \t\r\n");
+        if (start == std::string::npos) {
+            name.clear();
+        } else {
+            name = name.substr(start, end - start + 1);
+        }
         if (name.empty()) {
             setStatus("Please enter a character name.", true);
         } else if (availableClasses.empty()) {
             setStatus("No valid class for this race.", true);
         } else {
+            setStatus("Creating character...", false);
             game::CharCreateData data;
             data.name = name;
             data.race = allRaces[raceIndex];

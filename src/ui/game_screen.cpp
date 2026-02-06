@@ -462,8 +462,16 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                             gameHandler.startAutoAttack(target->getGuid());
                         }
                     } else {
-                        // Try NPC interaction first (gossip), fall back to attack
-                        gameHandler.interactWithNpc(target->getGuid());
+                        // Online mode: interact with friendly NPCs, attack hostiles
+                        if (unit->isInteractable()) {
+                            gameHandler.interactWithNpc(target->getGuid());
+                        } else {
+                            if (gameHandler.isAutoAttacking()) {
+                                gameHandler.stopAutoAttack();
+                            } else {
+                                gameHandler.startAutoAttack(target->getGuid());
+                            }
+                        }
                     }
                 } else if (target->getType() == game::ObjectType::PLAYER) {
                     // Right-click another player could start attack in PvP context

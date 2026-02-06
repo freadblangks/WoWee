@@ -410,6 +410,9 @@ private:
     // ---- Phase 1 handlers ----
     void handleNameQueryResponse(network::Packet& packet);
     void handleCreatureQueryResponse(network::Packet& packet);
+    void handleItemQueryResponse(network::Packet& packet);
+    void queryItemInfo(uint32_t entry, uint64_t guid);
+    void rebuildOnlineInventory();
 
     // ---- Phase 2 handlers ----
     void handleAttackStart(network::Packet& packet);
@@ -534,6 +537,17 @@ private:
     std::unordered_set<uint64_t> pendingNameQueries;
     std::unordered_map<uint32_t, CreatureQueryResponseData> creatureInfoCache;
     std::unordered_set<uint32_t> pendingCreatureQueries;
+
+    // ---- Online item tracking ----
+    struct OnlineItemInfo {
+        uint32_t entry = 0;
+        uint32_t stackCount = 1;
+    };
+    std::unordered_map<uint64_t, OnlineItemInfo> onlineItems_;
+    std::unordered_map<uint32_t, ItemQueryResponseData> itemInfoCache_;
+    std::unordered_set<uint32_t> pendingItemQueries_;
+    std::array<uint64_t, 23> equipSlotGuids_{};
+    std::array<uint64_t, 16> backpackSlotGuids_{};
 
     // ---- Phase 2: Combat ----
     bool autoAttacking = false;

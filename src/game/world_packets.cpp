@@ -1207,6 +1207,121 @@ bool CreatureQueryResponseParser::parse(network::Packet& packet, CreatureQueryRe
     return true;
 }
 
+// ---- Item Query ----
+
+network::Packet ItemQueryPacket::build(uint32_t entry, uint64_t guid) {
+    network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_ITEM_QUERY_SINGLE));
+    packet.writeUInt32(entry);
+    packet.writeUInt64(guid);
+    LOG_DEBUG("Built CMSG_ITEM_QUERY_SINGLE: entry=", entry, " guid=0x", std::hex, guid, std::dec);
+    return packet;
+}
+
+static const char* getItemSubclassName(uint32_t itemClass, uint32_t subClass) {
+    if (itemClass == 2) { // Weapon
+        switch (subClass) {
+            case 0: return "Axe"; case 1: return "Axe";
+            case 2: return "Bow"; case 3: return "Gun";
+            case 4: return "Mace"; case 5: return "Mace";
+            case 6: return "Polearm"; case 7: return "Sword";
+            case 8: return "Sword"; case 9: return "Obsolete";
+            case 10: return "Staff"; case 13: return "Fist Weapon";
+            case 15: return "Dagger"; case 16: return "Thrown";
+            case 18: return "Crossbow"; case 19: return "Wand";
+            case 20: return "Fishing Pole";
+            default: return "Weapon";
+        }
+    }
+    if (itemClass == 4) { // Armor
+        switch (subClass) {
+            case 0: return "Miscellaneous"; case 1: return "Cloth";
+            case 2: return "Leather"; case 3: return "Mail";
+            case 4: return "Plate"; case 6: return "Shield";
+            default: return "Armor";
+        }
+    }
+    return "";
+}
+
+bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseData& data) {
+    data.entry = packet.readUInt32();
+
+    // High bit set means item not found
+    if (data.entry & 0x80000000) {
+        data.entry &= ~0x80000000;
+        LOG_DEBUG("Item query: entry ", data.entry, " not found");
+        return true;
+    }
+
+    uint32_t itemClass = packet.readUInt32();
+    uint32_t subClass = packet.readUInt32();
+    packet.readUInt32(); // SoundOverrideSubclass
+
+    data.subclassName = getItemSubclassName(itemClass, subClass);
+
+    // 4 name strings
+    data.name = packet.readString();
+    packet.readString(); // name2
+    packet.readString(); // name3
+    packet.readString(); // name4
+
+    data.displayInfoId = packet.readUInt32();
+    data.quality = packet.readUInt32();
+
+    packet.readUInt32(); // Flags
+    packet.readUInt32(); // Flags2
+    packet.readUInt32(); // BuyPrice
+    packet.readUInt32(); // SellPrice
+
+    data.inventoryType = packet.readUInt32();
+
+    packet.readUInt32(); // AllowableClass
+    packet.readUInt32(); // AllowableRace
+    packet.readUInt32(); // ItemLevel
+    packet.readUInt32(); // RequiredLevel
+    packet.readUInt32(); // RequiredSkill
+    packet.readUInt32(); // RequiredSkillRank
+    packet.readUInt32(); // RequiredSpell
+    packet.readUInt32(); // RequiredHonorRank
+    packet.readUInt32(); // RequiredCityRank
+    packet.readUInt32(); // RequiredReputationFaction
+    packet.readUInt32(); // RequiredReputationRank
+    packet.readUInt32(); // MaxCount
+    data.maxStack = static_cast<int32_t>(packet.readUInt32()); // Stackable
+    data.containerSlots = packet.readUInt32();
+
+    uint32_t statsCount = packet.readUInt32();
+    for (uint32_t i = 0; i < statsCount && i < 10; i++) {
+        uint32_t statType = packet.readUInt32();
+        int32_t statValue = static_cast<int32_t>(packet.readUInt32());
+        switch (statType) {
+            case 3: data.agility = statValue; break;
+            case 4: data.strength = statValue; break;
+            case 5: data.intellect = statValue; break;
+            case 6: data.spirit = statValue; break;
+            case 7: data.stamina = statValue; break;
+            default: break;
+        }
+    }
+
+    packet.readUInt32(); // ScalingStatDistribution
+    packet.readUInt32(); // ScalingStatValue
+
+    // 5 damage types
+    for (int i = 0; i < 5; i++) {
+        packet.readFloat();   // DamageMin
+        packet.readFloat();   // DamageMax
+        packet.readUInt32();  // DamageType
+    }
+
+    data.armor = static_cast<int32_t>(packet.readUInt32());
+
+    data.valid = !data.name.empty();
+    LOG_INFO("Item query response: ", data.name, " (quality=", data.quality,
+             " invType=", data.inventoryType, " stack=", data.maxStack, ")");
+    return true;
+}
+
 // ============================================================
 // Phase 2: Combat Core
 // ============================================================

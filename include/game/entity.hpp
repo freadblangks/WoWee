@@ -151,6 +151,17 @@ public:
     uint32_t getDisplayId() const { return displayId; }
     void setDisplayId(uint32_t id) { displayId = id; }
 
+    // Unit flags (UNIT_FIELD_FLAGS, index 59)
+    uint32_t getUnitFlags() const { return unitFlags; }
+    void setUnitFlags(uint32_t f) { unitFlags = f; }
+
+    // NPC flags (UNIT_NPC_FLAGS, index 82)
+    uint32_t getNpcFlags() const { return npcFlags; }
+    void setNpcFlags(uint32_t f) { npcFlags = f; }
+
+    // Returns true if NPC has interaction flags (gossip/vendor/quest/trainer)
+    bool isInteractable() const { return npcFlags != 0; }
+
 protected:
     std::string name;
     uint32_t health = 0;
@@ -161,6 +172,8 @@ protected:
     uint32_t level = 1;
     uint32_t entry = 0;
     uint32_t displayId = 0;
+    uint32_t unitFlags = 0;
+    uint32_t npcFlags = 0;
 };
 
 /**

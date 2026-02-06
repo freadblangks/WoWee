@@ -964,6 +964,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
             handleCreatureQueryResponse(packet);
             break;
 
+        case Opcode::SMSG_ITEM_QUERY_SINGLE_RESPONSE:
+            handleItemQueryResponse(packet);
+            break;
+
         // ---- XP ----
         case Opcode::SMSG_LOG_XPGAIN:
             handleXpGain(packet);
@@ -2382,8 +2386,10 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             case 25: unit->setPower(val); break;
                             case 32: unit->setMaxHealth(val); break;
                             case 33: unit->setMaxPower(val); break;
+                            case 59: unit->setUnitFlags(val); break;   // UNIT_FIELD_FLAGS
                             case 54: unit->setLevel(val); break;
                             case 67: unit->setDisplayId(val); break;  // UNIT_FIELD_DISPLAYID
+                            case 82: unit->setNpcFlags(val); break;   // UNIT_NPC_FLAGS
                             default: break;
                         }
                     }
@@ -2395,16 +2401,50 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         }
                     }
                 }
-                // Extract XP fields for player entity
+                // Track online item objects
+                if (block.objectType == ObjectType::ITEM) {
+                    auto entryIt = block.fields.find(3);  // OBJECT_FIELD_ENTRY
+                    auto stackIt = block.fields.find(14); // ITEM_FIELD_STACK_COUNT
+                    if (entryIt != block.fields.end() && entryIt->second != 0) {
+                        OnlineItemInfo info;
+                        info.entry = entryIt->second;
+                        info.stackCount = (stackIt != block.fields.end()) ? stackIt->second : 1;
+                        onlineItems_[block.guid] = info;
+                        queryItemInfo(info.entry, block.guid);
+                    }
+                }
+
+                // Extract XP / inventory slot fields for player entity
                 if (block.guid == playerGuid && block.objectType == ObjectType::PLAYER) {
+                    bool slotsChanged = false;
                     for (const auto& [key, val] : block.fields) {
-                        switch (key) {
-                            case 634: playerXp_ = val; break;           // PLAYER_XP
-                            case 635: playerNextLevelXp_ = val; break;  // PLAYER_NEXT_LEVEL_XP
-                            case 54:  serverPlayerLevel_ = val; break;  // UNIT_FIELD_LEVEL
-                            default: break;
+                        if (key == 634) { playerXp_ = val; }                // PLAYER_XP
+                        else if (key == 635) { playerNextLevelXp_ = val; }  // PLAYER_NEXT_LEVEL_XP
+                        else if (key == 54) { serverPlayerLevel_ = val; }   // UNIT_FIELD_LEVEL
+                        else if (key == 632) { playerMoneyCopper_ = val; }  // PLAYER_FIELD_COINAGE
+                        else if (key >= 322 && key <= 367) {
+                            // PLAYER_FIELD_INV_SLOT_HEAD: equipment slots (23 slots × 2 fields)
+                            int slotIndex = (key - 322) / 2;
+                            bool isLow = ((key - 322) % 2 == 0);
+                            if (slotIndex < 23) {
+                                uint64_t& guid = equipSlotGuids_[slotIndex];
+                                if (isLow) guid = (guid & 0xFFFFFFFF00000000ULL) | val;
+                                else guid = (guid & 0x00000000FFFFFFFFULL) | (uint64_t(val) << 32);
+                                slotsChanged = true;
+                            }
+                        } else if (key >= 368 && key <= 399) {
+                            // PLAYER_FIELD_PACK_SLOT_1: backpack slots (16 slots × 2 fields)
+                            int slotIndex = (key - 368) / 2;
+                            bool isLow = ((key - 368) % 2 == 0);
+                            if (slotIndex < 16) {
+                                uint64_t& guid = backpackSlotGuids_[slotIndex];
+                                if (isLow) guid = (guid & 0xFFFFFFFF00000000ULL) | val;
+                                else guid = (guid & 0x00000000FFFFFFFFULL) | (uint64_t(val) << 32);
+                                slotsChanged = true;
+                            }
                         }
                     }
+                    if (slotsChanged) rebuildOnlineInventory();
                 }
                 break;
             }
@@ -2422,25 +2462,62 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         auto unit = std::static_pointer_cast<Unit>(entity);
                         for (const auto& [key, val] : block.fields) {
                             switch (key) {
-                                case 24: unit->setHealth(val); break;
+                                case 24:
+                                    unit->setHealth(val);
+                                    if (val == 0 && block.guid == autoAttackTarget) {
+                                        stopAutoAttack();
+                                    }
+                                    break;
                                 case 25: unit->setPower(val); break;
                                 case 32: unit->setMaxHealth(val); break;
                                 case 33: unit->setMaxPower(val); break;
+                                case 59: unit->setUnitFlags(val); break;   // UNIT_FIELD_FLAGS
                                 case 54: unit->setLevel(val); break;
+                                case 82: unit->setNpcFlags(val); break;   // UNIT_NPC_FLAGS
                                 default: break;
                             }
                         }
                     }
-                    // Update XP fields for player entity
+                    // Update XP / inventory slot fields for player entity
                     if (block.guid == playerGuid) {
+                        bool slotsChanged = false;
                         for (const auto& [key, val] : block.fields) {
-                            switch (key) {
-                                case 634: playerXp_ = val; break;           // PLAYER_XP
-                                case 635: playerNextLevelXp_ = val; break;  // PLAYER_NEXT_LEVEL_XP
-                                case 54:  serverPlayerLevel_ = val; break;  // UNIT_FIELD_LEVEL
-                                default: break;
+                            if (key == 634) { playerXp_ = val; }
+                            else if (key == 635) { playerNextLevelXp_ = val; }
+                            else if (key == 54) { serverPlayerLevel_ = val; }
+                            else if (key == 632) { playerMoneyCopper_ = val; }
+                            else if (key >= 322 && key <= 367) {
+                                int slotIndex = (key - 322) / 2;
+                                bool isLow = ((key - 322) % 2 == 0);
+                                if (slotIndex < 23) {
+                                    uint64_t& guid = equipSlotGuids_[slotIndex];
+                                    if (isLow) guid = (guid & 0xFFFFFFFF00000000ULL) | val;
+                                    else guid = (guid & 0x00000000FFFFFFFFULL) | (uint64_t(val) << 32);
+                                    slotsChanged = true;
+                                }
+                            } else if (key >= 368 && key <= 399) {
+                                int slotIndex = (key - 368) / 2;
+                                bool isLow = ((key - 368) % 2 == 0);
+                                if (slotIndex < 16) {
+                                    uint64_t& guid = backpackSlotGuids_[slotIndex];
+                                    if (isLow) guid = (guid & 0xFFFFFFFF00000000ULL) | val;
+                                    else guid = (guid & 0x00000000FFFFFFFFULL) | (uint64_t(val) << 32);
+                                    slotsChanged = true;
+                                }
                             }
                         }
+                        if (slotsChanged) rebuildOnlineInventory();
+                    }
+
+                    // Update item stack count for online items
+                    if (entity->getType() == ObjectType::ITEM) {
+                        for (const auto& [key, val] : block.fields) {
+                            if (key == 14) { // ITEM_FIELD_STACK_COUNT
+                                auto it = onlineItems_.find(block.guid);
+                                if (it != onlineItems_.end()) it->second.stackCount = val;
+                            }
+                        }
+                        rebuildOnlineInventory();
                     }
 
                     LOG_DEBUG("Updated entity fields: 0x", std::hex, block.guid, std::dec);
@@ -2526,6 +2603,19 @@ void GameHandler::handleDestroyObject(network::Packet& packet) {
                  " (", (data.isDeath ? "death" : "despawn"), ")");
     } else {
         LOG_WARNING("Destroy object for unknown entity: 0x", std::hex, data.guid, std::dec);
+    }
+
+    // Clean up auto-attack and target if destroyed entity was our target
+    if (data.guid == autoAttackTarget) {
+        stopAutoAttack();
+    }
+    if (data.guid == targetGuid) {
+        targetGuid = 0;
+    }
+
+    // Remove online item tracking
+    if (onlineItems_.erase(data.guid)) {
+        rebuildOnlineInventory();
     }
 
     tabCycleStale = true;
@@ -2746,6 +2836,111 @@ void GameHandler::handleCreatureQueryResponse(network::Packet& packet) {
             }
         }
     }
+}
+
+// ============================================================
+// Item Query
+// ============================================================
+
+void GameHandler::queryItemInfo(uint32_t entry, uint64_t guid) {
+    if (itemInfoCache_.count(entry) || pendingItemQueries_.count(entry)) return;
+    if (state != WorldState::IN_WORLD || !socket) return;
+
+    pendingItemQueries_.insert(entry);
+    auto packet = ItemQueryPacket::build(entry, guid);
+    socket->send(packet);
+}
+
+void GameHandler::handleItemQueryResponse(network::Packet& packet) {
+    ItemQueryResponseData data;
+    if (!ItemQueryResponseParser::parse(packet, data)) return;
+
+    pendingItemQueries_.erase(data.entry);
+
+    if (data.valid) {
+        itemInfoCache_[data.entry] = data;
+        rebuildOnlineInventory();
+    }
+}
+
+void GameHandler::rebuildOnlineInventory() {
+    if (singlePlayerMode_) return;
+
+    inventory = Inventory();
+
+    // Equipment slots
+    for (int i = 0; i < 23; i++) {
+        uint64_t guid = equipSlotGuids_[i];
+        if (guid == 0) continue;
+
+        auto itemIt = onlineItems_.find(guid);
+        if (itemIt == onlineItems_.end()) continue;
+
+        ItemDef def;
+        def.itemId = itemIt->second.entry;
+        def.stackCount = itemIt->second.stackCount;
+        def.maxStack = 1;
+
+        auto infoIt = itemInfoCache_.find(itemIt->second.entry);
+        if (infoIt != itemInfoCache_.end()) {
+            def.name = infoIt->second.name;
+            def.quality = static_cast<ItemQuality>(infoIt->second.quality);
+            def.inventoryType = infoIt->second.inventoryType;
+            def.maxStack = std::max(1, infoIt->second.maxStack);
+            def.displayInfoId = infoIt->second.displayInfoId;
+            def.subclassName = infoIt->second.subclassName;
+            def.armor = infoIt->second.armor;
+            def.stamina = infoIt->second.stamina;
+            def.strength = infoIt->second.strength;
+            def.agility = infoIt->second.agility;
+            def.intellect = infoIt->second.intellect;
+            def.spirit = infoIt->second.spirit;
+        } else {
+            def.name = "Item " + std::to_string(def.itemId);
+        }
+
+        inventory.setEquipSlot(static_cast<EquipSlot>(i), def);
+    }
+
+    // Backpack slots
+    for (int i = 0; i < 16; i++) {
+        uint64_t guid = backpackSlotGuids_[i];
+        if (guid == 0) continue;
+
+        auto itemIt = onlineItems_.find(guid);
+        if (itemIt == onlineItems_.end()) continue;
+
+        ItemDef def;
+        def.itemId = itemIt->second.entry;
+        def.stackCount = itemIt->second.stackCount;
+        def.maxStack = 1;
+
+        auto infoIt = itemInfoCache_.find(itemIt->second.entry);
+        if (infoIt != itemInfoCache_.end()) {
+            def.name = infoIt->second.name;
+            def.quality = static_cast<ItemQuality>(infoIt->second.quality);
+            def.inventoryType = infoIt->second.inventoryType;
+            def.maxStack = std::max(1, infoIt->second.maxStack);
+            def.displayInfoId = infoIt->second.displayInfoId;
+            def.subclassName = infoIt->second.subclassName;
+            def.armor = infoIt->second.armor;
+            def.stamina = infoIt->second.stamina;
+            def.strength = infoIt->second.strength;
+            def.agility = infoIt->second.agility;
+            def.intellect = infoIt->second.intellect;
+            def.spirit = infoIt->second.spirit;
+        } else {
+            def.name = "Item " + std::to_string(def.itemId);
+        }
+
+        inventory.setBackpackSlot(i, def);
+    }
+
+    LOG_DEBUG("Rebuilt online inventory: equip=", [&](){
+        int c = 0; for (auto g : equipSlotGuids_) if (g) c++; return c;
+    }(), " backpack=", [&](){
+        int c = 0; for (auto g : backpackSlotGuids_) if (g) c++; return c;
+    }());
 }
 
 // ============================================================

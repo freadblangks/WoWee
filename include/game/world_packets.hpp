@@ -716,6 +716,41 @@ public:
 };
 
 // ============================================================
+// Item Query
+// ============================================================
+
+/** CMSG_ITEM_QUERY_SINGLE packet builder */
+class ItemQueryPacket {
+public:
+    static network::Packet build(uint32_t entry, uint64_t guid);
+};
+
+/** SMSG_ITEM_QUERY_SINGLE_RESPONSE data */
+struct ItemQueryResponseData {
+    uint32_t entry = 0;
+    std::string name;
+    uint32_t displayInfoId = 0;
+    uint32_t quality = 0;
+    uint32_t inventoryType = 0;
+    int32_t maxStack = 1;
+    uint32_t containerSlots = 0;
+    int32_t armor = 0;
+    int32_t stamina = 0;
+    int32_t strength = 0;
+    int32_t agility = 0;
+    int32_t intellect = 0;
+    int32_t spirit = 0;
+    std::string subclassName;
+    bool valid = false;
+};
+
+/** SMSG_ITEM_QUERY_SINGLE_RESPONSE parser */
+class ItemQueryResponseParser {
+public:
+    static bool parse(network::Packet& packet, ItemQueryResponseData& data);
+};
+
+// ============================================================
 // Phase 2: Combat Core
 // ============================================================
 

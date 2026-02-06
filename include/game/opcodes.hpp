@@ -139,6 +139,8 @@ enum class Opcode : uint16_t {
     SMSG_BUY_FAILED                  = 0x1A5,
 
     // ---- Phase 5: Item/Equip ----
+    CMSG_ITEM_QUERY_SINGLE           = 0x056,
+    SMSG_ITEM_QUERY_SINGLE_RESPONSE  = 0x058,
     CMSG_AUTOEQUIP_ITEM              = 0x10A,
     SMSG_INVENTORY_CHANGE_FAILURE    = 0x112,
 };

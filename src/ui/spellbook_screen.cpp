@@ -10,20 +10,6 @@
 
 namespace wowee { namespace ui {
 
-// General utility spells that belong in the General tab
-static bool isGeneralSpell(uint32_t spellId) {
-    switch (spellId) {
-        case 6603:  // Attack
-        case 8690:  // Hearthstone
-        case 3365:  // Opening
-        case 21651: // Opening
-        case 21652: // Closing
-            return true;
-        default:
-            return false;
-    }
-}
-
 void SpellbookScreen::loadSpellDBC(pipeline::AssetManager* assetManager) {
     if (dbcLoadAttempted) return;
     dbcLoadAttempted = true;
@@ -99,9 +85,11 @@ void SpellbookScreen::loadSkillLineDBCs(pipeline::AssetManager* assetManager) {
     if (skillLineDbc && skillLineDbc->isLoaded()) {
         for (uint32_t i = 0; i < skillLineDbc->getRecordCount(); i++) {
             uint32_t id = skillLineDbc->getUInt32(i, 0);
+            uint32_t category = skillLineDbc->getUInt32(i, 1);
             std::string name = skillLineDbc->getString(i, 3);
             if (id > 0 && !name.empty()) {
                 skillLineNames[id] = name;
+                skillLineCategories[id] = category;
             }
         }
         LOG_INFO("Spellbook: Loaded ", skillLineNames.size(), " skill lines");
@@ -128,8 +116,11 @@ void SpellbookScreen::loadSkillLineDBCs(pipeline::AssetManager* assetManager) {
 void SpellbookScreen::categorizeSpells(const std::vector<uint32_t>& knownSpells) {
     spellTabs.clear();
 
-    // Group spells by skill line, preserving order of first appearance
-    std::map<uint32_t, std::vector<const SpellInfo*>> skillLineSpells;
+    // Only SkillLine category 7 ("Class") gets its own tab (the 3 specialties).
+    // Everything else (weapons, professions, racials, general utilities) → General.
+    static constexpr uint32_t SKILLLINE_CATEGORY_CLASS = 7;
+
+    std::map<uint32_t, std::vector<const SpellInfo*>> specialtySpells;
     std::vector<const SpellInfo*> generalSpells;
 
     for (uint32_t spellId : knownSpells) {
@@ -138,33 +129,27 @@ void SpellbookScreen::categorizeSpells(const std::vector<uint32_t>& knownSpells)
 
         const SpellInfo* info = &it->second;
 
-        if (isGeneralSpell(spellId)) {
-            generalSpells.push_back(info);
-            continue;
-        }
-
         auto slIt = spellToSkillLine.find(spellId);
         if (slIt != spellToSkillLine.end()) {
-            skillLineSpells[slIt->second].push_back(info);
-        } else {
-            generalSpells.push_back(info);
+            uint32_t skillLineId = slIt->second;
+            auto catIt = skillLineCategories.find(skillLineId);
+            if (catIt != skillLineCategories.end() && catIt->second == SKILLLINE_CATEGORY_CLASS) {
+                specialtySpells[skillLineId].push_back(info);
+                continue;
+            }
         }
+
+        generalSpells.push_back(info);
     }
 
     auto byName = [](const SpellInfo* a, const SpellInfo* b) { return a->name < b->name; };
 
-    // General tab first
-    if (!generalSpells.empty()) {
-        std::sort(generalSpells.begin(), generalSpells.end(), byName);
-        spellTabs.push_back({"General", std::move(generalSpells)});
-    }
-
-    // Skill line tabs sorted by name
+    // Specialty tabs sorted alphabetically by skill line name
     std::vector<std::pair<std::string, std::vector<const SpellInfo*>>> named;
-    for (auto& [skillLineId, spells] : skillLineSpells) {
+    for (auto& [skillLineId, spells] : specialtySpells) {
         auto nameIt = skillLineNames.find(skillLineId);
         std::string tabName = (nameIt != skillLineNames.end()) ? nameIt->second
-                              : "Unknown (" + std::to_string(skillLineId) + ")";
+                              : "Specialty";
         std::sort(spells.begin(), spells.end(), byName);
         named.push_back({std::move(tabName), std::move(spells)});
     }
@@ -173,6 +158,12 @@ void SpellbookScreen::categorizeSpells(const std::vector<uint32_t>& knownSpells)
 
     for (auto& [name, spells] : named) {
         spellTabs.push_back({std::move(name), std::move(spells)});
+    }
+
+    // General tab last
+    if (!generalSpells.empty()) {
+        std::sort(generalSpells.begin(), generalSpells.end(), byName);
+        spellTabs.push_back({"General", std::move(generalSpells)});
     }
 
     lastKnownSpellCount = knownSpells.size();

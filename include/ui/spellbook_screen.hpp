@@ -57,6 +57,7 @@ private:
     // Skill line data (loaded from SkillLine.dbc + SkillLineAbility.dbc)
     bool skillLineDbLoaded = false;
     std::unordered_map<uint32_t, std::string> skillLineNames;    // skillLineID -> name
+    std::unordered_map<uint32_t, uint32_t> skillLineCategories;  // skillLineID -> categoryID
     std::unordered_map<uint32_t, uint32_t> spellToSkillLine;     // spellID -> skillLineID
 
     // Categorized spell tabs (rebuilt when spell list changes)

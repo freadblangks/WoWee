@@ -1906,6 +1906,27 @@ network::Packet AutostoreLootItemPacket::build(uint8_t slotIndex) {
     return packet;
 }
 
+network::Packet UseItemPacket::build(uint8_t bagIndex, uint8_t slotIndex, uint64_t itemGuid) {
+    network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_USE_ITEM));
+    packet.writeUInt8(bagIndex);
+    packet.writeUInt8(slotIndex);
+    packet.writeUInt8(0); // spell index
+    packet.writeUInt8(0); // cast count
+    packet.writeUInt32(0); // spell id (unused)
+    packet.writeUInt64(itemGuid);
+    packet.writeUInt32(0); // glyph index
+    packet.writeUInt8(0);  // cast flags
+    // SpellCastTargets: self
+    packet.writeUInt32(0x00);
+    return packet;
+}
+
+network::Packet AutoEquipItemPacket::build(uint64_t itemGuid) {
+    network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_AUTOEQUIP_ITEM));
+    packet.writeUInt64(itemGuid);
+    return packet;
+}
+
 network::Packet LootReleasePacket::build(uint64_t lootGuid) {
     network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_LOOT_RELEASE));
     packet.writeUInt64(lootGuid);
@@ -2119,6 +2140,12 @@ bool ListInventoryParser::parse(network::Packet& packet, ListInventoryData& data
 network::Packet RepopRequestPacket::build() {
     network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_REPOP_REQUEST));
     packet.writeUInt8(0);  // auto-release flag (0 = manual)
+    return packet;
+}
+
+network::Packet SpiritHealerActivatePacket::build(uint64_t npcGuid) {
+    network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_SPIRIT_HEALER_ACTIVATE));
+    packet.writeUInt64(npcGuid);
     return packet;
 }
 

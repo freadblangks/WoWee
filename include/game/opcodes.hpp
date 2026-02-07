@@ -162,11 +162,13 @@ enum class Opcode : uint16_t {
     // ---- Phase 5: Item/Equip ----
     CMSG_ITEM_QUERY_SINGLE           = 0x056,
     SMSG_ITEM_QUERY_SINGLE_RESPONSE  = 0x058,
+    CMSG_USE_ITEM                    = 0x00AB,
     CMSG_AUTOEQUIP_ITEM              = 0x10A,
     SMSG_INVENTORY_CHANGE_FAILURE    = 0x112,
 
     // ---- Death/Respawn ----
     CMSG_REPOP_REQUEST               = 0x015A,
+    CMSG_SPIRIT_HEALER_ACTIVATE      = 0x0176,
 };
 
 } // namespace game

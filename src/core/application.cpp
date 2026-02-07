@@ -465,14 +465,12 @@ void Application::update(float deltaTime) {
                 gameHandler->setOrientation(wowOrientation);
             }
 
-            // Send movement heartbeat every 500ms while moving
-            if (renderer && renderer->isMoving()) {
+            // Send movement heartbeat every 500ms (keeps server position in sync)
+            if (gameHandler && renderer && !singlePlayerMode) {
                 movementHeartbeatTimer += deltaTime;
                 if (movementHeartbeatTimer >= 0.5f) {
                     movementHeartbeatTimer = 0.0f;
-                    if (gameHandler && !singlePlayerMode) {
-                        gameHandler->sendMovement(game::Opcode::CMSG_MOVE_HEARTBEAT);
-                    }
+                    gameHandler->sendMovement(game::Opcode::CMSG_MOVE_HEARTBEAT);
                 }
             } else {
                 movementHeartbeatTimer = 0.0f;
@@ -712,7 +710,9 @@ void Application::setupUICallbacks() {
                 gameHandler->requestCharacterList();
             }
         } else {
-            uiManager->getCharacterScreen().setStatus("Delete failed.");
+            uint8_t code = gameHandler ? gameHandler->getLastCharDeleteResult() : 0xFF;
+            uiManager->getCharacterScreen().setStatus(
+                "Delete failed (code " + std::to_string(static_cast<int>(code)) + ").");
         }
     });
 }
@@ -2183,6 +2183,25 @@ std::string Application::getModelPathForDisplayId(uint32_t displayId) const {
     return itPath->second;
 }
 
+bool Application::getRenderBoundsForGuid(uint64_t guid, glm::vec3& outCenter, float& outRadius) const {
+    if (!renderer || !renderer->getCharacterRenderer()) return false;
+    uint32_t instanceId = 0;
+
+    if (gameHandler && guid == gameHandler->getPlayerGuid()) {
+        instanceId = renderer->getCharacterInstanceId();
+    }
+    if (instanceId == 0) {
+        auto it = creatureInstances_.find(guid);
+        if (it != creatureInstances_.end()) instanceId = it->second;
+    }
+    if (instanceId == 0 && npcManager) {
+        instanceId = npcManager->findRenderInstanceId(guid);
+    }
+    if (instanceId == 0) return false;
+
+    return renderer->getCharacterRenderer()->getInstanceBounds(instanceId, outCenter, outRadius);
+}
+
 void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x, float y, float z, float orientation) {
     if (!renderer || !renderer->getCharacterRenderer() || !assetManager) return;
 
@@ -2388,9 +2407,12 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
     // Convert canonical → render coordinates
     glm::vec3 renderPos = core::coords::canonicalToRender(glm::vec3(x, y, z));
 
+    // Convert canonical WoW orientation (0=north) -> render yaw (0=west)
+    float renderYaw = orientation + glm::radians(90.0f);
+
     // Create instance
     uint32_t instanceId = charRenderer->createInstance(modelId, renderPos,
-        glm::vec3(0.0f, 0.0f, orientation), 1.0f);
+        glm::vec3(0.0f, 0.0f, renderYaw), 1.0f);
 
     if (instanceId == 0) {
         LOG_WARNING("Failed to create creature instance for guid 0x", std::hex, guid, std::dec);

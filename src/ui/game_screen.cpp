@@ -17,7 +17,9 @@
 #include "pipeline/blp_loader.hpp"
 #include "core/logger.hpp"
 #include <imgui.h>
+#include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <unordered_set>
 
 namespace {
@@ -138,6 +140,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     }
 
     // Bags (B key toggle handled inside)
+    inventoryScreen.setGameHandler(&gameHandler);
     inventoryScreen.render(gameHandler.getInventory(), gameHandler.getMoneyCopper());
 
     // Character screen (C key toggle handled inside render())
@@ -174,11 +177,19 @@ void GameScreen::render(game::GameHandler& gameHandler) {
                 // Selection circle color: WoW-canonical level-based colors
                 glm::vec3 circleColor(1.0f, 1.0f, 0.3f); // default yellow
                 float circleRadius = 1.5f;
+                {
+                    glm::vec3 boundsCenter;
+                    float boundsRadius = 0.0f;
+                    if (core::Application::getInstance().getRenderBoundsForGuid(target->getGuid(), boundsCenter, boundsRadius)) {
+                        float r = boundsRadius * 1.1f;
+                        circleRadius = std::min(std::max(r, 0.8f), 8.0f);
+                    }
+                }
                 if (target->getType() == game::ObjectType::UNIT) {
                     auto unit = std::static_pointer_cast<game::Unit>(target);
                     if (unit->getHealth() == 0 && unit->getMaxHealth() > 0) {
                         circleColor = glm::vec3(0.5f, 0.5f, 0.5f); // gray (dead)
-                    } else if (unit->isHostile()) {
+                    } else if (unit->isHostile() || gameHandler.isAggressiveTowardPlayer(target->getGuid())) {
                         uint32_t playerLv = gameHandler.getPlayerLevel();
                         uint32_t mobLv = unit->getLevel();
                         int32_t diff = static_cast<int32_t>(mobLv) - static_cast<int32_t>(playerLv);
@@ -363,9 +374,24 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
     float chatH = 220.0f;
     float chatX = 8.0f;
     float chatY = screenH - chatH - 80.0f;  // Above action bar
-    ImGui::SetNextWindowSize(ImVec2(chatW, chatH), ImGuiCond_Always);
-    ImGui::SetNextWindowPos(ImVec2(chatX, chatY), ImGuiCond_Always);
-    ImGui::Begin("Chat", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+    if (!chatWindowPosInit_) {
+        chatWindowPos_ = ImVec2(chatX, chatY);
+        chatWindowPosInit_ = true;
+    }
+    if (chatWindowLocked) {
+        ImGui::SetNextWindowSize(ImVec2(chatW, chatH), ImGuiCond_Always);
+        ImGui::SetNextWindowPos(chatWindowPos_, ImGuiCond_Always);
+    } else {
+        ImGui::SetNextWindowSize(ImVec2(chatW, chatH), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowPos(chatWindowPos_, ImGuiCond_FirstUseEver);
+    }
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize;
+    if (chatWindowLocked) flags |= ImGuiWindowFlags_NoMove;
+    ImGui::Begin("Chat", nullptr, flags);
+
+    if (!chatWindowLocked) {
+        chatWindowPos_ = ImGui::GetWindowPos();
+    }
 
     // Chat history
     const auto& chatHistory = gameHandler.getChatHistory();
@@ -404,6 +430,11 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
     ImGui::Separator();
     ImGui::Spacing();
 
+    // Lock toggle
+    ImGui::Checkbox("Lock", &chatWindowLocked);
+    ImGui::SameLine();
+    ImGui::TextDisabled(chatWindowLocked ? "(locked)" : "(movable)");
+
     // Chat input
     ImGui::Text("Type:");
     ImGui::SameLine();
@@ -420,7 +451,20 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
         ImGui::SetKeyboardFocusHere();
         refocusChatInput = false;
     }
-    if (ImGui::InputText("##ChatInput", chatInputBuffer, sizeof(chatInputBuffer), ImGuiInputTextFlags_EnterReturnsTrue)) {
+    auto inputCallback = [](ImGuiInputTextCallbackData* data) -> int {
+        auto* self = static_cast<GameScreen*>(data->UserData);
+        if (self && self->chatInputMoveCursorToEnd) {
+            int len = static_cast<int>(std::strlen(data->Buf));
+            data->CursorPos = len;
+            data->SelectionStart = len;
+            data->SelectionEnd = len;
+            self->chatInputMoveCursorToEnd = false;
+        }
+        return 0;
+    };
+
+    ImGuiInputTextFlags inputFlags = ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackAlways;
+    if (ImGui::InputText("##ChatInput", chatInputBuffer, sizeof(chatInputBuffer), inputFlags, inputCallback, this)) {
         sendChatMessage(gameHandler);
         refocusChatInput = true;
     }
@@ -486,6 +530,7 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
         refocusChatInput = true;
         chatInputBuffer[0] = '/';
         chatInputBuffer[1] = '\0';
+        chatInputMoveCursorToEnd = true;
     }
 
     // Enter key: focus chat input (empty)
@@ -516,23 +561,29 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                 if (t != game::ObjectType::UNIT && t != game::ObjectType::PLAYER) continue;
                 if (guid == myGuid) continue;  // Don't target self
 
-                // Scale hitbox based on entity type
-                float hitRadius = 1.5f;
-                float heightOffset = 1.5f;
-                if (t == game::ObjectType::UNIT) {
-                    auto unit = std::static_pointer_cast<game::Unit>(entity);
-                    // Critters have very low max health (< 100)
-                    if (unit->getMaxHealth() > 0 && unit->getMaxHealth() < 100) {
-                        hitRadius = 0.5f;
-                        heightOffset = 0.3f;
+                glm::vec3 hitCenter;
+                float hitRadius = 0.0f;
+                bool hasBounds = core::Application::getInstance().getRenderBoundsForGuid(guid, hitCenter, hitRadius);
+                if (!hasBounds) {
+                    // Fallback hitbox based on entity type
+                    float heightOffset = 1.5f;
+                    hitRadius = 1.5f;
+                    if (t == game::ObjectType::UNIT) {
+                        auto unit = std::static_pointer_cast<game::Unit>(entity);
+                        // Critters have very low max health (< 100)
+                        if (unit->getMaxHealth() > 0 && unit->getMaxHealth() < 100) {
+                            hitRadius = 0.5f;
+                            heightOffset = 0.3f;
+                        }
                     }
+                    hitCenter = core::coords::canonicalToRender(glm::vec3(entity->getX(), entity->getY(), entity->getZ()));
+                    hitCenter.z += heightOffset;
+                } else {
+                    hitRadius = std::max(hitRadius * 1.1f, 0.6f);
                 }
 
-                glm::vec3 entityGL = core::coords::canonicalToRender(glm::vec3(entity->getX(), entity->getY(), entity->getZ()));
-                entityGL.z += heightOffset;
-
                 float hitT;
-                if (raySphereIntersect(ray, entityGL, hitRadius, hitT)) {
+                if (raySphereIntersect(ray, hitCenter, hitRadius, hitT)) {
                     if (hitT < closestT) {
                         closestT = hitT;
                         closestGuid = guid;
@@ -569,20 +620,27 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                     auto t = entity->getType();
                     if (t != game::ObjectType::UNIT && t != game::ObjectType::PLAYER) continue;
                     if (guid == myGuid) continue;
-                    float hitRadius = 1.5f;
-                    float heightOffset = 1.5f;
-                    if (t == game::ObjectType::UNIT) {
-                        auto unit = std::static_pointer_cast<game::Unit>(entity);
-                        if (unit->getMaxHealth() > 0 && unit->getMaxHealth() < 100) {
-                            hitRadius = 0.5f;
-                            heightOffset = 0.3f;
+                    glm::vec3 hitCenter;
+                    float hitRadius = 0.0f;
+                    bool hasBounds = core::Application::getInstance().getRenderBoundsForGuid(guid, hitCenter, hitRadius);
+                    if (!hasBounds) {
+                        float heightOffset = 1.5f;
+                        hitRadius = 1.5f;
+                        if (t == game::ObjectType::UNIT) {
+                            auto unit = std::static_pointer_cast<game::Unit>(entity);
+                            if (unit->getMaxHealth() > 0 && unit->getMaxHealth() < 100) {
+                                hitRadius = 0.5f;
+                                heightOffset = 0.3f;
+                            }
                         }
+                        hitCenter = core::coords::canonicalToRender(
+                            glm::vec3(entity->getX(), entity->getY(), entity->getZ()));
+                        hitCenter.z += heightOffset;
+                    } else {
+                        hitRadius = std::max(hitRadius * 1.1f, 0.6f);
                     }
-                    glm::vec3 entityGL = core::coords::canonicalToRender(
-                        glm::vec3(entity->getX(), entity->getY(), entity->getZ()));
-                    entityGL.z += heightOffset;
                     float hitT;
-                    if (raySphereIntersect(ray, entityGL, hitRadius, hitT)) {
+                    if (raySphereIntersect(ray, hitCenter, hitRadius, hitT)) {
                         if (hitT < closestT) {
                             closestT = hitT;
                             closestGuid = guid;
@@ -603,26 +661,18 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                     if (unit->getHealth() == 0 && unit->getMaxHealth() > 0) {
                         gameHandler.lootTarget(target->getGuid());
                     } else if (gameHandler.isSinglePlayerMode()) {
-                        // Single-player: interact with friendly NPCs, attack hostiles
+                        // Single-player: interact with friendly NPCs, otherwise attack
                         if (!unit->isHostile() && unit->isInteractable()) {
                             gameHandler.interactWithNpc(target->getGuid());
-                        } else if (unit->isHostile()) {
-                            if (gameHandler.isAutoAttacking()) {
-                                gameHandler.stopAutoAttack();
-                            } else {
-                                gameHandler.startAutoAttack(target->getGuid());
-                            }
+                        } else {
+                            gameHandler.startAutoAttack(target->getGuid());
                         }
                     } else {
-                        // Online mode: interact with friendly NPCs, attack hostiles
+                        // Online mode: interact with friendly NPCs, otherwise attack
                         if (!unit->isHostile() && unit->isInteractable()) {
                             gameHandler.interactWithNpc(target->getGuid());
-                        } else if (unit->isHostile()) {
-                            if (gameHandler.isAutoAttacking()) {
-                                gameHandler.stopAutoAttack();
-                            } else {
-                                gameHandler.startAutoAttack(target->getGuid());
-                            }
+                        } else {
+                            gameHandler.startAutoAttack(target->getGuid());
                         }
                     }
                 } else if (target->getType() == game::ObjectType::PLAYER) {
@@ -634,6 +684,7 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
 }
 
 void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
+    bool isDead = gameHandler.isPlayerDead();
     ImGui::SetNextWindowPos(ImVec2(10.0f, 30.0f), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(250.0f, 0.0f), ImGuiCond_Always);
 
@@ -643,7 +694,12 @@ void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.1f, 0.1f, 0.1f, 0.85f));
-    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.4f, 0.4f, 0.4f, 1.0f));
+    ImVec4 playerBorder = isDead
+        ? ImVec4(0.5f, 0.5f, 0.5f, 1.0f)
+        : (gameHandler.isAutoAttacking()
+            ? ImVec4(1.0f, 0.2f, 0.2f, 1.0f)
+            : ImVec4(0.4f, 0.4f, 0.4f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Border, playerBorder);
 
     if (ImGui::Begin("##PlayerFrame", nullptr, flags)) {
         // Use selected character info if available, otherwise defaults
@@ -671,6 +727,10 @@ void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
         ImGui::PopStyleColor();
         ImGui::SameLine();
         ImGui::TextDisabled("Lv %u", playerLevel);
+        if (isDead) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(0.9f, 0.2f, 0.2f, 1.0f), "DEAD");
+        }
 
         // Try to get real HP/mana from the player entity
         auto playerEntity = gameHandler.getEntityManager().getEntity(gameHandler.getPlayerGuid());
@@ -690,7 +750,8 @@ void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
 
         // Health bar
         float pct = static_cast<float>(playerHp) / static_cast<float>(playerMaxHp);
-        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.2f, 0.8f, 0.2f, 1.0f));
+        ImVec4 hpColor = isDead ? ImVec4(0.5f, 0.5f, 0.5f, 1.0f) : ImVec4(0.2f, 0.8f, 0.2f, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, hpColor);
         char overlay[64];
         snprintf(overlay, sizeof(overlay), "%u / %u", playerHp, playerMaxHp);
         ImGui::ProgressBar(pct, ImVec2(-1, 18), overlay);
@@ -773,7 +834,11 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.1f, 0.1f, 0.1f, 0.85f));
-    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(hostileColor.x * 0.8f, hostileColor.y * 0.8f, hostileColor.z * 0.8f, 1.0f));
+    ImVec4 borderColor = ImVec4(hostileColor.x * 0.8f, hostileColor.y * 0.8f, hostileColor.z * 0.8f, 1.0f);
+    if (gameHandler.isAutoAttacking()) {
+        borderColor = ImVec4(1.0f, 0.2f, 0.2f, 1.0f);
+    }
+    ImGui::PushStyleColor(ImGuiCol_Border, borderColor);
 
     if (ImGui::Begin("##TargetFrame", nullptr, flags)) {
         // Entity name and type
@@ -1471,8 +1536,6 @@ void GameScreen::renderXpBar(game::GameHandler& gameHandler) {
     if (nextLevelXp == 0) return; // No XP data yet (level 80 or not initialized)
 
     uint32_t currentXp = gameHandler.getPlayerXp();
-    uint32_t level = gameHandler.getPlayerLevel();
-
     auto* window = core::Application::getInstance().getWindow();
     float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
     float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
@@ -1485,7 +1548,7 @@ void GameScreen::renderXpBar(game::GameHandler& gameHandler) {
     float barH = slotSize + 24.0f;
     float actionBarY = screenH - barH;
 
-    float xpBarH = 14.0f;
+    float xpBarH = 20.0f;
     float xpBarW = barW;
     float xpBarX = (screenW - xpBarW) / 2.0f;
     float xpBarY = actionBarY - xpBarH - 2.0f;
@@ -1506,14 +1569,38 @@ void GameScreen::renderXpBar(game::GameHandler& gameHandler) {
         float pct = static_cast<float>(currentXp) / static_cast<float>(nextLevelXp);
         if (pct > 1.0f) pct = 1.0f;
 
-        // Purple XP bar (WoW-style)
-        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.58f, 0.2f, 0.93f, 1.0f));
+        // Custom segmented XP bar (20 bubbles)
+        ImVec2 barMin = ImGui::GetCursorScreenPos();
+        ImVec2 barSize = ImVec2(ImGui::GetContentRegionAvail().x, xpBarH - 4.0f);
+        ImVec2 barMax = ImVec2(barMin.x + barSize.x, barMin.y + barSize.y);
+        auto* drawList = ImGui::GetWindowDrawList();
+
+        ImU32 bg = IM_COL32(15, 15, 20, 220);
+        ImU32 fg = IM_COL32(148, 51, 238, 255);
+        ImU32 seg = IM_COL32(35, 35, 45, 255);
+        drawList->AddRectFilled(barMin, barMax, bg, 2.0f);
+        drawList->AddRect(barMin, barMax, IM_COL32(80, 80, 90, 220), 2.0f);
+
+        float fillW = barSize.x * pct;
+        if (fillW > 0.0f) {
+            drawList->AddRectFilled(barMin, ImVec2(barMin.x + fillW, barMax.y), fg, 2.0f);
+        }
+
+        const int segments = 20;
+        float segW = barSize.x / static_cast<float>(segments);
+        for (int i = 1; i < segments; ++i) {
+            float x = barMin.x + segW * i;
+            drawList->AddLine(ImVec2(x, barMin.y + 1.0f), ImVec2(x, barMax.y - 1.0f), seg, 1.0f);
+        }
 
         char overlay[96];
-        snprintf(overlay, sizeof(overlay), "Lv %u  -  %u / %u XP", level, currentXp, nextLevelXp);
-        ImGui::ProgressBar(pct, ImVec2(-1, xpBarH - 4.0f), overlay);
+        snprintf(overlay, sizeof(overlay), "%u / %u XP", currentXp, nextLevelXp);
+        ImVec2 textSize = ImGui::CalcTextSize(overlay);
+        float tx = barMin.x + (barSize.x - textSize.x) * 0.5f;
+        float ty = barMin.y + (barSize.y - textSize.y) * 0.5f;
+        drawList->AddText(ImVec2(tx, ty), IM_COL32(230, 230, 230, 255), overlay);
 
-        ImGui::PopStyleColor();
+        ImGui::Dummy(barSize);
     }
     ImGui::End();
 
@@ -1857,6 +1944,9 @@ void GameScreen::renderLootWindow(game::GameHandler& gameHandler) {
             if (ImGui::Selectable("##loot", false, 0, ImVec2(0, rowH))) {
                 lootSlotClicked = item.slotIndex;
             }
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                lootSlotClicked = item.slotIndex;
+            }
             bool hovered = ImGui::IsItemHovered();
 
             ImDrawList* drawList = ImGui::GetWindowDrawList();
@@ -1906,7 +1996,7 @@ void GameScreen::renderLootWindow(game::GameHandler& gameHandler) {
         }
 
         if (loot.items.empty() && loot.gold == 0) {
-            ImGui::TextDisabled("Empty");
+            gameHandler.closeLoot();
         }
 
         ImGui::Spacing();
@@ -1961,7 +2051,13 @@ void GameScreen::renderGossipWindow(game::GameHandler& gameHandler) {
             char label[256];
             snprintf(label, sizeof(label), "%s %s", icon, opt.text.c_str());
             if (ImGui::Selectable(label)) {
-                gameHandler.selectGossipOption(opt.id);
+                if (opt.icon == 4) { // Spirit guide
+                    gameHandler.selectGossipOption(opt.id);
+                    gameHandler.activateSpiritHealer(gossip.npcGuid);
+                    gameHandler.closeGossip();
+                } else {
+                    gameHandler.selectGossipOption(opt.id);
+                }
             }
             ImGui::PopID();
         }

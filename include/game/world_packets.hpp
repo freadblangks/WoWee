@@ -1125,6 +1125,18 @@ public:
     static network::Packet build(uint8_t slotIndex);
 };
 
+/** CMSG_USE_ITEM packet builder */
+class UseItemPacket {
+public:
+    static network::Packet build(uint8_t bagIndex, uint8_t slotIndex, uint64_t itemGuid);
+};
+
+/** CMSG_AUTOEQUIP_ITEM packet builder */
+class AutoEquipItemPacket {
+public:
+    static network::Packet build(uint64_t itemGuid);
+};
+
 /** CMSG_LOOT_RELEASE packet builder */
 class LootReleasePacket {
 public:
@@ -1272,6 +1284,12 @@ public:
 class RepopRequestPacket {
 public:
     static network::Packet build();
+};
+
+/** CMSG_SPIRIT_HEALER_ACTIVATE packet builder */
+class SpiritHealerActivatePacket {
+public:
+    static network::Packet build(uint64_t npcGuid);
 };
 
 } // namespace game

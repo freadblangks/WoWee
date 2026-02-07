@@ -900,6 +900,20 @@ void GameHandler::update(float deltaTime) {
                 if (unit->getHealth() == 0) {
                     stopAutoAttack();
                 } else {
+                    // Out-of-range notice (melee)
+                    constexpr float MELEE_RANGE = 5.0f;
+                    float dx = target->getX() - movementInfo.x;
+                    float dy = target->getY() - movementInfo.y;
+                    float dz = target->getZ() - movementInfo.z;
+                    float dist = std::sqrt(dx*dx + dy*dy + dz*dz);
+                    bool outOfRange = dist > MELEE_RANGE;
+                    if (outOfRange && !autoAttackOutOfRange_) {
+                        addSystemChatMessage("Target is out of range.");
+                        autoAttackOutOfRange_ = true;
+                    } else if (!outOfRange && autoAttackOutOfRange_) {
+                        autoAttackOutOfRange_ = false;
+                    }
+
                     // Re-send attack swing every 2 seconds to keep server combat alive
                     swingTimer_ += deltaTime;
                     if (swingTimer_ >= 2.0f) {
@@ -966,9 +980,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
 
         case Opcode::SMSG_CHAR_DELETE: {
             uint8_t result = packet.readUInt8();
-            bool success = (result == 0x47); // CHAR_DELETE_SUCCESS
+            lastCharDeleteResult_ = result;
+            bool success = (result == 0x00 || result == 0x47); // Common success codes
             LOG_INFO("SMSG_CHAR_DELETE result: ", (int)result, success ? " (success)" : " (failed)");
-            if (success) requestCharacterList();
+            requestCharacterList();
             if (charDeleteCallback_) charDeleteCallback_(success);
             break;
         }
@@ -2608,6 +2623,8 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
 
                 // Extract XP / inventory slot fields for player entity
                 if (block.guid == playerGuid && block.objectType == ObjectType::PLAYER) {
+                    lastPlayerFields_ = block.fields;
+                    detectInventorySlotBases(block.fields);
                     bool slotsChanged = false;
                     for (const auto& [key, val] : block.fields) {
                         if (key == 634) { playerXp_ = val; }                // PLAYER_XP
@@ -2619,28 +2636,8 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             }
                         }
                         else if (key == 632) { playerMoneyCopper_ = val; }  // PLAYER_FIELD_COINAGE
-                        else if (key >= 322 && key <= 367) {
-                            // PLAYER_FIELD_INV_SLOT_HEAD: equipment slots (23 slots × 2 fields)
-                            int slotIndex = (key - 322) / 2;
-                            bool isLow = ((key - 322) % 2 == 0);
-                            if (slotIndex < 23) {
-                                uint64_t& guid = equipSlotGuids_[slotIndex];
-                                if (isLow) guid = (guid & 0xFFFFFFFF00000000ULL) | val;
-                                else guid = (guid & 0x00000000FFFFFFFFULL) | (uint64_t(val) << 32);
-                                slotsChanged = true;
-                            }
-                        } else if (key >= 368 && key <= 399) {
-                            // PLAYER_FIELD_PACK_SLOT_1: backpack slots (16 slots × 2 fields)
-                            int slotIndex = (key - 368) / 2;
-                            bool isLow = ((key - 368) % 2 == 0);
-                            if (slotIndex < 16) {
-                                uint64_t& guid = backpackSlotGuids_[slotIndex];
-                                if (isLow) guid = (guid & 0xFFFFFFFF00000000ULL) | val;
-                                else guid = (guid & 0x00000000FFFFFFFFULL) | (uint64_t(val) << 32);
-                                slotsChanged = true;
-                            }
-                        }
                     }
+                    if (applyInventoryFields(block.fields)) slotsChanged = true;
                     if (slotsChanged) rebuildOnlineInventory();
                 }
                 break;
@@ -2666,6 +2663,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                         if (block.guid == autoAttackTarget) {
                                             stopAutoAttack();
                                         }
+                                        hostileAttackers_.erase(block.guid);
                                         // Player death
                                         if (block.guid == playerGuid) {
                                             playerDead_ = true;
@@ -2705,6 +2703,10 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     }
                     // Update XP / inventory slot fields for player entity
                     if (block.guid == playerGuid) {
+                        for (const auto& [key, val] : block.fields) {
+                            lastPlayerFields_[key] = val;
+                        }
+                        detectInventorySlotBases(block.fields);
                         bool slotsChanged = false;
                         for (const auto& [key, val] : block.fields) {
                             if (key == 634) {
@@ -2730,26 +2732,8 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                 playerMoneyCopper_ = val;
                                 LOG_INFO("Money updated via VALUES: ", val, " copper");
                             }
-                            else if (key >= 322 && key <= 367) {
-                                int slotIndex = (key - 322) / 2;
-                                bool isLow = ((key - 322) % 2 == 0);
-                                if (slotIndex < 23) {
-                                    uint64_t& guid = equipSlotGuids_[slotIndex];
-                                    if (isLow) guid = (guid & 0xFFFFFFFF00000000ULL) | val;
-                                    else guid = (guid & 0x00000000FFFFFFFFULL) | (uint64_t(val) << 32);
-                                    slotsChanged = true;
-                                }
-                            } else if (key >= 368 && key <= 399) {
-                                int slotIndex = (key - 368) / 2;
-                                bool isLow = ((key - 368) % 2 == 0);
-                                if (slotIndex < 16) {
-                                    uint64_t& guid = backpackSlotGuids_[slotIndex];
-                                    if (isLow) guid = (guid & 0xFFFFFFFF00000000ULL) | val;
-                                    else guid = (guid & 0x00000000FFFFFFFFULL) | (uint64_t(val) << 32);
-                                    slotsChanged = true;
-                                }
-                            }
                         }
+                        if (applyInventoryFields(block.fields)) slotsChanged = true;
                         if (slotsChanged) rebuildOnlineInventory();
                     }
 
@@ -2791,6 +2775,16 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
 
     tabCycleStale = true;
     LOG_INFO("Entity count: ", entityManager.getEntityCount());
+
+    // Late inventory base detection once items are known
+    if (playerGuid != 0 && invSlotBase_ < 0 && !lastPlayerFields_.empty() && !onlineItems_.empty()) {
+        detectInventorySlotBases(lastPlayerFields_);
+        if (invSlotBase_ >= 0) {
+            if (applyInventoryFields(lastPlayerFields_)) {
+                rebuildOnlineInventory();
+            }
+        }
+    }
 }
 
 void GameHandler::handleCompressedUpdateObject(network::Packet& packet) {
@@ -2856,6 +2850,7 @@ void GameHandler::handleDestroyObject(network::Packet& packet) {
     if (data.guid == targetGuid) {
         targetGuid = 0;
     }
+    hostileAttackers_.erase(data.guid);
 
     // Remove online item tracking
     if (onlineItems_.erase(data.guid)) {
@@ -2973,6 +2968,14 @@ void GameHandler::releaseSpirit() {
         socket->send(packet);
         LOG_INFO("Sent CMSG_REPOP_REQUEST (Release Spirit)");
     }
+}
+
+void GameHandler::activateSpiritHealer(uint64_t npcGuid) {
+    if (!playerDead_) return;
+    if (state != WorldState::IN_WORLD || !socket) return;
+    auto packet = SpiritHealerActivatePacket::build(npcGuid);
+    socket->send(packet);
+    LOG_INFO("Sent CMSG_SPIRIT_HEALER_ACTIVATE to 0x", std::hex, npcGuid, std::dec);
 }
 
 void GameHandler::tabTarget(float playerX, float playerY, float playerZ) {
@@ -3117,6 +3120,65 @@ void GameHandler::handleItemQueryResponse(network::Packet& packet) {
     }
 }
 
+void GameHandler::detectInventorySlotBases(const std::map<uint16_t, uint32_t>& fields) {
+    if (invSlotBase_ >= 0 && packSlotBase_ >= 0) return;
+    if (onlineItems_.empty() || fields.empty()) return;
+
+    std::vector<uint16_t> matchingPairs;
+    matchingPairs.reserve(32);
+
+    for (const auto& [idx, low] : fields) {
+        if ((idx % 2) != 0) continue;
+        auto itHigh = fields.find(static_cast<uint16_t>(idx + 1));
+        if (itHigh == fields.end()) continue;
+        uint64_t guid = (uint64_t(itHigh->second) << 32) | low;
+        if (guid == 0) continue;
+        if (onlineItems_.count(guid)) {
+            matchingPairs.push_back(idx);
+        }
+    }
+
+    if (matchingPairs.empty()) return;
+    std::sort(matchingPairs.begin(), matchingPairs.end());
+
+    if (invSlotBase_ < 0) {
+        invSlotBase_ = matchingPairs.front();
+        packSlotBase_ = invSlotBase_ + (game::Inventory::NUM_EQUIP_SLOTS * 2);
+        LOG_INFO("Detected inventory field base: equip=", invSlotBase_,
+                 " pack=", packSlotBase_);
+    }
+}
+
+bool GameHandler::applyInventoryFields(const std::map<uint16_t, uint32_t>& fields) {
+    bool slotsChanged = false;
+    int equipBase = (invSlotBase_ >= 0) ? invSlotBase_ : 322;
+    int packBase = (packSlotBase_ >= 0) ? packSlotBase_ : 368;
+
+    for (const auto& [key, val] : fields) {
+        if (key >= equipBase && key <= equipBase + (game::Inventory::NUM_EQUIP_SLOTS * 2 - 1)) {
+            int slotIndex = (key - equipBase) / 2;
+            bool isLow = ((key - equipBase) % 2 == 0);
+            if (slotIndex < static_cast<int>(equipSlotGuids_.size())) {
+                uint64_t& guid = equipSlotGuids_[slotIndex];
+                if (isLow) guid = (guid & 0xFFFFFFFF00000000ULL) | val;
+                else guid = (guid & 0x00000000FFFFFFFFULL) | (uint64_t(val) << 32);
+                slotsChanged = true;
+            }
+        } else if (key >= packBase && key <= packBase + (game::Inventory::BACKPACK_SLOTS * 2 - 1)) {
+            int slotIndex = (key - packBase) / 2;
+            bool isLow = ((key - packBase) % 2 == 0);
+            if (slotIndex < static_cast<int>(backpackSlotGuids_.size())) {
+                uint64_t& guid = backpackSlotGuids_[slotIndex];
+                if (isLow) guid = (guid & 0xFFFFFFFF00000000ULL) | val;
+                else guid = (guid & 0x00000000FFFFFFFFULL) | (uint64_t(val) << 32);
+                slotsChanged = true;
+            }
+        }
+    }
+
+    return slotsChanged;
+}
+
 void GameHandler::rebuildOnlineInventory() {
     if (singlePlayerMode_) return;
 
@@ -3151,6 +3213,7 @@ void GameHandler::rebuildOnlineInventory() {
             def.spirit = infoIt->second.spirit;
         } else {
             def.name = "Item " + std::to_string(def.itemId);
+            queryItemInfo(def.itemId, guid);
         }
 
         inventory.setEquipSlot(static_cast<EquipSlot>(i), def);
@@ -3185,6 +3248,7 @@ void GameHandler::rebuildOnlineInventory() {
             def.spirit = infoIt->second.spirit;
         } else {
             def.name = "Item " + std::to_string(def.itemId);
+            queryItemInfo(def.itemId, guid);
         }
 
         inventory.setBackpackSlot(i, def);
@@ -3206,6 +3270,7 @@ void GameHandler::rebuildOnlineInventory() {
 void GameHandler::startAutoAttack(uint64_t targetGuid) {
     autoAttacking = true;
     autoAttackTarget = targetGuid;
+    autoAttackOutOfRange_ = false;
     swingTimer_ = 0.0f;
     if (state == WorldState::IN_WORLD && socket) {
         auto packet = AttackSwingPacket::build(targetGuid);
@@ -3218,6 +3283,7 @@ void GameHandler::stopAutoAttack() {
     if (!autoAttacking) return;
     autoAttacking = false;
     autoAttackTarget = 0;
+    autoAttackOutOfRange_ = false;
     if (state == WorldState::IN_WORLD && socket) {
         auto packet = AttackStopPacket::build();
         socket->send(packet);
@@ -3265,6 +3331,8 @@ void GameHandler::handleAttackStop(network::Packet& packet) {
     // We'll re-send CMSG_ATTACKSWING periodically in the update loop.
     if (data.attackerGuid == playerGuid) {
         LOG_DEBUG("SMSG_ATTACKSTOP received (keeping auto-attack intent)");
+    } else if (data.victimGuid == playerGuid) {
+        hostileAttackers_.erase(data.attackerGuid);
     }
 }
 
@@ -3343,6 +3411,10 @@ void GameHandler::handleAttackerStateUpdate(network::Packet& packet) {
     }
     if (!isPlayerAttacker && npcSwingCallback_) {
         npcSwingCallback_(data.attackerGuid);
+    }
+
+    if (isPlayerTarget && data.attackerGuid != 0) {
+        hostileAttackers_.insert(data.attackerGuid);
     }
 
     if (data.isMiss()) {
@@ -3918,6 +3990,40 @@ void GameHandler::sellItemBySlot(int backpackIndex) {
         if (itemGuid != 0 && currentVendorItems.vendorGuid != 0) {
             sellItem(currentVendorItems.vendorGuid, itemGuid, 1);
         }
+    }
+}
+
+void GameHandler::autoEquipItemBySlot(int backpackIndex) {
+    if (backpackIndex < 0 || backpackIndex >= inventory.getBackpackSize()) return;
+    const auto& slot = inventory.getBackpackSlot(backpackIndex);
+    if (slot.empty()) return;
+
+    if (singlePlayerMode_) {
+        // Fall back to local equip logic (UI already handles this).
+        return;
+    }
+
+    uint64_t itemGuid = backpackSlotGuids_[backpackIndex];
+    if (itemGuid != 0 && state == WorldState::IN_WORLD && socket) {
+        auto packet = AutoEquipItemPacket::build(itemGuid);
+        socket->send(packet);
+    }
+}
+
+void GameHandler::useItemBySlot(int backpackIndex) {
+    if (backpackIndex < 0 || backpackIndex >= inventory.getBackpackSize()) return;
+    const auto& slot = inventory.getBackpackSlot(backpackIndex);
+    if (slot.empty()) return;
+
+    if (singlePlayerMode_) {
+        // Single-player consumable use not implemented yet.
+        return;
+    }
+
+    uint64_t itemGuid = backpackSlotGuids_[backpackIndex];
+    if (itemGuid != 0 && state == WorldState::IN_WORLD && socket) {
+        auto packet = UseItemPacket::build(0xFF, static_cast<uint8_t>(backpackIndex), itemGuid);
+        socket->send(packet);
     }
 }
 

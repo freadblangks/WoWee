@@ -38,6 +38,7 @@ public:
         vendorMode_ = enabled;
         gameHandler_ = handler;
     }
+    void setGameHandler(game::GameHandler* handler) { gameHandler_ = handler; }
 
     /// Set asset manager for icon/model loading
     void setAssetManager(pipeline::AssetManager* am) { assetManager_ = am; }

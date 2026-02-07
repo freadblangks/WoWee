@@ -52,12 +52,16 @@ private:
     char chatInputBuffer[512] = "";
     bool chatInputActive = false;
     int selectedChatType = 0;  // 0=SAY, 1=YELL, 2=PARTY, etc.
+    bool chatInputMoveCursorToEnd = false;
 
     // UI state
     bool showEntityWindow = false;
     bool showChatWindow = true;
     bool showPlayerInfo = false;
     bool refocusChatInput = false;
+    bool chatWindowLocked = true;
+    ImVec2 chatWindowPos_ = ImVec2(0.0f, 0.0f);
+    bool chatWindowPosInit_ = false;
     bool showTeleporter = false;
     bool showEscapeMenu = false;
     bool showEscapeSettingsNotice = false;

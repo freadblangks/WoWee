@@ -72,6 +72,7 @@ public:
     bool hasAnimation(uint32_t instanceId, uint32_t animationId) const;
     bool getAnimationSequences(uint32_t instanceId, std::vector<pipeline::M2Sequence>& out) const;
     bool getInstanceModelName(uint32_t instanceId, std::string& modelName) const;
+    bool getInstanceBounds(uint32_t instanceId, glm::vec3& outCenter, float& outRadius) const;
 
     /** Attach a weapon model to a character instance at the given attachment point. */
     bool attachWeapon(uint32_t charInstanceId, uint32_t attachmentId,

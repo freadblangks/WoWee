@@ -1415,10 +1415,11 @@ glm::mat4 CharacterRenderer::getModelMatrix(const CharacterInstance& instance) c
     // Apply transformations: T * R * S
     model = glm::translate(model, instance.position);
 
-    // Apply rotation (euler angles)
-    model = glm::rotate(model, instance.rotation.y, glm::vec3(0.0f, 1.0f, 0.0f));  // Yaw
+    // Apply rotation (euler angles, Z-up)
+    // Convention: yaw around Z, pitch around X, roll around Y.
+    model = glm::rotate(model, instance.rotation.z, glm::vec3(0.0f, 0.0f, 1.0f));  // Yaw
     model = glm::rotate(model, instance.rotation.x, glm::vec3(1.0f, 0.0f, 0.0f));  // Pitch
-    model = glm::rotate(model, instance.rotation.z, glm::vec3(0.0f, 0.0f, 1.0f));  // Roll
+    model = glm::rotate(model, instance.rotation.y, glm::vec3(0.0f, 1.0f, 0.0f));  // Roll
 
     model = glm::scale(model, glm::vec3(instance.scale));
 
@@ -1694,6 +1695,27 @@ bool CharacterRenderer::attachWeapon(uint32_t charInstanceId, uint32_t attachmen
     core::Logger::getInstance().info("Attached weapon model ", weaponModelId,
         " to instance ", charInstanceId, " at attachment ", attachmentId,
         " (bone ", boneIndex, ", offset ", offset.x, ",", offset.y, ",", offset.z, ")");
+    return true;
+}
+
+bool CharacterRenderer::getInstanceBounds(uint32_t instanceId, glm::vec3& outCenter, float& outRadius) const {
+    auto it = instances.find(instanceId);
+    if (it == instances.end()) return false;
+    auto mIt = models.find(it->second.modelId);
+    if (mIt == models.end()) return false;
+
+    const auto& inst = it->second;
+    const auto& model = mIt->second.data;
+
+    glm::vec3 localCenter = (model.boundMin + model.boundMax) * 0.5f;
+    float radius = model.boundRadius;
+    if (radius <= 0.001f) {
+        radius = glm::length(model.boundMax - model.boundMin) * 0.5f;
+    }
+
+    float scale = std::max(0.001f, inst.scale);
+    outCenter = inst.position + localCenter * scale;
+    outRadius = std::max(0.5f, radius * scale);
     return true;
 }
 

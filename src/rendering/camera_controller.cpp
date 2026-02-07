@@ -79,8 +79,8 @@ void CameraController::update(float deltaTime) {
 
     auto& input = core::Input::getInstance();
 
-    // Don't process keyboard input when UI (e.g. chat box) has focus
-    bool uiWantsKeyboard = ImGui::GetIO().WantCaptureKeyboard;
+    // Don't process keyboard input when UI text input (e.g. chat box) has focus
+    bool uiWantsKeyboard = ImGui::GetIO().WantTextInput;
 
     // Determine current key states
     bool keyW = !uiWantsKeyboard && !sitting && input.isKeyPressed(SDL_SCANCODE_W);

@@ -110,6 +110,7 @@ public:
 
     using CharDeleteCallback = std::function<void(bool success)>;
     void setCharDeleteCallback(CharDeleteCallback cb) { charDeleteCallback_ = std::move(cb); }
+    uint8_t getLastCharDeleteResult() const { return lastCharDeleteResult_; }
 
     /**
      * Select and log in with a character
@@ -214,6 +215,7 @@ public:
     void startAutoAttack(uint64_t targetGuid);
     void stopAutoAttack();
     bool isAutoAttacking() const { return autoAttacking; }
+    bool isAggressiveTowardPlayer(uint64_t guid) const { return hostileAttackers_.count(guid) > 0; }
     const std::vector<CombatTextEntry>& getCombatText() const { return combatText; }
     void updateCombatText(float deltaTime);
 
@@ -332,6 +334,7 @@ public:
     void lootTarget(uint64_t guid);
     void lootItem(uint8_t slotIndex);
     void closeLoot();
+    void activateSpiritHealer(uint64_t npcGuid);
     bool isLootWindowOpen() const { return lootWindowOpen; }
     const LootResponseData& getCurrentLoot() const { return currentLoot; }
 
@@ -363,6 +366,8 @@ public:
     void buyItem(uint64_t vendorGuid, uint32_t itemId, uint32_t slot, uint8_t count);
     void sellItem(uint64_t vendorGuid, uint64_t itemGuid, uint8_t count);
     void sellItemBySlot(int backpackIndex);
+    void autoEquipItemBySlot(int backpackIndex);
+    void useItemBySlot(int backpackIndex);
     bool isVendorWindowOpen() const { return vendorWindowOpen; }
     const ListInventoryData& getVendorItems() const { return currentVendorItems; }
     const ItemQueryResponseData* getItemInfo(uint32_t itemId) const {
@@ -467,6 +472,8 @@ private:
     void handleItemQueryResponse(network::Packet& packet);
     void queryItemInfo(uint32_t entry, uint64_t guid);
     void rebuildOnlineInventory();
+    void detectInventorySlotBases(const std::map<uint16_t, uint32_t>& fields);
+    bool applyInventoryFields(const std::map<uint16_t, uint32_t>& fields);
 
     // ---- Phase 2 handlers ----
     void handleAttackStart(network::Packet& packet);
@@ -606,11 +613,16 @@ private:
     std::unordered_set<uint32_t> pendingItemQueries_;
     std::array<uint64_t, 23> equipSlotGuids_{};
     std::array<uint64_t, 16> backpackSlotGuids_{};
+    int invSlotBase_ = -1;
+    int packSlotBase_ = -1;
+    std::map<uint16_t, uint32_t> lastPlayerFields_;
     bool onlineEquipDirty_ = false;
 
     // ---- Phase 2: Combat ----
     bool autoAttacking = false;
     uint64_t autoAttackTarget = 0;
+    bool autoAttackOutOfRange_ = false;
+    std::unordered_set<uint64_t> hostileAttackers_;
     std::vector<CombatTextEntry> combatText;
 
     // ---- Phase 3: Spells ----
@@ -674,6 +686,7 @@ private:
     WorldConnectFailureCallback onFailure;
     CharCreateCallback charCreateCallback_;
     CharDeleteCallback charDeleteCallback_;
+    uint8_t lastCharDeleteResult_ = 0xFF;
     bool pendingCharCreateResult_ = false;
     bool pendingCharCreateSuccess_ = false;
     std::string pendingCharCreateMsg_;

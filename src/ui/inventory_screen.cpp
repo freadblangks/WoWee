@@ -704,32 +704,70 @@ void InventoryScreen::renderCharacterScreen(game::GameHandler& gameHandler) {
         }
 
         if (ImGui::BeginTabItem("Skills")) {
-            uint32_t level = gameHandler.getPlayerLevel();
-            uint32_t cap = (level > 0) ? (level * 5) : 0;
-            ImGui::TextDisabled("Skills (online sync pending)");
-            ImGui::Spacing();
-            if (ImGui::BeginTable("SkillsTable", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) {
-                ImGui::TableSetupColumn("Skill", ImGuiTableColumnFlags_WidthStretch);
-                ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthFixed, 120.0f);
-                ImGui::TableHeadersRow();
-
-                const char* skills[] = {
-                    "Unarmed", "Swords", "Axes", "Maces", "Daggers",
-                    "Staves", "Polearms", "Bows", "Guns", "Crossbows"
+            const auto& skills = gameHandler.getPlayerSkills();
+            if (skills.empty()) {
+                ImGui::TextDisabled("No skill data received yet.");
+            } else {
+                // Group skills by SkillLine.dbc category
+                struct CategoryGroup {
+                    const char* label;
+                    uint32_t categoryId;
                 };
-                for (const char* skill : skills) {
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0);
-                    ImGui::Text("%s", skill);
-                    ImGui::TableSetColumnIndex(1);
-                    if (cap > 0) {
-                        ImGui::Text("-- / %u", cap);
-                    } else {
-                        ImGui::TextDisabled("--");
+                static const CategoryGroup groups[] = {
+                    { "Weapon Skills", 6 },
+                    { "Armor Skills", 8 },
+                    { "Secondary Skills", 10 },
+                    { "Professions", 11 },
+                    { "Languages", 9 },
+                    { "Other", 0 },
+                };
+
+                ImGui::BeginChild("##SkillsList", ImVec2(0, 0), true);
+
+                for (const auto& group : groups) {
+                    // Collect skills for this category
+                    std::vector<const game::PlayerSkill*> groupSkills;
+                    for (const auto& [id, skill] : skills) {
+                        if (skill.value == 0 && skill.maxValue == 0) continue;
+                        uint32_t cat = gameHandler.getSkillCategory(id);
+                        if (group.categoryId == 0) {
+                            // "Other" catches everything not in the named categories
+                            if (cat != 6 && cat != 8 && cat != 9 && cat != 10 && cat != 11) {
+                                groupSkills.push_back(&skill);
+                            }
+                        } else if (cat == group.categoryId) {
+                            groupSkills.push_back(&skill);
+                        }
+                    }
+                    if (groupSkills.empty()) continue;
+
+                    if (ImGui::CollapsingHeader(group.label, ImGuiTreeNodeFlags_DefaultOpen)) {
+                        for (const game::PlayerSkill* skill : groupSkills) {
+                            const std::string& name = gameHandler.getSkillName(skill->skillId);
+                            char label[128];
+                            if (name.empty()) {
+                                snprintf(label, sizeof(label), "Skill #%u", skill->skillId);
+                            } else {
+                                snprintf(label, sizeof(label), "%s", name.c_str());
+                            }
+
+                            // Show progress bar with value/max overlay
+                            float ratio = (skill->maxValue > 0)
+                                ? static_cast<float>(skill->value) / static_cast<float>(skill->maxValue)
+                                : 0.0f;
+
+                            char overlay[64];
+                            snprintf(overlay, sizeof(overlay), "%u / %u", skill->value, skill->maxValue);
+
+                            ImGui::Text("%s", label);
+                            ImGui::SameLine(180.0f);
+                            ImGui::SetNextItemWidth(-1.0f);
+                            ImGui::ProgressBar(ratio, ImVec2(0, 14.0f), overlay);
+                        }
                     }
                 }
 
-                ImGui::EndTable();
+                ImGui::EndChild();
             }
             ImGui::EndTabItem();
         }

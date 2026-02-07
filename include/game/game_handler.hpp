@@ -14,11 +14,18 @@
 #include <cstdint>
 #include <unordered_map>
 #include <unordered_set>
+#include <map>
 
 namespace wowee {
 namespace network { class WorldSocket; class Packet; }
 
 namespace game {
+
+struct PlayerSkill {
+    uint32_t skillId = 0;
+    uint16_t value = 0;
+    uint16_t maxValue = 0;
+};
 
 /**
  * Quest giver status values (WoW 3.3.5a)
@@ -342,6 +349,11 @@ public:
     uint32_t getPlayerNextLevelXp() const { return playerNextLevelXp_; }
     uint32_t getPlayerLevel() const { return serverPlayerLevel_; }
     static uint32_t killXp(uint32_t playerLevel, uint32_t victimLevel);
+
+    // Player skills
+    const std::map<uint32_t, PlayerSkill>& getPlayerSkills() const { return playerSkills_; }
+    const std::string& getSkillName(uint32_t skillId) const;
+    uint32_t getSkillCategory(uint32_t skillId) const;
 
     // World entry callback (online mode - triggered when entering world)
     // Parameters: mapId, x, y, z (canonical WoW coordinates)
@@ -803,6 +815,14 @@ private:
     uint32_t playerNextLevelXp_ = 0;
     uint32_t serverPlayerLevel_ = 1;
     static uint32_t xpForLevel(uint32_t level);
+
+    // ---- Player skills ----
+    std::map<uint32_t, PlayerSkill> playerSkills_;
+    std::unordered_map<uint32_t, std::string> skillLineNames_;
+    std::unordered_map<uint32_t, uint32_t> skillLineCategories_;
+    bool skillLineDbcLoaded_ = false;
+    void loadSkillLineDbc();
+    void extractSkillFields(const std::map<uint16_t, uint32_t>& fields);
 
     NpcDeathCallback npcDeathCallback_;
     NpcRespawnCallback npcRespawnCallback_;

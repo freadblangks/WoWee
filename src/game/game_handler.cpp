@@ -3,6 +3,9 @@
 #include "network/world_socket.hpp"
 #include "network/packet.hpp"
 #include "core/coordinates.hpp"
+#include "core/application.hpp"
+#include "pipeline/asset_manager.hpp"
+#include "pipeline/dbc_loader.hpp"
 #include "core/logger.hpp"
 #include <algorithm>
 #include <cmath>
@@ -1251,7 +1254,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     }
                 }
 
-                // Extract XP / inventory slot fields for player entity
+                // Extract XP / inventory slot / skill fields for player entity
                 if (block.guid == playerGuid && block.objectType == ObjectType::PLAYER) {
                     lastPlayerFields_ = block.fields;
                     detectInventorySlotBases(block.fields);
@@ -1269,6 +1272,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     }
                     if (applyInventoryFields(block.fields)) slotsChanged = true;
                     if (slotsChanged) rebuildOnlineInventory();
+                    extractSkillFields(lastPlayerFields_);
                 }
                 break;
             }
@@ -1331,7 +1335,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             }
                         }
                     }
-                    // Update XP / inventory slot fields for player entity
+                    // Update XP / inventory slot / skill fields for player entity
                     if (block.guid == playerGuid) {
                         for (const auto& [key, val] : block.fields) {
                             lastPlayerFields_[key] = val;
@@ -1365,6 +1369,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         }
                         if (applyInventoryFields(block.fields)) slotsChanged = true;
                         if (slotsChanged) rebuildOnlineInventory();
+                        extractSkillFields(lastPlayerFields_);
                     }
 
                     // Update item stack count for online items
@@ -3966,6 +3971,94 @@ void GameHandler::fail(const std::string& reason) {
     }
 }
 
+
+// ============================================================
+// Player Skills
+// ============================================================
+
+static const std::string kEmptySkillName;
+
+const std::string& GameHandler::getSkillName(uint32_t skillId) const {
+    auto it = skillLineNames_.find(skillId);
+    return (it != skillLineNames_.end()) ? it->second : kEmptySkillName;
+}
+
+uint32_t GameHandler::getSkillCategory(uint32_t skillId) const {
+    auto it = skillLineCategories_.find(skillId);
+    return (it != skillLineCategories_.end()) ? it->second : 0;
+}
+
+void GameHandler::loadSkillLineDbc() {
+    if (skillLineDbcLoaded_) return;
+    skillLineDbcLoaded_ = true;
+
+    auto* am = core::Application::getInstance().getAssetManager();
+    if (!am || !am->isInitialized()) return;
+
+    auto dbc = am->loadDBC("SkillLine.dbc");
+    if (!dbc || !dbc->isLoaded()) {
+        LOG_WARNING("GameHandler: Could not load SkillLine.dbc");
+        return;
+    }
+
+    for (uint32_t i = 0; i < dbc->getRecordCount(); i++) {
+        uint32_t id = dbc->getUInt32(i, 0);
+        uint32_t category = dbc->getUInt32(i, 1);
+        std::string name = dbc->getString(i, 3);
+        if (id > 0 && !name.empty()) {
+            skillLineNames_[id] = name;
+            skillLineCategories_[id] = category;
+        }
+    }
+    LOG_INFO("GameHandler: Loaded ", skillLineNames_.size(), " skill line names");
+}
+
+void GameHandler::extractSkillFields(const std::map<uint16_t, uint32_t>& fields) {
+    loadSkillLineDbc();
+
+    // PLAYER_SKILL_INFO_1_1 = field 636, 128 slots x 3 fields each (636..1019)
+    static constexpr uint16_t PLAYER_SKILL_INFO_START = 636;
+    static constexpr int MAX_SKILL_SLOTS = 128;
+
+    std::map<uint32_t, PlayerSkill> newSkills;
+
+    for (int slot = 0; slot < MAX_SKILL_SLOTS; slot++) {
+        uint16_t baseField = PLAYER_SKILL_INFO_START + slot * 3;
+
+        auto idIt = fields.find(baseField);
+        if (idIt == fields.end()) continue;
+
+        uint32_t raw0 = idIt->second;
+        uint16_t skillId = raw0 & 0xFFFF;
+        if (skillId == 0) continue;
+
+        auto valIt = fields.find(baseField + 1);
+        if (valIt == fields.end()) continue;
+
+        uint32_t raw1 = valIt->second;
+        uint16_t value = raw1 & 0xFFFF;
+        uint16_t maxValue = (raw1 >> 16) & 0xFFFF;
+
+        PlayerSkill skill;
+        skill.skillId = skillId;
+        skill.value = value;
+        skill.maxValue = maxValue;
+        newSkills[skillId] = skill;
+    }
+
+    // Detect increases and emit chat messages
+    for (const auto& [skillId, skill] : newSkills) {
+        if (skill.value == 0) continue;
+        auto oldIt = playerSkills_.find(skillId);
+        if (oldIt != playerSkills_.end() && skill.value > oldIt->second.value) {
+            const std::string& name = getSkillName(skillId);
+            std::string skillName = name.empty() ? ("Skill #" + std::to_string(skillId)) : name;
+            addSystemChatMessage("Your skill in " + skillName + " has increased to " + std::to_string(skill.value) + ".");
+        }
+    }
+
+    playerSkills_ = std::move(newSkills);
+}
 
 } // namespace game
 } // namespace wowee

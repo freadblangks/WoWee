@@ -15,6 +15,8 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <future>
+#include <thread>
 
 namespace wowee {
 namespace rendering {
@@ -203,7 +205,8 @@ M2Renderer::~M2Renderer() {
 bool M2Renderer::initialize(pipeline::AssetManager* assets) {
     assetManager = assets;
 
-    LOG_INFO("Initializing M2 renderer...");
+    numAnimThreads_ = std::min(4u, std::max(1u, std::thread::hardware_concurrency() - 1));
+    LOG_INFO("Initializing M2 renderer (", numAnimThreads_, " anim threads)...");
 
     // Create M2 shader with skeletal animation support
     const char* vertexSrc = R"(
@@ -1212,7 +1215,13 @@ void M2Renderer::update(float deltaTime) {
     }
 
     // --- Normal M2 animation update ---
-    for (auto& instance : instances) {
+    // Phase 1: Update animation state (cheap, sequential)
+    // Collect indices of instances that need bone matrix computation.
+    std::vector<size_t> boneWorkIndices;
+    boneWorkIndices.reserve(instances.size());
+
+    for (size_t idx = 0; idx < instances.size(); ++idx) {
+        auto& instance = instances[idx];
         auto it = models.find(instance.modelId);
         if (it == models.end()) continue;
         const M2ModelGPU& model = it->second;
@@ -1267,9 +1276,53 @@ void M2Renderer::update(float deltaTime) {
             }
         }
 
-        computeBoneMatrices(model, instance);
+        boneWorkIndices.push_back(idx);
+    }
 
-        // M2 particle emitter update
+    // Phase 2: Compute bone matrices (expensive, parallel if enough work)
+    const size_t animCount = boneWorkIndices.size();
+    if (animCount > 0) {
+        if (animCount < 32 || numAnimThreads_ <= 1) {
+            // Sequential — not enough work to justify thread overhead
+            for (size_t i : boneWorkIndices) {
+                auto& inst = instances[i];
+                const auto& mdl = models.find(inst.modelId)->second;
+                computeBoneMatrices(mdl, inst);
+            }
+        } else {
+            // Parallel — dispatch across worker threads
+            const size_t numThreads = std::min(static_cast<size_t>(numAnimThreads_), animCount);
+            const size_t chunkSize = animCount / numThreads;
+            const size_t remainder = animCount % numThreads;
+
+            std::vector<std::future<void>> futures;
+            futures.reserve(numThreads);
+
+            size_t start = 0;
+            for (size_t t = 0; t < numThreads; ++t) {
+                size_t end = start + chunkSize + (t < remainder ? 1 : 0);
+                futures.push_back(std::async(std::launch::async,
+                    [this, &boneWorkIndices, start, end]() {
+                        for (size_t j = start; j < end; ++j) {
+                            size_t idx = boneWorkIndices[j];
+                            auto& inst = instances[idx];
+                            const auto& mdl = models.find(inst.modelId)->second;
+                            computeBoneMatrices(mdl, inst);
+                        }
+                    }));
+                start = end;
+            }
+
+            for (auto& f : futures) {
+                f.get();
+            }
+        }
+    }
+
+    // Phase 3: Particle update (sequential — uses RNG, not thread-safe)
+    for (size_t idx : boneWorkIndices) {
+        auto& instance = instances[idx];
+        const auto& model = models.find(instance.modelId)->second;
         if (!model.particleEmitters.empty()) {
             emitParticles(instance, model, deltaTime);
             updateParticles(instance, deltaTime);

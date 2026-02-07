@@ -10,6 +10,7 @@
 #include <string>
 #include <optional>
 #include <random>
+#include <future>
 
 namespace wowee {
 
@@ -353,6 +354,9 @@ private:
     GLuint m2ParticleVBO_ = 0;
     static constexpr size_t MAX_M2_PARTICLES = 4000;
     std::mt19937 particleRng_{123};
+
+    // Thread count for parallel bone animation
+    uint32_t numAnimThreads_ = 1;
 
     float interpFloat(const pipeline::M2AnimationTrack& track, float animTime, int seqIdx,
                       const std::vector<pipeline::M2Sequence>& seqs,

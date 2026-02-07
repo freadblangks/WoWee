@@ -2652,7 +2652,8 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         auto unit = std::static_pointer_cast<Unit>(entity);
                         for (const auto& [key, val] : block.fields) {
                             switch (key) {
-                                case 24:
+                                case 24: {
+                                    uint32_t oldHealth = unit->getHealth();
                                     unit->setHealth(val);
                                     if (val == 0) {
                                         if (block.guid == autoAttackTarget) {
@@ -2662,8 +2663,14 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                         if (entity->getType() == ObjectType::UNIT && npcDeathCallback_) {
                                             npcDeathCallback_(block.guid);
                                         }
+                                    } else if (oldHealth == 0 && val > 0) {
+                                        // Respawn: health went from 0 to >0, reset animation
+                                        if (entity->getType() == ObjectType::UNIT && npcRespawnCallback_) {
+                                            npcRespawnCallback_(block.guid);
+                                        }
                                     }
                                     break;
+                                }
                                 case 25: unit->setPower(val); break;
                                 case 32: unit->setMaxHealth(val); break;
                                 case 33: unit->setMaxPower(val); break;

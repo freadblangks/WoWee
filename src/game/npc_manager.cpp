@@ -736,12 +736,34 @@ void NpcManager::initialize(pipeline::AssetManager* am,
                     break;
                 }
             }
+            // Find player's parent faction ID for individual enemy checks
+            uint32_t playerFactionId = 0;
+            for (uint32_t i = 0; i < dbc->getRecordCount(); i++) {
+                if (dbc->getUInt32(i, 0) == 1) {
+                    playerFactionId = dbc->getUInt32(i, 1); // Faction (parent)
+                    break;
+                }
+            }
             // Second pass: classify each faction template
             for (uint32_t i = 0; i < dbc->getRecordCount(); i++) {
                 uint32_t id = dbc->getUInt32(i, 0);
+                uint32_t factionGroup = dbc->getUInt32(i, 3);
                 uint32_t enemyGroup = dbc->getUInt32(i, 5);
-                // Hostile only if creature's enemy groups overlap player's faction/friend groups
+                // Check group-level hostility
                 bool hostile = (enemyGroup & playerFriendGroup) != 0;
+                // Check if creature is a Monster type (factionGroup bit 4)
+                if (!hostile && (factionGroup & 4) != 0) {
+                    hostile = true;
+                }
+                // Check individual enemy faction IDs (fields 6-9)
+                if (!hostile && playerFactionId > 0) {
+                    for (int e = 6; e <= 9; e++) {
+                        if (dbc->getUInt32(i, e) == playerFactionId) {
+                            hostile = true;
+                            break;
+                        }
+                    }
+                }
                 factionHostile[id] = hostile;
             }
             LOG_INFO("NpcManager: loaded ", dbc->getRecordCount(),

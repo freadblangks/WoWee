@@ -252,6 +252,10 @@ public:
     using NpcDeathCallback = std::function<void(uint64_t guid)>;
     void setNpcDeathCallback(NpcDeathCallback cb) { npcDeathCallback_ = std::move(cb); }
 
+    // NPC respawn callback (health 0 → >0, resets animation to idle)
+    using NpcRespawnCallback = std::function<void(uint64_t guid)>;
+    void setNpcRespawnCallback(NpcRespawnCallback cb) { npcRespawnCallback_ = std::move(cb); }
+
     // Melee swing callback (for driving animation/SFX)
     using MeleeSwingCallback = std::function<void()>;
     void setMeleeSwingCallback(MeleeSwingCallback cb) { meleeSwingCallback_ = std::move(cb); }
@@ -683,6 +687,7 @@ private:
     float swingTimer_ = 0.0f;
     static constexpr float SWING_SPEED = 2.0f;
     NpcDeathCallback npcDeathCallback_;
+    NpcRespawnCallback npcRespawnCallback_;
     MeleeSwingCallback meleeSwingCallback_;
     NpcSwingCallback npcSwingCallback_;
     uint32_t localPlayerHealth_ = 0;

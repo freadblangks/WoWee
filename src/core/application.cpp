@@ -638,11 +638,33 @@ void Application::setupUICallbacks() {
                     break;
                 }
             }
+            // Find player's parent faction ID for individual enemy checks
+            uint32_t playerFactionId = 0;
+            for (uint32_t i = 0; i < dbc->getRecordCount(); i++) {
+                if (dbc->getUInt32(i, 0) == 1) {
+                    playerFactionId = dbc->getUInt32(i, 1);
+                    break;
+                }
+            }
             std::unordered_map<uint32_t, bool> factionMap;
             for (uint32_t i = 0; i < dbc->getRecordCount(); i++) {
                 uint32_t id = dbc->getUInt32(i, 0);
+                uint32_t factionGroup = dbc->getUInt32(i, 3);
                 uint32_t enemyGroup = dbc->getUInt32(i, 5);
                 bool hostile = (enemyGroup & playerFriendGroup) != 0;
+                // Monster factionGroup bit (4) = hostile to players
+                if (!hostile && (factionGroup & 4) != 0) {
+                    hostile = true;
+                }
+                // Check individual enemy faction IDs (fields 6-9)
+                if (!hostile && playerFactionId > 0) {
+                    for (int e = 6; e <= 9; e++) {
+                        if (dbc->getUInt32(i, e) == playerFactionId) {
+                            hostile = true;
+                            break;
+                        }
+                    }
+                }
                 factionMap[id] = hostile;
             }
             gameHandler->setFactionHostileMap(std::move(factionMap));
@@ -676,6 +698,14 @@ void Application::setupUICallbacks() {
         auto it = creatureInstances_.find(guid);
         if (it != creatureInstances_.end() && renderer && renderer->getCharacterRenderer()) {
             renderer->getCharacterRenderer()->playAnimation(it->second, 1, false); // Death
+        }
+    });
+
+    // NPC respawn callback (online mode) - reset to idle animation
+    gameHandler->setNpcRespawnCallback([this](uint64_t guid) {
+        auto it = creatureInstances_.find(guid);
+        if (it != creatureInstances_.end() && renderer && renderer->getCharacterRenderer()) {
+            renderer->getCharacterRenderer()->playAnimation(it->second, 0, true); // Idle
         }
     });
 
@@ -1246,6 +1276,16 @@ void Application::spawnNpcs() {
             }
             if (instanceId != 0 && cr) {
                 cr->playAnimation(instanceId, 1, false); // animation ID 1 = Death
+            }
+        });
+        gameHandler->setNpcRespawnCallback([npcMgr, cr, app](uint64_t guid) {
+            uint32_t instanceId = npcMgr->findRenderInstanceId(guid);
+            if (instanceId == 0) {
+                auto it = app->creatureInstances_.find(guid);
+                if (it != app->creatureInstances_.end()) instanceId = it->second;
+            }
+            if (instanceId != 0 && cr) {
+                cr->playAnimation(instanceId, 0, true); // animation ID 0 = Idle
             }
         });
         gameHandler->setNpcSwingCallback([npcMgr, cr, app](uint64_t guid) {

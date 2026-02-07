@@ -170,7 +170,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
                 targetGLPos = core::coords::canonicalToRender(glm::vec3(target->getX(), target->getY(), target->getZ()));
                 renderer->setTargetPosition(&targetGLPos);
 
-                // Selection circle color: red=hostile, green=friendly, gray=dead
+                // Selection circle color: WoW-canonical level-based colors
                 glm::vec3 circleColor(1.0f, 1.0f, 0.3f); // default yellow
                 float circleRadius = 1.5f;
                 if (target->getType() == game::ObjectType::UNIT) {
@@ -178,7 +178,20 @@ void GameScreen::render(game::GameHandler& gameHandler) {
                     if (unit->getHealth() == 0 && unit->getMaxHealth() > 0) {
                         circleColor = glm::vec3(0.5f, 0.5f, 0.5f); // gray (dead)
                     } else if (unit->isHostile()) {
-                        circleColor = glm::vec3(1.0f, 0.2f, 0.2f); // red (hostile)
+                        uint32_t playerLv = gameHandler.getPlayerLevel();
+                        uint32_t mobLv = unit->getLevel();
+                        int32_t diff = static_cast<int32_t>(mobLv) - static_cast<int32_t>(playerLv);
+                        if (game::GameHandler::killXp(playerLv, mobLv) == 0) {
+                            circleColor = glm::vec3(0.6f, 0.6f, 0.6f); // grey
+                        } else if (diff >= 10) {
+                            circleColor = glm::vec3(1.0f, 0.1f, 0.1f); // red
+                        } else if (diff >= 5) {
+                            circleColor = glm::vec3(1.0f, 0.5f, 0.1f); // orange
+                        } else if (diff >= -2) {
+                            circleColor = glm::vec3(1.0f, 1.0f, 0.1f); // yellow
+                        } else {
+                            circleColor = glm::vec3(0.3f, 1.0f, 0.3f); // green
+                        }
                     } else {
                         circleColor = glm::vec3(0.3f, 1.0f, 0.3f); // green (friendly)
                     }
@@ -724,7 +737,7 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                              ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
                              ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_AlwaysAutoResize;
 
-    // Determine hostility color for border and name
+    // Determine hostility/level color for border and name (WoW-canonical)
     ImVec4 hostileColor(0.7f, 0.7f, 0.7f, 1.0f);
     if (target->getType() == game::ObjectType::PLAYER) {
         hostileColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f);
@@ -733,9 +746,23 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
         if (u->getHealth() == 0 && u->getMaxHealth() > 0) {
             hostileColor = ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
         } else if (u->isHostile()) {
-            hostileColor = ImVec4(1.0f, 0.2f, 0.2f, 1.0f);
+            // WoW level-based color for hostile mobs
+            uint32_t playerLv = gameHandler.getPlayerLevel();
+            uint32_t mobLv = u->getLevel();
+            int32_t diff = static_cast<int32_t>(mobLv) - static_cast<int32_t>(playerLv);
+            if (game::GameHandler::killXp(playerLv, mobLv) == 0) {
+                hostileColor = ImVec4(0.6f, 0.6f, 0.6f, 1.0f); // Grey - no XP
+            } else if (diff >= 10) {
+                hostileColor = ImVec4(1.0f, 0.1f, 0.1f, 1.0f); // Red - skull/very hard
+            } else if (diff >= 5) {
+                hostileColor = ImVec4(1.0f, 0.5f, 0.1f, 1.0f); // Orange - hard
+            } else if (diff >= -2) {
+                hostileColor = ImVec4(1.0f, 1.0f, 0.1f, 1.0f); // Yellow - even
+            } else {
+                hostileColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f); // Green - easy
+            }
         } else {
-            hostileColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f);
+            hostileColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f); // Friendly
         }
     }
 
@@ -751,11 +778,16 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
 
         ImGui::TextColored(nameColor, "%s", name.c_str());
 
-        // Level (for units/players)
+        // Level (for units/players) — colored by difficulty
         if (target->getType() == game::ObjectType::UNIT || target->getType() == game::ObjectType::PLAYER) {
             auto unit = std::static_pointer_cast<game::Unit>(target);
             ImGui::SameLine();
-            ImGui::TextDisabled("Lv %u", unit->getLevel());
+            // Level color matches the hostility/difficulty color
+            ImVec4 levelColor = hostileColor;
+            if (target->getType() == game::ObjectType::PLAYER) {
+                levelColor = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+            }
+            ImGui::TextColored(levelColor, "Lv %u", unit->getLevel());
 
             // Health bar
             uint32_t hp = unit->getHealth();

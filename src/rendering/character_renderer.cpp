@@ -876,6 +876,13 @@ void CharacterRenderer::playAnimation(uint32_t instanceId, uint32_t animationId,
     auto& instance = it->second;
     auto& model = models[instance.modelId].data;
 
+    // Track death state for preventing movement while dead
+    if (animationId == 1) {
+        instance.isDead = true;
+    } else if (instance.isDead && animationId == 0) {
+        instance.isDead = false;  // Respawned
+    }
+
     // Find animation sequence index by ID
     instance.currentAnimationId = animationId;
     instance.currentSequenceIndex = -1;
@@ -1437,6 +1444,10 @@ void CharacterRenderer::moveInstanceTo(uint32_t instanceId, const glm::vec3& des
     if (it == instances.end()) return;
 
     auto& inst = it->second;
+
+    // Don't move dead instances (corpses shouldn't slide around)
+    if (inst.isDead) return;
+
     if (durationSeconds <= 0.0f) {
         // Instant move (stop)
         inst.position = destination;

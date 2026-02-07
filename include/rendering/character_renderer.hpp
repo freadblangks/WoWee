@@ -121,6 +121,7 @@ private:
         int currentSequenceIndex = -1;  // Index into M2Model::sequences
         float animationTime = 0.0f;
         bool animationLoop = true;
+        bool isDead = false;  // Prevents movement while in death state
         std::vector<glm::mat4> boneMatrices;  // Current bone transforms
 
         // Geoset visibility — which submesh IDs to render

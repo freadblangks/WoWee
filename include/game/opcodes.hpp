@@ -71,6 +71,16 @@ enum class Opcode : uint16_t {
     CMSG_ADD_IGNORE                  = 0x06C,
     CMSG_DEL_IGNORE                  = 0x06D,
 
+    // ---- Logout Commands ----
+    CMSG_PLAYER_LOGOUT               = 0x04A,
+    CMSG_LOGOUT_REQUEST              = 0x04B,
+    CMSG_LOGOUT_CANCEL               = 0x04E,
+    SMSG_LOGOUT_RESPONSE             = 0x04C,
+    SMSG_LOGOUT_COMPLETE             = 0x04D,
+
+    // ---- Stand State ----
+    CMSG_STAND_STATE_CHANGE          = 0x101,
+
     // ---- Random Roll ----
     MSG_RANDOM_ROLL                  = 0x1FB,
 

@@ -1268,6 +1268,54 @@ bool FriendStatusParser::parse(network::Packet& packet, FriendStatusData& data) 
     return true;
 }
 
+network::Packet AddIgnorePacket::build(const std::string& playerName) {
+    network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_ADD_IGNORE));
+    packet.writeString(playerName);
+    LOG_DEBUG("Built CMSG_ADD_IGNORE: player=", playerName);
+    return packet;
+}
+
+network::Packet DelIgnorePacket::build(uint64_t ignoreGuid) {
+    network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_DEL_IGNORE));
+    packet.writeUInt64(ignoreGuid);
+    LOG_DEBUG("Built CMSG_DEL_IGNORE: guid=0x", std::hex, ignoreGuid, std::dec);
+    return packet;
+}
+
+// ============================================================
+// Logout Commands
+// ============================================================
+
+network::Packet LogoutRequestPacket::build() {
+    network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_LOGOUT_REQUEST));
+    LOG_DEBUG("Built CMSG_LOGOUT_REQUEST");
+    return packet;
+}
+
+network::Packet LogoutCancelPacket::build() {
+    network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_LOGOUT_CANCEL));
+    LOG_DEBUG("Built CMSG_LOGOUT_CANCEL");
+    return packet;
+}
+
+bool LogoutResponseParser::parse(network::Packet& packet, LogoutResponseData& data) {
+    data.result = packet.readUInt32();
+    data.instant = packet.readUInt8();
+    LOG_DEBUG("Parsed SMSG_LOGOUT_RESPONSE: result=", data.result, " instant=", (int)data.instant);
+    return true;
+}
+
+// ============================================================
+// Stand State
+// ============================================================
+
+network::Packet StandStateChangePacket::build(uint8_t state) {
+    network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_STAND_STATE_CHANGE));
+    packet.writeUInt32(state);
+    LOG_DEBUG("Built CMSG_STAND_STATE_CHANGE: state=", (int)state);
+    return packet;
+}
+
 // ============================================================
 // Random Roll
 // ============================================================

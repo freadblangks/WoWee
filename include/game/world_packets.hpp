@@ -736,6 +736,56 @@ public:
     static bool parse(network::Packet& packet, FriendStatusData& data);
 };
 
+/** CMSG_ADD_IGNORE packet builder */
+class AddIgnorePacket {
+public:
+    static network::Packet build(const std::string& playerName);
+};
+
+/** CMSG_DEL_IGNORE packet builder */
+class DelIgnorePacket {
+public:
+    static network::Packet build(uint64_t ignoreGuid);
+};
+
+// ============================================================
+// Logout Commands
+// ============================================================
+
+/** CMSG_LOGOUT_REQUEST packet builder */
+class LogoutRequestPacket {
+public:
+    static network::Packet build();
+};
+
+/** CMSG_LOGOUT_CANCEL packet builder */
+class LogoutCancelPacket {
+public:
+    static network::Packet build();
+};
+
+/** SMSG_LOGOUT_RESPONSE data */
+struct LogoutResponseData {
+    uint32_t result = 0;  // 0 = success, 1 = failure
+    uint8_t instant = 0;  // 1 = instant logout
+};
+
+/** SMSG_LOGOUT_RESPONSE parser */
+class LogoutResponseParser {
+public:
+    static bool parse(network::Packet& packet, LogoutResponseData& data);
+};
+
+// ============================================================
+// Stand State
+// ============================================================
+
+/** CMSG_STAND_STATE_CHANGE packet builder */
+class StandStateChangePacket {
+public:
+    static network::Packet build(uint8_t state);
+};
+
 // ============================================================
 // Random Roll
 // ============================================================

@@ -317,6 +317,14 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
             break;
 
+        case Opcode::SMSG_LOGOUT_RESPONSE:
+            handleLogoutResponse(packet);
+            break;
+
+        case Opcode::SMSG_LOGOUT_COMPLETE:
+            handleLogoutComplete(packet);
+            break;
+
         // ---- Phase 1: Foundation ----
         case Opcode::SMSG_NAME_QUERY_RESPONSE:
             handleNameQueryResponse(packet);
@@ -1677,6 +1685,95 @@ void GameHandler::randomRoll(uint32_t minRoll, uint32_t maxRoll) {
     auto packet = RandomRollPacket::build(minRoll, maxRoll);
     socket->send(packet);
     LOG_INFO("Rolled ", minRoll, "-", maxRoll);
+}
+
+void GameHandler::addIgnore(const std::string& playerName) {
+    if (state != WorldState::IN_WORLD || !socket) {
+        LOG_WARNING("Cannot add ignore: not in world or not connected");
+        return;
+    }
+
+    if (playerName.empty()) {
+        addSystemChatMessage("You must specify a player name.");
+        return;
+    }
+
+    auto packet = AddIgnorePacket::build(playerName);
+    socket->send(packet);
+    addSystemChatMessage("Adding " + playerName + " to ignore list...");
+    LOG_INFO("Sent ignore request for: ", playerName);
+}
+
+void GameHandler::removeIgnore(const std::string& playerName) {
+    if (state != WorldState::IN_WORLD || !socket) {
+        LOG_WARNING("Cannot remove ignore: not in world or not connected");
+        return;
+    }
+
+    if (playerName.empty()) {
+        addSystemChatMessage("You must specify a player name.");
+        return;
+    }
+
+    // Look up GUID from cache
+    auto it = ignoreCache.find(playerName);
+    if (it == ignoreCache.end()) {
+        addSystemChatMessage(playerName + " is not in your ignore list.");
+        LOG_WARNING("Ignored player not found in cache: ", playerName);
+        return;
+    }
+
+    auto packet = DelIgnorePacket::build(it->second);
+    socket->send(packet);
+    addSystemChatMessage("Removing " + playerName + " from ignore list...");
+    ignoreCache.erase(it);
+    LOG_INFO("Sent remove ignore request for: ", playerName, " (GUID: 0x", std::hex, it->second, std::dec, ")");
+}
+
+void GameHandler::requestLogout() {
+    if (!socket) {
+        LOG_WARNING("Cannot logout: not connected");
+        return;
+    }
+
+    if (loggingOut_) {
+        addSystemChatMessage("Already logging out.");
+        return;
+    }
+
+    auto packet = LogoutRequestPacket::build();
+    socket->send(packet);
+    loggingOut_ = true;
+    LOG_INFO("Sent logout request");
+}
+
+void GameHandler::cancelLogout() {
+    if (!socket) {
+        LOG_WARNING("Cannot cancel logout: not connected");
+        return;
+    }
+
+    if (!loggingOut_) {
+        addSystemChatMessage("Not currently logging out.");
+        return;
+    }
+
+    auto packet = LogoutCancelPacket::build();
+    socket->send(packet);
+    loggingOut_ = false;
+    addSystemChatMessage("Logout cancelled.");
+    LOG_INFO("Cancelled logout");
+}
+
+void GameHandler::setStandState(uint8_t standState) {
+    if (state != WorldState::IN_WORLD || !socket) {
+        LOG_WARNING("Cannot change stand state: not in world or not connected");
+        return;
+    }
+
+    auto packet = StandStateChangePacket::build(standState);
+    socket->send(packet);
+    LOG_INFO("Changed stand state to: ", (int)standState);
 }
 
 void GameHandler::releaseSpirit() {
@@ -3121,6 +3218,36 @@ void GameHandler::handleRandomRoll(network::Packet& packet) {
 
     addSystemChatMessage(msg);
     LOG_INFO("Random roll: ", rollerName, " rolled ", data.result, " (", data.minRoll, "-", data.maxRoll, ")");
+}
+
+void GameHandler::handleLogoutResponse(network::Packet& packet) {
+    LogoutResponseData data;
+    if (!LogoutResponseParser::parse(packet, data)) {
+        LOG_WARNING("Failed to parse SMSG_LOGOUT_RESPONSE");
+        return;
+    }
+
+    if (data.result == 0) {
+        // Success - logout initiated
+        if (data.instant) {
+            addSystemChatMessage("Logging out...");
+        } else {
+            addSystemChatMessage("Logging out in 20 seconds...");
+        }
+        LOG_INFO("Logout response: success, instant=", (int)data.instant);
+    } else {
+        // Failure
+        addSystemChatMessage("Cannot logout right now.");
+        loggingOut_ = false;
+        LOG_WARNING("Logout failed, result=", data.result);
+    }
+}
+
+void GameHandler::handleLogoutComplete(network::Packet& /*packet*/) {
+    addSystemChatMessage("Logout complete.");
+    loggingOut_ = false;
+    LOG_INFO("Logout complete");
+    // Server will disconnect us
 }
 
 uint32_t GameHandler::generateClientSeed() {

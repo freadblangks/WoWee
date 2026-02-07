@@ -214,9 +214,18 @@ public:
     void addFriend(const std::string& playerName, const std::string& note = "");
     void removeFriend(const std::string& playerName);
     void setFriendNote(const std::string& playerName, const std::string& note);
+    void addIgnore(const std::string& playerName);
+    void removeIgnore(const std::string& playerName);
 
     // Random roll
     void randomRoll(uint32_t minRoll = 1, uint32_t maxRoll = 100);
+
+    // Logout commands
+    void requestLogout();
+    void cancelLogout();
+
+    // Stand state
+    void setStandState(uint8_t state);  // 0=stand, 1=sit, 2=sit_chair, 3=sleep, 4=sit_low_chair, 5=sit_medium_chair, 6=sit_high_chair, 7=dead, 8=kneel, 9=submerged
 
     // ---- Phase 1: Name queries ----
     void queryPlayerName(uint64_t guid);
@@ -525,6 +534,10 @@ private:
     void handleFriendStatus(network::Packet& packet);
     void handleRandomRoll(network::Packet& packet);
 
+    // ---- Logout handlers ----
+    void handleLogoutResponse(network::Packet& packet);
+    void handleLogoutComplete(network::Packet& packet);
+
     void addCombatText(CombatTextEntry::Type type, int32_t amount, uint32_t spellId, bool isPlayerSource);
     void addSystemChatMessage(const std::string& message);
 
@@ -606,6 +619,12 @@ private:
 
     // ---- Friend list cache ----
     std::unordered_map<std::string, uint64_t> friendsCache;  // name -> guid
+
+    // ---- Ignore list cache ----
+    std::unordered_map<std::string, uint64_t> ignoreCache;  // name -> guid
+
+    // ---- Logout state ----
+    bool loggingOut_ = false;
 
     // ---- Online item tracking ----
     struct OnlineItemInfo {

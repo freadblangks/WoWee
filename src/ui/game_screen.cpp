@@ -1079,6 +1079,77 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                 return;
             }
 
+            // /ignore command
+            if (cmdLower == "ignore") {
+                if (spacePos != std::string::npos) {
+                    std::string playerName = command.substr(spacePos + 1);
+                    gameHandler.addIgnore(playerName);
+                    chatInputBuffer[0] = '\0';
+                    return;
+                }
+
+                game::MessageChatData msg;
+                msg.type = game::ChatType::SYSTEM;
+                msg.language = game::ChatLanguage::UNIVERSAL;
+                msg.message = "Usage: /ignore <name>";
+                gameHandler.addLocalChatMessage(msg);
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            // /unignore command
+            if (cmdLower == "unignore") {
+                if (spacePos != std::string::npos) {
+                    std::string playerName = command.substr(spacePos + 1);
+                    gameHandler.removeIgnore(playerName);
+                    chatInputBuffer[0] = '\0';
+                    return;
+                }
+
+                game::MessageChatData msg;
+                msg.type = game::ChatType::SYSTEM;
+                msg.language = game::ChatLanguage::UNIVERSAL;
+                msg.message = "Usage: /unignore <name>";
+                gameHandler.addLocalChatMessage(msg);
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            // /sit command
+            if (cmdLower == "sit") {
+                gameHandler.setStandState(1);  // 1 = sit
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            // /stand command
+            if (cmdLower == "stand") {
+                gameHandler.setStandState(0);  // 0 = stand
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            // /kneel command
+            if (cmdLower == "kneel") {
+                gameHandler.setStandState(8);  // 8 = kneel
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            // /logout command (already exists but using /logout instead of going to login)
+            if (cmdLower == "logout" || cmdLower == "camp") {
+                gameHandler.requestLogout();
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            // /cancellogout command
+            if (cmdLower == "cancellogout") {
+                gameHandler.cancelLogout();
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
             // Chat channel slash commands
             bool isChannelCommand = false;
             if (cmdLower == "s" || cmdLower == "say") {

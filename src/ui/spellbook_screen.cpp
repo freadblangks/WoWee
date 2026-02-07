@@ -196,13 +196,8 @@ void SpellbookScreen::render(game::GameHandler& gameHandler, pipeline::AssetMana
     ImGui::SetNextWindowSize(ImVec2(bookW, bookH), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSizeConstraints(ImVec2(280, 200), ImVec2(screenW, screenH));
 
-    ImGuiWindowFlags spellbookFlags = 0;
-    if (draggingSpell_) {
-        spellbookFlags |= ImGuiWindowFlags_NoMove;
-    }
-
     bool windowOpen = open;
-    if (ImGui::Begin("Spellbook", &windowOpen, spellbookFlags)) {
+    if (ImGui::Begin("Spellbook", &windowOpen)) {
         // Clamp window position to stay on screen
         ImVec2 winPos = ImGui::GetWindowPos();
         ImVec2 winSize = ImGui::GetWindowSize();
@@ -233,60 +228,53 @@ void SpellbookScreen::render(game::GameHandler& gameHandler, pipeline::AssetMana
 
                         float cd = gameHandler.getSpellCooldown(info->spellId);
                         bool onCooldown = cd > 0.0f;
+                        bool isDim = isPassiveTab || onCooldown;
 
-                        // Dimmer for passive or cooldown spells
-                        if (isPassiveTab || onCooldown) {
-                            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
-                        }
-
-                        // Icon
                         GLuint iconTex = getSpellIcon(info->iconId, assetManager);
-                        float startY = ImGui::GetCursorPosY();
 
+                        // Selectable consumes clicks properly (prevents window drag)
+                        ImGui::Selectable("##row", false,
+                            ImGuiSelectableFlags_AllowDoubleClick, ImVec2(0, iconSize));
+                        bool rowHovered = ImGui::IsItemHovered();
+                        bool rowClicked = ImGui::IsItemClicked(0);
+                        ImVec2 rMin = ImGui::GetItemRectMin();
+                        auto* dl = ImGui::GetWindowDrawList();
+
+                        // Draw icon on top of selectable
                         if (iconTex) {
-                            ImGui::Image((ImTextureID)(uintptr_t)iconTex,
-                                         ImVec2(iconSize, iconSize));
+                            dl->AddImage((ImTextureID)(uintptr_t)iconTex,
+                                rMin, ImVec2(rMin.x + iconSize, rMin.y + iconSize));
                         } else {
-                            // Placeholder colored square
-                            ImVec2 pos = ImGui::GetCursorScreenPos();
-                            ImGui::GetWindowDrawList()->AddRectFilled(
-                                pos, ImVec2(pos.x + iconSize, pos.y + iconSize),
+                            dl->AddRectFilled(rMin,
+                                ImVec2(rMin.x + iconSize, rMin.y + iconSize),
                                 IM_COL32(60, 60, 80, 255));
-                            ImGui::Dummy(ImVec2(iconSize, iconSize));
                         }
 
-                        ImGui::SameLine();
-
-                        // Name and rank text
-                        ImGui::BeginGroup();
-                        ImGui::Text("%s", info->name.c_str());
+                        // Draw name and rank text
+                        ImU32 textCol = isDim ? IM_COL32(153, 153, 153, 255)
+                                              : ImGui::GetColorU32(ImGuiCol_Text);
+                        ImU32 dimCol = ImGui::GetColorU32(ImGuiCol_TextDisabled);
+                        float textX = rMin.x + iconSize + 4.0f;
+                        dl->AddText(ImVec2(textX, rMin.y), textCol, info->name.c_str());
                         if (!info->rank.empty()) {
-                            ImGui::TextDisabled("%s", info->rank.c_str());
+                            dl->AddText(ImVec2(textX, rMin.y + ImGui::GetTextLineHeight()),
+                                dimCol, info->rank.c_str());
                         } else if (onCooldown) {
-                            ImGui::TextDisabled("%.1fs cooldown", cd);
+                            char cdBuf[32];
+                            snprintf(cdBuf, sizeof(cdBuf), "%.1fs cooldown", cd);
+                            dl->AddText(ImVec2(textX, rMin.y + ImGui::GetTextLineHeight()),
+                                dimCol, cdBuf);
                         }
-                        ImGui::EndGroup();
 
-                        // Make the whole row clickable
-                        ImVec2 rowMin = ImVec2(ImGui::GetWindowPos().x,
-                                               ImGui::GetWindowPos().y + startY - ImGui::GetScrollY());
-                        ImVec2 rowMax = ImVec2(rowMin.x + ImGui::GetContentRegionAvail().x,
-                                               rowMin.y + std::max(iconSize, ImGui::GetCursorPosY() - startY));
-
-                        if (ImGui::IsMouseHoveringRect(rowMin, rowMax) && ImGui::IsWindowHovered()) {
-                            // Highlight
-                            ImGui::GetWindowDrawList()->AddRectFilled(
-                                rowMin, rowMax, IM_COL32(255, 255, 255, 20));
-
-                            // Left-click-drag to pick up spell for action bar
-                            if (ImGui::IsMouseClicked(0) && !isPassiveTab) {
+                        if (rowHovered) {
+                            // Start drag on click (not passive)
+                            if (rowClicked && !isPassiveTab) {
                                 draggingSpell_ = true;
                                 dragSpellId_ = info->spellId;
                                 dragSpellIconTex_ = iconTex;
                             }
 
                             if (ImGui::IsMouseDoubleClicked(0) && !isPassiveTab && !onCooldown) {
-                                // Double-click casts (cancel any drag)
                                 draggingSpell_ = false;
                                 dragSpellId_ = 0;
                                 dragSpellIconTex_ = 0;
@@ -314,11 +302,6 @@ void SpellbookScreen::render(game::GameHandler& gameHandler, pipeline::AssetMana
                             }
                         }
 
-                        if (isPassiveTab || onCooldown) {
-                            ImGui::PopStyleColor();
-                        }
-
-                        ImGui::Spacing();
                         ImGui::PopID();
                     }
 

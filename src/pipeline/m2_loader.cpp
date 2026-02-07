@@ -129,6 +129,15 @@ struct M2TrackDisk {
     uint32_t ofsKeys;
 };
 
+// FBlock header (on-disk, 16 bytes) — particle lifetime curves
+// Like M2TrackDisk but WITHOUT interpolationType/globalSequence prefix
+struct FBlockDisk {
+    uint32_t nTimestamps;
+    uint32_t ofsTimestamps;
+    uint32_t nKeys;
+    uint32_t ofsKeys;
+};
+
 // Full M2 bone structure (on-disk, 88 bytes)
 struct M2BoneDisk {
     int32_t keyBoneId;          // 4
@@ -296,6 +305,8 @@ void parseAnimTrack(const std::vector<uint8_t>& data,
     if (disk.nTimestamps == 0 || disk.nKeys == 0) return;
 
     uint32_t numSubArrays = disk.nTimestamps;
+    // Sanity cap: no model has >4096 animation sequences; garbage counts cause OOM
+    if (numSubArrays > 4096) return;
     track.sequences.resize(numSubArrays);
 
     for (uint32_t i = 0; i < numSubArrays; i++) {
@@ -370,15 +381,17 @@ void parseAnimTrack(const std::vector<uint8_t>& data,
     }
 }
 
-// Parse an FBlock (particle lifetime curve) from a 20-byte on-disk header.
-// FBlocks use the same layout as M2TrackDisk but timestamps/values are flat arrays.
+// Parse an FBlock (particle lifetime curve) from a 16-byte on-disk header.
+// FBlocks are like M2Track but WITHOUT the interpolationType/globalSequence prefix.
 void parseFBlock(const std::vector<uint8_t>& data, uint32_t offset,
                  M2FBlock& fb, int valueType) {
     // valueType: 0 = color (3 bytes RGB), 1 = alpha (uint16), 2 = scale (float pair)
-    if (offset + 20 > data.size()) return;
+    if (offset + sizeof(FBlockDisk) > data.size()) return;
 
-    M2TrackDisk disk = readValue<M2TrackDisk>(data, offset);
+    FBlockDisk disk = readValue<FBlockDisk>(data, offset);
     if (disk.nTimestamps == 0 || disk.nKeys == 0) return;
+    // Sanity cap: particle FBlocks typically have 3 keyframes
+    if (disk.nTimestamps > 1024 || disk.nKeys > 1024) return;
 
     // FBlock timestamps are uint16 (not sub-arrays), stored directly
     if (disk.ofsTimestamps + disk.nTimestamps * sizeof(uint16_t) > data.size()) return;
@@ -656,8 +669,8 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
         model.attachmentLookup = readArray<uint16_t>(m2Data, header.ofsAttachmentLookup, header.nAttachmentLookup);
     }
 
-    // Parse particle emitters (WotLK M2ParticleOld: 0x1F0 = 496 bytes per emitter)
-    static constexpr uint32_t EMITTER_STRUCT_SIZE = 0x1F0;
+    // Parse particle emitters (WotLK M2ParticleOld: 0x1DC = 476 bytes per emitter)
+    static constexpr uint32_t EMITTER_STRUCT_SIZE = 0x1DC;
     if (header.nParticleEmitters > 0 && header.ofsParticleEmitters > 0 &&
         header.nParticleEmitters < 256 &&
         static_cast<size_t>(header.ofsParticleEmitters) +
@@ -702,10 +715,10 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
             parseTrack(0xDC, em.emissionAreaWidth);
             parseTrack(0xF0, em.deceleration);
 
-            // Parse FBlocks (color, alpha, scale)
+            // Parse FBlocks (color, alpha, scale) — FBlocks are 16 bytes each
             parseFBlock(m2Data, base + 0x104, em.particleColor, 0);
-            parseFBlock(m2Data, base + 0x118, em.particleAlpha, 1);
-            parseFBlock(m2Data, base + 0x12C, em.particleScale, 2);
+            parseFBlock(m2Data, base + 0x114, em.particleAlpha, 1);
+            parseFBlock(m2Data, base + 0x124, em.particleScale, 2);
 
             model.particleEmitters.push_back(std::move(em));
         }

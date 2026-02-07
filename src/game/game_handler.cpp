@@ -1869,7 +1869,6 @@ void GameHandler::startAutoAttack(uint64_t targetGuid) {
     autoAttacking = true;
     autoAttackTarget = targetGuid;
     autoAttackOutOfRange_ = false;
-    swingTimer_ = 0.0f;
     if (state == WorldState::IN_WORLD && socket) {
         auto packet = AttackSwingPacket::build(targetGuid);
         socket->send(packet);

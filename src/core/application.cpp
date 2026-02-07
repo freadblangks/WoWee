@@ -81,7 +81,7 @@ const char* Application::mapIdToName(uint32_t mapId) {
 }
 
 std::string Application::getPlayerModelPath() const {
-    return game::getPlayerModelPath(spRace_, spGender_);
+    return game::getPlayerModelPath(playerRace_, playerGender_);
 }
 
 namespace {
@@ -264,12 +264,6 @@ void Application::run() {
                         bool enabled = !renderer->areShadowsEnabled();
                         renderer->setShadowsEnabled(enabled);
                         LOG_INFO("Shadows: ", enabled ? "ON" : "OFF");
-                    }
-                }
-                // T: Toggle teleporter panel
-                else if (event.key.keysym.scancode == SDL_SCANCODE_T) {
-                    if (state == AppState::IN_GAME && uiManager) {
-                        uiManager->getGameScreen().toggleTeleporter();
                     }
                 }
             }
@@ -716,12 +710,12 @@ void Application::spawnPlayerCharacter() {
 
                 // Look up textures from CharSections.dbc for all races
                 bool useCharSections = true;
-                uint32_t targetRaceId = static_cast<uint32_t>(spRace_);
-                uint32_t targetSexId = (spGender_ == game::Gender::FEMALE) ? 1u : 0u;
+                uint32_t targetRaceId = static_cast<uint32_t>(playerRace_);
+                uint32_t targetSexId = (playerGender_ == game::Gender::FEMALE) ? 1u : 0u;
 
                 // Race name for fallback texture paths
                 const char* raceFolderName = "Human";
-                switch (spRace_) {
+                switch (playerRace_) {
                     case game::Race::HUMAN:    raceFolderName = "Human"; break;
                     case game::Race::ORC:      raceFolderName = "Orc"; break;
                     case game::Race::DWARF:    raceFolderName = "Dwarf"; break;
@@ -734,7 +728,7 @@ void Application::spawnPlayerCharacter() {
                     case game::Race::DRAENEI:   raceFolderName = "Draenei"; break;
                     default: break;
                 }
-                const char* genderFolder = (spGender_ == game::Gender::FEMALE) ? "Female" : "Male";
+                const char* genderFolder = (playerGender_ == game::Gender::FEMALE) ? "Female" : "Male";
                 std::string raceGender = std::string(raceFolderName) + genderFolder;
                 std::string bodySkinPath = std::string("Character\\") + raceFolderName + "\\" + genderFolder + "\\" + raceGender + "Skin00_00.blp";
                 std::string pelvisPath = std::string("Character\\") + raceFolderName + "\\" + genderFolder + "\\" + raceGender + "NakedPelvisSkin00_00.blp";
@@ -1425,16 +1419,16 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
     if (gameHandler) {
         const game::Character* activeChar = gameHandler->getActiveCharacter();
         if (activeChar) {
-            spRace_ = activeChar->race;
-            spGender_ = activeChar->gender;
-            spClass_ = activeChar->characterClass;
+            playerRace_ = activeChar->race;
+            playerGender_ = activeChar->gender;
+            playerClass_ = activeChar->characterClass;
             spawnSnapToGround = false;
             playerCharacterSpawned = false;
             spawnPlayerCharacter();
             renderer->getCharacterPosition() = spawnRender;
             LOG_INFO("Spawned online player model: ", activeChar->name,
-                     " (race=", static_cast<int>(spRace_),
-                     ", gender=", static_cast<int>(spGender_),
+                     " (race=", static_cast<int>(playerRace_),
+                     ", gender=", static_cast<int>(playerGender_),
                      ") at render pos (", spawnRender.x, ", ", spawnRender.y, ", ", spawnRender.z, ")");
         } else {
             LOG_WARNING("No active character found for player model spawning");

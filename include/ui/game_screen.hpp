@@ -37,16 +37,6 @@ public:
      */
     bool isChatInputActive() const { return chatInputActive; }
 
-    /**
-     * Toggle the teleporter panel
-     */
-    void toggleTeleporter() { showTeleporter = !showTeleporter; }
-
-    /**
-     * Check if teleporter panel is open
-     */
-    bool isTeleporterOpen() const { return showTeleporter; }
-
 private:
     // Chat state
     char chatInputBuffer[512] = "";
@@ -62,7 +52,6 @@ private:
     bool chatWindowLocked = true;
     ImVec2 chatWindowPos_ = ImVec2(0.0f, 0.0f);
     bool chatWindowPosInit_ = false;
-    bool showTeleporter = false;
     bool showEscapeMenu = false;
     bool showEscapeSettingsNotice = false;
     bool showSettingsWindow = false;
@@ -149,7 +138,6 @@ private:
     void renderQuestRequestItemsWindow(game::GameHandler& gameHandler);
     void renderQuestOfferRewardWindow(game::GameHandler& gameHandler);
     void renderVendorWindow(game::GameHandler& gameHandler);
-    void renderTeleporterPanel();
     void renderDeathScreen(game::GameHandler& gameHandler);
     void renderEscapeMenu();
     void renderSettingsWindow();

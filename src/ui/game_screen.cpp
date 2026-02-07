@@ -105,9 +105,6 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     // World map (M key toggle handled inside)
     renderWorldMap(gameHandler);
 
-    // Teleporter panel (T key toggle handled in Application event loop)
-    renderTeleporterPanel();
-
     // Quest Log (L key toggle handled inside)
     questLogScreen.render(gameHandler);
 
@@ -500,8 +497,6 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                 showEscapeMenu = false;
                 showEscapeSettingsNotice = false;
                 showSettingsWindow = false;
-            } else if (showTeleporter) {
-                showTeleporter = false;
             } else if (gameHandler.isCasting()) {
                 gameHandler.cancelCast();
             } else if (gameHandler.isLootWindowOpen()) {
@@ -2534,52 +2529,6 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
 // ============================================================
 // Teleporter Panel
 // ============================================================
-
-void GameScreen::renderTeleporterPanel() {
-    if (!showTeleporter) return;
-
-    auto* window = core::Application::getInstance().getWindow();
-    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
-    float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
-
-    float panelW = 280.0f;
-    float panelH = 0.0f;  // Auto-size height
-    ImGui::SetNextWindowPos(ImVec2((screenW - panelW) / 2.0f, screenH * 0.25f), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(panelW, panelH), ImGuiCond_Always);
-
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0f);
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08f, 0.08f, 0.15f, 0.92f));
-
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-                             ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize;
-
-    if (ImGui::Begin("Teleporter", &showTeleporter, flags)) {
-        ImGui::Spacing();
-
-        for (int i = 0; i < core::SPAWN_PRESET_COUNT; i++) {
-            const auto& preset = core::SPAWN_PRESETS[i];
-            char label[128];
-            snprintf(label, sizeof(label), "%s\n(%.0f, %.0f, %.0f)",
-                     preset.label,
-                     preset.spawnCanonical.x, preset.spawnCanonical.y, preset.spawnCanonical.z);
-
-            if (ImGui::Button(label, ImVec2(-1, 50))) {
-                core::Application::getInstance().teleportTo(i);
-                showTeleporter = false;
-            }
-
-            if (i < core::SPAWN_PRESET_COUNT - 1) {
-                ImGui::Spacing();
-            }
-        }
-
-        ImGui::Spacing();
-    }
-    ImGui::End();
-
-    ImGui::PopStyleColor();
-    ImGui::PopStyleVar();
-}
 
 // ============================================================
 // Escape Menu

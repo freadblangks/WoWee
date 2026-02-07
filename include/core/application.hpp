@@ -105,6 +105,11 @@ private:
     float lastFrameTime = 0.0f;
     float movementHeartbeatTimer = 0.0f;
 
+    // Player character info (for model spawning)
+    game::Race playerRace_ = game::Race::HUMAN;
+    game::Gender playerGender_ = game::Gender::MALE;
+    game::Class playerClass_ = game::Class::WARRIOR;
+
     // Weapon model ID counter (starting high to avoid collision with character model IDs)
     uint32_t nextWeaponModelId_ = 1000;
 

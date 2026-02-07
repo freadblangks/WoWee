@@ -1509,15 +1509,21 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
                 ImGui::PopStyleColor();
             }
 
+            bool rightClicked = ImGui::IsItemClicked(ImGuiMouseButton_Right);
+
             // Drop held item from inventory onto action bar
             if (clicked && inventoryScreen.isHoldingItem()) {
                 const auto& held = inventoryScreen.getHeldItem();
                 gameHandler.setActionBarSlot(i, game::ActionBarSlot::ITEM, held.itemId);
                 inventoryScreen.returnHeldItem(gameHandler.getInventory());
+            } else if (clicked && spellbookScreen.isDraggingSpell()) {
+                // Drop dragged spell from spellbook onto this slot
+                gameHandler.setActionBarSlot(i, game::ActionBarSlot::SPELL,
+                    spellbookScreen.getDragSpellId());
+                spellbookScreen.consumeDragSpell();
             } else if (clicked && actionBarDragSlot_ >= 0) {
                 // Dropping a dragged action bar slot onto another slot - swap or place
                 if (i != actionBarDragSlot_) {
-                    // Swap the two slots
                     const auto& dragSrc = bar[actionBarDragSlot_];
                     auto srcType = dragSrc.type;
                     auto srcId = dragSrc.id;
@@ -1527,16 +1533,17 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
                 actionBarDragSlot_ = -1;
                 actionBarDragIcon_ = 0;
             } else if (clicked && !slot.isEmpty()) {
-                // Pick up this action bar slot for dragging
-                actionBarDragSlot_ = i;
-                actionBarDragIcon_ = iconTex;
-            } else if (clicked) {
+                // Left-click on non-empty slot: cast spell or use item
                 if (slot.type == game::ActionBarSlot::SPELL && slot.isReady()) {
                     uint64_t target = gameHandler.hasTarget() ? gameHandler.getTargetGuid() : 0;
                     gameHandler.castSpell(slot.id, target);
                 } else if (slot.type == game::ActionBarSlot::ITEM && slot.id != 0) {
                     gameHandler.useItemById(slot.id);
                 }
+            } else if (rightClicked && !slot.isEmpty()) {
+                // Right-click on non-empty slot: pick up for dragging
+                actionBarDragSlot_ = i;
+                actionBarDragIcon_ = iconTex;
             }
 
             // Tooltip
@@ -1604,8 +1611,8 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
                 IM_COL32(80, 80, 120, 180));
         }
 
-        // On mouse release, check if outside the action bar area
-        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        // On right mouse release, check if outside the action bar area
+        if (ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
             bool insideBar = (mousePos.x >= barX && mousePos.x <= barX + barW &&
                               mousePos.y >= barY && mousePos.y <= barY + barH);
             if (!insideBar) {

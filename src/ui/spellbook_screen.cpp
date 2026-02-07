@@ -204,22 +204,12 @@ void SpellbookScreen::render(game::GameHandler& gameHandler, pipeline::AssetMana
                 if (ImGui::BeginTabItem(label)) {
                     currentTab = tab;
 
-                    // Action bar assignment mode indicator
-                    if (assigningSlot >= 0) {
-                        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f),
-                            "Click a spell to assign to slot %d", assigningSlot + 1);
-                        if (ImGui::SmallButton("Cancel")) {
-                            assigningSlot = -1;
-                        }
-                        ImGui::Separator();
-                    }
-
                     if (spellList.empty()) {
                         ImGui::TextDisabled("No spells in this category.");
                     }
 
                     // Spell list with icons
-                    ImGui::BeginChild("SpellList", ImVec2(0, -60), true);
+                    ImGui::BeginChild("SpellList", ImVec2(0, 0), true);
 
                     float iconSize = 32.0f;
                     bool isPassiveTab = (tab == SpellTab::PASSIVE);
@@ -274,35 +264,40 @@ void SpellbookScreen::render(game::GameHandler& gameHandler, pipeline::AssetMana
                             ImGui::GetWindowDrawList()->AddRectFilled(
                                 rowMin, rowMax, IM_COL32(255, 255, 255, 20));
 
-                            if (ImGui::IsMouseClicked(0)) {
-                                if (assigningSlot >= 0 && !isPassiveTab) {
-                                    gameHandler.setActionBarSlot(assigningSlot,
-                                        game::ActionBarSlot::SPELL, info->spellId);
-                                    assigningSlot = -1;
-                                }
+                            // Left-click-drag to pick up spell for action bar
+                            if (ImGui::IsMouseClicked(0) && !isPassiveTab) {
+                                draggingSpell_ = true;
+                                dragSpellId_ = info->spellId;
+                                dragSpellIconTex_ = iconTex;
                             }
 
                             if (ImGui::IsMouseDoubleClicked(0) && !isPassiveTab && !onCooldown) {
+                                // Double-click casts (cancel any drag)
+                                draggingSpell_ = false;
+                                dragSpellId_ = 0;
+                                dragSpellIconTex_ = 0;
                                 uint64_t target = gameHandler.hasTarget() ? gameHandler.getTargetGuid() : 0;
                                 gameHandler.castSpell(info->spellId, target);
                             }
 
-                            // Tooltip
-                            ImGui::BeginTooltip();
-                            ImGui::Text("%s", info->name.c_str());
-                            if (!info->rank.empty()) {
-                                ImGui::TextDisabled("%s", info->rank.c_str());
-                            }
-                            ImGui::TextDisabled("Spell ID: %u", info->spellId);
-                            if (isPassiveTab) {
-                                ImGui::TextDisabled("Passive");
-                            } else {
-                                if (!onCooldown) {
-                                    ImGui::TextDisabled("Double-click to cast");
+                            // Tooltip (only when not dragging)
+                            if (!draggingSpell_) {
+                                ImGui::BeginTooltip();
+                                ImGui::Text("%s", info->name.c_str());
+                                if (!info->rank.empty()) {
+                                    ImGui::TextDisabled("%s", info->rank.c_str());
                                 }
-                                ImGui::TextDisabled("Use buttons below to assign to action bar");
+                                ImGui::TextDisabled("Spell ID: %u", info->spellId);
+                                if (isPassiveTab) {
+                                    ImGui::TextDisabled("Passive");
+                                } else {
+                                    ImGui::TextDisabled("Drag to action bar to assign");
+                                    if (!onCooldown) {
+                                        ImGui::TextDisabled("Double-click to cast");
+                                    }
+                                }
+                                ImGui::EndTooltip();
                             }
-                            ImGui::EndTooltip();
                         }
 
                         if (isPassiveTab || onCooldown) {
@@ -329,34 +324,35 @@ void SpellbookScreen::render(game::GameHandler& gameHandler, pipeline::AssetMana
 
             ImGui::EndTabBar();
         }
-
-        // Action bar quick-assign buttons (not for passive tab)
-        if (currentTab != SpellTab::PASSIVE) {
-            ImGui::Separator();
-            ImGui::Text("Assign to:");
-            ImGui::SameLine();
-            static const char* slotLabels[] = {"1","2","3","4","5","6","7","8","9","0","-","="};
-            for (int i = 0; i < 12; ++i) {
-                if (i > 0) ImGui::SameLine(0, 2);
-                ImGui::PushID(100 + i);
-                bool isAssigning = (assigningSlot == i);
-                if (isAssigning) {
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.6f, 0.2f, 1.0f));
-                }
-                if (ImGui::SmallButton(slotLabels[i])) {
-                    assigningSlot = isAssigning ? -1 : i;
-                }
-                if (isAssigning) {
-                    ImGui::PopStyleColor();
-                }
-                ImGui::PopID();
-            }
-        }
     }
     ImGui::End();
 
     if (!windowOpen) {
         open = false;
+    }
+
+    // Render dragged spell icon at cursor
+    if (draggingSpell_ && dragSpellId_ != 0) {
+        ImVec2 mousePos = ImGui::GetMousePos();
+        float dragSize = 32.0f;
+        if (dragSpellIconTex_) {
+            ImGui::GetForegroundDrawList()->AddImage(
+                (ImTextureID)(uintptr_t)dragSpellIconTex_,
+                ImVec2(mousePos.x - dragSize * 0.5f, mousePos.y - dragSize * 0.5f),
+                ImVec2(mousePos.x + dragSize * 0.5f, mousePos.y + dragSize * 0.5f));
+        } else {
+            ImGui::GetForegroundDrawList()->AddRectFilled(
+                ImVec2(mousePos.x - dragSize * 0.5f, mousePos.y - dragSize * 0.5f),
+                ImVec2(mousePos.x + dragSize * 0.5f, mousePos.y + dragSize * 0.5f),
+                IM_COL32(80, 80, 120, 180));
+        }
+
+        // Cancel drag on mouse release (action bar consumes it before this if dropped on a slot)
+        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+            draggingSpell_ = false;
+            dragSpellId_ = 0;
+            dragSpellIconTex_ = 0;
+        }
     }
 }
 

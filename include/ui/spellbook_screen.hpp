@@ -31,6 +31,11 @@ public:
     void toggle() { open = !open; }
     void setOpen(bool o) { open = o; }
 
+    // Drag-and-drop state for action bar assignment
+    bool isDraggingSpell() const { return draggingSpell_; }
+    uint32_t getDragSpellId() const { return dragSpellId_; }
+    void consumeDragSpell() { draggingSpell_ = false; dragSpellId_ = 0; dragSpellIconTex_ = 0; }
+
 private:
     bool open = false;
     bool pKeyWasDown = false;
@@ -54,8 +59,10 @@ private:
     // Tab state
     SpellTab currentTab = SpellTab::GENERAL;
 
-    // Action bar assignment
-    int assigningSlot = -1;
+    // Drag-and-drop from spellbook to action bar
+    bool draggingSpell_ = false;
+    uint32_t dragSpellId_ = 0;
+    GLuint dragSpellIconTex_ = 0;
 
     void loadSpellDBC(pipeline::AssetManager* assetManager);
     void loadSpellIconDBC(pipeline::AssetManager* assetManager);

@@ -1521,6 +1521,12 @@ void GameHandler::handleMessageChat(network::Packet& packet) {
 
 void GameHandler::setTarget(uint64_t guid) {
     if (guid == targetGuid) return;
+
+    // Save previous target
+    if (targetGuid != 0) {
+        lastTargetGuid = targetGuid;
+    }
+
     targetGuid = guid;
 
     // Inform server of target selection (Phase 1)
@@ -1546,6 +1552,135 @@ void GameHandler::clearTarget() {
 std::shared_ptr<Entity> GameHandler::getTarget() const {
     if (targetGuid == 0) return nullptr;
     return entityManager.getEntity(targetGuid);
+}
+
+void GameHandler::setFocus(uint64_t guid) {
+    focusGuid = guid;
+    if (guid != 0) {
+        auto entity = entityManager.getEntity(guid);
+        if (entity) {
+            std::string name = "Unknown";
+            if (entity->getType() == ObjectType::PLAYER) {
+                auto player = std::dynamic_pointer_cast<Player>(entity);
+                if (player && !player->getName().empty()) {
+                    name = player->getName();
+                }
+            }
+            addSystemChatMessage("Focus set: " + name);
+            LOG_INFO("Focus set: 0x", std::hex, guid, std::dec);
+        }
+    }
+}
+
+void GameHandler::clearFocus() {
+    if (focusGuid != 0) {
+        addSystemChatMessage("Focus cleared.");
+        LOG_INFO("Focus cleared");
+    }
+    focusGuid = 0;
+}
+
+std::shared_ptr<Entity> GameHandler::getFocus() const {
+    if (focusGuid == 0) return nullptr;
+    return entityManager.getEntity(focusGuid);
+}
+
+void GameHandler::targetLastTarget() {
+    if (lastTargetGuid == 0) {
+        addSystemChatMessage("No previous target.");
+        return;
+    }
+
+    // Swap current and last target
+    uint64_t temp = targetGuid;
+    setTarget(lastTargetGuid);
+    lastTargetGuid = temp;
+}
+
+void GameHandler::targetEnemy(bool reverse) {
+    // Get list of hostile entities
+    std::vector<uint64_t> hostiles;
+    auto& entities = entityManager.getEntities();
+
+    for (const auto& [guid, entity] : entities) {
+        if (entity->getType() == ObjectType::UNIT) {
+            // Check if hostile (this is simplified - would need faction checking)
+            auto unit = std::dynamic_pointer_cast<Unit>(entity);
+            if (unit && guid != playerGuid) {
+                hostiles.push_back(guid);
+            }
+        }
+    }
+
+    if (hostiles.empty()) {
+        addSystemChatMessage("No enemies in range.");
+        return;
+    }
+
+    // Find current target in list
+    auto it = std::find(hostiles.begin(), hostiles.end(), targetGuid);
+
+    if (it == hostiles.end()) {
+        // Not currently targeting a hostile, target first one
+        setTarget(reverse ? hostiles.back() : hostiles.front());
+    } else {
+        // Cycle to next/previous
+        if (reverse) {
+            if (it == hostiles.begin()) {
+                setTarget(hostiles.back());
+            } else {
+                setTarget(*(--it));
+            }
+        } else {
+            ++it;
+            if (it == hostiles.end()) {
+                setTarget(hostiles.front());
+            } else {
+                setTarget(*it);
+            }
+        }
+    }
+}
+
+void GameHandler::targetFriend(bool reverse) {
+    // Get list of friendly entities (players)
+    std::vector<uint64_t> friendlies;
+    auto& entities = entityManager.getEntities();
+
+    for (const auto& [guid, entity] : entities) {
+        if (entity->getType() == ObjectType::PLAYER && guid != playerGuid) {
+            friendlies.push_back(guid);
+        }
+    }
+
+    if (friendlies.empty()) {
+        addSystemChatMessage("No friendly targets in range.");
+        return;
+    }
+
+    // Find current target in list
+    auto it = std::find(friendlies.begin(), friendlies.end(), targetGuid);
+
+    if (it == friendlies.end()) {
+        // Not currently targeting a friend, target first one
+        setTarget(reverse ? friendlies.back() : friendlies.front());
+    } else {
+        // Cycle to next/previous
+        if (reverse) {
+            if (it == friendlies.begin()) {
+                setTarget(friendlies.back());
+            } else {
+                setTarget(*(--it));
+            }
+        } else {
+            ++it;
+            if (it == friendlies.end()) {
+                setTarget(friendlies.front());
+            } else {
+                setTarget(*it);
+            }
+        }
+    }
 }
 
 void GameHandler::inspectTarget() {

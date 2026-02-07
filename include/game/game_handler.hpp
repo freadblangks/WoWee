@@ -202,6 +202,18 @@ public:
     bool hasTarget() const { return targetGuid != 0; }
     void tabTarget(float playerX, float playerY, float playerZ);
 
+    // Focus targeting
+    void setFocus(uint64_t guid);
+    void clearFocus();
+    uint64_t getFocusGuid() const { return focusGuid; }
+    std::shared_ptr<Entity> getFocus() const;
+    bool hasFocus() const { return focusGuid != 0; }
+
+    // Advanced targeting
+    void targetLastTarget();
+    void targetEnemy(bool reverse = false);
+    void targetFriend(bool reverse = false);
+
     // Inspection
     void inspectTarget();
 
@@ -646,6 +658,8 @@ private:
 
     // Targeting
     uint64_t targetGuid = 0;
+    uint64_t focusGuid = 0;              // Focus target
+    uint64_t lastTargetGuid = 0;         // Previous target
     std::vector<uint64_t> tabCycleList;
     int tabCycleIndex = -1;
     bool tabCycleStale = true;

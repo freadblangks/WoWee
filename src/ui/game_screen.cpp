@@ -1460,6 +1460,63 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                 return;
             }
 
+            // Targeting commands
+            if (cmdLower == "cleartarget") {
+                gameHandler.clearTarget();
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            if (cmdLower == "targetenemy") {
+                gameHandler.targetEnemy(false);
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            if (cmdLower == "targetfriend") {
+                gameHandler.targetFriend(false);
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            if (cmdLower == "targetlasttarget" || cmdLower == "targetlast") {
+                gameHandler.targetLastTarget();
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            if (cmdLower == "targetlastenemy") {
+                gameHandler.targetEnemy(true);  // Reverse direction
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            if (cmdLower == "targetlastfriend") {
+                gameHandler.targetFriend(true);  // Reverse direction
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            if (cmdLower == "focus") {
+                if (gameHandler.hasTarget()) {
+                    gameHandler.setFocus(gameHandler.getTargetGuid());
+                } else {
+                    game::MessageChatData msg;
+                    msg.type = game::ChatType::SYSTEM;
+                    msg.language = game::ChatLanguage::UNIVERSAL;
+                    msg.message = "You must target a unit to set as focus.";
+                    gameHandler.addLocalChatMessage(msg);
+                }
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            if (cmdLower == "clearfocus") {
+                gameHandler.clearFocus();
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
             // Chat channel slash commands
             bool isChannelCommand = false;
             if (cmdLower == "s" || cmdLower == "say") {

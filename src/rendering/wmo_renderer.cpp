@@ -1586,7 +1586,6 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
                 float triMaxZ = std::max({v0.z, v1.z, v2.z});
                 float fromDist = glm::dot(localFrom - v0, normal);
                 float toDist = glm::dot(localTo - v0, normal);
-                bool towardWallMotion = (std::abs(toDist) + 1e-4f < std::abs(fromDist));
 
                 // Only collide with walls in player's vertical range
                 if (triMaxZ < localFeetZ + 0.3f) continue;

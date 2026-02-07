@@ -1488,6 +1488,11 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
         }
     }
 
+    // Snap player to loaded terrain so they don't spawn underground
+    if (renderer->getCameraController()) {
+        renderer->getCameraController()->reset();
+    }
+
     showProgress("Entering world...", 1.0f);
 
     if (loadingScreenOk) {

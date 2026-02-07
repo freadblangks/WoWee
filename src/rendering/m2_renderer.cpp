@@ -1148,8 +1148,17 @@ static void computeBoneMatrices(const M2ModelGPU& model, M2Instance& instance) {
     }
 }
 
-void M2Renderer::update(float deltaTime) {
+void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::mat4& viewProjection) {
     float dtMs = deltaTime * 1000.0f;
+
+    // Cache camera state for frustum-culling bone computation
+    cachedCamPos_ = cameraPos;
+    const float maxRenderDistance = (instances.size() > 600) ? 320.0f : 2800.0f;
+    cachedMaxRenderDistSq_ = maxRenderDistance * maxRenderDistance;
+
+    // Build frustum for culling bones
+    Frustum updateFrustum;
+    updateFrustum.extractFromMatrix(viewProjection);
 
     // --- Smoke particle spawning ---
     std::uniform_real_distribution<float> distXY(-0.4f, 0.4f);
@@ -1276,6 +1285,22 @@ void M2Renderer::update(float deltaTime) {
             }
         }
 
+        // Frustum + distance cull: skip expensive bone computation for off-screen instances
+        float worldRadius = model.boundRadius * instance.scale;
+        float cullRadius = worldRadius;
+        glm::vec3 toCam = instance.position - cachedCamPos_;
+        float distSq = glm::dot(toCam, toCam);
+        float effectiveMaxDistSq = cachedMaxRenderDistSq_ * std::max(1.0f, cullRadius / 12.0f);
+        if (!model.disableAnimation) {
+            if (worldRadius < 0.8f) {
+                effectiveMaxDistSq = std::min(effectiveMaxDistSq, 95.0f * 95.0f);
+            } else if (worldRadius < 1.5f) {
+                effectiveMaxDistSq = std::min(effectiveMaxDistSq, 140.0f * 140.0f);
+            }
+        }
+        if (distSq > effectiveMaxDistSq) continue;
+        if (cullRadius > 0.0f && !updateFrustum.intersectsSphere(instance.position, cullRadius)) continue;
+
         boneWorkIndices.push_back(idx);
     }
 
@@ -1389,29 +1414,32 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
     const float fadeStartFraction = 0.75f;
     const glm::vec3 camPos = camera.getPosition();
 
-    for (const auto& instance : instances) {
+    // Build sorted visible instance list: cull then sort by modelId to batch VAO binds
+    struct VisibleEntry {
+        uint32_t index;
+        uint32_t modelId;
+        float distSq;
+        float effectiveMaxDistSq;
+    };
+    std::vector<VisibleEntry> sortedVisible;
+    sortedVisible.reserve(instances.size() / 2);
+
+    for (uint32_t i = 0; i < static_cast<uint32_t>(instances.size()); ++i) {
+        const auto& instance = instances[i];
         auto it = models.find(instance.modelId);
         if (it == models.end()) continue;
-
         const M2ModelGPU& model = it->second;
-        if (!model.isValid()) continue;
+        if (!model.isValid() || model.isSmoke) continue;
 
-        // Skip smoke models — replaced by particle emitters
-        if (model.isSmoke) continue;
-
-        // Distance culling for small objects (scaled by object size)
         glm::vec3 toCam = instance.position - camPos;
         float distSq = glm::dot(toCam, toCam);
         float worldRadius = model.boundRadius * instance.scale;
         float cullRadius = worldRadius;
         if (model.disableAnimation) {
-            // Many bushes/foliage M2s have conservative tiny bounds; pad to reduce pop-in.
             cullRadius = std::max(cullRadius, 3.0f);
         }
-        // Cull small objects (radius < 20) at distance, keep larger objects visible longer
         float effectiveMaxDistSq = maxRenderDistanceSq * std::max(1.0f, cullRadius / 12.0f);
         if (model.disableAnimation) {
-            // Trees/foliage keep a much larger horizon before culling.
             effectiveMaxDistSq *= 2.6f;
         }
         if (!model.disableAnimation) {
@@ -1421,24 +1449,39 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
                 effectiveMaxDistSq = std::min(effectiveMaxDistSq, 140.0f * 140.0f);
             }
         }
-        if (distSq > effectiveMaxDistSq) {
-            continue;
+        if (distSq > effectiveMaxDistSq) continue;
+        if (cullRadius > 0.0f && !frustum.intersectsSphere(instance.position, cullRadius)) continue;
+
+        sortedVisible.push_back({i, instance.modelId, distSq, effectiveMaxDistSq});
+    }
+
+    // Sort by modelId to minimize VAO rebinds
+    std::sort(sortedVisible.begin(), sortedVisible.end(),
+              [](const VisibleEntry& a, const VisibleEntry& b) { return a.modelId < b.modelId; });
+
+    uint32_t currentModelId = UINT32_MAX;
+    const M2ModelGPU* currentModel = nullptr;
+
+    for (const auto& entry : sortedVisible) {
+        const auto& instance = instances[entry.index];
+
+        // Bind VAO once per model group
+        if (entry.modelId != currentModelId) {
+            if (currentModel) glBindVertexArray(0);
+            currentModelId = entry.modelId;
+            currentModel = &models.find(currentModelId)->second;
+            glBindVertexArray(currentModel->vao);
         }
 
-        // Frustum cull: test bounding sphere in world space
-        if (cullRadius > 0.0f && !frustum.intersectsSphere(instance.position, cullRadius)) {
-            continue;
-        }
+        const M2ModelGPU& model = *currentModel;
 
-        // Distance-based fade alpha for smooth pop-in
+        // Distance-based fade alpha for smooth pop-in (squared-distance, no sqrt)
         float fadeAlpha = 1.0f;
         float fadeFrac = model.disableAnimation ? 0.55f : fadeStartFraction;
-        float fadeStartDistSq = effectiveMaxDistSq * fadeFrac * fadeFrac;
-        if (distSq > fadeStartDistSq) {
-            float dist = std::sqrt(distSq);
-            float effectiveMaxDist = std::sqrt(effectiveMaxDistSq);
-            float fadeStartDist = effectiveMaxDist * fadeFrac;
-            fadeAlpha = std::clamp((effectiveMaxDist - dist) / (effectiveMaxDist - fadeStartDist), 0.0f, 1.0f);
+        float fadeStartDistSq = entry.effectiveMaxDistSq * fadeFrac * fadeFrac;
+        if (entry.distSq > fadeStartDistSq) {
+            fadeAlpha = std::clamp((entry.effectiveMaxDistSq - entry.distSq) /
+                                  (entry.effectiveMaxDistSq - fadeStartDistSq), 0.0f, 1.0f);
         }
 
         shader->setUniform("uModel", instance.modelMatrix);
@@ -1457,15 +1500,13 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
             glDepthMask(GL_FALSE);
         }
 
-        glBindVertexArray(model.vao);
-
         for (const auto& batch : model.batches) {
             if (batch.indexCount == 0) continue;
 
             // Additive/mod batches (glow halos, light effects): collect as glow sprites
             // instead of rendering the mesh geometry which appears as flat orange disks.
             if (batch.blendMode >= 3) {
-                if (distSq < 120.0f * 120.0f) { // Only render glow within 120 units
+                if (entry.distSq < 120.0f * 120.0f) { // Only render glow within 120 units
                     glm::vec3 worldPos = glm::vec3(instance.modelMatrix * glm::vec4(batch.center, 1.0f));
                     GlowSprite gs;
                     gs.worldPos = worldPos;
@@ -1562,12 +1603,12 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
             lastDrawCallCount++;
         }
 
-        glBindVertexArray(0);
-
         if (fadeAlpha < 1.0f) {
             glDepthMask(GL_TRUE);
         }
     }
+
+    if (currentModel) glBindVertexArray(0);
 
     // Render glow sprites as billboarded additive point lights
     if (!glowSprites.empty() && m2ParticleShader_ != 0 && m2ParticleVAO_ != 0) {

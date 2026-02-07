@@ -999,9 +999,10 @@ void Renderer::update(float deltaTime) {
         }
     }
 
-    // Update M2 doodad animations
-    if (m2Renderer) {
-        m2Renderer->update(deltaTime);
+    // Update M2 doodad animations (pass camera for frustum-culling bone computation)
+    if (m2Renderer && camera) {
+        m2Renderer->update(deltaTime, camera->getPosition(),
+                           camera->getProjectionMatrix() * camera->getViewMatrix());
     }
 
     // Update zone detection and music

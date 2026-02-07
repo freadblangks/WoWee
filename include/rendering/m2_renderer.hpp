@@ -181,8 +181,10 @@ public:
     /**
      * Update animation state for all instances
      * @param deltaTime Time since last frame
+     * @param cameraPos Camera world position (for frustum-culling bones)
+     * @param viewProjection Combined view*projection matrix
      */
-    void update(float deltaTime);
+    void update(float deltaTime, const glm::vec3& cameraPos, const glm::mat4& viewProjection);
 
     /**
      * Render all visible instances
@@ -354,6 +356,10 @@ private:
     GLuint m2ParticleVBO_ = 0;
     static constexpr size_t MAX_M2_PARTICLES = 4000;
     std::mt19937 particleRng_{123};
+
+    // Cached camera state from update() for frustum-culling bones
+    glm::vec3 cachedCamPos_ = glm::vec3(0.0f);
+    float cachedMaxRenderDistSq_ = 0.0f;
 
     // Thread count for parallel bone animation
     uint32_t numAnimThreads_ = 1;

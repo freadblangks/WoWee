@@ -173,6 +173,10 @@ private:
     // Action bar drag state (-1 = not dragging)
     int actionBarDragSlot_ = -1;
     GLuint actionBarDragIcon_ = 0;
+
+    // Left-click targeting: distinguish click from camera drag
+    glm::vec2 leftClickPressPos_ = glm::vec2(0.0f);
+    bool leftClickWasPress_ = false;
 };
 
 } // namespace ui

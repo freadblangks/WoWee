@@ -566,64 +566,76 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
         refocusChatInput = true;
     }
 
-    // Left-click targeting (when mouse not captured by UI)
-    // Suppress when right button is held (both-button run)
+    // Left-click targeting: only on mouse-up if the mouse didn't drag (camera rotate)
+    // Record press position on mouse-down
     if (!io.WantCaptureMouse && input.isMouseButtonJustPressed(SDL_BUTTON_LEFT) && !input.isMouseButtonPressed(SDL_BUTTON_RIGHT)) {
-        auto* renderer = core::Application::getInstance().getRenderer();
-        auto* camera = renderer ? renderer->getCamera() : nullptr;
-        auto* window = core::Application::getInstance().getWindow();
+        leftClickPressPos_ = input.getMousePosition();
+        leftClickWasPress_ = true;
+    }
 
-        if (camera && window) {
-            glm::vec2 mousePos = input.getMousePosition();
-            float screenW = static_cast<float>(window->getWidth());
-            float screenH = static_cast<float>(window->getHeight());
+    // On mouse-up, check if it was a click (not a drag)
+    if (leftClickWasPress_ && input.isMouseButtonJustReleased(SDL_BUTTON_LEFT)) {
+        leftClickWasPress_ = false;
+        glm::vec2 releasePos = input.getMousePosition();
+        float dragDist = glm::length(releasePos - leftClickPressPos_);
+        constexpr float CLICK_THRESHOLD = 5.0f;  // pixels
 
-            rendering::Ray ray = camera->screenToWorldRay(mousePos.x, mousePos.y, screenW, screenH);
+        if (dragDist < CLICK_THRESHOLD) {
+            auto* renderer = core::Application::getInstance().getRenderer();
+            auto* camera = renderer ? renderer->getCamera() : nullptr;
+            auto* window = core::Application::getInstance().getWindow();
 
-            float closestT = 1e30f;
-            uint64_t closestGuid = 0;
+            if (camera && window) {
+                float screenW = static_cast<float>(window->getWidth());
+                float screenH = static_cast<float>(window->getHeight());
 
-            const uint64_t myGuid = gameHandler.getPlayerGuid();
-            for (const auto& [guid, entity] : gameHandler.getEntityManager().getEntities()) {
-                auto t = entity->getType();
-                if (t != game::ObjectType::UNIT && t != game::ObjectType::PLAYER) continue;
-                if (guid == myGuid) continue;  // Don't target self
+                rendering::Ray ray = camera->screenToWorldRay(leftClickPressPos_.x, leftClickPressPos_.y, screenW, screenH);
 
-                glm::vec3 hitCenter;
-                float hitRadius = 0.0f;
-                bool hasBounds = core::Application::getInstance().getRenderBoundsForGuid(guid, hitCenter, hitRadius);
-                if (!hasBounds) {
-                    // Fallback hitbox based on entity type
-                    float heightOffset = 1.5f;
-                    hitRadius = 1.5f;
-                    if (t == game::ObjectType::UNIT) {
-                        auto unit = std::static_pointer_cast<game::Unit>(entity);
-                        // Critters have very low max health (< 100)
-                        if (unit->getMaxHealth() > 0 && unit->getMaxHealth() < 100) {
-                            hitRadius = 0.5f;
-                            heightOffset = 0.3f;
+                float closestT = 1e30f;
+                uint64_t closestGuid = 0;
+
+                const uint64_t myGuid = gameHandler.getPlayerGuid();
+                for (const auto& [guid, entity] : gameHandler.getEntityManager().getEntities()) {
+                    auto t = entity->getType();
+                    if (t != game::ObjectType::UNIT && t != game::ObjectType::PLAYER) continue;
+                    if (guid == myGuid) continue;  // Don't target self
+
+                    glm::vec3 hitCenter;
+                    float hitRadius = 0.0f;
+                    bool hasBounds = core::Application::getInstance().getRenderBoundsForGuid(guid, hitCenter, hitRadius);
+                    if (!hasBounds) {
+                        // Fallback hitbox based on entity type
+                        float heightOffset = 1.5f;
+                        hitRadius = 1.5f;
+                        if (t == game::ObjectType::UNIT) {
+                            auto unit = std::static_pointer_cast<game::Unit>(entity);
+                            // Critters have very low max health (< 100)
+                            if (unit->getMaxHealth() > 0 && unit->getMaxHealth() < 100) {
+                                hitRadius = 0.5f;
+                                heightOffset = 0.3f;
+                            }
+                        }
+                        hitCenter = core::coords::canonicalToRender(glm::vec3(entity->getX(), entity->getY(), entity->getZ()));
+                        hitCenter.z += heightOffset;
+                    } else {
+                        hitRadius = std::max(hitRadius * 1.1f, 0.6f);
+                    }
+
+                    float hitT;
+                    if (raySphereIntersect(ray, hitCenter, hitRadius, hitT)) {
+                        if (hitT < closestT) {
+                            closestT = hitT;
+                            closestGuid = guid;
                         }
                     }
-                    hitCenter = core::coords::canonicalToRender(glm::vec3(entity->getX(), entity->getY(), entity->getZ()));
-                    hitCenter.z += heightOffset;
+                }
+
+                if (closestGuid != 0) {
+                    gameHandler.setTarget(closestGuid);
                 } else {
-                    hitRadius = std::max(hitRadius * 1.1f, 0.6f);
+                    // Clicked empty space — deselect current target
+                    gameHandler.clearTarget();
                 }
-
-                float hitT;
-                if (raySphereIntersect(ray, hitCenter, hitRadius, hitT)) {
-                    if (hitT < closestT) {
-                        closestT = hitT;
-                        closestGuid = guid;
-                    }
-                }
-            }
-
-            if (closestGuid != 0) {
-                gameHandler.setTarget(closestGuid);
-            } else {
-                // Clicked empty space — deselect current target
-                gameHandler.clearTarget();
             }
         }
     }

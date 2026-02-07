@@ -344,36 +344,38 @@ void CameraController::update(float deltaTime) {
                 }
             }
 
-            // Enforce collision while swimming too (horizontal only), so we don't
-            // pass through walls/props when underwater or at waterline.
+            // Enforce collision while swimming too (horizontal only), skip when stationary.
             {
                 glm::vec3 swimFrom = *followTarget;
                 glm::vec3 swimTo = targetPos;
                 float swimMoveDist = glm::length(swimTo - swimFrom);
-                int swimSteps = std::max(1, std::min(4, static_cast<int>(std::ceil(swimMoveDist / 0.5f))));
                 glm::vec3 stepPos = swimFrom;
-                glm::vec3 stepDelta = (swimTo - swimFrom) / static_cast<float>(swimSteps);
 
-                for (int i = 0; i < swimSteps; i++) {
-                    glm::vec3 candidate = stepPos + stepDelta;
+                if (swimMoveDist > 0.01f) {
+                    int swimSteps = std::max(1, std::min(2, static_cast<int>(std::ceil(swimMoveDist / 1.0f))));
+                    glm::vec3 stepDelta = (swimTo - swimFrom) / static_cast<float>(swimSteps);
 
-                    if (wmoRenderer) {
-                        glm::vec3 adjusted;
-                        if (wmoRenderer->checkWallCollision(stepPos, candidate, adjusted)) {
-                            candidate.x = adjusted.x;
-                            candidate.y = adjusted.y;
+                    for (int i = 0; i < swimSteps; i++) {
+                        glm::vec3 candidate = stepPos + stepDelta;
+
+                        if (wmoRenderer) {
+                            glm::vec3 adjusted;
+                            if (wmoRenderer->checkWallCollision(stepPos, candidate, adjusted)) {
+                                candidate.x = adjusted.x;
+                                candidate.y = adjusted.y;
+                            }
                         }
-                    }
 
-                    if (m2Renderer) {
-                        glm::vec3 adjusted;
-                        if (m2Renderer->checkCollision(stepPos, candidate, adjusted)) {
-                            candidate.x = adjusted.x;
-                            candidate.y = adjusted.y;
+                        if (m2Renderer) {
+                            glm::vec3 adjusted;
+                            if (m2Renderer->checkCollision(stepPos, candidate, adjusted)) {
+                                candidate.x = adjusted.x;
+                                candidate.y = adjusted.y;
+                            }
                         }
-                    }
 
-                    stepPos = candidate;
+                        stepPos = candidate;
+                    }
                 }
 
                 targetPos.x = stepPos.x;
@@ -411,39 +413,42 @@ void CameraController::update(float deltaTime) {
         }
 
         // Sweep collisions in small steps to reduce tunneling through thin walls/floors.
+        // Skip entirely when stationary to avoid wasting collision calls.
         {
             glm::vec3 startPos = *followTarget;
             glm::vec3 desiredPos = targetPos;
             float moveDist = glm::length(desiredPos - startPos);
-            // Adaptive CCD: larger step size to reduce collision call count.
-            int sweepSteps = std::max(1, std::min(4, static_cast<int>(std::ceil(moveDist / 0.50f))));
-            glm::vec3 stepPos = startPos;
-            glm::vec3 stepDelta = (desiredPos - startPos) / static_cast<float>(sweepSteps);
 
-            for (int i = 0; i < sweepSteps; i++) {
-                glm::vec3 candidate = stepPos + stepDelta;
+            if (moveDist > 0.01f) {
+                // Adaptive CCD: 1.0f step size, max 2 steps.
+                int sweepSteps = std::max(1, std::min(2, static_cast<int>(std::ceil(moveDist / 1.0f))));
+                glm::vec3 stepPos = startPos;
+                glm::vec3 stepDelta = (desiredPos - startPos) / static_cast<float>(sweepSteps);
 
-                if (wmoRenderer) {
-                    glm::vec3 adjusted;
-                    if (wmoRenderer->checkWallCollision(stepPos, candidate, adjusted)) {
-                        // Keep vertical motion from physics/grounding; only block horizontal wall penetration.
-                        candidate.x = adjusted.x;
-                        candidate.y = adjusted.y;
+                for (int i = 0; i < sweepSteps; i++) {
+                    glm::vec3 candidate = stepPos + stepDelta;
+
+                    if (wmoRenderer) {
+                        glm::vec3 adjusted;
+                        if (wmoRenderer->checkWallCollision(stepPos, candidate, adjusted)) {
+                            candidate.x = adjusted.x;
+                            candidate.y = adjusted.y;
+                        }
                     }
+
+                    if (m2Renderer) {
+                        glm::vec3 adjusted;
+                        if (m2Renderer->checkCollision(stepPos, candidate, adjusted)) {
+                            candidate.x = adjusted.x;
+                            candidate.y = adjusted.y;
+                        }
+                    }
+
+                    stepPos = candidate;
                 }
 
-                if (m2Renderer) {
-                    glm::vec3 adjusted;
-                    if (m2Renderer->checkCollision(stepPos, candidate, adjusted)) {
-                        candidate.x = adjusted.x;
-                        candidate.y = adjusted.y;
-                    }
-                }
-
-                stepPos = candidate;
+                targetPos = stepPos;
             }
-
-            targetPos = stepPos;
         }
 
         // WoW-style slope limiting (50 degrees, with sliding)
@@ -574,21 +579,29 @@ void CameraController::update(float deltaTime) {
                 return base;
             };
 
-            // Single center probe — extra probes are too expensive in WMO-heavy areas.
-            std::optional<float> groundH = sampleGround(targetPos.x, targetPos.y);
+            // Use cached floor height if player hasn't moved much horizontally.
+            float floorPosDist = glm::length(glm::vec2(targetPos.x, targetPos.y) - cachedFloorPos);
+            std::optional<float> groundH;
+            if (cachedFloorHeight && floorPosDist < 0.5f) {
+                groundH = cachedFloorHeight;
+            } else {
+                groundH = sampleGround(targetPos.x, targetPos.y);
+                cachedFloorHeight = groundH;
+                cachedFloorPos = glm::vec2(targetPos.x, targetPos.y);
+            }
 
             if (groundH) {
                 float groundDiff = *groundH - lastGroundZ;
                 if (groundDiff > 2.0f) {
                     // Landing on a higher ledge - snap up
                     lastGroundZ = *groundH;
-                } else if (groundDiff > -2.0f) {
-                    // Small height difference - smooth it
-                    lastGroundZ += groundDiff * std::min(1.0f, deltaTime * 15.0f);
+                } else {
+                    // Smooth toward detected ground. Use a slower rate for large
+                    // drops so multi-story buildings don't snap to the wrong floor,
+                    // but always converge so walking off a fountain works.
+                    float rate = (groundDiff > -2.0f) ? 15.0f : 6.0f;
+                    lastGroundZ += groundDiff * std::min(1.0f, deltaTime * rate);
                 }
-                // If groundDiff < -2.0f (floor much lower), ignore it - we're likely
-                // on an upper floor and detecting ground floor through a gap.
-                // Let gravity handle actual falls.
 
                 if (targetPos.z <= lastGroundZ + 0.1f && verticalVelocity <= 0.0f) {
                     targetPos.z = lastGroundZ;
@@ -638,40 +651,14 @@ void CameraController::update(float deltaTime) {
         // Find max safe distance using raycast + sphere radius
         collisionDistance = currentDistance;
 
-        // Helper to get floor height for camera collision.
-        // Use the player's ground level as reference to avoid locking the camera
-        // to upper floors in multi-story buildings.
-        auto getFloorAt = [&](float x, float y, float /*z*/) -> std::optional<float> {
-            std::optional<float> terrainH;
-            std::optional<float> wmoH;
+        // Camera collision: terrain-only floor clamping (skip expensive WMO raycasts).
+        // The camera may clip through WMO walls but won't go underground.
+        auto getTerrainFloorAt = [&](float x, float y) -> std::optional<float> {
             if (terrainManager) {
-                terrainH = terrainManager->getHeightAt(x, y);
+                return terrainManager->getHeightAt(x, y);
             }
-            if (wmoRenderer) {
-                wmoH = wmoRenderer->getFloorHeight(x, y, lastGroundZ + 2.5f);
-            }
-            return selectReachableFloor(terrainH, wmoH, lastGroundZ, 2.0f);
+            return std::nullopt;
         };
-
-        // Raycast against WMO bounding boxes
-        if (wmoRenderer && collisionDistance > MIN_DISTANCE) {
-            float wmoHit = wmoRenderer->raycastBoundingBoxes(pivot, camDir, collisionDistance);
-            if (wmoHit < collisionDistance) {
-                collisionDistance = std::max(MIN_DISTANCE, wmoHit - CAM_SPHERE_RADIUS - CAM_EPSILON);
-            }
-        }
-
-        // Intentionally ignore M2 doodads for camera collision to match WoW feel.
-
-        // Check floor collision at the camera's target position
-        {
-            glm::vec3 testPos = pivot + camDir * collisionDistance;
-            auto floorH = getFloorAt(testPos.x, testPos.y, testPos.z);
-
-            if (floorH && testPos.z < *floorH + CAM_SPHERE_RADIUS + CAM_EPSILON) {
-                collisionDistance = std::max(MIN_DISTANCE, collisionDistance - CAM_SPHERE_RADIUS);
-            }
-        }
 
         // Use collision distance (don't exceed user target)
         float actualDist = std::min(currentDistance, collisionDistance);
@@ -692,9 +679,9 @@ void CameraController::update(float deltaTime) {
         float camLerp = 1.0f - std::exp(-CAM_SMOOTH_SPEED * deltaTime);
         smoothedCamPos += (actualCam - smoothedCamPos) * camLerp;
 
-        // ===== Final floor clearance check =====
+        // ===== Final floor clearance check (terrain only) =====
         constexpr float MIN_FLOOR_CLEARANCE = 0.35f;
-        auto finalFloorH = getFloorAt(smoothedCamPos.x, smoothedCamPos.y, smoothedCamPos.z);
+        auto finalFloorH = getTerrainFloorAt(smoothedCamPos.x, smoothedCamPos.y);
         if (finalFloorH && smoothedCamPos.z < *finalFloorH + MIN_FLOOR_CLEARANCE) {
             smoothedCamPos.z = *finalFloorH + MIN_FLOOR_CLEARANCE;
         }
@@ -818,26 +805,28 @@ void CameraController::update(float deltaTime) {
             newPos.z += verticalVelocity * deltaTime;
         }
 
-        // Wall sweep collision before grounding (reduces tunneling at low FPS/high speed).
+        // Wall sweep collision before grounding (skip when stationary).
         if (wmoRenderer) {
             glm::vec3 startFeet = camera->getPosition() - glm::vec3(0, 0, eyeHeight);
             glm::vec3 desiredFeet = newPos - glm::vec3(0, 0, eyeHeight);
             float moveDist = glm::length(desiredFeet - startFeet);
-            // Adaptive CCD: larger step size to reduce collision call count.
-            int sweepSteps = std::max(1, std::min(4, static_cast<int>(std::ceil(moveDist / 0.50f))));
-            glm::vec3 stepPos = startFeet;
-            glm::vec3 stepDelta = (desiredFeet - startFeet) / static_cast<float>(sweepSteps);
 
-            for (int i = 0; i < sweepSteps; i++) {
-                glm::vec3 candidate = stepPos + stepDelta;
-                glm::vec3 adjusted;
-                if (wmoRenderer->checkWallCollision(stepPos, candidate, adjusted)) {
-                    candidate = adjusted;
+            if (moveDist > 0.01f) {
+                int sweepSteps = std::max(1, std::min(2, static_cast<int>(std::ceil(moveDist / 1.0f))));
+                glm::vec3 stepPos = startFeet;
+                glm::vec3 stepDelta = (desiredFeet - startFeet) / static_cast<float>(sweepSteps);
+
+                for (int i = 0; i < sweepSteps; i++) {
+                    glm::vec3 candidate = stepPos + stepDelta;
+                    glm::vec3 adjusted;
+                    if (wmoRenderer->checkWallCollision(stepPos, candidate, adjusted)) {
+                        candidate = adjusted;
+                    }
+                    stepPos = candidate;
                 }
-                stepPos = candidate;
-            }
 
-            newPos = stepPos + glm::vec3(0, 0, eyeHeight);
+                newPos = stepPos + glm::vec3(0, 0, eyeHeight);
+            }
         }
 
         // Ground to terrain or WMO floor
@@ -865,29 +854,17 @@ void CameraController::update(float deltaTime) {
                 return base;
             };
 
-            std::optional<float> groundH;
-            constexpr float FOOTPRINT = 0.4f;  // Larger footprint for better floor detection
-            const glm::vec2 offsets[] = {
-                {0.0f, 0.0f}, {FOOTPRINT, 0.0f}, {-FOOTPRINT, 0.0f}, {0.0f, FOOTPRINT}, {0.0f, -FOOTPRINT}
-            };
-            for (const auto& o : offsets) {
-                auto h = sampleGround(newPos.x + o.x, newPos.y + o.y);
-                if (h && (!groundH || *h > *groundH)) {
-                    groundH = h;
-                }
-            }
+            // Single center probe.
+            std::optional<float> groundH = sampleGround(newPos.x, newPos.y);
 
             if (groundH) {
                 float groundDiff = *groundH - lastGroundZ;
                 if (groundDiff > 2.0f) {
-                    // Landing on a higher ledge - snap up
                     lastGroundZ = *groundH;
-                } else if (groundDiff > -2.0f) {
-                    // Small difference - accept it
-                    lastGroundZ = *groundH;
+                } else {
+                    float rate = (groundDiff > -2.0f) ? 15.0f : 6.0f;
+                    lastGroundZ += groundDiff * std::min(1.0f, deltaTime * rate);
                 }
-                // If groundDiff < -2.0f (floor much lower), ignore it - we're likely
-                // on an upper floor and detecting ground floor through a gap.
 
                 float groundZ = lastGroundZ + eyeHeight;
                 if (newPos.z <= groundZ) {

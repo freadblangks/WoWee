@@ -2019,13 +2019,23 @@ float WMORenderer::raycastBoundingBoxes(const glm::vec3& origin, const glm::vec3
                 continue;
             }
 
-            // Narrow-phase: triangle raycast for accurate camera collision.
+            // Narrow-phase: triangle raycast using spatial grid.
             const auto& verts = group.collisionVertices;
             const auto& indices = group.collisionIndices;
-            for (size_t i = 0; i + 2 < indices.size(); i += 3) {
-                const glm::vec3& v0 = verts[indices[i]];
-                const glm::vec3& v1 = verts[indices[i + 1]];
-                const glm::vec3& v2 = verts[indices[i + 2]];
+
+            // Compute local-space ray endpoint and query grid for XY range
+            glm::vec3 localEnd = localOrigin + localDir * (closestHit / glm::length(
+                glm::vec3(instance.modelMatrix * glm::vec4(localDir, 0.0f))));
+            float rMinX = std::min(localOrigin.x, localEnd.x) - 1.0f;
+            float rMinY = std::min(localOrigin.y, localEnd.y) - 1.0f;
+            float rMaxX = std::max(localOrigin.x, localEnd.x) + 1.0f;
+            float rMaxY = std::max(localOrigin.y, localEnd.y) + 1.0f;
+            group.getTrianglesInRange(rMinX, rMinY, rMaxX, rMaxY, wallTriScratch);
+
+            for (uint32_t triStart : wallTriScratch) {
+                const glm::vec3& v0 = verts[indices[triStart]];
+                const glm::vec3& v1 = verts[indices[triStart + 1]];
+                const glm::vec3& v2 = verts[indices[triStart + 2]];
                 glm::vec3 triNormal = glm::cross(v1 - v0, v2 - v0);
                 float normalLenSq = glm::dot(triNormal, triNormal);
                 if (normalLenSq < 1e-8f) {

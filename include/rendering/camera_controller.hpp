@@ -4,6 +4,7 @@
 #include "core/input.hpp"
 #include <SDL2/SDL.h>
 #include <functional>
+#include <optional>
 
 namespace wowee {
 namespace rendering {
@@ -132,6 +133,10 @@ private:
     float coyoteTimer = 0.0f;       // Time since last grounded
     static constexpr float JUMP_BUFFER_TIME = 0.15f;  // 150ms input buffer
     static constexpr float COYOTE_TIME = 0.10f;        // 100ms grace after leaving ground
+
+    // Cached floor height between frames (skip expensive probes when barely moving)
+    std::optional<float> cachedFloorHeight;
+    glm::vec2 cachedFloorPos = glm::vec2(0.0f);
 
     // Cached isInsideWMO result (throttled to avoid per-frame cost)
     bool cachedInsideWMO = false;

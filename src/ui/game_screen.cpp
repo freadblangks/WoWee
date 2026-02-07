@@ -54,6 +54,10 @@ GameScreen::GameScreen() {
 }
 
 void GameScreen::render(game::GameHandler& gameHandler) {
+    // Apply UI transparency setting
+    float prevAlpha = ImGui::GetStyle().Alpha;
+    ImGui::GetStyle().Alpha = uiOpacity_;
+
     // Process targeting input before UI windows
     processTargetInput(gameHandler);
 
@@ -222,6 +226,9 @@ void GameScreen::render(game::GameHandler& gameHandler) {
             renderer->clearSelectionCircle();
         }
     }
+
+    // Restore previous alpha
+    ImGui::GetStyle().Alpha = prevAlpha;
 }
 
 void GameScreen::renderPlayerInfo(game::GameHandler& gameHandler) {
@@ -2612,6 +2619,7 @@ void GameScreen::renderSettingsWindow() {
                 }
             }
         }
+        pendingUiOpacity = static_cast<int>(uiOpacity_ * 100.0f + 0.5f);
         settingsInit = true;
     }
 
@@ -2678,7 +2686,18 @@ void GameScreen::renderSettingsWindow() {
         ImGui::Separator();
         ImGui::Spacing();
 
+        ImGui::Text("Interface");
+        ImGui::SliderInt("UI Opacity", &pendingUiOpacity, 20, 100, "%d%%");
+        if (ImGui::Button("Restore Interface Defaults", ImVec2(-1, 0))) {
+            pendingUiOpacity = 100;
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
         if (ImGui::Button("Apply", ImVec2(-1, 0))) {
+            uiOpacity_ = static_cast<float>(pendingUiOpacity) / 100.0f;
             window->setVsync(pendingVsync);
             window->setFullscreen(pendingFullscreen);
             window->applyResolution(kResolutions[pendingResIndex][0], kResolutions[pendingResIndex][1]);

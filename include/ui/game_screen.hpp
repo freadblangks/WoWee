@@ -75,6 +75,10 @@ private:
     int pendingSfxVolume = 100;
     float pendingMouseSensitivity = 0.2f;
     bool pendingInvertMouse = false;
+    int pendingUiOpacity = 100;
+
+    // UI element transparency (0.0 = fully transparent, 1.0 = fully opaque)
+    float uiOpacity_ = 1.0f;
 
     /**
      * Render player info window

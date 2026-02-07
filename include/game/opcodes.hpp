@@ -166,6 +166,8 @@ enum class Opcode : uint16_t {
     CMSG_USE_ITEM                    = 0x00AB,
     CMSG_AUTOEQUIP_ITEM              = 0x10A,
     SMSG_INVENTORY_CHANGE_FAILURE    = 0x112,
+    CMSG_INSPECT                     = 0x114,
+    SMSG_INSPECT_RESULTS             = 0x115,
 
     // ---- Death/Respawn ----
     CMSG_REPOP_REQUEST               = 0x015A,

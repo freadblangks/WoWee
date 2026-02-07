@@ -1174,6 +1174,13 @@ network::Packet SetActiveMoverPacket::build(uint64_t guid) {
     return packet;
 }
 
+network::Packet InspectPacket::build(uint64_t targetGuid) {
+    network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_INSPECT));
+    packet.writeUInt64(targetGuid);
+    LOG_DEBUG("Built CMSG_INSPECT: target=0x", std::hex, targetGuid, std::dec);
+    return packet;
+}
+
 network::Packet NameQueryPacket::build(uint64_t playerGuid) {
     network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_NAME_QUERY));
     packet.writeUInt64(playerGuid);

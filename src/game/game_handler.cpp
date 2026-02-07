@@ -1504,6 +1504,32 @@ std::shared_ptr<Entity> GameHandler::getTarget() const {
     return entityManager.getEntity(targetGuid);
 }
 
+void GameHandler::inspectTarget() {
+    if (state != WorldState::IN_WORLD || !socket) {
+        LOG_WARNING("Cannot inspect: not in world or not connected");
+        return;
+    }
+
+    if (targetGuid == 0) {
+        addSystemChatMessage("You must target a player to inspect.");
+        return;
+    }
+
+    auto target = getTarget();
+    if (!target || target->getType() != ObjectType::PLAYER) {
+        addSystemChatMessage("You can only inspect players.");
+        return;
+    }
+
+    auto packet = InspectPacket::build(targetGuid);
+    socket->send(packet);
+
+    auto player = std::static_pointer_cast<Player>(target);
+    std::string name = player->getName().empty() ? "Target" : player->getName();
+    addSystemChatMessage("Inspecting " + name + "...");
+    LOG_INFO("Sent inspect request for player: ", name, " (GUID: 0x", std::hex, targetGuid, std::dec, ")");
+}
+
 void GameHandler::releaseSpirit() {
     if (!playerDead_) return;
     if (socket && state == WorldState::IN_WORLD) {

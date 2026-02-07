@@ -202,6 +202,9 @@ public:
     bool hasTarget() const { return targetGuid != 0; }
     void tabTarget(float playerX, float playerY, float playerZ);
 
+    // Inspection
+    void inspectTarget();
+
     // ---- Phase 1: Name queries ----
     void queryPlayerName(uint64_t guid);
     void queryCreatureInfo(uint32_t entry, uint64_t guid);

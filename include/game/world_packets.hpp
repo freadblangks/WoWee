@@ -664,6 +664,12 @@ public:
     static network::Packet build(uint64_t guid);
 };
 
+/** CMSG_INSPECT packet builder */
+class InspectPacket {
+public:
+    static network::Packet build(uint64_t targetGuid);
+};
+
 /** CMSG_NAME_QUERY packet builder */
 class NameQueryPacket {
 public:

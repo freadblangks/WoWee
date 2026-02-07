@@ -76,7 +76,7 @@ void UIManager::shutdown() {
     LOG_INFO("UI manager shutdown");
 }
 
-void UIManager::update(float deltaTime) {
+void UIManager::update([[maybe_unused]] float deltaTime) {
     if (!imguiInitialized) return;
 
     // Start ImGui frame

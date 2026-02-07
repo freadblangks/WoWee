@@ -1552,11 +1552,6 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
         glm::vec3 localFrom = glm::vec3(instance.invModelMatrix * glm::vec4(from, 1.0f));
         glm::vec3 localTo = glm::vec3(instance.invModelMatrix * glm::vec4(to, 1.0f));
         float localFeetZ = localTo.z;
-        // Use a tiny Z threshold so ramp-side logic still triggers with
-        // smoothed ground snapping and small per-step vertical deltas.
-        bool steppingUp = (localTo.z > localFrom.z + 0.005f);
-        bool steppingDown = (localTo.z < localFrom.z - 0.005f);
-
         for (const auto& group : model.groups) {
             // Quick bounding box check
             float margin = PLAYER_RADIUS + 2.0f;
@@ -1592,7 +1587,6 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
                 float fromDist = glm::dot(localFrom - v0, normal);
                 float toDist = glm::dot(localTo - v0, normal);
                 bool towardWallMotion = (std::abs(toDist) + 1e-4f < std::abs(fromDist));
-                bool awayFromWallMotion = !towardWallMotion;
 
                 // Only collide with walls in player's vertical range
                 if (triMaxZ < localFeetZ + 0.3f) continue;

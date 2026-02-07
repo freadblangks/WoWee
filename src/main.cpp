@@ -2,7 +2,7 @@
 #include "core/logger.hpp"
 #include <exception>
 
-int main(int argc, char* argv[]) {
+int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
     try {
         wowee::core::Logger::getInstance().setLogLevel(wowee::core::LogLevel::DEBUG);
         LOG_INFO("=== Wowee Native Client ===");

@@ -46,29 +46,6 @@
 namespace wowee {
 namespace core {
 
-namespace {
-
-const SpawnPreset* selectSpawnPreset(const char* envValue) {
-    // Return nullptr if no preset specified - use saved character position
-    if (!envValue || !*envValue) {
-        return nullptr;
-    }
-
-    std::string key = envValue;
-    std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-
-    for (int i = 0; i < SPAWN_PRESET_COUNT; i++) {
-        if (key == SPAWN_PRESETS[i].key) return &SPAWN_PRESETS[i];
-    }
-
-    LOG_WARNING("Unknown WOW_SPAWN='", key, "', falling back to goldshire");
-    LOG_INFO("Available WOW_SPAWN presets: goldshire, stormwind, sw_plaza, ironforge, westfall");
-    return &SPAWN_PRESETS[0];
-}
-
-} // namespace
 
 const char* Application::mapIdToName(uint32_t mapId) {
     switch (mapId) {
@@ -84,37 +61,6 @@ std::string Application::getPlayerModelPath() const {
     return game::getPlayerModelPath(playerRace_, playerGender_);
 }
 
-namespace {
-
-std::optional<glm::vec3> parseVec3Csv(const char* raw) {
-    if (!raw || !*raw) return std::nullopt;
-    std::stringstream ss(raw);
-    std::string part;
-    float vals[3];
-    for (int i = 0; i < 3; i++) {
-        if (!std::getline(ss, part, ',')) return std::nullopt;
-        try {
-            vals[i] = std::stof(part);
-        } catch (...) {
-            return std::nullopt;
-        }
-    }
-    return glm::vec3(vals[0], vals[1], vals[2]);
-}
-
-std::optional<std::pair<float, float>> parseYawPitchCsv(const char* raw) {
-    if (!raw || !*raw) return std::nullopt;
-    std::stringstream ss(raw);
-    std::string part;
-    float yaw = 0.0f, pitch = 0.0f;
-    if (!std::getline(ss, part, ',')) return std::nullopt;
-    try { yaw = std::stof(part); } catch (...) { return std::nullopt; }
-    if (!std::getline(ss, part, ',')) return std::nullopt;
-    try { pitch = std::stof(part); } catch (...) { return std::nullopt; }
-    return std::make_pair(yaw, pitch);
-}
-
-} // namespace
 
 Application* Application::instance = nullptr;
 

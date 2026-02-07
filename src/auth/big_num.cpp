@@ -125,7 +125,7 @@ std::vector<uint8_t> BigNum::toArray(bool littleEndian, int minSize) const {
     }
 
     std::vector<uint8_t> bytes(size, 0);
-    int actualSize = BN_bn2bin(bn, bytes.data() + (size - BN_num_bytes(bn)));
+    [[maybe_unused]] int actualSize = BN_bn2bin(bn, bytes.data() + (size - BN_num_bytes(bn)));
 
     if (littleEndian) {
         std::reverse(bytes.begin(), bytes.end());

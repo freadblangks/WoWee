@@ -169,7 +169,7 @@ ChunkMesh TerrainMeshGenerator::generateChunkMesh(const MapChunk& chunk, int chu
     return mesh;
 }
 
-std::vector<TerrainVertex> TerrainMeshGenerator::generateVertices(const MapChunk& chunk, int chunkX, int chunkY, int tileX, int tileY) {
+std::vector<TerrainVertex> TerrainMeshGenerator::generateVertices(const MapChunk& chunk, [[maybe_unused]] int chunkX, [[maybe_unused]] int chunkY, [[maybe_unused]] int tileX, [[maybe_unused]] int tileY) {
     std::vector<TerrainVertex> vertices;
     vertices.reserve(145);  // 145 vertices total
 

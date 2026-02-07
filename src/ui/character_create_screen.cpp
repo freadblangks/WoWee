@@ -369,7 +369,6 @@ void CharacterCreateScreen::render(game::GameHandler& /*gameHandler*/) {
 
     // Appearance sliders
     updateAppearanceRanges();
-    game::Race currentRace = allRaces[raceIndex];
     game::Gender currentGender = static_cast<game::Gender>(genderIndex);
 
     ImGui::Text("Appearance");

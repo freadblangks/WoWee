@@ -1834,10 +1834,6 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
         for (const auto& member : partyData.members) {
             ImGui::PushID(static_cast<int>(member.guid));
 
-            ImVec4 nameColor = member.isOnline ?
-                ImVec4(0.3f, 0.8f, 1.0f, 1.0f) :
-                ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
-
             // Clickable name to target
             if (ImGui::Selectable(member.name.c_str(), gameHandler.getTargetGuid() == member.guid)) {
                 gameHandler.setTarget(member.guid);

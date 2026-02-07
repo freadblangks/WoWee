@@ -484,18 +484,69 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 uint8_t error = packet.readUInt8();
                 if (error != 0) {
                     LOG_WARNING("SMSG_INVENTORY_CHANGE_FAILURE: error=", (int)error);
-                    // Common error codes
-                    std::string msg;
+                    // InventoryResult enum (AzerothCore 3.3.5a)
+                    const char* errMsg = nullptr;
                     switch (error) {
-                        case 1: msg = "Item slots occupied."; break;
-                        case 4: msg = "Item doesn't go there."; break;
-                        case 5: msg = "Bag is full."; break;
-                        case 14: msg = "Can't equip that."; break;
-                        case 23: msg = "Can't equip with two-handed weapon."; break;
-                        case 26: msg = "Inventory full."; break;
-                        case 29: msg = "Item is locked."; break;
-                        default: msg = "Inventory error (" + std::to_string(error) + ")."; break;
+                        case 1:  errMsg = "You must reach level %d to use that item."; break;
+                        case 2:  errMsg = "You don't have the required skill."; break;
+                        case 3:  errMsg = "That item doesn't go in that slot."; break;
+                        case 4:  errMsg = "That bag is full."; break;
+                        case 5:  errMsg = "Can't put bags in bags."; break;
+                        case 6:  errMsg = "Can't trade equipped bags."; break;
+                        case 7:  errMsg = "That slot only holds ammo."; break;
+                        case 8:  errMsg = "You can't use that item."; break;
+                        case 9:  errMsg = "No equipment slot available."; break;
+                        case 10: errMsg = "You can never use that item."; break;
+                        case 11: errMsg = "You can never use that item."; break;
+                        case 12: errMsg = "No equipment slot available."; break;
+                        case 13: errMsg = "Can't equip with a two-handed weapon."; break;
+                        case 14: errMsg = "Can't dual-wield."; break;
+                        case 15: errMsg = "That item doesn't go in that bag."; break;
+                        case 16: errMsg = "That item doesn't go in that bag."; break;
+                        case 17: errMsg = "You can't carry any more of those."; break;
+                        case 18: errMsg = "No equipment slot available."; break;
+                        case 19: errMsg = "Can't stack those items."; break;
+                        case 20: errMsg = "That item can't be equipped."; break;
+                        case 21: errMsg = "Can't swap items."; break;
+                        case 22: errMsg = "That slot is empty."; break;
+                        case 23: errMsg = "Item not found."; break;
+                        case 24: errMsg = "Can't drop soulbound items."; break;
+                        case 25: errMsg = "Out of range."; break;
+                        case 26: errMsg = "Need to split more than 1."; break;
+                        case 27: errMsg = "Split failed."; break;
+                        case 28: errMsg = "Not enough reagents."; break;
+                        case 29: errMsg = "Not enough money."; break;
+                        case 30: errMsg = "Not a bag."; break;
+                        case 31: errMsg = "Can't destroy non-empty bag."; break;
+                        case 32: errMsg = "You don't own that item."; break;
+                        case 33: errMsg = "You can only have one quiver."; break;
+                        case 34: errMsg = "No free bank slots."; break;
+                        case 35: errMsg = "No bank here."; break;
+                        case 36: errMsg = "Item is locked."; break;
+                        case 37: errMsg = "You are stunned."; break;
+                        case 38: errMsg = "You are dead."; break;
+                        case 39: errMsg = "Can't do that right now."; break;
+                        case 40: errMsg = "Internal bag error."; break;
+                        case 49: errMsg = "Loot is gone."; break;
+                        case 50: errMsg = "Inventory is full."; break;
+                        case 51: errMsg = "Bank is full."; break;
+                        case 52: errMsg = "That item is sold out."; break;
+                        case 58: errMsg = "That object is busy."; break;
+                        case 60: errMsg = "Can't do that in combat."; break;
+                        case 61: errMsg = "Can't do that while disarmed."; break;
+                        case 63: errMsg = "Requires a higher rank."; break;
+                        case 64: errMsg = "Requires higher reputation."; break;
+                        case 67: errMsg = "That item is unique-equipped."; break;
+                        case 69: errMsg = "Not enough honor points."; break;
+                        case 70: errMsg = "Not enough arena points."; break;
+                        case 77: errMsg = "Too much gold."; break;
+                        case 78: errMsg = "Can't do that during arena match."; break;
+                        case 80: errMsg = "Requires a personal arena rating."; break;
+                        case 87: errMsg = "Requires a higher level."; break;
+                        case 88: errMsg = "Requires the right talent."; break;
+                        default: break;
                     }
+                    std::string msg = errMsg ? errMsg : "Inventory error (" + std::to_string(error) + ").";
                     addSystemChatMessage(msg);
                 }
             }

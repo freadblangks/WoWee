@@ -144,6 +144,11 @@ public:
     bool loadTile(int x, int y);
 
     /**
+     * Enqueue a tile for async loading (returns false if previously failed).
+     */
+    bool enqueueTile(int x, int y);
+
+    /**
      * Unload a tile
      * @param x Tile X coordinate
      * @param y Tile Y coordinate

@@ -194,6 +194,27 @@ bool TerrainManager::loadTile(int x, int y) {
     return true;
 }
 
+bool TerrainManager::enqueueTile(int x, int y) {
+    TileCoord coord = {x, y};
+    if (loadedTiles.find(coord) != loadedTiles.end()) {
+        return true;
+    }
+    if (pendingTiles.find(coord) != pendingTiles.end()) {
+        return true;
+    }
+    if (failedTiles.find(coord) != failedTiles.end()) {
+        return false;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        loadQueue.push(coord);
+        pendingTiles[coord] = true;
+    }
+    queueCV.notify_all();
+    return true;
+}
+
 std::unique_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
     TileCoord coord = {x, y};
 

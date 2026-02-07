@@ -3120,6 +3120,19 @@ void GameHandler::handleItemQueryResponse(network::Packet& packet) {
     }
 }
 
+uint64_t GameHandler::resolveOnlineItemGuid(uint32_t itemId) const {
+    if (itemId == 0) return 0;
+    uint64_t found = 0;
+    for (const auto& [guid, info] : onlineItems_) {
+        if (info.entry != itemId) continue;
+        if (found != 0) {
+            return 0; // Ambiguous
+        }
+        found = guid;
+    }
+    return found;
+}
+
 void GameHandler::detectInventorySlotBases(const std::map<uint16_t, uint32_t>& fields) {
     if (invSlotBase_ >= 0 && packSlotBase_ >= 0) return;
     if (onlineItems_.empty() || fields.empty()) return;
@@ -3215,6 +3228,31 @@ void GameHandler::rebuildOnlineInventory() {
             def.name = "Item " + std::to_string(def.itemId);
             queryItemInfo(def.itemId, guid);
         }
+        if (def.itemId != 0) {
+            auto& db = getSinglePlayerLootDb();
+            auto itTpl = db.itemTemplates.find(def.itemId);
+            if (itTpl != db.itemTemplates.end()) {
+                if (def.name.empty() || def.name.rfind("Item ", 0) == 0) def.name = itTpl->second.name;
+                if (def.quality == ItemQuality::COMMON && itTpl->second.quality != 0) {
+                    def.quality = static_cast<ItemQuality>(itTpl->second.quality);
+                }
+                if (def.inventoryType == 0 && itTpl->second.inventoryType != 0) {
+                    def.inventoryType = itTpl->second.inventoryType;
+                }
+                if (def.maxStack <= 1 && itTpl->second.maxStack > 1) {
+                    def.maxStack = static_cast<uint32_t>(itTpl->second.maxStack);
+                }
+                if (def.displayInfoId == 0 && itTpl->second.displayId != 0) {
+                    def.displayInfoId = itTpl->second.displayId;
+                }
+                if (def.armor == 0 && itTpl->second.armor > 0) def.armor = itTpl->second.armor;
+                if (def.stamina == 0 && itTpl->second.stamina > 0) def.stamina = itTpl->second.stamina;
+                if (def.strength == 0 && itTpl->second.strength > 0) def.strength = itTpl->second.strength;
+                if (def.agility == 0 && itTpl->second.agility > 0) def.agility = itTpl->second.agility;
+                if (def.intellect == 0 && itTpl->second.intellect > 0) def.intellect = itTpl->second.intellect;
+                if (def.spirit == 0 && itTpl->second.spirit > 0) def.spirit = itTpl->second.spirit;
+            }
+        }
 
         inventory.setEquipSlot(static_cast<EquipSlot>(i), def);
     }
@@ -3249,6 +3287,31 @@ void GameHandler::rebuildOnlineInventory() {
         } else {
             def.name = "Item " + std::to_string(def.itemId);
             queryItemInfo(def.itemId, guid);
+        }
+        if (def.itemId != 0) {
+            auto& db = getSinglePlayerLootDb();
+            auto itTpl = db.itemTemplates.find(def.itemId);
+            if (itTpl != db.itemTemplates.end()) {
+                if (def.name.empty() || def.name.rfind("Item ", 0) == 0) def.name = itTpl->second.name;
+                if (def.quality == ItemQuality::COMMON && itTpl->second.quality != 0) {
+                    def.quality = static_cast<ItemQuality>(itTpl->second.quality);
+                }
+                if (def.inventoryType == 0 && itTpl->second.inventoryType != 0) {
+                    def.inventoryType = itTpl->second.inventoryType;
+                }
+                if (def.maxStack <= 1 && itTpl->second.maxStack > 1) {
+                    def.maxStack = static_cast<uint32_t>(itTpl->second.maxStack);
+                }
+                if (def.displayInfoId == 0 && itTpl->second.displayId != 0) {
+                    def.displayInfoId = itTpl->second.displayId;
+                }
+                if (def.armor == 0 && itTpl->second.armor > 0) def.armor = itTpl->second.armor;
+                if (def.stamina == 0 && itTpl->second.stamina > 0) def.stamina = itTpl->second.stamina;
+                if (def.strength == 0 && itTpl->second.strength > 0) def.strength = itTpl->second.strength;
+                if (def.agility == 0 && itTpl->second.agility > 0) def.agility = itTpl->second.agility;
+                if (def.intellect == 0 && itTpl->second.intellect > 0) def.intellect = itTpl->second.intellect;
+                if (def.spirit == 0 && itTpl->second.spirit > 0) def.spirit = itTpl->second.spirit;
+            }
         }
 
         inventory.setBackpackSlot(i, def);
@@ -3846,6 +3909,9 @@ void GameHandler::lootItem(uint8_t slotIndex) {
 void GameHandler::closeLoot() {
     if (!lootWindowOpen) return;
     lootWindowOpen = false;
+    if (currentLoot.lootGuid != 0 && targetGuid == currentLoot.lootGuid) {
+        clearTarget();
+    }
     if (singlePlayerMode_ && currentLoot.lootGuid != 0) {
         auto st = localLootState_.find(currentLoot.lootGuid);
         if (st != localLootState_.end()) {
@@ -3987,8 +4053,13 @@ void GameHandler::sellItemBySlot(int backpackIndex) {
         notifyInventoryChanged();
     } else {
         uint64_t itemGuid = backpackSlotGuids_[backpackIndex];
+        if (itemGuid == 0) {
+            itemGuid = resolveOnlineItemGuid(slot.item.itemId);
+        }
         if (itemGuid != 0 && currentVendorItems.vendorGuid != 0) {
             sellItem(currentVendorItems.vendorGuid, itemGuid, 1);
+        } else if (itemGuid == 0) {
+            LOG_WARNING("Sell failed: missing item GUID for slot ", backpackIndex);
         }
     }
 }
@@ -4004,9 +4075,14 @@ void GameHandler::autoEquipItemBySlot(int backpackIndex) {
     }
 
     uint64_t itemGuid = backpackSlotGuids_[backpackIndex];
+    if (itemGuid == 0) {
+        itemGuid = resolveOnlineItemGuid(slot.item.itemId);
+    }
     if (itemGuid != 0 && state == WorldState::IN_WORLD && socket) {
         auto packet = AutoEquipItemPacket::build(itemGuid);
         socket->send(packet);
+    } else if (itemGuid == 0) {
+        LOG_WARNING("Auto-equip failed: missing item GUID for slot ", backpackIndex);
     }
 }
 
@@ -4021,9 +4097,14 @@ void GameHandler::useItemBySlot(int backpackIndex) {
     }
 
     uint64_t itemGuid = backpackSlotGuids_[backpackIndex];
+    if (itemGuid == 0) {
+        itemGuid = resolveOnlineItemGuid(slot.item.itemId);
+    }
     if (itemGuid != 0 && state == WorldState::IN_WORLD && socket) {
         auto packet = UseItemPacket::build(0xFF, static_cast<uint8_t>(backpackIndex), itemGuid);
         socket->send(packet);
+    } else if (itemGuid == 0) {
+        LOG_WARNING("Use item failed: missing item GUID for slot ", backpackIndex);
     }
 }
 

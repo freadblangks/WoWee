@@ -474,6 +474,7 @@ private:
     void rebuildOnlineInventory();
     void detectInventorySlotBases(const std::map<uint16_t, uint32_t>& fields);
     bool applyInventoryFields(const std::map<uint16_t, uint32_t>& fields);
+    uint64_t resolveOnlineItemGuid(uint32_t itemId) const;
 
     // ---- Phase 2 handlers ----
     void handleAttackStart(network::Packet& packet);

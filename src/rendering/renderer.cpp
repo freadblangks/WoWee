@@ -661,7 +661,7 @@ void Renderer::updateCharacterAnimation() {
             } else if (anyStrafeRight) {
                 animId = pickFirstAvailable({ANIM_STRAFE_WALK_RIGHT, ANIM_STRAFE_RUN_RIGHT}, ANIM_WALK);
             } else {
-                animId = ANIM_WALK;
+                animId = pickFirstAvailable({ANIM_WALK, ANIM_RUN}, ANIM_STAND);
             }
             loop = true;
             break;
@@ -673,7 +673,7 @@ void Renderer::updateCharacterAnimation() {
             } else if (anyStrafeRight) {
                 animId = pickFirstAvailable({ANIM_STRAFE_RUN_RIGHT}, ANIM_RUN);
             } else {
-                animId = ANIM_RUN;
+                animId = pickFirstAvailable({ANIM_RUN, ANIM_WALK}, ANIM_STAND);
             }
             loop = true;
             break;
@@ -1622,11 +1622,11 @@ bool Renderer::loadTestTerrain(pipeline::AssetManager* assetManager, const std::
         }
     }
 
-    LOG_INFO("Loading initial tile [", tileX, ",", tileY, "] via terrain manager");
+    LOG_INFO("Enqueuing initial tile [", tileX, ",", tileY, "] via terrain manager");
 
-    // Load the initial tile through TerrainManager (properly tracked for streaming)
-    if (!terrainManager->loadTile(tileX, tileY)) {
-        LOG_ERROR("Failed to load initial tile [", tileX, ",", tileY, "]");
+    // Enqueue the initial tile for async loading (avoids long sync stalls)
+    if (!terrainManager->enqueueTile(tileX, tileY)) {
+        LOG_ERROR("Failed to enqueue initial tile [", tileX, ",", tileY, "]");
         return false;
     }
 

@@ -1051,12 +1051,14 @@ void CameraController::reset() {
         if (terrainManager) {
             terrainH = terrainManager->getHeightAt(x, y);
         }
-        float floorProbeZ = terrainH.value_or(refZ);
+        // Probe from the highest of terrain, refZ (server position), and defaultPosition.z
+        // so we don't miss WMO floors above terrain (e.g. Stormwind city surface).
+        float floorProbeZ = std::max(terrainH.value_or(refZ), refZ);
         if (wmoRenderer) {
-            wmoH = wmoRenderer->getFloorHeight(x, y, floorProbeZ + 2.0f);
+            wmoH = wmoRenderer->getFloorHeight(x, y, floorProbeZ + 4.0f);
         }
         if (m2Renderer) {
-            m2H = m2Renderer->getFloorHeight(x, y, floorProbeZ + 2.0f);
+            m2H = m2Renderer->getFloorHeight(x, y, floorProbeZ + 4.0f);
         }
         auto h = selectReachableFloor(terrainH, wmoH, refZ, 16.0f);
         if (!h) {
@@ -1176,6 +1178,10 @@ void CameraController::reset() {
         spawnPos = bestPos;
         lastGroundZ = spawnPos.z - 0.05f;
     }
+
+    // Invalidate inter-frame floor cache so the first frame probes fresh.
+    cachedFloorHeight.reset();
+    cachedFloorPos = glm::vec2(0.0f);
 
     camera->setRotation(yaw, pitch);
     glm::vec3 forward3D = camera->getForward();

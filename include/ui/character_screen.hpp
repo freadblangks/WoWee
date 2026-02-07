@@ -64,7 +64,7 @@ private:
     std::function<void()> onCreateCharacter;
     std::function<void()> onBack;
     std::function<void(uint64_t)> onDeleteCharacter;
-    bool confirmDelete = false;
+    int deleteConfirmStage = 0;  // 0=none, 1=first warning, 2=final warning
 
     /**
      * Get faction color based on race

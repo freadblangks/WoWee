@@ -2,192 +2,253 @@
 
 ## Current Status
 
-The native wowee client foundation is **complete and functional**! The application successfully:
+Wowee is a **fully functional native C++ World of Warcraft 3.3.5a client**! The application includes:
 
-✅ Opens a native Linux window (1920x1080)
-✅ Creates an OpenGL 3.3+ rendering context
-✅ Initializes SDL2 for window management and input
-✅ Sets up ImGui for UI rendering (ready to use)
-✅ Implements a complete application lifecycle
+✅ Complete SRP6a authentication system
+✅ Character creation and selection
+✅ Full 3D rendering engine (terrain, water, sky, characters, buildings, particles)
+✅ Online multiplayer gameplay (movement, combat, spells, inventory, quests)
+✅ Offline single-player mode
+✅ Comprehensive UI system (action bar, spellbook, inventory, quest log, chat)
+✅ Asset pipeline for all WoW formats (MPQ, BLP, M2, ADT, WMO, DBC)
 
-## What Works Right Now
+## Quick Start
+
+### Prerequisites
+
+Ensure you have all dependencies installed (see main README.md for details).
+
+### Build & Run
 
 ```bash
-# Build the project
-cd wowee/build
+# Clone the repository
+git clone https://github.com/yourname/wowee.git
+cd wowee
+
+# Get ImGui (required)
+git clone https://github.com/ocornut/imgui.git extern/imgui
+
+# Set up game data (see "Game Data" section in README.md)
+# Either symlink Data/ directory or set WOW_DATA_PATH environment variable
+
+# Build
+mkdir build && cd build
 cmake ..
 make -j$(nproc)
 
-# Run the application
+# Run
 ./bin/wowee
 ```
 
-The application will:
-- Open a window with SDL2
-- Initialize OpenGL 3.3+ with GLEW
-- Set up the rendering pipeline
-- Run the main game loop
-- Handle input and events
-- Close cleanly on window close or Escape key
+## What Works Right Now
 
-## What You See
+### Authentication & Character Selection
+- Login with username and password
+- Realm selection with population info
+- Character list with 3D preview
+- Character creation (all races and classes)
+- Enter world seamlessly
 
-Currently, the window displays a blue gradient background (clear color: 0.2, 0.3, 0.5). This is the base rendering loop working correctly.
+### In-Game Gameplay
+- **Movement**: WASD movement with camera orbit
+- **Combat**: Auto-attack, spell casting, damage calculation
+- **Targeting**: Click-to-target, tab-cycling, faction-based hostility
+- **Inventory**: Full equipment and backpack system with drag-drop
+- **Spells**: Spellbook organized by class specialties, drag-drop to action bar
+- **Quests**: Quest markers on NPCs and minimap, quest log, quest details, turn-in
+- **Vendors**: Buy and sell items with gold tracking
+- **Loot**: Loot window for items and gold
+- **Chat**: Send and receive chat messages (SAY, YELL, WHISPER)
+- **NPCs**: Gossip interactions, animations
 
-## Next Steps
+### Rendering
+- Multi-tile terrain streaming with async loading
+- Animated water with reflections and refractions
+- Dynamic day/night cycle with sun and moon
+- Procedural star field (1000+ stars)
+- Volumetric clouds with FBM noise
+- Weather effects (rain and snow)
+- Skeletal character animations (256 bones, GPU skinning)
+- Building rendering (WMO) with frustum culling
+- M2 particle emitters
+- Post-processing (HDR, tonemapping, shadow mapping)
 
-The foundation is in place. Here's what needs implementation next (in recommended order):
+### Single-Player Mode
+- Play offline without a server connection
+- Local character persistence
+- Simulated combat and XP
+- Settings persistence
 
-### 1. Authentication System (High Priority)
-**Files:** `src/auth/srp.cpp`, `src/auth/auth_handler.cpp`
-**Goal:** Implement SRP6a authentication protocol
+## Common Tasks
 
-Reference the original wowee implementation:
-- `/wowee/src/lib/auth/handler.js` - Auth packet flow
-- `/wowee/src/lib/crypto/srp.js` - SRP implementation
+### Connecting to a Server
 
-Key tasks:
-- Implement `LOGON_CHALLENGE` packet
-- Implement `LOGON_PROOF` packet
-- Port SHA1 and big integer math (already have OpenSSL)
+1. Launch wowee: `./bin/wowee`
+2. Enter your username and password
+3. Enter the auth server address (default: `localhost`)
+4. Click "Login"
+5. Select your realm from the list
+6. Select or create a character
+7. Click "Enter World"
 
-### 2. Network Protocol (High Priority)
-**Files:** `src/game/game_handler.cpp`, `src/game/opcodes.hpp`
-**Goal:** Implement World of Warcraft 3.3.5a packet protocol
+### Single-Player Mode
 
-Reference:
-- `/wowee/src/lib/game/handler.js` - Packet handlers
-- `/wowee/src/lib/game/opcode.js` - Opcode definitions
-- [WoWDev Wiki](https://wowdev.wiki/) - Protocol documentation
+1. Launch wowee
+2. Click "Single Player" on the auth screen
+3. Create or select a character
+4. Play offline without a server connection
 
-Key packets to implement:
-- `SMSG_AUTH_CHALLENGE` / `CMSG_AUTH_SESSION`
-- `CMSG_CHAR_ENUM` / `SMSG_CHAR_ENUM`
-- `CMSG_PLAYER_LOGIN`
-- Movement packets (CMSG_MOVE_*)
+### Playing the Game
 
-### 3. Asset Pipeline (Medium Priority)
-**Files:** `src/pipeline/*.cpp`
-**Goal:** Load and parse WoW game assets
+**Movement**:
+- WASD to move
+- Mouse to look around / orbit camera
+- Shift for sprint
 
-Formats to implement:
-- **BLP** (`blp_loader.cpp`) - Texture format
-- **M2** (`m2_loader.cpp`) - Character/creature models
-- **ADT** (`adt_loader.cpp`) - Terrain chunks
-- **WMO** (`wmo_loader.cpp`) - World map objects (buildings)
-- **DBC** (`dbc_loader.cpp`) - Game databases
+**Combat**:
+- Left-click to target enemies
+- Tab to cycle targets
+- 1-9, 0, -, = to use action bar abilities
+- Drag spells from spellbook (P) to action bar
 
-Resources:
-- [WoWDev Wiki - File Formats](https://wowdev.wiki/)
-- Original parsers in `/wowee/src/lib/pipeline/`
-- StormLib is already linked for MPQ archive reading
+**Inventory**:
+- Press I to open inventory
+- Drag items to equipment slots to equip
+- Drag items to vendors to sell
+- Drag items to action bar to use
 
-### 4. Terrain Rendering (Medium Priority)
-**Files:** `src/rendering/renderer.cpp`, `src/game/world.cpp`
-**Goal:** Render game world terrain
+**Quests**:
+- Click NPCs with ! marker to get quests
+- Press L to view quest log
+- Click NPCs with ? marker to turn in quests
+- Quest markers appear on minimap
 
-Tasks:
-- Load ADT terrain chunks
-- Parse height maps and texture layers
-- Create OpenGL meshes from terrain data
-- Implement chunk streaming based on camera position
-- Add frustum culling
+**Chat**:
+- Press Enter to open chat
+- Type message and press Enter to send
+- Chat commands: /say, /yell, /whisper [name]
 
-Shaders are ready at `assets/shaders/basic.vert` and `basic.frag`.
+### Development & Debugging
 
-### 5. Character Rendering (Low Priority)
-**Files:** `src/rendering/renderer.cpp`
-**Goal:** Render player and NPC models
+**Performance Monitoring**:
+- Press F1 to toggle performance HUD
+- Shows FPS, draw calls, triangle count, GPU usage
 
-Tasks:
-- Load M2 model format
-- Implement skeletal animation system
-- Parse animation tracks
-- Implement vertex skinning in shaders
-- Render character equipment
+**Rendering Debug**:
+- F2: Toggle wireframe mode
+- F9: Toggle time progression
+- F10: Toggle sun/moon
+- F11: Toggle stars
+- +/-: Manual time control
+- C: Toggle clouds
+- L: Toggle lens flare
+- W: Cycle weather
 
-### 6. UI Screens (Low Priority)
-**Files:** `src/ui/*.cpp`
-**Goal:** Create game UI with ImGui
+**Settings**:
+- Settings window available in-game
+- Adjust UI opacity
+- Configure graphics options
 
-Screens to implement:
-- Authentication screen (username/password input)
-- Realm selection screen
-- Character selection screen
-- In-game UI (chat, action bars, character panel)
+### Advanced Configuration
 
-ImGui is already initialized and ready to use!
+**Environment Variables**:
+```bash
+# Set custom WoW data path
+export WOW_DATA_PATH="/path/to/WoW-3.3.5a/Data"
 
-## Development Tips
-
-### Adding New Features
-
-1. **Window/Input:** Use `window->getSDLWindow()` and `Input::getInstance()`
-2. **Rendering:** Add render calls in `Application::render()`
-3. **Game Logic:** Add updates in `Application::update(float deltaTime)`
-4. **UI:** Use ImGui in `UIManager::render()`
-
-### Debugging
-
-```cpp
-#include "core/logger.hpp"
-
-LOG_DEBUG("Debug message");
-LOG_INFO("Info message");
-LOG_WARNING("Warning message");
-LOG_ERROR("Error message");
+# Run with custom data path
+WOW_DATA_PATH="/path/to/data" ./bin/wowee
 ```
 
-### State Management
+**Server Configuration**:
+Edit auth server address in the login screen or configure default in Application settings.
 
-The application uses state machine pattern:
-```cpp
-AppState::AUTHENTICATION     // Login screen
-AppState::REALM_SELECTION    // Choose server
-AppState::CHARACTER_SELECTION // Choose character
-AppState::IN_GAME           // Playing the game
-AppState::DISCONNECTED      // Connection lost
-```
+## Troubleshooting
 
-Change state with:
-```cpp
-Application::getInstance().setState(AppState::IN_GAME);
-```
+### Connection Issues
 
-## Testing Without a Server
+**Problem**: Cannot connect to authentication server
+- Check that the auth server is running and reachable
+- Verify the server address and port (default: 3724)
+- Check firewall settings
 
-For development, you can:
+**Problem**: Disconnected during gameplay
+- Network timeout or unstable connection
+- Check server logs for errors
+- Application will return to authentication screen
 
-1. **Mock authentication** - Skip SRP and go straight to realm selection
-2. **Load local assets** - Test terrain/model rendering without network
-3. **Stub packet handlers** - Return fake data for testing UI
+### Rendering Issues
 
-## Performance Notes
+**Problem**: Low FPS or stuttering
+- Press F1 to check performance stats
+- Reduce graphics settings in settings window
+- Check GPU driver version
 
-Current configuration:
+**Problem**: Missing textures or models
+- Verify all WoW 3.3.5a MPQ files are present in Data/ directory
+- Check that Data/ path is correct (or WOW_DATA_PATH is set)
+- Look for errors in console output
+
+**Problem**: Terrain not loading
+- Async terrain streaming may take a moment
+- Check for MPQ read errors in console
+- Verify ADT files exist for the current map
+
+### Gameplay Issues
+
+**Problem**: Cannot interact with NPCs
+- Ensure you're within interaction range (5-10 yards)
+- Check that NPC is not in combat
+- Left-click to target NPC first
+
+**Problem**: Spells not working
+- Check that you have enough mana/rage/energy
+- Verify spell is on cooldown (check action bar)
+- Ensure you have a valid target (for targeted spells)
+
+**Problem**: Items not equipping
+- Check that item is for your class
+- Verify you meet level requirements
+- Ensure equipment slot is not already occupied (or drag to replace)
+
+### Performance Notes
+
+Default configuration:
 - **VSync:** Enabled (60 FPS cap)
-- **Resolution:** 1920x1080 (configurable in `Application::initialize()`)
+- **Resolution:** 1920x1080 (configurable in Application settings)
 - **OpenGL:** 3.3 Core Profile
-- **Rendering:** Deferred until `renderWorld()` is implemented
+- **Shadow Map:** 2048x2048 resolution
+- **Particles:** 2000 max (weather), emitter-dependent (M2)
+
+Optimization tips:
+- Frustum culling automatically enabled
+- Terrain streaming loads chunks as needed
+- WMO distance culling at 160 units
+- Async terrain loading prevents frame stalls
 
 ## Useful Resources
 
-- **Original Wowee:** `/woweer/` directory - JavaScript reference implementation
-- **WoWDev Wiki:** https://wowdev.wiki/ - File formats and protocol docs
-- **TrinityCore:** https://github.com/TrinityCore/TrinityCore - Server reference
-- **ImGui Demo:** Run `ImGui::ShowDemoWindow()` for UI examples
+- **WoWDev Wiki:** https://wowdev.wiki/ - File formats and protocol documentation
+- **TrinityCore:** https://github.com/TrinityCore/TrinityCore - Server reference implementation
+- **MaNGOS:** https://github.com/cmangos/mangos-wotlk - Alternative server reference
+- **StormLib:** https://github.com/ladislav-zezula/StormLib - MPQ library documentation
+- **ImGui:** https://github.com/ocornut/imgui - UI framework
 
 ## Known Issues
 
-None! The foundation is solid and ready for feature implementation.
+- **Stormwind Mage Quarter**: Water overflows near Moonwell area (geometry constraint issue)
+- **Particle emitters**: Some complex emitters may have minor visual glitches
+- **Hair textures**: Occasional texture resolution on some race/gender combinations
 
-## Need Help?
+See GitHub issues for full list and tracking.
 
-1. Check the original wowee codebase for JavaScript reference implementations
+## Getting Help
+
+1. Check console output for error messages (use `LOG_DEBUG` builds for verbose output)
 2. Consult WoWDev Wiki for protocol and format specifications
-3. Look at TrinityCore source for server-side packet handling
-4. Use `LOG_DEBUG()` extensively for troubleshooting
+3. Review Architecture documentation for system design
+4. Report bugs on GitHub issue tracker
 
 ---
 
-**Ready to build a native WoW client!** 🎮
+**Enjoy playing WoW with a native C++ client!** 🎮

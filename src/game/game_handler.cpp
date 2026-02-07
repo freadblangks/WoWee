@@ -2668,6 +2668,12 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             creatureSpawnCallback_(block.guid, unit->getDisplayId(),
                                 unit->getX(), unit->getY(), unit->getZ(), unit->getOrientation());
                         }
+                        // Query quest giver status for NPCs with questgiver flag (0x02)
+                        if ((unit->getNpcFlags() & 0x02) && socket) {
+                            network::Packet qsPkt(static_cast<uint16_t>(Opcode::CMSG_QUESTGIVER_STATUS_QUERY));
+                            qsPkt.writeUInt64(block.guid);
+                            socket->send(qsPkt);
+                        }
                     }
                 }
                 // Track online item objects

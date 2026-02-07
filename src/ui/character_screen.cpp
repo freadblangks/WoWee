@@ -33,21 +33,13 @@ void CharacterScreen::render(game::GameHandler& gameHandler) {
         gameHandler.requestCharacterList();
     } else if (characters.empty()) {
         ImGui::Text("No characters available.");
-    } else if (characters.size() == 1 && !characterSelected) {
-        // Auto-select the only available character
-        selectedCharacterIndex = 0;
-        selectedCharacterGuid = characters[0].guid;
-        characterSelected = true;
-        std::stringstream ss;
-        ss << "Entering world with " << characters[0].name << "...";
-        setStatus(ss.str());
-        if (!gameHandler.isSinglePlayerMode()) {
-            gameHandler.selectCharacter(characters[0].guid);
-        }
-        if (onCharacterSelected) {
-            onCharacterSelected(characters[0].guid);
-        }
     } else {
+        // Auto-highlight the first character if none selected yet
+        if (selectedCharacterIndex < 0 && !characters.empty()) {
+            selectedCharacterIndex = 0;
+            selectedCharacterGuid = characters[0].guid;
+        }
+
         // Character table
         if (ImGui::BeginTable("CharactersTable", 6, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
             ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);

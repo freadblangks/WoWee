@@ -642,10 +642,8 @@ void Application::setupUICallbacks() {
             for (uint32_t i = 0; i < dbc->getRecordCount(); i++) {
                 uint32_t id = dbc->getUInt32(i, 0);
                 uint32_t enemyGroup = dbc->getUInt32(i, 5);
-                uint32_t friendGroup = dbc->getUInt32(i, 4);
                 bool hostile = (enemyGroup & playerFriendGroup) != 0;
-                bool friendly = (friendGroup & playerFriendGroup) != 0;
-                factionMap[id] = hostile ? true : (!friendly && enemyGroup == 0 && friendGroup == 0);
+                factionMap[id] = hostile;
             }
             gameHandler->setFactionHostileMap(std::move(factionMap));
             LOG_INFO("Loaded faction hostility data (playerFriendGroup=0x", std::hex, playerFriendGroup, std::dec, ")");
@@ -933,6 +931,19 @@ void Application::spawnPlayerCharacter() {
                                     charRenderer->setModelTexture(1, static_cast<uint32_t>(ti), compositeTex);
                                     skinTextureSlotIndex_ = static_cast<uint32_t>(ti);
                                     LOG_INFO("Replaced type-1 texture slot ", ti, " with composited body+underwear");
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    // Override hair texture on GPU (type-6 slot) after model load
+                    if (!hairTexturePath.empty()) {
+                        GLuint hairTex = charRenderer->loadTexture(hairTexturePath);
+                        if (hairTex != 0) {
+                            for (size_t ti = 0; ti < model.textures.size(); ti++) {
+                                if (model.textures[ti].type == 6) {
+                                    charRenderer->setModelTexture(1, static_cast<uint32_t>(ti), hairTex);
+                                    LOG_INFO("Applied DBC hair texture to slot ", ti, ": ", hairTexturePath);
                                     break;
                                 }
                             }

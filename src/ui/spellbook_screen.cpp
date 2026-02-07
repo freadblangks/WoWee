@@ -36,13 +36,13 @@ void SpellbookScreen::loadSpellDBC(pipeline::AssetManager* assetManager) {
     }
 
     uint32_t fieldCount = dbc->getFieldCount();
-    if (fieldCount < 142) {
+    if (fieldCount < 154) {
         LOG_WARNING("Spellbook: Spell.dbc has ", fieldCount, " fields, expected 234+");
         return;
     }
 
-    // WoW 3.3.5a Spell.dbc fields:
-    // 0 = SpellID, 75 = Attributes, 133 = SpellIconID, 136 = SpellName, 141 = RankText
+    // WoW 3.3.5a Spell.dbc fields (0-based):
+    // 0 = SpellID, 4 = Attributes, 133 = SpellIconID, 136 = SpellName_enUS, 153 = RankText_enUS
     uint32_t count = dbc->getRecordCount();
     for (uint32_t i = 0; i < count; ++i) {
         uint32_t spellId = dbc->getUInt32(i, 0);
@@ -50,10 +50,10 @@ void SpellbookScreen::loadSpellDBC(pipeline::AssetManager* assetManager) {
 
         SpellInfo info;
         info.spellId = spellId;
-        info.attributes = dbc->getUInt32(i, 75);
+        info.attributes = dbc->getUInt32(i, 4);
         info.iconId = dbc->getUInt32(i, 133);
         info.name = dbc->getString(i, 136);
-        info.rank = dbc->getString(i, 141);
+        info.rank = dbc->getString(i, 153);
 
         if (!info.name.empty()) {
             spellData[spellId] = std::move(info);

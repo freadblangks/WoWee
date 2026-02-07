@@ -360,6 +360,8 @@ public:
         auto it = itemInfoCache_.find(itemId);
         return (it != itemInfoCache_.end()) ? &it->second : nullptr;
     }
+    std::string getItemTemplateName(uint32_t itemId) const;
+    ItemQuality getItemTemplateQuality(uint32_t itemId) const;
     uint64_t getBackpackItemGuid(int index) const {
         if (index < 0 || index >= static_cast<int>(backpackSlotGuids_.size())) return 0;
         return backpackSlotGuids_[index];

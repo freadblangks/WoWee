@@ -62,17 +62,13 @@ void CameraController::startIntroPan(float durationSec, float orbitDegrees) {
     introTimer = 0.0f;
     idleTimer_ = 0.0f;
     introDuration = std::max(0.5f, durationSec);
-    introStartYaw = facingYaw + orbitDegrees;
-    introEndYaw = facingYaw;
+    introStartYaw = yaw;
+    introEndYaw = yaw - orbitDegrees;
     introOrbitDegrees = orbitDegrees;
-    introStartPitch = -32.0f;
-    introEndPitch = -10.0f;
-    introStartDistance = 18.0f;
-    introEndDistance = 10.0f;
-    yaw = introStartYaw;
-    pitch = introStartPitch;
-    currentDistance = introStartDistance;
-    userTargetDistance = introEndDistance;
+    introStartPitch = pitch;
+    introEndPitch = pitch;
+    introStartDistance = currentDistance;
+    introEndDistance = currentDistance;
     thirdPerson = true;
 }
 
@@ -105,7 +101,7 @@ void CameraController::update(float deltaTime) {
         idleTimer_ += deltaTime;
         if (idleTimer_ >= IDLE_TIMEOUT) {
             idleTimer_ = 0.0f;
-            startIntroPan(6.0f, 360.0f); // Slow full orbit
+            startIntroPan(30.0f, 360.0f); // Slow casual orbit over 30 seconds
             idleOrbit_ = true;
         }
     }
@@ -117,19 +113,21 @@ void CameraController::update(float deltaTime) {
             idleTimer_ = 0.0f;
         } else {
             introTimer += deltaTime;
-            float t = (introDuration > 0.0f) ? std::min(introTimer / introDuration, 1.0f) : 1.0f;
-            yaw = introStartYaw + (introEndYaw - introStartYaw) * t;
-            pitch = introStartPitch + (introEndPitch - introStartPitch) * t;
-            currentDistance = introStartDistance + (introEndDistance - introStartDistance) * t;
-            userTargetDistance = introEndDistance;
-            camera->setRotation(yaw, pitch);
-            facingYaw = yaw;
-            if (t >= 1.0f) {
-                if (idleOrbit_) {
-                    // Loop: restart the slow orbit continuously
-                    startIntroPan(6.0f, 360.0f);
-                    idleOrbit_ = true;
-                } else {
+            if (idleOrbit_) {
+                // Continuous smooth rotation — no lerp endpoint, just constant angular velocity
+                float degreesPerSec = introOrbitDegrees / introDuration;
+                yaw -= degreesPerSec * deltaTime;
+                camera->setRotation(yaw, pitch);
+                facingYaw = yaw;
+            } else {
+                float t = (introDuration > 0.0f) ? std::min(introTimer / introDuration, 1.0f) : 1.0f;
+                yaw = introStartYaw + (introEndYaw - introStartYaw) * t;
+                pitch = introStartPitch + (introEndPitch - introStartPitch) * t;
+                currentDistance = introStartDistance + (introEndDistance - introStartDistance) * t;
+                userTargetDistance = introEndDistance;
+                camera->setRotation(yaw, pitch);
+                facingYaw = yaw;
+                if (t >= 1.0f) {
                     introActive = false;
                 }
             }

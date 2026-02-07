@@ -362,10 +362,17 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
         ImVec4 color = getChatTypeColor(msg.type);
         ImGui::PushStyleColor(ImGuiCol_Text, color);
 
-        if (msg.type == game::ChatType::TEXT_EMOTE) {
+        if (msg.type == game::ChatType::SYSTEM) {
+            // System messages: just yellow text, no header
+            ImGui::TextWrapped("%s", msg.message.c_str());
+        } else if (msg.type == game::ChatType::TEXT_EMOTE) {
             ImGui::TextWrapped("You %s", msg.message.c_str());
         } else if (!msg.senderName.empty()) {
-            ImGui::TextWrapped("[%s] %s: %s", getChatTypeName(msg.type), msg.senderName.c_str(), msg.message.c_str());
+            if (msg.type == game::ChatType::MONSTER_SAY || msg.type == game::ChatType::MONSTER_YELL) {
+                ImGui::TextWrapped("%s says: %s", msg.senderName.c_str(), msg.message.c_str());
+            } else {
+                ImGui::TextWrapped("[%s] %s: %s", getChatTypeName(msg.type), msg.senderName.c_str(), msg.message.c_str());
+            }
         } else {
             ImGui::TextWrapped("[%s] %s", getChatTypeName(msg.type), msg.message.c_str());
         }
@@ -521,14 +528,58 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
 
             if (closestGuid != 0) {
                 gameHandler.setTarget(closestGuid);
+            } else {
+                // Clicked empty space — deselect current target
+                gameHandler.clearTarget();
             }
-            // Don't clear on miss — left-click is also used for camera orbit
         }
     }
 
-    // Right-click on target for NPC interaction / loot / auto-attack
+    // Right-click: select NPC (if needed) then interact / loot / auto-attack
     // Suppress when left button is held (both-button run)
     if (!io.WantCaptureMouse && input.isMouseButtonJustPressed(SDL_BUTTON_RIGHT) && !input.isMouseButtonPressed(SDL_BUTTON_LEFT)) {
+        // If no target or right-clicking in world, try to pick one under cursor
+        {
+            auto* renderer = core::Application::getInstance().getRenderer();
+            auto* camera = renderer ? renderer->getCamera() : nullptr;
+            auto* window = core::Application::getInstance().getWindow();
+            if (camera && window) {
+                glm::vec2 mousePos = input.getMousePosition();
+                float screenW = static_cast<float>(window->getWidth());
+                float screenH = static_cast<float>(window->getHeight());
+                rendering::Ray ray = camera->screenToWorldRay(mousePos.x, mousePos.y, screenW, screenH);
+                float closestT = 1e30f;
+                uint64_t closestGuid = 0;
+                const uint64_t myGuid = gameHandler.getPlayerGuid();
+                for (const auto& [guid, entity] : gameHandler.getEntityManager().getEntities()) {
+                    auto t = entity->getType();
+                    if (t != game::ObjectType::UNIT && t != game::ObjectType::PLAYER) continue;
+                    if (guid == myGuid) continue;
+                    float hitRadius = 1.5f;
+                    float heightOffset = 1.5f;
+                    if (t == game::ObjectType::UNIT) {
+                        auto unit = std::static_pointer_cast<game::Unit>(entity);
+                        if (unit->getMaxHealth() > 0 && unit->getMaxHealth() < 100) {
+                            hitRadius = 0.5f;
+                            heightOffset = 0.3f;
+                        }
+                    }
+                    glm::vec3 entityGL = core::coords::canonicalToRender(
+                        glm::vec3(entity->getX(), entity->getY(), entity->getZ()));
+                    entityGL.z += heightOffset;
+                    float hitT;
+                    if (raySphereIntersect(ray, entityGL, hitRadius, hitT)) {
+                        if (hitT < closestT) {
+                            closestT = hitT;
+                            closestGuid = guid;
+                        }
+                    }
+                }
+                if (closestGuid != 0) {
+                    gameHandler.setTarget(closestGuid);
+                }
+            }
+        }
         if (gameHandler.hasTarget()) {
             auto target = gameHandler.getTarget();
             if (target) {
@@ -1734,17 +1785,27 @@ void GameScreen::renderLootWindow(game::GameHandler& gameHandler) {
 
         // Items with icons and labels
         constexpr float iconSize = 32.0f;
+        int lootSlotClicked = -1;  // defer loot pickup to avoid iterator invalidation
         for (const auto& item : loot.items) {
             ImGui::PushID(item.slotIndex);
 
             // Get item info for name and quality
             const auto* info = gameHandler.getItemInfo(item.itemId);
-            std::string itemName = info && !info->name.empty()
-                ? info->name
-                : "Item #" + std::to_string(item.itemId);
-            game::ItemQuality quality = info
-                ? static_cast<game::ItemQuality>(info->quality)
-                : game::ItemQuality::COMMON;
+            std::string itemName;
+            game::ItemQuality quality = game::ItemQuality::COMMON;
+            if (info && !info->name.empty()) {
+                itemName = info->name;
+                quality = static_cast<game::ItemQuality>(info->quality);
+            } else {
+                // Fallback: look up name from item template DB (single-player)
+                auto tplName = gameHandler.getItemTemplateName(item.itemId);
+                if (!tplName.empty()) {
+                    itemName = tplName;
+                    quality = gameHandler.getItemTemplateQuality(item.itemId);
+                } else {
+                    itemName = "Item #" + std::to_string(item.itemId);
+                }
+            }
             ImVec4 qColor = InventoryScreen::getQualityColor(quality);
 
             // Get item icon
@@ -1757,7 +1818,7 @@ void GameScreen::renderLootWindow(game::GameHandler& gameHandler) {
 
             // Invisible selectable for click handling
             if (ImGui::Selectable("##loot", false, 0, ImVec2(0, rowH))) {
-                gameHandler.lootItem(item.slotIndex);
+                lootSlotClicked = item.slotIndex;
             }
             bool hovered = ImGui::IsItemHovered();
 
@@ -1800,6 +1861,11 @@ void GameScreen::renderLootWindow(game::GameHandler& gameHandler) {
             }
 
             ImGui::PopID();
+        }
+
+        // Process deferred loot pickup (after loop to avoid iterator invalidation)
+        if (lootSlotClicked >= 0) {
+            gameHandler.lootItem(static_cast<uint8_t>(lootSlotClicked));
         }
 
         if (loot.items.empty() && loot.gold == 0) {

@@ -587,6 +587,43 @@ void InventoryScreen::render(game::Inventory& inventory, uint64_t moneyCopper) {
                        static_cast<unsigned long long>(copper));
     ImGui::End();
 
+    // Detect held item dropped outside inventory windows → drop confirmation
+    if (holdingItem && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+        !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow)) {
+        dropConfirmOpen_ = true;
+        dropItemName_ = heldItem.name;
+    }
+
+    // Drop item confirmation popup — positioned near cursor
+    if (dropConfirmOpen_) {
+        ImVec2 mousePos = ImGui::GetIO().MousePos;
+        ImGui::SetNextWindowPos(ImVec2(mousePos.x - 80.0f, mousePos.y - 20.0f), ImGuiCond_Always);
+        ImGui::OpenPopup("##DropItem");
+        dropConfirmOpen_ = false;
+    }
+    if (ImGui::BeginPopup("##DropItem", ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar)) {
+        ImGui::Text("Destroy \"%s\"?", dropItemName_.c_str());
+        ImGui::Spacing();
+        if (ImGui::Button("Yes", ImVec2(80, 0))) {
+            holdingItem = false;
+            heldItem = game::ItemDef{};
+            heldSource = HeldSource::NONE;
+            inventoryDirty = true;
+            if (gameHandler_) {
+                gameHandler_->notifyInventoryChanged();
+            }
+            dropItemName_.clear();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("No", ImVec2(80, 0))) {
+            cancelPickup(inventory);
+            dropItemName_.clear();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
     // Draw held item at cursor
     renderHeldItem();
 }
@@ -617,7 +654,7 @@ void InventoryScreen::renderCharacterScreen(game::GameHandler& gameHandler) {
     }
 
     ImGui::SetNextWindowPos(ImVec2(20.0f, 80.0f), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(350.0f, 650.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(380.0f, 650.0f), ImGuiCond_FirstUseEver);
 
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
     if (!ImGui::Begin("Character", &characterOpen, flags)) {
@@ -640,8 +677,8 @@ void InventoryScreen::renderCharacterScreen(game::GameHandler& gameHandler) {
 
     renderEquipmentPanel(inventory);
 
-    // Stats panel
-    ImGui::Spacing();
+    // Stats panel — use full width and separate from equipment layout
+    ImGui::SetCursorPosX(ImGui::GetStyle().WindowPadding.x);
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
@@ -1114,16 +1151,13 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item) {
         ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Stack: %u/%u", item.stackCount, item.maxStack);
     }
 
-    // Sell price (when vendor is open)
-    if (vendorMode_ && gameHandler_) {
-        const auto* info = gameHandler_->getItemInfo(item.itemId);
-        if (info && info->sellPrice > 0) {
-            uint32_t g = info->sellPrice / 10000;
-            uint32_t s = (info->sellPrice / 100) % 100;
-            uint32_t c = info->sellPrice % 100;
-            ImGui::Separator();
-            ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.0f, 1.0f), "Sell Price: %ug %us %uc", g, s, c);
-        }
+    // Sell price
+    if (item.sellPrice > 0) {
+        uint32_t g = item.sellPrice / 10000;
+        uint32_t s = (item.sellPrice / 100) % 100;
+        uint32_t c = item.sellPrice % 100;
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.0f, 1.0f), "Sell Price: %ug %us %uc", g, s, c);
     }
 
     ImGui::EndTooltip();

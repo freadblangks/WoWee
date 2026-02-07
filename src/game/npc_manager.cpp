@@ -740,13 +740,9 @@ void NpcManager::initialize(pipeline::AssetManager* am,
             for (uint32_t i = 0; i < dbc->getRecordCount(); i++) {
                 uint32_t id = dbc->getUInt32(i, 0);
                 uint32_t enemyGroup = dbc->getUInt32(i, 5);
-                uint32_t friendGroup = dbc->getUInt32(i, 4);
-                // Hostile if creature's enemy groups overlap player's faction/friend groups
+                // Hostile only if creature's enemy groups overlap player's faction/friend groups
                 bool hostile = (enemyGroup & playerFriendGroup) != 0;
-                // Friendly only if creature's friendGroup explicitly includes player's groups
-                bool friendly = (friendGroup & playerFriendGroup) != 0;
-                // Hostile if explicitly hostile, or if no explicit relationship at all
-                factionHostile[id] = hostile ? true : (!friendly && enemyGroup == 0 && friendGroup == 0);
+                factionHostile[id] = hostile;
             }
             LOG_INFO("NpcManager: loaded ", dbc->getRecordCount(),
                      " faction templates (playerFriendGroup=0x", std::hex, playerFriendGroup, std::dec, ")");
@@ -802,7 +798,7 @@ void NpcManager::initialize(pipeline::AssetManager* am,
 
         // Determine hostility from faction template
         auto fIt = factionHostile.find(s.faction);
-        unit->setHostile(fIt != factionHostile.end() ? fIt->second : true);
+        unit->setHostile(fIt != factionHostile.end() ? fIt->second : false);
 
         // Store canonical WoW coordinates for targeting/server compatibility
         glm::vec3 spawnCanonical = core::coords::renderToCanonical(glPos);

@@ -126,6 +126,11 @@ private:
     game::EquipSlot getEquipSlotForType(uint8_t inventoryType, game::Inventory& inv);
     void renderHeldItem();
 
+    // Drop confirmation
+    bool dropConfirmOpen_ = false;
+    int dropBackpackIndex_ = -1;
+    std::string dropItemName_;
+
 public:
     static ImVec4 getQualityColor(game::ItemQuality quality);
 };

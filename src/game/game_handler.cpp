@@ -46,6 +46,12 @@ struct ItemTemplateRow {
     uint8_t inventoryType = 0;
     int32_t maxStack = 1;
     uint32_t sellPrice = 0;
+    int32_t armor = 0;
+    int32_t stamina = 0;
+    int32_t strength = 0;
+    int32_t agility = 0;
+    int32_t intellect = 0;
+    int32_t spirit = 0;
 };
 
 struct SinglePlayerLootDb {
@@ -163,6 +169,7 @@ struct SinglePlayerSqlite {
             " spirit INTEGER,"
             " display_info_id INTEGER,"
             " subclass_name TEXT,"
+            " sell_price INTEGER DEFAULT 0,"
             " PRIMARY KEY (guid, location, slot)"
             ");"
             "CREATE TABLE IF NOT EXISTS character_spell ("
@@ -208,7 +215,10 @@ struct SinglePlayerSqlite {
             " mouse_sensitivity REAL,"
             " invert_mouse INTEGER"
             ");";
-        return exec(kSchema);
+        if (!exec(kSchema)) return false;
+        // Migration: add sell_price column to existing saves
+        exec("ALTER TABLE character_inventory ADD COLUMN sell_price INTEGER DEFAULT 0;");
+        return true;
     }
 };
 
@@ -502,6 +512,13 @@ static SinglePlayerLootDb& getSinglePlayerLootDb() {
         int idxInvType = columnIndex(cols, "InventoryType");
         int idxStack = columnIndex(cols, "stackable");
         int idxSellPrice = columnIndex(cols, "SellPrice");
+        int idxArmor = columnIndex(cols, "armor");
+        // stat_type/stat_value pairs (up to 10)
+        int idxStatType[10], idxStatVal[10];
+        for (int si = 0; si < 10; si++) {
+            idxStatType[si] = columnIndex(cols, "stat_type" + std::to_string(si + 1));
+            idxStatVal[si] = columnIndex(cols, "stat_value" + std::to_string(si + 1));
+        }
         if (idxEntry >= 0 && std::filesystem::exists(itemTemplatePath)) {
             std::ifstream in(itemTemplatePath);
             processInsertStatements(in, [&](const std::vector<std::string>& row) {
@@ -527,6 +544,27 @@ static SinglePlayerLootDb& getSinglePlayerLootDb() {
                     }
                     if (idxSellPrice >= 0 && idxSellPrice < static_cast<int>(row.size())) {
                         ir.sellPrice = static_cast<uint32_t>(std::stoul(row[idxSellPrice]));
+                    }
+                    if (idxArmor >= 0 && idxArmor < static_cast<int>(row.size())) {
+                        ir.armor = static_cast<int32_t>(std::stol(row[idxArmor]));
+                    }
+                    // Parse stat_type/stat_value pairs (protected from parse errors)
+                    for (int si = 0; si < 10; si++) {
+                        try {
+                            if (idxStatType[si] < 0 || idxStatVal[si] < 0) continue;
+                            if (idxStatType[si] >= static_cast<int>(row.size())) continue;
+                            if (idxStatVal[si] >= static_cast<int>(row.size())) continue;
+                            int stype = std::stoi(row[idxStatType[si]]);
+                            int sval = std::stoi(row[idxStatVal[si]]);
+                            if (sval == 0) continue;
+                            switch (stype) {
+                                case 3: ir.agility += sval; break;
+                                case 4: ir.strength += sval; break;
+                                case 5: ir.intellect += sval; break;
+                                case 6: ir.spirit += sval; break;
+                                case 7: ir.stamina += sval; break;
+                            }
+                        } catch (...) {}
                     }
                     db.itemTemplates[ir.itemId] = std::move(ir);
                 } catch (const std::exception&) {
@@ -1671,7 +1709,8 @@ bool GameHandler::loadSinglePlayerCharacterState(uint64_t guid) {
     inventory = Inventory();
     const char* sqlInv =
         "SELECT location, slot, item_id, name, quality, inventory_type, stack_count, max_stack, bag_slots, "
-        "armor, stamina, strength, agility, intellect, spirit, display_info_id, subclass_name "
+        "armor, stamina, strength, agility, intellect, spirit, display_info_id, subclass_name, "
+        "COALESCE(sell_price, 0) "
         "FROM character_inventory WHERE guid=?;";
     if (sqlite3_prepare_v2(sp.db, sqlInv, -1, &stmt, nullptr) == SQLITE_OK) {
         sqlite3_bind_int64(stmt, 1, static_cast<sqlite3_int64>(guid));
@@ -1696,6 +1735,23 @@ bool GameHandler::loadSinglePlayerCharacterState(uint64_t guid) {
             def.displayInfoId = static_cast<uint32_t>(sqlite3_column_int(stmt, 15));
             const unsigned char* subclassText = sqlite3_column_text(stmt, 16);
             def.subclassName = subclassText ? reinterpret_cast<const char*>(subclassText) : "";
+            def.sellPrice = static_cast<uint32_t>(sqlite3_column_int(stmt, 17));
+
+            // Fill missing data from item template DB (for old saves)
+            if (def.itemId != 0) {
+                auto& itemDb = getSinglePlayerLootDb().itemTemplates;
+                auto itTpl = itemDb.find(def.itemId);
+                if (itTpl != itemDb.end()) {
+                    if (def.sellPrice == 0) def.sellPrice = itTpl->second.sellPrice;
+                    if (def.displayInfoId == 0) def.displayInfoId = itTpl->second.displayId;
+                    if (def.armor == 0) def.armor = itTpl->second.armor;
+                    if (def.stamina == 0) def.stamina = itTpl->second.stamina;
+                    if (def.strength == 0) def.strength = itTpl->second.strength;
+                    if (def.agility == 0) def.agility = itTpl->second.agility;
+                    if (def.intellect == 0) def.intellect = itTpl->second.intellect;
+                    if (def.spirit == 0) def.spirit = itTpl->second.spirit;
+                }
+            }
 
             if (location == 0) {
                 inventory.setBackpackSlot(slot, def);
@@ -1864,6 +1920,13 @@ void GameHandler::applySinglePlayerStartData(Race race, Class cls) {
             def.inventoryType = itTpl->second.inventoryType;
             def.maxStack = std::max(def.maxStack, static_cast<uint32_t>(itTpl->second.maxStack));
             def.sellPrice = itTpl->second.sellPrice;
+            def.displayInfoId = itTpl->second.displayId;
+            def.armor = itTpl->second.armor;
+            def.stamina = itTpl->second.stamina;
+            def.strength = itTpl->second.strength;
+            def.agility = itTpl->second.agility;
+            def.intellect = itTpl->second.intellect;
+            def.spirit = itTpl->second.spirit;
         } else {
             def.name = "Item " + std::to_string(row.itemId);
         }
@@ -2026,8 +2089,8 @@ void GameHandler::saveSinglePlayerCharacterState(bool force) {
     const char* insInv =
         "INSERT INTO character_inventory "
         "(guid, location, slot, item_id, name, quality, inventory_type, stack_count, max_stack, bag_slots, "
-        "armor, stamina, strength, agility, intellect, spirit, display_info_id, subclass_name) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);";
+        "armor, stamina, strength, agility, intellect, spirit, display_info_id, subclass_name, sell_price) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);";
     if (sqlite3_prepare_v2(sp.db, insInv, -1, &stmt, nullptr) == SQLITE_OK) {
         for (int i = 0; i < Inventory::BACKPACK_SLOTS; i++) {
             const ItemSlot& slot = inventory.getBackpackSlot(i);
@@ -2050,6 +2113,7 @@ void GameHandler::saveSinglePlayerCharacterState(bool force) {
             sqlite3_bind_int(stmt, 16, static_cast<int>(slot.item.spirit));
             sqlite3_bind_int(stmt, 17, static_cast<int>(slot.item.displayInfoId));
             sqlite3_bind_text(stmt, 18, slot.item.subclassName.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int(stmt, 19, static_cast<int>(slot.item.sellPrice));
             sqlite3_step(stmt);
             sqlite3_reset(stmt);
         }
@@ -2075,6 +2139,7 @@ void GameHandler::saveSinglePlayerCharacterState(bool force) {
             sqlite3_bind_int(stmt, 16, static_cast<int>(slot.item.spirit));
             sqlite3_bind_int(stmt, 17, static_cast<int>(slot.item.displayInfoId));
             sqlite3_bind_text(stmt, 18, slot.item.subclassName.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int(stmt, 19, static_cast<int>(slot.item.sellPrice));
             sqlite3_step(stmt);
             sqlite3_reset(stmt);
         }
@@ -3636,6 +3701,13 @@ void GameHandler::lootItem(uint8_t slotIndex) {
             def.inventoryType = itTpl->second.inventoryType;
             def.maxStack = std::max(def.maxStack, static_cast<uint32_t>(itTpl->second.maxStack));
             def.sellPrice = itTpl->second.sellPrice;
+            def.displayInfoId = itTpl->second.displayId;
+            def.armor = itTpl->second.armor;
+            def.stamina = itTpl->second.stamina;
+            def.strength = itTpl->second.strength;
+            def.agility = itTpl->second.agility;
+            def.intellect = itTpl->second.intellect;
+            def.spirit = itTpl->second.spirit;
         } else {
             def.name = "Item " + std::to_string(it->itemId);
         }
@@ -3819,11 +3891,15 @@ void GameHandler::handleLootResponse(network::Packet& packet) {
     if (!LootResponseParser::parse(packet, currentLoot)) return;
     lootWindowOpen = true;
     if (currentLoot.gold > 0) {
+        if (singlePlayerMode_) {
+            addMoneyCopper(currentLoot.gold);
+        }
         std::string msg = "You loot ";
         msg += std::to_string(currentLoot.getGold()) + "g ";
         msg += std::to_string(currentLoot.getSilver()) + "s ";
         msg += std::to_string(currentLoot.getCopper()) + "c.";
         addSystemChatMessage(msg);
+        currentLoot.gold = 0;  // Clear gold from loot window after collecting
     }
 }
 
@@ -4024,6 +4100,11 @@ void GameHandler::performNpcSwing(uint64_t guid) {
     auto entity = entityManager.getEntity(guid);
     if (!entity || entity->getType() != ObjectType::UNIT) return;
     auto unit = std::static_pointer_cast<Unit>(entity);
+
+    // Auto-target the attacker if player has no current target
+    if (targetGuid == 0) {
+        setTarget(guid);
+    }
 
     if (npcSwingCallback_) {
         npcSwingCallback_(guid);
@@ -4372,6 +4453,20 @@ void GameHandler::fail(const std::string& reason) {
     if (onFailure) {
         onFailure(reason);
     }
+}
+
+std::string GameHandler::getItemTemplateName(uint32_t itemId) const {
+    auto& db = getSinglePlayerLootDb();
+    auto it = db.itemTemplates.find(itemId);
+    if (it != db.itemTemplates.end()) return it->second.name;
+    return {};
+}
+
+ItemQuality GameHandler::getItemTemplateQuality(uint32_t itemId) const {
+    auto& db = getSinglePlayerLootDb();
+    auto it = db.itemTemplates.find(itemId);
+    if (it != db.itemTemplates.end()) return static_cast<ItemQuality>(it->second.quality);
+    return ItemQuality::COMMON;
 }
 
 } // namespace game

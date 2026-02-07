@@ -46,6 +46,7 @@ private:
     char username[256] = "";
     char password[256] = "";
     int port = 3724;
+    int compatibilityMode = 0;  // 0 = 3.3.5a
     bool authenticating = false;
     bool showPassword = false;
 

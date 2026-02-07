@@ -111,9 +111,9 @@ void AuthScreen::render(auth::AuthHandler& authHandler) {
     }
 
     ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiCond_FirstUseEver);
-    ImGui::Begin("WoW 3.3.5a Authentication", nullptr, ImGuiWindowFlags_NoCollapse);
+    ImGui::Begin("Authentication", nullptr, ImGuiWindowFlags_NoCollapse);
 
-    ImGui::Text("Connect to Authentication Server");
+    ImGui::Text("Connect to Server");
     ImGui::Separator();
     ImGui::Spacing();
 
@@ -123,6 +123,10 @@ void AuthScreen::render(auth::AuthHandler& authHandler) {
     ImGui::InputInt("Port", &port);
     if (port < 1) port = 1;
     if (port > 65535) port = 65535;
+
+    // Compatibility mode dropdown
+    const char* compatModes[] = { "3.3.5a" };
+    ImGui::Combo("Compatibility Mode", &compatibilityMode, compatModes, IM_ARRAYSIZE(compatModes));
 
     ImGui::Spacing();
     ImGui::Separator();
@@ -200,12 +204,12 @@ void AuthScreen::render(auth::AuthHandler& authHandler) {
             authHandler.disconnect();
         }
     } else {
-        if (ImGui::Button("Connect", ImVec2(120, 0))) {
+        if (ImGui::Button("Connect", ImVec2(160, 40))) {
             attemptAuth(authHandler);
         }
 
         ImGui::SameLine();
-        if (ImGui::Button("Clear", ImVec2(120, 0))) {
+        if (ImGui::Button("Clear", ImVec2(160, 40))) {
             statusMessage.clear();
         }
     }

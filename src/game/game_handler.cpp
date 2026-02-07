@@ -2219,6 +2219,63 @@ void GameHandler::requestRaidInfo() {
     LOG_INFO("Requested raid info");
 }
 
+void GameHandler::proposeDuel(uint64_t targetGuid) {
+    if (state != WorldState::IN_WORLD || !socket) {
+        LOG_WARNING("Cannot propose duel: not in world or not connected");
+        return;
+    }
+
+    if (targetGuid == 0) {
+        addSystemChatMessage("You must target a player to challenge to a duel.");
+        return;
+    }
+
+    auto packet = DuelProposedPacket::build(targetGuid);
+    socket->send(packet);
+    addSystemChatMessage("You have challenged your target to a duel.");
+    LOG_INFO("Proposed duel to target: 0x", std::hex, targetGuid, std::dec);
+}
+
+void GameHandler::initiateTrade(uint64_t targetGuid) {
+    if (state != WorldState::IN_WORLD || !socket) {
+        LOG_WARNING("Cannot initiate trade: not in world or not connected");
+        return;
+    }
+
+    if (targetGuid == 0) {
+        addSystemChatMessage("You must target a player to trade with.");
+        return;
+    }
+
+    auto packet = InitiateTradePacket::build(targetGuid);
+    socket->send(packet);
+    addSystemChatMessage("Requesting trade with target.");
+    LOG_INFO("Initiated trade with target: 0x", std::hex, targetGuid, std::dec);
+}
+
+void GameHandler::stopCasting() {
+    if (state != WorldState::IN_WORLD || !socket) {
+        LOG_WARNING("Cannot stop casting: not in world or not connected");
+        return;
+    }
+
+    if (!casting) {
+        return; // Not casting anything
+    }
+
+    // Send cancel cast packet with current spell ID
+    auto packet = CancelCastPacket::build(currentCastSpellId);
+    socket->send(packet);
+
+    // Reset casting state
+    casting = false;
+    currentCastSpellId = 0;
+    castTimeRemaining = 0.0f;
+    castTimeTotal = 0.0f;
+
+    LOG_INFO("Cancelled spell cast");
+}
+
 void GameHandler::releaseSpirit() {
     if (!playerDead_) return;
     if (socket && state == WorldState::IN_WORLD) {

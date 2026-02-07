@@ -106,9 +106,13 @@ enum class Opcode : uint16_t {
     MSG_RAID_READY_CHECK_CONFIRM     = 0x3AE,
 
     // ---- Duel ----
+    CMSG_DUEL_PROPOSED               = 0x166,
     CMSG_DUEL_ACCEPTED               = 0x16C,
     CMSG_DUEL_CANCELLED              = 0x16D,
     SMSG_DUEL_REQUESTED              = 0x167,
+
+    // ---- Trade ----
+    CMSG_INITIATE_TRADE              = 0x116,
 
     // ---- Random Roll ----
     MSG_RANDOM_ROLL                  = 0x1FB,

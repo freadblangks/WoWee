@@ -918,6 +918,40 @@ public:
 };
 
 // ============================================================
+// Combat and Trade
+// ============================================================
+
+/** CMSG_DUEL_PROPOSED packet builder */
+class DuelProposedPacket {
+public:
+    static network::Packet build(uint64_t targetGuid);
+};
+
+/** CMSG_INITIATE_TRADE packet builder */
+class InitiateTradePacket {
+public:
+    static network::Packet build(uint64_t targetGuid);
+};
+
+/** CMSG_ATTACKSWING packet builder */
+class AttackSwingPacket {
+public:
+    static network::Packet build(uint64_t targetGuid);
+};
+
+/** CMSG_ATTACKSTOP packet builder */
+class AttackStopPacket {
+public:
+    static network::Packet build();
+};
+
+/** CMSG_CANCEL_CAST packet builder */
+class CancelCastPacket {
+public:
+    static network::Packet build(uint32_t spellId);
+};
+
+// ============================================================
 // Random Roll
 // ============================================================
 
@@ -1074,18 +1108,6 @@ public:
     static bool parse(network::Packet& packet, MonsterMoveData& data);
 };
 
-/** CMSG_ATTACKSWING packet builder */
-class AttackSwingPacket {
-public:
-    static network::Packet build(uint64_t targetGuid);
-};
-
-/** CMSG_ATTACKSTOP packet builder */
-class AttackStopPacket {
-public:
-    static network::Packet build();
-};
-
 /** SMSG_ATTACKSTART data */
 struct AttackStartData {
     uint64_t attackerGuid = 0;
@@ -1221,12 +1243,6 @@ public:
 class CastSpellPacket {
 public:
     static network::Packet build(uint32_t spellId, uint64_t targetGuid, uint8_t castCount);
-};
-
-/** CMSG_CANCEL_CAST packet builder */
-class CancelCastPacket {
-public:
-    static network::Packet build(uint32_t spellId);
 };
 
 /** CMSG_CANCEL_AURA packet builder */

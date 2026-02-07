@@ -270,6 +270,11 @@ public:
     void clearMainAssist();
     void requestRaidInfo();
 
+    // Combat and Trade
+    void proposeDuel(uint64_t targetGuid);
+    void initiateTrade(uint64_t targetGuid);
+    void stopCasting();
+
     // ---- Phase 1: Name queries ----
     void queryPlayerName(uint64_t guid);
     void queryCreatureInfo(uint32_t entry, uint64_t guid);

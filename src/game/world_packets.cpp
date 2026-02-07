@@ -1453,6 +1453,45 @@ network::Packet RequestRaidInfoPacket::build() {
 }
 
 // ============================================================
+// Combat and Trade
+// ============================================================
+
+network::Packet DuelProposedPacket::build(uint64_t targetGuid) {
+    network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_DUEL_PROPOSED));
+    packet.writeUInt64(targetGuid);
+    LOG_DEBUG("Built CMSG_DUEL_PROPOSED for target: 0x", std::hex, targetGuid, std::dec);
+    return packet;
+}
+
+network::Packet InitiateTradePacket::build(uint64_t targetGuid) {
+    network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_INITIATE_TRADE));
+    packet.writeUInt64(targetGuid);
+    LOG_DEBUG("Built CMSG_INITIATE_TRADE for target: 0x", std::hex, targetGuid, std::dec);
+    return packet;
+}
+
+network::Packet AttackSwingPacket::build(uint64_t targetGuid) {
+    network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_ATTACKSWING));
+    packet.writeUInt64(targetGuid);
+    LOG_DEBUG("Built CMSG_ATTACKSWING for target: 0x", std::hex, targetGuid, std::dec);
+    return packet;
+}
+
+network::Packet AttackStopPacket::build() {
+    network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_ATTACKSTOP));
+    LOG_DEBUG("Built CMSG_ATTACKSTOP");
+    return packet;
+}
+
+network::Packet CancelCastPacket::build(uint32_t spellId) {
+    network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_CANCEL_CAST));
+    packet.writeUInt32(0); // cast count/sequence
+    packet.writeUInt32(spellId);
+    LOG_DEBUG("Built CMSG_CANCEL_CAST for spell: ", spellId);
+    return packet;
+}
+
+// ============================================================
 // Random Roll
 // ============================================================
 
@@ -1777,19 +1816,6 @@ bool MonsterMoveParser::parse(network::Packet& packet, MonsterMoveData& data) {
 // Phase 2: Combat Core
 // ============================================================
 
-network::Packet AttackSwingPacket::build(uint64_t targetGuid) {
-    network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_ATTACKSWING));
-    packet.writeUInt64(targetGuid);
-    LOG_DEBUG("Built CMSG_ATTACKSWING: target=0x", std::hex, targetGuid, std::dec);
-    return packet;
-}
-
-network::Packet AttackStopPacket::build() {
-    network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_ATTACKSTOP));
-    LOG_DEBUG("Built CMSG_ATTACKSTOP");
-    return packet;
-}
-
 bool AttackStartParser::parse(network::Packet& packet, AttackStartData& data) {
     if (packet.getSize() < 16) return false;
     data.attackerGuid = packet.readUInt64();
@@ -1968,13 +1994,6 @@ network::Packet CastSpellPacket::build(uint32_t spellId, uint64_t targetGuid, ui
 
     LOG_DEBUG("Built CMSG_CAST_SPELL: spell=", spellId, " target=0x",
               std::hex, targetGuid, std::dec);
-    return packet;
-}
-
-network::Packet CancelCastPacket::build(uint32_t spellId) {
-    network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_CANCEL_CAST));
-    packet.writeUInt32(0); // sequence
-    packet.writeUInt32(spellId);
     return packet;
 }
 

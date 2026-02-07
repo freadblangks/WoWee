@@ -1398,6 +1398,68 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                 return;
             }
 
+            // Combat and Trade commands
+            if (cmdLower == "duel") {
+                if (gameHandler.hasTarget()) {
+                    gameHandler.proposeDuel(gameHandler.getTargetGuid());
+                } else if (spacePos != std::string::npos) {
+                    // Target player by name (would need name-to-GUID lookup)
+                    game::MessageChatData msg;
+                    msg.type = game::ChatType::SYSTEM;
+                    msg.language = game::ChatLanguage::UNIVERSAL;
+                    msg.message = "You must target a player to challenge to a duel.";
+                    gameHandler.addLocalChatMessage(msg);
+                } else {
+                    game::MessageChatData msg;
+                    msg.type = game::ChatType::SYSTEM;
+                    msg.language = game::ChatLanguage::UNIVERSAL;
+                    msg.message = "You must target a player to challenge to a duel.";
+                    gameHandler.addLocalChatMessage(msg);
+                }
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            if (cmdLower == "trade") {
+                if (gameHandler.hasTarget()) {
+                    gameHandler.initiateTrade(gameHandler.getTargetGuid());
+                } else {
+                    game::MessageChatData msg;
+                    msg.type = game::ChatType::SYSTEM;
+                    msg.language = game::ChatLanguage::UNIVERSAL;
+                    msg.message = "You must target a player to trade with.";
+                    gameHandler.addLocalChatMessage(msg);
+                }
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            if (cmdLower == "startattack") {
+                if (gameHandler.hasTarget()) {
+                    gameHandler.startAutoAttack(gameHandler.getTargetGuid());
+                } else {
+                    game::MessageChatData msg;
+                    msg.type = game::ChatType::SYSTEM;
+                    msg.language = game::ChatLanguage::UNIVERSAL;
+                    msg.message = "You have no target.";
+                    gameHandler.addLocalChatMessage(msg);
+                }
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            if (cmdLower == "stopattack") {
+                gameHandler.stopAutoAttack();
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            if (cmdLower == "stopcasting") {
+                gameHandler.stopCasting();
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
             // Chat channel slash commands
             bool isChannelCommand = false;
             if (cmdLower == "s" || cmdLower == "say") {

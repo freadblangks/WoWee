@@ -1,5 +1,6 @@
 #include "game/npc_manager.hpp"
 #include "game/entity.hpp"
+#include <unordered_set>
 #include "core/coordinates.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/m2_loader.hpp"
@@ -717,58 +718,62 @@ void NpcManager::initialize(pipeline::AssetManager* am,
         }
     }
 
-    // Build faction hostility lookup from FactionTemplate.dbc.
-    // Player is Alliance (Human) — faction template 1, friendGroup includes Alliance mask.
-    // A creature is hostile if its enemyGroup overlaps the player's friendGroup.
-    std::unordered_map<uint32_t, bool> factionHostile; // factionTemplateId → hostile to player
+    // Build faction hostility lookup from FactionTemplate.dbc + Faction.dbc
+    std::unordered_map<uint32_t, bool> factionHostile;
     {
-        // FactionTemplate.dbc columns (3.3.5a):
-        //  0: ID, 1: Faction, 2: Flags, 3: FactionGroup, 4: FriendGroup, 5: EnemyGroup,
-        //  6-9: Enemies[4], 10-13: Friends[4]
-        uint32_t playerFriendGroup = 0;
-        if (auto dbc = am->loadDBC("FactionTemplate.dbc"); dbc && dbc->isLoaded()) {
-            // First pass: find player faction template (ID 1) friendGroup
-            for (uint32_t i = 0; i < dbc->getRecordCount(); i++) {
-                if (dbc->getUInt32(i, 0) == 1) {
-                    playerFriendGroup = dbc->getUInt32(i, 4); // FriendGroup
-                    // Also include our own factionGroup as friendly
-                    playerFriendGroup |= dbc->getUInt32(i, 3);
-                    break;
-                }
-            }
-            // Find player's parent faction ID for individual enemy checks
-            uint32_t playerFactionId = 0;
-            for (uint32_t i = 0; i < dbc->getRecordCount(); i++) {
-                if (dbc->getUInt32(i, 0) == 1) {
-                    playerFactionId = dbc->getUInt32(i, 1); // Faction (parent)
-                    break;
-                }
-            }
-            // Second pass: classify each faction template
-            for (uint32_t i = 0; i < dbc->getRecordCount(); i++) {
-                uint32_t id = dbc->getUInt32(i, 0);
-                uint32_t factionGroup = dbc->getUInt32(i, 3);
-                uint32_t enemyGroup = dbc->getUInt32(i, 5);
-                // Check group-level hostility
-                bool hostile = (enemyGroup & playerFriendGroup) != 0;
-                // Check if creature is a Monster type (factionGroup bit 8)
-                // Bits: 1=Player, 2=Alliance, 4=Horde, 8=Monster
-                if (!hostile && (factionGroup & 8) != 0) {
-                    hostile = true;
-                }
-                // Check individual enemy faction IDs (fields 6-9)
-                if (!hostile && playerFactionId > 0) {
-                    for (int e = 6; e <= 9; e++) {
-                        if (dbc->getUInt32(i, e) == playerFactionId) {
-                            hostile = true;
+        auto ftDbc = am->loadDBC("FactionTemplate.dbc");
+        auto fDbc = am->loadDBC("Faction.dbc");
+        if (ftDbc && ftDbc->isLoaded()) {
+            // Build hostile parent factions from Faction.dbc base reputation
+            std::unordered_set<uint32_t> hostileParentFactions;
+            if (fDbc && fDbc->isLoaded()) {
+                for (uint32_t i = 0; i < fDbc->getRecordCount(); i++) {
+                    uint32_t factionId = fDbc->getUInt32(i, 0);
+                    for (int slot = 0; slot < 4; slot++) {
+                        uint32_t raceMask = fDbc->getUInt32(i, 2 + slot);
+                        if (raceMask & 0x1) { // Human race bit
+                            int32_t baseRep = fDbc->getInt32(i, 10 + slot);
+                            if (baseRep < 0) hostileParentFactions.insert(factionId);
                             break;
                         }
                     }
                 }
+            }
+
+            uint32_t playerFriendGroup = 0, playerEnemyGroup = 0, playerFactionId = 0;
+            for (uint32_t i = 0; i < ftDbc->getRecordCount(); i++) {
+                if (ftDbc->getUInt32(i, 0) == 1) {
+                    playerFriendGroup = ftDbc->getUInt32(i, 4) | ftDbc->getUInt32(i, 3);
+                    playerEnemyGroup = ftDbc->getUInt32(i, 5);
+                    playerFactionId = ftDbc->getUInt32(i, 1);
+                    break;
+                }
+            }
+
+            for (uint32_t i = 0; i < ftDbc->getRecordCount(); i++) {
+                uint32_t id = ftDbc->getUInt32(i, 0);
+                uint32_t parentFaction = ftDbc->getUInt32(i, 1);
+                uint32_t factionGroup = ftDbc->getUInt32(i, 3);
+                uint32_t friendGroup = ftDbc->getUInt32(i, 4);
+                uint32_t enemyGroup = ftDbc->getUInt32(i, 5);
+
+                bool hostile = (enemyGroup & playerFriendGroup) != 0
+                            || (factionGroup & playerEnemyGroup) != 0;
+                if (!hostile && (factionGroup & 8) != 0) hostile = true;
+                if (!hostile && playerFactionId > 0) {
+                    for (int e = 6; e <= 9; e++) {
+                        if (ftDbc->getUInt32(i, e) == playerFactionId) { hostile = true; break; }
+                    }
+                }
+                if (!hostile && parentFaction > 0 && hostileParentFactions.count(parentFaction)) {
+                    hostile = true;
+                }
+                if (hostile && (friendGroup & playerFriendGroup) != 0) {
+                    hostile = false;
+                }
                 factionHostile[id] = hostile;
             }
-            LOG_INFO("NpcManager: loaded ", dbc->getRecordCount(),
-                     " faction templates (playerFriendGroup=0x", std::hex, playerFriendGroup, std::dec, ")");
+            LOG_INFO("NpcManager: loaded ", ftDbc->getRecordCount(), " faction templates");
         } else {
             LOG_WARNING("NpcManager: FactionTemplate.dbc not available, all NPCs default to hostile");
         }

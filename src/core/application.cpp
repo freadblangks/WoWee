@@ -1,5 +1,6 @@
 #include "core/application.hpp"
 #include "core/coordinates.hpp"
+#include <unordered_set>
 #include "core/spawn_presets.hpp"
 #include "core/logger.hpp"
 #include "rendering/renderer.hpp"
@@ -628,48 +629,94 @@ void Application::setupUICallbacks() {
         loadOnlineWorldTerrain(mapId, x, y, z);
     });
 
-    // Load faction hostility map from FactionTemplate.dbc (used for both single-player and online)
+    // Load faction hostility map from FactionTemplate.dbc + Faction.dbc
     if (assetManager && assetManager->isInitialized()) {
-        if (auto dbc = assetManager->loadDBC("FactionTemplate.dbc"); dbc && dbc->isLoaded()) {
+        auto ftDbc = assetManager->loadDBC("FactionTemplate.dbc");
+        auto fDbc = assetManager->loadDBC("Faction.dbc");
+        if (ftDbc && ftDbc->isLoaded()) {
+            // Build set of hostile parent faction IDs from Faction.dbc base reputation
+            // Faction.dbc: field 0=ID, fields 13-16=ReputationBase[4], fields 5-8=ReputationRaceMask[4]
+            // Human = race 1 = raceMask bit 0 (0x1)
+            std::unordered_set<uint32_t> hostileParentFactions;
+            if (fDbc && fDbc->isLoaded()) {
+                for (uint32_t i = 0; i < fDbc->getRecordCount(); i++) {
+                    uint32_t factionId = fDbc->getUInt32(i, 0);
+                    // Check each of the 4 reputation slots for Human race mask
+                    for (int slot = 0; slot < 4; slot++) {
+                        uint32_t raceMask = fDbc->getUInt32(i, 2 + slot);  // ReputationRaceMask[4] at fields 2-5
+                        if (raceMask & 0x1) { // Human race bit
+                            int32_t baseRep = fDbc->getInt32(i, 10 + slot);  // ReputationBase[4] at fields 10-13
+                            if (baseRep < 0) {
+                                hostileParentFactions.insert(factionId);
+                            }
+                            break;
+                        }
+                    }
+                }
+                LOG_INFO("Faction.dbc: ", hostileParentFactions.size(), " factions hostile to Humans");
+            }
+
+            // Get player faction template data
             uint32_t playerFriendGroup = 0;
-            for (uint32_t i = 0; i < dbc->getRecordCount(); i++) {
-                if (dbc->getUInt32(i, 0) == 1) { // Human player faction template
-                    playerFriendGroup = dbc->getUInt32(i, 4) | dbc->getUInt32(i, 3);
-                    break;
-                }
-            }
-            // Find player's parent faction ID for individual enemy checks
+            uint32_t playerEnemyGroup = 0;
             uint32_t playerFactionId = 0;
-            for (uint32_t i = 0; i < dbc->getRecordCount(); i++) {
-                if (dbc->getUInt32(i, 0) == 1) {
-                    playerFactionId = dbc->getUInt32(i, 1);
+            for (uint32_t i = 0; i < ftDbc->getRecordCount(); i++) {
+                if (ftDbc->getUInt32(i, 0) == 1) { // Human player faction template
+                    playerFriendGroup = ftDbc->getUInt32(i, 4) | ftDbc->getUInt32(i, 3);
+                    playerEnemyGroup = ftDbc->getUInt32(i, 5);
+                    playerFactionId = ftDbc->getUInt32(i, 1);
                     break;
                 }
             }
+
+            // Build hostility map for each faction template
             std::unordered_map<uint32_t, bool> factionMap;
-            for (uint32_t i = 0; i < dbc->getRecordCount(); i++) {
-                uint32_t id = dbc->getUInt32(i, 0);
-                uint32_t factionGroup = dbc->getUInt32(i, 3);
-                uint32_t enemyGroup = dbc->getUInt32(i, 5);
-                bool hostile = (enemyGroup & playerFriendGroup) != 0;
-                // Monster factionGroup bit (8) = hostile to players
-                // Bits: 1=Player, 2=Alliance, 4=Horde, 8=Monster
+            for (uint32_t i = 0; i < ftDbc->getRecordCount(); i++) {
+                uint32_t id = ftDbc->getUInt32(i, 0);
+                uint32_t parentFaction = ftDbc->getUInt32(i, 1);
+                uint32_t factionGroup = ftDbc->getUInt32(i, 3);
+                uint32_t friendGroup = ftDbc->getUInt32(i, 4);
+                uint32_t enemyGroup = ftDbc->getUInt32(i, 5);
+
+                // 1. Symmetric group check (WoW's actual hostility formula)
+                bool hostile = (enemyGroup & playerFriendGroup) != 0
+                            || (factionGroup & playerEnemyGroup) != 0;
+
+                // 2. Monster factionGroup bit (8)
                 if (!hostile && (factionGroup & 8) != 0) {
                     hostile = true;
                 }
-                // Check individual enemy faction IDs (fields 6-9)
+
+                // 3. Individual enemy faction IDs (fields 6-9)
                 if (!hostile && playerFactionId > 0) {
                     for (int e = 6; e <= 9; e++) {
-                        if (dbc->getUInt32(i, e) == playerFactionId) {
+                        if (ftDbc->getUInt32(i, e) == playerFactionId) {
                             hostile = true;
                             break;
                         }
                     }
                 }
+
+                // 4. Parent faction base reputation check (Faction.dbc)
+                if (!hostile && parentFaction > 0) {
+                    if (hostileParentFactions.count(parentFaction)) {
+                        hostile = true;
+                    }
+                }
+
+                // 5. If explicitly friendly (friendGroup includes player), override to non-hostile
+                if (hostile && (friendGroup & playerFriendGroup) != 0) {
+                    hostile = false;
+                }
+
                 factionMap[id] = hostile;
             }
+
+            uint32_t hostileCount = 0;
+            for (const auto& [fid, h] : factionMap) { if (h) hostileCount++; }
             gameHandler->setFactionHostileMap(std::move(factionMap));
-            LOG_INFO("Loaded faction hostility data (playerFriendGroup=0x", std::hex, playerFriendGroup, std::dec, ")");
+            LOG_INFO("Loaded faction hostility: ", hostileCount, "/", ftDbc->getRecordCount(),
+                " hostile (playerFriendGroup=0x", std::hex, playerFriendGroup, std::dec, ")");
         }
     }
 

@@ -1260,10 +1260,22 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // Mark quest as complete in local log
             if (packet.getSize() - packet.getReadPos() >= 4) {
                 uint32_t questId = packet.readUInt32();
-                for (auto& q : questLog_) {
-                    if (q.questId == questId) {
-                        q.complete = true;
+                for (auto it = questLog_.begin(); it != questLog_.end(); ++it) {
+                    if (it->questId == questId) {
+                        questLog_.erase(it);
                         break;
+                    }
+                }
+            }
+            // Re-query all nearby quest giver NPCs so markers refresh
+            if (socket) {
+                for (const auto& [guid, entity] : entityManager.getEntities()) {
+                    if (entity->getType() != ObjectType::UNIT) continue;
+                    auto unit = std::static_pointer_cast<Unit>(entity);
+                    if (unit->getNpcFlags() & 0x02) {
+                        network::Packet qsPkt(static_cast<uint16_t>(Opcode::CMSG_QUESTGIVER_STATUS_QUERY));
+                        qsPkt.writeUInt64(guid);
+                        socket->send(qsPkt);
                     }
                 }
             }
@@ -4078,8 +4090,9 @@ void GameHandler::handleQuestDetails(network::Packet& packet) {
 
 void GameHandler::acceptQuest() {
     if (!questDetailsOpen || state != WorldState::IN_WORLD || !socket) return;
+    uint64_t npcGuid = currentQuestDetails.npcGuid;
     auto packet = QuestgiverAcceptQuestPacket::build(
-        currentQuestDetails.npcGuid, currentQuestDetails.questId);
+        npcGuid, currentQuestDetails.questId);
     socket->send(packet);
 
     // Add to quest log
@@ -4097,6 +4110,13 @@ void GameHandler::acceptQuest() {
 
     questDetailsOpen = false;
     currentQuestDetails = QuestDetailsData{};
+
+    // Re-query quest giver status so marker updates (! → ?)
+    if (npcGuid) {
+        network::Packet qsPkt(static_cast<uint16_t>(Opcode::CMSG_QUESTGIVER_STATUS_QUERY));
+        qsPkt.writeUInt64(npcGuid);
+        socket->send(qsPkt);
+    }
 }
 
 void GameHandler::declineQuest() {

@@ -442,8 +442,33 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
     ImGui::Text("Type:");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(100);
-    const char* chatTypes[] = { "SAY", "YELL", "PARTY", "GUILD" };
-    ImGui::Combo("##ChatType", &selectedChatType, chatTypes, 4);
+    const char* chatTypes[] = { "SAY", "YELL", "PARTY", "GUILD", "WHISPER" };
+    ImGui::Combo("##ChatType", &selectedChatType, chatTypes, 5);
+
+    // Auto-fill whisper target when switching to WHISPER mode
+    if (selectedChatType == 4 && lastChatType != 4) {
+        // Just switched to WHISPER mode
+        if (gameHandler.hasTarget()) {
+            auto target = gameHandler.getTarget();
+            if (target && target->getType() == game::ObjectType::PLAYER) {
+                auto player = std::static_pointer_cast<game::Player>(target);
+                if (!player->getName().empty()) {
+                    strncpy(whisperTargetBuffer, player->getName().c_str(), sizeof(whisperTargetBuffer) - 1);
+                    whisperTargetBuffer[sizeof(whisperTargetBuffer) - 1] = '\0';
+                }
+            }
+        }
+    }
+    lastChatType = selectedChatType;
+
+    // Show whisper target field if WHISPER is selected
+    if (selectedChatType == 4) {
+        ImGui::SameLine();
+        ImGui::Text("To:");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(120);
+        ImGui::InputText("##WhisperTarget", whisperTargetBuffer, sizeof(whisperTargetBuffer));
+    }
 
     ImGui::SameLine();
     ImGui::Text("Message:");
@@ -902,72 +927,186 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
 void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
     if (strlen(chatInputBuffer) > 0) {
         std::string input(chatInputBuffer);
+        game::ChatType type;
+        std::string message = input;
+        std::string target;
 
-        // Check for slash command emotes
+        // Check for slash commands
         if (input.size() > 1 && input[0] == '/') {
             std::string command = input.substr(1);
-            // Convert to lowercase
-            for (char& c : command) c = std::tolower(c);
+            size_t spacePos = command.find(' ');
+            std::string cmd = (spacePos != std::string::npos) ? command.substr(0, spacePos) : command;
 
-            if (command == "logout") {
+            // Convert command to lowercase for comparison
+            std::string cmdLower = cmd;
+            for (char& c : cmdLower) c = std::tolower(c);
+
+            // Special commands
+            if (cmdLower == "logout") {
                 core::Application::getInstance().logoutToLogin();
                 chatInputBuffer[0] = '\0';
                 return;
             }
 
-            std::string emoteText = rendering::Renderer::getEmoteText(command);
-            if (!emoteText.empty()) {
-                // Play the emote animation
-                auto* renderer = core::Application::getInstance().getRenderer();
-                if (renderer) {
-                    renderer->playEmote(command);
-                }
-
-                // Build emote message — targeted or untargeted
-                std::string chatText;
-                if (gameHandler.hasTarget()) {
-                    auto target = gameHandler.getTarget();
-                    if (target) {
-                        std::string targetName = getEntityName(target);
-                        chatText = command + " at " + targetName + ".";
-                    } else {
-                        chatText = emoteText;
-                    }
-                } else {
-                    chatText = command + ".";  // First person: "You wave."
-                }
-
-                // Add local chat message
-                game::MessageChatData msg;
-                msg.type = game::ChatType::TEXT_EMOTE;
-                msg.language = game::ChatLanguage::COMMON;
-                msg.message = chatText;
-                gameHandler.addLocalChatMessage(msg);
-
-                chatInputBuffer[0] = '\0';
-                return;
-            }
-            // /invite command (Phase 4)
-            if (command.size() > 7 && command.substr(0, 7) == "invite ") {
-                std::string targetName = input.substr(8);
+            // /invite command
+            if (cmdLower == "invite" && spacePos != std::string::npos) {
+                std::string targetName = command.substr(spacePos + 1);
                 gameHandler.inviteToGroup(targetName);
                 chatInputBuffer[0] = '\0';
                 return;
             }
 
-            // Not a recognized emote — fall through and send as normal chat
+            // Chat channel slash commands
+            bool isChannelCommand = false;
+            if (cmdLower == "s" || cmdLower == "say") {
+                type = game::ChatType::SAY;
+                message = (spacePos != std::string::npos) ? command.substr(spacePos + 1) : "";
+                isChannelCommand = true;
+            } else if (cmdLower == "y" || cmdLower == "yell") {
+                type = game::ChatType::YELL;
+                message = (spacePos != std::string::npos) ? command.substr(spacePos + 1) : "";
+                isChannelCommand = true;
+            } else if (cmdLower == "p" || cmdLower == "party") {
+                type = game::ChatType::PARTY;
+                message = (spacePos != std::string::npos) ? command.substr(spacePos + 1) : "";
+                isChannelCommand = true;
+            } else if (cmdLower == "g" || cmdLower == "guild") {
+                type = game::ChatType::GUILD;
+                message = (spacePos != std::string::npos) ? command.substr(spacePos + 1) : "";
+                isChannelCommand = true;
+            } else if (cmdLower == "w" || cmdLower == "whisper" || cmdLower == "tell" || cmdLower == "t") {
+                // Parse: /w [TargetName] message text
+                // If no target name, use current target
+                if (spacePos != std::string::npos) {
+                    std::string rest = command.substr(spacePos + 1);
+                    size_t msgStart = rest.find(' ');
+                    if (msgStart != std::string::npos) {
+                        // Has both target and message: /w PlayerName message
+                        target = rest.substr(0, msgStart);
+                        message = rest.substr(msgStart + 1);
+                        type = game::ChatType::WHISPER;
+                        isChannelCommand = true;
+                    } else {
+                        // Only one word after /w - treat as message to current target
+                        message = rest;
+                        if (gameHandler.hasTarget()) {
+                            auto targetEntity = gameHandler.getTarget();
+                            if (targetEntity && targetEntity->getType() == game::ObjectType::PLAYER) {
+                                auto player = std::static_pointer_cast<game::Player>(targetEntity);
+                                target = player->getName();
+                                type = game::ChatType::WHISPER;
+                                isChannelCommand = true;
+                            } else {
+                                game::MessageChatData msg;
+                                msg.type = game::ChatType::SYSTEM;
+                                msg.language = game::ChatLanguage::UNIVERSAL;
+                                msg.message = "You must target a player to whisper, or use: /w <player> <message>";
+                                gameHandler.addLocalChatMessage(msg);
+                                chatInputBuffer[0] = '\0';
+                                return;
+                            }
+                        } else {
+                            game::MessageChatData msg;
+                            msg.type = game::ChatType::SYSTEM;
+                            msg.language = game::ChatLanguage::UNIVERSAL;
+                            msg.message = "No player targeted. Use: /w <player> <message>";
+                            gameHandler.addLocalChatMessage(msg);
+                            chatInputBuffer[0] = '\0';
+                            return;
+                        }
+                    }
+                } else {
+                    // Just "/w" with no message - show usage
+                    game::MessageChatData msg;
+                    msg.type = game::ChatType::SYSTEM;
+                    msg.language = game::ChatLanguage::UNIVERSAL;
+                    msg.message = "Usage: /w <message> (to target) or /w <player> <message>";
+                    gameHandler.addLocalChatMessage(msg);
+                    chatInputBuffer[0] = '\0';
+                    return;
+                }
+            }
+
+            // Check for emote commands
+            if (!isChannelCommand) {
+                std::string emoteText = rendering::Renderer::getEmoteText(cmdLower);
+                if (!emoteText.empty()) {
+                    // Play the emote animation
+                    auto* renderer = core::Application::getInstance().getRenderer();
+                    if (renderer) {
+                        renderer->playEmote(cmdLower);
+                    }
+
+                    // Build emote message — targeted or untargeted
+                    std::string chatText;
+                    if (gameHandler.hasTarget()) {
+                        auto targetEntity = gameHandler.getTarget();
+                        if (targetEntity) {
+                            std::string targetName = getEntityName(targetEntity);
+                            chatText = cmdLower + " at " + targetName + ".";
+                        } else {
+                            chatText = emoteText;
+                        }
+                    } else {
+                        chatText = cmdLower + ".";  // First person: "You wave."
+                    }
+
+                    // Add local chat message
+                    game::MessageChatData msg;
+                    msg.type = game::ChatType::TEXT_EMOTE;
+                    msg.language = game::ChatLanguage::COMMON;
+                    msg.message = chatText;
+                    gameHandler.addLocalChatMessage(msg);
+
+                    chatInputBuffer[0] = '\0';
+                    return;
+                }
+
+                // Not a recognized command — fall through and send as normal chat
+                if (!isChannelCommand) {
+                    message = input;
+                }
+            }
+
+            // If no valid command found and starts with /, just send as-is
+            if (!isChannelCommand && message == input) {
+                // Use the selected chat type from dropdown
+                switch (selectedChatType) {
+                    case 0: type = game::ChatType::SAY; break;
+                    case 1: type = game::ChatType::YELL; break;
+                    case 2: type = game::ChatType::PARTY; break;
+                    case 3: type = game::ChatType::GUILD; break;
+                    case 4: type = game::ChatType::WHISPER; target = whisperTargetBuffer; break;
+                    default: type = game::ChatType::SAY; break;
+                }
+            }
+        } else {
+            // No slash command, use the selected chat type from dropdown
+            switch (selectedChatType) {
+                case 0: type = game::ChatType::SAY; break;
+                case 1: type = game::ChatType::YELL; break;
+                case 2: type = game::ChatType::PARTY; break;
+                case 3: type = game::ChatType::GUILD; break;
+                case 4: type = game::ChatType::WHISPER; target = whisperTargetBuffer; break;
+                default: type = game::ChatType::SAY; break;
+            }
         }
 
-        game::ChatType type;
-        switch (selectedChatType) {
-            case 0: type = game::ChatType::SAY; break;
-            case 1: type = game::ChatType::YELL; break;
-            case 2: type = game::ChatType::PARTY; break;
-            case 3: type = game::ChatType::GUILD; break;
-            default: type = game::ChatType::SAY; break;
+        // Validate whisper has a target
+        if (type == game::ChatType::WHISPER && target.empty()) {
+            game::MessageChatData msg;
+            msg.type = game::ChatType::SYSTEM;
+            msg.language = game::ChatLanguage::UNIVERSAL;
+            msg.message = "You must specify a player name for whisper.";
+            gameHandler.addLocalChatMessage(msg);
+            chatInputBuffer[0] = '\0';
+            return;
         }
 
-        gameHandler.sendChatMessage(type, chatInputBuffer);
+        // Don't send empty messages
+        if (!message.empty()) {
+            gameHandler.sendChatMessage(type, message, target);
+        }
 
         // Clear input
         chatInputBuffer[0] = '\0';

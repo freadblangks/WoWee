@@ -40,8 +40,10 @@ public:
 private:
     // Chat state
     char chatInputBuffer[512] = "";
+    char whisperTargetBuffer[256] = "";
     bool chatInputActive = false;
-    int selectedChatType = 0;  // 0=SAY, 1=YELL, 2=PARTY, etc.
+    int selectedChatType = 0;  // 0=SAY, 1=YELL, 2=PARTY, 3=GUILD, 4=WHISPER
+    int lastChatType = 0;  // Track chat type changes
     bool chatInputMoveCursorToEnd = false;
 
     // UI state

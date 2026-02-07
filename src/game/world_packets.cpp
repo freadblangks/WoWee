@@ -2056,6 +2056,7 @@ bool GossipMessageParser::parse(network::Packet& packet, GossipMessageData& data
     data.titleTextId = packet.readUInt32();
     uint32_t optionCount = packet.readUInt32();
 
+    data.options.clear();
     data.options.reserve(optionCount);
     for (uint32_t i = 0; i < optionCount; ++i) {
         GossipOption opt;
@@ -2069,6 +2070,7 @@ bool GossipMessageParser::parse(network::Packet& packet, GossipMessageData& data
     }
 
     uint32_t questCount = packet.readUInt32();
+    data.quests.clear();
     data.quests.reserve(questCount);
     for (uint32_t i = 0; i < questCount; ++i) {
         GossipQuestItem quest;

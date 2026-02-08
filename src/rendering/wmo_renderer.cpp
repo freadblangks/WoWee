@@ -1859,10 +1859,10 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
             const auto& indices = group.collisionIndices;
 
             // Use spatial grid: query range covering the movement segment + player radius
-            float rangeMinX = std::min(localFrom.x, localTo.x) - PLAYER_RADIUS - 1.0f;
-            float rangeMinY = std::min(localFrom.y, localTo.y) - PLAYER_RADIUS - 1.0f;
-            float rangeMaxX = std::max(localFrom.x, localTo.x) + PLAYER_RADIUS + 1.0f;
-            float rangeMaxY = std::max(localFrom.y, localTo.y) + PLAYER_RADIUS + 1.0f;
+            float rangeMinX = std::min(localFrom.x, localTo.x) - PLAYER_RADIUS - 2.5f;
+            float rangeMinY = std::min(localFrom.y, localTo.y) - PLAYER_RADIUS - 2.5f;
+            float rangeMaxX = std::max(localFrom.x, localTo.x) + PLAYER_RADIUS + 2.5f;
+            float rangeMaxY = std::max(localFrom.y, localTo.y) + PLAYER_RADIUS + 2.5f;
             group.getTrianglesInRange(rangeMinX, rangeMinY, rangeMaxX, rangeMaxY, wallTriScratch);
 
             for (uint32_t triStart : wallTriScratch) {
@@ -1913,7 +1913,7 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
                             glm::vec3 hitPoint = localFrom + (localTo - localFrom) * tHit;
                             glm::vec3 hitClosest = closestPointOnTriangle(hitPoint, v0, v1, v2);
                             float hitErrSq = glm::dot(hitClosest - hitPoint, hitClosest - hitPoint);
-                            if (hitErrSq <= 0.04f * 0.04f) {
+                            if (hitErrSq <= 0.5f * 0.5f) {
                                 float side = fromDist > 0.0f ? 1.0f : -1.0f;
                                 glm::vec3 safeLocal = hitPoint + normal * side * (PLAYER_RADIUS + 0.05f);
                                 glm::vec3 safeWorld = glm::vec3(instance.modelMatrix * glm::vec4(safeLocal, 1.0f));

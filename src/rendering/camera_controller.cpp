@@ -27,7 +27,7 @@ std::optional<float> selectReachableFloor(const std::optional<float>& terrainH,
     if (wmoH && *wmoH <= refZ + maxStepUp) reachWmo = wmoH;
 
     // Avoid snapping up to higher WMO floors when entering buildings.
-    if (reachTerrain && reachWmo && *reachWmo > refZ + 2.0f) {
+    if (reachTerrain && reachWmo && *reachWmo > refZ + 3.5f) {
         return reachTerrain;
     }
 
@@ -479,6 +479,11 @@ void CameraController::update(float deltaTime) {
                             if (!walkable) {
                                 candidate.x = adjusted.x;
                                 candidate.y = adjusted.y;
+                                // Snap Z to floor at adjusted position to prevent fall-through
+                                auto adjFloor = wmoRenderer->getFloorHeight(adjusted.x, adjusted.y, feetZ + 2.5f);
+                                if (adjFloor && *adjFloor >= feetZ - 1.0f && *adjFloor <= feetZ + 1.6f) {
+                                    candidate.z = *adjFloor;
+                                }
                             } else if (floorH && *floorH > candidate.z) {
                                 // Snap Z to ramp surface so subsequent sweep
                                 // steps measure feetZ from the ramp, not the
@@ -611,8 +616,6 @@ void CameraController::update(float deltaTime) {
         // Skip entirely while swimming — the swim floor clamp handles vertical bounds.
         if (!swimming) {
             float stepUpBudget = grounded ? 1.6f : 1.2f;
-            bool firstPerson = (!thirdPerson) || (currentDistance < 0.6f);
-
             // 1. Center-only sample for terrain/WMO floor selection.
             //    Using only the center prevents tunnel entrances from snapping
             //    to terrain when offset samples miss the WMO floor geometry.
@@ -624,7 +627,7 @@ void CameraController::update(float deltaTime) {
                     terrainH = terrainManager->getHeightAt(targetPos.x, targetPos.y);
                 }
                 float wmoProbeZ = std::max(targetPos.z, lastGroundZ) + stepUpBudget + 0.5f;
-                if (wmoRenderer && !firstPerson) {
+                if (wmoRenderer) {
                     wmoH = wmoRenderer->getFloorHeight(targetPos.x, targetPos.y, wmoProbeZ);
                 }
                 groundH = selectReachableFloor(terrainH, wmoH, targetPos.z, stepUpBudget);

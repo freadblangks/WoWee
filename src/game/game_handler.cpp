@@ -1456,6 +1456,10 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                     uint32_t old = currentMountDisplayId_;
                                     currentMountDisplayId_ = val;
                                     if (val != old && mountCallback_) mountCallback_(val);
+                                    if (old != 0 && val == 0) {
+                                        for (auto& a : playerAuras)
+                                            if (!a.isEmpty() && a.maxDurationMs < 0) a = AuraSlot{};
+                                    }
                                 }
                                 unit->setMountDisplayId(val);
                                 break;
@@ -1628,6 +1632,10 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                         uint32_t old = currentMountDisplayId_;
                                         currentMountDisplayId_ = val;
                                         if (val != old && mountCallback_) mountCallback_(val);
+                                        if (old != 0 && val == 0) {
+                                            for (auto& a : playerAuras)
+                                                if (!a.isEmpty() && a.maxDurationMs < 0) a = AuraSlot{};
+                                        }
                                     }
                                     unit->setMountDisplayId(val);
                                     break;

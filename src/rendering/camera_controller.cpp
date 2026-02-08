@@ -587,45 +587,41 @@ void CameraController::update(float deltaTime) {
         // Ground the character to terrain or WMO floor
         // Skip entirely while swimming — the swim floor clamp handles vertical bounds.
         if (!swimming) {
-            auto sampleGround = [&](float x, float y) -> std::optional<float> {
-                std::optional<float> terrainH;
-                std::optional<float> wmoH;
-                std::optional<float> m2H;
-                if (terrainManager) {
-                    terrainH = terrainManager->getHeightAt(x, y);
-                }
-                float stepUpBudget = grounded ? 1.6f : 1.2f;
-                // WMO probe: keep tight so multi-story buildings return the
-                // current floor, not a ceiling/upper floor the player can't reach.
-                float wmoProbeZ = std::max(targetPos.z, lastGroundZ) + stepUpBudget + 0.5f;
-                float m2ProbeZ = std::max(targetPos.z, lastGroundZ) + 6.0f;
-                if (wmoRenderer) {
-                    wmoH = wmoRenderer->getFloorHeight(x, y, wmoProbeZ);
-                }
-                if (m2Renderer) {
-                    m2H = m2Renderer->getFloorHeight(x, y, m2ProbeZ);
-                }
-                auto base = selectReachableFloor(terrainH, wmoH, targetPos.z, stepUpBudget);
-                if (m2H && *m2H <= targetPos.z + stepUpBudget && (!base || *m2H > *base)) {
-                    base = m2H;
-                }
-                return base;
-            };
+            float stepUpBudget = grounded ? 1.6f : 1.2f;
 
-            // Sample center + 4 cardinal offsets so narrow M2 objects (rugs,
-            // planks) are reliably detected.  Take the highest result.
+            // 1. Center-only sample for terrain/WMO floor selection.
+            //    Using only the center prevents tunnel entrances from snapping
+            //    to terrain when offset samples miss the WMO floor geometry.
             std::optional<float> groundH;
             {
+                std::optional<float> terrainH;
+                std::optional<float> wmoH;
+                if (terrainManager) {
+                    terrainH = terrainManager->getHeightAt(targetPos.x, targetPos.y);
+                }
+                float wmoProbeZ = std::max(targetPos.z, lastGroundZ) + stepUpBudget + 0.5f;
+                if (wmoRenderer) {
+                    wmoH = wmoRenderer->getFloorHeight(targetPos.x, targetPos.y, wmoProbeZ);
+                }
+                groundH = selectReachableFloor(terrainH, wmoH, targetPos.z, stepUpBudget);
+            }
+
+            // 2. Multi-sample for M2 objects (rugs, planks, bridges) —
+            //    these are narrow and need offset probes to detect reliably.
+            if (m2Renderer) {
                 constexpr float FOOTPRINT = 0.4f;
                 const glm::vec2 offsets[] = {
                     {0.0f, 0.0f},
                     {FOOTPRINT, 0.0f}, {-FOOTPRINT, 0.0f},
                     {0.0f, FOOTPRINT}, {0.0f, -FOOTPRINT}
                 };
+                float m2ProbeZ = std::max(targetPos.z, lastGroundZ) + 6.0f;
                 for (const auto& o : offsets) {
-                    auto h = sampleGround(targetPos.x + o.x, targetPos.y + o.y);
-                    if (h && (!groundH || *h > *groundH)) {
-                        groundH = h;
+                    auto m2H = m2Renderer->getFloorHeight(
+                        targetPos.x + o.x, targetPos.y + o.y, m2ProbeZ);
+                    if (m2H && *m2H <= targetPos.z + stepUpBudget &&
+                        (!groundH || *m2H > *groundH)) {
+                        groundH = m2H;
                     }
                 }
             }
@@ -720,11 +716,21 @@ void CameraController::update(float deltaTime) {
         float camLerp = 1.0f - std::exp(-CAM_SMOOTH_SPEED * deltaTime);
         smoothedCamPos += (actualCam - smoothedCamPos) * camLerp;
 
-        // ===== Final floor clearance check (terrain only) =====
+        // ===== Final floor clearance check =====
+        // Use WMO-aware floor so the camera doesn't pop above tunnels/caves.
         constexpr float MIN_FLOOR_CLEARANCE = 0.35f;
-        auto finalFloorH = getTerrainFloorAt(smoothedCamPos.x, smoothedCamPos.y);
-        if (finalFloorH && smoothedCamPos.z < *finalFloorH + MIN_FLOOR_CLEARANCE) {
-            smoothedCamPos.z = *finalFloorH + MIN_FLOOR_CLEARANCE;
+        {
+            auto camTerrainH = getTerrainFloorAt(smoothedCamPos.x, smoothedCamPos.y);
+            std::optional<float> camWmoH;
+            if (wmoRenderer) {
+                camWmoH = wmoRenderer->getFloorHeight(
+                    smoothedCamPos.x, smoothedCamPos.y, smoothedCamPos.z + 3.0f);
+            }
+            auto camFloorH = selectReachableFloor(
+                camTerrainH, camWmoH, smoothedCamPos.z, 3.0f);
+            if (camFloorH && smoothedCamPos.z < *camFloorH + MIN_FLOOR_CLEARANCE) {
+                smoothedCamPos.z = *camFloorH + MIN_FLOOR_CLEARANCE;
+            }
         }
         // Never let camera sink below the character's feet plane.
         smoothedCamPos.z = std::max(smoothedCamPos.z, targetPos.z + 0.15f);

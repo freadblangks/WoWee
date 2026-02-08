@@ -90,6 +90,7 @@ struct M2Particle {
     float life;        // current age in seconds
     float maxLife;     // total lifespan
     int emitterIndex;  // which emitter spawned this
+    float tileIndex = 0.0f; // texture atlas tile index
 };
 
 /**

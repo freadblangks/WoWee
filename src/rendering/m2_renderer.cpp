@@ -12,6 +12,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <unordered_set>
+#include <functional>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -22,6 +23,9 @@ namespace wowee {
 namespace rendering {
 
 namespace {
+
+static constexpr uint32_t kParticleFlagRandomized = 0x40;
+static constexpr uint32_t kParticleFlagTiled = 0x80;
 
 void getTightCollisionBounds(const M2ModelGPU& model, glm::vec3& outMin, glm::vec3& outMax) {
     glm::vec3 center = (model.boundMin + model.boundMax) * 0.5f;
@@ -457,11 +461,13 @@ bool M2Renderer::initialize(pipeline::AssetManager* assets) {
             layout (location = 0) in vec3 aPos;
             layout (location = 1) in vec4 aColor;
             layout (location = 2) in float aSize;
+            layout (location = 3) in float aTile;
 
             uniform mat4 uView;
             uniform mat4 uProjection;
 
             out vec4 vColor;
+            out float vTile;
 
             void main() {
                 vec4 viewPos = uView * vec4(aPos, 1.0);
@@ -469,17 +475,29 @@ bool M2Renderer::initialize(pipeline::AssetManager* assets) {
                 float dist = max(-viewPos.z, 1.0);
                 gl_PointSize = clamp(aSize * 800.0 / dist, 1.0, 256.0);
                 vColor = aColor;
+                vTile = aTile;
             }
         )";
 
         const char* particleFragSrc = R"(
             #version 330 core
             in vec4 vColor;
+            in float vTile;
             uniform sampler2D uTexture;
+            uniform vec2 uTileCount;
             out vec4 FragColor;
 
             void main() {
-                vec4 texColor = texture(uTexture, gl_PointCoord);
+                vec2 tileCount = max(uTileCount, vec2(1.0));
+                float tilesX = tileCount.x;
+                float tilesY = tileCount.y;
+                float tileMax = max(tilesX * tilesY - 1.0, 0.0);
+                float tile = clamp(vTile, 0.0, tileMax);
+                float col = mod(tile, tilesX);
+                float row = floor(tile / tilesX);
+                vec2 tileSize = vec2(1.0 / tilesX, 1.0 / tilesY);
+                vec2 uv = gl_PointCoord * tileSize + vec2(col, row) * tileSize;
+                vec4 texColor = texture(uTexture, uv);
                 FragColor = texColor * vColor;
                 if (FragColor.a < 0.01) discard;
             }
@@ -500,21 +518,24 @@ bool M2Renderer::initialize(pipeline::AssetManager* assets) {
         glDeleteShader(vs);
         glDeleteShader(fs);
 
-        // Create particle VAO/VBO: 8 floats per particle (pos3 + rgba4 + size1)
+        // Create particle VAO/VBO: 9 floats per particle (pos3 + rgba4 + size1 + tile1)
         glGenVertexArrays(1, &m2ParticleVAO_);
         glGenBuffers(1, &m2ParticleVBO_);
         glBindVertexArray(m2ParticleVAO_);
         glBindBuffer(GL_ARRAY_BUFFER, m2ParticleVBO_);
-        glBufferData(GL_ARRAY_BUFFER, MAX_M2_PARTICLES * 8 * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, MAX_M2_PARTICLES * 9 * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
         // Position (3f)
         glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void*)0);
         // Color (4f)
         glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+        glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void*)(3 * sizeof(float)));
         // Size (1f)
         glEnableVertexAttribArray(2);
-        glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(7 * sizeof(float)));
+        glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void*)(7 * sizeof(float)));
+        // Tile index (1f)
+        glEnableVertexAttribArray(3);
+        glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void*)(8 * sizeof(float)));
         glBindVertexArray(0);
     }
 
@@ -1636,9 +1657,11 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
         GLint viewLoc = glGetUniformLocation(m2ParticleShader_, "uView");
         GLint projLoc = glGetUniformLocation(m2ParticleShader_, "uProjection");
         GLint texLoc = glGetUniformLocation(m2ParticleShader_, "uTexture");
+        GLint tileLoc = glGetUniformLocation(m2ParticleShader_, "uTileCount");
         glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
         glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
         glUniform1i(texLoc, 0);
+        glUniform2f(tileLoc, 1.0f, 1.0f);
 
         glBlendFunc(GL_SRC_ALPHA, GL_ONE); // Additive blending
         glDepthMask(GL_FALSE);
@@ -1648,9 +1671,9 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, glowTexture);
 
-        // Build vertex data: pos(3) + color(4) + size(1) = 8 floats per sprite
+        // Build vertex data: pos(3) + color(4) + size(1) + tile(1) = 9 floats per sprite
         std::vector<float> glowData;
-        glowData.reserve(glowSprites.size() * 8);
+        glowData.reserve(glowSprites.size() * 9);
         for (const auto& gs : glowSprites) {
             glowData.push_back(gs.worldPos.x);
             glowData.push_back(gs.worldPos.y);
@@ -1660,12 +1683,13 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
             glowData.push_back(gs.color.b);
             glowData.push_back(gs.color.a);
             glowData.push_back(gs.size);
+            glowData.push_back(0.0f);
         }
 
         glBindVertexArray(m2ParticleVAO_);
         glBindBuffer(GL_ARRAY_BUFFER, m2ParticleVBO_);
         size_t uploadCount = std::min(glowSprites.size(), MAX_M2_PARTICLES);
-        glBufferSubData(GL_ARRAY_BUFFER, 0, uploadCount * 8 * sizeof(float), glowData.data());
+        glBufferSubData(GL_ARRAY_BUFFER, 0, uploadCount * 9 * sizeof(float), glowData.data());
         glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(uploadCount));
         glBindVertexArray(0);
 
@@ -1799,6 +1823,7 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
 
     std::uniform_real_distribution<float> dist01(0.0f, 1.0f);
     std::uniform_real_distribution<float> distN(-1.0f, 1.0f);
+    std::uniform_int_distribution<int> distTile;
 
     for (size_t ei = 0; ei < gpu.particleEmitters.size(); ei++) {
         const auto& em = gpu.particleEmitters[ei];
@@ -1819,6 +1844,7 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
             p.emitterIndex = static_cast<int>(ei);
             p.life = 0.0f;
             p.maxLife = life;
+            p.tileIndex = 0.0f;
 
             // Position: emitter position transformed by bone matrix
             glm::vec3 localPos = em.position;
@@ -1849,6 +1875,18 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
             // Transform direction by bone + model orientation (rotation only)
             glm::mat3 rotMat = glm::mat3(inst.modelMatrix * boneXform);
             p.velocity = rotMat * dir * speed;
+
+            const uint32_t tilesX = std::max<uint16_t>(em.textureCols, 1);
+            const uint32_t tilesY = std::max<uint16_t>(em.textureRows, 1);
+            const uint32_t totalTiles = tilesX * tilesY;
+            if ((em.flags & kParticleFlagTiled) && totalTiles > 1) {
+                if (em.flags & kParticleFlagRandomized) {
+                    distTile = std::uniform_int_distribution<int>(0, static_cast<int>(totalTiles - 1));
+                    p.tileIndex = static_cast<float>(distTile(particleRng_));
+                } else {
+                    p.tileIndex = 0.0f;
+                }
+            }
 
             inst.particles.push_back(p);
         }
@@ -1889,14 +1927,38 @@ void M2Renderer::renderM2Particles(const glm::mat4& view, const glm::mat4& proj)
     if (m2ParticleShader_ == 0 || m2ParticleVAO_ == 0) return;
 
     // Collect all particles from all instances, grouped by texture+blend
+    struct ParticleGroupKey {
+        GLuint texture;
+        uint8_t blendType;
+        uint16_t tilesX;
+        uint16_t tilesY;
+
+        bool operator==(const ParticleGroupKey& other) const {
+            return texture == other.texture &&
+                   blendType == other.blendType &&
+                   tilesX == other.tilesX &&
+                   tilesY == other.tilesY;
+        }
+    };
+    struct ParticleGroupKeyHash {
+        size_t operator()(const ParticleGroupKey& key) const {
+            size_t h1 = std::hash<uint32_t>{}(key.texture);
+            size_t h2 = std::hash<uint32_t>{}((static_cast<uint32_t>(key.tilesX) << 16) | key.tilesY);
+            size_t h3 = std::hash<uint8_t>{}(key.blendType);
+            return h1 ^ (h2 * 0x9e3779b9u) ^ (h3 * 0x85ebca6bu);
+        }
+    };
     struct ParticleGroup {
         GLuint texture;
         uint8_t blendType;
-        std::vector<float> vertexData;  // 8 floats per particle
+        uint16_t tilesX;
+        uint16_t tilesY;
+        std::vector<float> vertexData;  // 9 floats per particle
     };
-    std::unordered_map<uint64_t, ParticleGroup> groups;
+    std::unordered_map<ParticleGroupKey, ParticleGroup, ParticleGroupKeyHash> groups;
 
     size_t totalParticles = 0;
+
     for (auto& inst : instances) {
         if (inst.particles.empty()) continue;
         auto it = models.find(inst.modelId);
@@ -1917,10 +1979,15 @@ void M2Renderer::renderM2Particles(const glm::mat4& view, const glm::mat4& proj)
                 tex = gpu.particleTextures[p.emitterIndex];
             }
 
-            uint64_t key = (static_cast<uint64_t>(tex) << 8) | em.blendingType;
+            uint16_t tilesX = std::max<uint16_t>(em.textureCols, 1);
+            uint16_t tilesY = std::max<uint16_t>(em.textureRows, 1);
+            uint32_t totalTiles = static_cast<uint32_t>(tilesX) * static_cast<uint32_t>(tilesY);
+            ParticleGroupKey key{tex, em.blendingType, tilesX, tilesY};
             auto& group = groups[key];
             group.texture = tex;
             group.blendType = em.blendingType;
+            group.tilesX = tilesX;
+            group.tilesY = tilesY;
 
             group.vertexData.push_back(p.position.x);
             group.vertexData.push_back(p.position.y);
@@ -1930,6 +1997,14 @@ void M2Renderer::renderM2Particles(const glm::mat4& view, const glm::mat4& proj)
             group.vertexData.push_back(color.b);
             group.vertexData.push_back(alpha);
             group.vertexData.push_back(scale);
+            float tileIndex = p.tileIndex;
+            if ((em.flags & kParticleFlagTiled) && totalTiles > 1) {
+                float animSeconds = inst.animTime / 1000.0f;
+                uint32_t animFrame = static_cast<uint32_t>(std::floor(animSeconds * totalTiles)) % totalTiles;
+                tileIndex = std::fmod(p.tileIndex + static_cast<float>(animFrame),
+                                      static_cast<float>(totalTiles));
+            }
+            group.vertexData.push_back(tileIndex);
             totalParticles++;
         }
     }
@@ -1948,6 +2023,7 @@ void M2Renderer::renderM2Particles(const glm::mat4& view, const glm::mat4& proj)
     GLint viewLoc = glGetUniformLocation(m2ParticleShader_, "uView");
     GLint projLoc = glGetUniformLocation(m2ParticleShader_, "uProjection");
     GLint texLoc = glGetUniformLocation(m2ParticleShader_, "uTexture");
+    GLint tileLoc = glGetUniformLocation(m2ParticleShader_, "uTileCount");
     glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
     glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
     glUniform1i(texLoc, 0);
@@ -1966,15 +2042,16 @@ void M2Renderer::renderM2Particles(const glm::mat4& view, const glm::mat4& proj)
         }
 
         glBindTexture(GL_TEXTURE_2D, group.texture);
+        glUniform2f(tileLoc, static_cast<float>(group.tilesX), static_cast<float>(group.tilesY));
 
         // Upload and draw in chunks of MAX_M2_PARTICLES
-        size_t count = group.vertexData.size() / 8;
+        size_t count = group.vertexData.size() / 9;
         size_t offset = 0;
         while (offset < count) {
             size_t batch = std::min(count - offset, MAX_M2_PARTICLES);
             glBindBuffer(GL_ARRAY_BUFFER, m2ParticleVBO_);
-            glBufferSubData(GL_ARRAY_BUFFER, 0, batch * 8 * sizeof(float),
-                            &group.vertexData[offset * 8]);
+            glBufferSubData(GL_ARRAY_BUFFER, 0, batch * 9 * sizeof(float),
+                            &group.vertexData[offset * 9]);
             glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(batch));
             offset += batch;
         }

@@ -146,6 +146,9 @@ struct M2ParticleEmitter {
     uint16_t texture;
     uint8_t blendingType;   // 0=opaque,1=alphakey,2=alpha,4=add
     uint8_t emitterType;    // 1=plane,2=sphere,3=spline
+    int16_t textureTileRotation = 0;
+    uint16_t textureRows = 1;
+    uint16_t textureCols = 1;
     M2AnimationTrack emissionSpeed;
     M2AnimationTrack speedVariation;
     M2AnimationTrack verticalRange;

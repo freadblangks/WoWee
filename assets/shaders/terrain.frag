@@ -63,6 +63,23 @@ float calcShadow() {
     return mix(1.0, shadow, coverageFade);
 }
 
+float sampleAlpha(sampler2D tex, vec2 uv) {
+    // Slight blur near alpha-map borders to hide seams between chunks.
+    vec2 edge = min(uv, 1.0 - uv);
+    float border = min(edge.x, edge.y);
+    float doBlur = step(border, 2.0 / 64.0); // within ~2 texels of edge
+    if (doBlur < 0.5) {
+        return texture(tex, uv).r;
+    }
+    vec2 texel = vec2(1.0 / 64.0);
+    float a = 0.0;
+    a += texture(tex, uv + vec2(-texel.x, 0.0)).r;
+    a += texture(tex, uv + vec2(texel.x, 0.0)).r;
+    a += texture(tex, uv + vec2(0.0, -texel.y)).r;
+    a += texture(tex, uv + vec2(0.0, texel.y)).r;
+    return a * 0.25;
+}
+
 void main() {
     // Sample base texture
     vec4 baseColor = texture(uBaseTexture, TexCoord);
@@ -71,22 +88,32 @@ void main() {
     // Apply texture layers with alpha blending
     // TexCoord = tiling UVs for texture sampling (repeats across chunk)
     // LayerUV = 0-1 per-chunk UVs for alpha map sampling
+    float a1 = uHasLayer1 ? sampleAlpha(uLayer1Alpha, LayerUV) : 0.0;
+    float a2 = uHasLayer2 ? sampleAlpha(uLayer2Alpha, LayerUV) : 0.0;
+    float a3 = uHasLayer3 ? sampleAlpha(uLayer3Alpha, LayerUV) : 0.0;
+
+    // Normalize weights to reduce quilting seams at chunk borders.
+    float w0 = 1.0;
+    float w1 = a1;
+    float w2 = a2;
+    float w3 = a3;
+    float sum = w0 + w1 + w2 + w3;
+    if (sum > 0.0) {
+        w0 /= sum; w1 /= sum; w2 /= sum; w3 /= sum;
+    }
+
+    finalColor = baseColor * w0;
     if (uHasLayer1) {
         vec4 layer1Color = texture(uLayer1Texture, TexCoord);
-        float alpha1 = texture(uLayer1Alpha, LayerUV).r;
-        finalColor = mix(finalColor, layer1Color, alpha1);
+        finalColor += layer1Color * w1;
     }
-
     if (uHasLayer2) {
         vec4 layer2Color = texture(uLayer2Texture, TexCoord);
-        float alpha2 = texture(uLayer2Alpha, LayerUV).r;
-        finalColor = mix(finalColor, layer2Color, alpha2);
+        finalColor += layer2Color * w2;
     }
-
     if (uHasLayer3) {
         vec4 layer3Color = texture(uLayer3Texture, TexCoord);
-        float alpha3 = texture(uLayer3Alpha, LayerUV).r;
-        finalColor = mix(finalColor, layer3Color, alpha3);
+        finalColor += layer3Color * w3;
     }
 
     // Normalize normal

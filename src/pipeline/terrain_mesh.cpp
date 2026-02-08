@@ -214,9 +214,11 @@ std::vector<TerrainVertex> TerrainMeshGenerator::generateVertices(const MapChunk
             vertex.normal[2] = 1.0f;
         }
 
-        // Texture coordinates (0-1 per chunk, tiles with GL_REPEAT)
-        vertex.texCoord[0] = offsetX / 8.0f;
-        vertex.texCoord[1] = offsetY / 8.0f;
+        // Texture coordinates: world-aligned so patterns don't reset per chunk.
+        // Keep one texture repeat per chunk (matches prior scale).
+        constexpr float texScale = 1.0f / CHUNK_SIZE;
+        vertex.texCoord[0] = -vertex.position[1] * texScale;
+        vertex.texCoord[1] = -vertex.position[0] * texScale;
 
         // Layer UV for alpha map sampling (0-1 range per chunk).
         // Sample at texel centers of the 64x64 alpha map to avoid edge seams.

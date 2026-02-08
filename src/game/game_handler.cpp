@@ -582,9 +582,12 @@ void GameHandler::handlePacket(network::Packet& packet) {
             if (BindPointUpdateParser::parse(packet, data)) {
                 LOG_INFO("Bindpoint updated: mapId=", data.mapId,
                          " pos=(", data.x, ", ", data.y, ", ", data.z, ")");
+                glm::vec3 canonical = core::coords::serverToCanonical(
+                    glm::vec3(data.x, data.y, data.z));
+                hasHomeBind_ = true;
+                homeBindMapId_ = data.mapId;
+                homeBindPos_ = canonical;
                 if (bindPointCallback_) {
-                    glm::vec3 canonical = core::coords::serverToCanonical(
-                        glm::vec3(data.x, data.y, data.z));
                     bindPointCallback_(data.mapId, canonical.x, canonical.y, canonical.z);
                 }
                 addSystemChatMessage("Your home has been set.");

@@ -407,6 +407,13 @@ void Application::update(float deltaTime) {
                 if (lastTaxiFlight_ && !onTaxi) {
                     renderer->getCameraController()->clearMovementInputs();
                 }
+                bool idleOrbit = renderer->getCameraController()->isIdleOrbit();
+                if (idleOrbit && !idleYawned_ && renderer) {
+                    renderer->playEmote("yawn");
+                    idleYawned_ = true;
+                } else if (!idleOrbit) {
+                    idleYawned_ = false;
+                }
             }
             if (renderer) {
                 renderer->setTaxiFlight(onTaxi);

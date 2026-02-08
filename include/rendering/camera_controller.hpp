@@ -45,6 +45,7 @@ public:
     void setOnlineMode(bool online) { onlineMode = online; }
     void startIntroPan(float durationSec = 2.8f, float orbitDegrees = 140.0f);
     bool isIntroActive() const { return introActive; }
+    bool isIdleOrbit() const { return idleOrbit_; }
 
     float getMovementSpeed() const { return movementSpeed; }
     const glm::vec3& getDefaultPosition() const { return defaultPosition; }

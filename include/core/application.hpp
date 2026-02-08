@@ -160,6 +160,7 @@ private:
     uint32_t wyvernDisplayId_ = 0;
     bool lastTaxiFlight_ = false;
     float taxiStreamCooldown_ = 0.0f;
+    bool idleYawned_ = false;
 
     // Online gameobject model spawning
     struct GameObjectInstanceInfo {

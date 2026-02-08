@@ -531,6 +531,10 @@ void CameraController::update(float deltaTime) {
                     if (m2Renderer) {
                         m2H = m2Renderer->getFloorHeight(x, y, targetPos.z);
                     }
+                    bool firstPerson = (!thirdPerson) || (currentDistance < 0.6f);
+                    if (firstPerson) {
+                        wmoH.reset();
+                    }
                     auto base = selectReachableFloor(terrainH, wmoH, targetPos.z, stepUpBudget);
                     bool fromM2 = false;
                     if (m2H && *m2H <= targetPos.z + stepUpBudget && (!base || *m2H > *base)) {
@@ -607,6 +611,7 @@ void CameraController::update(float deltaTime) {
         // Skip entirely while swimming — the swim floor clamp handles vertical bounds.
         if (!swimming) {
             float stepUpBudget = grounded ? 1.6f : 1.2f;
+            bool firstPerson = (!thirdPerson) || (currentDistance < 0.6f);
 
             // 1. Center-only sample for terrain/WMO floor selection.
             //    Using only the center prevents tunnel entrances from snapping
@@ -619,7 +624,7 @@ void CameraController::update(float deltaTime) {
                     terrainH = terrainManager->getHeightAt(targetPos.x, targetPos.y);
                 }
                 float wmoProbeZ = std::max(targetPos.z, lastGroundZ) + stepUpBudget + 0.5f;
-                if (wmoRenderer) {
+                if (wmoRenderer && !firstPerson) {
                     wmoH = wmoRenderer->getFloorHeight(targetPos.x, targetPos.y, wmoProbeZ);
                 }
                 groundH = selectReachableFloor(terrainH, wmoH, targetPos.z, stepUpBudget);

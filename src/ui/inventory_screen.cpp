@@ -1159,6 +1159,17 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item) {
     ImVec4 qColor = getQualityColor(item.quality);
     ImGui::TextColored(qColor, "%s", item.name.c_str());
 
+    if (item.itemId == 6948 && gameHandler_) {
+        uint32_t mapId = 0;
+        glm::vec3 pos;
+        if (gameHandler_->getHomeBind(mapId, pos)) {
+            ImGui::TextColored(ImVec4(0.8f, 0.9f, 1.0f, 1.0f),
+                               "Home: map %u (%.1f, %.1f, %.1f)", mapId, pos.x, pos.y, pos.z);
+        } else {
+            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Home: not set");
+        }
+    }
+
     // Slot type
     if (item.inventoryType > 0) {
         const char* slotName = "";

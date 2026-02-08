@@ -148,6 +148,12 @@ public:
      */
     const MovementInfo& getMovementInfo() const { return movementInfo; }
     uint32_t getCurrentMapId() const { return currentMapId_; }
+    bool getHomeBind(uint32_t& mapId, glm::vec3& pos) const {
+        if (!hasHomeBind_) return false;
+        mapId = homeBindMapId_;
+        pos = homeBindPos_;
+        return true;
+    }
 
     /**
      * Send a movement packet
@@ -781,6 +787,9 @@ private:
     // Player GUID and map
     uint64_t playerGuid = 0;
     uint32_t currentMapId_ = 0;
+    bool hasHomeBind_ = false;
+    uint32_t homeBindMapId_ = 0;
+    glm::vec3 homeBindPos_{0.0f};
 
     // ---- Phase 1: Name caches ----
     std::unordered_map<uint64_t, std::string> playerNameCache;

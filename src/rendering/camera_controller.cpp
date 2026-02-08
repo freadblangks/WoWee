@@ -136,8 +136,18 @@ void CameraController::update(float deltaTime) {
         keyW = keyS = keyA = keyD = keyQ = keyE = nowJump = false;
     }
 
+    // Tilde toggles auto-run; any forward/backward key cancels it
+    bool tildeDown = !uiWantsKeyboard && input.isKeyPressed(SDL_SCANCODE_GRAVE);
+    if (tildeDown && !tildeWasDown) {
+        autoRunning = !autoRunning;
+    }
+    tildeWasDown = tildeDown;
+    if (keyW || keyS) {
+        autoRunning = false;
+    }
+
     bool mouseAutorun = !uiWantsKeyboard && !sitting && leftMouseDown && rightMouseDown;
-    bool nowForward = keyW || mouseAutorun;
+    bool nowForward = keyW || mouseAutorun || autoRunning;
     bool nowBackward = keyS;
     bool nowStrafeLeft = false;
     bool nowStrafeRight = false;
@@ -1025,6 +1035,7 @@ void CameraController::reset() {
     grounded = true;
     swimming = false;
     sitting = false;
+    autoRunning = false;
 
     // Clear edge-state so movement packets can re-start cleanly after respawn.
     wasMovingForward = false;

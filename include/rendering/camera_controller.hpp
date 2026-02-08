@@ -158,6 +158,8 @@ private:
     bool xKeyWasDown = false;
     bool rKeyWasDown = false;
     bool runPace = false;
+    bool autoRunning = false;
+    bool tildeWasDown = false;
 
     // Movement state tracking (for sending opcodes on state change)
     bool wasMovingForward = false;

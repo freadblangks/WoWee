@@ -3789,6 +3789,9 @@ void GameHandler::handleAuraUpdate(network::Packet& packet, bool isAll) {
     }
 
     if (auraList) {
+        if (isAll) {
+            auraList->clear();
+        }
         for (const auto& [slot, aura] : data.updates) {
             // Ensure vector is large enough
             while (auraList->size() <= slot) {

@@ -2882,11 +2882,10 @@ void GameScreen::renderBuffBar(game::GameHandler& gameHandler) {
                 iconTex = getSpellIcon(aura.spellId, assetMgr);
             }
 
-            bool clicked = false;
             if (iconTex) {
                 ImGui::PushStyleColor(ImGuiCol_Button, borderColor);
                 ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
-                clicked = ImGui::ImageButton("##aura",
+                ImGui::ImageButton("##aura",
                     (ImTextureID)(uintptr_t)iconTex,
                     ImVec2(ICON_SIZE - 4, ICON_SIZE - 4));
                 ImGui::PopStyleVar();
@@ -2895,8 +2894,17 @@ void GameScreen::renderBuffBar(game::GameHandler& gameHandler) {
                 ImGui::PushStyleColor(ImGuiCol_Button, borderColor);
                 char label[8];
                 snprintf(label, sizeof(label), "%u", aura.spellId);
-                clicked = ImGui::Button(label, ImVec2(ICON_SIZE, ICON_SIZE));
+                ImGui::Button(label, ImVec2(ICON_SIZE, ICON_SIZE));
                 ImGui::PopStyleColor();
+            }
+
+            // Right-click to cancel buffs / dismount
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && isBuff) {
+                if (gameHandler.isMounted()) {
+                    gameHandler.dismount();
+                } else {
+                    gameHandler.cancelAura(aura.spellId);
+                }
             }
 
             // Tooltip with spell name and duration
@@ -2918,11 +2926,6 @@ void GameScreen::renderBuffBar(game::GameHandler& gameHandler) {
                 } else {
                     ImGui::SetTooltip("%s", name.c_str());
                 }
-            }
-
-            // Click to cancel own buffs
-            if (clicked && isBuff) {
-                gameHandler.cancelAura(aura.spellId);
             }
 
             ImGui::PopID();

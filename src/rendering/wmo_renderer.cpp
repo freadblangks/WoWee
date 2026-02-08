@@ -1767,7 +1767,7 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
     // Player collision parameters
     const float PLAYER_RADIUS = 0.70f;      // Wider radius for better wall collision
     const float PLAYER_HEIGHT = 2.0f;       // Player height for wall checks
-    const float MAX_STEP_HEIGHT = 0.6f;     // Allow stepping up stairs (lowered to catch curbs)
+    const float MAX_STEP_HEIGHT = 1.0f;     // Allow stepping up stairs/ramps
 
     glm::vec3 queryMin = glm::min(from, to) - glm::vec3(8.0f, 8.0f, 5.0f);
     glm::vec3 queryMax = glm::max(from, to) + glm::vec3(8.0f, 8.0f, 5.0f);
@@ -1873,7 +1873,7 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
                 if (triMaxZ <= localFeetZ + MAX_STEP_HEIGHT) continue;
 
                 // Skip very short vertical surfaces (stair risers)
-                if (triHeight < 0.6f && triMaxZ <= localFeetZ + 0.8f) continue;
+                if (triHeight < 1.0f && triMaxZ <= localFeetZ + 1.2f) continue;
 
                 // Recompute distances with current (possibly pushed) localTo
                 float fromDist = glm::dot(localFrom - v0, normal);

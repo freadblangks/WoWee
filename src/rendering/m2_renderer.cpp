@@ -1318,9 +1318,11 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
         if (animCount < 32 || numAnimThreads_ <= 1) {
             // Sequential — not enough work to justify thread overhead
             for (size_t i : boneWorkIndices) {
+                if (i >= instances.size()) continue;
                 auto& inst = instances[i];
-                const auto& mdl = models.find(inst.modelId)->second;
-                computeBoneMatrices(mdl, inst);
+                auto mdlIt = models.find(inst.modelId);
+                if (mdlIt == models.end()) continue;
+                computeBoneMatrices(mdlIt->second, inst);
             }
         } else {
             // Parallel — dispatch across worker threads
@@ -1338,9 +1340,11 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
                     [this, &boneWorkIndices, start, end]() {
                         for (size_t j = start; j < end; ++j) {
                             size_t idx = boneWorkIndices[j];
+                            if (idx >= instances.size()) continue;
                             auto& inst = instances[idx];
-                            const auto& mdl = models.find(inst.modelId)->second;
-                            computeBoneMatrices(mdl, inst);
+                            auto mdlIt = models.find(inst.modelId);
+                            if (mdlIt == models.end()) continue;
+                            computeBoneMatrices(mdlIt->second, inst);
                         }
                     }));
                 start = end;
@@ -1354,8 +1358,11 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
 
     // Phase 3: Particle update (sequential — uses RNG, not thread-safe)
     for (size_t idx : boneWorkIndices) {
+        if (idx >= instances.size()) continue;
         auto& instance = instances[idx];
-        const auto& model = models.find(instance.modelId)->second;
+        auto mdlIt = models.find(instance.modelId);
+        if (mdlIt == models.end()) continue;
+        const auto& model = mdlIt->second;
         if (!model.particleEmitters.empty()) {
             emitParticles(instance, model, deltaTime);
             updateParticles(instance, deltaTime);
@@ -1471,13 +1478,16 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
     const M2ModelGPU* currentModel = nullptr;
 
     for (const auto& entry : sortedVisible) {
+        if (entry.index >= instances.size()) continue;
         const auto& instance = instances[entry.index];
 
         // Bind VAO once per model group
         if (entry.modelId != currentModelId) {
             if (currentModel) glBindVertexArray(0);
             currentModelId = entry.modelId;
-            currentModel = &models.find(currentModelId)->second;
+            auto mdlIt = models.find(currentModelId);
+            if (mdlIt == models.end()) continue;
+            currentModel = &mdlIt->second;
             glBindVertexArray(currentModel->vao);
         }
 

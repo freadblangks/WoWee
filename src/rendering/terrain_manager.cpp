@@ -676,7 +676,10 @@ void TerrainManager::processReadyTiles() {
         if (pending) {
             TileCoord coord = pending->coord;
             finalizeTile(std::move(pending));
-            pendingTiles.erase(coord);
+            {
+                std::lock_guard<std::mutex> lock(queueMutex);
+                pendingTiles.erase(coord);
+            }
             processed++;
         }
     }
@@ -694,7 +697,10 @@ void TerrainManager::processAllReadyTiles() {
         if (pending) {
             TileCoord coord = pending->coord;
             finalizeTile(std::move(pending));
-            pendingTiles.erase(coord);
+            {
+                std::lock_guard<std::mutex> lock(queueMutex);
+                pendingTiles.erase(coord);
+            }
         }
     }
 }
@@ -703,7 +709,10 @@ void TerrainManager::unloadTile(int x, int y) {
     TileCoord coord = {x, y};
 
     // Also remove from pending if it was queued but not yet loaded
-    pendingTiles.erase(coord);
+    {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        pendingTiles.erase(coord);
+    }
 
     auto it = loadedTiles.find(coord);
     if (it == loadedTiles.end()) {
@@ -750,14 +759,6 @@ void TerrainManager::unloadTile(int x, int y) {
     }
 
     loadedTiles.erase(it);
-
-    // Clean up any models that are no longer referenced
-    if (m2Renderer) {
-        m2Renderer->cleanupUnusedModels();
-    }
-    if (wmoRenderer) {
-        wmoRenderer->cleanupUnusedModels();
-    }
 }
 
 void TerrainManager::unloadAll() {
@@ -1091,6 +1092,14 @@ void TerrainManager::streamTiles() {
     }
 
     if (!tilesToUnload.empty()) {
+        // Clean up models that lost all instances (once, after all tiles removed)
+        if (m2Renderer) {
+            m2Renderer->cleanupUnusedModels();
+        }
+        if (wmoRenderer) {
+            wmoRenderer->cleanupUnusedModels();
+        }
+
         LOG_INFO("Unloaded ", tilesToUnload.size(), " distant tiles, ",
                  loadedTiles.size(), " remain");
     }

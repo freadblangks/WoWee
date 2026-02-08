@@ -852,8 +852,11 @@ void WMORenderer::render(const Camera& camera, const glm::mat4& view, const glm:
     bool doFrustumCull = frustumCulling;
 
     auto cullInstance = [&](size_t instIdx) -> InstanceDrawList {
+        if (instIdx >= instances.size()) return InstanceDrawList{};
         const auto& instance = instances[instIdx];
-        const ModelData& model = loadedModels.find(instance.modelId)->second;
+        auto mdlIt = loadedModels.find(instance.modelId);
+        if (mdlIt == loadedModels.end()) return InstanceDrawList{};
+        const ModelData& model = mdlIt->second;
 
         InstanceDrawList result;
         result.instanceIndex = instIdx;
@@ -942,8 +945,11 @@ void WMORenderer::render(const Camera& camera, const glm::mat4& view, const glm:
 
     // ── Phase 2: Sequential GL draw ────────────────────────────────
     for (const auto& dl : drawLists) {
+        if (dl.instanceIndex >= instances.size()) continue;
         const auto& instance = instances[dl.instanceIndex];
-        const ModelData& model = loadedModels.find(instance.modelId)->second;
+        auto modelIt = loadedModels.find(instance.modelId);
+        if (modelIt == loadedModels.end()) continue;
+        const ModelData& model = modelIt->second;
 
         // Occlusion query pre-pass (GL calls — must be main thread)
         if (occlusionCulling && occlusionShader && bboxVao != 0) {

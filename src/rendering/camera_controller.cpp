@@ -1256,11 +1256,11 @@ bool CameraController::isMoving() const {
 
     // In third-person without RMB, A/D are turn keys (not movement).
     if (thirdPerson && !rightMouseDown) {
-        return keyW || keyS || keyQ || keyE;
+        return keyW || keyS || keyQ || keyE || autoRunning;
     }
 
     bool mouseAutorun = leftMouseDown && rightMouseDown;
-    return keyW || keyS || keyA || keyD || keyQ || keyE || mouseAutorun;
+    return keyW || keyS || keyA || keyD || keyQ || keyE || mouseAutorun || autoRunning;
 }
 
 bool CameraController::isSprinting() const {

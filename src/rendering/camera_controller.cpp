@@ -147,6 +147,9 @@ void CameraController::update(float deltaTime) {
     }
 
     bool mouseAutorun = !uiWantsKeyboard && !sitting && leftMouseDown && rightMouseDown;
+    if (mouseAutorun) {
+        autoRunning = false;
+    }
     bool nowForward = keyW || mouseAutorun || autoRunning;
     bool nowBackward = keyS;
     bool nowStrafeLeft = false;

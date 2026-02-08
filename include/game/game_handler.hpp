@@ -659,6 +659,14 @@ private:
     // ---- Speed change handler ----
     void handleForceRunSpeedChange(network::Packet& packet);
 
+    // ---- Arena / Battleground handlers ----
+    void handleBattlefieldStatus(network::Packet& packet);
+    void handleArenaTeamCommandResult(network::Packet& packet);
+    void handleArenaTeamQueryResponse(network::Packet& packet);
+    void handleArenaTeamInvite(network::Packet& packet);
+    void handleArenaTeamEvent(network::Packet& packet);
+    void handleArenaError(network::Packet& packet);
+
     // ---- Taxi handlers ----
     void handleShowTaxiNodes(network::Packet& packet);
     void handleActivateTaxiReply(network::Packet& packet);
@@ -914,7 +922,6 @@ private:
     NpcSwingCallback npcSwingCallback_;
     MountCallback mountCallback_;
     uint32_t currentMountDisplayId_ = 0;
-    float preMountRunSpeed_ = 0.0f;
     float serverRunSpeed_ = 7.0f;
     bool playerDead_ = false;
     bool releasedSpirit_ = false;

@@ -748,6 +748,59 @@ void GameHandler::handlePacket(network::Packet& packet) {
             addSystemChatMessage("New flight path discovered!");
             break;
 
+        // ---- Arena / Battleground ----
+        case Opcode::SMSG_BATTLEFIELD_STATUS:
+            handleBattlefieldStatus(packet);
+            break;
+        case Opcode::SMSG_BATTLEFIELD_LIST:
+            LOG_INFO("Received SMSG_BATTLEFIELD_LIST");
+            break;
+        case Opcode::SMSG_BATTLEFIELD_PORT_DENIED:
+            addSystemChatMessage("Battlefield port denied.");
+            break;
+        case Opcode::SMSG_REMOVED_FROM_PVP_QUEUE:
+            addSystemChatMessage("You have been removed from the PvP queue.");
+            break;
+        case Opcode::SMSG_GROUP_JOINED_BATTLEGROUND:
+            addSystemChatMessage("Your group has joined the battleground.");
+            break;
+        case Opcode::SMSG_JOINED_BATTLEGROUND_QUEUE:
+            addSystemChatMessage("You have joined the battleground queue.");
+            break;
+        case Opcode::SMSG_BATTLEGROUND_PLAYER_JOINED:
+            LOG_INFO("Battleground player joined");
+            break;
+        case Opcode::SMSG_BATTLEGROUND_PLAYER_LEFT:
+            LOG_INFO("Battleground player left");
+            break;
+        case Opcode::SMSG_ARENA_TEAM_COMMAND_RESULT:
+            handleArenaTeamCommandResult(packet);
+            break;
+        case Opcode::SMSG_ARENA_TEAM_QUERY_RESPONSE:
+            handleArenaTeamQueryResponse(packet);
+            break;
+        case Opcode::SMSG_ARENA_TEAM_ROSTER:
+            LOG_INFO("Received SMSG_ARENA_TEAM_ROSTER");
+            break;
+        case Opcode::SMSG_ARENA_TEAM_INVITE:
+            handleArenaTeamInvite(packet);
+            break;
+        case Opcode::SMSG_ARENA_TEAM_EVENT:
+            handleArenaTeamEvent(packet);
+            break;
+        case Opcode::SMSG_ARENA_TEAM_STATS:
+            LOG_INFO("Received SMSG_ARENA_TEAM_STATS");
+            break;
+        case Opcode::SMSG_ARENA_ERROR:
+            handleArenaError(packet);
+            break;
+        case Opcode::MSG_PVP_LOG_DATA:
+            LOG_INFO("Received MSG_PVP_LOG_DATA");
+            break;
+        case Opcode::MSG_INSPECT_ARENA_TEAMS:
+            LOG_INFO("Received MSG_INSPECT_ARENA_TEAMS");
+            break;
+
         default:
             LOG_WARNING("Unhandled world opcode: 0x", std::hex, opcode, std::dec);
             break;
@@ -1402,16 +1455,6 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                 if (block.guid == playerGuid) {
                                     uint32_t old = currentMountDisplayId_;
                                     currentMountDisplayId_ = val;
-                                    if (old == 0 && val != 0) {
-                                        preMountRunSpeed_ = serverRunSpeed_;
-                                    } else if (old != 0 && val == 0) {
-                                        if (preMountRunSpeed_ > 0.1f && preMountRunSpeed_ < 100.0f) {
-                                            serverRunSpeed_ = preMountRunSpeed_;
-                                        } else {
-                                            serverRunSpeed_ = 7.0f;
-                                        }
-                                        preMountRunSpeed_ = 0.0f;
-                                    }
                                     if (val != old && mountCallback_) mountCallback_(val);
                                 }
                                 unit->setMountDisplayId(val);
@@ -1584,16 +1627,6 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                     if (block.guid == playerGuid) {
                                         uint32_t old = currentMountDisplayId_;
                                         currentMountDisplayId_ = val;
-                                        if (old == 0 && val != 0) {
-                                            preMountRunSpeed_ = serverRunSpeed_;
-                                        } else if (old != 0 && val == 0) {
-                                            if (preMountRunSpeed_ > 0.1f && preMountRunSpeed_ < 100.0f) {
-                                                serverRunSpeed_ = preMountRunSpeed_;
-                                            } else {
-                                                serverRunSpeed_ = 7.0f;
-                                            }
-                                            preMountRunSpeed_ = 0.0f;
-                                        }
                                         if (val != old && mountCallback_) mountCallback_(val);
                                     }
                                     unit->setMountDisplayId(val);
@@ -3269,8 +3302,17 @@ void GameHandler::handleForceRunSpeedChange(network::Packet& packet) {
     uint64_t guid = UpdateObjectParser::readPackedGuid(packet);
     // uint32 counter
     uint32_t counter = packet.readUInt32();
-    // uint32 unknown (TrinityCore/AzerothCore adds this for run speed)
-    packet.readUInt32();
+
+    // Determine format from remaining bytes:
+    //   5 bytes remaining = uint8(1) + float(4)  — standard 3.3.5a
+    //   8 bytes remaining = uint32(4) + float(4) — some forks
+    //   4 bytes remaining = float(4)             — no unknown field
+    size_t remaining = packet.getSize() - packet.getReadPos();
+    if (remaining >= 8) {
+        packet.readUInt32();  // unknown (extended format)
+    } else if (remaining >= 5) {
+        packet.readUInt8();   // unknown (standard 3.3.5a)
+    }
     // float newSpeed
     float newSpeed = packet.readFloat();
 
@@ -3304,6 +3346,147 @@ void GameHandler::handleForceRunSpeedChange(network::Packet& packet) {
     }
 
     serverRunSpeed_ = newSpeed;
+}
+
+// ============================================================
+// Arena / Battleground Handlers
+// ============================================================
+
+void GameHandler::handleBattlefieldStatus(network::Packet& packet) {
+    if (packet.getSize() - packet.getReadPos() < 4) return;
+    uint32_t queueSlot = packet.readUInt32();
+
+    // Minimal packet = just queueSlot + arenaType(1) when status is NONE
+    if (packet.getSize() - packet.getReadPos() < 1) {
+        LOG_INFO("Battlefield status: queue slot ", queueSlot, " cleared");
+        return;
+    }
+
+    uint8_t arenaType = packet.readUInt8();
+    if (packet.getSize() - packet.getReadPos() < 1) return;
+
+    // Unknown byte
+    packet.readUInt8();
+    if (packet.getSize() - packet.getReadPos() < 4) return;
+    uint32_t bgTypeId = packet.readUInt32();
+
+    if (packet.getSize() - packet.getReadPos() < 2) return;
+    uint16_t unk2 = packet.readUInt16();
+    (void)unk2;
+
+    if (packet.getSize() - packet.getReadPos() < 4) return;
+    uint32_t clientInstanceId = packet.readUInt32();
+
+    if (packet.getSize() - packet.getReadPos() < 1) return;
+    uint8_t isRatedArena = packet.readUInt8();
+
+    if (packet.getSize() - packet.getReadPos() < 4) return;
+    uint32_t statusId = packet.readUInt32();
+
+    std::string bgName = "Battleground #" + std::to_string(bgTypeId);
+    if (arenaType > 0) {
+        bgName = std::to_string(arenaType) + "v" + std::to_string(arenaType) + " Arena";
+    }
+
+    switch (statusId) {
+        case 0: // STATUS_NONE
+            LOG_INFO("Battlefield status: NONE for ", bgName);
+            break;
+        case 1: // STATUS_WAIT_QUEUE
+            addSystemChatMessage("Queued for " + bgName + ".");
+            LOG_INFO("Battlefield status: WAIT_QUEUE for ", bgName);
+            break;
+        case 2: // STATUS_WAIT_JOIN
+            addSystemChatMessage(bgName + " is ready! Type /join to enter.");
+            LOG_INFO("Battlefield status: WAIT_JOIN for ", bgName);
+            break;
+        case 3: // STATUS_IN_PROGRESS
+            addSystemChatMessage("Entered " + bgName + ".");
+            LOG_INFO("Battlefield status: IN_PROGRESS for ", bgName);
+            break;
+        case 4: // STATUS_WAIT_LEAVE
+            LOG_INFO("Battlefield status: WAIT_LEAVE for ", bgName);
+            break;
+        default:
+            LOG_INFO("Battlefield status: unknown (", statusId, ") for ", bgName);
+            break;
+    }
+}
+
+void GameHandler::handleArenaTeamCommandResult(network::Packet& packet) {
+    if (packet.getSize() - packet.getReadPos() < 8) return;
+    uint32_t command = packet.readUInt32();
+    std::string name = packet.readString();
+    uint32_t error = packet.readUInt32();
+
+    static const char* commands[] = { "create", "invite", "leave", "remove", "disband", "leader" };
+    std::string cmdName = (command < 6) ? commands[command] : "unknown";
+
+    if (error == 0) {
+        addSystemChatMessage("Arena team " + cmdName + " successful" +
+                           (name.empty() ? "." : ": " + name));
+    } else {
+        addSystemChatMessage("Arena team " + cmdName + " failed" +
+                           (name.empty() ? "." : " for " + name + "."));
+    }
+    LOG_INFO("Arena team command: ", cmdName, " name=", name, " error=", error);
+}
+
+void GameHandler::handleArenaTeamQueryResponse(network::Packet& packet) {
+    if (packet.getSize() - packet.getReadPos() < 4) return;
+    uint32_t teamId = packet.readUInt32();
+    std::string teamName = packet.readString();
+    LOG_INFO("Arena team query response: id=", teamId, " name=", teamName);
+}
+
+void GameHandler::handleArenaTeamInvite(network::Packet& packet) {
+    std::string playerName = packet.readString();
+    std::string teamName = packet.readString();
+    addSystemChatMessage(playerName + " has invited you to join " + teamName + ".");
+    LOG_INFO("Arena team invite from ", playerName, " to ", teamName);
+}
+
+void GameHandler::handleArenaTeamEvent(network::Packet& packet) {
+    if (packet.getSize() - packet.getReadPos() < 1) return;
+    uint8_t event = packet.readUInt8();
+
+    static const char* events[] = {
+        "joined", "left", "removed", "leader changed",
+        "disbanded", "created"
+    };
+    std::string eventName = (event < 6) ? events[event] : "unknown event";
+
+    // Read string params (up to 3)
+    uint8_t strCount = 0;
+    if (packet.getSize() - packet.getReadPos() >= 1) {
+        strCount = packet.readUInt8();
+    }
+
+    std::string param1, param2;
+    if (strCount >= 1 && packet.getSize() > packet.getReadPos()) param1 = packet.readString();
+    if (strCount >= 2 && packet.getSize() > packet.getReadPos()) param2 = packet.readString();
+
+    std::string msg = "Arena team " + eventName;
+    if (!param1.empty()) msg += ": " + param1;
+    if (!param2.empty()) msg += " (" + param2 + ")";
+    addSystemChatMessage(msg);
+    LOG_INFO("Arena team event: ", eventName, " ", param1, " ", param2);
+}
+
+void GameHandler::handleArenaError(network::Packet& packet) {
+    if (packet.getSize() - packet.getReadPos() < 4) return;
+    uint32_t error = packet.readUInt32();
+
+    std::string msg;
+    switch (error) {
+        case 1: msg = "The other team is not big enough."; break;
+        case 2: msg = "That team is full."; break;
+        case 3: msg = "Not enough members to start."; break;
+        case 4: msg = "Too many members."; break;
+        default: msg = "Arena error (code " + std::to_string(error) + ")"; break;
+    }
+    addSystemChatMessage(msg);
+    LOG_INFO("Arena error: ", error, " - ", msg);
 }
 
 void GameHandler::handleMonsterMove(network::Packet& packet) {

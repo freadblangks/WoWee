@@ -2847,15 +2847,21 @@ void GameScreen::renderBuffBar(game::GameHandler& gameHandler) {
 
     auto* window = core::Application::getInstance().getWindow();
     float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
+    auto* assetMgr = core::Application::getInstance().getAssetManager();
 
-    ImGui::SetNextWindowPos(ImVec2(screenW - 400, 30), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(390, 0), ImGuiCond_Always);
+    // Position below the minimap (minimap is 200px + 10px margin from top-right)
+    constexpr float ICON_SIZE = 32.0f;
+    constexpr int ICONS_PER_ROW = 8;
+    float barW = ICONS_PER_ROW * (ICON_SIZE + 4.0f) + 8.0f;
+    ImGui::SetNextWindowPos(ImVec2(screenW - barW - 10.0f, 220.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(barW, 0), ImGuiCond_Always);
 
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                              ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
-                             ImGuiWindowFlags_AlwaysAutoResize;
+                             ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoScrollbar;
 
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(2.0f, 2.0f));
 
     if (ImGui::Begin("##BuffBar", nullptr, flags)) {
         int shown = 0;
@@ -2863,33 +2869,60 @@ void GameScreen::renderBuffBar(game::GameHandler& gameHandler) {
             const auto& aura = auras[i];
             if (aura.isEmpty()) continue;
 
-            if (shown > 0 && shown % 8 != 0) ImGui::SameLine();
+            if (shown > 0 && shown % ICONS_PER_ROW != 0) ImGui::SameLine();
 
             ImGui::PushID(static_cast<int>(i));
 
-            // Green border for buffs, red for debuffs
-            bool isBuff = (aura.flags & 0x02) != 0; // POSITIVE flag
-            ImVec4 borderColor = isBuff ? ImVec4(0.2f, 0.8f, 0.2f, 1.0f) : ImVec4(0.8f, 0.2f, 0.2f, 1.0f);
-            ImGui::PushStyleColor(ImGuiCol_Button, borderColor);
+            bool isBuff = (aura.flags & 0x02) != 0;
+            ImVec4 borderColor = isBuff ? ImVec4(0.2f, 0.8f, 0.2f, 0.9f) : ImVec4(0.8f, 0.2f, 0.2f, 0.9f);
 
-            char label[16];
-            snprintf(label, sizeof(label), "%u", aura.spellId);
-            if (ImGui::Button(label, ImVec2(40, 40))) {
-                // Right-click to cancel own buffs
-                if (isBuff) {
-                    gameHandler.cancelAura(aura.spellId);
+            // Try to get spell icon
+            GLuint iconTex = 0;
+            if (assetMgr) {
+                iconTex = getSpellIcon(aura.spellId, assetMgr);
+            }
+
+            bool clicked = false;
+            if (iconTex) {
+                ImGui::PushStyleColor(ImGuiCol_Button, borderColor);
+                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
+                clicked = ImGui::ImageButton("##aura",
+                    (ImTextureID)(uintptr_t)iconTex,
+                    ImVec2(ICON_SIZE - 4, ICON_SIZE - 4));
+                ImGui::PopStyleVar();
+                ImGui::PopStyleColor();
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Button, borderColor);
+                char label[8];
+                snprintf(label, sizeof(label), "%u", aura.spellId);
+                clicked = ImGui::Button(label, ImVec2(ICON_SIZE, ICON_SIZE));
+                ImGui::PopStyleColor();
+            }
+
+            // Tooltip with spell name and duration
+            if (ImGui::IsItemHovered()) {
+                std::string name;
+                auto it = actionSpellNames.find(aura.spellId);
+                if (it != actionSpellNames.end()) {
+                    name = it->second;
+                } else {
+                    name = "Spell #" + std::to_string(aura.spellId);
+                }
+                if (aura.durationMs > 0) {
+                    int seconds = aura.durationMs / 1000;
+                    if (seconds < 60) {
+                        ImGui::SetTooltip("%s (%ds)", name.c_str(), seconds);
+                    } else {
+                        ImGui::SetTooltip("%s (%dm %ds)", name.c_str(), seconds / 60, seconds % 60);
+                    }
+                } else {
+                    ImGui::SetTooltip("%s", name.c_str());
                 }
             }
-            ImGui::PopStyleColor();
 
-            // Duration text
-            if (aura.durationMs > 0) {
-                int seconds = aura.durationMs / 1000;
-                if (seconds < 60) {
-                    ImGui::Text("%ds", seconds);
-                } else {
-                    ImGui::Text("%dm", seconds / 60);
-                }
+            // Click to cancel own buffs
+            if (clicked && isBuff) {
+                gameHandler.cancelAura(aura.spellId);
             }
 
             ImGui::PopID();
@@ -2898,6 +2931,7 @@ void GameScreen::renderBuffBar(game::GameHandler& gameHandler) {
     }
     ImGui::End();
 
+    ImGui::PopStyleVar();
     ImGui::PopStyleColor();
 }
 

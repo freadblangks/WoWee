@@ -3569,25 +3569,18 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
                 return std::find(knownSpells.begin(), knownSpells.end(), id) != knownSpells.end();
             };
 
-            if (ImGui::BeginTable("TrainerTable", 4,
-                    ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
-                ImGui::TableSetupColumn("Spell", ImGuiTableColumnFlags_WidthStretch);
-                ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthFixed, 40.0f);
-                ImGui::TableSetupColumn("Cost", ImGuiTableColumnFlags_WidthFixed, 120.0f);
-                ImGui::TableSetupColumn("##action", ImGuiTableColumnFlags_WidthFixed, 55.0f);
-                ImGui::TableHeadersRow();
-
-                for (const auto& spell : trainer.spells) {
+            // Renders spell rows into the current table
+            auto renderSpellRows = [&](const std::vector<const game::TrainerSpell*>& spells) {
+                for (const auto* spell : spells) {
                     ImGui::TableNextRow();
-                    ImGui::PushID(static_cast<int>(spell.spellId));
+                    ImGui::PushID(static_cast<int>(spell->spellId));
 
-                    // State color: 0=known(green), 1=available(white), 2=unavailable(gray)
                     ImVec4 color;
                     const char* statusLabel;
-                    if (spell.state == 0 || isKnown(spell.spellId)) {
+                    if (spell->state == 0 || isKnown(spell->spellId)) {
                         color = ImVec4(0.3f, 0.9f, 0.3f, 1.0f);
                         statusLabel = "Known";
-                    } else if (spell.state == 1) {
+                    } else if (spell->state == 1) {
                         color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
                         statusLabel = "Available";
                     } else {
@@ -3597,19 +3590,17 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
 
                     // Spell name
                     ImGui::TableSetColumnIndex(0);
-                    const std::string& name = gameHandler.getSpellName(spell.spellId);
-                    const std::string& rank = gameHandler.getSpellRank(spell.spellId);
+                    const std::string& name = gameHandler.getSpellName(spell->spellId);
+                    const std::string& rank = gameHandler.getSpellRank(spell->spellId);
                     if (!name.empty()) {
-                        if (!rank.empty()) {
+                        if (!rank.empty())
                             ImGui::TextColored(color, "%s (%s)", name.c_str(), rank.c_str());
-                        } else {
+                        else
                             ImGui::TextColored(color, "%s", name.c_str());
-                        }
                     } else {
-                        ImGui::TextColored(color, "Spell #%u", spell.spellId);
+                        ImGui::TextColored(color, "Spell #%u", spell->spellId);
                     }
 
-                    // Tooltip
                     if (ImGui::IsItemHovered()) {
                         ImGui::BeginTooltip();
                         if (!name.empty()) {
@@ -3617,27 +3608,27 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
                             if (!rank.empty()) ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "%s", rank.c_str());
                         }
                         ImGui::Text("Status: %s", statusLabel);
-                        if (spell.reqLevel > 0) ImGui::Text("Required Level: %u", spell.reqLevel);
-                        if (spell.reqSkill > 0) ImGui::Text("Required Skill: %u (value %u)", spell.reqSkill, spell.reqSkillValue);
-                        if (spell.chainNode1 > 0) {
-                            const std::string& prereq = gameHandler.getSpellName(spell.chainNode1);
+                        if (spell->reqLevel > 0) ImGui::Text("Required Level: %u", spell->reqLevel);
+                        if (spell->reqSkill > 0) ImGui::Text("Required Skill: %u (value %u)", spell->reqSkill, spell->reqSkillValue);
+                        if (spell->chainNode1 > 0) {
+                            const std::string& prereq = gameHandler.getSpellName(spell->chainNode1);
                             if (!prereq.empty()) ImGui::Text("Requires: %s", prereq.c_str());
-                            else ImGui::Text("Requires: Spell #%u", spell.chainNode1);
+                            else ImGui::Text("Requires: Spell #%u", spell->chainNode1);
                         }
                         ImGui::EndTooltip();
                     }
 
                     // Level
                     ImGui::TableSetColumnIndex(1);
-                    ImGui::TextColored(color, "%u", spell.reqLevel);
+                    ImGui::TextColored(color, "%u", spell->reqLevel);
 
                     // Cost
                     ImGui::TableSetColumnIndex(2);
-                    if (spell.spellCost > 0) {
-                        uint32_t g = spell.spellCost / 10000;
-                        uint32_t s = (spell.spellCost / 100) % 100;
-                        uint32_t c = spell.spellCost % 100;
-                        bool canAfford = money >= spell.spellCost;
+                    if (spell->spellCost > 0) {
+                        uint32_t g = spell->spellCost / 10000;
+                        uint32_t s = (spell->spellCost / 100) % 100;
+                        uint32_t c = spell->spellCost % 100;
+                        bool canAfford = money >= spell->spellCost;
                         ImVec4 costColor = canAfford ? color : ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
                         ImGui::TextColored(costColor, "%ug %us %uc", g, s, c);
                     } else {
@@ -3646,21 +3637,55 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
 
                     // Train button
                     ImGui::TableSetColumnIndex(3);
-                    bool canTrain = (spell.state == 1) && (money >= spell.spellCost);
-                    if (!canTrain) {
-                        ImGui::BeginDisabled();
-                    }
+                    bool canTrain = (spell->state == 1) && (money >= spell->spellCost);
+                    if (!canTrain) ImGui::BeginDisabled();
                     if (ImGui::SmallButton("Train")) {
-                        gameHandler.trainSpell(spell.spellId);
+                        gameHandler.trainSpell(spell->spellId);
                     }
-                    if (!canTrain) {
-                        ImGui::EndDisabled();
-                    }
+                    if (!canTrain) ImGui::EndDisabled();
 
                     ImGui::PopID();
                 }
+            };
 
-                ImGui::EndTable();
+            auto renderSpellTable = [&](const char* tableId, const std::vector<const game::TrainerSpell*>& spells) {
+                if (ImGui::BeginTable(tableId, 4,
+                        ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
+                    ImGui::TableSetupColumn("Spell", ImGuiTableColumnFlags_WidthStretch);
+                    ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthFixed, 40.0f);
+                    ImGui::TableSetupColumn("Cost", ImGuiTableColumnFlags_WidthFixed, 120.0f);
+                    ImGui::TableSetupColumn("##action", ImGuiTableColumnFlags_WidthFixed, 55.0f);
+                    ImGui::TableHeadersRow();
+                    renderSpellRows(spells);
+                    ImGui::EndTable();
+                }
+            };
+
+            const auto& tabs = gameHandler.getTrainerTabs();
+            if (tabs.size() > 1) {
+                // Multiple tabs - show tab bar
+                if (ImGui::BeginTabBar("TrainerTabs")) {
+                    for (size_t i = 0; i < tabs.size(); i++) {
+                        char tabLabel[64];
+                        snprintf(tabLabel, sizeof(tabLabel), "%s (%zu)",
+                            tabs[i].name.c_str(), tabs[i].spells.size());
+
+                        if (ImGui::BeginTabItem(tabLabel)) {
+                            char tableId[32];
+                            snprintf(tableId, sizeof(tableId), "TT%zu", i);
+                            renderSpellTable(tableId, tabs[i].spells);
+                            ImGui::EndTabItem();
+                        }
+                    }
+                    ImGui::EndTabBar();
+                }
+            } else {
+                // Single tab or no categorization - flat list
+                std::vector<const game::TrainerSpell*> allSpells;
+                for (const auto& spell : trainer.spells) {
+                    allSpells.push_back(&spell);
+                }
+                renderSpellTable("TrainerTable", allSpells);
             }
         }
     }

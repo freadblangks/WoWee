@@ -654,6 +654,17 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_TRAINER_LIST:
             handleTrainerList(packet);
             break;
+        case Opcode::SMSG_TRAINER_BUY_SUCCEEDED: {
+            uint64_t guid = packet.readUInt64();
+            uint32_t spellId = packet.readUInt32();
+            (void)guid;
+            const std::string& name = getSpellName(spellId);
+            if (!name.empty())
+                addSystemChatMessage("You have learned " + name + ".");
+            else
+                addSystemChatMessage("Spell learned.");
+            break;
+        }
 
         // Silently ignore common packets we don't handle yet
         case Opcode::SMSG_FEATURE_SYSTEM_STATUS:
@@ -4562,8 +4573,11 @@ void GameHandler::handleTrainerList(network::Packet& packet) {
     trainerWindowOpen_ = true;
     gossipWindowOpen = false;
 
-    // Ensure spell name cache is populated
+    // Ensure caches are populated
     loadSpellNameCache();
+    loadSkillLineDbc();
+    loadSkillLineAbilityDbc();
+    categorizeTrainerSpells();
 }
 
 void GameHandler::trainSpell(uint32_t spellId) {
@@ -4575,6 +4589,7 @@ void GameHandler::trainSpell(uint32_t spellId) {
 void GameHandler::closeTrainer() {
     trainerWindowOpen_ = false;
     currentTrainerList_ = TrainerListData{};
+    trainerTabs_.clear();
 }
 
 void GameHandler::loadSpellNameCache() {
@@ -4609,6 +4624,78 @@ void GameHandler::loadSpellNameCache() {
     LOG_INFO("Trainer: Loaded ", spellNameCache_.size(), " spell names from Spell.dbc");
 }
 
+void GameHandler::loadSkillLineAbilityDbc() {
+    if (skillLineAbilityLoaded_) return;
+    skillLineAbilityLoaded_ = true;
+
+    auto* am = core::Application::getInstance().getAssetManager();
+    if (!am || !am->isInitialized()) return;
+
+    // SkillLineAbility.dbc: field 1=skillLineID, field 2=spellID
+    auto slaDbc = am->loadDBC("SkillLineAbility.dbc");
+    if (slaDbc && slaDbc->isLoaded()) {
+        for (uint32_t i = 0; i < slaDbc->getRecordCount(); i++) {
+            uint32_t skillLineId = slaDbc->getUInt32(i, 1);
+            uint32_t spellId = slaDbc->getUInt32(i, 2);
+            if (spellId > 0 && skillLineId > 0) {
+                spellToSkillLine_[spellId] = skillLineId;
+            }
+        }
+        LOG_INFO("Trainer: Loaded ", spellToSkillLine_.size(), " skill line abilities");
+    }
+}
+
+void GameHandler::categorizeTrainerSpells() {
+    trainerTabs_.clear();
+
+    static constexpr uint32_t SKILLLINE_CATEGORY_CLASS = 7;
+
+    // Group spells by skill line (category 7 = class spec tabs)
+    std::map<uint32_t, std::vector<const TrainerSpell*>> specialtySpells;
+    std::vector<const TrainerSpell*> generalSpells;
+
+    for (const auto& spell : currentTrainerList_.spells) {
+        auto slIt = spellToSkillLine_.find(spell.spellId);
+        if (slIt != spellToSkillLine_.end()) {
+            uint32_t skillLineId = slIt->second;
+            auto catIt = skillLineCategories_.find(skillLineId);
+            if (catIt != skillLineCategories_.end() && catIt->second == SKILLLINE_CATEGORY_CLASS) {
+                specialtySpells[skillLineId].push_back(&spell);
+                continue;
+            }
+        }
+        generalSpells.push_back(&spell);
+    }
+
+    // Sort by spell name within each group
+    auto byName = [this](const TrainerSpell* a, const TrainerSpell* b) {
+        return getSpellName(a->spellId) < getSpellName(b->spellId);
+    };
+
+    // Build named tabs sorted alphabetically
+    std::vector<std::pair<std::string, std::vector<const TrainerSpell*>>> named;
+    for (auto& [skillLineId, spells] : specialtySpells) {
+        auto nameIt = skillLineNames_.find(skillLineId);
+        std::string tabName = (nameIt != skillLineNames_.end()) ? nameIt->second : "Specialty";
+        std::sort(spells.begin(), spells.end(), byName);
+        named.push_back({std::move(tabName), std::move(spells)});
+    }
+    std::sort(named.begin(), named.end(),
+        [](const auto& a, const auto& b) { return a.first < b.first; });
+
+    for (auto& [name, spells] : named) {
+        trainerTabs_.push_back({std::move(name), std::move(spells)});
+    }
+
+    // General tab last
+    if (!generalSpells.empty()) {
+        std::sort(generalSpells.begin(), generalSpells.end(), byName);
+        trainerTabs_.push_back({"General", std::move(generalSpells)});
+    }
+
+    LOG_INFO("Trainer: Categorized into ", trainerTabs_.size(), " tabs");
+}
+
 static const std::string EMPTY_STRING;
 
 const std::string& GameHandler::getSpellName(uint32_t spellId) const {
@@ -4619,6 +4706,13 @@ const std::string& GameHandler::getSpellName(uint32_t spellId) const {
 const std::string& GameHandler::getSpellRank(uint32_t spellId) const {
     auto it = spellNameCache_.find(spellId);
     return (it != spellNameCache_.end()) ? it->second.rank : EMPTY_STRING;
+}
+
+const std::string& GameHandler::getSkillLineName(uint32_t spellId) const {
+    auto slIt = spellToSkillLine_.find(spellId);
+    if (slIt == spellToSkillLine_.end()) return EMPTY_STRING;
+    auto nameIt = skillLineNames_.find(slIt->second);
+    return (nameIt != skillLineNames_.end()) ? nameIt->second : EMPTY_STRING;
 }
 
 // ============================================================

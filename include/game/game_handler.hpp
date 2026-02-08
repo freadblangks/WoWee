@@ -544,6 +544,13 @@ public:
     void closeTrainer();
     const std::string& getSpellName(uint32_t spellId) const;
     const std::string& getSpellRank(uint32_t spellId) const;
+    const std::string& getSkillLineName(uint32_t spellId) const;
+
+    struct TrainerTab {
+        std::string name;
+        std::vector<const TrainerSpell*> spells;
+    };
+    const std::vector<TrainerTab>& getTrainerTabs() const { return trainerTabs_; }
     const ItemQueryResponseData* getItemInfo(uint32_t itemId) const {
         auto it = itemInfoCache_.find(itemId);
         return (it != itemInfoCache_.end()) ? &it->second : nullptr;
@@ -962,8 +969,10 @@ private:
     struct SpellNameEntry { std::string name; std::string rank; };
     std::unordered_map<uint32_t, SpellNameEntry> spellNameCache_;
     bool spellNameCacheLoaded_ = false;
+    std::vector<TrainerTab> trainerTabs_;
     void handleTrainerList(network::Packet& packet);
     void loadSpellNameCache();
+    void categorizeTrainerSpells();
 
     // Callbacks
     WorldConnectSuccessCallback onSuccess;
@@ -985,8 +994,11 @@ private:
     std::map<uint32_t, PlayerSkill> playerSkills_;
     std::unordered_map<uint32_t, std::string> skillLineNames_;
     std::unordered_map<uint32_t, uint32_t> skillLineCategories_;
+    std::unordered_map<uint32_t, uint32_t> spellToSkillLine_;      // spellID -> skillLineID
     bool skillLineDbcLoaded_ = false;
+    bool skillLineAbilityLoaded_ = false;
     void loadSkillLineDbc();
+    void loadSkillLineAbilityDbc();
     void extractSkillFields(const std::map<uint16_t, uint32_t>& fields);
 
     NpcDeathCallback npcDeathCallback_;

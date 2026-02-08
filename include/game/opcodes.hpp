@@ -277,7 +277,8 @@ enum class Opcode : uint16_t {
     // ---- Battleground ----
     SMSG_BATTLEFIELD_PORT_DENIED     = 0x014B,
     SMSG_REMOVED_FROM_PVP_QUEUE      = 0x0170,
-    SMSG_BINDPOINTUPDATE             = 0x01B3,
+    SMSG_TRAINER_BUY_SUCCEEDED       = 0x01B3,
+    SMSG_BINDPOINTUPDATE             = 0x0155,
     CMSG_BATTLEFIELD_LIST            = 0x023C,
     SMSG_BATTLEFIELD_LIST            = 0x023D,
     CMSG_BATTLEFIELD_JOIN            = 0x023E,

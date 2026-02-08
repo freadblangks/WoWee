@@ -364,6 +364,20 @@ void Renderer::setCharacterFollow(uint32_t instanceId) {
     }
 }
 
+void Renderer::setMounted(uint32_t mountInstId, float heightOffset) {
+    mountInstanceId_ = mountInstId;
+    mountHeightOffset_ = heightOffset;
+    charAnimState = CharAnimState::MOUNT;
+    if (cameraController) cameraController->setMounted(true);
+}
+
+void Renderer::clearMount() {
+    mountInstanceId_ = 0;
+    mountHeightOffset_ = 0.0f;
+    charAnimState = CharAnimState::IDLE;
+    if (cameraController) cameraController->setMounted(false);
+}
+
 uint32_t Renderer::resolveMeleeAnimId() {
     if (!characterRenderer || characterInstanceId == 0) {
         meleeAnimId = 0;
@@ -473,6 +487,7 @@ void Renderer::updateCharacterAnimation() {
     constexpr uint32_t ANIM_SITTING    = 97;  // Hold on same animation (no separate idle)
     constexpr uint32_t ANIM_SWIM_IDLE  = 41;  // Treading water (SwimIdle)
     constexpr uint32_t ANIM_SWIM       = 42;  // Swimming forward (Swim)
+    constexpr uint32_t ANIM_MOUNT      = 91;  // Seated on mount
 
     CharAnimState newState = charAnimState;
 
@@ -488,6 +503,42 @@ void Renderer::updateCharacterAnimation() {
     bool sitting = cameraController->isSitting();
     bool swim = cameraController->isSwimming();
     bool forceMelee = meleeSwingTimer > 0.0f && grounded && !swim;
+
+    // When mounted, force MOUNT state and skip normal transitions
+    if (isMounted()) {
+        newState = CharAnimState::MOUNT;
+        charAnimState = newState;
+
+        // Play seated animation on player
+        uint32_t currentAnimId = 0;
+        float currentAnimTimeMs = 0.0f, currentAnimDurationMs = 0.0f;
+        bool haveState = characterRenderer->getAnimationState(characterInstanceId, currentAnimId, currentAnimTimeMs, currentAnimDurationMs);
+        if (!haveState || currentAnimId != ANIM_MOUNT) {
+            characterRenderer->playAnimation(characterInstanceId, ANIM_MOUNT, true);
+        }
+
+        // Sync mount instance position and rotation
+        if (mountInstanceId_ > 0) {
+            characterRenderer->setInstancePosition(mountInstanceId_, characterPosition);
+            float yawRad = glm::radians(characterYaw);
+            characterRenderer->setInstanceRotation(mountInstanceId_, glm::vec3(0.0f, 0.0f, yawRad));
+
+            // Drive mount model animation: idle when still, run when moving
+            uint32_t mountAnimId = moving ? ANIM_RUN : ANIM_STAND;
+            uint32_t curMountAnim = 0;
+            float curMountTime = 0, curMountDur = 0;
+            bool haveMountState = characterRenderer->getAnimationState(mountInstanceId_, curMountAnim, curMountTime, curMountDur);
+            if (!haveMountState || curMountAnim != mountAnimId) {
+                characterRenderer->playAnimation(mountInstanceId_, mountAnimId, true);
+            }
+        }
+
+        // Offset player Z above mount
+        glm::vec3 playerPos = characterPosition;
+        playerPos.z += mountHeightOffset_;
+        characterRenderer->setInstancePosition(characterInstanceId, playerPos);
+        return;
+    }
 
     if (!forceMelee) switch (charAnimState) {
         case CharAnimState::IDLE:
@@ -629,6 +680,9 @@ void Renderer::updateCharacterAnimation() {
                 newState = CharAnimState::IDLE;
             }
             break;
+
+        case CharAnimState::MOUNT:
+            break;  // Handled by early return above
     }
 
     if (forceMelee) {
@@ -692,6 +746,7 @@ void Renderer::updateCharacterAnimation() {
             }
             loop = false;
             break;
+        case CharAnimState::MOUNT:      animId = ANIM_MOUNT;      loop = true;  break;
     }
 
     uint32_t currentAnimId = 0;

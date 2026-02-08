@@ -72,6 +72,8 @@ public:
     using MovementCallback = std::function<void(uint32_t opcode)>;
     void setMovementCallback(MovementCallback cb) { movementCallback = std::move(cb); }
     void setUseWoWSpeed(bool use) { useWoWSpeed = use; }
+    void setRunSpeedOverride(float speed) { runSpeedOverride_ = speed; }
+    void setMounted(bool m) { mounted_ = m; }
 
     // For first-person player hiding
     void setCharacterRenderer(class CharacterRenderer* cr, uint32_t playerId) {
@@ -187,6 +189,10 @@ private:
     static constexpr float WOW_TURN_SPEED = 180.0f;  // Keyboard turn deg/sec
     static constexpr float WOW_GRAVITY = -19.29f;
     static constexpr float WOW_JUMP_VELOCITY = 7.96f;
+
+    // Server-driven run speed override (0 = use default WOW_RUN_SPEED)
+    float runSpeedOverride_ = 0.0f;
+    bool mounted_ = false;
 
     // Online mode: trust server position, don't prefer outdoors over WMO floors
     bool onlineMode = false;

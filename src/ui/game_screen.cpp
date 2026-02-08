@@ -1138,6 +1138,13 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                 return;
             }
 
+            // /dismount command
+            if (cmdLower == "dismount") {
+                gameHandler.dismount();
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
             // /sit command
             if (cmdLower == "sit") {
                 gameHandler.setStandState(1);  // 1 = sit

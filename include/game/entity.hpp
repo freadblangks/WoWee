@@ -189,6 +189,10 @@ public:
     uint32_t getDisplayId() const { return displayId; }
     void setDisplayId(uint32_t id) { displayId = id; }
 
+    // Mount display ID (UNIT_FIELD_MOUNTDISPLAYID, index 69)
+    uint32_t getMountDisplayId() const { return mountDisplayId; }
+    void setMountDisplayId(uint32_t id) { mountDisplayId = id; }
+
     // Unit flags (UNIT_FIELD_FLAGS, index 59)
     uint32_t getUnitFlags() const { return unitFlags; }
     void setUnitFlags(uint32_t f) { unitFlags = f; }
@@ -216,6 +220,7 @@ protected:
     uint32_t level = 1;
     uint32_t entry = 0;
     uint32_t displayId = 0;
+    uint32_t mountDisplayId = 0;
     uint32_t unitFlags = 0;
     uint32_t npcFlags = 0;
     uint32_t factionTemplate = 0;

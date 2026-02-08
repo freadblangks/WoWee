@@ -272,6 +272,9 @@ if (FFMPEG_LIBRARY_DIRS)
 endif()
 
 # Platform-specific libraries
+if(UNIX AND NOT APPLE)
+    target_link_libraries(wowee PRIVATE X11)
+endif()
 if(WIN32)
     target_link_libraries(wowee PRIVATE ws2_32)
     # SDL2main provides WinMain entry point on Windows

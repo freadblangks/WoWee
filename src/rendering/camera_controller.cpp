@@ -191,7 +191,7 @@ void CameraController::update(float deltaTime) {
         } else if (ctrlDown) {
             speed = WOW_WALK_SPEED;
         } else {
-            speed = WOW_RUN_SPEED;
+            speed = (runSpeedOverride_ > 0.0f) ? runSpeedOverride_ : WOW_RUN_SPEED;
         }
     } else {
         // Exploration mode (original behavior)
@@ -225,10 +225,12 @@ void CameraController::update(float deltaTime) {
     glm::vec3 right(-std::sin(moveYawRad), std::cos(moveYawRad), 0.0f);
 
     // Toggle sit/crouch with X key (edge-triggered) — only when UI doesn't want keyboard
+    // Blocked while mounted
     bool xDown = !uiWantsKeyboard && input.isKeyPressed(SDL_SCANCODE_X);
-    if (xDown && !xKeyWasDown) {
+    if (xDown && !xKeyWasDown && !mounted_) {
         sitting = !sitting;
     }
+    if (mounted_) sitting = false;
     xKeyWasDown = xDown;
 
     // Update eye height based on crouch state (smooth transition)

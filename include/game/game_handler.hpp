@@ -455,6 +455,13 @@ public:
     }
     const std::unordered_map<uint64_t, QuestGiverStatus>& getNpcQuestStatuses() const { return npcQuestStatus_; }
 
+    // Mount state
+    using MountCallback = std::function<void(uint32_t mountDisplayId)>;  // 0 = dismount
+    void setMountCallback(MountCallback cb) { mountCallback_ = std::move(cb); }
+    bool isMounted() const { return currentMountDisplayId_ != 0; }
+    float getServerRunSpeed() const { return serverRunSpeed_; }
+    void dismount();
+
     // Taxi / Flight Paths
     bool isTaxiWindowOpen() const { return taxiWindowOpen_; }
     void closeTaxi();
@@ -629,6 +636,9 @@ private:
 
     // ---- Teleport handler ----
     void handleTeleportAck(network::Packet& packet);
+
+    // ---- Speed change handler ----
+    void handleForceRunSpeedChange(network::Packet& packet);
 
     // ---- Taxi handlers ----
     void handleShowTaxiNodes(network::Packet& packet);
@@ -844,6 +854,8 @@ private:
     ShowTaxiNodesData currentTaxiData_;
     uint64_t taxiNpcGuid_ = 0;
     bool onTaxiFlight_ = false;
+    uint32_t knownTaxiMask_[12] = {};  // Track previously known nodes for discovery alerts
+    bool taxiMaskInitialized_ = false; // First SMSG_SHOWTAXINODES seeds mask without alerts
 
     // Vendor
     bool vendorWindowOpen = false;
@@ -877,6 +889,9 @@ private:
     NpcRespawnCallback npcRespawnCallback_;
     MeleeSwingCallback meleeSwingCallback_;
     NpcSwingCallback npcSwingCallback_;
+    MountCallback mountCallback_;
+    uint32_t currentMountDisplayId_ = 0;
+    float serverRunSpeed_ = 7.0f;
     bool playerDead_ = false;
 };
 

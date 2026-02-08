@@ -363,6 +363,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
             handleMonsterMove(packet);
             break;
 
+        // ---- Speed Changes ----
+        case Opcode::SMSG_FORCE_RUN_SPEED_CHANGE:
+            handleForceRunSpeedChange(packet);
+            break;
+
         // ---- Phase 2: Combat ----
         case Opcode::SMSG_ATTACKSTART:
             handleAttackStart(packet);
@@ -647,6 +652,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         case Opcode::SMSG_ACTIVATETAXIREPLY:
             handleActivateTaxiReply(packet);
+            break;
+        case Opcode::SMSG_NEW_TAXI_PATH:
+            // Empty packet - server signals a new flight path was learned
+            // The actual node details come in the next SMSG_SHOWTAXINODES
+            addSystemChatMessage("New flight path discovered!");
             break;
 
         default:
@@ -1287,6 +1297,14 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             case 59: unit->setUnitFlags(val); break;   // UNIT_FIELD_FLAGS
                             case 54: unit->setLevel(val); break;
                             case 67: unit->setDisplayId(val); break;  // UNIT_FIELD_DISPLAYID
+                            case 69: // UNIT_FIELD_MOUNTDISPLAYID
+                                if (block.guid == playerGuid) {
+                                    uint32_t old = currentMountDisplayId_;
+                                    currentMountDisplayId_ = val;
+                                    if (val != old && mountCallback_) mountCallback_(val);
+                                }
+                                unit->setMountDisplayId(val);
+                                break;
                             case 82: unit->setNpcFlags(val); break;   // UNIT_NPC_FLAGS
                             default: break;
                         }
@@ -1397,6 +1415,15 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                 case 55:  // UNIT_FIELD_FACTIONTEMPLATE
                                     unit->setFactionTemplate(val);
                                     unit->setHostile(isHostileFaction(val));
+                                    break;
+                                case 67: unit->setDisplayId(val); break;  // UNIT_FIELD_DISPLAYID
+                                case 69: // UNIT_FIELD_MOUNTDISPLAYID
+                                    if (block.guid == playerGuid) {
+                                        uint32_t old = currentMountDisplayId_;
+                                        currentMountDisplayId_ = val;
+                                        if (val != old && mountCallback_) mountCallback_(val);
+                                    }
+                                    unit->setMountDisplayId(val);
                                     break;
                                 case 82: unit->setNpcFlags(val); break;   // UNIT_NPC_FLAGS
                                 default: break;
@@ -2964,6 +2991,27 @@ void GameHandler::handleAttackStop(network::Packet& packet) {
     }
 }
 
+void GameHandler::dismount() {
+    if (!isMounted() || !socket) return;
+    network::Packet pkt(static_cast<uint16_t>(Opcode::CMSG_CANCEL_MOUNT_AURA));
+    socket->send(pkt);
+    LOG_INFO("Sent CMSG_CANCEL_MOUNT_AURA");
+}
+
+void GameHandler::handleForceRunSpeedChange(network::Packet& packet) {
+    // Packed GUID
+    uint64_t guid = UpdateObjectParser::readPackedGuid(packet);
+    // uint32 counter (ack counter, we ignore)
+    packet.readUInt32();
+    // float newSpeed
+    float newSpeed = packet.readFloat();
+
+    if (guid == playerGuid) {
+        serverRunSpeed_ = newSpeed;
+        LOG_INFO("Server run speed changed to ", newSpeed);
+    }
+}
+
 void GameHandler::handleMonsterMove(network::Packet& packet) {
     MonsterMoveData data;
     if (!MonsterMoveParser::parse(packet, data)) {
@@ -3944,6 +3992,29 @@ void GameHandler::handleShowTaxiNodes(network::Packet& packet) {
     }
 
     loadTaxiDbc();
+
+    // Detect newly discovered flight paths by comparing with stored mask
+    if (taxiMaskInitialized_) {
+        for (uint32_t i = 0; i < TLK_TAXI_MASK_SIZE; ++i) {
+            uint32_t newBits = data.nodeMask[i] & ~knownTaxiMask_[i];
+            if (newBits == 0) continue;
+            for (uint32_t bit = 0; bit < 32; ++bit) {
+                if (newBits & (1u << bit)) {
+                    uint32_t nodeId = i * 32 + bit;
+                    auto it = taxiNodes_.find(nodeId);
+                    if (it != taxiNodes_.end()) {
+                        addSystemChatMessage("Discovered flight path: " + it->second.name);
+                    }
+                }
+            }
+        }
+    }
+
+    // Update stored mask
+    for (uint32_t i = 0; i < TLK_TAXI_MASK_SIZE; ++i) {
+        knownTaxiMask_[i] = data.nodeMask[i];
+    }
+    taxiMaskInitialized_ = true;
 
     currentTaxiData_ = data;
     taxiNpcGuid_ = data.npcGuid;

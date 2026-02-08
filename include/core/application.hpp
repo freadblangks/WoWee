@@ -150,6 +150,10 @@ private:
     std::unordered_map<uint64_t, uint32_t> creatureModelIds_;   // guid → loaded modelId
     std::unordered_map<uint32_t, uint32_t> displayIdModelCache_; // displayId → modelId (model caching)
     uint32_t nextCreatureModelId_ = 5000;  // Model IDs for online creatures
+
+    // Mount model tracking
+    uint32_t mountInstanceId_ = 0;
+    uint32_t mountModelId_ = 0;
     bool creatureLookupsBuilt_ = false;
 
     // Deferred creature spawn queue (throttles spawning to avoid hangs)

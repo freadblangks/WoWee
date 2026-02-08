@@ -241,9 +241,16 @@ enum class Opcode : uint16_t {
     MSG_MOVE_TELEPORT_ACK            = 0x0C7,
     SMSG_TRANSFER_PENDING            = 0x003F,
 
+    // ---- Speed Changes ----
+    SMSG_FORCE_RUN_SPEED_CHANGE      = 0x00E2,
+
+    // ---- Mount ----
+    CMSG_CANCEL_MOUNT_AURA           = 0x0375,
+
     // ---- Taxi / Flight Paths ----
     SMSG_SHOWTAXINODES               = 0x01A9,
     SMSG_ACTIVATETAXIREPLY           = 0x01AE,
+    SMSG_NEW_TAXI_PATH               = 0x01AF,
     CMSG_ACTIVATETAXIEXPRESS         = 0x0312,
 };
 

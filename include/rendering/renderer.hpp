@@ -125,6 +125,11 @@ public:
     void triggerMeleeSwing();
     void setEquippedWeaponType(uint32_t inventoryType) { equippedWeaponInvType_ = inventoryType; meleeAnimId = 0; }
 
+    // Mount rendering
+    void setMounted(uint32_t mountInstId, float heightOffset);
+    void clearMount();
+    bool isMounted() const { return mountInstanceId_ != 0; }
+
     // Selection circle for targeted entity
     void setSelectionCircle(const glm::vec3& pos, float radius, const glm::vec3& color);
     void clearSelectionCircle();
@@ -214,7 +219,7 @@ private:
     float characterYaw = 0.0f;
 
     // Character animation state
-    enum class CharAnimState { IDLE, WALK, RUN, JUMP_START, JUMP_MID, JUMP_END, SIT_DOWN, SITTING, EMOTE, SWIM_IDLE, SWIM, MELEE_SWING };
+    enum class CharAnimState { IDLE, WALK, RUN, JUMP_START, JUMP_MID, JUMP_END, SIT_DOWN, SITTING, EMOTE, SWIM_IDLE, SWIM, MELEE_SWING, MOUNT };
     CharAnimState charAnimState = CharAnimState::IDLE;
     void updateCharacterAnimation();
     bool isFootstepAnimationState() const;
@@ -258,6 +263,10 @@ private:
     float meleeAnimDurationMs = 0.0f;
     uint32_t meleeAnimId = 0;
     uint32_t equippedWeaponInvType_ = 0;
+
+    // Mount state
+    uint32_t mountInstanceId_ = 0;
+    float mountHeightOffset_ = 0.0f;
 
     bool terrainEnabled = true;
     bool terrainLoaded = false;

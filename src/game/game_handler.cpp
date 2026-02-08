@@ -1804,6 +1804,27 @@ void GameHandler::sendChatMessage(ChatType type, const std::string& message, con
     // Build and send packet
     auto packet = MessageChatPacket::build(type, language, message, target);
     socket->send(packet);
+
+    // Add local echo so the player sees their own message immediately
+    MessageChatData echo;
+    echo.senderGuid = playerGuid;
+    echo.language = language;
+    echo.message = message;
+
+    // Look up player name
+    auto nameIt = playerNameCache.find(playerGuid);
+    if (nameIt != playerNameCache.end()) {
+        echo.senderName = nameIt->second;
+    }
+
+    if (type == ChatType::WHISPER) {
+        echo.type = ChatType::WHISPER_INFORM;
+        echo.senderName = target;  // "To [target]: message"
+    } else {
+        echo.type = type;
+    }
+
+    addLocalChatMessage(echo);
 }
 
 void GameHandler::handleMessageChat(network::Packet& packet) {
@@ -1812,6 +1833,15 @@ void GameHandler::handleMessageChat(network::Packet& packet) {
     MessageChatData data;
     if (!MessageChatParser::parse(packet, data)) {
         LOG_WARNING("Failed to parse SMSG_MESSAGECHAT");
+        return;
+    }
+
+    // Skip server echo of our own messages (we already added a local echo)
+    if (data.senderGuid == playerGuid && data.senderGuid != 0) {
+        // Still track whisper sender for /r even if it's our own whisper-inform
+        if (data.type == ChatType::WHISPER && !data.senderName.empty()) {
+            lastWhisperSender_ = data.senderName;
+        }
         return;
     }
 

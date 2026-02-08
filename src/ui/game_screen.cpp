@@ -411,25 +411,92 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
     ImGui::BeginChild("ChatHistory", ImVec2(0, -70), true, ImGuiWindowFlags_HorizontalScrollbar);
     bool chatHistoryHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
 
+    // Helper: render text with clickable URLs
+    auto renderTextWithLinks = [](const std::string& text, const ImVec4& color) {
+        size_t pos = 0;
+        while (pos < text.size()) {
+            // Find next URL (http:// or https://)
+            size_t urlStart = std::string::npos;
+            size_t httpPos = text.find("http://", pos);
+            size_t httpsPos = text.find("https://", pos);
+            if (httpPos != std::string::npos && (httpsPos == std::string::npos || httpPos < httpsPos))
+                urlStart = httpPos;
+            else if (httpsPos != std::string::npos)
+                urlStart = httpsPos;
+
+            if (urlStart == std::string::npos) {
+                // No more URLs, render remaining text
+                std::string remaining = text.substr(pos);
+                if (!remaining.empty()) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, color);
+                    ImGui::TextWrapped("%s", remaining.c_str());
+                    ImGui::PopStyleColor();
+                }
+                break;
+            }
+
+            // Render text before URL
+            if (urlStart > pos) {
+                std::string before = text.substr(pos, urlStart - pos);
+                ImGui::PushStyleColor(ImGuiCol_Text, color);
+                ImGui::TextWrapped("%s", before.c_str());
+                ImGui::PopStyleColor();
+            }
+
+            // Find end of URL (space, newline, or end of string)
+            size_t urlEnd = text.find_first_of(" \t\n\r", urlStart);
+            if (urlEnd == std::string::npos) urlEnd = text.size();
+            std::string url = text.substr(urlStart, urlEnd - urlStart);
+
+            // Render URL as clickable link
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.7f, 1.0f, 1.0f));
+            ImGui::TextWrapped("%s", url.c_str());
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+                ImGui::SetTooltip("Open: %s", url.c_str());
+            }
+            if (ImGui::IsItemClicked()) {
+                std::string cmd = "xdg-open '" + url + "' &";
+                system(cmd.c_str());
+            }
+            ImGui::PopStyleColor();
+
+            pos = urlEnd;
+        }
+    };
+
     for (const auto& msg : chatHistory) {
         ImVec4 color = getChatTypeColor(msg.type);
-        ImGui::PushStyleColor(ImGuiCol_Text, color);
 
         if (msg.type == game::ChatType::SYSTEM) {
-            // System messages: just yellow text, no header
-            ImGui::TextWrapped("%s", msg.message.c_str());
+            renderTextWithLinks(msg.message, color);
         } else if (msg.type == game::ChatType::TEXT_EMOTE) {
-            ImGui::TextWrapped("You %s", msg.message.c_str());
+            std::string full = "You " + msg.message;
+            renderTextWithLinks(full, color);
         } else if (!msg.senderName.empty()) {
             if (msg.type == game::ChatType::MONSTER_SAY || msg.type == game::ChatType::MONSTER_YELL) {
-                ImGui::TextWrapped("%s says: %s", msg.senderName.c_str(), msg.message.c_str());
+                std::string prefix = msg.senderName + " says: ";
+                ImGui::PushStyleColor(ImGuiCol_Text, color);
+                ImGui::TextWrapped("%s", prefix.c_str());
+                ImGui::PopStyleColor();
+                ImGui::SameLine(0, 0);
+                renderTextWithLinks(msg.message, color);
             } else {
-                ImGui::TextWrapped("[%s] %s: %s", getChatTypeName(msg.type), msg.senderName.c_str(), msg.message.c_str());
+                std::string prefix = "[" + std::string(getChatTypeName(msg.type)) + "] " + msg.senderName + ": ";
+                ImGui::PushStyleColor(ImGuiCol_Text, color);
+                ImGui::TextWrapped("%s", prefix.c_str());
+                ImGui::PopStyleColor();
+                ImGui::SameLine(0, 0);
+                renderTextWithLinks(msg.message, color);
             }
         } else {
-            ImGui::TextWrapped("[%s] %s", getChatTypeName(msg.type), msg.message.c_str());
+            std::string prefix = "[" + std::string(getChatTypeName(msg.type)) + "] ";
+            ImGui::PushStyleColor(ImGuiCol_Text, color);
+            ImGui::TextWrapped("%s", prefix.c_str());
+            ImGui::PopStyleColor();
+            ImGui::SameLine(0, 0);
+            renderTextWithLinks(msg.message, color);
         }
-        ImGui::PopStyleColor();
     }
 
     // Auto-scroll to bottom
@@ -488,6 +555,70 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
         ImGui::SetKeyboardFocusHere();
         refocusChatInput = false;
     }
+
+    // Detect chat channel prefix as user types and switch the dropdown
+    {
+        std::string buf(chatInputBuffer);
+        if (buf.size() >= 2 && buf[0] == '/') {
+            // Find the command and check if there's a space after it
+            size_t sp = buf.find(' ', 1);
+            if (sp != std::string::npos) {
+                std::string cmd = buf.substr(1, sp - 1);
+                for (char& c : cmd) c = std::tolower(c);
+                int detected = -1;
+                if (cmd == "s" || cmd == "say") detected = 0;
+                else if (cmd == "y" || cmd == "yell" || cmd == "shout") detected = 1;
+                else if (cmd == "p" || cmd == "party") detected = 2;
+                else if (cmd == "g" || cmd == "guild") detected = 3;
+                else if (cmd == "w" || cmd == "whisper" || cmd == "tell" || cmd == "t") detected = 4;
+                else if (cmd == "raid" || cmd == "rsay" || cmd == "ra") detected = 5;
+                else if (cmd == "o" || cmd == "officer" || cmd == "osay") detected = 6;
+                else if (cmd == "bg" || cmd == "battleground") detected = 7;
+                else if (cmd == "rw" || cmd == "raidwarning") detected = 8;
+                else if (cmd == "i" || cmd == "instance") detected = 9;
+                if (detected >= 0 && selectedChatType != detected) {
+                    selectedChatType = detected;
+                    // Strip the prefix, keep only the message part
+                    std::string remaining = buf.substr(sp + 1);
+                    // For whisper, first word after /w is the target
+                    if (detected == 4) {
+                        size_t msgStart = remaining.find(' ');
+                        if (msgStart != std::string::npos) {
+                            std::string wTarget = remaining.substr(0, msgStart);
+                            strncpy(whisperTargetBuffer, wTarget.c_str(), sizeof(whisperTargetBuffer) - 1);
+                            whisperTargetBuffer[sizeof(whisperTargetBuffer) - 1] = '\0';
+                            remaining = remaining.substr(msgStart + 1);
+                        } else {
+                            // Just the target name so far, no message yet
+                            strncpy(whisperTargetBuffer, remaining.c_str(), sizeof(whisperTargetBuffer) - 1);
+                            whisperTargetBuffer[sizeof(whisperTargetBuffer) - 1] = '\0';
+                            remaining = "";
+                        }
+                    }
+                    strncpy(chatInputBuffer, remaining.c_str(), sizeof(chatInputBuffer) - 1);
+                    chatInputBuffer[sizeof(chatInputBuffer) - 1] = '\0';
+                    chatInputMoveCursorToEnd = true;
+                }
+            }
+        }
+    }
+
+    // Color the input text based on current chat type
+    ImVec4 inputColor;
+    switch (selectedChatType) {
+        case 1: inputColor = ImVec4(1.0f, 0.3f, 0.3f, 1.0f); break;  // YELL - red
+        case 2: inputColor = ImVec4(0.4f, 0.6f, 1.0f, 1.0f); break;  // PARTY - blue
+        case 3: inputColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f); break;  // GUILD - green
+        case 4: inputColor = ImVec4(1.0f, 0.5f, 1.0f, 1.0f); break;  // WHISPER - pink
+        case 5: inputColor = ImVec4(1.0f, 0.5f, 0.0f, 1.0f); break;  // RAID - orange
+        case 6: inputColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f); break;  // OFFICER - green
+        case 7: inputColor = ImVec4(1.0f, 0.5f, 0.0f, 1.0f); break;  // BG - orange
+        case 8: inputColor = ImVec4(1.0f, 0.3f, 0.0f, 1.0f); break;  // RAID WARNING - red-orange
+        case 9: inputColor = ImVec4(0.4f, 0.6f, 1.0f, 1.0f); break;  // INSTANCE - blue
+        default: inputColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f); break; // SAY - white
+    }
+    ImGui::PushStyleColor(ImGuiCol_Text, inputColor);
+
     auto inputCallback = [](ImGuiInputTextCallbackData* data) -> int {
         auto* self = static_cast<GameScreen*>(data->UserData);
         if (self && self->chatInputMoveCursorToEnd) {
@@ -505,6 +636,7 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
         sendChatMessage(gameHandler);
         refocusChatInput = true;
     }
+    ImGui::PopStyleColor();
 
     if (ImGui::IsItemActive()) {
         chatInputActive = true;
@@ -990,6 +1122,9 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
         game::ChatType type;
         std::string message = input;
         std::string target;
+
+        // Track if a channel shortcut should change the chat type dropdown
+        int switchChatType = -1;
 
         // Check for slash commands
         if (input.size() > 1 && input[0] == '/') {
@@ -1592,94 +1727,79 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
             }
 
             // Chat channel slash commands
+            // If used without a message (e.g. just "/s"), switch the chat type dropdown
             bool isChannelCommand = false;
             if (cmdLower == "s" || cmdLower == "say") {
                 type = game::ChatType::SAY;
                 message = (spacePos != std::string::npos) ? command.substr(spacePos + 1) : "";
                 isChannelCommand = true;
-            } else if (cmdLower == "y" || cmdLower == "yell") {
+                switchChatType = 0;
+            } else if (cmdLower == "y" || cmdLower == "yell" || cmdLower == "shout") {
                 type = game::ChatType::YELL;
                 message = (spacePos != std::string::npos) ? command.substr(spacePos + 1) : "";
                 isChannelCommand = true;
+                switchChatType = 1;
             } else if (cmdLower == "p" || cmdLower == "party") {
                 type = game::ChatType::PARTY;
                 message = (spacePos != std::string::npos) ? command.substr(spacePos + 1) : "";
                 isChannelCommand = true;
+                switchChatType = 2;
             } else if (cmdLower == "g" || cmdLower == "guild") {
                 type = game::ChatType::GUILD;
                 message = (spacePos != std::string::npos) ? command.substr(spacePos + 1) : "";
                 isChannelCommand = true;
+                switchChatType = 3;
             } else if (cmdLower == "raid" || cmdLower == "rsay" || cmdLower == "ra") {
                 type = game::ChatType::RAID;
                 message = (spacePos != std::string::npos) ? command.substr(spacePos + 1) : "";
                 isChannelCommand = true;
+                switchChatType = 5;
             } else if (cmdLower == "raidwarning" || cmdLower == "rw") {
                 type = game::ChatType::RAID_WARNING;
                 message = (spacePos != std::string::npos) ? command.substr(spacePos + 1) : "";
                 isChannelCommand = true;
+                switchChatType = 8;
             } else if (cmdLower == "officer" || cmdLower == "o" || cmdLower == "osay") {
                 type = game::ChatType::OFFICER;
                 message = (spacePos != std::string::npos) ? command.substr(spacePos + 1) : "";
                 isChannelCommand = true;
+                switchChatType = 6;
             } else if (cmdLower == "battleground" || cmdLower == "bg") {
                 type = game::ChatType::BATTLEGROUND;
                 message = (spacePos != std::string::npos) ? command.substr(spacePos + 1) : "";
                 isChannelCommand = true;
+                switchChatType = 7;
             } else if (cmdLower == "instance" || cmdLower == "i") {
                 // Instance chat uses PARTY chat type
                 type = game::ChatType::PARTY;
                 message = (spacePos != std::string::npos) ? command.substr(spacePos + 1) : "";
                 isChannelCommand = true;
+                switchChatType = 9;
             } else if (cmdLower == "w" || cmdLower == "whisper" || cmdLower == "tell" || cmdLower == "t") {
-                // Parse: /w [TargetName] message text
-                // If no target name, use current target
+                switchChatType = 4;
                 if (spacePos != std::string::npos) {
                     std::string rest = command.substr(spacePos + 1);
                     size_t msgStart = rest.find(' ');
                     if (msgStart != std::string::npos) {
-                        // Has both target and message: /w PlayerName message
+                        // /w PlayerName message — send whisper immediately
                         target = rest.substr(0, msgStart);
                         message = rest.substr(msgStart + 1);
                         type = game::ChatType::WHISPER;
                         isChannelCommand = true;
+                        // Set whisper target for future messages
+                        strncpy(whisperTargetBuffer, target.c_str(), sizeof(whisperTargetBuffer) - 1);
+                        whisperTargetBuffer[sizeof(whisperTargetBuffer) - 1] = '\0';
                     } else {
-                        // Only one word after /w - treat as message to current target
-                        message = rest;
-                        if (gameHandler.hasTarget()) {
-                            auto targetEntity = gameHandler.getTarget();
-                            if (targetEntity && targetEntity->getType() == game::ObjectType::PLAYER) {
-                                auto player = std::static_pointer_cast<game::Player>(targetEntity);
-                                target = player->getName();
-                                type = game::ChatType::WHISPER;
-                                isChannelCommand = true;
-                            } else {
-                                game::MessageChatData msg;
-                                msg.type = game::ChatType::SYSTEM;
-                                msg.language = game::ChatLanguage::UNIVERSAL;
-                                msg.message = "You must target a player to whisper, or use: /w <player> <message>";
-                                gameHandler.addLocalChatMessage(msg);
-                                chatInputBuffer[0] = '\0';
-                                return;
-                            }
-                        } else {
-                            game::MessageChatData msg;
-                            msg.type = game::ChatType::SYSTEM;
-                            msg.language = game::ChatLanguage::UNIVERSAL;
-                            msg.message = "No player targeted. Use: /w <player> <message>";
-                            gameHandler.addLocalChatMessage(msg);
-                            chatInputBuffer[0] = '\0';
-                            return;
-                        }
+                        // /w PlayerName — switch to whisper mode with target set
+                        strncpy(whisperTargetBuffer, rest.c_str(), sizeof(whisperTargetBuffer) - 1);
+                        whisperTargetBuffer[sizeof(whisperTargetBuffer) - 1] = '\0';
+                        message = "";
+                        isChannelCommand = true;
                     }
                 } else {
-                    // Just "/w" with no message - show usage
-                    game::MessageChatData msg;
-                    msg.type = game::ChatType::SYSTEM;
-                    msg.language = game::ChatLanguage::UNIVERSAL;
-                    msg.message = "Usage: /w <message> (to target) or /w <player> <message>";
-                    gameHandler.addLocalChatMessage(msg);
-                    chatInputBuffer[0] = '\0';
-                    return;
+                    // Just "/w" — switch to whisper mode
+                    message = "";
+                    isChannelCommand = true;
                 }
             }
 
@@ -1765,9 +1885,14 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
             return;
         }
 
-        // Don't send empty messages
+        // Don't send empty messages — but switch chat type if a channel shortcut was used
         if (!message.empty()) {
             gameHandler.sendChatMessage(type, message, target);
+        }
+
+        // Switch chat type dropdown when channel shortcut used (with or without message)
+        if (switchChatType >= 0) {
+            selectedChatType = switchChatType;
         }
 
         // Clear input

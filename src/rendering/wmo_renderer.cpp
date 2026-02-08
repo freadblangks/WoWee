@@ -1744,7 +1744,7 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
     // Player collision parameters
     const float PLAYER_RADIUS = 0.70f;      // Wider radius for better wall collision
     const float PLAYER_HEIGHT = 2.0f;       // Player height for wall checks
-    const float MAX_STEP_HEIGHT = 1.0f;     // Allow stepping up stairs
+    const float MAX_STEP_HEIGHT = 0.6f;     // Allow stepping up stairs (lowered to catch curbs)
 
     glm::vec3 queryMin = glm::min(from, to) - glm::vec3(8.0f, 8.0f, 5.0f);
     glm::vec3 queryMax = glm::max(from, to) + glm::vec3(8.0f, 8.0f, 5.0f);
@@ -1852,11 +1852,11 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
                 // Skip low geometry that can be stepped over
                 if (triMaxZ <= localFeetZ + MAX_STEP_HEIGHT) continue;
 
-                // Skip ramp surfaces (facing mostly upward) that are low
-                if (normal.z > 0.50f && triMaxZ <= localFeetZ + 1.2f) continue;
+                // Skip ramp surfaces (facing mostly upward) that are very low
+                if (normal.z > 0.60f && triMaxZ <= localFeetZ + 0.8f) continue;
 
-                // Skip short vertical surfaces (stair risers) - real walls are tall
-                if (triHeight < 1.2f && triMaxZ <= localFeetZ + 1.5f) continue;
+                // Skip very short vertical surfaces (stair risers)
+                if (triHeight < 0.6f && triMaxZ <= localFeetZ + 0.8f) continue;
 
                 // Swept test: prevent tunneling when crossing a wall between frames.
                 if ((fromDist > PLAYER_RADIUS && toDist < -PLAYER_RADIUS) ||

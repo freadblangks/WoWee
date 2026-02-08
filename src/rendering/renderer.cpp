@@ -536,8 +536,8 @@ void Renderer::updateCharacterAnimation() {
             // Rider bob: sinusoidal motion synced to mount's run animation
             if (moving && haveMountState && curMountDur > 1.0f) {
                 float norm = std::fmod(curMountTime, curMountDur) / curMountDur;
-                // Two bounces per stride cycle (horse gait), lowest at footfalls (0.22, 0.72)
-                mountBob = std::sin(norm * 4.0f * 3.14159f) * 0.12f;
+                // One bounce per stride cycle
+                mountBob = std::sin(norm * 2.0f * 3.14159f) * 0.12f;
             }
         }
 

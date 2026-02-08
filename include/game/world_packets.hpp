@@ -1665,8 +1665,10 @@ struct ShowTaxiNodesData {
     uint32_t nearestNode = 0;       // Taxi node player is at
     uint32_t nodeMask[TLK_TAXI_MASK_SIZE] = {};
     bool isNodeKnown(uint32_t nodeId) const {
-        uint32_t idx = nodeId / 32;
-        uint32_t bit = nodeId % 32;
+        if (nodeId == 0) return false;
+        uint32_t bitIndex = nodeId - 1;
+        uint32_t idx = bitIndex / 32;
+        uint32_t bit = bitIndex % 32;
         return idx < TLK_TAXI_MASK_SIZE && (nodeMask[idx] & (1u << bit));
     }
 };
@@ -1692,6 +1694,18 @@ public:
 class ActivateTaxiExpressPacket {
 public:
     static network::Packet build(uint64_t npcGuid, const std::vector<uint32_t>& pathNodes);
+};
+
+/** CMSG_ACTIVATETAXI packet builder */
+class ActivateTaxiPacket {
+public:
+    static network::Packet build(uint64_t npcGuid, uint32_t srcNode, uint32_t destNode);
+};
+
+/** CMSG_GAMEOBJECT_USE packet builder */
+class GameObjectUsePacket {
+public:
+    static network::Packet build(uint64_t guid);
 };
 
 /** CMSG_REPOP_REQUEST packet builder */

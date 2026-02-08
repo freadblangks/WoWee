@@ -18,6 +18,7 @@
 #include "rendering/weather.hpp"
 #include "rendering/character_renderer.hpp"
 #include "rendering/wmo_renderer.hpp"
+#include "rendering/m2_renderer.hpp"
 #include "rendering/minimap.hpp"
 #include "rendering/loading_screen.hpp"
 #include "audio/music_manager.hpp"
@@ -38,6 +39,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <algorithm>
+#include <cctype>
 #include <cctype>
 #include <optional>
 #include <sstream>
@@ -385,6 +387,7 @@ void Application::update(float deltaTime) {
             }
             // Process deferred online creature spawns (throttled)
             processCreatureSpawnQueue();
+            processGameObjectSpawnQueue();
             processPendingMount();
             if (npcManager && renderer && renderer->getCharacterRenderer()) {
                 npcManager->update(deltaTime, renderer->getCharacterRenderer());
@@ -558,6 +561,16 @@ void Application::setupUICallbacks() {
     // Creature despawn callback (online mode) - remove creature models
     gameHandler->setCreatureDespawnCallback([this](uint64_t guid) {
         despawnOnlineCreature(guid);
+    });
+
+    // GameObject spawn callback (online mode) - spawn static models (mailboxes, etc.)
+    gameHandler->setGameObjectSpawnCallback([this](uint64_t guid, uint32_t displayId, float x, float y, float z, float orientation) {
+        pendingGameObjectSpawns_.push_back({guid, displayId, x, y, z, orientation});
+    });
+
+    // GameObject despawn callback (online mode) - remove static models
+    gameHandler->setGameObjectDespawnCallback([this](uint64_t guid) {
+        despawnOnlineGameObject(guid);
     });
 
     // Mount callback (online mode) - defer heavy model load to next frame
@@ -1663,6 +1676,40 @@ std::string Application::getModelPathForDisplayId(uint32_t displayId) const {
     return itPath->second;
 }
 
+void Application::buildGameObjectDisplayLookups() {
+    if (gameObjectLookupsBuilt_ || !assetManager || !assetManager->isInitialized()) return;
+
+    LOG_INFO("Building gameobject display lookups from DBC files");
+
+    // GameObjectDisplayInfo.dbc structure (3.3.5a):
+    // Col 0: ID (displayId)
+    // Col 1: ModelName
+    if (auto godi = assetManager->loadDBC("GameObjectDisplayInfo.dbc"); godi && godi->isLoaded()) {
+        for (uint32_t i = 0; i < godi->getRecordCount(); i++) {
+            uint32_t displayId = godi->getUInt32(i, 0);
+            std::string modelName = godi->getString(i, 1);
+            if (modelName.empty()) continue;
+            if (modelName.size() >= 4) {
+                std::string ext = modelName.substr(modelName.size() - 4);
+                for (char& c : ext) c = static_cast<char>(std::tolower(c));
+                if (ext == ".mdx") {
+                    modelName = modelName.substr(0, modelName.size() - 4) + ".m2";
+                }
+            }
+            gameObjectDisplayIdToPath_[displayId] = modelName;
+        }
+        LOG_INFO("Loaded ", gameObjectDisplayIdToPath_.size(), " gameobject display mappings");
+    }
+
+    gameObjectLookupsBuilt_ = true;
+}
+
+std::string Application::getGameObjectModelPathForDisplayId(uint32_t displayId) const {
+    auto it = gameObjectDisplayIdToPath_.find(displayId);
+    if (it == gameObjectDisplayIdToPath_.end()) return "";
+    return it->second;
+}
+
 bool Application::getRenderBoundsForGuid(uint64_t guid, glm::vec3& outCenter, float& outRadius) const {
     if (!renderer || !renderer->getCharacterRenderer()) return false;
     uint32_t instanceId = 0;
@@ -2142,6 +2189,144 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
              " displayId=", displayId, " at (", x, ", ", y, ", ", z, ")");
 }
 
+void Application::spawnOnlineGameObject(uint64_t guid, uint32_t displayId, float x, float y, float z, float orientation) {
+    if (!renderer || !assetManager) return;
+
+    if (!gameObjectLookupsBuilt_) {
+        buildGameObjectDisplayLookups();
+    }
+    if (!gameObjectLookupsBuilt_) return;
+
+    if (gameObjectInstances_.count(guid)) return;
+
+    std::string modelPath = getGameObjectModelPathForDisplayId(displayId);
+    if (modelPath.empty()) {
+        LOG_WARNING("No model path for gameobject displayId ", displayId, " (guid 0x", std::hex, guid, std::dec, ")");
+        return;
+    }
+
+    std::string lowerPath = modelPath;
+    std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    bool isWmo = lowerPath.size() >= 4 && lowerPath.substr(lowerPath.size() - 4) == ".wmo";
+
+    glm::vec3 renderPos = core::coords::canonicalToRender(glm::vec3(x, y, z));
+    float renderYaw = orientation + glm::radians(90.0f);
+
+    if (isWmo) {
+        auto* wmoRenderer = renderer->getWMORenderer();
+        if (!wmoRenderer) return;
+
+        uint32_t modelId = 0;
+        auto itCache = gameObjectDisplayIdWmoCache_.find(displayId);
+        if (itCache != gameObjectDisplayIdWmoCache_.end()) {
+            modelId = itCache->second;
+        } else {
+            modelId = nextGameObjectWmoModelId_++;
+            auto wmoData = assetManager->readFile(modelPath);
+            if (wmoData.empty()) {
+                LOG_WARNING("Failed to read gameobject WMO: ", modelPath);
+                return;
+            }
+
+            pipeline::WMOModel wmoModel = pipeline::WMOLoader::load(wmoData);
+            if (wmoModel.nGroups > 0) {
+                std::string basePath = modelPath;
+                std::string extension;
+                if (basePath.size() > 4) {
+                    extension = basePath.substr(basePath.size() - 4);
+                    std::string extLower = extension;
+                    for (char& c : extLower) c = static_cast<char>(std::tolower(c));
+                    if (extLower == ".wmo") {
+                        basePath = basePath.substr(0, basePath.size() - 4);
+                    }
+                }
+
+                for (uint32_t gi = 0; gi < wmoModel.nGroups; gi++) {
+                    char groupSuffix[16];
+                    snprintf(groupSuffix, sizeof(groupSuffix), "_%03u%s", gi, extension.c_str());
+                    std::string groupPath = basePath + groupSuffix;
+                    std::vector<uint8_t> groupData = assetManager->readFile(groupPath);
+                    if (groupData.empty()) {
+                        snprintf(groupSuffix, sizeof(groupSuffix), "_%03u.wmo", gi);
+                        groupData = assetManager->readFile(basePath + groupSuffix);
+                    }
+                    if (groupData.empty()) {
+                        snprintf(groupSuffix, sizeof(groupSuffix), "_%03u.WMO", gi);
+                        groupData = assetManager->readFile(basePath + groupSuffix);
+                    }
+                    if (!groupData.empty()) {
+                        pipeline::WMOLoader::loadGroup(groupData, wmoModel, gi);
+                    }
+                }
+            }
+
+            if (!wmoRenderer->loadModel(wmoModel, modelId)) {
+                LOG_WARNING("Failed to load gameobject WMO: ", modelPath);
+                return;
+            }
+            gameObjectDisplayIdWmoCache_[displayId] = modelId;
+        }
+
+        uint32_t instanceId = wmoRenderer->createInstance(modelId, renderPos,
+            glm::vec3(0.0f, 0.0f, renderYaw), 1.0f);
+        if (instanceId == 0) {
+            LOG_WARNING("Failed to create gameobject WMO instance for guid 0x", std::hex, guid, std::dec);
+            return;
+        }
+
+        gameObjectInstances_[guid] = {modelId, instanceId, true};
+    } else {
+        auto* m2Renderer = renderer->getM2Renderer();
+        if (!m2Renderer) return;
+
+        uint32_t modelId = 0;
+        auto itCache = gameObjectDisplayIdModelCache_.find(displayId);
+        if (itCache != gameObjectDisplayIdModelCache_.end()) {
+            modelId = itCache->second;
+        } else {
+            modelId = nextGameObjectModelId_++;
+
+            auto m2Data = assetManager->readFile(modelPath);
+            if (m2Data.empty()) {
+                LOG_WARNING("Failed to read gameobject M2: ", modelPath);
+                return;
+            }
+
+            pipeline::M2Model model = pipeline::M2Loader::load(m2Data);
+            if (model.vertices.empty()) {
+                LOG_WARNING("Failed to parse gameobject M2: ", modelPath);
+                return;
+            }
+
+            std::string skinPath = modelPath.substr(0, modelPath.size() - 3) + "00.skin";
+            auto skinData = assetManager->readFile(skinPath);
+            if (!skinData.empty()) {
+                pipeline::M2Loader::loadSkin(skinData, model);
+            }
+
+            if (!m2Renderer->loadModel(model, modelId)) {
+                LOG_WARNING("Failed to load gameobject model: ", modelPath);
+                return;
+            }
+
+            gameObjectDisplayIdModelCache_[displayId] = modelId;
+        }
+
+        uint32_t instanceId = m2Renderer->createInstance(modelId, renderPos,
+            glm::vec3(0.0f, 0.0f, renderYaw), 1.0f);
+        if (instanceId == 0) {
+            LOG_WARNING("Failed to create gameobject instance for guid 0x", std::hex, guid, std::dec);
+            return;
+        }
+
+        gameObjectInstances_[guid] = {modelId, instanceId, false};
+    }
+
+    LOG_INFO("Spawned gameobject: guid=0x", std::hex, guid, std::dec,
+             " displayId=", displayId, " at (", x, ", ", y, ", ", z, ")");
+}
+
 void Application::processCreatureSpawnQueue() {
     if (pendingCreatureSpawns_.empty()) return;
 
@@ -2150,6 +2335,18 @@ void Application::processCreatureSpawnQueue() {
         auto& s = pendingCreatureSpawns_.front();
         spawnOnlineCreature(s.guid, s.displayId, s.x, s.y, s.z, s.orientation);
         pendingCreatureSpawns_.erase(pendingCreatureSpawns_.begin());
+        spawned++;
+    }
+}
+
+void Application::processGameObjectSpawnQueue() {
+    if (pendingGameObjectSpawns_.empty()) return;
+
+    int spawned = 0;
+    while (!pendingGameObjectSpawns_.empty() && spawned < MAX_SPAWNS_PER_FRAME) {
+        auto& s = pendingGameObjectSpawns_.front();
+        spawnOnlineGameObject(s.guid, s.displayId, s.x, s.y, s.z, s.orientation);
+        pendingGameObjectSpawns_.erase(pendingGameObjectSpawns_.begin());
         spawned++;
     }
 }
@@ -2310,6 +2507,27 @@ void Application::despawnOnlineCreature(uint64_t guid) {
     creatureModelIds_.erase(guid);
 
     LOG_INFO("Despawned creature: guid=0x", std::hex, guid, std::dec);
+}
+
+void Application::despawnOnlineGameObject(uint64_t guid) {
+    auto it = gameObjectInstances_.find(guid);
+    if (it == gameObjectInstances_.end()) return;
+
+    if (renderer) {
+        if (it->second.isWmo) {
+            if (auto* wmoRenderer = renderer->getWMORenderer()) {
+                wmoRenderer->removeInstance(it->second.instanceId);
+            }
+        } else {
+            if (auto* m2Renderer = renderer->getM2Renderer()) {
+                m2Renderer->removeInstance(it->second.instanceId);
+            }
+        }
+    }
+
+    gameObjectInstances_.erase(it);
+
+    LOG_INFO("Despawned gameobject: guid=0x", std::hex, guid, std::dec);
 }
 
 } // namespace core

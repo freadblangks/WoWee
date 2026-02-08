@@ -608,7 +608,9 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                 const uint64_t myGuid = gameHandler.getPlayerGuid();
                 for (const auto& [guid, entity] : gameHandler.getEntityManager().getEntities()) {
                     auto t = entity->getType();
-                    if (t != game::ObjectType::UNIT && t != game::ObjectType::PLAYER) continue;
+                    if (t != game::ObjectType::UNIT &&
+                        t != game::ObjectType::PLAYER &&
+                        t != game::ObjectType::GAMEOBJECT) continue;
                     if (guid == myGuid) continue;  // Don't target self
 
                     glm::vec3 hitCenter;
@@ -625,6 +627,9 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                                 hitRadius = 0.5f;
                                 heightOffset = 0.3f;
                             }
+                        } else if (t == game::ObjectType::GAMEOBJECT) {
+                            hitRadius = 1.2f;
+                            heightOffset = 0.8f;
                         }
                         hitCenter = core::coords::canonicalToRender(glm::vec3(entity->getX(), entity->getY(), entity->getZ()));
                         hitCenter.z += heightOffset;
@@ -669,7 +674,9 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                 const uint64_t myGuid = gameHandler.getPlayerGuid();
                 for (const auto& [guid, entity] : gameHandler.getEntityManager().getEntities()) {
                     auto t = entity->getType();
-                    if (t != game::ObjectType::UNIT && t != game::ObjectType::PLAYER) continue;
+                    if (t != game::ObjectType::UNIT &&
+                        t != game::ObjectType::PLAYER &&
+                        t != game::ObjectType::GAMEOBJECT) continue;
                     if (guid == myGuid) continue;
                     glm::vec3 hitCenter;
                     float hitRadius = 0.0f;
@@ -683,6 +690,9 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                                 hitRadius = 0.5f;
                                 heightOffset = 0.3f;
                             }
+                        } else if (t == game::ObjectType::GAMEOBJECT) {
+                            hitRadius = 1.2f;
+                            heightOffset = 0.8f;
                         }
                         hitCenter = core::coords::canonicalToRender(
                             glm::vec3(entity->getX(), entity->getY(), entity->getZ()));
@@ -717,6 +727,8 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                             gameHandler.interactWithNpc(target->getGuid());
                         }
                     }
+                } else if (target->getType() == game::ObjectType::GAMEOBJECT) {
+                    gameHandler.interactWithGameObject(target->getGuid());
                 } else if (target->getType() == game::ObjectType::PLAYER) {
                     // Right-click another player could start attack in PvP context
                 }

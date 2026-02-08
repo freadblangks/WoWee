@@ -193,12 +193,18 @@ enum class Opcode : uint16_t {
     SMSG_LOOT_MONEY_NOTIFY           = 0x163,
     SMSG_LOOT_CLEAR_MONEY            = 0x165,
 
+    // ---- Phase 5: Taxi / Flight Paths ----
+    CMSG_ACTIVATETAXI                = 0x19D,
+
     // ---- Phase 5: NPC Gossip ----
     CMSG_GOSSIP_HELLO                = 0x17B,
     CMSG_GOSSIP_SELECT_OPTION        = 0x17C,
     SMSG_GOSSIP_MESSAGE              = 0x17D,
     SMSG_GOSSIP_COMPLETE             = 0x17E,
     SMSG_NPC_TEXT_UPDATE             = 0x180,
+
+    // ---- Phase 5: GameObject ----
+    CMSG_GAMEOBJECT_USE              = 0x01B,
 
     // ---- Phase 5: Quests ----
     CMSG_QUESTGIVER_STATUS_QUERY     = 0x182,

@@ -203,7 +203,7 @@ void GameHandler::update(float deltaTime) {
             }
         }
 
-        // Close vendor/gossip window if player walks too far from NPC
+        // Close vendor/gossip/taxi window if player walks too far from NPC
         if (vendorWindowOpen && currentVendorItems.vendorGuid != 0) {
             auto npc = entityManager.getEntity(currentVendorItems.vendorGuid);
             if (npc) {
@@ -213,6 +213,30 @@ void GameHandler::update(float deltaTime) {
                 if (dist > 15.0f) {
                     closeVendor();
                     LOG_INFO("Vendor closed: walked too far from NPC");
+                }
+            }
+        }
+        if (gossipWindowOpen && currentGossip.npcGuid != 0) {
+            auto npc = entityManager.getEntity(currentGossip.npcGuid);
+            if (npc) {
+                float dx = movementInfo.x - npc->getX();
+                float dy = movementInfo.y - npc->getY();
+                float dist = std::sqrt(dx * dx + dy * dy);
+                if (dist > 15.0f) {
+                    closeGossip();
+                    LOG_INFO("Gossip closed: walked too far from NPC");
+                }
+            }
+        }
+        if (taxiWindowOpen_ && taxiNpcGuid_ != 0) {
+            auto npc = entityManager.getEntity(taxiNpcGuid_);
+            if (npc) {
+                float dx = movementInfo.x - npc->getX();
+                float dy = movementInfo.y - npc->getY();
+                float dist = std::sqrt(dx * dx + dy * dy);
+                if (dist > 15.0f) {
+                    closeTaxi();
+                    LOG_INFO("Taxi window closed: walked too far from NPC");
                 }
             }
         }
@@ -1231,9 +1255,14 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
     for (uint64_t guid : data.outOfRangeGuids) {
         if (entityManager.hasEntity(guid)) {
             LOG_INFO("Entity went out of range: 0x", std::hex, guid, std::dec);
-            // Trigger creature despawn callback before removing entity
-            if (creatureDespawnCallback_) {
-                creatureDespawnCallback_(guid);
+            // Trigger despawn callbacks before removing entity
+            auto entity = entityManager.getEntity(guid);
+            if (entity) {
+                if (entity->getType() == ObjectType::UNIT && creatureDespawnCallback_) {
+                    creatureDespawnCallback_(guid);
+                } else if (entity->getType() == ObjectType::GAMEOBJECT && gameObjectDespawnCallback_) {
+                    gameObjectDespawnCallback_(guid);
+                }
             }
             entityManager.removeEntity(guid);
         }
@@ -1353,6 +1382,18 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             qsPkt.writeUInt64(block.guid);
                             socket->send(qsPkt);
                         }
+                    }
+                }
+                // Extract displayId for gameobjects (3.3.5a: GAMEOBJECT_DISPLAYID = field 8)
+                if (block.objectType == ObjectType::GAMEOBJECT) {
+                    auto go = std::static_pointer_cast<GameObject>(entity);
+                    auto itDisp = block.fields.find(8);
+                    if (itDisp != block.fields.end()) {
+                        go->setDisplayId(itDisp->second);
+                    }
+                    if (go->getDisplayId() != 0 && gameObjectSpawnCallback_) {
+                        gameObjectSpawnCallback_(block.guid, go->getDisplayId(),
+                            go->getX(), go->getY(), go->getZ(), go->getOrientation());
                     }
                 }
                 // Track online item objects
@@ -3524,6 +3565,12 @@ void GameHandler::interactWithNpc(uint64_t guid) {
     socket->send(packet);
 }
 
+void GameHandler::interactWithGameObject(uint64_t guid) {
+    if (state != WorldState::IN_WORLD || !socket) return;
+    auto packet = GameObjectUsePacket::build(guid);
+    socket->send(packet);
+}
+
 void GameHandler::selectGossipOption(uint32_t optionId) {
     if (state != WorldState::IN_WORLD || !socket || !gossipWindowOpen) return;
     auto packet = GossipSelectOptionPacket::build(currentGossip.npcGuid, currentGossip.menuId, optionId);
@@ -4069,7 +4116,7 @@ void GameHandler::handleShowTaxiNodes(network::Packet& packet) {
             if (newBits == 0) continue;
             for (uint32_t bit = 0; bit < 32; ++bit) {
                 if (newBits & (1u << bit)) {
-                    uint32_t nodeId = i * 32 + bit;
+                    uint32_t nodeId = i * 32 + bit + 1;
                     auto it = taxiNodes_.find(nodeId);
                     if (it != taxiNodes_.end()) {
                         addSystemChatMessage("Discovered flight path: " + it->second.name);
@@ -4119,13 +4166,11 @@ void GameHandler::buildTaxiCostMap() {
     uint32_t startNode = currentTaxiData_.nearestNode;
     if (startNode == 0) return;
 
-    // Build adjacency list with costs from known edges
+    // Build adjacency list with costs from all edges (path may traverse unknown nodes)
     struct AdjEntry { uint32_t node; uint32_t cost; };
     std::unordered_map<uint32_t, std::vector<AdjEntry>> adj;
     for (const auto& edge : taxiPathEdges_) {
-        if (currentTaxiData_.isNodeKnown(edge.fromNode) && currentTaxiData_.isNodeKnown(edge.toNode)) {
-            adj[edge.fromNode].push_back({edge.toNode, edge.cost});
-        }
+        adj[edge.fromNode].push_back({edge.toNode, edge.cost});
     }
 
     // BFS from startNode, accumulating costs along the path
@@ -4156,51 +4201,7 @@ void GameHandler::activateTaxi(uint32_t destNodeId) {
     uint32_t startNode = currentTaxiData_.nearestNode;
     if (startNode == 0 || destNodeId == 0 || startNode == destNodeId) return;
 
-    // BFS to find path from startNode to destNodeId through known nodes
-    // Build adjacency list from edges where both nodes are known
-    std::unordered_map<uint32_t, std::vector<uint32_t>> adj;
-    for (const auto& edge : taxiPathEdges_) {
-        if (currentTaxiData_.isNodeKnown(edge.fromNode) && currentTaxiData_.isNodeKnown(edge.toNode)) {
-            adj[edge.fromNode].push_back(edge.toNode);
-        }
-    }
-
-    // BFS
-    std::unordered_map<uint32_t, uint32_t> parent;
-    std::deque<uint32_t> queue;
-    queue.push_back(startNode);
-    parent[startNode] = startNode;
-
-    bool found = false;
-    while (!queue.empty()) {
-        uint32_t cur = queue.front();
-        queue.pop_front();
-        if (cur == destNodeId) { found = true; break; }
-        for (uint32_t next : adj[cur]) {
-            if (parent.find(next) == parent.end()) {
-                parent[next] = cur;
-                queue.push_back(next);
-            }
-        }
-    }
-
-    if (!found) {
-        LOG_WARNING("No taxi path found from node ", startNode, " to ", destNodeId);
-        addSystemChatMessage("No flight path available to that destination.");
-        return;
-    }
-
-    // Reconstruct path
-    std::vector<uint32_t> path;
-    for (uint32_t n = destNodeId; n != startNode; n = parent[n]) {
-        path.push_back(n);
-    }
-    path.push_back(startNode);
-    std::reverse(path.begin(), path.end());
-
-    LOG_INFO("Taxi path: ", path.size(), " nodes, from ", startNode, " to ", destNodeId);
-
-    auto pkt = ActivateTaxiExpressPacket::build(taxiNpcGuid_, path);
+    auto pkt = ActivateTaxiPacket::build(taxiNpcGuid_, startNode, destNodeId);
     socket->send(pkt);
 }
 

@@ -2634,5 +2634,19 @@ network::Packet ActivateTaxiExpressPacket::build(uint64_t npcGuid, const std::ve
     return packet;
 }
 
+network::Packet ActivateTaxiPacket::build(uint64_t npcGuid, uint32_t srcNode, uint32_t destNode) {
+    network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_ACTIVATETAXI));
+    packet.writeUInt64(npcGuid);
+    packet.writeUInt32(srcNode);
+    packet.writeUInt32(destNode);
+    return packet;
+}
+
+network::Packet GameObjectUsePacket::build(uint64_t guid) {
+    network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_GAMEOBJECT_USE));
+    packet.writeUInt64(guid);
+    return packet;
+}
+
 } // namespace game
 } // namespace wowee

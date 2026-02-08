@@ -378,6 +378,15 @@ public:
     using CreatureDespawnCallback = std::function<void(uint64_t guid)>;
     void setCreatureDespawnCallback(CreatureDespawnCallback cb) { creatureDespawnCallback_ = std::move(cb); }
 
+    // GameObject spawn callback (online mode - triggered when gameobject enters view)
+    // Parameters: guid, displayId, x, y, z (canonical), orientation
+    using GameObjectSpawnCallback = std::function<void(uint64_t guid, uint32_t displayId, float x, float y, float z, float orientation)>;
+    void setGameObjectSpawnCallback(GameObjectSpawnCallback cb) { gameObjectSpawnCallback_ = std::move(cb); }
+
+    // GameObject despawn callback (online mode - triggered when gameobject leaves view)
+    using GameObjectDespawnCallback = std::function<void(uint64_t guid)>;
+    void setGameObjectDespawnCallback(GameObjectDespawnCallback cb) { gameObjectDespawnCallback_ = std::move(cb); }
+
     // Faction hostility map (populated from FactionTemplate.dbc by Application)
     void setFactionHostileMap(std::unordered_map<uint32_t, bool> map) { factionHostileMap_ = std::move(map); }
 
@@ -417,6 +426,7 @@ public:
 
     // NPC Gossip
     void interactWithNpc(uint64_t guid);
+    void interactWithGameObject(uint64_t guid);
     void selectGossipOption(uint32_t optionId);
     void selectGossipQuest(uint32_t questId);
     void acceptQuest();
@@ -792,6 +802,8 @@ private:
     CreatureSpawnCallback creatureSpawnCallback_;
     CreatureDespawnCallback creatureDespawnCallback_;
     CreatureMoveCallback creatureMoveCallback_;
+    GameObjectSpawnCallback gameObjectSpawnCallback_;
+    GameObjectDespawnCallback gameObjectDespawnCallback_;
     std::vector<uint32_t> knownSpells;
     std::unordered_map<uint32_t, float> spellCooldowns;    // spellId -> remaining seconds
     uint8_t castCount = 0;

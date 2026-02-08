@@ -85,6 +85,10 @@ private:
     void despawnOnlineCreature(uint64_t guid);
     void buildCreatureDisplayLookups();
     std::string getModelPathForDisplayId(uint32_t displayId) const;
+    void spawnOnlineGameObject(uint64_t guid, uint32_t displayId, float x, float y, float z, float orientation);
+    void despawnOnlineGameObject(uint64_t guid);
+    void buildGameObjectDisplayLookups();
+    std::string getGameObjectModelPathForDisplayId(uint32_t displayId) const;
 
     static Application* instance;
 
@@ -151,6 +155,20 @@ private:
     std::unordered_map<uint32_t, uint32_t> displayIdModelCache_; // displayId → modelId (model caching)
     uint32_t nextCreatureModelId_ = 5000;  // Model IDs for online creatures
 
+    // Online gameobject model spawning
+    struct GameObjectInstanceInfo {
+        uint32_t modelId = 0;
+        uint32_t instanceId = 0;
+        bool isWmo = false;
+    };
+    std::unordered_map<uint32_t, std::string> gameObjectDisplayIdToPath_;
+    std::unordered_map<uint32_t, uint32_t> gameObjectDisplayIdModelCache_; // displayId → M2 modelId
+    std::unordered_map<uint32_t, uint32_t> gameObjectDisplayIdWmoCache_;   // displayId → WMO modelId
+    std::unordered_map<uint64_t, GameObjectInstanceInfo> gameObjectInstances_; // guid → instance info
+    uint32_t nextGameObjectModelId_ = 20000;
+    uint32_t nextGameObjectWmoModelId_ = 40000;
+    bool gameObjectLookupsBuilt_ = false;
+
     // Mount model tracking
     uint32_t mountInstanceId_ = 0;
     uint32_t mountModelId_ = 0;
@@ -167,6 +185,14 @@ private:
     std::vector<PendingCreatureSpawn> pendingCreatureSpawns_;
     static constexpr int MAX_SPAWNS_PER_FRAME = 2;
     void processCreatureSpawnQueue();
+
+    struct PendingGameObjectSpawn {
+        uint64_t guid;
+        uint32_t displayId;
+        float x, y, z, orientation;
+    };
+    std::vector<PendingGameObjectSpawn> pendingGameObjectSpawns_;
+    void processGameObjectSpawnQueue();
 };
 
 } // namespace core

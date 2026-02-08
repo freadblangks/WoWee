@@ -404,7 +404,12 @@ public:
 
     // Player death state
     bool isPlayerDead() const { return playerDead_; }
+    bool isPlayerGhost() const { return releasedSpirit_; }
+    bool showDeathDialog() const { return playerDead_ && !releasedSpirit_; }
+    bool showResurrectDialog() const { return resurrectRequestPending_; }
     void releaseSpirit();
+    void acceptResurrect();
+    void declineResurrect();
 
     // ---- Phase 4: Group ----
     void inviteToGroup(const std::string& playerName);
@@ -912,8 +917,11 @@ private:
     float preMountRunSpeed_ = 0.0f;
     float serverRunSpeed_ = 7.0f;
     bool playerDead_ = false;
+    bool releasedSpirit_ = false;
     uint64_t pendingSpiritHealerGuid_ = 0;
     bool resurrectPending_ = false;
+    bool resurrectRequestPending_ = false;
+    uint64_t resurrectCasterGuid_ = 0;
     bool repopPending_ = false;
     uint64_t lastRepopRequestMs_ = 0;
 };

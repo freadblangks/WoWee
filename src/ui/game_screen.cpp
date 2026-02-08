@@ -104,6 +104,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderQuestMarkers(gameHandler);
     renderMinimapMarkers(gameHandler);
     renderDeathScreen(gameHandler);
+    renderResurrectDialog(gameHandler);
     renderEscapeMenu();
     renderSettingsWindow();
 
@@ -739,7 +740,7 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                             return (name.find("spirit healer") != std::string::npos) ||
                                    (name.find("spirit guide") != std::string::npos);
                         };
-                        bool allowSpiritInteract = gameHandler.isPlayerDead() && isSpiritNpc();
+                        bool allowSpiritInteract = (gameHandler.isPlayerDead() || gameHandler.isPlayerGhost()) && isSpiritNpc();
                         if (!unit->isHostile() && (unit->isInteractable() || allowSpiritInteract)) {
                             gameHandler.interactWithNpc(target->getGuid());
                         }
@@ -2936,19 +2937,13 @@ void GameScreen::renderGossipWindow(game::GameHandler& gameHandler) {
             char label[256];
             snprintf(label, sizeof(label), "%s %s", icon, opt.text.c_str());
             if (ImGui::Selectable(label)) {
-                if (opt.icon == 4) { // Spirit guide
-                    gameHandler.selectGossipOption(opt.id);
-                    gameHandler.activateSpiritHealer(gossip.npcGuid);
-                    gameHandler.closeGossip();
-                } else {
-                    gameHandler.selectGossipOption(opt.id);
-                }
+                gameHandler.selectGossipOption(opt.id);
             }
             ImGui::PopID();
         }
 
         // Fallback: some spirit healers don't send gossip options.
-        if (gossip.options.empty() && gameHandler.isPlayerDead()) {
+        if (gossip.options.empty() && gameHandler.isPlayerGhost()) {
             bool isSpirit = false;
             if (npcEntity && npcEntity->getType() == game::ObjectType::UNIT) {
                 auto unit = std::static_pointer_cast<game::Unit>(npcEntity);
@@ -3512,7 +3507,7 @@ void GameScreen::renderTaxiWindow(game::GameHandler& gameHandler) {
 // ============================================================
 
 void GameScreen::renderDeathScreen(game::GameHandler& gameHandler) {
-    if (!gameHandler.isPlayerDead()) return;
+    if (!gameHandler.showDeathDialog()) return;
 
     auto* window = core::Application::getInstance().getWindow();
     float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
@@ -3559,6 +3554,60 @@ void GameScreen::renderDeathScreen(game::GameHandler& gameHandler) {
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.15f, 0.15f, 1.0f));
         if (ImGui::Button("Release Spirit", ImVec2(btnW, 30))) {
             gameHandler.releaseSpirit();
+        }
+        ImGui::PopStyleColor(2);
+    }
+    ImGui::End();
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar();
+}
+
+void GameScreen::renderResurrectDialog(game::GameHandler& gameHandler) {
+    if (!gameHandler.showResurrectDialog()) return;
+
+    auto* window = core::Application::getInstance().getWindow();
+    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
+    float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
+
+    float dlgW = 300.0f;
+    float dlgH = 110.0f;
+    ImGui::SetNextWindowPos(ImVec2(screenW / 2 - dlgW / 2, screenH * 0.3f), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(dlgW, dlgH), ImGuiCond_Always);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.1f, 0.1f, 0.15f, 0.95f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.4f, 0.4f, 0.8f, 1.0f));
+
+    if (ImGui::Begin("##ResurrectDialog", nullptr,
+            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar)) {
+
+        ImGui::Spacing();
+        const char* text = "Return to life?";
+        float textW = ImGui::CalcTextSize(text).x;
+        ImGui::SetCursorPosX((dlgW - textW) / 2);
+        ImGui::TextColored(ImVec4(0.8f, 0.9f, 1.0f, 1.0f), "%s", text);
+
+        ImGui::Spacing();
+        ImGui::Spacing();
+
+        float btnW = 100.0f;
+        float spacing = 20.0f;
+        ImGui::SetCursorPosX((dlgW - btnW * 2 - spacing) / 2);
+
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.5f, 0.2f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 0.3f, 1.0f));
+        if (ImGui::Button("Accept", ImVec2(btnW, 30))) {
+            gameHandler.acceptResurrect();
+        }
+        ImGui::PopStyleColor(2);
+
+        ImGui::SameLine(0, spacing);
+
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0.2f, 0.2f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.3f, 0.3f, 1.0f));
+        if (ImGui::Button("Decline", ImVec2(btnW, 30))) {
+            gameHandler.declineResurrect();
         }
         ImGui::PopStyleColor(2);
     }

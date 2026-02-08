@@ -147,6 +147,7 @@ private:
     void renderVendorWindow(game::GameHandler& gameHandler);
     void renderTaxiWindow(game::GameHandler& gameHandler);
     void renderDeathScreen(game::GameHandler& gameHandler);
+    void renderResurrectDialog(game::GameHandler& gameHandler);
     void renderEscapeMenu();
     void renderSettingsWindow();
     void renderQuestMarkers(game::GameHandler& gameHandler);

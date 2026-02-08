@@ -499,14 +499,20 @@ void Renderer::setMounted(uint32_t mountInstId, float heightOffset) {
     mountInstanceId_ = mountInstId;
     mountHeightOffset_ = heightOffset;
     charAnimState = CharAnimState::MOUNT;
-    if (cameraController) cameraController->setMounted(true);
+    if (cameraController) {
+        cameraController->setMounted(true);
+        cameraController->setMountHeightOffset(heightOffset);
+    }
 }
 
 void Renderer::clearMount() {
     mountInstanceId_ = 0;
     mountHeightOffset_ = 0.0f;
     charAnimState = CharAnimState::IDLE;
-    if (cameraController) cameraController->setMounted(false);
+    if (cameraController) {
+        cameraController->setMounted(false);
+        cameraController->setMountHeightOffset(0.0f);
+    }
 }
 
 uint32_t Renderer::resolveMeleeAnimId() {

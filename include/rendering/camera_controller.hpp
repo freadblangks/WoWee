@@ -74,6 +74,7 @@ public:
     void setUseWoWSpeed(bool use) { useWoWSpeed = use; }
     void setRunSpeedOverride(float speed) { runSpeedOverride_ = speed; }
     void setMounted(bool m) { mounted_ = m; }
+    void setMountHeightOffset(float offset) { mountHeightOffset_ = offset; }
 
     // For first-person player hiding
     void setCharacterRenderer(class CharacterRenderer* cr, uint32_t playerId) {
@@ -193,6 +194,7 @@ private:
     // Server-driven run speed override (0 = use default WOW_RUN_SPEED)
     float runSpeedOverride_ = 0.0f;
     bool mounted_ = false;
+    float mountHeightOffset_ = 0.0f;
 
     // Online mode: trust server position, don't prefer outdoors over WMO floors
     bool onlineMode = false;

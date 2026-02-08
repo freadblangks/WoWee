@@ -643,7 +643,8 @@ void CameraController::update(float deltaTime) {
 
         // ===== WoW-style orbit camera =====
         // Pivot point at upper chest/neck
-        glm::vec3 pivot = targetPos + glm::vec3(0.0f, 0.0f, PIVOT_HEIGHT);
+        float mountedOffset = mounted_ ? mountHeightOffset_ : 0.0f;
+        glm::vec3 pivot = targetPos + glm::vec3(0.0f, 0.0f, PIVOT_HEIGHT + mountedOffset);
 
         // Camera direction from yaw/pitch (already computed as forward3D)
         glm::vec3 camDir = -forward3D;  // Camera looks at pivot, so it's behind
@@ -1219,7 +1220,8 @@ void CameraController::reset() {
         currentDistance = userTargetDistance;
         collisionDistance = currentDistance;
 
-        glm::vec3 pivot = spawnPos + glm::vec3(0.0f, 0.0f, PIVOT_HEIGHT);
+        float mountedOffset = mounted_ ? mountHeightOffset_ : 0.0f;
+        glm::vec3 pivot = spawnPos + glm::vec3(0.0f, 0.0f, PIVOT_HEIGHT + mountedOffset);
         glm::vec3 camDir = -forward3D;
         glm::vec3 camPos = pivot + camDir * currentDistance;
         smoothedCamPos = camPos;

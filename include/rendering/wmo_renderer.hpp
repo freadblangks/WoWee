@@ -321,6 +321,7 @@ private:
         std::vector<GroupResources> groups;
         glm::vec3 boundingBoxMin;
         glm::vec3 boundingBoxMax;
+        bool isLowPlatform = false;
 
         // Texture handles for this model (indexed by texture path order)
         std::vector<GLuint> textures;

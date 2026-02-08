@@ -3068,6 +3068,13 @@ void GameHandler::updateCombatText(float deltaTime) {
         combatText.end());
 }
 
+void GameHandler::autoTargetAttacker(uint64_t attackerGuid) {
+    if (attackerGuid == 0 || attackerGuid == playerGuid) return;
+    if (targetGuid != 0) return;
+    if (!entityManager.hasEntity(attackerGuid)) return;
+    setTarget(attackerGuid);
+}
+
 void GameHandler::handleAttackStart(network::Packet& packet) {
     AttackStartData data;
     if (!AttackStartParser::parse(packet, data)) return;
@@ -3075,6 +3082,9 @@ void GameHandler::handleAttackStart(network::Packet& packet) {
     if (data.attackerGuid == playerGuid) {
         autoAttacking = true;
         autoAttackTarget = data.victimGuid;
+    } else if (data.victimGuid == playerGuid && data.attackerGuid != 0) {
+        hostileAttackers_.insert(data.attackerGuid);
+        autoTargetAttacker(data.attackerGuid);
     }
 }
 
@@ -3221,6 +3231,7 @@ void GameHandler::handleAttackerStateUpdate(network::Packet& packet) {
 
     if (isPlayerTarget && data.attackerGuid != 0) {
         hostileAttackers_.insert(data.attackerGuid);
+        autoTargetAttacker(data.attackerGuid);
     }
 
     if (data.isMiss()) {
@@ -3240,6 +3251,11 @@ void GameHandler::handleAttackerStateUpdate(network::Packet& packet) {
 void GameHandler::handleSpellDamageLog(network::Packet& packet) {
     SpellDamageLogData data;
     if (!SpellDamageLogParser::parse(packet, data)) return;
+
+    if (data.targetGuid == playerGuid && data.attackerGuid != 0) {
+        hostileAttackers_.insert(data.attackerGuid);
+        autoTargetAttacker(data.attackerGuid);
+    }
 
     bool isPlayerSource = (data.attackerGuid == playerGuid);
     auto type = data.isCrit ? CombatTextEntry::CRIT_DAMAGE : CombatTextEntry::SPELL_DAMAGE;

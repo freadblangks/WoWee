@@ -529,6 +529,8 @@ public:
     void update(float deltaTime);
 
 private:
+    void autoTargetAttacker(uint64_t attackerGuid);
+
     /**
      * Handle incoming packet from world server
      */

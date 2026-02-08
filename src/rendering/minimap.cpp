@@ -141,6 +141,7 @@ bool Minimap::initialize(int size) {
         uniform sampler2D uComposite;
         uniform vec2 uPlayerUV;
         uniform float uRotation;
+        uniform float uArrowRotation;
         uniform float uZoomRadius;
 
         out vec4 FragColor;
@@ -156,6 +157,12 @@ bool Minimap::initialize(int size) {
             float u = (d11 * d02 - d01 * d12) * inv;
             float v = (d00 * d12 - d01 * d02) * inv;
             return (u >= 0.0) && (v >= 0.0) && (u + v <= 1.0);
+        }
+
+        vec2 rot2(vec2 v, float ang) {
+            float c = cos(ang);
+            float s = sin(ang);
+            return vec2(v.x * c - v.y * s, v.x * s + v.y * c);
         }
 
         void main() {
@@ -185,7 +192,7 @@ bool Minimap::initialize(int size) {
             }
 
             // Player arrow at center (always points up = forward)
-            vec2 ap = centered;
+            vec2 ap = rot2(centered, -uArrowRotation);
             vec2 tip = vec2(0.0, 0.035);
             vec2 lt  = vec2(-0.018, -0.016);
             vec2 rt  = vec2(0.018, -0.016);
@@ -490,9 +497,18 @@ void Minimap::renderQuad(const Camera& playerCamera, const glm::vec3& centerWorl
     // renderX = wowY (west), renderY = wowX (north)
     // Facing north: fwd=(0,1,0) → bearing=0
     // Facing east:  fwd=(-1,0,0) → bearing=π/2
-    glm::vec3 fwd = playerCamera.getForward();
-    float rotation = std::atan2(-fwd.x, fwd.y);
+    float rotation = 0.0f;
+    if (rotateWithCamera) {
+        glm::vec3 fwd = playerCamera.getForward();
+        rotation = std::atan2(-fwd.x, fwd.y);
+    }
     quadShader->setUniform("uRotation", rotation);
+    float arrowRotation = 0.0f;
+    if (!rotateWithCamera) {
+        glm::vec3 fwd = playerCamera.getForward();
+        arrowRotation = std::atan2(-fwd.x, fwd.y);
+    }
+    quadShader->setUniform("uArrowRotation", arrowRotation);
 
     quadShader->setUniform("uComposite", 0);
     glActiveTexture(GL_TEXTURE0);

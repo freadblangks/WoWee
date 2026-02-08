@@ -33,6 +33,8 @@ public:
     void toggle() { enabled = !enabled; }
 
     void setViewRadius(float radius) { viewRadius = radius; }
+    void setRotateWithCamera(bool rotate) { rotateWithCamera = rotate; }
+    bool isRotateWithCamera() const { return rotateWithCamera; }
 
     // Public accessors for WorldMap
     GLuint getOrLoadTileTexture(int tileX, int tileY);
@@ -76,6 +78,7 @@ private:
     int mapSize = 200;
     float viewRadius = 400.0f;  // world units visible in minimap radius
     bool enabled = true;
+    bool rotateWithCamera = true;
 
     // Throttling
     float updateIntervalSec = 0.25f;

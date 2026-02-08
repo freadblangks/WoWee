@@ -70,9 +70,11 @@ private:
     float pendingMouseSensitivity = 0.2f;
     bool pendingInvertMouse = false;
     int pendingUiOpacity = 65;
+    bool pendingMinimapRotate = true;
 
     // UI element transparency (0.0 = fully transparent, 1.0 = fully opaque)
     float uiOpacity_ = 0.65f;
+    bool minimapRotate_ = true;
 
     /**
      * Render player info window

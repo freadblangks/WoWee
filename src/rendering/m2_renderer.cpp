@@ -668,9 +668,15 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
             (lowerName.find("stormwindplanter") != std::string::npos) ||
             (lowerName.find("stormwindwindowplanter") != std::string::npos);
         bool lowPlatformShape = (horiz > 1.8f && vert > 0.2f && vert < 1.8f);
+        bool bridgeName =
+            (lowerName.find("bridge") != std::string::npos) ||
+            (lowerName.find("plank") != std::string::npos) ||
+            (lowerName.find("walkway") != std::string::npos);
         gpuModel.collisionSteppedLowPlatform = (!gpuModel.collisionSteppedFountain) &&
                                                (knownStormwindPlanter ||
+                                                bridgeName ||
                                                 (likelyCurbName && (lowPlatformShape || lowWideShape)));
+        gpuModel.collisionBridge = bridgeName;
 
         bool isPlanter = (lowerName.find("planter") != std::string::npos);
         gpuModel.collisionPlanter = isPlanter;
@@ -702,6 +708,7 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
             (lowerName.find("vine") != std::string::npos) ||
             (lowerName.find("lily") != std::string::npos) ||
             (lowerName.find("weed") != std::string::npos) ||
+            (lowerName.find("wheat") != std::string::npos) ||
             (lowerName.find("pumpkin") != std::string::npos) ||
             (lowerName.find("firefly") != std::string::npos) ||
             (lowerName.find("fireflies") != std::string::npos) ||
@@ -2329,18 +2336,18 @@ std::optional<float> M2Renderer::getFloorHeight(float glX, float glY, float glZ)
             continue;
         }
 
-        if (glX < instance.worldBoundsMin.x || glX > instance.worldBoundsMax.x ||
-            glY < instance.worldBoundsMin.y || glY > instance.worldBoundsMax.y ||
-            glZ < instance.worldBoundsMin.z - 2.0f || glZ > instance.worldBoundsMax.z + 2.0f) {
-            continue;
-        }
-
         auto it = models.find(instance.modelId);
         if (it == models.end()) continue;
         if (instance.scale <= 0.001f) continue;
 
         const M2ModelGPU& model = it->second;
         if (model.collisionNoBlock) continue;
+        float zMargin = model.collisionBridge ? 25.0f : 2.0f;
+        if (glX < instance.worldBoundsMin.x || glX > instance.worldBoundsMax.x ||
+            glY < instance.worldBoundsMin.y || glY > instance.worldBoundsMax.y ||
+            glZ < instance.worldBoundsMin.z - zMargin || glZ > instance.worldBoundsMax.z + zMargin) {
+            continue;
+        }
         glm::vec3 localMin, localMax;
         getTightCollisionBounds(model, localMin, localMax);
 
@@ -2351,6 +2358,9 @@ std::optional<float> M2Renderer::getFloorHeight(float glX, float glY, float glZ)
         float footprintPad = 0.0f;
         if (model.collisionSteppedLowPlatform) {
             footprintPad = model.collisionPlanter ? 0.22f : 0.16f;
+            if (model.collisionBridge) {
+                footprintPad = 0.35f;
+            }
         }
         if (localPos.x < localMin.x - footprintPad || localPos.x > localMax.x + footprintPad ||
             localPos.y < localMin.y - footprintPad || localPos.y > localMax.y + footprintPad) {
@@ -2372,6 +2382,9 @@ std::optional<float> M2Renderer::getFloorHeight(float glX, float glY, float glZ)
             maxStepUp = 2.5f;
         } else if (model.collisionSteppedLowPlatform) {
             maxStepUp = model.collisionPlanter ? 3.0f : 2.4f;
+            if (model.collisionBridge) {
+                maxStepUp = 25.0f;
+            }
         }
         if (worldTop.z > glZ + maxStepUp) continue;
 
@@ -2455,6 +2468,9 @@ bool M2Renderer::checkCollision(const glm::vec3& from, const glm::vec3& to,
             maxStepUp = 2.5f;
         } else if (model.collisionSteppedLowPlatform) {
             maxStepUp = model.collisionPlanter ? 2.8f : 2.4f;
+            if (model.collisionBridge) {
+                maxStepUp = 25.0f;
+            }
         }
         bool stepableLowObject = (effectiveTop <= localFrom.z + maxStepUp);
         bool climbingAttempt = (localPos.z > localFrom.z + 0.18f);
@@ -2463,6 +2479,9 @@ bool M2Renderer::checkCollision(const glm::vec3& from, const glm::vec3& to,
         if (model.collisionSteppedLowPlatform && !model.collisionPlanter) {
             // Let low curb/planter blocks be stepable without sticky side shoves.
             climbAllowance = 1.00f;
+        }
+        if (model.collisionBridge) {
+            climbAllowance = 3.0f;
         }
         if (model.collisionSmallSolidProp) {
             climbAllowance = 1.05f;

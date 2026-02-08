@@ -272,6 +272,12 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
     modelData.id = id;
     modelData.boundingBoxMin = model.boundingBoxMin;
     modelData.boundingBoxMax = model.boundingBoxMax;
+    {
+        glm::vec3 ext = model.boundingBoxMax - model.boundingBoxMin;
+        float horiz = std::max(ext.x, ext.y);
+        float vert = ext.z;
+        modelData.isLowPlatform = (vert < 6.0f && horiz > 20.0f);
+    }
 
     core::Logger::getInstance().info("  WMO bounds: min=(", model.boundingBoxMin.x, ", ", model.boundingBoxMin.y, ", ", model.boundingBoxMin.z,
                                      ") max=(", model.boundingBoxMax.x, ", ", model.boundingBoxMax.y, ", ", model.boundingBoxMax.z, ")");
@@ -1637,6 +1643,7 @@ std::optional<float> WMORenderer::getFloorHeight(float glX, float glY, float glZ
 
     QueryTimer timer(&queryTimeMs, &queryCallCount);
     std::optional<float> bestFloor;
+    bool bestFromLowPlatform = false;
 
     // World-space ray: from high above, pointing straight down
     glm::vec3 worldOrigin(glX, glY, glZ + 500.0f);
@@ -1653,17 +1660,19 @@ std::optional<float> WMORenderer::getFloorHeight(float glX, float glY, float glZ
             continue;
         }
 
-        // Broad-phase reject in world space to avoid expensive matrix transforms.
-        if (glX < instance.worldBoundsMin.x || glX > instance.worldBoundsMax.x ||
-            glY < instance.worldBoundsMin.y || glY > instance.worldBoundsMax.y ||
-            glZ < instance.worldBoundsMin.z - 2.0f || glZ > instance.worldBoundsMax.z + 4.0f) {
-            continue;
-        }
-
         auto it = loadedModels.find(instance.modelId);
         if (it == loadedModels.end()) continue;
 
         const ModelData& model = it->second;
+        float zMarginDown = model.isLowPlatform ? 20.0f : 2.0f;
+        float zMarginUp = model.isLowPlatform ? 20.0f : 4.0f;
+
+        // Broad-phase reject in world space to avoid expensive matrix transforms.
+        if (glX < instance.worldBoundsMin.x || glX > instance.worldBoundsMax.x ||
+            glY < instance.worldBoundsMin.y || glY > instance.worldBoundsMax.y ||
+            glZ < instance.worldBoundsMin.z - zMarginDown || glZ > instance.worldBoundsMax.z + zMarginUp) {
+            continue;
+        }
 
         // World-space pre-pass: check which groups' world XY bounds contain
         // the query point. For a vertical ray this eliminates most groups
@@ -1720,9 +1729,11 @@ std::optional<float> WMORenderer::getFloorHeight(float glX, float glY, float glZ
                         glm::vec3 hitLocal = localOrigin + localDir * t;
                         glm::vec3 hitWorld = glm::vec3(instance.modelMatrix * glm::vec4(hitLocal, 1.0f));
 
-                        if (hitWorld.z <= glZ + 0.5f) {
+                        float allowAbove = model.isLowPlatform ? 12.0f : 0.5f;
+                        if (hitWorld.z <= glZ + allowAbove) {
                             if (!bestFloor || hitWorld.z > *bestFloor) {
                                 bestFloor = hitWorld.z;
+                                bestFromLowPlatform = model.isLowPlatform;
                             }
                         }
                     }
@@ -1735,7 +1746,10 @@ std::optional<float> WMORenderer::getFloorHeight(float glX, float glY, float glZ
     // Only update cache if we found a floor that's close to query height,
     // to avoid caching wrong floors when player is on different stories.
     if (bestFloor && *bestFloor >= glZ - 6.0f) {
-        precomputedFloorGrid[gridKey] = *bestFloor;
+        float cacheAbove = bestFromLowPlatform ? 12.0f : 2.0f;
+        if (*bestFloor <= glZ + cacheAbove) {
+            precomputedFloorGrid[gridKey] = *bestFloor;
+        }
     }
 
     return bestFloor;

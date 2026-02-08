@@ -935,7 +935,7 @@ void Renderer::update(float deltaTime) {
         // Movement-facing comes from camera controller and is decoupled from LMB orbit.
         if (cameraController->isMoving() || cameraController->isRightMouseHeld()) {
             characterYaw = cameraController->getFacingYaw();
-        } else if (inCombat_ && targetPosition && !emoteActive) {
+        } else if (inCombat_ && targetPosition && !emoteActive && !isMounted()) {
             // Face target when in combat and idle
             glm::vec3 toTarget = *targetPosition - characterPosition;
             if (glm::length(glm::vec2(toTarget.x, toTarget.y)) > 0.1f) {

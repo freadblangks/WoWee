@@ -91,7 +91,7 @@ void CameraController::update(float deltaTime) {
     bool keyE = !uiWantsKeyboard && !sitting && input.isKeyPressed(SDL_SCANCODE_E);
     bool shiftDown = !uiWantsKeyboard && (input.isKeyPressed(SDL_SCANCODE_LSHIFT) || input.isKeyPressed(SDL_SCANCODE_RSHIFT));
     bool ctrlDown = !uiWantsKeyboard && (input.isKeyPressed(SDL_SCANCODE_LCTRL) || input.isKeyPressed(SDL_SCANCODE_RCTRL));
-    bool nowJump = !uiWantsKeyboard && !sitting && input.isKeyPressed(SDL_SCANCODE_SPACE);
+    bool nowJump = !uiWantsKeyboard && !sitting && input.isKeyJustPressed(SDL_SCANCODE_SPACE);
 
     // Idle camera: any input resets the timer; timeout triggers a slow orbit pan
     bool anyInput = leftMouseDown || rightMouseDown || keyW || keyS || keyA || keyD || keyQ || keyE || nowJump;

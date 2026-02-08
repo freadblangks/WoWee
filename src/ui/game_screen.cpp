@@ -712,11 +712,9 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                     if (unit->getHealth() == 0 && unit->getMaxHealth() > 0) {
                         gameHandler.lootTarget(target->getGuid());
                     } else {
-                        // Interact with friendly NPCs, otherwise attack
+                        // Interact with friendly NPCs; hostile units just get targeted
                         if (!unit->isHostile() && unit->isInteractable()) {
                             gameHandler.interactWithNpc(target->getGuid());
-                        } else {
-                            gameHandler.startAutoAttack(target->getGuid());
                         }
                     }
                 } else if (target->getType() == game::ObjectType::PLAYER) {

@@ -252,6 +252,33 @@ GLuint TerrainRenderer::loadTexture(const std::string& path) {
     return textureID;
 }
 
+void TerrainRenderer::uploadPreloadedTextures(const std::unordered_map<std::string, pipeline::BLPImage>& textures) {
+    for (const auto& [path, blp] : textures) {
+        // Skip if already cached
+        if (textureCache.find(path) != textureCache.end()) continue;
+        if (!blp.isValid()) {
+            textureCache[path] = whiteTexture;
+            continue;
+        }
+
+        GLuint textureID;
+        glGenTextures(1, &textureID);
+        glBindTexture(GL_TEXTURE_2D, textureID);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+                     blp.width, blp.height, 0,
+                     GL_RGBA, GL_UNSIGNED_BYTE, blp.data.data());
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glGenerateMipmap(GL_TEXTURE_2D);
+        applyAnisotropicFiltering();
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        textureCache[path] = textureID;
+    }
+}
+
 GLuint TerrainRenderer::createAlphaTexture(const std::vector<uint8_t>& alphaData) {
     if (alphaData.empty()) {
         return 0;

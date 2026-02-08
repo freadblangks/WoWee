@@ -30,13 +30,12 @@ GameHandler::GameHandler() {
 
     // Default spells always available
     knownSpells.push_back(6603);  // Attack
-    knownSpells.push_back(8690);  // Hearthstone
 
     // Default action bar layout
     actionBar[0].type = ActionBarSlot::SPELL;
     actionBar[0].id = 6603;   // Attack in slot 1
-    actionBar[11].type = ActionBarSlot::SPELL;
-    actionBar[11].id = 8690;  // Hearthstone in slot 12
+    actionBar[11].type = ActionBarSlot::ITEM;
+    actionBar[11].id = 6948;  // Hearthstone item in slot 12
 }
 
 GameHandler::~GameHandler() {
@@ -3788,12 +3787,9 @@ void GameHandler::handleInitialSpells(network::Packet& packet) {
 
     knownSpells = data.spellIds;
 
-    // Ensure Attack (6603) and Hearthstone (8690) are always present
+    // Ensure Attack (6603) is always present
     if (std::find(knownSpells.begin(), knownSpells.end(), 6603u) == knownSpells.end()) {
         knownSpells.insert(knownSpells.begin(), 6603u);
-    }
-    if (std::find(knownSpells.begin(), knownSpells.end(), 8690u) == knownSpells.end()) {
-        knownSpells.push_back(8690u);
     }
 
     // Set initial cooldowns
@@ -3803,11 +3799,11 @@ void GameHandler::handleInitialSpells(network::Packet& packet) {
         }
     }
 
-    // Load saved action bar or use defaults (Attack slot 1, Hearthstone slot 12)
+    // Load saved action bar or use defaults (Attack slot 1, Hearthstone item slot 12)
     actionBar[0].type = ActionBarSlot::SPELL;
     actionBar[0].id = 6603;  // Attack
-    actionBar[11].type = ActionBarSlot::SPELL;
-    actionBar[11].id = 8690;  // Hearthstone
+    actionBar[11].type = ActionBarSlot::ITEM;
+    actionBar[11].id = 6948;  // Hearthstone item
     loadCharacterConfig();
 
     LOG_INFO("Learned ", knownSpells.size(), " spells");

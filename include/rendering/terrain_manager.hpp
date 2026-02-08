@@ -4,6 +4,7 @@
 #include "pipeline/terrain_mesh.hpp"
 #include "pipeline/m2_loader.hpp"
 #include "pipeline/wmo_loader.hpp"
+#include "pipeline/blp_loader.hpp"
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -103,6 +104,10 @@ struct PendingTile {
         glm::mat4 modelMatrix;     // Pre-computed world transform
     };
     std::vector<WMODoodadReady> wmoDoodads;
+
+    // Pre-loaded terrain texture BLP data (loaded on background thread to avoid
+    // blocking file I/O on the main thread during finalizeTile)
+    std::unordered_map<std::string, pipeline::BLPImage> preloadedTextures;
 };
 
 /**

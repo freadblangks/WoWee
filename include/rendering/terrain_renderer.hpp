@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pipeline/terrain_mesh.hpp"
+#include "pipeline/blp_loader.hpp"
 #include "rendering/shader.hpp"
 #include "rendering/texture.hpp"
 #include "rendering/camera.hpp"
@@ -86,6 +87,12 @@ public:
      * @param tileY Tile Y coordinate
      */
     void removeTile(int tileX, int tileY);
+
+    /**
+     * Upload pre-loaded BLP textures to the GL texture cache.
+     * Called before loadTerrain() so texture loading avoids file I/O.
+     */
+    void uploadPreloadedTextures(const std::unordered_map<std::string, pipeline::BLPImage>& textures);
 
     /**
      * Render loaded terrain

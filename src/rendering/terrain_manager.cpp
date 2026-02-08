@@ -465,11 +465,19 @@ std::unique_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
         }
     }
 
+    // Pre-load terrain texture BLP data on background thread so finalizeTile
+    // doesn't block the main thread with file I/O.
+    for (const auto& texPath : pending->terrain.textures) {
+        if (pending->preloadedTextures.find(texPath) != pending->preloadedTextures.end()) continue;
+        pending->preloadedTextures[texPath] = assetManager->loadTexture(texPath);
+    }
+
     LOG_DEBUG("Prepared tile [", x, ",", y, "]: ",
              pending->m2Models.size(), " M2 models, ",
              pending->m2Placements.size(), " M2 placements, ",
              pending->wmoModels.size(), " WMOs, ",
-             pending->wmoDoodads.size(), " WMO doodads");
+             pending->wmoDoodads.size(), " WMO doodads, ",
+             pending->preloadedTextures.size(), " textures");
 
     return pending;
 }
@@ -487,6 +495,11 @@ void TerrainManager::finalizeTile(std::unique_ptr<PendingTile> pending) {
     }
     if (failedTiles.find(coord) != failedTiles.end()) {
         return;
+    }
+
+    // Upload pre-loaded textures to the GL cache so loadTerrain avoids file I/O
+    if (!pending->preloadedTextures.empty()) {
+        terrainRenderer->uploadPreloadedTextures(pending->preloadedTextures);
     }
 
     // Upload terrain to GPU
@@ -657,9 +670,9 @@ void TerrainManager::workerLoop() {
 }
 
 void TerrainManager::processReadyTiles() {
-    // Process up to 2 ready tiles per frame to spread GPU work
+    // Process up to 1 ready tile per frame to avoid main-thread stalls
     int processed = 0;
-    const int maxPerFrame = 2;
+    const int maxPerFrame = 1;
 
     while (processed < maxPerFrame) {
         std::unique_ptr<PendingTile> pending;

@@ -465,6 +465,11 @@ void CameraController::update(float deltaTime) {
                             if (!walkable) {
                                 candidate.x = adjusted.x;
                                 candidate.y = adjusted.y;
+                            } else if (floorH && *floorH > candidate.z) {
+                                // Snap Z to ramp surface so subsequent sweep
+                                // steps measure feetZ from the ramp, not the
+                                // starting position.
+                                candidate.z = *floorH;
                             }
                         }
                     }

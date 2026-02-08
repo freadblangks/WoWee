@@ -1733,7 +1733,7 @@ public:
 /** CMSG_ACTIVATETAXIEXPRESS packet builder */
 class ActivateTaxiExpressPacket {
 public:
-    static network::Packet build(uint64_t npcGuid, const std::vector<uint32_t>& pathNodes);
+    static network::Packet build(uint64_t npcGuid, uint32_t totalCost, const std::vector<uint32_t>& pathNodes);
 };
 
 /** CMSG_ACTIVATETAXI packet builder */

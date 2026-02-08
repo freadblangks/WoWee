@@ -303,7 +303,7 @@ void Application::setState(AppState newState) {
         case AppState::CHARACTER_SELECTION:
             // Show character screen
             break;
-        case AppState::IN_GAME:
+        case AppState::IN_GAME: {
             // Wire up movement opcodes from camera controller
             if (renderer && renderer->getCameraController()) {
                 auto* cc = renderer->getCameraController();
@@ -323,6 +323,7 @@ void Application::setState(AppState newState) {
                 });
             }
             break;
+        }
         case AppState::DISCONNECTED:
             // Back to auth
             break;
@@ -379,7 +380,7 @@ void Application::update(float deltaTime) {
             }
             break;
 
-        case AppState::IN_GAME:
+        case AppState::IN_GAME: {
             if (gameHandler) {
                 gameHandler->update(deltaTime);
             }
@@ -399,16 +400,60 @@ void Application::update(float deltaTime) {
                 renderer->getCameraController()->setRunSpeedOverride(gameHandler->getServerRunSpeed());
             }
 
-            // Sync character render position → canonical WoW coords each frame
-            if (renderer && gameHandler) {
-                glm::vec3 renderPos = renderer->getCharacterPosition();
-                glm::vec3 canonical = core::coords::renderToCanonical(renderPos);
-                gameHandler->setPosition(canonical.x, canonical.y, canonical.z);
+            bool onTaxi = gameHandler && gameHandler->isOnTaxiFlight();
+            if (renderer && renderer->getCameraController()) {
+                renderer->getCameraController()->setExternalFollow(onTaxi);
+                renderer->getCameraController()->setExternalMoving(onTaxi);
+                if (lastTaxiFlight_ && !onTaxi) {
+                    renderer->getCameraController()->clearMovementInputs();
+                }
+            }
+            if (renderer) {
+                renderer->setTaxiFlight(onTaxi);
+            }
+            if (renderer && renderer->getTerrainManager()) {
+                renderer->getTerrainManager()->setStreamingEnabled(true);
+                // Freeze new tile streaming during taxi to avoid hangs; still process ready tiles.
+                if (onTaxi) {
+                    renderer->getTerrainManager()->setUpdateInterval(9999.0f);
+                    taxiStreamCooldown_ = 2.5f;
+                } else {
+                    // Ramp streaming back in after taxi to avoid end-of-flight hitches.
+                    if (lastTaxiFlight_) {
+                        taxiStreamCooldown_ = 2.5f;
+                    }
+                    if (taxiStreamCooldown_ > 0.0f) {
+                        taxiStreamCooldown_ -= deltaTime;
+                        renderer->getTerrainManager()->setUpdateInterval(1.0f);
+                    } else {
+                        renderer->getTerrainManager()->setUpdateInterval(0.1f);
+                    }
+                }
+            }
+            lastTaxiFlight_ = onTaxi;
 
-                // Sync orientation: camera yaw (degrees) → WoW orientation (radians)
-                float yawDeg = renderer->getCharacterYaw();
-                float wowOrientation = glm::radians(yawDeg - 90.0f);
-                gameHandler->setOrientation(wowOrientation);
+            // Sync character render position ↔ canonical WoW coords each frame
+            if (renderer && gameHandler) {
+                if (onTaxi) {
+                    auto playerEntity = gameHandler->getEntityManager().getEntity(gameHandler->getPlayerGuid());
+                    if (playerEntity) {
+                        glm::vec3 canonical(playerEntity->getX(), playerEntity->getY(), playerEntity->getZ());
+                        glm::vec3 renderPos = core::coords::canonicalToRender(canonical);
+                        renderer->getCharacterPosition() = renderPos;
+                        // Lock yaw to server/taxi orientation so mouse cannot steer during taxi.
+                        float yawDeg = glm::degrees(playerEntity->getOrientation()) + 90.0f;
+                        renderer->setCharacterYaw(yawDeg);
+                    }
+                } else {
+                    glm::vec3 renderPos = renderer->getCharacterPosition();
+                    glm::vec3 canonical = core::coords::renderToCanonical(renderPos);
+                    gameHandler->setPosition(canonical.x, canonical.y, canonical.z);
+
+                    // Sync orientation: camera yaw (degrees) → WoW orientation (radians)
+                    float yawDeg = renderer->getCharacterYaw();
+                    float wowOrientation = glm::radians(yawDeg - 90.0f);
+                    gameHandler->setOrientation(wowOrientation);
+                }
             }
 
             // Send movement heartbeat every 500ms (keeps server position in sync)
@@ -422,6 +467,7 @@ void Application::update(float deltaTime) {
                 movementHeartbeatTimer = 0.0f;
             }
             break;
+        }
 
         case AppState::DISCONNECTED:
             // Handle disconnection
@@ -1661,6 +1707,46 @@ void Application::buildCreatureDisplayLookups() {
         LOG_INFO("Loaded ", modelIdToPath_.size(), " model→path mappings");
     }
 
+    // Resolve gryphon/wyvern display IDs by exact model path so taxi mounts have textures.
+    auto toLower = [](std::string s) {
+        for (char& c : s) c = static_cast<char>(::tolower(c));
+        return s;
+    };
+    auto normalizePath = [&](const std::string& p) {
+        std::string s = p;
+        for (char& c : s) if (c == '/') c = '\\';
+        return toLower(s);
+    };
+    auto resolveDisplayIdForExactPath = [&](const std::string& exactPath) -> uint32_t {
+        const std::string target = normalizePath(exactPath);
+        uint32_t modelId = 0;
+        for (const auto& [mid, path] : modelIdToPath_) {
+            if (normalizePath(path) == target) {
+                modelId = mid;
+                break;
+            }
+        }
+        if (modelId == 0) return 0;
+        uint32_t bestDisplayId = 0;
+        int bestScore = -1;
+        for (const auto& [dispId, data] : displayDataMap_) {
+            if (data.modelId != modelId) continue;
+            int score = 0;
+            if (!data.skin1.empty()) score += 3;
+            if (!data.skin2.empty()) score += 2;
+            if (!data.skin3.empty()) score += 1;
+            if (score > bestScore) {
+                bestScore = score;
+                bestDisplayId = dispId;
+            }
+        }
+        return bestDisplayId;
+    };
+
+    gryphonDisplayId_ = resolveDisplayIdForExactPath("Creature\\Gryphon\\Gryphon.m2");
+    wyvernDisplayId_  = resolveDisplayIdForExactPath("Creature\\Wyvern\\Wyvern.m2");
+    LOG_INFO("Taxi mount displayIds: gryphon=", gryphonDisplayId_, " wyvern=", wyvernDisplayId_);
+
     // CharHairGeosets.dbc: maps (race, sex, hairStyleId) → skinSectionId for hair mesh
     // Col 0: ID, Col 1: RaceID, Col 2: SexID, Col 3: VariationID, Col 4: GeosetID, Col 5: Showscalp
     if (auto chg = assetManager->loadDBC("CharHairGeosets.dbc"); chg && chg->isLoaded()) {
@@ -1705,8 +1791,19 @@ void Application::buildCreatureDisplayLookups() {
 }
 
 std::string Application::getModelPathForDisplayId(uint32_t displayId) const {
+    if (displayId == 30412) return "Creature\\Gryphon\\Gryphon.m2";
+    if (displayId == 30413) return "Creature\\Wyvern\\Wyvern.m2";
     auto itData = displayDataMap_.find(displayId);
-    if (itData == displayDataMap_.end()) return "";
+    if (itData == displayDataMap_.end()) {
+        // Some sources (e.g., taxi nodes) may provide a modelId directly.
+        auto itPath = modelIdToPath_.find(displayId);
+        if (itPath != modelIdToPath_.end()) {
+            return itPath->second;
+        }
+        if (displayId == 30412) return "Creature\\Gryphon\\Gryphon.m2";
+        if (displayId == 30413) return "Creature\\Wyvern\\Wyvern.m2";
+        return "";
+    }
 
     auto itPath = modelIdToPath_.find(itData->second.modelId);
     if (itPath == modelIdToPath_.end()) return "";
@@ -2507,6 +2604,7 @@ void Application::processPendingMount() {
                 if (lastSlash != std::string::npos) {
                     modelDir = m2Path.substr(0, lastSlash + 1);
                 }
+                int replaced = 0;
                 for (size_t ti = 0; ti < md->textures.size(); ti++) {
                     const auto& tex = md->textures[ti];
                     std::string texPath;
@@ -2521,7 +2619,17 @@ void Application::processPendingMount() {
                         GLuint skinTex = charRenderer->loadTexture(texPath);
                         if (skinTex != 0) {
                             charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), skinTex);
+                            replaced++;
                         }
+                    }
+                }
+                // Some mounts (gryphon/wyvern) use empty model textures; force skin1 onto slot 0.
+                if (replaced == 0 && !dispData.skin1.empty() && !md->textures.empty()) {
+                    std::string texPath = modelDir + dispData.skin1 + ".blp";
+                    GLuint skinTex = charRenderer->loadTexture(texPath);
+                    if (skinTex != 0) {
+                        charRenderer->setModelTexture(modelId, 0, skinTex);
+                        LOG_INFO("Forced mount skin1 texture on slot 0: ", texPath);
                     }
                 }
             }

@@ -266,27 +266,30 @@ void CameraController::update(float deltaTime) {
     if (thirdPerson && followTarget) {
         // Move the follow target (character position) instead of the camera
         glm::vec3 targetPos = *followTarget;
-        if (wmoRenderer) {
-            wmoRenderer->setCollisionFocus(targetPos, COLLISION_FOCUS_RADIUS_THIRD_PERSON);
-        }
-        if (m2Renderer) {
-            m2Renderer->setCollisionFocus(targetPos, COLLISION_FOCUS_RADIUS_THIRD_PERSON);
-        }
-
-        // Check for water at current position — simple submersion test.
-        // If the player's feet are meaningfully below the water surface, swim.
-        std::optional<float> waterH;
-        if (waterRenderer) {
-            waterH = waterRenderer->getWaterHeightAt(targetPos.x, targetPos.y);
-        }
-        bool inWater = waterH && (targetPos.z < (*waterH - 0.3f));
-        // Keep swimming through water-data gaps (chunk boundaries).
-        if (!inWater && swimming && !waterH) {
-            inWater = true;
+        if (!externalFollow_) {
+            if (wmoRenderer) {
+                wmoRenderer->setCollisionFocus(targetPos, COLLISION_FOCUS_RADIUS_THIRD_PERSON);
+            }
+            if (m2Renderer) {
+                m2Renderer->setCollisionFocus(targetPos, COLLISION_FOCUS_RADIUS_THIRD_PERSON);
+            }
         }
 
+        if (!externalFollow_) {
+            // Check for water at current position — simple submersion test.
+            // If the player's feet are meaningfully below the water surface, swim.
+            std::optional<float> waterH;
+            if (waterRenderer) {
+                waterH = waterRenderer->getWaterHeightAt(targetPos.x, targetPos.y);
+            }
+            bool inWater = waterH && (targetPos.z < (*waterH - 0.3f));
+            // Keep swimming through water-data gaps (chunk boundaries).
+            if (!inWater && swimming && !waterH) {
+                inWater = true;
+            }
 
-        if (inWater) {
+
+            if (inWater) {
             swimming = true;
             // Swim movement follows look pitch (forward/back), while strafe stays
             // lateral for stable control.
@@ -406,7 +409,7 @@ void CameraController::update(float deltaTime) {
             }
 
             grounded = false;
-        } else {
+            } else {
             // Exiting water — give a small upward boost to help climb onto shore.
             swimming = false;
 
@@ -433,6 +436,12 @@ void CameraController::update(float deltaTime) {
             // Apply gravity
             verticalVelocity += gravity * deltaTime;
             targetPos.z += verticalVelocity * deltaTime;
+            }
+        } else {
+            // External follow (e.g., taxi): trust server position without grounding.
+            swimming = false;
+            grounded = true;
+            verticalVelocity = 0.0f;
         }
 
         // Sweep collisions in small steps to reduce tunneling through thin walls/floors.
@@ -1286,7 +1295,16 @@ bool CameraController::isMoving() const {
     if (!enabled || !camera) {
         return false;
     }
+    if (externalMoving_) return true;
     return moveForwardActive || moveBackwardActive || strafeLeftActive || strafeRightActive || autoRunning;
+}
+
+void CameraController::clearMovementInputs() {
+    moveForwardActive = false;
+    moveBackwardActive = false;
+    strafeLeftActive = false;
+    strafeRightActive = false;
+    autoRunning = false;
 }
 
 bool CameraController::isSprinting() const {

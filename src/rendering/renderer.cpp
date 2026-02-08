@@ -694,7 +694,8 @@ void Renderer::updateCharacterAnimation() {
             if (moving && haveMountState && curMountDur > 1.0f) {
                 float norm = std::fmod(curMountTime, curMountDur) / curMountDur;
                 // One bounce per stride cycle
-                mountBob = std::sin(norm * 2.0f * 3.14159f) * 0.12f;
+                float bobSpeed = taxiFlight_ ? 2.0f : 1.0f;
+                mountBob = std::sin(norm * 2.0f * 3.14159f * bobSpeed) * 0.12f;
             }
         }
 
@@ -1190,7 +1191,7 @@ void Renderer::update(float deltaTime) {
             cameraController && cameraController->isThirdPerson() &&
             cameraController->isGrounded() && !cameraController->isSwimming();
 
-        if (canPlayFootsteps && isMounted() && mountInstanceId_ > 0) {
+        if (canPlayFootsteps && isMounted() && mountInstanceId_ > 0 && !taxiFlight_) {
             // Mount footsteps: use mount's animation for timing
             uint32_t animId = 0;
             float animTimeMs = 0.0f, animDurationMs = 0.0f;

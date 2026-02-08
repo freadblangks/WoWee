@@ -70,6 +70,8 @@ public:
     const std::vector<std::string>& getUnderwearPaths() const { return underwearPaths_; }
     uint32_t getSkinTextureSlotIndex() const { return skinTextureSlotIndex_; }
     uint32_t getCloakTextureSlotIndex() const { return cloakTextureSlotIndex_; }
+    uint32_t getGryphonDisplayId() const { return gryphonDisplayId_; }
+    uint32_t getWyvernDisplayId() const { return wyvernDisplayId_; }
 
 private:
     void update(float deltaTime);
@@ -154,6 +156,10 @@ private:
     std::unordered_map<uint64_t, uint32_t> creatureModelIds_;   // guid → loaded modelId
     std::unordered_map<uint32_t, uint32_t> displayIdModelCache_; // displayId → modelId (model caching)
     uint32_t nextCreatureModelId_ = 5000;  // Model IDs for online creatures
+    uint32_t gryphonDisplayId_ = 0;
+    uint32_t wyvernDisplayId_ = 0;
+    bool lastTaxiFlight_ = false;
+    float taxiStreamCooldown_ = 0.0f;
 
     // Online gameobject model spawning
     struct GameObjectInstanceInfo {

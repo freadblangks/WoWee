@@ -30,12 +30,13 @@ GameHandler::GameHandler() {
 
     // Default spells always available
     knownSpells.push_back(6603);  // Attack
+    knownSpells.push_back(8690);  // Hearthstone
 
     // Default action bar layout
     actionBar[0].type = ActionBarSlot::SPELL;
     actionBar[0].id = 6603;   // Attack in slot 1
-    actionBar[11].type = ActionBarSlot::ITEM;
-    actionBar[11].id = 6948;  // Hearthstone item in slot 12
+    actionBar[11].type = ActionBarSlot::SPELL;
+    actionBar[11].id = 8690;  // Hearthstone in slot 12
 }
 
 GameHandler::~GameHandler() {
@@ -96,6 +97,11 @@ bool GameHandler::connect(const std::string& host,
 }
 
 void GameHandler::disconnect() {
+    if (onTaxiFlight_) {
+        taxiRecoverPending_ = true;
+    } else {
+        taxiRecoverPending_ = false;
+    }
     if (socket) {
         socket->disconnect();
         socket.reset();
@@ -178,13 +184,81 @@ void GameHandler::update(float deltaTime) {
 
         // Detect taxi flight landing: UNIT_FLAG_TAXI_FLIGHT (0x00000100) cleared
         if (onTaxiFlight_) {
+            updateClientTaxi(deltaTime);
+            if (!taxiMountActive_ && !taxiClientActive_ && taxiClientPath_.empty()) {
+                onTaxiFlight_ = false;
+                LOG_INFO("Cleared stale taxi state in update");
+            }
             auto playerEntity = entityManager.getEntity(playerGuid);
             if (playerEntity && playerEntity->getType() == ObjectType::UNIT) {
                 auto unit = std::static_pointer_cast<Unit>(playerEntity);
                 if ((unit->getUnitFlags() & 0x00000100) == 0) {
                     onTaxiFlight_ = false;
+                    if (taxiMountActive_ && mountCallback_) {
+                        mountCallback_(0);
+                    }
+                    taxiMountActive_ = false;
+                    taxiMountDisplayId_ = 0;
+                    currentMountDisplayId_ = 0;
+                    taxiClientActive_ = false;
+                    taxiClientPath_.clear();
+                    taxiRecoverPending_ = false;
+                    movementInfo.flags = 0;
+                    movementInfo.flags2 = 0;
+                    if (socket) {
+                        sendMovement(Opcode::CMSG_MOVE_STOP);
+                        sendMovement(Opcode::CMSG_MOVE_HEARTBEAT);
+                    }
                     LOG_INFO("Taxi flight landed");
                 }
+            }
+        }
+
+        // Safety: if taxi flight ended but mount is still active, force dismount.
+        if (!onTaxiFlight_ && taxiMountActive_) {
+            if (mountCallback_) mountCallback_(0);
+            taxiMountActive_ = false;
+            taxiMountDisplayId_ = 0;
+            currentMountDisplayId_ = 0;
+            movementInfo.flags = 0;
+            movementInfo.flags2 = 0;
+            if (socket) {
+                sendMovement(Opcode::CMSG_MOVE_STOP);
+                sendMovement(Opcode::CMSG_MOVE_HEARTBEAT);
+            }
+            LOG_INFO("Taxi dismount cleanup");
+        }
+
+        if (taxiRecoverPending_ && state == WorldState::IN_WORLD) {
+            auto playerEntity = entityManager.getEntity(playerGuid);
+            if (playerEntity) {
+                playerEntity->setPosition(taxiRecoverPos_.x, taxiRecoverPos_.y,
+                                          taxiRecoverPos_.z, movementInfo.orientation);
+                movementInfo.x = taxiRecoverPos_.x;
+                movementInfo.y = taxiRecoverPos_.y;
+                movementInfo.z = taxiRecoverPos_.z;
+                if (socket) {
+                    sendMovement(Opcode::CMSG_MOVE_HEARTBEAT);
+                }
+                taxiRecoverPending_ = false;
+                LOG_INFO("Taxi recovery applied");
+            }
+        }
+
+        if (taxiActivatePending_) {
+            taxiActivateTimer_ += deltaTime;
+            if (!onTaxiFlight_ && taxiActivateTimer_ > 5.0f) {
+                taxiActivatePending_ = false;
+                taxiActivateTimer_ = 0.0f;
+                if (taxiMountActive_ && mountCallback_) {
+                    mountCallback_(0);
+                }
+                taxiMountActive_ = false;
+                taxiMountDisplayId_ = 0;
+                taxiClientActive_ = false;
+                taxiClientPath_.clear();
+                onTaxiFlight_ = false;
+                LOG_WARNING("Taxi activation timed out");
             }
         }
 
@@ -744,12 +818,23 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
             break;
         }
+        case Opcode::SMSG_NEW_WORLD:
+            handleNewWorld(packet);
+            break;
+        case Opcode::SMSG_TRANSFER_ABORTED: {
+            uint32_t mapId = packet.readUInt32();
+            uint8_t reason = (packet.getReadPos() < packet.getSize()) ? packet.readUInt8() : 0;
+            LOG_WARNING("SMSG_TRANSFER_ABORTED: mapId=", mapId, " reason=", (int)reason);
+            addSystemChatMessage("Transfer aborted.");
+            break;
+        }
 
         // ---- Taxi / Flight Paths ----
         case Opcode::SMSG_SHOWTAXINODES:
             handleShowTaxiNodes(packet);
             break;
         case Opcode::SMSG_ACTIVATETAXIREPLY:
+        case Opcode::SMSG_ACTIVATETAXIREPLY_ALT:
             handleActivateTaxiReply(packet);
             break;
         case Opcode::SMSG_NEW_TAXI_PATH:
@@ -1086,6 +1171,7 @@ void GameHandler::selectCharacter(uint64_t characterGuid) {
             LOG_INFO("Level ", (int)character.level, " ",
                      getRaceName(character.race), " ",
                      getClassName(character.characterClass));
+            playerRace_ = character.race;
             break;
         }
     }
@@ -1188,6 +1274,20 @@ void GameHandler::handleLoginVerifyWorld(network::Packet& packet) {
     if (worldEntryCallback_) {
         worldEntryCallback_(data.mapId, data.x, data.y, data.z);
     }
+
+    // If we disconnected mid-taxi, attempt to recover to destination after login.
+    if (taxiRecoverPending_ && taxiRecoverMapId_ == data.mapId) {
+        float dx = movementInfo.x - taxiRecoverPos_.x;
+        float dy = movementInfo.y - taxiRecoverPos_.y;
+        float dz = movementInfo.z - taxiRecoverPos_.z;
+        float dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist > 5.0f) {
+            // Keep pending until player entity exists; update() will apply.
+            LOG_INFO("Taxi recovery pending: dist=", dist);
+        } else {
+            taxiRecoverPending_ = false;
+        }
+    }
 }
 
 void GameHandler::handleAccountDataTimes(network::Packet& packet) {
@@ -1265,7 +1365,15 @@ void GameHandler::sendMovement(Opcode opcode) {
     }
 
     // Block movement during taxi flight
-    if (onTaxiFlight_) return;
+    if (onTaxiFlight_) {
+        // If taxi visuals are already gone, clear taxi state to avoid stuck movement.
+        if (!taxiMountActive_ && !taxiClientActive_ && taxiClientPath_.empty()) {
+            onTaxiFlight_ = false;
+            LOG_INFO("Cleared stale taxi state in sendMovement");
+        } else {
+            return;
+        }
+    }
     if (resurrectPending_) return;
 
     // Use real millisecond timestamp (server validates for anti-cheat)
@@ -1495,6 +1603,13 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                 break;
                             case 82: unit->setNpcFlags(val); break;   // UNIT_NPC_FLAGS
                             default: break;
+                        }
+                    }
+                    if (block.guid == playerGuid) {
+                        constexpr uint32_t UNIT_FLAG_TAXI_FLIGHT = 0x00000100;
+                        if ((unit->getUnitFlags() & UNIT_FLAG_TAXI_FLIGHT) != 0 && !onTaxiFlight_) {
+                            onTaxiFlight_ = true;
+                            applyTaxiMountForCurrentNode();
                         }
                     }
                     if (block.guid == playerGuid &&
@@ -1776,6 +1891,12 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     glm::vec3 pos = core::coords::serverToCanonical(glm::vec3(block.x, block.y, block.z));
                     entity->setPosition(pos.x, pos.y, pos.z, block.orientation);
                     LOG_DEBUG("Updated entity position: 0x", std::hex, block.guid, std::dec);
+                    if (block.guid == playerGuid) {
+                        movementInfo.x = pos.x;
+                        movementInfo.y = pos.y;
+                        movementInfo.z = pos.z;
+                        movementInfo.orientation = block.orientation;
+                    }
 
                     // Fire transport move callback if this is a known transport
                     if (transportGuids_.count(block.guid) && transportMoveCallback_) {
@@ -3746,6 +3867,12 @@ void GameHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
 
     if (casting) return; // Already casting
 
+    // Hearthstone is item-bound; use the item rather than direct spell cast.
+    if (spellId == 8690) {
+        useItemById(6948);
+        return;
+    }
+
     uint64_t target = targetGuid != 0 ? targetGuid : this->targetGuid;
     auto packet = CastSpellPacket::build(spellId, target, ++castCount);
     socket->send(packet);
@@ -3787,9 +3914,12 @@ void GameHandler::handleInitialSpells(network::Packet& packet) {
 
     knownSpells = data.spellIds;
 
-    // Ensure Attack (6603) is always present
+    // Ensure Attack (6603) and Hearthstone (8690) are always present
     if (std::find(knownSpells.begin(), knownSpells.end(), 6603u) == knownSpells.end()) {
         knownSpells.insert(knownSpells.begin(), 6603u);
+    }
+    if (std::find(knownSpells.begin(), knownSpells.end(), 8690u) == knownSpells.end()) {
+        knownSpells.push_back(8690u);
     }
 
     // Set initial cooldowns
@@ -3799,11 +3929,11 @@ void GameHandler::handleInitialSpells(network::Packet& packet) {
         }
     }
 
-    // Load saved action bar or use defaults (Attack slot 1, Hearthstone item slot 12)
+    // Load saved action bar or use defaults (Attack slot 1, Hearthstone slot 12)
     actionBar[0].type = ActionBarSlot::SPELL;
     actionBar[0].id = 6603;  // Attack
-    actionBar[11].type = ActionBarSlot::ITEM;
-    actionBar[11].id = 6948;  // Hearthstone item
+    actionBar[11].type = ActionBarSlot::SPELL;
+    actionBar[11].id = 8690;  // Hearthstone
     loadCharacterConfig();
 
     LOG_INFO("Learned ", knownSpells.size(), " spells");
@@ -4541,6 +4671,54 @@ void GameHandler::handleTeleportAck(network::Packet& packet) {
     }
 }
 
+void GameHandler::handleNewWorld(network::Packet& packet) {
+    // SMSG_NEW_WORLD: uint32 mapId, float x, y, z, orientation
+    if (packet.getSize() - packet.getReadPos() < 20) {
+        LOG_WARNING("SMSG_NEW_WORLD too short");
+        return;
+    }
+
+    uint32_t mapId = packet.readUInt32();
+    float serverX = packet.readFloat();
+    float serverY = packet.readFloat();
+    float serverZ = packet.readFloat();
+    float orientation = packet.readFloat();
+
+    LOG_INFO("SMSG_NEW_WORLD: mapId=", mapId,
+             " pos=(", serverX, ", ", serverY, ", ", serverZ, ")",
+             " orient=", orientation);
+
+    currentMapId_ = mapId;
+
+    // Update player position
+    glm::vec3 canonical = core::coords::serverToCanonical(glm::vec3(serverX, serverY, serverZ));
+    movementInfo.x = canonical.x;
+    movementInfo.y = canonical.y;
+    movementInfo.z = canonical.z;
+    movementInfo.orientation = orientation;
+    movementInfo.flags = 0;
+
+    // Clear world state for the new map
+    entityManager.clear();
+    hostileAttackers_.clear();
+    stopAutoAttack();
+    casting = false;
+    currentCastSpellId = 0;
+    castTimeRemaining = 0.0f;
+
+    // Send MSG_MOVE_WORLDPORT_ACK to tell the server we're ready
+    if (socket) {
+        network::Packet ack(static_cast<uint16_t>(Opcode::MSG_MOVE_WORLDPORT_ACK));
+        socket->send(ack);
+        LOG_INFO("Sent MSG_MOVE_WORLDPORT_ACK");
+    }
+
+    // Reload terrain at new position
+    if (worldEntryCallback_) {
+        worldEntryCallback_(mapId, serverX, serverY, serverZ);
+    }
+}
+
 // ============================================================
 // Taxi / Flight Path Handlers
 // ============================================================
@@ -4555,6 +4733,7 @@ void GameHandler::loadTaxiDbc() {
     // Load TaxiNodes.dbc: 0=ID, 1=mapId, 2=x, 3=y, 4=z, 5=name(enUS locale)
     auto nodesDbc = am->loadDBC("TaxiNodes.dbc");
     if (nodesDbc && nodesDbc->isLoaded()) {
+        uint32_t fieldCount = nodesDbc->getFieldCount();
         for (uint32_t i = 0; i < nodesDbc->getRecordCount(); i++) {
             TaxiNode node;
             node.id = nodesDbc->getUInt32(i, 0);
@@ -4563,8 +4742,24 @@ void GameHandler::loadTaxiDbc() {
             node.y = nodesDbc->getFloat(i, 3);
             node.z = nodesDbc->getFloat(i, 4);
             node.name = nodesDbc->getString(i, 5);
+            // TaxiNodes.dbc (3.3.5a): last two fields are mount display IDs (Alliance, Horde)
+            if (fieldCount >= 24) {
+                node.mountDisplayIdAlliance = nodesDbc->getUInt32(i, 22);
+                node.mountDisplayIdHorde = nodesDbc->getUInt32(i, 23);
+                if (node.mountDisplayIdAlliance == 0 && node.mountDisplayIdHorde == 0 && fieldCount >= 22) {
+                    node.mountDisplayIdAlliance = nodesDbc->getUInt32(i, 20);
+                    node.mountDisplayIdHorde = nodesDbc->getUInt32(i, 21);
+                }
+            }
             if (node.id > 0) {
                 taxiNodes_[node.id] = std::move(node);
+            }
+            if (node.id == 195) {
+                std::string fields;
+                for (uint32_t f = 0; f < fieldCount; f++) {
+                    fields += std::to_string(f) + ":" + std::to_string(nodesDbc->getUInt32(i, f)) + " ";
+                }
+                LOG_INFO("TaxiNodes[195] fields: ", fields);
             }
         }
         LOG_INFO("Loaded ", taxiNodes_.size(), " taxi nodes from TaxiNodes.dbc");
@@ -4626,7 +4821,144 @@ void GameHandler::handleShowTaxiNodes(network::Packet& packet) {
     taxiWindowOpen_ = true;
     gossipWindowOpen = false;
     buildTaxiCostMap();
+    auto it = taxiNodes_.find(data.nearestNode);
+    if (it != taxiNodes_.end()) {
+        LOG_INFO("Taxi node ", data.nearestNode, " mounts: A=", it->second.mountDisplayIdAlliance,
+                 " H=", it->second.mountDisplayIdHorde);
+    }
     LOG_INFO("Taxi window opened, nearest node=", data.nearestNode);
+}
+
+void GameHandler::applyTaxiMountForCurrentNode() {
+    if (taxiMountActive_ || !mountCallback_) return;
+    auto it = taxiNodes_.find(currentTaxiData_.nearestNode);
+    if (it == taxiNodes_.end()) return;
+
+    bool isAlliance = true;
+    switch (playerRace_) {
+        case Race::ORC:
+        case Race::UNDEAD:
+        case Race::TAUREN:
+        case Race::TROLL:
+        case Race::GOBLIN:
+        case Race::BLOOD_ELF:
+            isAlliance = false;
+            break;
+        default:
+            isAlliance = true;
+            break;
+    }
+    uint32_t mountId = isAlliance ? it->second.mountDisplayIdAlliance
+                                  : it->second.mountDisplayIdHorde;
+    if (mountId == 0) {
+        mountId = isAlliance ? it->second.mountDisplayIdHorde
+                             : it->second.mountDisplayIdAlliance;
+    }
+    if (mountId == 0) {
+        auto& app = core::Application::getInstance();
+        uint32_t gryphonId = app.getGryphonDisplayId();
+        uint32_t wyvernId = app.getWyvernDisplayId();
+        if (isAlliance && gryphonId != 0) mountId = gryphonId;
+        if (!isAlliance && wyvernId != 0) mountId = wyvernId;
+        if (mountId == 0) {
+            mountId = (isAlliance ? wyvernId : gryphonId);
+        }
+    }
+    if (mountId == 0) {
+        // Fallback: any non-zero mount display from the node.
+        if (it->second.mountDisplayIdAlliance != 0) mountId = it->second.mountDisplayIdAlliance;
+        else if (it->second.mountDisplayIdHorde != 0) mountId = it->second.mountDisplayIdHorde;
+    }
+    if (mountId == 0 || mountId == 541) {
+        mountId = isAlliance ? 30412u : 30413u;
+    }
+    if (mountId != 0) {
+        taxiMountDisplayId_ = mountId;
+        taxiMountActive_ = true;
+        LOG_INFO("Taxi mount apply: displayId=", mountId);
+        mountCallback_(mountId);
+    }
+}
+
+void GameHandler::startClientTaxiPath(const std::vector<uint32_t>& pathNodes) {
+    taxiClientPath_.clear();
+    taxiClientIndex_ = 0;
+    taxiClientActive_ = false;
+    taxiClientSegmentProgress_ = 0.0f;
+
+    for (uint32_t nodeId : pathNodes) {
+        auto it = taxiNodes_.find(nodeId);
+        if (it == taxiNodes_.end()) continue;
+        glm::vec3 serverPos(it->second.x, it->second.y, it->second.z);
+        glm::vec3 canonical = core::coords::serverToCanonical(serverPos);
+        taxiClientPath_.push_back(canonical);
+    }
+    if (taxiClientPath_.size() < 2) return;
+
+    taxiClientActive_ = true;
+}
+
+void GameHandler::updateClientTaxi(float deltaTime) {
+    if (!taxiClientActive_ || taxiClientPath_.size() < 2) return;
+    if (!entityManager.hasEntity(playerGuid)) return;
+    auto playerEntity = entityManager.getEntity(playerGuid);
+    if (!playerEntity) return;
+
+    if (taxiClientIndex_ + 1 >= taxiClientPath_.size()) {
+        taxiClientActive_ = false;
+        return;
+    }
+
+    glm::vec3 start = taxiClientPath_[taxiClientIndex_];
+    glm::vec3 end = taxiClientPath_[taxiClientIndex_ + 1];
+    glm::vec3 dir = end - start;
+    float segmentLen = glm::length(dir);
+    if (segmentLen < 0.01f) {
+        taxiClientIndex_++;
+        taxiClientSegmentProgress_ = 0.0f;
+        return;
+    }
+
+    taxiClientSegmentProgress_ += taxiClientSpeed_ * deltaTime;
+    float t = taxiClientSegmentProgress_ / segmentLen;
+    if (t >= 1.0f) {
+        taxiClientIndex_++;
+        taxiClientSegmentProgress_ = 0.0f;
+        if (taxiClientIndex_ + 1 >= taxiClientPath_.size()) {
+            taxiClientActive_ = false;
+            onTaxiFlight_ = false;
+            if (taxiMountActive_ && mountCallback_) {
+                mountCallback_(0);
+            }
+            taxiMountActive_ = false;
+            taxiMountDisplayId_ = 0;
+            taxiClientPath_.clear();
+            taxiRecoverPending_ = false;
+            movementInfo.flags = 0;
+            movementInfo.flags2 = 0;
+            if (socket) {
+                sendMovement(Opcode::CMSG_MOVE_STOP);
+                sendMovement(Opcode::CMSG_MOVE_HEARTBEAT);
+            }
+            LOG_INFO("Taxi flight landed (client path)");
+        }
+        return;
+    }
+
+    glm::vec3 dirNorm = dir / segmentLen;
+    glm::vec3 nextPos = start + dirNorm * (t * segmentLen);
+
+    // Add a flight arc to avoid terrain collisions.
+    float arcHeight = std::clamp(segmentLen * 0.15f, 20.0f, 120.0f);
+    float arc = 4.0f * t * (1.0f - t);
+    nextPos.z = glm::mix(start.z, end.z, t) + arcHeight * arc;
+
+    float orientation = std::atan2(dir.y, dir.x) - 1.57079632679f;
+    playerEntity->setPosition(nextPos.x, nextPos.y, nextPos.z, orientation);
+    movementInfo.x = nextPos.x;
+    movementInfo.y = nextPos.y;
+    movementInfo.z = nextPos.z;
+    movementInfo.orientation = orientation;
 }
 
 void GameHandler::handleActivateTaxiReply(network::Packet& packet) {
@@ -4639,10 +4971,23 @@ void GameHandler::handleActivateTaxiReply(network::Packet& packet) {
     if (data.result == 0) {
         onTaxiFlight_ = true;
         taxiWindowOpen_ = false;
+        taxiMountActive_ = false;
+        taxiMountDisplayId_ = 0;
+        taxiActivatePending_ = false;
+        taxiActivateTimer_ = 0.0f;
+        applyTaxiMountForCurrentNode();
         LOG_INFO("Taxi flight started!");
     } else {
         LOG_WARNING("Taxi activation failed, result=", data.result);
         addSystemChatMessage("Cannot take that flight path.");
+        taxiActivatePending_ = false;
+        taxiActivateTimer_ = 0.0f;
+        if (taxiMountActive_ && mountCallback_) {
+            mountCallback_(0);
+        }
+        taxiMountActive_ = false;
+        taxiMountDisplayId_ = 0;
+        onTaxiFlight_ = false;
     }
 }
 
@@ -4689,6 +5034,16 @@ void GameHandler::activateTaxi(uint32_t destNodeId) {
 
     uint32_t startNode = currentTaxiData_.nearestNode;
     if (startNode == 0 || destNodeId == 0 || startNode == destNodeId) return;
+
+    // If already mounted, dismount before starting a taxi flight.
+    if (isMounted()) {
+        LOG_INFO("Taxi activate: dismounting current mount");
+        if (mountCallback_) mountCallback_(0);
+        currentMountDisplayId_ = 0;
+        dismount();
+    }
+
+    addSystemChatMessage("Taxi: requesting flight...");
 
     // BFS to find path from startNode to destNodeId
     std::unordered_map<uint32_t, std::vector<uint32_t>> adj;
@@ -4740,12 +5095,34 @@ void GameHandler::activateTaxi(uint32_t destNodeId) {
         LOG_INFO("Taxi path nodes: ", pathStr);
     }
 
-    auto pkt = ActivateTaxiExpressPacket::build(taxiNpcGuid_, path);
-    socket->send(pkt);
+    uint32_t totalCost = getTaxiCostTo(destNodeId);
+    LOG_INFO("Taxi activate: start=", startNode, " dest=", destNodeId, " cost=", totalCost);
 
-    // Fallback: some servers expect basic CMSG_ACTIVATETAXI.
+    // Some servers only accept basic CMSG_ACTIVATETAXI.
     auto basicPkt = ActivateTaxiPacket::build(taxiNpcGuid_, startNode, destNodeId);
     socket->send(basicPkt);
+
+    // Others accept express with a full node path + cost.
+    auto pkt = ActivateTaxiExpressPacket::build(taxiNpcGuid_, totalCost, path);
+    socket->send(pkt);
+
+    // Optimistically start taxi visuals; server will correct if it denies.
+    taxiActivatePending_ = true;
+    taxiActivateTimer_ = 0.0f;
+    if (!onTaxiFlight_) {
+        onTaxiFlight_ = true;
+        applyTaxiMountForCurrentNode();
+    }
+    startClientTaxiPath(path);
+
+    // Save recovery target in case of disconnect during taxi.
+    auto destIt = taxiNodes_.find(destNodeId);
+    if (destIt != taxiNodes_.end()) {
+        taxiRecoverMapId_ = destIt->second.mapId;
+        taxiRecoverPos_ = core::coords::serverToCanonical(
+            glm::vec3(destIt->second.x, destIt->second.y, destIt->second.z));
+        taxiRecoverPending_ = false;
+    }
 }
 
 // ============================================================

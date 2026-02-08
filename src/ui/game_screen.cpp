@@ -3624,8 +3624,15 @@ void GameScreen::renderTaxiWindow(game::GameHandler& gameHandler) {
 
                 ImGui::TableSetColumnIndex(0);
                 bool isSelected = (selectedNodeId == nodeId);
-                if (ImGui::Selectable(node.name.c_str(), isSelected, ImGuiSelectableFlags_SpanAllColumns)) {
+                if (ImGui::Selectable(node.name.c_str(), isSelected,
+                                      ImGuiSelectableFlags_SpanAllColumns |
+                                      ImGuiSelectableFlags_AllowDoubleClick)) {
                     selectedNodeId = nodeId;
+                    LOG_INFO("Taxi UI: Selected dest=", nodeId);
+                    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                        LOG_INFO("Taxi UI: Double-click activate dest=", nodeId);
+                        gameHandler.activateTaxi(nodeId);
+                    }
                 }
 
                 ImGui::TableSetColumnIndex(1);
@@ -3656,6 +3663,10 @@ void GameScreen::renderTaxiWindow(game::GameHandler& gameHandler) {
 
         ImGui::Spacing();
         ImGui::Separator();
+        if (selectedNodeId != 0 && ImGui::Button("Fly Selected", ImVec2(-1, 0))) {
+            LOG_INFO("Taxi UI: Fly Selected dest=", selectedNodeId);
+            gameHandler.activateTaxi(selectedNodeId);
+        }
         if (ImGui::Button("Close", ImVec2(-1, 0))) {
             gameHandler.closeTaxi();
         }

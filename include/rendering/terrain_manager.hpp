@@ -171,6 +171,7 @@ public:
     void setLoadRadius(int radius) { loadRadius = radius; }
     void setUnloadRadius(int radius) { unloadRadius = radius; }
     void setStreamingEnabled(bool enabled) { streamingEnabled = enabled; }
+    void setUpdateInterval(float seconds) { updateInterval = seconds; }
     void setWaterRenderer(WaterRenderer* renderer) { waterRenderer = renderer; }
     void setM2Renderer(M2Renderer* renderer) { m2Renderer = renderer; }
     void setWMORenderer(WMORenderer* renderer) { wmoRenderer = renderer; }

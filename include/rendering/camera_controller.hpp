@@ -75,6 +75,9 @@ public:
     void setRunSpeedOverride(float speed) { runSpeedOverride_ = speed; }
     void setMounted(bool m) { mounted_ = m; }
     void setMountHeightOffset(float offset) { mountHeightOffset_ = offset; }
+    void setExternalFollow(bool enabled) { externalFollow_ = enabled; }
+    void setExternalMoving(bool moving) { externalMoving_ = moving; }
+    void clearMovementInputs();
 
     // For first-person player hiding
     void setCharacterRenderer(class CharacterRenderer* cr, uint32_t playerId) {
@@ -113,6 +116,7 @@ private:
     float userTargetDistance = 10.0f;   // What the player wants (scroll wheel)
     float currentDistance = 10.0f;      // Smoothed actual distance
     float collisionDistance = 10.0f;    // Max allowed by collision
+    bool externalFollow_ = false;
     static constexpr float MIN_DISTANCE = 0.5f;     // Minimum zoom (first-person threshold)
     static constexpr float MAX_DISTANCE = 50.0f;    // Maximum zoom out
     static constexpr float ZOOM_SMOOTH_SPEED = 15.0f;  // How fast zoom eases
@@ -195,6 +199,7 @@ private:
     float runSpeedOverride_ = 0.0f;
     bool mounted_ = false;
     float mountHeightOffset_ = 0.0f;
+    bool externalMoving_ = false;
 
     // Online mode: trust server position, don't prefer outdoors over WMO floors
     bool onlineMode = false;

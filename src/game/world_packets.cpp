@@ -2667,25 +2667,29 @@ bool ShowTaxiNodesParser::parse(network::Packet& packet, ShowTaxiNodesData& data
 }
 
 bool ActivateTaxiReplyParser::parse(network::Packet& packet, ActivateTaxiReplyData& data) {
-    if (packet.getSize() - packet.getReadPos() < 4) {
+    size_t remaining = packet.getSize() - packet.getReadPos();
+    if (remaining >= 4) {
+        data.result = packet.readUInt32();
+    } else if (remaining >= 1) {
+        data.result = packet.readUInt8();
+    } else {
         LOG_ERROR("ActivateTaxiReplyParser: packet too short");
         return false;
     }
-    data.result = packet.readUInt32();
     LOG_INFO("ActivateTaxiReply: result=", data.result);
     return true;
 }
 
-network::Packet ActivateTaxiExpressPacket::build(uint64_t npcGuid, const std::vector<uint32_t>& pathNodes) {
+network::Packet ActivateTaxiExpressPacket::build(uint64_t npcGuid, uint32_t totalCost, const std::vector<uint32_t>& pathNodes) {
     network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_ACTIVATETAXIEXPRESS));
     packet.writeUInt64(npcGuid);
-    packet.writeUInt32(0);  // totalCost (server recalculates)
+    packet.writeUInt32(totalCost);
     packet.writeUInt32(static_cast<uint32_t>(pathNodes.size()));
     for (uint32_t nodeId : pathNodes) {
         packet.writeUInt32(nodeId);
     }
     LOG_INFO("ActivateTaxiExpress: npc=0x", std::hex, npcGuid, std::dec,
-             " nodes=", pathNodes.size());
+             " cost=", totalCost, " nodes=", pathNodes.size());
     return packet;
 }
 

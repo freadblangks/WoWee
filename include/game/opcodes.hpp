@@ -250,6 +250,9 @@ enum class Opcode : uint16_t {
     // ---- Teleport / Transfer ----
     MSG_MOVE_TELEPORT_ACK            = 0x0C7,
     SMSG_TRANSFER_PENDING            = 0x003F,
+    SMSG_NEW_WORLD                   = 0x003E,
+    MSG_MOVE_WORLDPORT_ACK           = 0x00DC,
+    SMSG_TRANSFER_ABORTED            = 0x0040,
 
     // ---- Speed Changes ----
     SMSG_FORCE_RUN_SPEED_CHANGE      = 0x00E2,
@@ -261,6 +264,8 @@ enum class Opcode : uint16_t {
     // ---- Taxi / Flight Paths ----
     SMSG_SHOWTAXINODES               = 0x01A9,
     SMSG_ACTIVATETAXIREPLY           = 0x01AE,
+    // Some cores send activate taxi reply on 0x029D (observed in logs)
+    SMSG_ACTIVATETAXIREPLY_ALT       = 0x029D,
     SMSG_NEW_TAXI_PATH               = 0x01AF,
     CMSG_ACTIVATETAXIEXPRESS         = 0x0312,
 

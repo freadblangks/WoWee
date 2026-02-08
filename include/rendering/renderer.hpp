@@ -111,6 +111,7 @@ public:
     glm::vec3& getCharacterPosition() { return characterPosition; }
     uint32_t getCharacterInstanceId() const { return characterInstanceId; }
     float getCharacterYaw() const { return characterYaw; }
+    void setCharacterYaw(float yawDeg) { characterYaw = yawDeg; }
 
     // Emote support
     void playEmote(const std::string& emoteName);
@@ -127,6 +128,7 @@ public:
 
     // Mount rendering
     void setMounted(uint32_t mountInstId, float heightOffset);
+    void setTaxiFlight(bool onTaxi) { taxiFlight_ = onTaxi; }
     void clearMount();
     bool isMounted() const { return mountInstanceId_ != 0; }
 
@@ -272,6 +274,7 @@ private:
     // Mount state
     uint32_t mountInstanceId_ = 0;
     float mountHeightOffset_ = 0.0f;
+    bool taxiFlight_ = false;
 
     bool terrainEnabled = true;
     bool terrainLoaded = false;

@@ -503,6 +503,8 @@ public:
         uint32_t mapId = 0;
         float x = 0, y = 0, z = 0;
         std::string name;
+        uint32_t mountDisplayIdAlliance = 0;
+        uint32_t mountDisplayIdHorde = 0;
     };
     struct TaxiPathEdge {
         uint32_t pathId = 0;
@@ -668,6 +670,7 @@ private:
 
     // ---- Teleport handler ----
     void handleTeleportAck(network::Packet& packet);
+    void handleNewWorld(network::Packet& packet);
 
     // ---- Speed change handler ----
     void handleForceRunSpeedChange(network::Packet& packet);
@@ -858,6 +861,7 @@ private:
     std::string pendingInviterName;
 
     uint64_t activeCharacterGuid_ = 0;
+    Race playerRace_ = Race::HUMAN;
 
     // ---- Phase 5: Loot ----
     bool lootWindowOpen = false;
@@ -904,10 +908,25 @@ private:
     ShowTaxiNodesData currentTaxiData_;
     uint64_t taxiNpcGuid_ = 0;
     bool onTaxiFlight_ = false;
+    bool taxiMountActive_ = false;
+    uint32_t taxiMountDisplayId_ = 0;
+    bool taxiActivatePending_ = false;
+    float taxiActivateTimer_ = 0.0f;
+    bool taxiClientActive_ = false;
+    size_t taxiClientIndex_ = 0;
+    std::vector<glm::vec3> taxiClientPath_;
+    float taxiClientSpeed_ = 32.0f;
+    float taxiClientSegmentProgress_ = 0.0f;
+    bool taxiRecoverPending_ = false;
+    uint32_t taxiRecoverMapId_ = 0;
+    glm::vec3 taxiRecoverPos_{0.0f};
     uint32_t knownTaxiMask_[12] = {};  // Track previously known nodes for discovery alerts
     bool taxiMaskInitialized_ = false; // First SMSG_SHOWTAXINODES seeds mask without alerts
     std::unordered_map<uint32_t, uint32_t> taxiCostMap_; // destNodeId -> total cost in copper
     void buildTaxiCostMap();
+    void applyTaxiMountForCurrentNode();
+    void startClientTaxiPath(const std::vector<uint32_t>& pathNodes);
+    void updateClientTaxi(float deltaTime);
 
     // Vendor
     bool vendorWindowOpen = false;

@@ -185,6 +185,9 @@ bool Renderer::initialize(core::Window* win) {
 
     // Create M2 renderer (for doodads)
     m2Renderer = std::make_unique<M2Renderer>();
+    if (wmoRenderer) {
+        m2Renderer->setWMORenderer(wmoRenderer.get());
+    }
     // Note: M2 renderer needs asset manager, will be initialized when terrain loads
 
     // Create zone manager

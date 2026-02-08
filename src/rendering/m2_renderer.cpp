@@ -1,4 +1,5 @@
 #include "rendering/m2_renderer.hpp"
+#include "rendering/wmo_renderer.hpp"
 #include "rendering/texture.hpp"
 #include "rendering/shader.hpp"
 #include "rendering/camera.hpp"
@@ -275,6 +276,7 @@ bool M2Renderer::initialize(pipeline::AssetManager* assets) {
         uniform mat4 uLightSpaceMatrix;
         uniform bool uShadowEnabled;
         uniform float uShadowStrength;
+        uniform bool uInteriorDarken;
 
         out vec4 FragColor;
 
@@ -306,41 +308,48 @@ bool M2Renderer::initialize(pipeline::AssetManager* assets) {
             vec3 normal = normalize(Normal);
             vec3 lightDir = normalize(uLightDir);
 
-            // Two-sided lighting for foliage
-            float diff = max(abs(dot(normal, lightDir)), 0.3);
+            vec3 result;
+            if (uInteriorDarken) {
+                // Interior: dim ambient, minimal directional light
+                float diff = max(abs(dot(normal, lightDir)), 0.0) * 0.15;
+                result = texColor.rgb * (0.55 + diff);
+            } else {
+                // Two-sided lighting for foliage
+                float diff = max(abs(dot(normal, lightDir)), 0.3);
 
-            // Blinn-Phong specular
-            vec3 viewDir = normalize(uViewPos - FragPos);
-            vec3 halfDir = normalize(lightDir + viewDir);
-            float spec = pow(max(dot(normal, halfDir), 0.0), 32.0);
-            vec3 specular = spec * uLightColor * uSpecularIntensity;
+                // Blinn-Phong specular
+                vec3 viewDir = normalize(uViewPos - FragPos);
+                vec3 halfDir = normalize(lightDir + viewDir);
+                float spec = pow(max(dot(normal, halfDir), 0.0), 32.0);
+                vec3 specular = spec * uLightColor * uSpecularIntensity;
 
-            // Shadow mapping
-            float shadow = 1.0;
-            if (uShadowEnabled) {
-                vec4 lsPos = uLightSpaceMatrix * vec4(FragPos, 1.0);
-                vec3 proj = lsPos.xyz / lsPos.w * 0.5 + 0.5;
-                if (proj.z <= 1.0 && proj.x >= 0.0 && proj.x <= 1.0 && proj.y >= 0.0 && proj.y <= 1.0) {
-                    float edgeDist = max(abs(proj.x - 0.5), abs(proj.y - 0.5));
-                    float coverageFade = 1.0 - smoothstep(0.40, 0.49, edgeDist);
-                    float bias = max(0.005 * (1.0 - abs(dot(normal, lightDir))), 0.001);
-                    shadow = 0.0;
-                    vec2 texelSize = vec2(1.0 / 2048.0);
-                    for (int sx = -1; sx <= 1; sx++) {
-                        for (int sy = -1; sy <= 1; sy++) {
-                            shadow += texture(uShadowMap, vec3(proj.xy + vec2(sx, sy) * texelSize, proj.z - bias));
+                // Shadow mapping
+                float shadow = 1.0;
+                if (uShadowEnabled) {
+                    vec4 lsPos = uLightSpaceMatrix * vec4(FragPos, 1.0);
+                    vec3 proj = lsPos.xyz / lsPos.w * 0.5 + 0.5;
+                    if (proj.z <= 1.0 && proj.x >= 0.0 && proj.x <= 1.0 && proj.y >= 0.0 && proj.y <= 1.0) {
+                        float edgeDist = max(abs(proj.x - 0.5), abs(proj.y - 0.5));
+                        float coverageFade = 1.0 - smoothstep(0.40, 0.49, edgeDist);
+                        float bias = max(0.005 * (1.0 - abs(dot(normal, lightDir))), 0.001);
+                        shadow = 0.0;
+                        vec2 texelSize = vec2(1.0 / 2048.0);
+                        for (int sx = -1; sx <= 1; sx++) {
+                            for (int sy = -1; sy <= 1; sy++) {
+                                shadow += texture(uShadowMap, vec3(proj.xy + vec2(sx, sy) * texelSize, proj.z - bias));
+                            }
                         }
+                        shadow /= 9.0;
+                        shadow = mix(1.0, shadow, coverageFade);
                     }
-                    shadow /= 9.0;
-                    shadow = mix(1.0, shadow, coverageFade);
                 }
+                shadow = mix(1.0, shadow, clamp(uShadowStrength, 0.0, 1.0));
+
+                vec3 ambient = uAmbientColor * texColor.rgb;
+                vec3 diffuse = diff * texColor.rgb;
+
+                result = ambient + (diffuse + specular) * shadow;
             }
-            shadow = mix(1.0, shadow, clamp(uShadowStrength, 0.0, 1.0));
-
-            vec3 ambient = uAmbientColor * texColor.rgb;
-            vec3 diffuse = diff * texColor.rgb;
-
-            vec3 result = ambient + (diffuse + specular) * shadow;
 
             // Fog
             float fogDist = length(uViewPos - FragPos);
@@ -1486,6 +1495,14 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
 
         shader->setUniform("uModel", instance.modelMatrix);
         shader->setUniform("uFadeAlpha", fadeAlpha);
+
+        // Dim M2 objects inside WMO interiors
+        bool interior = false;
+        if (wmoRenderer && entry.distSq < 200.0f * 200.0f) {
+            interior = wmoRenderer->isInsideInteriorWMO(
+                instance.position.x, instance.position.y, instance.position.z);
+        }
+        shader->setUniform("uInteriorDarken", interior);
 
         // Upload bone matrices if model has skeletal animation
         bool useBones = model.hasAnimation && !model.disableAnimation && !instance.boneMatrices.empty();

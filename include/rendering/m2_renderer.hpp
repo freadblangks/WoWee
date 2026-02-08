@@ -22,6 +22,7 @@ namespace rendering {
 
 class Shader;
 class Camera;
+class WMORenderer;
 
 /**
  * GPU representation of an M2 model
@@ -276,7 +277,10 @@ public:
     }
     void clearShadowMap() { shadowEnabled = false; }
 
+    void setWMORenderer(WMORenderer* wmo) { wmoRenderer = wmo; }
+
 private:
+    WMORenderer* wmoRenderer = nullptr;
     pipeline::AssetManager* assetManager = nullptr;
     std::unique_ptr<Shader> shader;
 

@@ -100,6 +100,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderQuestRequestItemsWindow(gameHandler);
     renderQuestOfferRewardWindow(gameHandler);
     renderVendorWindow(gameHandler);
+    renderTaxiWindow(gameHandler);
     renderQuestMarkers(gameHandler);
     renderMinimapMarkers(gameHandler);
     renderDeathScreen(gameHandler);
@@ -1535,6 +1536,13 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
 
             if (cmdLower == "clearfocus") {
                 gameHandler.clearFocus();
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            // /unstuck command — resets player position to floor height
+            if (cmdLower == "unstuck") {
+                gameHandler.unstuck();
                 chatInputBuffer[0] = '\0';
                 return;
             }
@@ -3340,6 +3348,71 @@ void GameScreen::renderEscapeMenu() {
         ImGui::PopStyleVar();
     }
     ImGui::End();
+}
+
+// ============================================================
+// Taxi Window
+// ============================================================
+
+void GameScreen::renderTaxiWindow(game::GameHandler& gameHandler) {
+    if (!gameHandler.isTaxiWindowOpen()) return;
+
+    auto* window = core::Application::getInstance().getWindow();
+    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
+
+    ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 200, 150), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(ImVec2(400, 0), ImGuiCond_Always);
+
+    bool open = true;
+    if (ImGui::Begin("Flight Master", &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
+        const auto& taxiData = gameHandler.getTaxiData();
+        const auto& nodes = gameHandler.getTaxiNodes();
+        uint32_t currentNode = gameHandler.getTaxiCurrentNode();
+
+        // Get current node's map to filter destinations
+        uint32_t currentMapId = 0;
+        auto curIt = nodes.find(currentNode);
+        if (curIt != nodes.end()) {
+            currentMapId = curIt->second.mapId;
+            ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Current: %s", curIt->second.name.c_str());
+            ImGui::Separator();
+        }
+
+        ImGui::Text("Select a destination:");
+        ImGui::Spacing();
+
+        // List known destinations on same map, excluding current node
+        int destCount = 0;
+        for (const auto& [nodeId, node] : nodes) {
+            if (nodeId == currentNode) continue;
+            if (node.mapId != currentMapId) continue;
+            if (!taxiData.isNodeKnown(nodeId)) continue;
+
+            ImGui::PushID(static_cast<int>(nodeId));
+            ImGui::Text("%s", node.name.c_str());
+            ImGui::SameLine(ImGui::GetWindowWidth() - 60);
+            if (ImGui::SmallButton("Fly")) {
+                gameHandler.activateTaxi(nodeId);
+            }
+            ImGui::PopID();
+            destCount++;
+        }
+
+        if (destCount == 0) {
+            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No destinations available.");
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        if (ImGui::Button("Close", ImVec2(-1, 0))) {
+            gameHandler.closeTaxi();
+        }
+    }
+    ImGui::End();
+
+    if (!open) {
+        gameHandler.closeTaxi();
+    }
 }
 
 // ============================================================

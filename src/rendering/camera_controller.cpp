@@ -588,15 +588,22 @@ void CameraController::update(float deltaTime) {
                 return base;
             };
 
-            // Use cached floor height if player hasn't moved much horizontally.
-            float floorPosDist = glm::length(glm::vec2(targetPos.x, targetPos.y) - cachedFloorPos);
+            // Sample center + 4 cardinal offsets so narrow M2 objects (rugs,
+            // planks) are reliably detected.  Take the highest result.
             std::optional<float> groundH;
-            if (cachedFloorHeight && floorPosDist < 0.5f) {
-                groundH = cachedFloorHeight;
-            } else {
-                groundH = sampleGround(targetPos.x, targetPos.y);
-                cachedFloorHeight = groundH;
-                cachedFloorPos = glm::vec2(targetPos.x, targetPos.y);
+            {
+                constexpr float FOOTPRINT = 0.4f;
+                const glm::vec2 offsets[] = {
+                    {0.0f, 0.0f},
+                    {FOOTPRINT, 0.0f}, {-FOOTPRINT, 0.0f},
+                    {0.0f, FOOTPRINT}, {0.0f, -FOOTPRINT}
+                };
+                for (const auto& o : offsets) {
+                    auto h = sampleGround(targetPos.x + o.x, targetPos.y + o.y);
+                    if (h && (!groundH || *h > *groundH)) {
+                        groundH = h;
+                    }
+                }
             }
 
             if (groundH) {
@@ -1081,13 +1088,18 @@ void CameraController::reset() {
     };
 
     // Search nearby for a stable, non-steep spawn floor to avoid waterfall/ledge spawns.
+    // In online mode, use a tight search radius since the server dictates position.
     float bestScore = std::numeric_limits<float>::max();
     glm::vec3 bestPos = spawnPos;
     bool foundBest = false;
-    constexpr float radii[] = {0.0f, 6.0f, 12.0f, 18.0f, 24.0f, 32.0f};
+    constexpr float radiiOffline[] = {0.0f, 6.0f, 12.0f, 18.0f, 24.0f, 32.0f};
+    constexpr float radiiOnline[] = {0.0f, 2.0f};
+    const float* radii = onlineMode ? radiiOnline : radiiOffline;
+    const int radiiCount = onlineMode ? 2 : 6;
     constexpr int ANGLES = 16;
     constexpr float PI = 3.14159265f;
-    for (float r : radii) {
+    for (int ri = 0; ri < radiiCount; ri++) {
+        float r = radii[ri];
         int steps = (r <= 0.01f) ? 1 : ANGLES;
         for (int i = 0; i < steps; i++) {
             float a = (2.0f * PI * static_cast<float>(i)) / static_cast<float>(steps);
@@ -1128,8 +1140,9 @@ void CameraController::reset() {
                 const glm::vec3 from(x, y, *h + 0.20f);
                 const bool insideWMO = wmoRenderer->isInsideWMO(x, y, *h + 1.5f, nullptr);
 
-                // Prefer outdoors for default hearth-like spawn points.
-                if (insideWMO) {
+                // Prefer outdoors for default hearth-like spawn points (offline only).
+                // In online mode, trust the server position even if inside a WMO.
+                if (insideWMO && !onlineMode) {
                     score += 120.0f;
                 }
 
@@ -1191,10 +1204,6 @@ void CameraController::reset() {
         spawnPos = bestPos;
         lastGroundZ = spawnPos.z - 0.05f;
     }
-
-    // Invalidate inter-frame floor cache so the first frame probes fresh.
-    cachedFloorHeight.reset();
-    cachedFloorPos = glm::vec2(0.0f);
 
     camera->setRotation(yaw, pitch);
     glm::vec3 forward3D = camera->getForward();

@@ -236,6 +236,15 @@ enum class Opcode : uint16_t {
     // ---- Death/Respawn ----
     CMSG_REPOP_REQUEST               = 0x015A,
     CMSG_SPIRIT_HEALER_ACTIVATE      = 0x0176,
+
+    // ---- Teleport / Transfer ----
+    MSG_MOVE_TELEPORT_ACK            = 0x0C7,
+    SMSG_TRANSFER_PENDING            = 0x003F,
+
+    // ---- Taxi / Flight Paths ----
+    SMSG_SHOWTAXINODES               = 0x01A9,
+    SMSG_ACTIVATETAXIREPLY           = 0x01AE,
+    CMSG_ACTIVATETAXIEXPRESS         = 0x0312,
 };
 
 } // namespace game

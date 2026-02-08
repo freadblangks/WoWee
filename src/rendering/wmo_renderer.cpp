@@ -109,9 +109,12 @@ bool WMORenderer::initialize(pipeline::AssetManager* assets) {
                 texColor = texture(uTexture, TexCoord);
                 // Alpha test only for cutout materials (lattice, grating, etc.)
                 if (uAlphaTest && texColor.a < 0.5) discard;
-                // Multiply vertex color (MOCV baked lighting/AO) into texture
-                texColor.rgb *= VertexColor.rgb;
                 alpha = texColor.a;
+                // Exterior: multiply vertex color (MOCV baked AO) into texture
+                // Interior: keep texture clean — vertex color is used as light below
+                if (!uIsInterior) {
+                    texColor.rgb *= VertexColor.rgb;
+                }
             } else {
                 // MOCV vertex color alpha is a lighting blend factor, not transparency
                 texColor = vec4(VertexColor.rgb, 1.0);
@@ -130,56 +133,56 @@ bool WMORenderer::initialize(pipeline::AssetManager* assets) {
             vec3 normal = normalize(Normal);
             vec3 lightDir = normalize(uLightDir);
 
-            // Interior vs exterior lighting
-            vec3 ambient;
-            float dirScale;
+            vec3 litColor;
             if (uIsInterior) {
-                ambient = vec3(0.7, 0.7, 0.7);
-                dirScale = 0.3;
+                // Interior: MOCV vertex colors are baked lighting.
+                // Use them directly as the light multiplier on the texture.
+                vec3 vertLight = VertexColor.rgb * 2.2 + 0.3;
+                // Subtle directional fill so geometry reads
+                float diff = max(dot(normal, lightDir), 0.0);
+                vertLight += diff * 0.10;
+                litColor = texColor.rgb * vertLight;
             } else {
-                ambient = uAmbientColor;
-                dirScale = 1.0;
-            }
+                // Exterior: standard diffuse + specular lighting
+                vec3 ambient = uAmbientColor;
 
-            // Diffuse lighting
-            float diff = max(dot(normal, lightDir), 0.0);
-            vec3 diffuse = diff * vec3(1.0) * dirScale;
+                float diff = max(dot(normal, lightDir), 0.0);
+                vec3 diffuse = diff * vec3(1.0);
 
-            // Blinn-Phong specular
-            vec3 viewDir = normalize(uViewPos - FragPos);
-            vec3 halfDir = normalize(lightDir + viewDir);
-            float spec = pow(max(dot(normal, halfDir), 0.0), 32.0);
-            vec3 specular = spec * uLightColor * uSpecularIntensity * dirScale;
+                vec3 viewDir = normalize(uViewPos - FragPos);
+                vec3 halfDir = normalize(lightDir + viewDir);
+                float spec = pow(max(dot(normal, halfDir), 0.0), 32.0);
+                vec3 specular = spec * uLightColor * uSpecularIntensity;
 
-            // Shadow mapping
-            float shadow = 1.0;
-            if (uShadowEnabled) {
-                vec4 lsPos = uLightSpaceMatrix * vec4(FragPos, 1.0);
-                vec3 proj = lsPos.xyz / lsPos.w * 0.5 + 0.5;
-                if (proj.z <= 1.0 && proj.x >= 0.0 && proj.x <= 1.0 && proj.y >= 0.0 && proj.y <= 1.0) {
-                    float edgeDist = max(abs(proj.x - 0.5), abs(proj.y - 0.5));
-                    float coverageFade = 1.0 - smoothstep(0.40, 0.49, edgeDist);
-                    float bias = max(0.005 * (1.0 - dot(normal, lightDir)), 0.001);
-                    shadow = 0.0;
-                    vec2 texelSize = vec2(1.0 / 2048.0);
-                    for (int sx = -1; sx <= 1; sx++) {
-                        for (int sy = -1; sy <= 1; sy++) {
-                            shadow += texture(uShadowMap, vec3(proj.xy + vec2(sx, sy) * texelSize, proj.z - bias));
+                // Shadow mapping
+                float shadow = 1.0;
+                if (uShadowEnabled) {
+                    vec4 lsPos = uLightSpaceMatrix * vec4(FragPos, 1.0);
+                    vec3 proj = lsPos.xyz / lsPos.w * 0.5 + 0.5;
+                    if (proj.z <= 1.0 && proj.x >= 0.0 && proj.x <= 1.0 && proj.y >= 0.0 && proj.y <= 1.0) {
+                        float edgeDist = max(abs(proj.x - 0.5), abs(proj.y - 0.5));
+                        float coverageFade = 1.0 - smoothstep(0.40, 0.49, edgeDist);
+                        float bias = max(0.005 * (1.0 - dot(normal, lightDir)), 0.001);
+                        shadow = 0.0;
+                        vec2 texelSize = vec2(1.0 / 2048.0);
+                        for (int sx = -1; sx <= 1; sx++) {
+                            for (int sy = -1; sy <= 1; sy++) {
+                                shadow += texture(uShadowMap, vec3(proj.xy + vec2(sx, sy) * texelSize, proj.z - bias));
+                            }
                         }
+                        shadow /= 9.0;
+                        shadow = mix(1.0, shadow, coverageFade);
                     }
-                    shadow /= 9.0;
-                    shadow = mix(1.0, shadow, coverageFade);
                 }
-            }
-            shadow = mix(1.0, shadow, clamp(uShadowStrength, 0.0, 1.0));
+                shadow = mix(1.0, shadow, clamp(uShadowStrength, 0.0, 1.0));
 
-            // Combine lighting with texture
-            vec3 result = (ambient + (diffuse + specular) * shadow) * texColor.rgb;
+                litColor = (ambient + (diffuse + specular) * shadow) * texColor.rgb;
+            }
 
             // Fog
             float fogDist = length(uViewPos - FragPos);
             float fogFactor = clamp((uFogEnd - fogDist) / (uFogEnd - uFogStart), 0.0, 1.0);
-            result = mix(uFogColor, result, fogFactor);
+            vec3 result = mix(uFogColor, litColor, fogFactor);
 
             FragColor = vec4(result, alpha);
         }
@@ -1833,8 +1836,9 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
                 if (normalLen < 0.001f) continue;
                 normal /= normalLen;
 
-                // Skip near-horizontal triangles (floors/ceilings).
-                if (std::abs(normal.z) > 0.85f) continue;
+                // Skip near-horizontal triangles (floors/ceilings/ramps).
+                // Anything more horizontal than ~55° from vertical is walkable.
+                if (std::abs(normal.z) > 0.55f) continue;
 
                 // Get triangle Z range
                 float triMinZ = std::min({v0.z, v1.z, v2.z});
@@ -1851,9 +1855,6 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
 
                 // Skip low geometry that can be stepped over
                 if (triMaxZ <= localFeetZ + MAX_STEP_HEIGHT) continue;
-
-                // Skip ramp surfaces (facing mostly upward) that are very low
-                if (normal.z > 0.60f && triMaxZ <= localFeetZ + 0.8f) continue;
 
                 // Skip very short vertical surfaces (stair risers)
                 if (triHeight < 0.6f && triMaxZ <= localFeetZ + 0.8f) continue;
@@ -1953,6 +1954,51 @@ bool WMORenderer::isInsideWMO(float glX, float glY, float glZ, uint32_t* outMode
                 localPos.y >= group.boundingBoxMin.y && localPos.y <= group.boundingBoxMax.y &&
                 localPos.z >= group.boundingBoxMin.z && localPos.z <= group.boundingBoxMax.z) {
                 if (outModelId) *outModelId = instance.modelId;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool WMORenderer::isInsideInteriorWMO(float glX, float glY, float glZ) const {
+    glm::vec3 queryMin(glX - 0.5f, glY - 0.5f, glZ - 0.5f);
+    glm::vec3 queryMax(glX + 0.5f, glY + 0.5f, glZ + 0.5f);
+    gatherCandidates(queryMin, queryMax, candidateScratch);
+
+    for (size_t idx : candidateScratch) {
+        const auto& instance = instances[idx];
+        if (collisionFocusEnabled &&
+            pointAABBDistanceSq(collisionFocusPos, instance.worldBoundsMin, instance.worldBoundsMax) > collisionFocusRadiusSq) {
+            continue;
+        }
+        if (glX < instance.worldBoundsMin.x || glX > instance.worldBoundsMax.x ||
+            glY < instance.worldBoundsMin.y || glY > instance.worldBoundsMax.y ||
+            glZ < instance.worldBoundsMin.z || glZ > instance.worldBoundsMax.z) {
+            continue;
+        }
+        auto it = loadedModels.find(instance.modelId);
+        if (it == loadedModels.end()) continue;
+        const ModelData& model = it->second;
+
+        bool anyGroupContains = false;
+        for (size_t gi = 0; gi < model.groups.size() && gi < instance.worldGroupBounds.size(); ++gi) {
+            const auto& [gMin, gMax] = instance.worldGroupBounds[gi];
+            if (glX >= gMin.x && glX <= gMax.x &&
+                glY >= gMin.y && glY <= gMax.y &&
+                glZ >= gMin.z && glZ <= gMax.z) {
+                anyGroupContains = true;
+                break;
+            }
+        }
+        if (!anyGroupContains) continue;
+
+        glm::vec3 localPos = glm::vec3(instance.invModelMatrix * glm::vec4(glX, glY, glZ, 1.0f));
+        for (const auto& group : model.groups) {
+            if (!(group.groupFlags & 0x2000)) continue; // Skip exterior groups
+            if (localPos.x >= group.boundingBoxMin.x && localPos.x <= group.boundingBoxMax.x &&
+                localPos.y >= group.boundingBoxMin.y && localPos.y <= group.boundingBoxMax.y &&
+                localPos.z >= group.boundingBoxMin.z && localPos.z <= group.boundingBoxMax.z) {
                 return true;
             }
         }

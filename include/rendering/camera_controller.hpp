@@ -42,6 +42,7 @@ public:
     }
 
     void reset();
+    void setOnlineMode(bool online) { onlineMode = online; }
     void startIntroPan(float durationSec = 2.8f, float orbitDegrees = 140.0f);
     bool isIntroActive() const { return introActive; }
 
@@ -63,6 +64,7 @@ public:
     bool isSitting() const { return sitting; }
     bool isSwimming() const { return swimming; }
     const glm::vec3* getFollowTarget() const { return followTarget; }
+    glm::vec3* getFollowTargetMutable() { return followTarget; }
 
     // Movement callback for sending opcodes to server
     using MovementCallback = std::function<void(uint32_t opcode)>;
@@ -134,10 +136,6 @@ private:
     static constexpr float JUMP_BUFFER_TIME = 0.15f;  // 150ms input buffer
     static constexpr float COYOTE_TIME = 0.10f;        // 100ms grace after leaving ground
 
-    // Cached floor height between frames (skip expensive probes when barely moving)
-    std::optional<float> cachedFloorHeight;
-    glm::vec2 cachedFloorPos = glm::vec2(0.0f);
-
     // Cached isInsideWMO result (throttled to avoid per-frame cost)
     bool cachedInsideWMO = false;
     int insideWMOCheckCounter = 0;
@@ -187,6 +185,9 @@ private:
     static constexpr float WOW_TURN_SPEED = 180.0f;  // Keyboard turn deg/sec
     static constexpr float WOW_GRAVITY = -19.29f;
     static constexpr float WOW_JUMP_VELOCITY = 7.96f;
+
+    // Online mode: trust server position, don't prefer outdoors over WMO floors
+    bool onlineMode = false;
 
     // Default spawn position (Goldshire Inn)
     glm::vec3 defaultPosition = glm::vec3(-9464.0f, 62.0f, 200.0f);

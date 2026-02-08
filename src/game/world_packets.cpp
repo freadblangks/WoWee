@@ -2591,5 +2591,48 @@ network::Packet SpiritHealerActivatePacket::build(uint64_t npcGuid) {
     return packet;
 }
 
+// ============================================================
+// Taxi / Flight Paths
+// ============================================================
+
+bool ShowTaxiNodesParser::parse(network::Packet& packet, ShowTaxiNodesData& data) {
+    if (packet.getSize() - packet.getReadPos() < 4 + 8 + 4 + TLK_TAXI_MASK_SIZE * 4) {
+        LOG_ERROR("ShowTaxiNodesParser: packet too short");
+        return false;
+    }
+    data.windowInfo = packet.readUInt32();
+    data.npcGuid = packet.readUInt64();
+    data.nearestNode = packet.readUInt32();
+    for (uint32_t i = 0; i < TLK_TAXI_MASK_SIZE; ++i) {
+        data.nodeMask[i] = packet.readUInt32();
+    }
+    LOG_INFO("ShowTaxiNodes: window=", data.windowInfo, " npc=0x", std::hex, data.npcGuid, std::dec,
+             " nearest=", data.nearestNode);
+    return true;
+}
+
+bool ActivateTaxiReplyParser::parse(network::Packet& packet, ActivateTaxiReplyData& data) {
+    if (packet.getSize() - packet.getReadPos() < 4) {
+        LOG_ERROR("ActivateTaxiReplyParser: packet too short");
+        return false;
+    }
+    data.result = packet.readUInt32();
+    LOG_INFO("ActivateTaxiReply: result=", data.result);
+    return true;
+}
+
+network::Packet ActivateTaxiExpressPacket::build(uint64_t npcGuid, const std::vector<uint32_t>& pathNodes) {
+    network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_ACTIVATETAXIEXPRESS));
+    packet.writeUInt64(npcGuid);
+    packet.writeUInt32(0);  // totalCost (server recalculates)
+    packet.writeUInt32(static_cast<uint32_t>(pathNodes.size()));
+    for (uint32_t nodeId : pathNodes) {
+        packet.writeUInt32(nodeId);
+    }
+    LOG_INFO("ActivateTaxiExpress: npc=0x", std::hex, npcGuid, std::dec,
+             " nodes=", pathNodes.size());
+    return packet;
+}
+
 } // namespace game
 } // namespace wowee

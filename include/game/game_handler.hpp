@@ -364,6 +364,11 @@ public:
     using WorldEntryCallback = std::function<void(uint32_t mapId, float x, float y, float z)>;
     void setWorldEntryCallback(WorldEntryCallback cb) { worldEntryCallback_ = std::move(cb); }
 
+    // Unstuck callback (resets player Z to floor height)
+    using UnstuckCallback = std::function<void()>;
+    void setUnstuckCallback(UnstuckCallback cb) { unstuckCallback_ = std::move(cb); }
+    void unstuck();
+
     // Creature spawn callback (online mode - triggered when creature enters view)
     // Parameters: guid, displayId, x, y, z (canonical), orientation
     using CreatureSpawnCallback = std::function<void(uint64_t guid, uint32_t displayId, float x, float y, float z, float orientation)>;
@@ -449,6 +454,27 @@ public:
         return (it != npcQuestStatus_.end()) ? it->second : QuestGiverStatus::NONE;
     }
     const std::unordered_map<uint64_t, QuestGiverStatus>& getNpcQuestStatuses() const { return npcQuestStatus_; }
+
+    // Taxi / Flight Paths
+    bool isTaxiWindowOpen() const { return taxiWindowOpen_; }
+    void closeTaxi();
+    void activateTaxi(uint32_t destNodeId);
+    bool isOnTaxiFlight() const { return onTaxiFlight_; }
+    const ShowTaxiNodesData& getTaxiData() const { return currentTaxiData_; }
+    uint32_t getTaxiCurrentNode() const { return currentTaxiData_.nearestNode; }
+
+    struct TaxiNode {
+        uint32_t id = 0;
+        uint32_t mapId = 0;
+        float x = 0, y = 0, z = 0;
+        std::string name;
+    };
+    struct TaxiPathEdge {
+        uint32_t pathId = 0;
+        uint32_t fromNode = 0, toNode = 0;
+        uint32_t cost = 0;
+    };
+    const std::unordered_map<uint32_t, TaxiNode>& getTaxiNodes() const { return taxiNodes_; }
 
     // Vendor
     void openVendor(uint64_t npcGuid);
@@ -601,6 +627,14 @@ private:
     void handleListInventory(network::Packet& packet);
     void addMoneyCopper(uint32_t amount);
 
+    // ---- Teleport handler ----
+    void handleTeleportAck(network::Packet& packet);
+
+    // ---- Taxi handlers ----
+    void handleShowTaxiNodes(network::Packet& packet);
+    void handleActivateTaxiReply(network::Packet& packet);
+    void loadTaxiDbc();
+
     // ---- Server info handlers ----
     void handleQueryTimeResponse(network::Packet& packet);
     void handlePlayedTime(network::Packet& packet);
@@ -686,8 +720,9 @@ private:
     float pingInterval = 30.0f;              // Ping interval (30 seconds)
     uint32_t lastLatency = 0;                // Last measured latency (milliseconds)
 
-    // Player GUID
+    // Player GUID and map
     uint64_t playerGuid = 0;
+    uint32_t currentMapId_ = 0;
 
     // ---- Phase 1: Name caches ----
     std::unordered_map<uint64_t, std::string> playerNameCache;
@@ -742,6 +777,7 @@ private:
 
     // ---- Phase 3: Spells ----
     WorldEntryCallback worldEntryCallback_;
+    UnstuckCallback unstuckCallback_;
     CreatureSpawnCallback creatureSpawnCallback_;
     CreatureDespawnCallback creatureDespawnCallback_;
     CreatureMoveCallback creatureMoveCallback_;
@@ -799,6 +835,15 @@ private:
         auto it = factionHostileMap_.find(factionTemplateId);
         return it != factionHostileMap_.end() ? it->second : true; // default hostile if unknown
     }
+
+    // Taxi / Flight Paths
+    std::unordered_map<uint32_t, TaxiNode> taxiNodes_;
+    std::vector<TaxiPathEdge> taxiPathEdges_;
+    bool taxiDbcLoaded_ = false;
+    bool taxiWindowOpen_ = false;
+    ShowTaxiNodesData currentTaxiData_;
+    uint64_t taxiNpcGuid_ = 0;
+    bool onTaxiFlight_ = false;
 
     // Vendor
     bool vendorWindowOpen = false;

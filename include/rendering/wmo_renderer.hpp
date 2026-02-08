@@ -204,6 +204,12 @@ public:
     bool isInsideWMO(float glX, float glY, float glZ, uint32_t* outModelId = nullptr) const;
 
     /**
+     * Check if a position is inside an interior WMO group (flag 0x2000).
+     * Used to dim M2 lighting for doodads placed indoors.
+     */
+    bool isInsideInteriorWMO(float glX, float glY, float glZ) const;
+
+    /**
      * Raycast against WMO bounding boxes for camera collision
      * @param origin Ray origin (e.g., character head position)
      * @param direction Ray direction (normalized)

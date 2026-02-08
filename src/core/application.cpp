@@ -530,6 +530,38 @@ void Application::setupUICallbacks() {
         loadOnlineWorldTerrain(mapId, x, y, z);
     });
 
+    // Unstuck callback — snap player Z to WMO/terrain floor height
+    gameHandler->setUnstuckCallback([this]() {
+        if (!renderer || !renderer->getCameraController()) return;
+        auto* cc = renderer->getCameraController();
+        auto* ft = cc->getFollowTargetMutable();
+        if (!ft) return;
+        // Probe floor at current XY from high up to find WMO floors above
+        auto* wmo = renderer->getWMORenderer();
+        auto* terrain = renderer->getTerrainManager();
+        float bestZ = ft->z;
+        bool found = false;
+        // Probe from well above to catch WMO floors like Stormwind
+        float probeZ = ft->z + 200.0f;
+        if (wmo) {
+            auto wmoH = wmo->getFloorHeight(ft->x, ft->y, probeZ);
+            if (wmoH) {
+                bestZ = *wmoH;
+                found = true;
+            }
+        }
+        if (terrain) {
+            auto terrH = terrain->getHeightAt(ft->x, ft->y);
+            if (terrH && (!found || *terrH > bestZ)) {
+                bestZ = *terrH;
+                found = true;
+            }
+        }
+        if (found) {
+            ft->z = bestZ;
+        }
+    });
+
     // Faction hostility map is built in buildFactionHostilityMap() when character enters world
 
     // Creature spawn callback (online mode) - spawn creature models
@@ -1336,6 +1368,7 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
 
     // Set camera position
     if (renderer->getCameraController()) {
+        renderer->getCameraController()->setOnlineMode(true);
         renderer->getCameraController()->setDefaultSpawn(spawnRender, 0.0f, 15.0f);
         renderer->getCameraController()->reset();
         renderer->getCameraController()->startIntroPan(2.8f, 140.0f);
@@ -1361,21 +1394,19 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
         }
     }
 
-    // Spawn player model for online mode
+    // Spawn player model for online mode (skip if already spawned, e.g. teleport)
     if (gameHandler) {
         const game::Character* activeChar = gameHandler->getActiveCharacter();
         if (activeChar) {
-            playerRace_ = activeChar->race;
-            playerGender_ = activeChar->gender;
-            playerClass_ = activeChar->characterClass;
-            spawnSnapToGround = false;
-            playerCharacterSpawned = false;
-            spawnPlayerCharacter();
+            if (!playerCharacterSpawned) {
+                playerRace_ = activeChar->race;
+                playerGender_ = activeChar->gender;
+                playerClass_ = activeChar->characterClass;
+                spawnSnapToGround = false;
+                spawnPlayerCharacter();
+            }
             renderer->getCharacterPosition() = spawnRender;
-            LOG_INFO("Spawned online player model: ", activeChar->name,
-                     " (race=", static_cast<int>(playerRace_),
-                     ", gender=", static_cast<int>(playerGender_),
-                     ") at render pos (", spawnRender.x, ", ", spawnRender.y, ", ", spawnRender.z, ")");
+            LOG_INFO("Online player at render pos (", spawnRender.x, ", ", spawnRender.y, ", ", spawnRender.z, ")");
         } else {
             LOG_WARNING("No active character found for player model spawning");
         }

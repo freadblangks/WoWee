@@ -1652,6 +1652,48 @@ public:
     static bool parse(network::Packet& packet, ListInventoryData& data);
 };
 
+// ============================================================
+// Taxi / Flight Paths
+// ============================================================
+
+static constexpr uint32_t TLK_TAXI_MASK_SIZE = 12;
+
+/** SMSG_SHOWTAXINODES data */
+struct ShowTaxiNodesData {
+    uint32_t windowInfo = 0;        // 1 = show window
+    uint64_t npcGuid = 0;
+    uint32_t nearestNode = 0;       // Taxi node player is at
+    uint32_t nodeMask[TLK_TAXI_MASK_SIZE] = {};
+    bool isNodeKnown(uint32_t nodeId) const {
+        uint32_t idx = nodeId / 32;
+        uint32_t bit = nodeId % 32;
+        return idx < TLK_TAXI_MASK_SIZE && (nodeMask[idx] & (1u << bit));
+    }
+};
+
+/** SMSG_SHOWTAXINODES parser */
+class ShowTaxiNodesParser {
+public:
+    static bool parse(network::Packet& packet, ShowTaxiNodesData& data);
+};
+
+/** SMSG_ACTIVATETAXIREPLY data */
+struct ActivateTaxiReplyData {
+    uint32_t result = 0; // 0 = OK
+};
+
+/** SMSG_ACTIVATETAXIREPLY parser */
+class ActivateTaxiReplyParser {
+public:
+    static bool parse(network::Packet& packet, ActivateTaxiReplyData& data);
+};
+
+/** CMSG_ACTIVATETAXIEXPRESS packet builder */
+class ActivateTaxiExpressPacket {
+public:
+    static network::Packet build(uint64_t npcGuid, const std::vector<uint32_t>& pathNodes);
+};
+
 /** CMSG_REPOP_REQUEST packet builder */
 class RepopRequestPacket {
 public:

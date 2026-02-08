@@ -177,6 +177,18 @@ void GameHandler::update(float deltaTime) {
         // Update combat text (Phase 2)
         updateCombatText(deltaTime);
 
+        // Detect taxi flight landing: UNIT_FLAG_TAXI_FLIGHT (0x00000100) cleared
+        if (onTaxiFlight_) {
+            auto playerEntity = entityManager.getEntity(playerGuid);
+            if (playerEntity && playerEntity->getType() == ObjectType::UNIT) {
+                auto unit = std::static_pointer_cast<Unit>(playerEntity);
+                if ((unit->getUnitFlags() & 0x00000100) == 0) {
+                    onTaxiFlight_ = false;
+                    LOG_INFO("Taxi flight landed");
+                }
+            }
+        }
+
         // Update entity movement interpolation (keeps targeting in sync with visuals)
         for (auto& [guid, entity] : entityManager.getEntities()) {
             entity->updateMovement(deltaTime);
@@ -238,7 +250,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
 
         case Opcode::SMSG_LOGIN_VERIFY_WORLD:
-            if (state == WorldState::ENTERING_WORLD) {
+            if (state == WorldState::ENTERING_WORLD || state == WorldState::IN_WORLD) {
                 handleLoginVerifyWorld(packet);
             } else {
                 LOG_WARNING("Unexpected SMSG_LOGIN_VERIFY_WORLD in state: ", (int)state);
@@ -621,6 +633,22 @@ void GameHandler::handlePacket(network::Packet& packet) {
             LOG_DEBUG("Ignoring known opcode: 0x", std::hex, opcode, std::dec);
             break;
 
+        // ---- Teleport / Transfer ----
+        case Opcode::MSG_MOVE_TELEPORT_ACK:
+            handleTeleportAck(packet);
+            break;
+        case Opcode::SMSG_TRANSFER_PENDING:
+            LOG_INFO("SMSG_TRANSFER_PENDING received - map transfer incoming");
+            break;
+
+        // ---- Taxi / Flight Paths ----
+        case Opcode::SMSG_SHOWTAXINODES:
+            handleShowTaxiNodes(packet);
+            break;
+        case Opcode::SMSG_ACTIVATETAXIREPLY:
+            handleActivateTaxiReply(packet);
+            break;
+
         default:
             LOG_WARNING("Unhandled world opcode: 0x", std::hex, opcode, std::dec);
             break;
@@ -964,7 +992,8 @@ void GameHandler::handleLoginVerifyWorld(network::Packet& packet) {
         return;
     }
 
-    // Successfully entered the world!
+    // Successfully entered the world (or teleported)
+    currentMapId_ = data.mapId;
     setState(WorldState::IN_WORLD);
 
     LOG_INFO("========================================");
@@ -974,7 +1003,6 @@ void GameHandler::handleLoginVerifyWorld(network::Packet& packet) {
     LOG_INFO("Position: (", data.x, ", ", data.y, ", ", data.z, ")");
     LOG_INFO("Orientation: ", data.orientation, " radians");
     LOG_INFO("Player is now in the game world");
-    addSystemChatMessage("You have entered the world.");
 
     // Initialize movement info with world entry position (server → canonical)
     glm::vec3 canonical = core::coords::serverToCanonical(glm::vec3(data.x, data.y, data.z));
@@ -1072,6 +1100,9 @@ void GameHandler::sendMovement(Opcode opcode) {
         LOG_WARNING("Cannot send movement in state: ", (int)state);
         return;
     }
+
+    // Block movement during taxi flight
+    if (onTaxiFlight_) return;
 
     // Use real millisecond timestamp (server validates for anti-cheat)
     static auto startTime = std::chrono::steady_clock::now();
@@ -3617,6 +3648,13 @@ void GameHandler::useItemById(uint32_t itemId) {
     }
 }
 
+void GameHandler::unstuck() {
+    if (unstuckCallback_) {
+        unstuckCallback_();
+        addSystemChatMessage("Unstuck: position reset to floor.");
+    }
+}
+
 void GameHandler::handleLootResponse(network::Packet& packet) {
     if (!LootResponseParser::parse(packet, currentLoot)) return;
     lootWindowOpen = true;
@@ -3772,6 +3810,221 @@ void GameHandler::addSystemChatMessage(const std::string& message) {
     msg.language = ChatLanguage::UNIVERSAL;
     msg.message = message;
     addLocalChatMessage(msg);
+}
+
+// ============================================================
+// Teleport Handler
+// ============================================================
+
+void GameHandler::handleTeleportAck(network::Packet& packet) {
+    // MSG_MOVE_TELEPORT_ACK (server→client): packedGuid + u32 counter + u32 time
+    // followed by movement info with the new position
+    if (packet.getSize() - packet.getReadPos() < 4) {
+        LOG_WARNING("MSG_MOVE_TELEPORT_ACK too short");
+        return;
+    }
+
+    uint64_t guid = UpdateObjectParser::readPackedGuid(packet);
+    if (packet.getSize() - packet.getReadPos() < 4) return;
+    uint32_t counter = packet.readUInt32();
+
+    // Read the movement info embedded in the teleport
+    // Format: u32 flags, u16 flags2, u32 time, float x, float y, float z, float o
+    if (packet.getSize() - packet.getReadPos() < 4 + 2 + 4 + 4 * 4) {
+        LOG_WARNING("MSG_MOVE_TELEPORT_ACK: not enough data for movement info");
+        return;
+    }
+
+    packet.readUInt32();  // moveFlags
+    packet.readUInt16();  // moveFlags2
+    uint32_t moveTime = packet.readUInt32();
+    float serverX = packet.readFloat();
+    float serverY = packet.readFloat();
+    float serverZ = packet.readFloat();
+    float orientation = packet.readFloat();
+
+    LOG_INFO("MSG_MOVE_TELEPORT_ACK: guid=0x", std::hex, guid, std::dec,
+             " counter=", counter,
+             " pos=(", serverX, ", ", serverY, ", ", serverZ, ")");
+
+    // Update our position
+    glm::vec3 canonical = core::coords::serverToCanonical(glm::vec3(serverX, serverY, serverZ));
+    movementInfo.x = canonical.x;
+    movementInfo.y = canonical.y;
+    movementInfo.z = canonical.z;
+    movementInfo.orientation = orientation;
+    movementInfo.flags = 0;
+
+    // Send the ack back to the server
+    // Client→server MSG_MOVE_TELEPORT_ACK: u64 guid + u32 counter + u32 time
+    if (socket) {
+        network::Packet ack(static_cast<uint16_t>(Opcode::MSG_MOVE_TELEPORT_ACK));
+        // Write packed guid
+        uint8_t mask = 0;
+        uint8_t bytes[8];
+        int byteCount = 0;
+        uint64_t g = playerGuid;
+        for (int i = 0; i < 8; i++) {
+            uint8_t b = static_cast<uint8_t>(g & 0xFF);
+            g >>= 8;
+            if (b != 0) {
+                mask |= (1 << i);
+                bytes[byteCount++] = b;
+            }
+        }
+        ack.writeUInt8(mask);
+        for (int i = 0; i < byteCount; i++) {
+            ack.writeUInt8(bytes[i]);
+        }
+        ack.writeUInt32(counter);
+        ack.writeUInt32(moveTime);
+        socket->send(ack);
+        LOG_INFO("Sent MSG_MOVE_TELEPORT_ACK response");
+    }
+
+    // Notify application to reload terrain at new position
+    if (worldEntryCallback_) {
+        worldEntryCallback_(currentMapId_, serverX, serverY, serverZ);
+    }
+}
+
+// ============================================================
+// Taxi / Flight Path Handlers
+// ============================================================
+
+void GameHandler::loadTaxiDbc() {
+    if (taxiDbcLoaded_) return;
+    taxiDbcLoaded_ = true;
+
+    auto* am = core::Application::getInstance().getAssetManager();
+    if (!am || !am->isInitialized()) return;
+
+    // Load TaxiNodes.dbc: 0=ID, 1=mapId, 2=x, 3=y, 4=z, 6=name
+    auto nodesDbc = am->loadDBC("TaxiNodes.dbc");
+    if (nodesDbc && nodesDbc->isLoaded()) {
+        for (uint32_t i = 0; i < nodesDbc->getRecordCount(); i++) {
+            TaxiNode node;
+            node.id = nodesDbc->getUInt32(i, 0);
+            node.mapId = nodesDbc->getUInt32(i, 1);
+            node.x = nodesDbc->getFloat(i, 2);
+            node.y = nodesDbc->getFloat(i, 3);
+            node.z = nodesDbc->getFloat(i, 4);
+            node.name = nodesDbc->getString(i, 6);
+            if (node.id > 0) {
+                taxiNodes_[node.id] = std::move(node);
+            }
+        }
+        LOG_INFO("Loaded ", taxiNodes_.size(), " taxi nodes from TaxiNodes.dbc");
+    } else {
+        LOG_WARNING("Could not load TaxiNodes.dbc");
+    }
+
+    // Load TaxiPath.dbc: 0=pathId, 1=fromNode, 2=toNode, 3=cost
+    auto pathDbc = am->loadDBC("TaxiPath.dbc");
+    if (pathDbc && pathDbc->isLoaded()) {
+        for (uint32_t i = 0; i < pathDbc->getRecordCount(); i++) {
+            TaxiPathEdge edge;
+            edge.pathId = pathDbc->getUInt32(i, 0);
+            edge.fromNode = pathDbc->getUInt32(i, 1);
+            edge.toNode = pathDbc->getUInt32(i, 2);
+            edge.cost = pathDbc->getUInt32(i, 3);
+            taxiPathEdges_.push_back(edge);
+        }
+        LOG_INFO("Loaded ", taxiPathEdges_.size(), " taxi path edges from TaxiPath.dbc");
+    } else {
+        LOG_WARNING("Could not load TaxiPath.dbc");
+    }
+}
+
+void GameHandler::handleShowTaxiNodes(network::Packet& packet) {
+    ShowTaxiNodesData data;
+    if (!ShowTaxiNodesParser::parse(packet, data)) {
+        LOG_WARNING("Failed to parse SMSG_SHOWTAXINODES");
+        return;
+    }
+
+    loadTaxiDbc();
+
+    currentTaxiData_ = data;
+    taxiNpcGuid_ = data.npcGuid;
+    taxiWindowOpen_ = true;
+    gossipWindowOpen = false;
+    LOG_INFO("Taxi window opened, nearest node=", data.nearestNode);
+}
+
+void GameHandler::handleActivateTaxiReply(network::Packet& packet) {
+    ActivateTaxiReplyData data;
+    if (!ActivateTaxiReplyParser::parse(packet, data)) {
+        LOG_WARNING("Failed to parse SMSG_ACTIVATETAXIREPLY");
+        return;
+    }
+
+    if (data.result == 0) {
+        onTaxiFlight_ = true;
+        taxiWindowOpen_ = false;
+        LOG_INFO("Taxi flight started!");
+    } else {
+        LOG_WARNING("Taxi activation failed, result=", data.result);
+        addSystemChatMessage("Cannot take that flight path.");
+    }
+}
+
+void GameHandler::closeTaxi() {
+    taxiWindowOpen_ = false;
+}
+
+void GameHandler::activateTaxi(uint32_t destNodeId) {
+    if (!socket || state != WorldState::IN_WORLD) return;
+
+    uint32_t startNode = currentTaxiData_.nearestNode;
+    if (startNode == 0 || destNodeId == 0 || startNode == destNodeId) return;
+
+    // BFS to find path from startNode to destNodeId through known nodes
+    // Build adjacency list from edges where both nodes are known
+    std::unordered_map<uint32_t, std::vector<uint32_t>> adj;
+    for (const auto& edge : taxiPathEdges_) {
+        if (currentTaxiData_.isNodeKnown(edge.fromNode) && currentTaxiData_.isNodeKnown(edge.toNode)) {
+            adj[edge.fromNode].push_back(edge.toNode);
+        }
+    }
+
+    // BFS
+    std::unordered_map<uint32_t, uint32_t> parent;
+    std::deque<uint32_t> queue;
+    queue.push_back(startNode);
+    parent[startNode] = startNode;
+
+    bool found = false;
+    while (!queue.empty()) {
+        uint32_t cur = queue.front();
+        queue.pop_front();
+        if (cur == destNodeId) { found = true; break; }
+        for (uint32_t next : adj[cur]) {
+            if (parent.find(next) == parent.end()) {
+                parent[next] = cur;
+                queue.push_back(next);
+            }
+        }
+    }
+
+    if (!found) {
+        LOG_WARNING("No taxi path found from node ", startNode, " to ", destNodeId);
+        addSystemChatMessage("No flight path available to that destination.");
+        return;
+    }
+
+    // Reconstruct path
+    std::vector<uint32_t> path;
+    for (uint32_t n = destNodeId; n != startNode; n = parent[n]) {
+        path.push_back(n);
+    }
+    path.push_back(startNode);
+    std::reverse(path.begin(), path.end());
+
+    LOG_INFO("Taxi path: ", path.size(), " nodes, from ", startNode, " to ", destNodeId);
+
+    auto pkt = ActivateTaxiExpressPacket::build(taxiNpcGuid_, path);
+    socket->send(pkt);
 }
 
 // ============================================================

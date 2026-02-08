@@ -21,10 +21,12 @@
 #include "pipeline/m2_loader.hpp"
 #include <algorithm>
 #include "pipeline/asset_manager.hpp"
+#include "pipeline/dbc_loader.hpp"
 #include "pipeline/m2_loader.hpp"
 #include "pipeline/wmo_loader.hpp"
 #include "pipeline/adt_loader.hpp"
 #include "pipeline/terrain_mesh.hpp"
+#include "core/application.hpp"
 #include "core/window.hpp"
 #include "core/logger.hpp"
 #include "game/world.hpp"
@@ -47,34 +49,163 @@ namespace wowee {
 namespace rendering {
 
 struct EmoteInfo {
-    uint32_t animId;
-    bool loop;
-    std::string text;
+    uint32_t animId = 0;
+    bool loop = false;
+    std::string textNoTarget;
+    std::string textTarget;
+    std::string command;
 };
 
-// AnimationData.dbc IDs for WotLK HumanMale emotes
-// Reference: https://wowdev.wiki/M2/AnimationList
-static const std::unordered_map<std::string, EmoteInfo> EMOTE_TABLE = {
-    {"wave",    {67,  false, "waves."}},
-    {"bow",     {66,  false, "bows down graciously."}},
-    {"laugh",   {70,  false, "laughs."}},
-    {"point",   {84,  false, "points over there."}},
-    {"cheer",   {68,  false, "cheers!"}},
-    {"dance",   {69,  true,  "begins to dance."}},
-    {"kneel",   {75,  false, "kneels down."}},
-    {"applaud", {80,  false, "applauds."}},
-    {"shout",   {81,  false, "shouts."}},
-    {"chicken", {78,  false, "clucks like a chicken."}},
-    {"cry",     {77,  false, "cries."}},
-    {"kiss",    {76,  false, "blows a kiss."}},
-    {"roar",    {74,  false, "roars with bestial vigor."}},
-    {"salute",  {113, false, "salutes."}},
-    {"rude",    {73,  false, "makes a rude gesture."}},
-    {"flex",    {82,  false, "flexes muscles."}},
-    {"shy",     {83,  false, "acts shy."}},
-    {"beg",     {79,  false, "begs everyone around."}},
-    {"eat",     {61,  false, "begins to eat."}},
-};
+static std::unordered_map<std::string, EmoteInfo> EMOTE_TABLE;
+static bool emoteTableLoaded = false;
+
+static std::vector<std::string> parseEmoteCommands(const std::string& raw) {
+    std::vector<std::string> out;
+    std::string cur;
+    for (char c : raw) {
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_') {
+            cur.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+        } else if (!cur.empty()) {
+            out.push_back(cur);
+            cur.clear();
+        }
+    }
+    if (!cur.empty()) out.push_back(cur);
+    return out;
+}
+
+static bool isLoopingEmote(const std::string& command) {
+    static const std::unordered_set<std::string> kLooping = {
+        "dance",
+        "train",
+    };
+    return kLooping.find(command) != kLooping.end();
+}
+
+static void loadFallbackEmotes() {
+    if (!EMOTE_TABLE.empty()) return;
+    EMOTE_TABLE = {
+        {"wave",    {67,  false, "You wave.", "You wave at %s.", "wave"}},
+        {"bow",     {66,  false, "You bow down graciously.", "You bow down before %s.", "bow"}},
+        {"laugh",   {70,  false, "You laugh.", "You laugh at %s.", "laugh"}},
+        {"point",   {84,  false, "You point over yonder.", "You point at %s.", "point"}},
+        {"cheer",   {68,  false, "You cheer!", "You cheer at %s.", "cheer"}},
+        {"dance",   {69,  true,  "You burst into dance.", "You dance with %s.", "dance"}},
+        {"kneel",   {75,  false, "You kneel down.", "You kneel before %s.", "kneel"}},
+        {"applaud", {80,  false, "You applaud. Bravo!", "You applaud at %s. Bravo!", "applaud"}},
+        {"shout",   {81,  false, "You shout.", "You shout at %s.", "shout"}},
+        {"chicken", {78,  false, "With arms flapping, you strut around. Cluck, Cluck, Chicken!",
+                     "With arms flapping, you strut around %s. Cluck, Cluck, Chicken!", "chicken"}},
+        {"cry",     {77,  false, "You cry.", "You cry on %s's shoulder.", "cry"}},
+        {"kiss",    {76,  false, "You blow a kiss into the wind.", "You blow a kiss to %s.", "kiss"}},
+        {"roar",    {74,  false, "You roar with bestial vigor. So fierce!", "You roar with bestial vigor at %s. So fierce!", "roar"}},
+        {"salute",  {113, false, "You salute.", "You salute %s with respect.", "salute"}},
+        {"rude",    {73,  false, "You make a rude gesture.", "You make a rude gesture at %s.", "rude"}},
+        {"flex",    {82,  false, "You flex your muscles. Oooooh so strong!", "You flex at %s. Oooooh so strong!", "flex"}},
+        {"shy",     {83,  false, "You smile shyly.", "You smile shyly at %s.", "shy"}},
+        {"beg",     {79,  false, "You beg everyone around you. How pathetic.", "You beg %s. How pathetic.", "beg"}},
+        {"eat",     {61,  false, "You begin to eat.", "You begin to eat in front of %s.", "eat"}},
+    };
+}
+
+static std::string replacePlaceholders(const std::string& text, const std::string* targetName) {
+    if (text.empty()) return text;
+    std::string out;
+    out.reserve(text.size() + 16);
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '%' && i + 1 < text.size() && text[i + 1] == 's') {
+            if (targetName && !targetName->empty()) out += *targetName;
+            i++;
+        } else {
+            out.push_back(text[i]);
+        }
+    }
+    return out;
+}
+
+static void loadEmotesFromDbc() {
+    if (emoteTableLoaded) return;
+    emoteTableLoaded = true;
+
+    auto* assetManager = core::Application::getInstance().getAssetManager();
+    if (!assetManager) {
+        LOG_WARNING("Emotes: no AssetManager");
+        loadFallbackEmotes();
+        return;
+    }
+
+    auto emotesTextDbc = assetManager->loadDBC("EmotesText.dbc");
+    auto emotesTextDataDbc = assetManager->loadDBC("EmotesTextData.dbc");
+    if (!emotesTextDbc || !emotesTextDataDbc || !emotesTextDbc->isLoaded() || !emotesTextDataDbc->isLoaded()) {
+        LOG_WARNING("Emotes: DBCs not available (EmotesText/EmotesTextData)");
+        loadFallbackEmotes();
+        return;
+    }
+
+    std::unordered_map<uint32_t, std::string> textData;
+    textData.reserve(emotesTextDataDbc->getRecordCount());
+    for (uint32_t r = 0; r < emotesTextDataDbc->getRecordCount(); ++r) {
+        uint32_t id = emotesTextDataDbc->getUInt32(r, 0);
+        std::string text = emotesTextDataDbc->getString(r, 1);
+        if (!text.empty()) textData.emplace(id, std::move(text));
+    }
+
+    std::unordered_map<uint32_t, uint32_t> emoteIdToAnim;
+    if (auto emotesDbc = assetManager->loadDBC("Emotes.dbc"); emotesDbc && emotesDbc->isLoaded()) {
+        emoteIdToAnim.reserve(emotesDbc->getRecordCount());
+        for (uint32_t r = 0; r < emotesDbc->getRecordCount(); ++r) {
+            uint32_t emoteId = emotesDbc->getUInt32(r, 0);
+            uint32_t animId = emotesDbc->getUInt32(r, 2);
+            if (animId != 0) emoteIdToAnim[emoteId] = animId;
+        }
+    }
+
+    EMOTE_TABLE.clear();
+    EMOTE_TABLE.reserve(emotesTextDbc->getRecordCount());
+    for (uint32_t r = 0; r < emotesTextDbc->getRecordCount(); ++r) {
+        std::string cmdRaw = emotesTextDbc->getString(r, 1);
+        if (cmdRaw.empty()) continue;
+
+        uint32_t emoteRef = emotesTextDbc->getUInt32(r, 2);
+        uint32_t animId = 0;
+        auto animIt = emoteIdToAnim.find(emoteRef);
+        if (animIt != emoteIdToAnim.end()) {
+            animId = animIt->second;
+        } else {
+            animId = emoteRef;  // fallback if EmotesText stores animation id directly
+        }
+
+        uint32_t senderTargetTextId = emotesTextDbc->getUInt32(r, 5);  // unisex, target, sender
+        uint32_t senderNoTargetTextId = emotesTextDbc->getUInt32(r, 9); // unisex, no target, sender
+
+        std::string textTarget;
+        std::string textNoTarget;
+        if (auto it = textData.find(senderTargetTextId); it != textData.end()) {
+            textTarget = it->second;
+        }
+        if (auto it = textData.find(senderNoTargetTextId); it != textData.end()) {
+            textNoTarget = it->second;
+        }
+
+        for (const std::string& cmd : parseEmoteCommands(cmdRaw)) {
+            if (cmd.empty()) continue;
+            EmoteInfo info;
+            info.animId = animId;
+            info.loop = isLoopingEmote(cmd);
+            info.textNoTarget = textNoTarget;
+            info.textTarget = textTarget;
+            info.command = cmd;
+            EMOTE_TABLE.emplace(cmd, std::move(info));
+        }
+    }
+
+    if (EMOTE_TABLE.empty()) {
+        LOG_WARNING("Emotes: DBC loaded but no commands parsed, using fallback list");
+        loadFallbackEmotes();
+    } else {
+        LOG_INFO("Emotes: loaded ", EMOTE_TABLE.size(), " commands from DBC");
+    }
+}
 
 Renderer::Renderer() = default;
 Renderer::~Renderer() = default;
@@ -767,10 +898,12 @@ void Renderer::updateCharacterAnimation() {
 }
 
 void Renderer::playEmote(const std::string& emoteName) {
+    loadEmotesFromDbc();
     auto it = EMOTE_TABLE.find(emoteName);
     if (it == EMOTE_TABLE.end()) return;
 
     const auto& info = it->second;
+    if (info.animId == 0) return;
     emoteActive = true;
     emoteAnimId = info.animId;
     emoteLoop = info.loop;
@@ -804,10 +937,19 @@ void Renderer::triggerMeleeSwing() {
     }
 }
 
-std::string Renderer::getEmoteText(const std::string& emoteName) {
+std::string Renderer::getEmoteText(const std::string& emoteName, const std::string* targetName) {
+    loadEmotesFromDbc();
     auto it = EMOTE_TABLE.find(emoteName);
     if (it != EMOTE_TABLE.end()) {
-        return it->second.text;
+        const auto& info = it->second;
+        const std::string& base = (targetName ? info.textTarget : info.textNoTarget);
+        if (!base.empty()) {
+            return replacePlaceholders(base, targetName);
+        }
+        if (targetName && !targetName->empty()) {
+            return "You " + info.command + " at " + *targetName + ".";
+        }
+        return "You " + info.command + ".";
     }
     return "";
 }

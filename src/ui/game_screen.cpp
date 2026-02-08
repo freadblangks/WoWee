@@ -1658,7 +1658,17 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
 
             // Check for emote commands
             if (!isChannelCommand) {
-                std::string emoteText = rendering::Renderer::getEmoteText(cmdLower);
+                std::string targetName;
+                const std::string* targetNamePtr = nullptr;
+                if (gameHandler.hasTarget()) {
+                    auto targetEntity = gameHandler.getTarget();
+                    if (targetEntity) {
+                        targetName = getEntityName(targetEntity);
+                        if (!targetName.empty()) targetNamePtr = &targetName;
+                    }
+                }
+
+                std::string emoteText = rendering::Renderer::getEmoteText(cmdLower, targetNamePtr);
                 if (!emoteText.empty()) {
                     // Play the emote animation
                     auto* renderer = core::Application::getInstance().getRenderer();
@@ -1666,25 +1676,11 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                         renderer->playEmote(cmdLower);
                     }
 
-                    // Build emote message — targeted or untargeted
-                    std::string chatText;
-                    if (gameHandler.hasTarget()) {
-                        auto targetEntity = gameHandler.getTarget();
-                        if (targetEntity) {
-                            std::string targetName = getEntityName(targetEntity);
-                            chatText = cmdLower + " at " + targetName + ".";
-                        } else {
-                            chatText = emoteText;
-                        }
-                    } else {
-                        chatText = cmdLower + ".";  // First person: "You wave."
-                    }
-
                     // Add local chat message
                     game::MessageChatData msg;
                     msg.type = game::ChatType::TEXT_EMOTE;
                     msg.language = game::ChatLanguage::COMMON;
-                    msg.message = chatText;
+                    msg.message = emoteText;
                     gameHandler.addLocalChatMessage(msg);
 
                     chatInputBuffer[0] = '\0';
@@ -3398,34 +3394,53 @@ void GameScreen::renderTaxiWindow(game::GameHandler& gameHandler) {
         ImGui::Text("Select a destination:");
         ImGui::Spacing();
 
-        // List known destinations on same map, excluding current node
+        static uint32_t selectedNodeId = 0;
         int destCount = 0;
-        for (const auto& [nodeId, node] : nodes) {
-            if (nodeId == currentNode) continue;
-            if (node.mapId != currentMapId) continue;
-            if (!taxiData.isNodeKnown(nodeId)) continue;
+        if (ImGui::BeginTable("TaxiNodes", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("Destination", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Cost", ImGuiTableColumnFlags_WidthFixed, 120.0f);
+            ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+            ImGui::TableHeadersRow();
 
-            uint32_t costCopper = gameHandler.getTaxiCostTo(nodeId);
-            uint32_t gold = costCopper / 10000;
-            uint32_t silver = (costCopper / 100) % 100;
-            uint32_t copper = costCopper % 100;
+            for (const auto& [nodeId, node] : nodes) {
+                if (nodeId == currentNode) continue;
+                if (node.mapId != currentMapId) continue;
+                if (!taxiData.isNodeKnown(nodeId)) continue;
 
-            ImGui::PushID(static_cast<int>(nodeId));
-            ImGui::Text("%s", node.name.c_str());
-            ImGui::SameLine();
-            if (gold > 0) {
-                ImGui::TextColored(ImVec4(0.9f, 0.8f, 0.3f, 1.0f), "(%ug %us %uc)", gold, silver, copper);
-            } else if (silver > 0) {
-                ImGui::TextColored(ImVec4(0.75f, 0.75f, 0.75f, 1.0f), "(%us %uc)", silver, copper);
-            } else {
-                ImGui::TextColored(ImVec4(0.72f, 0.45f, 0.2f, 1.0f), "(%uc)", copper);
+                uint32_t costCopper = gameHandler.getTaxiCostTo(nodeId);
+                uint32_t gold = costCopper / 10000;
+                uint32_t silver = (costCopper / 100) % 100;
+                uint32_t copper = costCopper % 100;
+
+                ImGui::PushID(static_cast<int>(nodeId));
+                ImGui::TableNextRow();
+
+                ImGui::TableSetColumnIndex(0);
+                bool isSelected = (selectedNodeId == nodeId);
+                if (ImGui::Selectable(node.name.c_str(), isSelected, ImGuiSelectableFlags_SpanAllColumns)) {
+                    selectedNodeId = nodeId;
+                }
+
+                ImGui::TableSetColumnIndex(1);
+                if (gold > 0) {
+                    ImGui::TextColored(ImVec4(0.9f, 0.8f, 0.3f, 1.0f), "%ug %us %uc", gold, silver, copper);
+                } else if (silver > 0) {
+                    ImGui::TextColored(ImVec4(0.75f, 0.75f, 0.75f, 1.0f), "%us %uc", silver, copper);
+                } else {
+                    ImGui::TextColored(ImVec4(0.72f, 0.45f, 0.2f, 1.0f), "%uc", copper);
+                }
+
+                ImGui::TableSetColumnIndex(2);
+                if (ImGui::SmallButton("Fly")) {
+                    selectedNodeId = nodeId;
+                    LOG_INFO("Taxi UI: Fly clicked dest=", nodeId);
+                    gameHandler.activateTaxi(nodeId);
+                }
+
+                ImGui::PopID();
+                destCount++;
             }
-            ImGui::SameLine(ImGui::GetWindowWidth() - 60);
-            if (ImGui::SmallButton("Fly")) {
-                gameHandler.activateTaxi(nodeId);
-            }
-            ImGui::PopID();
-            destCount++;
+            ImGui::EndTable();
         }
 
         if (destCount == 0) {

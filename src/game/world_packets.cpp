@@ -2079,11 +2079,13 @@ bool AuraUpdateParser::parse(network::Packet& packet, AuraUpdateData& data, bool
                 aura.durationMs = static_cast<int32_t>(packet.readUInt32());
             }
 
-            if (aura.flags & 0x40) { // EFFECT_AMOUNTS - skip
-                // 3 effect amounts
+            if (aura.flags & 0x40) { // EFFECT_AMOUNTS
+                // Only read amounts for active effect indices (flags 0x01, 0x02, 0x04)
                 for (int i = 0; i < 3; ++i) {
-                    if (packet.getReadPos() < packet.getSize()) {
-                        packet.readUInt32();
+                    if (aura.flags & (1 << i)) {
+                        if (packet.getReadPos() < packet.getSize()) {
+                            packet.readUInt32();
+                        }
                     }
                 }
             }

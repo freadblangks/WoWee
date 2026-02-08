@@ -54,8 +54,12 @@ BLPImage AssetManager::loadTexture(const std::string& path) {
 
     LOG_DEBUG("Loading texture: ", normalizedPath);
 
-    // Read BLP file from MPQ
-    std::vector<uint8_t> blpData = mpqManager.readFile(normalizedPath);
+    // Read BLP file from MPQ (must hold readMutex — StormLib is not thread-safe)
+    std::vector<uint8_t> blpData;
+    {
+        std::lock_guard<std::mutex> lock(readMutex);
+        blpData = mpqManager.readFile(normalizedPath);
+    }
     if (blpData.empty()) {
         LOG_WARNING("Texture not found: ", normalizedPath);
         return BLPImage();
@@ -90,8 +94,12 @@ std::shared_ptr<DBCFile> AssetManager::loadDBC(const std::string& name) {
     // Construct DBC path (DBFilesClient directory)
     std::string dbcPath = "DBFilesClient\\" + name;
 
-    // Read DBC file from MPQ
-    std::vector<uint8_t> dbcData = mpqManager.readFile(dbcPath);
+    // Read DBC file from MPQ (must hold readMutex — StormLib is not thread-safe)
+    std::vector<uint8_t> dbcData;
+    {
+        std::lock_guard<std::mutex> lock(readMutex);
+        dbcData = mpqManager.readFile(dbcPath);
+    }
     if (dbcData.empty()) {
         LOG_WARNING("DBC not found: ", dbcPath);
         return nullptr;
@@ -124,6 +132,7 @@ bool AssetManager::fileExists(const std::string& path) const {
         return false;
     }
 
+    std::lock_guard<std::mutex> lock(readMutex);
     return mpqManager.fileExists(normalizePath(path));
 }
 

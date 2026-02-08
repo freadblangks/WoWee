@@ -481,7 +481,7 @@ void CameraController::update(float deltaTime) {
                                 candidate.y = adjusted.y;
                                 // Snap Z to floor at adjusted position to prevent fall-through
                                 auto adjFloor = wmoRenderer->getFloorHeight(adjusted.x, adjusted.y, feetZ + 2.5f);
-                                if (adjFloor && *adjFloor >= feetZ - 1.0f && *adjFloor <= feetZ + 1.6f) {
+                                if (adjFloor && *adjFloor >= feetZ - 0.3f && *adjFloor <= feetZ + 1.6f) {
                                     candidate.z = *adjFloor;
                                 }
                             } else if (floorH && *floorH > candidate.z) {

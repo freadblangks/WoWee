@@ -613,42 +613,22 @@ void Application::setupUICallbacks() {
         auto* ft = cc->getFollowTargetMutable();
         if (!ft) return;
 
-        auto wsl = assetManager->loadDBC("WorldSafeLocs.dbc");
-        if (!wsl || !wsl->isLoaded()) {
-            LOG_WARNING("WorldSafeLocs.dbc not available for /unstuckgy");
-            return;
-        }
-
-        // Use current map and position.
+        // Hardcoded safe locations per map (canonical WoW coords)
         uint32_t mapId = gameHandler ? gameHandler->getCurrentMapId() : 0;
-        glm::vec3 cur = *ft;
-        float bestDist2 = std::numeric_limits<float>::max();
-        glm::vec3 bestPos = cur;
-
-        for (uint32_t i = 0; i < wsl->getRecordCount(); i++) {
-            uint32_t recMap = wsl->getUInt32(i, 1);
-            if (recMap != mapId) continue;
-            float x = wsl->getFloat(i, 2);
-            float y = wsl->getFloat(i, 3);
-            float z = wsl->getFloat(i, 4);
-            glm::vec3 glPos = core::coords::adtToWorld(x, y, z);
-            float dx = glPos.x - cur.x;
-            float dy = glPos.y - cur.y;
-            float dz = glPos.z - cur.z;
-            float d2 = dx*dx + dy*dy + dz*dz;
-            if (d2 < bestDist2) {
-                bestDist2 = d2;
-                bestPos = glPos;
-            }
+        glm::vec3 safeCanonical;
+        switch (mapId) {
+            case 0:  safeCanonical = glm::vec3(-8833.38f, 628.63f, 94.0f); break; // Stormwind Trade District
+            case 1:  safeCanonical = glm::vec3(1629.36f, -4373.34f, 31.2f); break; // Orgrimmar
+            case 530: safeCanonical = glm::vec3(-3961.64f, -13931.2f, 100.6f); break; // Shattrath
+            case 571: safeCanonical = glm::vec3(5804.14f, 624.77f, 647.8f); break; // Dalaran
+            default:
+                LOG_WARNING("No hardcoded safe location for map ", mapId);
+                return;
         }
 
-        if (bestDist2 == std::numeric_limits<float>::max()) {
-            LOG_WARNING("No graveyard found on map ", mapId);
-            return;
-        }
-
-        *ft = bestPos;
-        cc->setDefaultSpawn(bestPos, cc->getYaw(), cc->getPitch());
+        glm::vec3 safePos = core::coords::canonicalToRender(safeCanonical);
+        *ft = safePos;
+        cc->setDefaultSpawn(safePos, cc->getYaw(), cc->getPitch());
         cc->reset();
     });
 

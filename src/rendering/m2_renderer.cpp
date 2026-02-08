@@ -2307,7 +2307,8 @@ GLuint M2Renderer::loadTexture(const std::string& path) {
     pipeline::BLPImage blp = assetManager->loadTexture(path);
     if (!blp.isValid()) {
         LOG_WARNING("M2: Failed to load texture: ", path);
-        textureCache[path] = whiteTexture;
+        // Don't cache failures — transient StormLib thread contention can
+        // cause reads to fail; next loadModel call will retry.
         return whiteTexture;
     }
 

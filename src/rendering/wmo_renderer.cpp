@@ -1736,10 +1736,15 @@ std::optional<float> WMORenderer::getFloorHeight(float glX, float glY, float glZ
             const auto& verts = group.collisionVertices;
             const auto& indices = group.collisionIndices;
 
-            // Use spatial grid to only test triangles near the query XY
-            const auto* cellTris = group.getTrianglesAtLocal(localOrigin.x, localOrigin.y);
-            if (cellTris) {
-                for (uint32_t triStart : *cellTris) {
+            // Use spatial grid to test triangles near the query XY.
+            // Query a small range (±1 unit) to catch floor triangles at cell boundaries
+            // (bridges, narrow walkways whose triangles may sit in adjacent cells).
+            group.getTrianglesInRange(
+                localOrigin.x - 1.0f, localOrigin.y - 1.0f,
+                localOrigin.x + 1.0f, localOrigin.y + 1.0f,
+                wallTriScratch);
+            {
+                for (uint32_t triStart : wallTriScratch) {
                     const glm::vec3& v0 = verts[indices[triStart]];
                     const glm::vec3& v1 = verts[indices[triStart + 1]];
                     const glm::vec3& v2 = verts[indices[triStart + 2]];
@@ -1859,10 +1864,10 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
             const auto& indices = group.collisionIndices;
 
             // Use spatial grid: query range covering the movement segment + player radius
-            float rangeMinX = std::min(localFrom.x, localTo.x) - PLAYER_RADIUS - 2.5f;
-            float rangeMinY = std::min(localFrom.y, localTo.y) - PLAYER_RADIUS - 2.5f;
-            float rangeMaxX = std::max(localFrom.x, localTo.x) + PLAYER_RADIUS + 2.5f;
-            float rangeMaxY = std::max(localFrom.y, localTo.y) + PLAYER_RADIUS + 2.5f;
+            float rangeMinX = std::min(localFrom.x, localTo.x) - PLAYER_RADIUS - 1.5f;
+            float rangeMinY = std::min(localFrom.y, localTo.y) - PLAYER_RADIUS - 1.5f;
+            float rangeMaxX = std::max(localFrom.x, localTo.x) + PLAYER_RADIUS + 1.5f;
+            float rangeMaxY = std::max(localFrom.y, localTo.y) + PLAYER_RADIUS + 1.5f;
             group.getTrianglesInRange(rangeMinX, rangeMinY, rangeMaxX, rangeMaxY, wallTriScratch);
 
             for (uint32_t triStart : wallTriScratch) {
@@ -1913,7 +1918,7 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
                             glm::vec3 hitPoint = localFrom + (localTo - localFrom) * tHit;
                             glm::vec3 hitClosest = closestPointOnTriangle(hitPoint, v0, v1, v2);
                             float hitErrSq = glm::dot(hitClosest - hitPoint, hitClosest - hitPoint);
-                            if (hitErrSq <= 0.5f * 0.5f) {
+                            if (hitErrSq <= 0.15f * 0.15f) {
                                 float side = fromDist > 0.0f ? 1.0f : -1.0f;
                                 glm::vec3 safeLocal = hitPoint + normal * side * (PLAYER_RADIUS + 0.05f);
                                 glm::vec3 safeWorld = glm::vec3(instance.modelMatrix * glm::vec4(safeLocal, 1.0f));

@@ -1748,12 +1748,13 @@ std::optional<float> WMORenderer::getFloorHeight(float glX, float glY, float glZ
     auto gridIt = precomputedFloorGrid.find(gridKey);
     if (gridIt != precomputedFloorGrid.end()) {
         float cachedHeight = gridIt->second;
-        // Only use cache if floor is close to query point (within ~4 units below).
-        // For multi-story buildings, the cache has the top floor - if we're on a
-        // lower floor, skip cache and do full raycast to find actual floor.
-        if (cachedHeight <= glZ + 2.0f && cachedHeight >= glZ - 4.0f) {
+        // Only trust cache if it's basically at foot level.
+        // Prevent ledges/shoulder ramps from being treated as "floor".
+        constexpr float CACHE_ABOVE = 0.35f;   // tune: 0.25–0.60
+        constexpr float CACHE_BELOW = 4.0f;    // keep generous below
+            if (cachedHeight <= glZ + CACHE_ABOVE && cachedHeight >= glZ - CACHE_BELOW) {
             // Persistent cache doesn't store normal — report as flat
-            if (outNormalZ) *outNormalZ = 1.0f;
+            if (outNormalZ) *outNormalZ = 0.8f; // conservative "walkable-ish"
             frameFloorCache_.put(glX, glY, cachedHeight, 1.0f, currentFrameId);
             return cachedHeight;
         }

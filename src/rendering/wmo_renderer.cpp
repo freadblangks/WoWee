@@ -2058,7 +2058,7 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
                     float absNz = std::abs(normal.z);
                     if (absNz >= 0.45f) continue;
 
-                    const float SKIN = 0.007f;        // small separation so we don’t re-collide immediately
+                    const float SKIN = 0.005f;        // small separation so we don’t re-collide immediately
                     const float MAX_PUSH = 0.08f;    // cap per triangle contact (tune 0.10–0.25)
                     float penetration = (PLAYER_RADIUS - horizDist);
                     float pushDist = glm::clamp(penetration + SKIN, 0.0f, MAX_PUSH);

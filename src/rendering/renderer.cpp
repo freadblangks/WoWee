@@ -1264,7 +1264,7 @@ void Renderer::update(float deltaTime) {
         mountDust->update(deltaTime);
 
         // Spawn dust when mounted and moving on ground
-        if (isMounted() && cameraController && !taxiFlight_) {
+        if (isMounted() && camera && cameraController && !taxiFlight_) {
             bool isMoving = cameraController->isMoving();
             bool onGround = cameraController->isGrounded();
 

@@ -78,7 +78,7 @@ private:
     int mapSize = 200;
     float viewRadius = 400.0f;  // world units visible in minimap radius
     bool enabled = true;
-    bool rotateWithCamera = true;
+    bool rotateWithCamera = false;
 
     // Throttling
     float updateIntervalSec = 0.25f;

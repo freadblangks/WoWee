@@ -4145,7 +4145,7 @@ void GameScreen::renderSettingsWindow() {
         ImGui::Checkbox("Rotate Minimap", &pendingMinimapRotate);
         if (ImGui::Button("Restore Interface Defaults", ImVec2(-1, 0))) {
             pendingUiOpacity = 65;
-            pendingMinimapRotate = true;
+            pendingMinimapRotate = false;
         }
 
         ImGui::Spacing();

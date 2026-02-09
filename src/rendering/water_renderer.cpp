@@ -115,11 +115,22 @@ bool WaterRenderer::initialize() {
             result += skyTint;
             result = max(result, waterColor.rgb * 0.24);
 
-            // Ocean foam on wave crests (procedural)
-            float wavePeak = smoothstep(0.25, 0.5, WaveOffset);  // Peaks have positive offset
-            float foamNoise = fract(sin(dot(TexCoord * 40.0 + time * 0.5, vec2(12.9898, 78.233))) * 43758.5453);
-            float foam = wavePeak * foamNoise * 0.65;
-            result += vec3(foam);  // Add white foam to wave crests
+            // Ocean foam on wave crests and shorelines (procedural)
+            // Wave crest foam
+            float wavePeak = smoothstep(0.15, 0.4, WaveOffset);  // More foam on peaks
+            float foamNoise = fract(sin(dot(TexCoord * 50.0 + time * 0.8, vec2(12.9898, 78.233))) * 43758.5453);
+            float foamPattern = foamNoise * 0.5 + 0.5;  // Scale to 0.5-1.0
+            float waveFoam = wavePeak * foamPattern * 0.85;
+
+            // Shoreline foam (appears in shallow water / near terrain)
+            // Use view-space depth as proxy - upward-facing surfaces near camera likely shoreline
+            float depth = length(viewPos - FragPos);
+            float shoreProximity = smoothstep(80.0, 20.0, depth);  // Foam within 20-80 units
+            float upwardFacing = max(dot(norm, vec3(0.0, 0.0, 1.0)), 0.0);  // Horizontal surfaces
+            float shoreFoam = shoreProximity * upwardFacing * foamPattern * 0.6;
+
+            float foam = max(waveFoam, shoreFoam);
+            result += vec3(foam);  // Add white foam
 
             // Slight fresnel: more reflective/opaque at grazing angles.
             float fresnel = pow(1.0 - max(dot(norm, viewDir), 0.0), 3.0);
@@ -404,9 +415,9 @@ void WaterRenderer::render(const Camera& camera, float time) {
         // City/canal liquid profile: clearer water + stronger ripples/sun shimmer.
         // Stormwind canals typically use LiquidType 5 in this data set.
         bool canalProfile = (surface.wmoId != 0) || (surface.liquidType == 5);
-        float waveAmp = canalProfile ? 0.07f : 0.12f;
-        float waveFreq = canalProfile ? 0.30f : 0.18f;
-        float waveSpeed = canalProfile ? 1.20f : 1.60f;
+        float waveAmp = canalProfile ? 0.10f : 0.25f;      // Increased from 0.07/0.12
+        float waveFreq = canalProfile ? 0.30f : 0.22f;     // Increased from 0.18 for more waves
+        float waveSpeed = canalProfile ? 1.20f : 2.00f;    // Increased from 1.60 for more motion
         float shimmerStrength = canalProfile ? 0.95f : 0.50f;
         float alphaScale = canalProfile ? 0.72f : 1.00f;
 

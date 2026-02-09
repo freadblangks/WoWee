@@ -35,6 +35,7 @@
 #include "audio/music_manager.hpp"
 #include "audio/footstep_manager.hpp"
 #include "audio/activity_sound_manager.hpp"
+#include "audio/mount_sound_manager.hpp"
 #include <GL/glew.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/euler_angles.hpp>
@@ -332,6 +333,7 @@ bool Renderer::initialize(core::Window* win) {
     musicManager = std::make_unique<audio::MusicManager>();
     footstepManager = std::make_unique<audio::FootstepManager>();
     activitySoundManager = std::make_unique<audio::ActivitySoundManager>();
+    mountSoundManager = std::make_unique<audio::MountSoundManager>();
 
     // Underwater full-screen tint overlay (applies to all world geometry).
     underwaterOverlayShader = std::make_unique<Shader>();

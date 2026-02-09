@@ -1906,7 +1906,7 @@ std::optional<float> WMORenderer::getFloorHeight(float glX, float glY, float glZ
     return bestFloor;
 }
 
-bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to, glm::vec3& adjustedPos) const {
+bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to, glm::vec3& adjustedPos, bool insideWMO) const {
     QueryTimer timer(&queryTimeMs, &queryCallCount);
     adjustedPos = to;
     bool blocked = false;
@@ -1916,7 +1916,8 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
     if (moveDist < 0.001f) return false;
 
     // Player collision parameters — WoW-style horizontal cylinder
-    const float PLAYER_RADIUS = 0.50f;      // Horizontal cylinder radius
+    // Tighter radius when inside for more responsive indoor collision
+    const float PLAYER_RADIUS = insideWMO ? 0.45f : 0.50f;
     const float PLAYER_HEIGHT = 2.0f;       // Cylinder height for Z bounds
     const float MAX_STEP_HEIGHT = 1.0f;     // Step-up threshold
 
@@ -2067,8 +2068,9 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
                     float absNz = std::abs(normal.z);
                     if (absNz >= 0.45f) continue;
 
-                    const float SKIN = 0.005f;        // small separation so we don’t re-collide immediately
-                    const float MAX_PUSH = 0.08f;    // cap per triangle contact (tune 0.10–0.25)
+                    const float SKIN = 0.005f;        // small separation so we don't re-collide immediately
+                    // Stronger push when inside WMO for more responsive indoor collision
+                    const float MAX_PUSH = insideWMO ? 0.12f : 0.08f;
                     float penetration = (PLAYER_RADIUS - horizDist);
                     float pushDist = glm::clamp(penetration + SKIN, 0.0f, MAX_PUSH);
                     glm::vec2 pushDir2;

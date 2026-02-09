@@ -444,13 +444,16 @@ void CameraController::update(float deltaTime) {
 
         // Sweep collisions in small steps to reduce tunneling through thin walls/floors.
         // Skip entirely when stationary to avoid wasting collision calls.
+        // Use tighter steps when inside WMO for more precise collision.
         {
             glm::vec3 startPos = *followTarget;
             glm::vec3 desiredPos = targetPos;
             float moveDist = glm::length(desiredPos - startPos);
 
             if (moveDist > 0.01f) {
-                int sweepSteps = std::max(1, std::min(5, static_cast<int>(std::ceil(moveDist / 0.35f))));
+                // Smaller step size when inside buildings for tighter collision
+                float stepSize = cachedInsideWMO ? 0.20f : 0.35f;
+                int sweepSteps = std::max(1, std::min(8, static_cast<int>(std::ceil(moveDist / stepSize))));
                 glm::vec3 stepPos = startPos;
                 glm::vec3 stepDelta = (desiredPos - startPos) / static_cast<float>(sweepSteps);
 
@@ -459,7 +462,7 @@ void CameraController::update(float deltaTime) {
 
                     if (wmoRenderer) {
                         glm::vec3 adjusted;
-                        if (wmoRenderer->checkWallCollision(stepPos, candidate, adjusted)) {
+                        if (wmoRenderer->checkWallCollision(stepPos, candidate, adjusted, cachedInsideWMO)) {
                             candidate.x = adjusted.x;
                             candidate.y = adjusted.y;
                             // Accept upward Z correction (ramps), reject downward

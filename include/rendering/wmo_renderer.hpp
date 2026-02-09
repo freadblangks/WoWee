@@ -201,9 +201,10 @@ public:
      * @param from Starting position
      * @param to Desired position
      * @param adjustedPos Output adjusted position (pushed away from walls)
+     * @param insideWMO If true, use tighter collision for indoor precision
      * @return true if collision occurred
      */
-    bool checkWallCollision(const glm::vec3& from, const glm::vec3& to, glm::vec3& adjustedPos) const;
+    bool checkWallCollision(const glm::vec3& from, const glm::vec3& to, glm::vec3& adjustedPos, bool insideWMO = false) const;
 
     /**
      * Check if a position is inside any WMO

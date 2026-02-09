@@ -47,10 +47,20 @@ bool WaterRenderer::initialize() {
 
         void main() {
             vec3 pos = aPos;
-            // Procedural ripple motion (tunable per water profile).
-            float w1 = sin((aPos.x + time * waveSpeed) * waveFreq) * waveAmp;
-            float w2 = cos((aPos.y - time * (waveSpeed * 0.78)) * (waveFreq * 0.82)) * (waveAmp * 0.72);
-            float wave = w1 + w2;
+
+            // Pseudo-random phase offsets to break up regular pattern
+            float hash1 = fract(sin(dot(aPos.xy, vec2(12.9898, 78.233))) * 43758.5453);
+            float hash2 = fract(sin(dot(aPos.xy, vec2(93.9898, 67.345))) * 27153.5328);
+
+            // Multiple wave octaves with randomized phases for natural variation
+            float w1 = sin((aPos.x + time * waveSpeed + hash1 * 6.28) * waveFreq) * waveAmp;
+            float w2 = cos((aPos.y - time * (waveSpeed * 0.78) + hash2 * 6.28) * (waveFreq * 0.82)) * (waveAmp * 0.72);
+
+            // Add higher frequency detail waves (smaller amplitude)
+            float w3 = sin((aPos.x * 1.7 - time * waveSpeed * 1.3 + hash1 * 3.14) * waveFreq * 2.1) * (waveAmp * 0.35);
+            float w4 = cos((aPos.y * 1.4 + time * waveSpeed * 0.9 + hash2 * 3.14) * waveFreq * 1.8) * (waveAmp * 0.28);
+
+            float wave = w1 + w2 + w3 + w4;
             pos.z += wave;
 
             FragPos = vec3(model * vec4(pos, 1.0));

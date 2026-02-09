@@ -1743,22 +1743,8 @@ std::optional<float> WMORenderer::getFloorHeight(float glX, float glY, float glZ
     auto frameCached = frameFloorCache_.get(glX, glY, currentFrameId, outNormalZ);
     if (frameCached) return *frameCached;
 
-    // Check persistent grid cache first (computed lazily, never expires)
-    uint64_t gridKey = floorGridKey(glX, glY);
-    auto gridIt = precomputedFloorGrid.find(gridKey);
-    if (gridIt != precomputedFloorGrid.end()) {
-        float cachedHeight = gridIt->second;
-        // Only trust cache if it's basically at foot level.
-        // Reject cache if it's too high above us (prevents stair landing from overriding approach floor)
-        constexpr float CACHE_ABOVE = 0.25f;   // tight above threshold (prevents stair landing cache hit)
-        constexpr float CACHE_BELOW = 4.0f;    // keep generous below
-            if (cachedHeight <= glZ + CACHE_ABOVE && cachedHeight >= glZ - CACHE_BELOW) {
-            // Persistent cache doesn't store normal — report as flat
-            if (outNormalZ) *outNormalZ = 0.8f; // conservative "walkable-ish"
-            frameFloorCache_.put(glX, glY, cachedHeight, 1.0f, currentFrameId);
-            return cachedHeight;
-        }
-    }
+    // Persistent grid cache disabled - causes fall-through at stairs where
+    // one 2-unit cell contains multiple floor heights. Per-frame cache is sufficient.
 
     QueryTimer timer(&queryTimeMs, &queryCallCount);
     std::optional<float> bestFloor;

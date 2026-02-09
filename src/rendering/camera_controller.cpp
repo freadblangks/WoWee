@@ -541,8 +541,7 @@ void CameraController::update(float deltaTime) {
 
                 // WoW-style: snap to floor if within step-up or fall-catch range,
                 // but only when not moving upward (jumping)
-                if (dz <= stepUp && dz >= -fallCatch &&
-                    (verticalVelocity <= 0.0f || *groundH > feetZ)) {
+                if (dz <= stepUp && dz >= -fallCatch && verticalVelocity <= 0.0f) {
                     targetPos.z = *groundH;
                     verticalVelocity = 0.0f;
                     grounded = true;

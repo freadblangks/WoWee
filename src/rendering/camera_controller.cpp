@@ -355,7 +355,7 @@ void CameraController::update(float deltaTime) {
                 auto wh = wmoRenderer->getFloorHeight(targetPos.x, targetPos.y, targetPos.z + 2.0f);
                 if (wh && (!floorH || *wh > *floorH)) floorH = wh;
             }
-            if (m2Renderer) {
+            if (m2Renderer && !externalFollow_) {
                 auto mh = m2Renderer->getFloorHeight(targetPos.x, targetPos.y, targetPos.z);
                 if (mh && (!floorH || *mh > *floorH)) floorH = mh;
             }
@@ -390,7 +390,7 @@ void CameraController::update(float deltaTime) {
                             }
                         }
 
-                        if (m2Renderer) {
+                        if (m2Renderer && !externalFollow_) {
                             glm::vec3 adjusted;
                             if (m2Renderer->checkCollision(stepPos, candidate, adjusted)) {
                                 candidate.x = adjusted.x;
@@ -470,7 +470,7 @@ void CameraController::update(float deltaTime) {
                         }
                     }
 
-                    if (m2Renderer) {
+                    if (m2Renderer && !externalFollow_) {
                         glm::vec3 adjusted;
                         if (m2Renderer->checkCollision(stepPos, candidate, adjusted)) {
                             candidate.x = adjusted.x;
@@ -508,7 +508,7 @@ void CameraController::update(float deltaTime) {
 
             // 2. Multi-sample for M2 objects (rugs, planks, bridges, ships) —
             //    these are narrow and need offset probes to detect reliably.
-            if (m2Renderer) {
+            if (m2Renderer && !externalFollow_) {
                 constexpr float FOOTPRINT = 0.4f;
                 const glm::vec2 offsets[] = {
                     {0.0f, 0.0f},
@@ -653,7 +653,7 @@ void CameraController::update(float deltaTime) {
         }
 
         // M2 raycast collision: zoom in when camera would clip through doodads
-        if (m2Renderer && currentDistance > MIN_DISTANCE) {
+        if (m2Renderer && !externalFollow_ && currentDistance > MIN_DISTANCE) {
             glm::vec3 camRayOrigin = pivot;
             glm::vec3 camRayDir = camDir;
             float m2HitDist = m2Renderer->raycastBoundingBoxes(camRayOrigin, camRayDir, currentDistance);
@@ -764,7 +764,7 @@ void CameraController::update(float deltaTime) {
             std::optional<float> m2H;
             if (terrainManager) terrainH = terrainManager->getHeightAt(newPos.x, newPos.y);
             if (wmoRenderer) wmoH = wmoRenderer->getFloorHeight(newPos.x, newPos.y, feetZ + 2.0f);
-            if (m2Renderer) m2H = m2Renderer->getFloorHeight(newPos.x, newPos.y, feetZ + 1.0f);
+            if (m2Renderer && !externalFollow_) m2H = m2Renderer->getFloorHeight(newPos.x, newPos.y, feetZ + 1.0f);
             auto floorH = selectHighestFloor(terrainH, wmoH, m2H);
             constexpr float MIN_SWIM_WATER_DEPTH = 1.8f;
             inWater = (floorH && ((*waterH - *floorH) >= MIN_SWIM_WATER_DEPTH)) || (isOcean && !floorH);
@@ -877,7 +877,7 @@ void CameraController::update(float deltaTime) {
                 if (wmoRenderer) {
                     wmoH = wmoRenderer->getFloorHeight(x, y, wmoProbeZ);
                 }
-                if (m2Renderer) {
+                if (m2Renderer && !externalFollow_) {
                     m2H = m2Renderer->getFloorHeight(x, y, m2ProbeZ);
                 }
                 auto base = selectReachableFloor(terrainH, wmoH, feetZ, 1.0f);
@@ -1090,7 +1090,7 @@ void CameraController::reset() {
         if (wmoRenderer) {
             wmoH = wmoRenderer->getFloorHeight(x, y, floorProbeZ + 4.0f);
         }
-        if (m2Renderer) {
+        if (m2Renderer && !externalFollow_) {
             m2H = m2Renderer->getFloorHeight(x, y, floorProbeZ + 4.0f);
         }
         auto h = selectReachableFloor(terrainH, wmoH, refZ, 16.0f);

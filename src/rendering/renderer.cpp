@@ -1582,7 +1582,7 @@ void Renderer::renderWorld(game::World* world) {
     }
 
     // Render M2 doodads (trees, rocks, etc.)
-    if (m2Renderer && camera && !taxiFlight_) {
+    if (m2Renderer && camera) {
         // Dim M2 lighting when player is inside a WMO
         if (cameraController) {
             m2Renderer->setInsideInterior(cameraController->isInsideWMO());
@@ -2305,8 +2305,8 @@ void Renderer::renderShadowPass() {
         shadowShaderWrapper.releaseProgram();  // Don't let wrapper delete our program
     }
 
-    // Render M2 doodads into shadow map (skip during taxi for performance)
-    if (m2Renderer && !taxiFlight_) {
+    // Render M2 doodads into shadow map
+    if (m2Renderer) {
         m2Renderer->renderShadow(shadowShaderProgram);
     }
 

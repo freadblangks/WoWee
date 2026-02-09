@@ -1739,12 +1739,8 @@ void WMORenderer::GroupResources::getWallTrianglesInRange(
 }
 
 std::optional<float> WMORenderer::getFloorHeight(float glX, float glY, float glZ, float* outNormalZ) const {
-    // Per-frame dedup cache: same (x,y) queried 3-5x per frame
-    auto frameCached = frameFloorCache_.get(glX, glY, currentFrameId, outNormalZ);
-    if (frameCached) return *frameCached;
-
-    // Persistent grid cache disabled - causes fall-through at stairs where
-    // one 2-unit cell contains multiple floor heights. Per-frame cache is sufficient.
+    // All floor caching disabled - even per-frame cache can return stale results
+    // when player Z changes between queries, causing fall-through at stairs.
 
     QueryTimer timer(&queryTimeMs, &queryCallCount);
     std::optional<float> bestFloor;
@@ -1876,9 +1872,8 @@ std::optional<float> WMORenderer::getFloorHeight(float glX, float glY, float glZ
 
     // Persistent grid cache disabled (see above comment about stairs fall-through)
 
-    if (bestFloor) {
-        if (outNormalZ) *outNormalZ = bestNormalZ;
-        frameFloorCache_.put(glX, glY, *bestFloor, bestNormalZ, currentFrameId);
+    if (bestFloor && outNormalZ) {
+        *outNormalZ = bestNormalZ;
     }
 
     return bestFloor;

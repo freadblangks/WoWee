@@ -26,7 +26,7 @@ bool AssetManager::initialize(const std::string& dataPath_) {
     }
 
     initialized = true;
-    LOG_INFO("Asset manager initialized successfully");
+    LOG_INFO("Asset manager initialized successfully (1GB file cache enabled)");
     return true;
 }
 
@@ -36,6 +36,13 @@ void AssetManager::shutdown() {
     }
 
     LOG_INFO("Shutting down asset manager");
+
+    // Log cache statistics
+    if (fileCacheHits + fileCacheMisses > 0) {
+        float hitRate = (float)fileCacheHits / (fileCacheHits + fileCacheMisses) * 100.0f;
+        LOG_INFO("File cache stats: ", fileCacheHits, " hits, ", fileCacheMisses, " misses (",
+                 (int)hitRate, "% hit rate), ", fileCacheTotalBytes / 1024 / 1024, " MB cached");
+    }
 
     clearCache();
     mpqManager.shutdown();
@@ -141,13 +148,59 @@ std::vector<uint8_t> AssetManager::readFile(const std::string& path) const {
         return std::vector<uint8_t>();
     }
 
+    std::string normalized = normalizePath(path);
     std::lock_guard<std::mutex> lock(readMutex);
-    return mpqManager.readFile(normalizePath(path));
+
+    // Check cache first
+    auto it = fileCache.find(normalized);
+    if (it != fileCache.end()) {
+        // Cache hit - update access time and return cached data
+        it->second.lastAccessTime = ++fileCacheAccessCounter;
+        fileCacheHits++;
+        return it->second.data;
+    }
+
+    // Cache miss - decompress from MPQ
+    fileCacheMisses++;
+    std::vector<uint8_t> data = mpqManager.readFile(normalized);
+    if (data.empty()) {
+        return data;  // File not found
+    }
+
+    // Add to cache if within budget
+    size_t fileSize = data.size();
+    if (fileSize > 0 && fileSize < FILE_CACHE_BUDGET / 10) {  // Don't cache files > 100MB
+        // Evict old entries if needed (LRU)
+        while (fileCacheTotalBytes + fileSize > FILE_CACHE_BUDGET && !fileCache.empty()) {
+            // Find least recently used entry
+            auto lru = fileCache.begin();
+            for (auto it = fileCache.begin(); it != fileCache.end(); ++it) {
+                if (it->second.lastAccessTime < lru->second.lastAccessTime) {
+                    lru = it;
+                }
+            }
+            fileCacheTotalBytes -= lru->second.data.size();
+            fileCache.erase(lru);
+        }
+
+        // Add new entry
+        CachedFile cached;
+        cached.data = data;
+        cached.lastAccessTime = ++fileCacheAccessCounter;
+        fileCache[normalized] = std::move(cached);
+        fileCacheTotalBytes += fileSize;
+    }
+
+    return data;
 }
 
 void AssetManager::clearCache() {
+    std::lock_guard<std::mutex> lock(readMutex);
     dbcCache.clear();
-    LOG_INFO("Cleared asset cache");
+    fileCache.clear();
+    fileCacheTotalBytes = 0;
+    fileCacheAccessCounter = 0;
+    LOG_INFO("Cleared asset cache (DBC + file cache)");
 }
 
 std::string AssetManager::normalizePath(const std::string& path) const {

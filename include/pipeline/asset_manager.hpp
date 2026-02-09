@@ -85,6 +85,13 @@ public:
     size_t getLoadedDBCCount() const { return dbcCache.size(); }
 
     /**
+     * Get file cache stats
+     */
+    size_t getFileCacheSize() const { return fileCacheTotalBytes; }
+    size_t getFileCacheHits() const { return fileCacheHits; }
+    size_t getFileCacheMisses() const { return fileCacheMisses; }
+
+    /**
      * Clear all cached resources
      */
     void clearCache();
@@ -96,6 +103,18 @@ private:
     MPQManager mpqManager;
     mutable std::mutex readMutex;
     std::map<std::string, std::shared_ptr<DBCFile>> dbcCache;
+
+    // Decompressed file cache (LRU, 1GB budget for modern RAM)
+    struct CachedFile {
+        std::vector<uint8_t> data;
+        uint64_t lastAccessTime;
+    };
+    mutable std::map<std::string, CachedFile> fileCache;
+    mutable size_t fileCacheTotalBytes = 0;
+    mutable uint64_t fileCacheAccessCounter = 0;
+    mutable size_t fileCacheHits = 0;
+    mutable size_t fileCacheMisses = 0;
+    static constexpr size_t FILE_CACHE_BUDGET = 1024 * 1024 * 1024;  // 1GB
 
     /**
      * Normalize path for case-insensitive lookup

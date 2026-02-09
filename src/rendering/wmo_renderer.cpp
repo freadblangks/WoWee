@@ -1874,15 +1874,7 @@ std::optional<float> WMORenderer::getFloorHeight(float glX, float glY, float glZ
         }
     }
 
-    // Cache the result in persistent grid.
-    // Only update cache if we found a floor that's close to query height,
-    // to avoid caching wrong floors when player is on different stories.
-    if (bestFloor && *bestFloor >= glZ - 6.0f) {
-        float cacheAbove = bestFromLowPlatform ? 12.0f : 2.0f;
-        if (*bestFloor <= glZ + cacheAbove) {
-            precomputedFloorGrid[gridKey] = *bestFloor;
-        }
-    }
+    // Persistent grid cache disabled (see above comment about stairs fall-through)
 
     if (bestFloor) {
         if (outNormalZ) *outNormalZ = bestNormalZ;

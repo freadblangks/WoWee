@@ -860,9 +860,6 @@ uint32_t CharacterRenderer::createInstance(uint32_t modelId, const glm::vec3& po
     instance.boneMatrices.resize(std::max(static_cast<size_t>(1), model.bones.size()), glm::mat4(1.0f));
 
     instances[instance.id] = instance;
-
-    core::Logger::getInstance().info("Created character instance ", instance.id, " from model ", modelId);
-
     return instance.id;
 }
 
@@ -1253,9 +1250,6 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
                          gpuModel.textureIds.size(), " textures loaded, ",
                          gpuModel.data.textureLookup.size(), " in lookup table");
                 for (size_t t = 0; t < gpuModel.data.textures.size(); t++) {
-                    LOG_INFO("  Texture[", t, "]: type=", gpuModel.data.textures[t].type,
-                             " file=", gpuModel.data.textures[t].filename,
-                             " glId=", (t < gpuModel.textureIds.size() ? std::to_string(gpuModel.textureIds[t]) : "N/A"));
                 }
             }
 

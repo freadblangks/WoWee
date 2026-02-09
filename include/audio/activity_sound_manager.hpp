@@ -66,6 +66,7 @@ private:
     std::chrono::steady_clock::time_point lastLandAt{};
     std::chrono::steady_clock::time_point lastSplashAt{};
     std::chrono::steady_clock::time_point lastMeleeSwingAt{};
+    std::chrono::steady_clock::time_point lastSwimStrokeAt{};
     bool meleeSwingWarned = false;
     std::string voiceProfileKey;
     float volumeScale = 1.0f;

@@ -31,7 +31,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
     std::signal(SIGTERM, crashHandler);
     std::signal(SIGINT,  crashHandler);
     try {
-        wowee::core::Logger::getInstance().setLogLevel(wowee::core::LogLevel::DEBUG);
+        wowee::core::Logger::getInstance().setLogLevel(wowee::core::LogLevel::INFO);
         LOG_INFO("=== Wowee Native Client ===");
         LOG_INFO("Starting application...");
 

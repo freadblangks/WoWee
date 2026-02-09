@@ -65,8 +65,6 @@ ADTTerrain ADTLoader::load(const std::vector<uint8_t>& adtData) {
             // Log first few chunks for debugging
             char magic[5] = {0};
             std::memcpy(magic, &header.magic, 4);
-            LOG_INFO("Chunk #", totalChunks, ": magic=", magic,
-                     " (0x", std::hex, header.magic, std::dec, "), size=", chunkSize);
         }
 
         // Parse based on chunk type
@@ -101,10 +99,6 @@ ADTTerrain ADTLoader::load(const std::vector<uint8_t>& adtData) {
     }
 
     terrain.loaded = true;
-    LOG_INFO("ADT loaded: ", chunkIndex, " map chunks, ",
-             terrain.textures.size(), " textures, ",
-             terrain.doodadNames.size(), " doodads, ",
-             terrain.wmoNames.size(), " WMOs");
 
     return terrain;
 }
@@ -211,7 +205,6 @@ void ADTLoader::parseMWMO(const uint8_t* data, size_t size, ADTTerrain& terrain)
 
     LOG_DEBUG("Loaded ", terrain.wmoNames.size(), " WMO names");
     for (size_t i = 0; i < terrain.wmoNames.size(); i++) {
-        LOG_INFO("  WMO[", i, "]: ", terrain.wmoNames[i]);
     }
 }
 

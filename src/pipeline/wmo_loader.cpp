@@ -75,7 +75,7 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
         return model;
     }
 
-    core::Logger::getInstance().info("Loading WMO model...");
+    // WMO loader logs disabled
 
     uint32_t offset = 0;
 
@@ -95,7 +95,7 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
         switch (chunkId) {
             case MVER: {
                 model.version = read<uint32_t>(wmoData, offset);
-                core::Logger::getInstance().info("WMO version: ", model.version);
+                // WMO version log disabled
                 break;
             }
 
@@ -147,11 +147,11 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
                     // Store mapping from byte offset to texture index
                     model.textureOffsetToIndex[relativeOffset] = texIndex;
                     model.textures.push_back(texName);
-                    core::Logger::getInstance().info("  MOTX texture[", texIndex, "] at offset ", relativeOffset, ": ", texName);
+                    // MOTX texture log disabled
                     texOffset += texName.length() + 1;
                     texIndex++;
                 }
-                core::Logger::getInstance().info("WMO textures: ", model.textures.size());
+                // WMO textures log disabled
                 break;
             }
 
@@ -200,7 +200,7 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
                     model.groupNames.push_back(name);
                     nameOffset += name.length() + 1;
                 }
-                core::Logger::getInstance().info("WMO group names: ", model.groupNames.size());
+                // WMO group names log disabled
                 break;
             }
 
@@ -382,7 +382,7 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
     // Initialize groups array
     model.groups.resize(model.nGroups);
 
-    core::Logger::getInstance().info("WMO model loaded successfully");
+    // WMO loaded log disabled
     return model;
 }
 

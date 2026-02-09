@@ -843,9 +843,6 @@ void NpcManager::initialize(pipeline::AssetManager* am,
         npc.isEmoting = false;
         npc.isCritter = s.isCritter;
         npcs.push_back(npc);
-
-        LOG_INFO("NpcManager: spawned '", s.name, "' guid=0x", std::hex, guid, std::dec,
-                 " at GL(", glPos.x, ",", glPos.y, ",", glPos.z, ")");
     }
 
     LOG_INFO("NpcManager: initialized ", npcs.size(), " NPCs with ",

@@ -38,6 +38,7 @@
 #include "audio/activity_sound_manager.hpp"
 #include "audio/mount_sound_manager.hpp"
 #include "audio/npc_voice_manager.hpp"
+#include "audio/ambient_sound_manager.hpp"
 #include <GL/glew.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/euler_angles.hpp>
@@ -344,6 +345,7 @@ bool Renderer::initialize(core::Window* win) {
     activitySoundManager = std::make_unique<audio::ActivitySoundManager>();
     mountSoundManager = std::make_unique<audio::MountSoundManager>();
     npcVoiceManager = std::make_unique<audio::NpcVoiceManager>();
+    ambientSoundManager = std::make_unique<audio::AmbientSoundManager>();
 
     // Underwater full-screen tint overlay (applies to all world geometry).
     underwaterOverlayShader = std::make_unique<Shader>();
@@ -1383,12 +1385,21 @@ void Renderer::update(float deltaTime) {
 
             activitySoundManager->setSwimmingState(swimming, moving);
 
+            // Fade music underwater
+            if (musicManager) {
+                musicManager->setUnderwaterMode(swimming);
+            }
+
             sfxPrevGrounded = grounded;
             sfxPrevJumping = jumping;
             sfxPrevFalling = falling;
             sfxPrevSwimming = swimming;
         } else {
             activitySoundManager->setSwimmingState(false, false);
+            // Restore music volume when activity sounds disabled
+            if (musicManager) {
+                musicManager->setUnderwaterMode(false);
+            }
             sfxStateInitialized = false;
         }
     }
@@ -1402,6 +1413,16 @@ void Renderer::update(float deltaTime) {
             mountSoundManager->setMoving(moving);
             mountSoundManager->setFlying(flying);
         }
+    }
+
+    // Ambient environmental sounds: fireplaces, water, birds, etc.
+    if (ambientSoundManager && camera && wmoRenderer && cameraController) {
+        glm::vec3 camPos = camera->getPosition();
+        uint32_t wmoId = 0;
+        bool isIndoor = wmoRenderer->isInsideWMO(camPos.x, camPos.y, camPos.z, &wmoId);
+        bool isSwimming = cameraController->isSwimming();
+
+        ambientSoundManager->update(deltaTime, camPos, isIndoor, isSwimming);
     }
 
     // Update M2 doodad animations (pass camera for frustum-culling bone computation)
@@ -2040,6 +2061,10 @@ bool Renderer::loadTestTerrain(pipeline::AssetManager* assetManager, const std::
         if (wmoRenderer) {
             terrainManager->setWMORenderer(wmoRenderer.get());
         }
+        // Set ambient sound manager for environmental audio emitters
+        if (ambientSoundManager) {
+            terrainManager->setAmbientSoundManager(ambientSoundManager.get());
+        }
         // Pass asset manager to character renderer for texture loading
         if (characterRenderer) {
             characterRenderer->setAssetManager(assetManager);
@@ -2116,6 +2141,9 @@ bool Renderer::loadTestTerrain(pipeline::AssetManager* assetManager, const std::
         }
         if (npcVoiceManager) {
             npcVoiceManager->initialize(assetManager);
+        }
+        if (ambientSoundManager) {
+            ambientSoundManager->initialize(assetManager);
         }
         cachedAssetManager = assetManager;
     }
@@ -2200,6 +2228,14 @@ bool Renderer::loadTerrainArea(const std::string& mapName, int centerX, int cent
     }
     if (npcVoiceManager && cachedAssetManager) {
         npcVoiceManager->initialize(cachedAssetManager);
+    }
+    if (ambientSoundManager && cachedAssetManager) {
+        ambientSoundManager->initialize(cachedAssetManager);
+    }
+
+    // Wire ambient sound manager to terrain manager for emitter registration
+    if (terrainManager && ambientSoundManager) {
+        terrainManager->setAmbientSoundManager(ambientSoundManager.get());
     }
 
     // Wire WMO, M2, and water renderer to camera controller

@@ -13,7 +13,6 @@ TerrainMesh TerrainMeshGenerator::generate(const ADTTerrain& terrain) {
         return mesh;
     }
 
-    LOG_INFO("Generating terrain mesh for ADT...");
 
     // Copy texture list
     mesh.textures = terrain.textures;
@@ -40,7 +39,6 @@ TerrainMesh TerrainMeshGenerator::generate(const ADTTerrain& terrain) {
     }
 
     mesh.validChunkCount = validCount;
-    LOG_INFO("Generated ", validCount, " terrain chunk meshes");
 
     return mesh;
 }

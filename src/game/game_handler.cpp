@@ -1522,7 +1522,6 @@ void GameHandler::setOrientation(float orientation) {
 }
 
 void GameHandler::handleUpdateObject(network::Packet& packet) {
-    LOG_INFO("Handling SMSG_UPDATE_OBJECT");
 
     UpdateObjectData data;
     if (!UpdateObjectParser::parse(packet, data)) {
@@ -1563,24 +1562,19 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                 switch (block.objectType) {
                     case ObjectType::PLAYER:
                         entity = std::make_shared<Player>(block.guid);
-                        LOG_INFO("Created player entity: 0x", std::hex, block.guid, std::dec);
                         break;
 
                     case ObjectType::UNIT:
                         entity = std::make_shared<Unit>(block.guid);
-                        LOG_INFO("Created unit entity: 0x", std::hex, block.guid, std::dec);
                         break;
 
                     case ObjectType::GAMEOBJECT:
                         entity = std::make_shared<GameObject>(block.guid);
-                        LOG_INFO("Created gameobject entity: 0x", std::hex, block.guid, std::dec);
                         break;
 
                     default:
                         entity = std::make_shared<Entity>(block.guid);
                         entity->setType(block.objectType);
-                        LOG_INFO("Created generic entity: 0x", std::hex, block.guid, std::dec,
-                                 ", type=", static_cast<int>(block.objectType));
                         break;
                 }
 
@@ -1948,7 +1942,6 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
 
                     LOG_DEBUG("Updated entity fields: 0x", std::hex, block.guid, std::dec);
                 } else {
-                    LOG_WARNING("VALUES update for unknown entity: 0x", std::hex, block.guid, std::dec);
                 }
                 break;
             }
@@ -1983,7 +1976,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
     }
 
     tabCycleStale = true;
-    LOG_INFO("Entity count: ", entityManager.getEntityCount());
+    // Entity count logging disabled
 
     // Late inventory base detection once items are known
     if (playerGuid != 0 && invSlotBase_ < 0 && !lastPlayerFields_.empty() && !onlineItems_.empty()) {
@@ -2070,7 +2063,7 @@ void GameHandler::handleDestroyObject(network::Packet& packet) {
     npcQuestStatus_.erase(data.guid);
 
     tabCycleStale = true;
-    LOG_INFO("Entity count: ", entityManager.getEntityCount());
+    // Entity count logging disabled
 }
 
 void GameHandler::sendChatMessage(ChatType type, const std::string& message, const std::string& target) {

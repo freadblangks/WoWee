@@ -4,6 +4,7 @@
 #include "rendering/m2_renderer.hpp"
 #include "rendering/wmo_renderer.hpp"
 #include "rendering/camera.hpp"
+#include "audio/ambient_sound_manager.hpp"
 #include "core/coordinates.hpp"
 #include "core/memory_monitor.hpp"
 #include "pipeline/asset_manager.hpp"
@@ -465,6 +466,49 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
                         // Extract world position for frustum culling
                         glm::vec3 worldPos = glm::vec3(worldMatrix[3]);
 
+                        // Detect ambient sound emitters from doodad model path
+                        std::string m2PathLower = m2Path;
+                        std::transform(m2PathLower.begin(), m2PathLower.end(), m2PathLower.begin(), ::tolower);
+
+                        // Debug: Log all doodad paths to help identify fire-related models
+                        static int doodadLogCount = 0;
+                        if (doodadLogCount < 50) {  // Limit logging to first 50 doodads
+                            LOG_DEBUG("WMO doodad: ", m2Path);
+                            doodadLogCount++;
+                        }
+
+                        if (m2PathLower.find("fire") != std::string::npos ||
+                            m2PathLower.find("brazier") != std::string::npos ||
+                            m2PathLower.find("campfire") != std::string::npos) {
+                            // Fireplace/brazier emitter
+                            PendingTile::AmbientEmitter emitter;
+                            emitter.position = worldPos;
+                            if (m2PathLower.find("small") != std::string::npos || m2PathLower.find("campfire") != std::string::npos) {
+                                emitter.type = 0;  // FIREPLACE_SMALL
+                            } else {
+                                emitter.type = 1;  // FIREPLACE_LARGE
+                            }
+                            pending->ambientEmitters.push_back(emitter);
+                        } else if (m2PathLower.find("torch") != std::string::npos) {
+                            // Torch emitter
+                            PendingTile::AmbientEmitter emitter;
+                            emitter.position = worldPos;
+                            emitter.type = 2;  // TORCH
+                            pending->ambientEmitters.push_back(emitter);
+                        } else if (m2PathLower.find("fountain") != std::string::npos) {
+                            // Fountain emitter
+                            PendingTile::AmbientEmitter emitter;
+                            emitter.position = worldPos;
+                            emitter.type = 3;  // FOUNTAIN
+                            pending->ambientEmitters.push_back(emitter);
+                        } else if (m2PathLower.find("waterfall") != std::string::npos) {
+                            // Waterfall emitter
+                            PendingTile::AmbientEmitter emitter;
+                            emitter.position = worldPos;
+                            emitter.type = 6;  // WATERFALL
+                            pending->ambientEmitters.push_back(emitter);
+                        }
+
                         PendingTile::WMODoodadReady doodadReady;
                         doodadReady.modelId = doodadModelId;
                         doodadReady.model = std::move(m2Model);
@@ -531,6 +575,60 @@ void TerrainManager::finalizeTile(const std::shared_ptr<PendingTile>& pending) {
     // Load water
     if (waterRenderer) {
         waterRenderer->loadFromTerrain(pending->terrain, true, x, y);
+    }
+
+    // Register water surface ambient sound emitters
+    if (ambientSoundManager) {
+        // Scan ADT water data for water surfaces
+        int waterEmitterCount = 0;
+        for (size_t chunkIdx = 0; chunkIdx < pending->terrain.waterData.size(); chunkIdx++) {
+            const auto& chunkWater = pending->terrain.waterData[chunkIdx];
+            if (!chunkWater.hasWater()) continue;
+
+            // Calculate chunk position in world coordinates
+            int chunkX = chunkIdx % 16;
+            int chunkY = chunkIdx / 16;
+
+            // WoW coordinates: Each ADT tile is 533.33 units, each chunk is 533.33/16 = 33.333 units
+            // Tile origin in GL space
+            float tileOriginX = (32.0f - x) * 533.33333f;
+            float tileOriginY = (32.0f - y) * 533.33333f;
+
+            // Chunk center position
+            float chunkCenterX = tileOriginX + (chunkX + 0.5f) * 33.333333f;
+            float chunkCenterY = tileOriginY + (chunkY + 0.5f) * 33.333333f;
+
+            // Use first layer for height and type detection
+            if (!chunkWater.layers.empty()) {
+                const auto& layer = chunkWater.layers[0];
+                float waterHeight = layer.minHeight;
+
+                // Determine water type and register appropriate emitter
+                // liquidType: 0=water/lake, 1=ocean, 2=magma, 3=slime
+                if (layer.liquidType == 0) {
+                    // Lake/river water - add water surface emitter every 32 chunks to avoid spam
+                    if (chunkIdx % 32 == 0) {
+                        PendingTile::AmbientEmitter emitter;
+                        emitter.position = glm::vec3(chunkCenterX, chunkCenterY, waterHeight);
+                        emitter.type = 4;  // WATER_SURFACE
+                        pending->ambientEmitters.push_back(emitter);
+                        waterEmitterCount++;
+                    }
+                } else if (layer.liquidType == 1) {
+                    // Ocean - add ocean emitter every 64 chunks (oceans are very large)
+                    if (chunkIdx % 64 == 0) {
+                        PendingTile::AmbientEmitter emitter;
+                        emitter.position = glm::vec3(chunkCenterX, chunkCenterY, waterHeight);
+                        emitter.type = 4;  // WATER_SURFACE (could add separate OCEAN type later)
+                        pending->ambientEmitters.push_back(emitter);
+                        waterEmitterCount++;
+                    }
+                }
+                // Skip magma and slime for now (no ambient sounds for those)
+            }
+        }
+        if (waterEmitterCount > 0) {
+        }
     }
 
     std::vector<uint32_t> m2InstanceIds;
@@ -628,6 +726,15 @@ void TerrainManager::finalizeTile(const std::shared_ptr<PendingTile>& pending) {
 
         if (loadedWMOs > 0) {
             LOG_DEBUG("  Loaded WMOs for tile [", x, ",", y, "]: ", loadedWMOs);
+        }
+    }
+
+    // Register ambient sound emitters with ambient sound manager
+    if (ambientSoundManager && !pending->ambientEmitters.empty()) {
+        for (const auto& emitter : pending->ambientEmitters) {
+            // Cast uint32_t type to AmbientSoundManager::AmbientType enum
+            auto type = static_cast<audio::AmbientSoundManager::AmbientType>(emitter.type);
+            ambientSoundManager->addEmitter(emitter.position, type);
         }
     }
 

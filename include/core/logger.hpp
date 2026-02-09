@@ -62,7 +62,7 @@ private:
         return oss.str();
     }
 
-    LogLevel minLevel = LogLevel::DEBUG;
+    LogLevel minLevel = LogLevel::INFO;  // Changed from DEBUG to reduce log spam
     std::mutex mutex;
     std::ofstream fileStream;
     bool fileReady = false;

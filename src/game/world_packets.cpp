@@ -924,11 +924,9 @@ bool UpdateObjectParser::parseUpdateBlock(network::Packet& packet, UpdateBlock& 
 }
 
 bool UpdateObjectParser::parse(network::Packet& packet, UpdateObjectData& data) {
-    LOG_INFO("Parsing SMSG_UPDATE_OBJECT");
 
     // Read block count
     data.blockCount = packet.readUInt32();
-    LOG_INFO("  Block count: ", data.blockCount);
 
     // Check for out-of-range objects first
     if (packet.getReadPos() + 1 <= packet.getSize()) {
@@ -937,7 +935,6 @@ bool UpdateObjectParser::parse(network::Packet& packet, UpdateObjectData& data) 
         if (firstByte == static_cast<uint8_t>(UpdateType::OUT_OF_RANGE_OBJECTS)) {
             // Read out-of-range GUID count
             uint32_t count = packet.readUInt32();
-            LOG_INFO("  Out-of-range objects: ", count);
 
             for (uint32_t i = 0; i < count; ++i) {
                 uint64_t guid = readPackedGuid(packet);
@@ -968,7 +965,6 @@ bool UpdateObjectParser::parse(network::Packet& packet, UpdateObjectData& data) 
         data.blocks.push_back(block);
     }
 
-    LOG_INFO("Successfully parsed ", data.blocks.size(), " update blocks");
 
     return true;
 }

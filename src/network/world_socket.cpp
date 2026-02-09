@@ -115,34 +115,16 @@ void WorldSocket::send(const Packet& packet) {
     sendData.push_back(0);  // High bytes are 0 for all WoW opcodes
     sendData.push_back(0);
 
-    // Debug: log encryption state and header
-    LOG_DEBUG("SEND opcode=0x", std::hex, opcode, std::dec,
-              " encryptionEnabled=", encryptionEnabled,
-              " header=[", std::hex,
-              (int)sendData[0], " ", (int)sendData[1], " ",
-              (int)sendData[2], " ", (int)sendData[3], " ",
-              (int)sendData[4], " ", (int)sendData[5], std::dec, "]",
-              " sizeField=", sizeField, " payloadLen=", payloadLen);
+    // Debug logging disabled - too spammy
 
     // Encrypt header if encryption is enabled (all 6 bytes)
     if (encryptionEnabled) {
-        uint8_t plainHeader[6];
-        memcpy(plainHeader, sendData.data(), 6);
         encryptCipher.process(sendData.data(), 6);
-        LOG_DEBUG("Encrypted header: plain=[", std::hex,
-                  (int)plainHeader[0], " ", (int)plainHeader[1], " ",
-                  (int)plainHeader[2], " ", (int)plainHeader[3], " ",
-                  (int)plainHeader[4], " ", (int)plainHeader[5], "] -> enc=[",
-                  (int)sendData[0], " ", (int)sendData[1], " ",
-                  (int)sendData[2], " ", (int)sendData[3], " ",
-                  (int)sendData[4], " ", (int)sendData[5], "]", std::dec);
     }
 
     // Add payload (unencrypted)
     sendData.insert(sendData.end(), data.begin(), data.end());
 
-    LOG_DEBUG("Sending world packet: opcode=0x", std::hex, opcode, std::dec,
-              " payload=", payloadLen, " bytes (", sendData.size(), " total)");
 
     // Debug: dump first few movement packets
     {
@@ -177,7 +159,6 @@ void WorldSocket::send(const Packet& packet) {
     if (sent < 0) {
         LOG_ERROR("Send failed: ", net::errorString(net::lastError()));
     } else {
-        LOG_DEBUG("Actually sent ", sent, " bytes to server");
         if (static_cast<size_t>(sent) != sendData.size()) {
             LOG_WARNING("Partial send: ", sent, " of ", sendData.size(), " bytes");
         }
@@ -228,39 +209,17 @@ void WorldSocket::tryParsePackets() {
         // Opcode: 2 bytes little-endian
         uint16_t opcode = receiveBuffer[2] | (receiveBuffer[3] << 8);
 
-        LOG_DEBUG("RECV encryptionEnabled=", encryptionEnabled,
-                  " header=[", std::hex, (int)receiveBuffer[0], " ", (int)receiveBuffer[1], " ",
-                  (int)receiveBuffer[2], " ", (int)receiveBuffer[3], std::dec, "]",
-                  " -> size=", size, " opcode=0x", std::hex, opcode, std::dec);
-
         // Total packet size: size field (2) + size value (which includes opcode + payload)
         size_t totalSize = 2 + size;
 
         if (receiveBuffer.size() < totalSize) {
             // Not enough data yet - header stays decrypted in buffer
-            LOG_DEBUG("Waiting for more data: have ", receiveBuffer.size(),
-                     " bytes, need ", totalSize);
             break;
         }
-
-        // We have a complete packet!
-        LOG_DEBUG("Parsing world packet: opcode=0x", std::hex, opcode, std::dec,
-                 " size=", size, " totalSize=", totalSize, " bytes");
 
         // Extract payload (skip header)
         std::vector<uint8_t> packetData(receiveBuffer.begin() + 4,
                                         receiveBuffer.begin() + totalSize);
-
-        // Log first few bytes of payload
-        if (!packetData.empty()) {
-            std::string payloadHex;
-            for (size_t i = 0; i < std::min(packetData.size(), size_t(16)); i++) {
-                char buf[4];
-                snprintf(buf, sizeof(buf), "%02x ", packetData[i]);
-                payloadHex += buf;
-            }
-            LOG_DEBUG("Payload (first 16 bytes): ", payloadHex);
-        }
 
         // Create packet with opcode and payload
         Packet packet(opcode, packetData);

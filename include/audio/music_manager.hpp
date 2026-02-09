@@ -22,6 +22,7 @@ public:
     void update(float deltaTime);
     void setVolume(int volume);
     int getVolume() const { return volumePercent; }
+    void setUnderwaterMode(bool underwater);
 
     bool isPlaying() const { return playing; }
     bool isInitialized() const { return assetManager != nullptr; }
@@ -33,6 +34,7 @@ private:
     bool currentTrackIsFile = false;
     bool playing = false;
     int volumePercent = 30;
+    bool underwaterMode = false;
 
     // Crossfade state
     bool crossfading = false;

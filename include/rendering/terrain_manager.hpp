@@ -22,6 +22,7 @@
 namespace wowee {
 
 namespace pipeline { class AssetManager; }
+namespace audio { class AmbientSoundManager; }
 namespace rendering { class TerrainRenderer; class Camera; class WaterRenderer; class M2Renderer; class WMORenderer; }
 
 namespace rendering {
@@ -106,6 +107,13 @@ struct PendingTile {
     };
     std::vector<WMODoodadReady> wmoDoodads;
 
+    // Ambient sound emitters (detected from doodads)
+    struct AmbientEmitter {
+        glm::vec3 position;
+        uint32_t type;  // Maps to AmbientSoundManager::AmbientType
+    };
+    std::vector<AmbientEmitter> ambientEmitters;
+
     // Pre-loaded terrain texture BLP data (loaded on background thread to avoid
     // blocking file I/O on the main thread during finalizeTile)
     std::unordered_map<std::string, pipeline::BLPImage> preloadedTextures;
@@ -182,6 +190,7 @@ public:
     void setWaterRenderer(WaterRenderer* renderer) { waterRenderer = renderer; }
     void setM2Renderer(M2Renderer* renderer) { m2Renderer = renderer; }
     void setWMORenderer(WMORenderer* renderer) { wmoRenderer = renderer; }
+    void setAmbientSoundManager(audio::AmbientSoundManager* manager) { ambientSoundManager = manager; }
 
     /**
      * Get terrain height at GL coordinates
@@ -257,6 +266,7 @@ private:
     WaterRenderer* waterRenderer = nullptr;
     M2Renderer* m2Renderer = nullptr;
     WMORenderer* wmoRenderer = nullptr;
+    audio::AmbientSoundManager* ambientSoundManager = nullptr;
 
     std::string mapName = "Azeroth";
 

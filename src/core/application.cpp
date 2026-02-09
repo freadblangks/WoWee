@@ -1121,9 +1121,6 @@ void Application::spawnPlayerCharacter() {
                          model.indices.size(), " indices, ", model.batches.size(), " batches");
                 // Log all animation sequence IDs
                 for (size_t i = 0; i < model.sequences.size(); i++) {
-                    LOG_INFO("  Anim[", i, "]: id=", model.sequences[i].id,
-                             " duration=", model.sequences[i].duration, "ms",
-                             " speed=", model.sequences[i].movingSpeed);
                 }
             }
         }
@@ -1889,7 +1886,6 @@ void Application::buildCreatureDisplayLookups() {
             uint32_t k = (1u << 16) | (0u << 8) | v;
             auto it = hairGeosetMap_.find(k);
             if (it != hairGeosetMap_.end()) {
-                LOG_INFO("  HairGeoset Human Male style ", v, " → geosetId ", it->second);
             }
         }
     }

@@ -8,7 +8,7 @@
 namespace wowee {
 namespace core { class Window; }
 namespace game { class World; class ZoneManager; }
-namespace audio { class MusicManager; class FootstepManager; class ActivitySoundManager; class MountSoundManager; class NpcVoiceManager; enum class FootstepSurface : uint8_t; enum class VoiceType; }
+namespace audio { class MusicManager; class FootstepManager; class ActivitySoundManager; class MountSoundManager; class NpcVoiceManager; class AmbientSoundManager; enum class FootstepSurface : uint8_t; enum class VoiceType; }
 namespace pipeline { class AssetManager; }
 
 namespace rendering {
@@ -150,6 +150,7 @@ public:
     audio::ActivitySoundManager* getActivitySoundManager() { return activitySoundManager.get(); }
     audio::MountSoundManager* getMountSoundManager() { return mountSoundManager.get(); }
     audio::NpcVoiceManager* getNpcVoiceManager() { return npcVoiceManager.get(); }
+    audio::AmbientSoundManager* getAmbientSoundManager() { return ambientSoundManager.get(); }
 
 private:
     core::Window* window = nullptr;
@@ -177,6 +178,7 @@ private:
     std::unique_ptr<audio::ActivitySoundManager> activitySoundManager;
     std::unique_ptr<audio::MountSoundManager> mountSoundManager;
     std::unique_ptr<audio::NpcVoiceManager> npcVoiceManager;
+    std::unique_ptr<audio::AmbientSoundManager> ambientSoundManager;
     std::unique_ptr<game::ZoneManager> zoneManager;
     std::unique_ptr<Shader> underwaterOverlayShader;
     uint32_t underwaterOverlayVAO = 0;

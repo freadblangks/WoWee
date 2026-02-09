@@ -136,7 +136,7 @@ bool AudioEngine::playSound2D(const std::vector<uint8_t>& wavData, float volume,
     );
 
     if (result != MA_SUCCESS) {
-        LOG_WARNING("Failed to decode WAV data: ", result);
+        LOG_ERROR("AudioEngine: Failed to decode WAV data (", wavData.size(), " bytes): error ", result);
         return false;
     }
 
@@ -152,8 +152,8 @@ bool AudioEngine::playSound2D(const std::vector<uint8_t>& wavData, float volume,
         totalFrames = 0;  // Unknown length, will decode what we can
     }
 
-    // Allocate buffer for decoded PCM data (limit to 5 seconds max to prevent huge allocations)
-    ma_uint64 maxFrames = sampleRate * 5;
+    // Allocate buffer for decoded PCM data (limit to 60 seconds max for ambient loops)
+    ma_uint64 maxFrames = sampleRate * 60;
     if (totalFrames == 0 || totalFrames > maxFrames) {
         totalFrames = maxFrames;
     }
@@ -167,8 +167,13 @@ bool AudioEngine::playSound2D(const std::vector<uint8_t>& wavData, float volume,
     ma_decoder_uninit(&decoder);
 
     if (result != MA_SUCCESS || framesRead == 0) {
-        LOG_WARNING("Failed to read any frames from WAV: ", result);
+        LOG_ERROR("AudioEngine: Failed to read frames from WAV: error ", result, ", framesRead=", framesRead);
         return false;
+    }
+
+    // Only log for large files (>1MB)
+    if (wavData.size() > 1000000) {
+        LOG_INFO("AudioEngine: Decoded ", framesRead, " frames (", framesRead / (float)sampleRate, "s) from ", wavData.size(), " byte WAV");
     }
 
     // Resize pcmData to actual size used
@@ -270,7 +275,8 @@ bool AudioEngine::playSound3D(const std::vector<uint8_t>& wavData, const glm::ve
         totalFrames = 0;
     }
 
-    ma_uint64 maxFrames = sampleRate * 5;
+    // Limit to 60 seconds max for ambient loops (same as 2D)
+    ma_uint64 maxFrames = sampleRate * 60;
     if (totalFrames == 0 || totalFrames > maxFrames) {
         totalFrames = maxFrames;
     }

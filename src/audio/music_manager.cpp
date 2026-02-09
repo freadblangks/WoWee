@@ -119,6 +119,21 @@ void MusicManager::setVolume(int volume) {
 
     // Update AudioEngine music volume directly (no restart needed!)
     float vol = volumePercent / 100.0f;
+    if (underwaterMode) {
+        vol *= 0.3f;  // 30% volume underwater
+    }
+    AudioEngine::instance().setMusicVolume(vol);
+}
+
+void MusicManager::setUnderwaterMode(bool underwater) {
+    if (underwaterMode == underwater) return;
+    underwaterMode = underwater;
+
+    // Apply volume change immediately
+    float vol = volumePercent / 100.0f;
+    if (underwaterMode) {
+        vol *= 0.3f;  // Fade to 30% underwater
+    }
     AudioEngine::instance().setMusicVolume(vol);
 }
 

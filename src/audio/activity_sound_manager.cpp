@@ -33,13 +33,14 @@ bool ActivitySoundManager::initialize(pipeline::AssetManager* assets) {
     rebuildHardLandClipsForProfile("Human", "Human", true);
 
     preloadCandidates(splashEnterClips, {
-        "Sound\\Character\\General\\Water\\WaterSplashSmall.wav",
-        "Sound\\Character\\General\\Water\\WaterSplashMedium.wav",
-        "Sound\\Character\\General\\Water\\WaterSplashLarge.wav",
-        "Sound\\Character\\Footsteps\\mFootMediumLargeWaterA.wav",
-        "Sound\\Character\\Footsteps\\mFootMediumLargeWaterB.wav",
-        "Sound\\Character\\Footsteps\\mFootMediumLargeWaterC.wav",
-        "Sound\\Character\\Footsteps\\mFootMediumLargeWaterD.wav"
+        "Sound\\Character\\Footsteps\\EnterWaterSplash\\EnterWaterSmallA.wav",
+        "Sound\\Character\\Footsteps\\EnterWaterSplash\\EnterWaterMediumA.wav",
+        "Sound\\Character\\Footsteps\\EnterWaterSplash\\EnterWaterGiantA.wav",
+        "Sound\\Character\\Footsteps\\WaterSplash\\FootStepsMediumWaterA.wav",
+        "Sound\\Character\\Footsteps\\WaterSplash\\FootStepsMediumWaterB.wav",
+        "Sound\\Character\\Footsteps\\WaterSplash\\FootStepsMediumWaterC.wav",
+        "Sound\\Character\\Footsteps\\WaterSplash\\FootStepsMediumWaterD.wav",
+        "Sound\\Character\\Footsteps\\WaterSplash\\FootStepsMediumWaterE.wav"
     });
     splashExitClips = splashEnterClips;
 
@@ -91,8 +92,29 @@ void ActivitySoundManager::shutdown() {
     assetManager = nullptr;
 }
 
-void ActivitySoundManager::update(float) {
+void ActivitySoundManager::update(float deltaTime) {
     reapProcesses();
+
+    // Play swimming stroke sounds periodically when swimming and moving
+    if (swimmingActive && swimMoving && !swimLoopClips.empty()) {
+        auto now = std::chrono::steady_clock::now();
+        float elapsed = std::chrono::duration<float>(now - lastSwimStrokeAt).count();
+
+        // Play swimming stroke sound every 0.8 seconds (swim stroke rhythm)
+        if (lastSwimStrokeAt.time_since_epoch().count() == 0 || elapsed >= 0.8f) {
+            std::uniform_int_distribution<size_t> clipDist(0, swimLoopClips.size() - 1);
+            const Sample& sample = swimLoopClips[clipDist(rng)];
+
+            // Play as one-shot 2D sound
+            float volume = 0.6f * volumeScale;
+            AudioEngine::instance().playSound2D(sample.data, volume, false);
+
+            lastSwimStrokeAt = now;
+        }
+    } else if (!swimmingActive) {
+        // Reset timer when not swimming
+        lastSwimStrokeAt = std::chrono::steady_clock::time_point{};
+    }
 }
 
 void ActivitySoundManager::preloadCandidates(std::vector<Sample>& out, const std::vector<std::string>& candidates) {
@@ -169,24 +191,21 @@ void ActivitySoundManager::rebuildJumpClipsForProfile(const std::string& raceFol
 
 void ActivitySoundManager::rebuildSwimLoopClipsForProfile(const std::string& raceFolder, const std::string& raceBase, bool male) {
     swimLoopClips.clear();
-    const std::string gender = male ? "Male" : "Female";
-    const std::string prefix = "Sound\\Character\\" + raceFolder + "\\";
-    const std::string stem = raceBase + gender;
+
+    // WoW 3.3.5a doesn't have dedicated swim loop sounds
+    // Use water splash/footstep sounds as swimming stroke sounds
     preloadCandidates(swimLoopClips, {
-        prefix + stem + "\\" + stem + "SwimLoop.wav",
-        prefix + stem + "\\" + stem + "Swim01.wav",
-        prefix + stem + "\\" + stem + "Swim02.wav",
-        prefix + stem + "SwimLoop.wav",
-        prefix + stem + "Swim01.wav",
-        prefix + stem + "Swim02.wav",
-        prefix + (male ? "Male" : "Female") + "\\" + stem + "SwimLoop.wav",
-        "Sound\\Character\\Swim\\SwimMoveLoop.wav",
-        "Sound\\Character\\Swim\\SwimLoop.wav",
-        "Sound\\Character\\Swim\\SwimSlowLoop.wav"
+        "Sound\\Character\\Footsteps\\WaterSplash\\FootStepsMediumWaterA.wav",
+        "Sound\\Character\\Footsteps\\WaterSplash\\FootStepsMediumWaterB.wav",
+        "Sound\\Character\\Footsteps\\WaterSplash\\FootStepsMediumWaterC.wav",
+        "Sound\\Character\\Footsteps\\WaterSplash\\FootStepsMediumWaterD.wav",
+        "Sound\\Character\\Footsteps\\WaterSplash\\FootStepsMediumWaterE.wav",
+        "Sound\\Character\\Footsteps\\WaterSplash\\FootStepsSmallWaterA.wav",
+        "Sound\\Character\\Footsteps\\WaterSplash\\FootStepsSmallWaterB.wav",
+        "Sound\\Character\\Footsteps\\WaterSplash\\FootStepsSmallWaterC.wav",
+        "Sound\\Character\\Footsteps\\WaterSplash\\FootStepsSmallWaterD.wav",
+        "Sound\\Character\\Footsteps\\WaterSplash\\FootStepsSmallWaterE.wav"
     });
-    if (swimLoopClips.empty()) {
-        preloadCandidates(swimLoopClips, buildClassicSet("Water"));
-    }
 }
 
 void ActivitySoundManager::rebuildHardLandClipsForProfile(const std::string& raceFolder, const std::string& raceBase, bool male) {
@@ -231,22 +250,9 @@ bool ActivitySoundManager::playOneShot(const std::vector<Sample>& clips, float v
 }
 
 void ActivitySoundManager::startSwimLoop() {
-    if (swimLoopPid != INVALID_PROCESS || swimLoopClips.empty()) return;
-    std::uniform_int_distribution<size_t> clipDist(0, swimLoopClips.size() - 1);
-    const Sample& sample = swimLoopClips[clipDist(rng)];
-
-    std::ofstream out(loopTempPath, std::ios::binary);
-    if (!out) return;
-    out.write(reinterpret_cast<const char*>(sample.data.data()), static_cast<std::streamsize>(sample.data.size()));
-    out.close();
-
-    float volume = (swimMoving ? 0.85f : 0.65f) * volumeScale;
-    std::string filter = "volume=" + std::to_string(volume);
-
-    swimLoopPid = platform::spawnProcess({
-        "-nodisp", "-autoexit", "-loop", "0", "-loglevel", "quiet",
-        "-af", filter, loopTempPath
-    });
+    // Swimming sounds now handled by periodic playback in update() method
+    // This method kept for API compatibility but does nothing
+    return;
 }
 
 void ActivitySoundManager::stopSwimLoop() {
@@ -353,8 +359,10 @@ void ActivitySoundManager::setSwimmingState(bool swimming, bool moving) {
     if (swimming == swimmingActive) return;
     swimmingActive = swimming;
     if (swimmingActive) {
+        LOG_INFO("Swimming started - playing swim loop");
         startSwimLoop();
     } else {
+        LOG_INFO("Swimming stopped - stopping swim loop");
         stopSwimLoop();
     }
 }
@@ -406,22 +414,36 @@ void ActivitySoundManager::setCharacterVoiceProfile(const std::string& modelName
 }
 
 void ActivitySoundManager::playWaterEnter() {
+    LOG_INFO("Water entry detected - attempting to play splash sound");
     auto now = std::chrono::steady_clock::now();
     if (lastSplashAt.time_since_epoch().count() != 0) {
-        if (std::chrono::duration<float>(now - lastSplashAt).count() < 0.20f) return;
+        if (std::chrono::duration<float>(now - lastSplashAt).count() < 0.20f) {
+            LOG_DEBUG("Water splash throttled (too soon)");
+            return;
+        }
     }
     if (playOneShot(splashEnterClips, 0.95f, 0.95f, 1.05f)) {
+        LOG_INFO("Water splash enter sound played");
         lastSplashAt = now;
+    } else {
+        LOG_ERROR("Failed to play water splash enter sound");
     }
 }
 
 void ActivitySoundManager::playWaterExit() {
+    LOG_INFO("Water exit detected - attempting to play splash sound");
     auto now = std::chrono::steady_clock::now();
     if (lastSplashAt.time_since_epoch().count() != 0) {
-        if (std::chrono::duration<float>(now - lastSplashAt).count() < 0.20f) return;
+        if (std::chrono::duration<float>(now - lastSplashAt).count() < 0.20f) {
+            LOG_DEBUG("Water splash throttled (too soon)");
+            return;
+        }
     }
     if (playOneShot(splashExitClips, 0.95f, 0.95f, 1.05f)) {
+        LOG_INFO("Water splash exit sound played");
         lastSplashAt = now;
+    } else {
+        LOG_ERROR("Failed to play water splash exit sound");
     }
 }
 

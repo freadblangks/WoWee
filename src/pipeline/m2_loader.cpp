@@ -823,11 +823,6 @@ bool M2Loader::loadSkin(const std::vector<uint8_t>& skinData, M2Model& model) {
         core::Logger::getInstance().debug("  Submeshes: ", submeshes.size());
         for (size_t i = 0; i < submeshes.size(); i++) {
             const auto& sm = submeshes[i];
-            core::Logger::getInstance().info("  SkinSection[", i, "]: id=", sm.id,
-                " level=", sm.level,
-                " vtxStart=", sm.vertexStart, " vtxCount=", sm.vertexCount,
-                " idxStart=", sm.indexStart, " idxCount=", sm.indexCount,
-                " boneCount=", sm.boneCount, " boneStart=", sm.boneStart);
         }
     }
 

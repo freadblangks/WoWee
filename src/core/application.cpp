@@ -820,7 +820,17 @@ void Application::setupUICallbacks() {
         if (renderer && renderer->getNpcVoiceManager()) {
             // Convert canonical to render coords for 3D audio
             glm::vec3 renderPos = core::coords::canonicalToRender(position);
-            renderer->getNpcVoiceManager()->playGreeting(guid, audio::VoiceType::GENERIC, renderPos);
+
+            // Detect voice type from NPC display ID
+            audio::VoiceType voiceType = audio::VoiceType::GENERIC;
+            auto entity = gameHandler->getEntityManager().getEntity(guid);
+            if (entity && entity->getType() == game::ObjectType::UNIT) {
+                auto unit = std::static_pointer_cast<game::Unit>(entity);
+                uint32_t displayId = unit->getDisplayId();
+                voiceType = detectVoiceTypeFromDisplayId(displayId);
+            }
+
+            renderer->getNpcVoiceManager()->playGreeting(guid, voiceType, renderPos);
         }
     });
 
@@ -1924,6 +1934,38 @@ std::string Application::getModelPathForDisplayId(uint32_t displayId) const {
     if (itPath == modelIdToPath_.end()) return "";
 
     return itPath->second;
+}
+
+audio::VoiceType Application::detectVoiceTypeFromDisplayId(uint32_t displayId) const {
+    // Look up display data
+    auto itDisplay = displayDataMap_.find(displayId);
+    if (itDisplay == displayDataMap_.end() || itDisplay->second.extraDisplayId == 0) {
+        return audio::VoiceType::GENERIC;  // Not a humanoid or no extra data
+    }
+
+    // Look up humanoid extra data (race/sex info)
+    auto itExtra = humanoidExtraMap_.find(itDisplay->second.extraDisplayId);
+    if (itExtra == humanoidExtraMap_.end()) {
+        return audio::VoiceType::GENERIC;
+    }
+
+    uint8_t raceId = itExtra->second.raceId;
+    uint8_t sexId = itExtra->second.sexId;
+
+    // Map (raceId, sexId) to VoiceType
+    // Race IDs: 1=Human, 2=Orc, 3=Dwarf, 4=NightElf, 5=Undead, 6=Tauren, 7=Gnome, 8=Troll
+    // Sex IDs: 0=Male, 1=Female
+    switch (raceId) {
+        case 1: return (sexId == 0) ? audio::VoiceType::HUMAN_MALE : audio::VoiceType::HUMAN_FEMALE;
+        case 2: return (sexId == 0) ? audio::VoiceType::ORC_MALE : audio::VoiceType::ORC_FEMALE;
+        case 3: return (sexId == 0) ? audio::VoiceType::DWARF_MALE : audio::VoiceType::GENERIC;  // No dwarf female voices loaded
+        case 4: return (sexId == 0) ? audio::VoiceType::NIGHTELF_MALE : audio::VoiceType::NIGHTELF_FEMALE;
+        case 5: return (sexId == 0) ? audio::VoiceType::UNDEAD_MALE : audio::VoiceType::UNDEAD_FEMALE;
+        case 6: return (sexId == 0) ? audio::VoiceType::TAUREN_MALE : audio::VoiceType::TAUREN_FEMALE;
+        case 7: return (sexId == 0) ? audio::VoiceType::GNOME_MALE : audio::VoiceType::GNOME_FEMALE;
+        case 8: return (sexId == 0) ? audio::VoiceType::TROLL_MALE : audio::VoiceType::TROLL_FEMALE;
+        default: return audio::VoiceType::GENERIC;
+    }
 }
 
 void Application::buildGameObjectDisplayLookups() {

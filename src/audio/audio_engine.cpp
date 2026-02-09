@@ -182,6 +182,7 @@ bool AudioEngine::playSound2D(const std::vector<uint8_t>& wavData, float volume,
         pcmData.data(),
         nullptr  // No custom allocator
     );
+    bufferConfig.sampleRate = sampleRate;  // Critical: preserve original sample rate!
 
     ma_audio_buffer* audioBuffer = new ma_audio_buffer();
     result = ma_audio_buffer_init(&bufferConfig, audioBuffer);
@@ -242,8 +243,6 @@ bool AudioEngine::playSound3D(const std::vector<uint8_t>& wavData, const glm::ve
         return false;
     }
 
-    (void)pitch;  // Pitch not supported yet
-
     // Decode WAV data first
     ma_decoder decoder;
     ma_decoder_config decoderConfig = ma_decoder_config_init_default();
@@ -255,12 +254,15 @@ bool AudioEngine::playSound3D(const std::vector<uint8_t>& wavData, const glm::ve
     );
 
     if (result != MA_SUCCESS) {
+        LOG_WARNING("playSound3D: Failed to decode WAV, error: ", result);
         return false;
     }
 
     ma_format format = decoder.outputFormat;
     ma_uint32 channels = decoder.outputChannels;
     ma_uint32 sampleRate = decoder.outputSampleRate;
+
+    LOG_DEBUG("playSound3D: Decoded WAV - format:", format, " channels:", channels, " sampleRate:", sampleRate, " pitch:", pitch);
 
     ma_uint64 totalFrames;
     result = ma_decoder_get_length_in_pcm_frames(&decoder, &totalFrames);
@@ -286,7 +288,7 @@ bool AudioEngine::playSound3D(const std::vector<uint8_t>& wavData, const glm::ve
 
     pcmData.resize(framesRead * channels * ma_get_bytes_per_sample(format));
 
-    // Create audio buffer
+    // Create audio buffer with correct sample rate
     ma_audio_buffer_config bufferConfig = ma_audio_buffer_config_init(
         format,
         channels,
@@ -294,6 +296,7 @@ bool AudioEngine::playSound3D(const std::vector<uint8_t>& wavData, const glm::ve
         pcmData.data(),
         nullptr
     );
+    bufferConfig.sampleRate = sampleRate;  // Critical: preserve original sample rate!
 
     ma_audio_buffer* audioBuffer = new ma_audio_buffer();
     result = ma_audio_buffer_init(&bufferConfig, audioBuffer);
@@ -302,17 +305,18 @@ bool AudioEngine::playSound3D(const std::vector<uint8_t>& wavData, const glm::ve
         return false;
     }
 
-    // Create 3D sound (spatialization enabled)
+    // Create 3D sound (spatialization enabled, pitch enabled)
     ma_sound* sound = new ma_sound();
     result = ma_sound_init_from_data_source(
         engine_,
         audioBuffer,
-        MA_SOUND_FLAG_DECODE | MA_SOUND_FLAG_ASYNC | MA_SOUND_FLAG_NO_PITCH,
+        MA_SOUND_FLAG_DECODE | MA_SOUND_FLAG_ASYNC,  // Removed NO_PITCH flag
         nullptr,
         sound
     );
 
     if (result != MA_SUCCESS) {
+        LOG_WARNING("playSound3D: Failed to create sound, error: ", result);
         ma_audio_buffer_uninit(audioBuffer);
         delete audioBuffer;
         delete sound;
@@ -322,6 +326,7 @@ bool AudioEngine::playSound3D(const std::vector<uint8_t>& wavData, const glm::ve
     // Set 3D position and attenuation
     ma_sound_set_position(sound, position.x, position.y, position.z);
     ma_sound_set_volume(sound, volume * masterVolume_);
+    ma_sound_set_pitch(sound, pitch);  // Enable pitch variation
     ma_sound_set_attenuation_model(sound, ma_attenuation_model_inverse);
     ma_sound_set_min_gain(sound, 0.0f);
     ma_sound_set_max_gain(sound, 1.0f);

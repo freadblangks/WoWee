@@ -16,6 +16,7 @@ namespace ui { class UIManager; }
 namespace auth { class AuthHandler; }
 namespace game { class GameHandler; class World; class NpcManager; }
 namespace pipeline { class AssetManager; }
+namespace audio { enum class VoiceType; }
 
 namespace core {
 
@@ -91,6 +92,7 @@ private:
     void despawnOnlineGameObject(uint64_t guid);
     void buildGameObjectDisplayLookups();
     std::string getGameObjectModelPathForDisplayId(uint32_t displayId) const;
+    audio::VoiceType detectVoiceTypeFromDisplayId(uint32_t displayId) const;
 
     static Application* instance;
 

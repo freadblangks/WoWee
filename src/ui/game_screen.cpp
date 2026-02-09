@@ -4302,26 +4302,6 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         sinB = std::sin(bearing);
     }
 
-    // Draw north indicator when rotating (points to world north on screen).
-    if (minimapRotate_) {
-        auto* drawList = ImGui::GetForegroundDrawList();
-        ImU32 fill = IM_COL32(0, 0, 0, 230);
-        ImU32 outline = IM_COL32(0, 0, 0, 220);
-        float tipDist = mapRadius - 8.0f;
-        float baseDist = tipDist - 10.0f;
-        float nAng = -bearing;  // map rotated by bearing; north rotates opposite
-        float cN = std::cos(nAng);
-        float sN = std::sin(nAng);
-
-        auto rot = [&](float x, float y) -> ImVec2 {
-            return ImVec2(centerX + x * cN - y * sN, centerY + x * sN + y * cN);
-        };
-
-        ImVec2 textPos = rot(0.0f, -(baseDist + 9.0f));
-        drawList->AddText(ImVec2(textPos.x - 4.0f, textPos.y), outline, "N");
-        drawList->AddText(ImVec2(textPos.x - 4.0f, textPos.y), fill, "N");
-    }
-
     if (statuses.empty()) return;
 
     auto* drawList = ImGui::GetForegroundDrawList();

@@ -1430,6 +1430,13 @@ void Renderer::update(float deltaTime) {
                 }
 
                 // Detect taverns/inns by WMO model ID (common inn WMOs)
+                // Log WMO ID for debugging
+                static uint32_t lastLoggedWmoId = 0;
+                if (wmoModelId != lastLoggedWmoId) {
+                    LOG_INFO("Inside WMO model ID: ", wmoModelId);
+                    lastLoggedWmoId = wmoModelId;
+                }
+
                 // These IDs represent typical Alliance and Horde inn buildings
                 if (wmoModelId == 191 ||    // Goldshire inn
                     wmoModelId == 190 ||    // Small inn (common)
@@ -1447,6 +1454,7 @@ void Renderer::update(float deltaTime) {
                     };
                     static int tavernTrackIndex = 0;
                     tavernMusic = tavernTracks[tavernTrackIndex % tavernTracks.size()];
+                    LOG_INFO("Detected tavern WMO, playing: ", tavernMusic);
                 }
             }
         }

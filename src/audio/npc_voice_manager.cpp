@@ -39,17 +39,25 @@ void NpcVoiceManager::shutdown() {
 void NpcVoiceManager::loadVoiceSounds() {
     if (!assetManager_) return;
 
-    // Generic NPC greetings using Hello emote (more reliable than Greeting)
+    // Generic NPC greetings using various emotes (Hello, Yes, Thanks)
     std::vector<std::string> genericPaths = {
         "Sound\\Character\\Human\\HumanMaleHello01.wav",
         "Sound\\Character\\Human\\HumanMaleHello02.wav",
         "Sound\\Character\\Human\\HumanMaleHello03.wav",
+        "Sound\\Character\\Human\\HumanMaleYes01.wav",
+        "Sound\\Character\\Human\\HumanMaleYes02.wav",
+        "Sound\\Character\\Human\\HumanMaleYes03.wav",
         "Sound\\Character\\Human\\HumanFemaleHello01.wav",
         "Sound\\Character\\Human\\HumanFemaleHello02.wav",
+        "Sound\\Character\\Human\\HumanFemaleYes01.wav",
+        "Sound\\Character\\Human\\HumanFemaleYes02.wav",
         "Sound\\Character\\Dwarf\\DwarfMaleHello01.wav",
         "Sound\\Character\\Dwarf\\DwarfMaleHello02.wav",
+        "Sound\\Character\\Dwarf\\DwarfMaleYes01.wav",
         "Sound\\Character\\NightElf\\NightElfMaleHello01.wav",
+        "Sound\\Character\\NightElf\\NightElfMaleYes01.wav",
         "Sound\\Character\\NightElf\\NightElfFemaleHello01.wav",
+        "Sound\\Character\\NightElf\\NightElfFemaleYes01.wav",
     };
 
     auto& genericVoices = voiceLibrary_[VoiceType::GENERIC];
@@ -160,7 +168,10 @@ bool NpcVoiceManager::loadSound(const std::string& path, VoiceSample& sample) {
 }
 
 void NpcVoiceManager::playGreeting(uint64_t npcGuid, VoiceType voiceType, const glm::vec3& position) {
+    LOG_INFO("NPC voice: playGreeting called for GUID ", npcGuid);
+
     if (!AudioEngine::instance().isInitialized()) {
+        LOG_WARNING("NPC voice: AudioEngine not initialized");
         return;
     }
 
@@ -170,6 +181,7 @@ void NpcVoiceManager::playGreeting(uint64_t npcGuid, VoiceType voiceType, const 
     if (it != lastPlayTime_.end()) {
         float elapsed = std::chrono::duration<float>(now - it->second).count();
         if (elapsed < GREETING_COOLDOWN) {
+            LOG_INFO("NPC voice: on cooldown (", elapsed, "s elapsed)");
             return;  // Still on cooldown
         }
     }
@@ -177,9 +189,11 @@ void NpcVoiceManager::playGreeting(uint64_t npcGuid, VoiceType voiceType, const 
     // Find voice library for this type
     auto libIt = voiceLibrary_.find(voiceType);
     if (libIt == voiceLibrary_.end() || libIt->second.empty()) {
+        LOG_INFO("NPC voice: No samples for type ", static_cast<int>(voiceType), ", falling back to GENERIC");
         // Fall back to generic
         libIt = voiceLibrary_.find(VoiceType::GENERIC);
         if (libIt == voiceLibrary_.end() || libIt->second.empty()) {
+            LOG_WARNING("NPC voice: No voice samples available (library empty)");
             return;  // No voice samples available
         }
     }
@@ -189,6 +203,8 @@ void NpcVoiceManager::playGreeting(uint64_t npcGuid, VoiceType voiceType, const 
     // Pick random voice line
     std::uniform_int_distribution<size_t> dist(0, samples.size() - 1);
     const auto& sample = samples[dist(rng_)];
+
+    LOG_INFO("NPC voice: Playing sound from: ", sample.path);
 
     // Play with 3D positioning
     std::uniform_real_distribution<float> volumeDist(0.85f, 1.0f);
@@ -203,7 +219,10 @@ void NpcVoiceManager::playGreeting(uint64_t npcGuid, VoiceType voiceType, const 
     );
 
     if (success) {
+        LOG_INFO("NPC voice: Sound played successfully");
         lastPlayTime_[npcGuid] = now;
+    } else {
+        LOG_WARNING("NPC voice: Failed to play sound");
     }
 }
 

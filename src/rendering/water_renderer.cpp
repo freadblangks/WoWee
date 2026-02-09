@@ -413,9 +413,10 @@ void WaterRenderer::render(const Camera& camera, float time) {
         // City/canal liquid profile: clearer water + stronger ripples/sun shimmer.
         // Stormwind canals typically use LiquidType 5 in this data set.
         bool canalProfile = (surface.wmoId != 0) || (surface.liquidType == 5);
-        float waveAmp = canalProfile ? 0.10f : 0.25f;      // Increased from 0.07/0.12
-        float waveFreq = canalProfile ? 0.30f : 0.22f;     // Increased from 0.18 for more waves
-        float waveSpeed = canalProfile ? 1.20f : 2.00f;    // Increased from 1.60 for more motion
+        // Reduced wave amplitude to prevent tile seam gaps (tiles don't share wave state)
+        float waveAmp = canalProfile ? 0.04f : 0.06f;      // Subtle waves to avoid boundary gaps
+        float waveFreq = canalProfile ? 0.30f : 0.22f;     // Frequency maintained for visual
+        float waveSpeed = canalProfile ? 1.20f : 2.00f;    // Speed maintained for animation
         float shimmerStrength = canalProfile ? 0.95f : 0.50f;
         float alphaScale = canalProfile ? 0.72f : 1.00f;
 

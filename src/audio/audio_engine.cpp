@@ -238,9 +238,110 @@ bool AudioEngine::playSound2D(const std::string& mpqPath, float volume, float pi
 
 bool AudioEngine::playSound3D(const std::vector<uint8_t>& wavData, const glm::vec3& position,
                               float volume, float pitch, float maxDistance) {
-    // TODO: Implement 3D positional audio
-    // For now, just play as 2D
-    return playSound2D(wavData, volume, pitch);
+    if (!initialized_ || !engine_ || wavData.empty()) {
+        return false;
+    }
+
+    (void)pitch;  // Pitch not supported yet
+
+    // Decode WAV data first
+    ma_decoder decoder;
+    ma_decoder_config decoderConfig = ma_decoder_config_init_default();
+    ma_result result = ma_decoder_init_memory(
+        wavData.data(),
+        wavData.size(),
+        &decoderConfig,
+        &decoder
+    );
+
+    if (result != MA_SUCCESS) {
+        return false;
+    }
+
+    ma_format format = decoder.outputFormat;
+    ma_uint32 channels = decoder.outputChannels;
+    ma_uint32 sampleRate = decoder.outputSampleRate;
+
+    ma_uint64 totalFrames;
+    result = ma_decoder_get_length_in_pcm_frames(&decoder, &totalFrames);
+    if (result != MA_SUCCESS) {
+        totalFrames = 0;
+    }
+
+    ma_uint64 maxFrames = sampleRate * 5;
+    if (totalFrames == 0 || totalFrames > maxFrames) {
+        totalFrames = maxFrames;
+    }
+
+    size_t bufferSize = totalFrames * channels * ma_get_bytes_per_sample(format);
+    std::vector<uint8_t> pcmData(bufferSize);
+
+    ma_uint64 framesRead = 0;
+    result = ma_decoder_read_pcm_frames(&decoder, pcmData.data(), totalFrames, &framesRead);
+    ma_decoder_uninit(&decoder);
+
+    if (result != MA_SUCCESS || framesRead == 0) {
+        return false;
+    }
+
+    pcmData.resize(framesRead * channels * ma_get_bytes_per_sample(format));
+
+    // Create audio buffer
+    ma_audio_buffer_config bufferConfig = ma_audio_buffer_config_init(
+        format,
+        channels,
+        framesRead,
+        pcmData.data(),
+        nullptr
+    );
+
+    ma_audio_buffer* audioBuffer = new ma_audio_buffer();
+    result = ma_audio_buffer_init(&bufferConfig, audioBuffer);
+    if (result != MA_SUCCESS) {
+        delete audioBuffer;
+        return false;
+    }
+
+    // Create 3D sound (spatialization enabled)
+    ma_sound* sound = new ma_sound();
+    result = ma_sound_init_from_data_source(
+        engine_,
+        audioBuffer,
+        MA_SOUND_FLAG_DECODE | MA_SOUND_FLAG_ASYNC | MA_SOUND_FLAG_NO_PITCH,
+        nullptr,
+        sound
+    );
+
+    if (result != MA_SUCCESS) {
+        ma_audio_buffer_uninit(audioBuffer);
+        delete audioBuffer;
+        delete sound;
+        return false;
+    }
+
+    // Set 3D position and attenuation
+    ma_sound_set_position(sound, position.x, position.y, position.z);
+    ma_sound_set_volume(sound, volume * masterVolume_);
+    ma_sound_set_attenuation_model(sound, ma_attenuation_model_inverse);
+    ma_sound_set_min_gain(sound, 0.0f);
+    ma_sound_set_max_gain(sound, 1.0f);
+    ma_sound_set_min_distance(sound, 1.0f);
+    ma_sound_set_max_distance(sound, maxDistance);
+    ma_sound_set_rolloff(sound, 1.0f);
+
+    result = ma_sound_start(sound);
+    if (result != MA_SUCCESS) {
+        ma_sound_uninit(sound);
+        ma_audio_buffer_uninit(audioBuffer);
+        delete audioBuffer;
+        delete sound;
+        return false;
+    }
+
+    // Track for cleanup
+    activeSounds_.push_back({sound, audioBuffer, std::move(pcmData)});
+
+    return true;
 }
 
 bool AudioEngine::playSound3D(const std::string& mpqPath, const glm::vec3& position,

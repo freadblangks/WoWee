@@ -20,17 +20,15 @@ bool NpcVoiceManager::initialize(pipeline::AssetManager* assets) {
         return false;
     }
 
-    // Probe for actual sound file paths
+    // Probe for actual sound file paths (NPC sounds are in Sound\Creature\)
     LOG_INFO("=== Probing for NPC voice files ===");
     std::vector<std::string> testPaths = {
-        "Sound\\Character\\Human\\HumanMaleHello01.wav",
-        "Sound\\Character\\Human\\HumanMaleGreeting01.wav",
-        "Sound\\Character\\Human\\HumanVocMaleHello01.wav",
-        "Sound\\Character\\PCVoice\\Human\\Male\\HumanMaleHello01.wav",
-        "Sound\\Character\\PCGuildGreetings\\HumanMaleGuildGreeting01.wav",
-        "Sound\\Character\\Human\\HumanVocMaleYes01.wav",
-        "Sound\\Character\\Human\\HumanVocMaleYes02.wav",
-        "Sound\\Character\\Human\\HumanVocMaleYes03.wav",
+        "Sound\\Creature\\humanfemalestandardnpc\\humanfemalestandardnpcgreeting01.ogg",
+        "Sound\\Creature\\humanfemalestandardnpc\\humanfemalestandardnpcgreeting02.ogg",
+        "Sound\\Creature\\humanmalestandardnpc\\humanmalestandardnpcgreeting01.ogg",
+        "Sound\\Creature\\humanmalestandardnpc\\humanmalestandardnpcgreeting02.ogg",
+        "Sound\\Creature\\NPCGhoul\\NPCGhoulVendor01.ogg",
+        "Sound\\Creature\\NPCGhoul\\NPCGhoulVendor02.ogg",
     };
     for (const auto& path : testPaths) {
         bool exists = assetManager_->fileExists(path);
@@ -67,25 +65,15 @@ void NpcVoiceManager::shutdown() {
 void NpcVoiceManager::loadVoiceSounds() {
     if (!assetManager_) return;
 
-    // Generic NPC greetings using various emotes (Hello, Yes, Thanks)
+    // Generic NPC greetings (using standard NPC creature sounds in .ogg format)
+    // These are the actual NPC vendor/innkeeper greetings from Sound/Creature/
     std::vector<std::string> genericPaths = {
-        "Sound\\Character\\Human\\HumanMaleHello01.wav",
-        "Sound\\Character\\Human\\HumanMaleHello02.wav",
-        "Sound\\Character\\Human\\HumanMaleHello03.wav",
-        "Sound\\Character\\Human\\HumanMaleYes01.wav",
-        "Sound\\Character\\Human\\HumanMaleYes02.wav",
-        "Sound\\Character\\Human\\HumanMaleYes03.wav",
-        "Sound\\Character\\Human\\HumanFemaleHello01.wav",
-        "Sound\\Character\\Human\\HumanFemaleHello02.wav",
-        "Sound\\Character\\Human\\HumanFemaleYes01.wav",
-        "Sound\\Character\\Human\\HumanFemaleYes02.wav",
-        "Sound\\Character\\Dwarf\\DwarfMaleHello01.wav",
-        "Sound\\Character\\Dwarf\\DwarfMaleHello02.wav",
-        "Sound\\Character\\Dwarf\\DwarfMaleYes01.wav",
-        "Sound\\Character\\NightElf\\NightElfMaleHello01.wav",
-        "Sound\\Character\\NightElf\\NightElfMaleYes01.wav",
-        "Sound\\Character\\NightElf\\NightElfFemaleHello01.wav",
-        "Sound\\Character\\NightElf\\NightElfFemaleYes01.wav",
+        "Sound\\Creature\\humanfemalestandardnpc\\humanfemalestandardnpcgreeting01.ogg",
+        "Sound\\Creature\\humanfemalestandardnpc\\humanfemalestandardnpcgreeting02.ogg",
+        "Sound\\Creature\\humanfemalestandardnpc\\humanfemalestandardnpcgreeting03.ogg",
+        "Sound\\Creature\\humanmalestandardnpc\\humanmalestandardnpcgreeting01.ogg",
+        "Sound\\Creature\\humanmalestandardnpc\\humanmalestandardnpcgreeting02.ogg",
+        "Sound\\Creature\\humanmalestandardnpc\\humanmalestandardnpcgreeting03.ogg",
     };
 
     auto& genericVoices = voiceLibrary_[VoiceType::GENERIC];
@@ -96,13 +84,11 @@ void NpcVoiceManager::loadVoiceSounds() {
         }
     }
 
-    // Human male
+    // Human male NPCs
     std::vector<std::string> humanMalePaths = {
-        "Sound\\Character\\Human\\HumanMaleHello01.wav",
-        "Sound\\Character\\Human\\HumanMaleHello02.wav",
-        "Sound\\Character\\Human\\HumanMaleHello03.wav",
-        "Sound\\Character\\Human\\HumanMaleYes01.wav",
-        "Sound\\Character\\Human\\HumanMaleYes02.wav",
+        "Sound\\Creature\\humanmalestandardnpc\\humanmalestandardnpcgreeting01.ogg",
+        "Sound\\Creature\\humanmalestandardnpc\\humanmalestandardnpcgreeting02.ogg",
+        "Sound\\Creature\\humanmalestandardnpc\\humanmalestandardnpcgreeting03.ogg",
     };
     auto& humanMale = voiceLibrary_[VoiceType::HUMAN_MALE];
     for (const auto& path : humanMalePaths) {
@@ -112,11 +98,11 @@ void NpcVoiceManager::loadVoiceSounds() {
         }
     }
 
-    // Human female
+    // Human female NPCs
     std::vector<std::string> humanFemalePaths = {
-        "Sound\\Character\\Human\\HumanFemaleHello01.wav",
-        "Sound\\Character\\Human\\HumanFemaleHello02.wav",
-        "Sound\\Character\\Human\\HumanFemaleYes01.wav",
+        "Sound\\Creature\\humanfemalestandardnpc\\humanfemalestandardnpcgreeting01.ogg",
+        "Sound\\Creature\\humanfemalestandardnpc\\humanfemalestandardnpcgreeting02.ogg",
+        "Sound\\Creature\\humanfemalestandardnpc\\humanfemalestandardnpcgreeting03.ogg",
     };
     auto& humanFemale = voiceLibrary_[VoiceType::HUMAN_FEMALE];
     for (const auto& path : humanFemalePaths) {
@@ -126,45 +112,8 @@ void NpcVoiceManager::loadVoiceSounds() {
         }
     }
 
-    // Dwarf male
-    std::vector<std::string> dwarfMalePaths = {
-        "Sound\\Character\\Dwarf\\DwarfMaleHello01.wav",
-        "Sound\\Character\\Dwarf\\DwarfMaleHello02.wav",
-        "Sound\\Character\\Dwarf\\DwarfMaleYes01.wav",
-    };
-    auto& dwarfMale = voiceLibrary_[VoiceType::DWARF_MALE];
-    for (const auto& path : dwarfMalePaths) {
-        VoiceSample sample;
-        if (loadSound(path, sample)) {
-            dwarfMale.push_back(std::move(sample));
-        }
-    }
-
-    // Night elf male
-    std::vector<std::string> nelfMalePaths = {
-        "Sound\\Character\\NightElf\\NightElfMaleHello01.wav",
-        "Sound\\Character\\NightElf\\NightElfMaleYes01.wav",
-    };
-    auto& nelfMale = voiceLibrary_[VoiceType::NIGHTELF_MALE];
-    for (const auto& path : nelfMalePaths) {
-        VoiceSample sample;
-        if (loadSound(path, sample)) {
-            nelfMale.push_back(std::move(sample));
-        }
-    }
-
-    // Night elf female
-    std::vector<std::string> nelfFemalePaths = {
-        "Sound\\Character\\NightElf\\NightElfFemaleHello01.wav",
-        "Sound\\Character\\NightElf\\NightElfFemaleYes01.wav",
-    };
-    auto& nelfFemale = voiceLibrary_[VoiceType::NIGHTELF_FEMALE];
-    for (const auto& path : nelfFemalePaths) {
-        VoiceSample sample;
-        if (loadSound(path, sample)) {
-            nelfFemale.push_back(std::move(sample));
-        }
-    }
+    // TODO: Add other race-specific NPC greetings when needed
+    // For now, all NPCs will use human standard greetings as fallback
 
     // Log loaded voice types
     int totalLoaded = 0;

@@ -20,15 +20,28 @@ bool NpcVoiceManager::initialize(pipeline::AssetManager* assets) {
         return false;
     }
 
-    // Probe for actual sound file paths (NPC sounds are in Sound\Creature\)
-    LOG_INFO("=== Probing for NPC voice files ===");
+    // Comprehensive probe - try many path/name variations
+    LOG_INFO("=== Searching for NPC voice files (testing patterns) ===");
     std::vector<std::string> testPaths = {
+        // Wowhead paths
         "Sound\\Creature\\HumanMaleStandardNPC\\HumanMaleStandardNPCGreetings01.ogg",
         "Sound\\Creature\\HumanFemaleStandardNPC\\HumanFemaleStandardNPCGreeting01.ogg",
-        "Sound\\Creature\\DwarfMaleStandardNPC\\DwarfMaleStandardNPCGreeting01.ogg",
-        "Sound\\Creature\\NightElfMaleStandardNPC\\NightElfMaleStandardNPCGreeting01.ogg",
-        "Sound\\Creature\\OrcMaleStandardNPC\\OrcMaleStandardNPCGreeting01.ogg",
-        "Sound\\Creature\\TaurenFemaleStandardNPC\\TaurenFemaleStandardNPCGreeting01.ogg",
+
+        // Try lowercase everything
+        "sound\\creature\\humanmalestandardnpc\\humanmalestandardnpcgreetings01.ogg",
+
+        // Try PC voice files (player character emotes - these exist!)
+        "Sound\\Character\\Human\\HumanVocMaleHello01.wav",
+        "Sound\\Character\\Human\\HumanVocMaleHello02.wav",
+        "Sound\\Character\\Human\\HumanVocFemaleHello01.wav",
+
+        // Try VO directory
+        "Sound\\VO\\Human\\Male\\Greeting01.wav",
+        "Sound\\Voice\\HumanMale\\Greeting.wav",
+
+        // Try simpler creature paths
+        "Sound\\Creature\\Human\\Greeting01.ogg",
+        "Sound\\Creature\\Humanoid\\MaleGreeting01.ogg",
     };
     for (const auto& path : testPaths) {
         bool exists = assetManager_->fileExists(path);

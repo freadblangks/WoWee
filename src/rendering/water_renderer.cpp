@@ -115,22 +115,10 @@ bool WaterRenderer::initialize() {
             result += skyTint;
             result = max(result, waterColor.rgb * 0.24);
 
-            // Ocean foam on wave crests and shorelines (procedural)
-            // Wave crest foam
-            float wavePeak = smoothstep(0.15, 0.4, WaveOffset);  // More foam on peaks
-            float foamNoise = fract(sin(dot(TexCoord * 50.0 + time * 0.8, vec2(12.9898, 78.233))) * 43758.5453);
-            float foamPattern = foamNoise * 0.5 + 0.5;  // Scale to 0.5-1.0
-            float waveFoam = wavePeak * foamPattern * 0.85;
-
-            // Shoreline foam (appears in shallow water / near terrain)
-            // Use view-space depth as proxy - upward-facing surfaces near camera likely shoreline
-            float depth = length(viewPos - FragPos);
-            float shoreProximity = smoothstep(80.0, 20.0, depth);  // Foam within 20-80 units
-            float upwardFacing = max(dot(norm, vec3(0.0, 0.0, 1.0)), 0.0);  // Horizontal surfaces
-            float shoreFoam = shoreProximity * upwardFacing * foamPattern * 0.6;
-
-            float foam = max(waveFoam, shoreFoam);
-            result += vec3(foam);  // Add white foam
+            // Subtle foam on wave crests only (no grid artifacts)
+            float wavePeak = smoothstep(0.35, 0.6, WaveOffset);  // Only highest peaks
+            float foam = wavePeak * 0.25;  // Subtle white highlight
+            result += vec3(foam);
 
             // Slight fresnel: more reflective/opaque at grazing angles.
             float fresnel = pow(1.0 - max(dot(norm, viewDir), 0.0), 3.0);

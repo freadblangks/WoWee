@@ -121,19 +121,21 @@ void MountDust::spawnDust(const glm::vec3& position, const glm::vec3& velocity, 
         spawnAccum -= 1.0f;
 
         Particle p;
-        // Spawn slightly behind and to the sides of the mount
+        // Spawn slightly behind and to the sides of the mount, at ground level
         p.position = position + glm::vec3(
             randFloat(-0.3f, 0.3f),
             randFloat(-0.3f, 0.3f),
-            randFloat(-0.1f, 0.1f)
+            0.2f  // Spawn slightly above ground to ensure visibility
         );
 
-        // Dust rises up and drifts backward slightly
+        // Dust rises up and spreads outward
+        // Only use horizontal velocity for drift, ignore vertical component
+        glm::vec3 horizontalVel = glm::vec3(velocity.x, velocity.y, 0.0f);
         p.velocity = glm::vec3(
-            randFloat(-0.2f, 0.2f),
-            randFloat(-0.2f, 0.2f),
-            randFloat(0.5f, 1.2f)  // Rise upward
-        ) - velocity * 0.2f;  // Drift backward relative to movement
+            randFloat(-0.3f, 0.3f),  // Random horizontal spread
+            randFloat(-0.3f, 0.3f),
+            randFloat(1.2f, 2.5f)    // Strong upward movement for visibility
+        ) - horizontalVel * 0.15f;  // Drift backward slightly based on horizontal movement only
 
         p.lifetime = 0.0f;
         p.maxLifetime = randFloat(0.4f, 0.8f);

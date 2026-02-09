@@ -2168,7 +2168,12 @@ bool Renderer::loadTerrainArea(const std::string& mapName, int centerX, int cent
 
     terrainLoaded = true;
 
-    // Initialize music manager with asset manager (if available from loadTestTerrain)
+    // Get asset manager from Application if not cached yet
+    if (!cachedAssetManager) {
+        cachedAssetManager = core::Application::getInstance().getAssetManager();
+    }
+
+    // Initialize music manager with asset manager
     if (musicManager && cachedAssetManager) {
         if (!musicManager->isInitialized()) {
             musicManager->initialize(cachedAssetManager);

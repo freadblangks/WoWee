@@ -1714,18 +1714,18 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
 
         const M2ModelGPU& model = *currentModel;
 
-        // Aggressive culling during taxi for smooth flight
+        // Relaxed culling during taxi (VRAM caching eliminates loading hitches)
         if (onTaxi_) {
-            // Skip all small/medium models (props, foliage, decorations)
-            if (model.boundRadius < 15.0f) {
+            // Skip tiny props (barrels, crates, small debris)
+            if (model.boundRadius < 2.0f) {
                 continue;
             }
-            // Skip all foliage and trees (even large ones cause hitching during load)
-            if (model.collisionNoBlock || model.collisionTreeTrunk) {
+            // Skip small ground foliage (bushes, flowers) but keep trees
+            if (model.collisionNoBlock && model.boundRadius < 5.0f) {
                 continue;
             }
-            // Skip underwater objects (water is opaque from altitude)
-            if (instance.position.z < -5.0f) {
+            // Skip deep underwater objects (opaque water hides them anyway)
+            if (instance.position.z < -10.0f) {
                 continue;
             }
         }

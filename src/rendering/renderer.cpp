@@ -508,6 +508,8 @@ void Renderer::setMounted(uint32_t mountInstId, float heightOffset) {
 void Renderer::clearMount() {
     mountInstanceId_ = 0;
     mountHeightOffset_ = 0.0f;
+    mountPitch_ = 0.0f;
+    mountRoll_ = 0.0f;
     charAnimState = CharAnimState::IDLE;
     if (cameraController) {
         cameraController->setMounted(false);
@@ -659,7 +661,8 @@ void Renderer::updateCharacterAnimation() {
         if (mountInstanceId_ > 0) {
             characterRenderer->setInstancePosition(mountInstanceId_, characterPosition);
             float yawRad = glm::radians(characterYaw);
-            characterRenderer->setInstanceRotation(mountInstanceId_, glm::vec3(0.0f, 0.0f, yawRad));
+            // Apply pitch (up/down), roll (banking), and yaw for realistic flight
+            characterRenderer->setInstanceRotation(mountInstanceId_, glm::vec3(mountPitch_, mountRoll_, yawRad));
 
             // Drive mount model animation: idle when still, run when moving
             auto pickMountAnim = [&](std::initializer_list<uint32_t> candidates, uint32_t fallback) -> uint32_t {

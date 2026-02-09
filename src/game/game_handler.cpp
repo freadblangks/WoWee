@@ -5195,12 +5195,17 @@ void GameHandler::startClientTaxiPath(const std::vector<uint32_t>& pathNodes) {
         glm::vec3 dir = end - start;
         float initialOrientation = std::atan2(dir.y, dir.x) - 1.57079632679f;
 
+        // Calculate initial pitch from altitude change
+        glm::vec3 dirNorm = glm::normalize(dir);
+        float initialPitch = std::asin(std::clamp(dirNorm.z, -1.0f, 1.0f));
+        float initialRoll = 0.0f;  // No initial banking
+
         playerEntity->setPosition(start.x, start.y, start.z, initialOrientation);
         movementInfo.orientation = initialOrientation;
 
-        // Update mount rotation immediately
+        // Update mount rotation immediately with pitch and roll
         if (taxiOrientationCallback_) {
-            taxiOrientationCallback_(initialOrientation);
+            taxiOrientationCallback_(initialOrientation, initialPitch, initialRoll);
         }
     }
 
@@ -5281,15 +5286,24 @@ void GameHandler::updateClientTaxi(float deltaTime) {
         3.0f * (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t2
     );
 
-    // Smooth orientation based on spline tangent
+    // Calculate yaw from horizontal direction
     float targetOrientation = std::atan2(tangent.y, tangent.x) - 1.57079632679f;
 
-    // Smooth rotation transition (lerp towards target)
+    // Calculate pitch from vertical component (altitude change)
+    glm::vec3 tangentNorm = glm::normalize(tangent);
+    float pitch = std::asin(std::clamp(tangentNorm.z, -1.0f, 1.0f));
+
+    // Calculate roll (banking) from rate of yaw change
     float currentOrientation = movementInfo.orientation;
     float orientDiff = targetOrientation - currentOrientation;
     // Normalize angle difference to [-PI, PI]
     while (orientDiff > 3.14159265f) orientDiff -= 6.28318530f;
     while (orientDiff < -3.14159265f) orientDiff += 6.28318530f;
+    // Bank proportional to turn rate (scaled for visual effect)
+    float roll = -orientDiff * 2.5f;
+    roll = std::clamp(roll, -0.7f, 0.7f);  // Limit to ~40 degrees
+
+    // Smooth rotation transition (lerp towards target)
     float smoothOrientation = currentOrientation + orientDiff * std::min(1.0f, deltaTime * 3.0f);
 
     playerEntity->setPosition(nextPos.x, nextPos.y, nextPos.z, smoothOrientation);
@@ -5298,9 +5312,9 @@ void GameHandler::updateClientTaxi(float deltaTime) {
     movementInfo.z = nextPos.z;
     movementInfo.orientation = smoothOrientation;
 
-    // Update mount rotation to face flight direction
+    // Update mount rotation with yaw, pitch, and roll for realistic flight
     if (taxiOrientationCallback_) {
-        taxiOrientationCallback_(smoothOrientation);
+        taxiOrientationCallback_(smoothOrientation, pitch, roll);
     }
 }
 

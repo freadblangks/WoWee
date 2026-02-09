@@ -719,11 +719,13 @@ void Application::setupUICallbacks() {
     });
 
     // Taxi orientation callback - update mount rotation during flight
-    gameHandler->setTaxiOrientationCallback([this](float orientationRadians) {
+    gameHandler->setTaxiOrientationCallback([this](float yaw, float pitch, float roll) {
         if (renderer && renderer->getCameraController()) {
-            // Convert radians to degrees for camera controller
-            float yawDegrees = glm::degrees(orientationRadians);
+            // Convert radians to degrees for camera controller (character facing)
+            float yawDegrees = glm::degrees(yaw);
             renderer->getCameraController()->setFacingYaw(yawDegrees);
+            // Set mount pitch and roll for realistic flight animation
+            renderer->setMountPitchRoll(pitch, roll);
         }
     });
 

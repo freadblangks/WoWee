@@ -129,6 +129,7 @@ public:
     // Mount rendering
     void setMounted(uint32_t mountInstId, float heightOffset);
     void setTaxiFlight(bool onTaxi) { taxiFlight_ = onTaxi; }
+    void setMountPitchRoll(float pitch, float roll) { mountPitch_ = pitch; mountRoll_ = roll; }
     void clearMount();
     bool isMounted() const { return mountInstanceId_ != 0; }
 
@@ -274,6 +275,8 @@ private:
     // Mount state
     uint32_t mountInstanceId_ = 0;
     float mountHeightOffset_ = 0.0f;
+    float mountPitch_ = 0.0f;  // Up/down tilt (radians)
+    float mountRoll_ = 0.0f;   // Left/right banking (radians)
     bool taxiFlight_ = false;
 
     bool terrainEnabled = true;

@@ -501,8 +501,8 @@ public:
     using TaxiPrecacheCallback = std::function<void(const std::vector<glm::vec3>&)>;
     void setTaxiPrecacheCallback(TaxiPrecacheCallback cb) { taxiPrecacheCallback_ = std::move(cb); }
 
-    // Taxi orientation callback (for mount rotation)
-    using TaxiOrientationCallback = std::function<void(float orientationRadians)>;
+    // Taxi orientation callback (for mount rotation: yaw, pitch, roll in radians)
+    using TaxiOrientationCallback = std::function<void(float yaw, float pitch, float roll)>;
     void setTaxiOrientationCallback(TaxiOrientationCallback cb) { taxiOrientationCallback_ = std::move(cb); }
 
     // Callback for when taxi flight is about to start (after mounting delay, before movement begins)

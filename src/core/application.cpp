@@ -421,12 +421,15 @@ void Application::update(float deltaTime) {
             if (renderer && renderer->getTerrainManager()) {
                 renderer->getTerrainManager()->setStreamingEnabled(true);
                 // With 2GB tile cache, keep streaming active during taxi at moderate rate.
+                // Increase load radius to pre-cache tiles ahead of flight path.
                 if (onTaxi) {
                     renderer->getTerrainManager()->setUpdateInterval(0.3f);
+                    renderer->getTerrainManager()->setLoadRadius(4);  // 9x9 grid for taxi
                 } else {
                     // Ramp streaming back in after taxi to avoid end-of-flight hitches.
                     if (lastTaxiFlight_) {
                         taxiStreamCooldown_ = 2.5f;
+                        renderer->getTerrainManager()->setLoadRadius(2);  // Back to 5x5
                     }
                     if (taxiStreamCooldown_ > 0.0f) {
                         taxiStreamCooldown_ -= deltaTime;

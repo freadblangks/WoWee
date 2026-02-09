@@ -730,6 +730,32 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
         core::Logger::getInstance().debug("  Particle emitters: ", model.particleEmitters.size());
     }
 
+    // Read collision mesh (bounding triangles/vertices/normals)
+    if (header.nBoundingVertices > 0 && header.ofsBoundingVertices > 0) {
+        struct Vec3Disk { float x, y, z; };
+        auto diskVerts = readArray<Vec3Disk>(m2Data, header.ofsBoundingVertices, header.nBoundingVertices);
+        model.collisionVertices.reserve(diskVerts.size());
+        for (const auto& v : diskVerts) {
+            model.collisionVertices.emplace_back(v.x, v.y, v.z);
+        }
+    }
+    if (header.nBoundingTriangles > 0 && header.ofsBoundingTriangles > 0) {
+        model.collisionIndices = readArray<uint16_t>(m2Data, header.ofsBoundingTriangles, header.nBoundingTriangles);
+    }
+    if (header.nBoundingNormals > 0 && header.ofsBoundingNormals > 0) {
+        struct Vec4Disk { float x, y, z, w; };
+        auto diskNormals = readArray<Vec4Disk>(m2Data, header.ofsBoundingNormals, header.nBoundingNormals);
+        model.collisionNormals.reserve(diskNormals.size());
+        for (const auto& n : diskNormals) {
+            model.collisionNormals.emplace_back(n.x, n.y, n.z, n.w);
+        }
+    }
+    if (!model.collisionVertices.empty()) {
+        core::Logger::getInstance().debug("  Collision mesh: ", model.collisionVertices.size(),
+            " verts, ", model.collisionIndices.size() / 3, " tris, ",
+            model.collisionNormals.size(), " normals");
+    }
+
     static int m2LoadLogBudget = 200;
     if (m2LoadLogBudget-- > 0) {
         core::Logger::getInstance().debug("M2 model loaded: ", model.name);

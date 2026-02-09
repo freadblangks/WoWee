@@ -59,6 +59,30 @@ struct M2ModelGPU {
     bool collisionNoBlock = false;
     bool collisionStatue = false;
 
+    // Collision mesh with spatial grid (from M2 bounding geometry)
+    struct CollisionMesh {
+        std::vector<glm::vec3> vertices;
+        std::vector<uint16_t> indices;
+        uint32_t triCount = 0;
+
+        struct TriBounds { float minZ, maxZ; };
+        std::vector<TriBounds> triBounds;
+
+        static constexpr float CELL_SIZE = 4.0f;
+        glm::vec2 gridOrigin{0.0f};
+        int gridCellsX = 0, gridCellsY = 0;
+        std::vector<std::vector<uint32_t>> cellFloorTris;
+        std::vector<std::vector<uint32_t>> cellWallTris;
+
+        void build();
+        void getFloorTrisInRange(float minX, float minY, float maxX, float maxY,
+                                 std::vector<uint32_t>& out) const;
+        void getWallTrisInRange(float minX, float minY, float maxX, float maxY,
+                                std::vector<uint32_t>& out) const;
+        bool valid() const { return triCount > 0; }
+    };
+    CollisionMesh collision;
+
     std::string name;
 
     // Skeletal animation data (kept from M2Model for bone computation)
@@ -348,6 +372,7 @@ private:
     std::unordered_map<uint32_t, size_t> instanceIndexById;
     mutable std::vector<size_t> candidateScratch;
     mutable std::unordered_set<uint32_t> candidateIdScratch;
+    mutable std::vector<uint32_t> collisionTriScratch_;
 
     // Collision query profiling (per frame).
     mutable double queryTimeMs = 0.0;

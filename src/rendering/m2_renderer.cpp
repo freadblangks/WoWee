@@ -184,6 +184,60 @@ struct QueryTimer {
     }
 };
 
+// Möller–Trumbore ray-triangle intersection.
+// Returns distance along ray if hit, negative if miss.
+float rayTriangleIntersect(const glm::vec3& origin, const glm::vec3& dir,
+                           const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2) {
+    constexpr float EPSILON = 1e-6f;
+    glm::vec3 e1 = v1 - v0;
+    glm::vec3 e2 = v2 - v0;
+    glm::vec3 h = glm::cross(dir, e2);
+    float a = glm::dot(e1, h);
+    if (a > -EPSILON && a < EPSILON) return -1.0f;
+    float f = 1.0f / a;
+    glm::vec3 s = origin - v0;
+    float u = f * glm::dot(s, h);
+    if (u < 0.0f || u > 1.0f) return -1.0f;
+    glm::vec3 q = glm::cross(s, e1);
+    float v = f * glm::dot(dir, q);
+    if (v < 0.0f || u + v > 1.0f) return -1.0f;
+    float t = f * glm::dot(e2, q);
+    return t > EPSILON ? t : -1.0f;
+}
+
+// Closest point on triangle to a point (Ericson, Real-Time Collision Detection §5.1.5).
+glm::vec3 closestPointOnTriangle(const glm::vec3& p,
+                                  const glm::vec3& a, const glm::vec3& b, const glm::vec3& c) {
+    glm::vec3 ab = b - a, ac = c - a, ap = p - a;
+    float d1 = glm::dot(ab, ap), d2 = glm::dot(ac, ap);
+    if (d1 <= 0.0f && d2 <= 0.0f) return a;
+    glm::vec3 bp = p - b;
+    float d3 = glm::dot(ab, bp), d4 = glm::dot(ac, bp);
+    if (d3 >= 0.0f && d4 <= d3) return b;
+    float vc = d1 * d4 - d3 * d2;
+    if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f) {
+        float v = d1 / (d1 - d3);
+        return a + v * ab;
+    }
+    glm::vec3 cp = p - c;
+    float d5 = glm::dot(ab, cp), d6 = glm::dot(ac, cp);
+    if (d6 >= 0.0f && d5 <= d6) return c;
+    float vb = d5 * d2 - d1 * d6;
+    if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f) {
+        float w = d2 / (d2 - d6);
+        return a + w * ac;
+    }
+    float va = d3 * d6 - d5 * d4;
+    if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f) {
+        float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        return b + w * (c - b);
+    }
+    float denom = 1.0f / (va + vb + vc);
+    float v = vb * denom;
+    float w = vc * denom;
+    return a + ab * v + ac * w;
+}
+
 } // namespace
 
 void M2Instance::updateModelMatrix() {
@@ -625,6 +679,106 @@ void M2Renderer::shutdown() {
     if (m2ParticleShader_ != 0) { glDeleteProgram(m2ParticleShader_); m2ParticleShader_ = 0; }
 }
 
+// ---------------------------------------------------------------------------
+// M2 collision mesh: build spatial grid + classify triangles
+// ---------------------------------------------------------------------------
+void M2ModelGPU::CollisionMesh::build() {
+    if (indices.size() < 3 || vertices.empty()) return;
+    triCount = static_cast<uint32_t>(indices.size() / 3);
+
+    // Bounding box for grid
+    glm::vec3 bmin(std::numeric_limits<float>::max());
+    glm::vec3 bmax(-std::numeric_limits<float>::max());
+    for (const auto& v : vertices) {
+        bmin = glm::min(bmin, v);
+        bmax = glm::max(bmax, v);
+    }
+
+    gridOrigin = glm::vec2(bmin.x, bmin.y);
+    gridCellsX = std::max(1, std::min(32, static_cast<int>(std::ceil((bmax.x - bmin.x) / CELL_SIZE))));
+    gridCellsY = std::max(1, std::min(32, static_cast<int>(std::ceil((bmax.y - bmin.y) / CELL_SIZE))));
+
+    cellFloorTris.resize(gridCellsX * gridCellsY);
+    cellWallTris.resize(gridCellsX * gridCellsY);
+    triBounds.resize(triCount);
+
+    for (uint32_t ti = 0; ti < triCount; ti++) {
+        uint16_t i0 = indices[ti * 3];
+        uint16_t i1 = indices[ti * 3 + 1];
+        uint16_t i2 = indices[ti * 3 + 2];
+        if (i0 >= vertices.size() || i1 >= vertices.size() || i2 >= vertices.size()) continue;
+
+        const auto& v0 = vertices[i0];
+        const auto& v1 = vertices[i1];
+        const auto& v2 = vertices[i2];
+
+        triBounds[ti].minZ = std::min({v0.z, v1.z, v2.z});
+        triBounds[ti].maxZ = std::max({v0.z, v1.z, v2.z});
+
+        glm::vec3 normal = glm::cross(v1 - v0, v2 - v0);
+        float normalLen = glm::length(normal);
+        float absNz = (normalLen > 0.001f) ? std::abs(normal.z / normalLen) : 0.0f;
+        bool isFloor = (absNz >= 0.45f);
+        bool isWall  = (absNz < 0.65f);
+
+        float triMinX = std::min({v0.x, v1.x, v2.x});
+        float triMaxX = std::max({v0.x, v1.x, v2.x});
+        float triMinY = std::min({v0.y, v1.y, v2.y});
+        float triMaxY = std::max({v0.y, v1.y, v2.y});
+
+        int cxMin = std::clamp(static_cast<int>((triMinX - gridOrigin.x) / CELL_SIZE), 0, gridCellsX - 1);
+        int cxMax = std::clamp(static_cast<int>((triMaxX - gridOrigin.x) / CELL_SIZE), 0, gridCellsX - 1);
+        int cyMin = std::clamp(static_cast<int>((triMinY - gridOrigin.y) / CELL_SIZE), 0, gridCellsY - 1);
+        int cyMax = std::clamp(static_cast<int>((triMaxY - gridOrigin.y) / CELL_SIZE), 0, gridCellsY - 1);
+
+        for (int cy = cyMin; cy <= cyMax; cy++) {
+            for (int cx = cxMin; cx <= cxMax; cx++) {
+                int ci = cy * gridCellsX + cx;
+                if (isFloor) cellFloorTris[ci].push_back(ti);
+                if (isWall)  cellWallTris[ci].push_back(ti);
+            }
+        }
+    }
+}
+
+void M2ModelGPU::CollisionMesh::getFloorTrisInRange(
+        float minX, float minY, float maxX, float maxY,
+        std::vector<uint32_t>& out) const {
+    out.clear();
+    if (gridCellsX == 0 || gridCellsY == 0) return;
+    int cxMin = std::clamp(static_cast<int>((minX - gridOrigin.x) / CELL_SIZE), 0, gridCellsX - 1);
+    int cxMax = std::clamp(static_cast<int>((maxX - gridOrigin.x) / CELL_SIZE), 0, gridCellsX - 1);
+    int cyMin = std::clamp(static_cast<int>((minY - gridOrigin.y) / CELL_SIZE), 0, gridCellsY - 1);
+    int cyMax = std::clamp(static_cast<int>((maxY - gridOrigin.y) / CELL_SIZE), 0, gridCellsY - 1);
+    for (int cy = cyMin; cy <= cyMax; cy++) {
+        for (int cx = cxMin; cx <= cxMax; cx++) {
+            const auto& cell = cellFloorTris[cy * gridCellsX + cx];
+            out.insert(out.end(), cell.begin(), cell.end());
+        }
+    }
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+}
+
+void M2ModelGPU::CollisionMesh::getWallTrisInRange(
+        float minX, float minY, float maxX, float maxY,
+        std::vector<uint32_t>& out) const {
+    out.clear();
+    if (gridCellsX == 0 || gridCellsY == 0) return;
+    int cxMin = std::clamp(static_cast<int>((minX - gridOrigin.x) / CELL_SIZE), 0, gridCellsX - 1);
+    int cxMax = std::clamp(static_cast<int>((maxX - gridOrigin.x) / CELL_SIZE), 0, gridCellsX - 1);
+    int cyMin = std::clamp(static_cast<int>((minY - gridOrigin.y) / CELL_SIZE), 0, gridCellsY - 1);
+    int cyMax = std::clamp(static_cast<int>((maxY - gridOrigin.y) / CELL_SIZE), 0, gridCellsY - 1);
+    for (int cy = cyMin; cy <= cyMax; cy++) {
+        for (int cx = cxMin; cx <= cxMax; cx++) {
+            const auto& cell = cellWallTris[cy * gridCellsX + cx];
+            out.insert(out.end(), cell.begin(), cell.end());
+        }
+    }
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+}
+
 bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
     if (models.find(modelId) != models.end()) {
         // Already loaded
@@ -792,6 +946,15 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
         }
     }
     gpuModel.disableAnimation = foliageOrTreeLike || chestName;
+
+    // Build collision mesh + spatial grid from M2 bounding geometry
+    gpuModel.collision.vertices = model.collisionVertices;
+    gpuModel.collision.indices = model.collisionIndices;
+    gpuModel.collision.build();
+    if (gpuModel.collision.valid()) {
+        core::Logger::getInstance().debug("  M2 collision mesh: ", gpuModel.collision.triCount,
+            " tris, grid ", gpuModel.collision.gridCellsX, "x", gpuModel.collision.gridCellsY);
+    }
 
     // Flag smoke models for UV scroll animation (particle emitters not implemented)
     {
@@ -2367,6 +2530,68 @@ std::optional<float> M2Renderer::getFloorHeight(float glX, float glY, float glZ)
 
         const M2ModelGPU& model = it->second;
         if (model.collisionNoBlock) continue;
+
+        // --- Mesh-based floor: vertical ray vs collision triangles ---
+        // Does NOT skip the AABB path — both contribute and highest wins.
+        if (model.collision.valid()) {
+            glm::vec3 localPos = glm::vec3(instance.invModelMatrix * glm::vec4(glX, glY, glZ, 1.0f));
+
+            model.collision.getFloorTrisInRange(
+                localPos.x - 1.0f, localPos.y - 1.0f,
+                localPos.x + 1.0f, localPos.y + 1.0f,
+                collisionTriScratch_);
+
+            glm::vec3 rayOrigin(localPos.x, localPos.y, localPos.z + 5.0f);
+            glm::vec3 rayDir(0.0f, 0.0f, -1.0f);
+            float bestHitZ = -std::numeric_limits<float>::max();
+            bool hitAny = false;
+
+            for (uint32_t ti : collisionTriScratch_) {
+                if (ti >= model.collision.triCount) continue;
+                if (model.collision.triBounds[ti].maxZ < localPos.z - 10.0f ||
+                    model.collision.triBounds[ti].minZ > localPos.z + 5.0f) continue;
+
+                const auto& verts = model.collision.vertices;
+                const auto& idx   = model.collision.indices;
+                const auto& v0 = verts[idx[ti * 3]];
+                const auto& v1 = verts[idx[ti * 3 + 1]];
+                const auto& v2 = verts[idx[ti * 3 + 2]];
+
+                // Two-sided: try both windings
+                float tHit = rayTriangleIntersect(rayOrigin, rayDir, v0, v1, v2);
+                if (tHit < 0.0f)
+                    tHit = rayTriangleIntersect(rayOrigin, rayDir, v0, v2, v1);
+                if (tHit < 0.0f) continue;
+
+                float hitZ = rayOrigin.z - tHit;
+
+                // Walkable normal check (world space)
+                glm::vec3 localN = glm::cross(v1 - v0, v2 - v0);
+                float nLen = glm::length(localN);
+                if (nLen > 0.001f) {
+                    localN /= nLen;
+                    if (localN.z < 0.0f) localN = -localN;
+                    glm::vec3 worldN = glm::normalize(
+                        glm::vec3(instance.modelMatrix * glm::vec4(localN, 0.0f)));
+                    if (std::abs(worldN.z) < 0.45f) continue; // too steep
+                }
+
+                if (hitZ <= localPos.z + 3.0f && hitZ > bestHitZ) {
+                    bestHitZ = hitZ;
+                    hitAny = true;
+                }
+            }
+
+            if (hitAny) {
+                glm::vec3 localHit(localPos.x, localPos.y, bestHitZ);
+                glm::vec3 worldHit = glm::vec3(instance.modelMatrix * glm::vec4(localHit, 1.0f));
+                if (worldHit.z <= glZ + 3.0f && (!bestFloor || worldHit.z > *bestFloor)) {
+                    bestFloor = worldHit.z;
+                }
+            }
+            // Fall through to AABB floor — both contribute, highest wins
+        }
+
         float zMargin = model.collisionBridge ? 25.0f : 2.0f;
         if (glX < instance.worldBoundsMin.x || glX > instance.worldBoundsMax.x ||
             glY < instance.worldBoundsMin.y || glY > instance.worldBoundsMax.y ||
@@ -2453,6 +2678,85 @@ bool M2Renderer::checkCollision(const glm::vec3& from, const glm::vec3& to,
         const M2ModelGPU& model = it->second;
         if (model.collisionNoBlock) continue;
         if (instance.scale <= 0.001f) continue;
+
+        // --- Mesh-based wall collision: closest-point push ---
+        if (model.collision.valid()) {
+            glm::vec3 localFrom = glm::vec3(instance.invModelMatrix * glm::vec4(from, 1.0f));
+            glm::vec3 localPos  = glm::vec3(instance.invModelMatrix * glm::vec4(adjustedPos, 1.0f));
+            float localRadius = playerRadius / instance.scale;
+
+            model.collision.getWallTrisInRange(
+                std::min(localFrom.x, localPos.x) - localRadius - 1.0f,
+                std::min(localFrom.y, localPos.y) - localRadius - 1.0f,
+                std::max(localFrom.x, localPos.x) + localRadius + 1.0f,
+                std::max(localFrom.y, localPos.y) + localRadius + 1.0f,
+                collisionTriScratch_);
+
+            constexpr float PLAYER_HEIGHT = 2.0f;
+            constexpr float MAX_TOTAL_PUSH = 0.02f; // Cap total push per instance
+            bool pushed = false;
+            float totalPushX = 0.0f, totalPushY = 0.0f;
+
+            for (uint32_t ti : collisionTriScratch_) {
+                if (ti >= model.collision.triCount) continue;
+                if (localPos.z + PLAYER_HEIGHT < model.collision.triBounds[ti].minZ ||
+                    localPos.z > model.collision.triBounds[ti].maxZ) continue;
+
+                // Step-up: only skip wall when player is rising (jumping over it)
+                constexpr float MAX_STEP_UP = 1.2f;
+                bool rising = (localPos.z > localFrom.z + 0.05f);
+                if (rising && localPos.z + MAX_STEP_UP >= model.collision.triBounds[ti].maxZ) continue;
+
+                // Early out if we already pushed enough this instance
+                float totalPushSoFar = std::sqrt(totalPushX * totalPushX + totalPushY * totalPushY);
+                if (totalPushSoFar >= MAX_TOTAL_PUSH) break;
+
+                const auto& verts = model.collision.vertices;
+                const auto& idx   = model.collision.indices;
+                const auto& v0 = verts[idx[ti * 3]];
+                const auto& v1 = verts[idx[ti * 3 + 1]];
+                const auto& v2 = verts[idx[ti * 3 + 2]];
+
+                glm::vec3 closest = closestPointOnTriangle(localPos, v0, v1, v2);
+                glm::vec3 diff = localPos - closest;
+                float distXY = std::sqrt(diff.x * diff.x + diff.y * diff.y);
+
+                if (distXY < localRadius && distXY > 1e-4f) {
+                    // Gentle push — very small fraction of penetration
+                    float penetration = localRadius - distXY;
+                    float pushDist = std::clamp(penetration * 0.08f, 0.001f, 0.015f);
+                    float dx = (diff.x / distXY) * pushDist;
+                    float dy = (diff.y / distXY) * pushDist;
+                    localPos.x += dx;
+                    localPos.y += dy;
+                    totalPushX += dx;
+                    totalPushY += dy;
+                    pushed = true;
+                } else if (distXY < 1e-4f) {
+                    // On the plane — soft push along triangle normal XY
+                    glm::vec3 n = glm::cross(v1 - v0, v2 - v0);
+                    float nxyLen = std::sqrt(n.x * n.x + n.y * n.y);
+                    if (nxyLen > 1e-4f) {
+                        float pushDist = std::min(localRadius, 0.015f);
+                        float dx = (n.x / nxyLen) * pushDist;
+                        float dy = (n.y / nxyLen) * pushDist;
+                        localPos.x += dx;
+                        localPos.y += dy;
+                        totalPushX += dx;
+                        totalPushY += dy;
+                        pushed = true;
+                    }
+                }
+            }
+
+            if (pushed) {
+                glm::vec3 worldPos = glm::vec3(instance.modelMatrix * glm::vec4(localPos, 1.0f));
+                adjustedPos.x = worldPos.x;
+                adjustedPos.y = worldPos.y;
+                collided = true;
+            }
+            continue;
+        }
 
         glm::vec3 localFrom = glm::vec3(instance.invModelMatrix * glm::vec4(from, 1.0f));
         glm::vec3 localPos = glm::vec3(instance.invModelMatrix * glm::vec4(adjustedPos, 1.0f));

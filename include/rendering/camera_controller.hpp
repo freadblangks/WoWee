@@ -260,6 +260,12 @@ private:
     bool autoUnstuckFired_ = false;
     AutoUnstuckCallback autoUnstuckCallback_;
     static constexpr float AUTO_UNSTUCK_FALL_TIME = 5.0f; // 5 seconds of falling
+
+    // Collision query cache (skip expensive checks if position barely changed)
+    glm::vec3 lastCollisionCheckPos_ = glm::vec3(0.0f);
+    float cachedFloorHeight_ = 0.0f;
+    bool hasCachedFloor_ = false;
+    static constexpr float COLLISION_CACHE_DISTANCE = 0.15f;  // Re-check every 15cm
 };
 
 } // namespace rendering

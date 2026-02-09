@@ -495,16 +495,35 @@ void CameraController::update(float deltaTime) {
             //    to terrain when offset samples miss the WMO floor geometry.
             std::optional<float> groundH;
             {
-                std::optional<float> terrainH;
-                std::optional<float> wmoH;
-                if (terrainManager) {
-                    terrainH = terrainManager->getHeightAt(targetPos.x, targetPos.y);
+                // Collision cache: skip expensive checks if barely moved (15cm threshold)
+                float distMoved = glm::length(glm::vec2(targetPos.x, targetPos.y) -
+                                             glm::vec2(lastCollisionCheckPos_.x, lastCollisionCheckPos_.y));
+                bool useCached = hasCachedFloor_ && distMoved < COLLISION_CACHE_DISTANCE;
+
+                if (useCached) {
+                    groundH = cachedFloorHeight_;
+                } else {
+                    // Full collision check
+                    std::optional<float> terrainH;
+                    std::optional<float> wmoH;
+                    if (terrainManager) {
+                        terrainH = terrainManager->getHeightAt(targetPos.x, targetPos.y);
+                    }
+                    float wmoProbeZ = std::max(targetPos.z, lastGroundZ) + stepUpBudget + 0.5f;
+                    if (wmoRenderer) {
+                        wmoH = wmoRenderer->getFloorHeight(targetPos.x, targetPos.y, wmoProbeZ);
+                    }
+                    groundH = selectReachableFloor(terrainH, wmoH, targetPos.z, stepUpBudget);
+
+                    // Update cache
+                    lastCollisionCheckPos_ = targetPos;
+                    if (groundH) {
+                        cachedFloorHeight_ = *groundH;
+                        hasCachedFloor_ = true;
+                    } else {
+                        hasCachedFloor_ = false;
+                    }
                 }
-                float wmoProbeZ = std::max(targetPos.z, lastGroundZ) + stepUpBudget + 0.5f;
-                if (wmoRenderer) {
-                    wmoH = wmoRenderer->getFloorHeight(targetPos.x, targetPos.y, wmoProbeZ);
-                }
-                groundH = selectReachableFloor(terrainH, wmoH, targetPos.z, stepUpBudget);
             }
 
             // 2. Multi-sample for M2 objects (rugs, planks, bridges, ships) —

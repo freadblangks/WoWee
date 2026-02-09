@@ -607,9 +607,15 @@ void CameraController::update(float deltaTime) {
                 float fallCatch = 3.0f;
                 float dz = *groundH - feetZ;
 
-                // WoW-style: snap to floor if within step-up or fall-catch range,
-                // but only when not moving upward (jumping)
-                if (dz <= stepUp && dz >= -fallCatch && verticalVelocity <= 0.0f) {
+                // Only snap when:
+                // 1. Near ground (within step-up range above) - handles walking
+                // 2. Actually falling from height (was airborne + falling fast)
+                // 3. Was grounded + ground is close (grace for slopes)
+                bool nearGround = (dz >= 0.0f && dz <= stepUp);
+                bool airFalling = (!grounded && verticalVelocity < -5.0f);
+                bool slopeGrace = (grounded && dz >= -1.0f && dz <= stepUp * 2.0f);
+
+                if (dz >= -fallCatch && (nearGround || airFalling || slopeGrace)) {
                     targetPos.z = *groundH;
                     verticalVelocity = 0.0f;
                     grounded = true;
@@ -964,8 +970,15 @@ void CameraController::update(float deltaTime) {
                 float fallCatch = 3.0f;
                 float dz = *groundH - feetZ;
 
-                // Only snap to ground when falling/landing (not when jumping up)
-                if (dz <= stepUp && dz >= -fallCatch && verticalVelocity <= 0.0f) {
+                // Only snap when:
+                // 1. Near ground (within step-up range above) - handles walking
+                // 2. Actually falling from height (was airborne + falling fast)
+                // 3. Was grounded + ground is close (grace for slopes)
+                bool nearGround = (dz >= 0.0f && dz <= stepUp);
+                bool airFalling = (!grounded && verticalVelocity < -5.0f);
+                bool slopeGrace = (grounded && dz >= -1.0f && dz <= stepUp * 2.0f);
+
+                if (dz >= -fallCatch && (nearGround || airFalling || slopeGrace)) {
                     newPos.z = *groundH + eyeHeight;
                     verticalVelocity = 0.0f;
                     grounded = true;

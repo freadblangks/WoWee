@@ -2111,6 +2111,12 @@ bool Renderer::loadTestTerrain(pipeline::AssetManager* assetManager, const std::
         if (activitySoundManager) {
             activitySoundManager->initialize(assetManager);
         }
+        if (mountSoundManager) {
+            mountSoundManager->initialize(assetManager);
+        }
+        if (npcVoiceManager) {
+            npcVoiceManager->initialize(assetManager);
+        }
         cachedAssetManager = assetManager;
     }
 

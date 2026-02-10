@@ -5,6 +5,8 @@
 #include <random>
 #include <algorithm>
 #include <cmath>
+#include <chrono>
+#include <ctime>
 
 namespace wowee {
 namespace audio {
@@ -553,7 +555,11 @@ void AmbientSoundManager::setCityType(CityType type) {
                  " to ", static_cast<int>(type));
         currentCity_ = type;
         cityLoopTime_ = 12.0f;  // Play city ambience soon after entering
-        bellTollTime_ = randomFloat(60.0f, 90.0f);  // First bell toll after 1-1.5 minutes
+
+        // Reset bell toll tracking when entering a new city
+        lastHourTolled_ = -1;
+        remainingTolls_ = 0;
+        bellTollDelay_ = 0.0f;
     }
 }
 
@@ -734,9 +740,10 @@ void AmbientSoundManager::updateCityAmbience(float deltaTime) {
 
 void AmbientSoundManager::updateBellTolls(float deltaTime) {
     // Only play bells when in a city
-    if (currentCity_ == CityType::NONE) return;
-
-    bellTollTime_ += deltaTime;
+    if (currentCity_ == CityType::NONE) {
+        remainingTolls_ = 0;
+        return;
+    }
 
     // Select appropriate bell sound based on city faction
     const std::vector<AmbientSample>* bellLibrary = nullptr;
@@ -760,15 +767,43 @@ void AmbientSoundManager::updateBellTolls(float deltaTime) {
             return;
     }
 
-    // Play bell toll every 120-180 seconds (2-3 minutes) with random variation
-    float bellInterval = randomFloat(120.0f, 180.0f);
+    if (!bellLibrary || bellLibrary->empty() || !(*bellLibrary)[0].loaded) {
+        return;
+    }
 
-    if (bellLibrary && !bellLibrary->empty() && (*bellLibrary)[0].loaded) {
-        if (bellTollTime_ >= bellInterval) {
-            float volume = 0.5f * volumeScale_;  // Bell tolls at moderate-high volume
+    // Get current system time (server time for single-player)
+    auto now = std::chrono::system_clock::now();
+    std::time_t currentTime = std::chrono::system_clock::to_time_t(now);
+    std::tm* localTime = std::localtime(&currentTime);
+    int currentHour = localTime->tm_hour;
+    int currentMinute = localTime->tm_min;
+
+    // Check if we're at the top of a new hour (within first minute)
+    if (currentMinute == 0 && currentHour != lastHourTolled_) {
+        // New hour! Calculate number of tolls (1-12 for 12-hour format)
+        int hour12 = currentHour % 12;
+        if (hour12 == 0) hour12 = 12;  // 0 and 12 both become 12
+
+        remainingTolls_ = hour12;
+        lastHourTolled_ = currentHour;
+        bellTollDelay_ = 0.0f;
+
+        LOG_INFO("Bell tower marking hour ", currentHour, " (", hour12, " tolls) in city: type ",
+                 static_cast<int>(currentCity_));
+    }
+
+    // Play remaining tolls with 1.5 second delay between each
+    if (remainingTolls_ > 0) {
+        bellTollDelay_ += deltaTime;
+
+        if (bellTollDelay_ >= 1.5f) {
+            float volume = 0.6f * volumeScale_;  // Bell tolls at moderate-high volume
             AudioEngine::instance().playSound2D((*bellLibrary)[0].data, volume, 1.0f);
-            LOG_INFO("Bell toll ringing in city: type ", static_cast<int>(currentCity_));
-            bellTollTime_ = 0.0f;
+            remainingTolls_--;
+            bellTollDelay_ = 0.0f;
+
+            LOG_INFO("Bell toll (", (lastHourTolled_ % 12 == 0 ? 12 : lastHourTolled_ % 12) - remainingTolls_,
+                     " of ", (lastHourTolled_ % 12 == 0 ? 12 : lastHourTolled_ % 12), ")");
         }
     }
 }

@@ -836,24 +836,31 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_QUESTGIVER_QUEST_DETAILS:
             handleQuestDetails(packet);
             break;
+        case Opcode::SMSG_QUESTGIVER_QUEST_INVALID: {
+            // Quest query failed - parse failure reason
+            if (packet.getSize() - packet.getReadPos() >= 4) {
+                uint32_t failReason = packet.readUInt32();
+                const char* reasonStr = "Unknown";
+                switch (failReason) {
+                    case 0: reasonStr = "Don't have quest"; break;
+                    case 1: reasonStr = "Quest level too low"; break;
+                    case 4: reasonStr = "Insufficient money"; break;
+                    case 5: reasonStr = "Inventory full"; break;
+                    case 13: reasonStr = "Already on that quest"; break;
+                    case 18: reasonStr = "Already completed quest"; break;
+                    case 19: reasonStr = "Can't take any more quests"; break;
+                }
+                LOG_WARNING("Quest invalid: reason=", failReason, " (", reasonStr, ")");
+                // Show error to user
+                addSystemChatMessage(std::string("Quest unavailable: ") + reasonStr);
+            }
+            break;
+        }
         case Opcode::SMSG_QUESTGIVER_QUEST_COMPLETE: {
             // Mark quest as complete in local log
-            size_t packetSize = packet.getSize();
-            size_t readPos = packet.getReadPos();
-            LOG_INFO("SMSG_QUESTGIVER_QUEST_COMPLETE: size=", packetSize, " readPos=", readPos);
-
-            // Dump packet hex for debugging
-            std::string hexDump;
-            for (size_t i = readPos; i < std::min(readPos + 32, packetSize); ++i) {
-                char buf[4];
-                snprintf(buf, sizeof(buf), "%02x ", static_cast<uint8_t>(packet.getData()[i]));
-                hexDump += buf;
-            }
-            LOG_INFO("  Packet hex: ", hexDump);
-
             if (packet.getSize() - packet.getReadPos() >= 4) {
                 uint32_t questId = packet.readUInt32();
-                LOG_INFO("  Read questId: ", questId);
+                LOG_INFO("Quest completed: questId=", questId);
                 for (auto it = questLog_.begin(); it != questLog_.end(); ++it) {
                     if (it->questId == questId) {
                         questLog_.erase(it);

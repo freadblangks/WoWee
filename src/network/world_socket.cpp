@@ -3,6 +3,8 @@
 #include "network/net_platform.hpp"
 #include "auth/crypto.hpp"
 #include "core/logger.hpp"
+#include <iomanip>
+#include <sstream>
 
 namespace wowee {
 namespace network {
@@ -258,6 +260,29 @@ void WorldSocket::tryParsePackets() {
 
         // Create packet with opcode and payload
         Packet packet(opcode, packetData);
+
+        // Log raw SMSG_TALENTS_INFO packets at network boundary
+        if (opcode == 0x4C0) {  // SMSG_TALENTS_INFO
+            std::stringstream headerHex, payloadHex;
+            headerHex << std::hex << std::setfill('0');
+            payloadHex << std::hex << std::setfill('0');
+
+            // Header (4 bytes from receiveBuffer before packetData extraction)
+            // Note: receiveBuffer still has the full packet at this point
+            for (size_t i = 0; i < 4 && i < receiveBuffer.size(); ++i) {
+                headerHex << std::setw(2) << (int)(uint8_t)receiveBuffer[i] << " ";
+            }
+
+            // Payload (ALL bytes)
+            for (size_t i = 0; i < packetData.size(); ++i) {
+                payloadHex << std::setw(2) << (int)(uint8_t)packetData[i] << " ";
+            }
+
+            LOG_INFO("=== SMSG_TALENTS_INFO RAW PACKET ===");
+            LOG_INFO("Header: ", headerHex.str());
+            LOG_INFO("Payload: ", payloadHex.str());
+            LOG_INFO("Total payload size: ", packetData.size(), " bytes");
+        }
 
         // Remove parsed data from buffer and reset header decryption counter
         receiveBuffer.erase(receiveBuffer.begin(), receiveBuffer.begin() + totalSize);

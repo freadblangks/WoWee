@@ -4413,6 +4413,20 @@ void GameHandler::handleLearnedSpell(network::Packet& packet) {
     uint32_t spellId = packet.readUInt32();
     knownSpells.push_back(spellId);
     LOG_INFO("Learned spell: ", spellId);
+
+    // Check if this spell corresponds to a talent rank
+    for (const auto& [talentId, talent] : talentCache_) {
+        for (int rank = 0; rank < 5; ++rank) {
+            if (talent.rankSpells[rank] == spellId) {
+                // Found the talent! Update the rank for the active spec
+                uint8_t newRank = rank + 1; // rank is 0-indexed in array, but stored as 1-indexed
+                learnedTalents_[activeTalentSpec_][talentId] = newRank;
+                LOG_INFO("Talent learned: id=", talentId, " rank=", (int)newRank,
+                         " (spell ", spellId, ") in spec ", (int)activeTalentSpec_);
+                return;
+            }
+        }
+    }
 }
 
 void GameHandler::handleRemovedSpell(network::Packet& packet) {
@@ -4483,11 +4497,10 @@ void GameHandler::handleTalentsInfo(network::Packet& packet) {
     unspentTalentPoints_[data.talentSpec] = data.unspentPoints;
 
     // Clear and rebuild learned talents map for this spec
+    // Note: If a talent appears in the packet, it's learned (ranks are 0-indexed)
     learnedTalents_[data.talentSpec].clear();
     for (const auto& talent : data.talents) {
-        if (talent.currentRank > 0) {
-            learnedTalents_[data.talentSpec][talent.talentId] = talent.currentRank;
-        }
+        learnedTalents_[data.talentSpec][talent.talentId] = talent.currentRank;
     }
 
     LOG_INFO("Talents loaded: spec=", (int)data.talentSpec,

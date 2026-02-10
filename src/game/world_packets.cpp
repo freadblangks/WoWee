@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <sstream>
+#include <iomanip>
 #include <zlib.h>
 
 namespace wowee {
@@ -2733,43 +2735,97 @@ network::Packet TrainerBuySpellPacket::build(uint64_t trainerGuid, uint32_t spel
 // ============================================================
 
 bool TalentsInfoParser::parse(network::Packet& packet, TalentsInfoData& data) {
-    // WotLK 3.3.5a SMSG_TALENTS_INFO format:
-    // uint8 talentSpec (0 or 1 for dual-spec)
-    // uint8 unspentPoints
-    // uint8 talentCount
-    // for each talent:
-    //   uint32 talentId
-    //   uint8 currentRank (0-5)
+    // SMSG_TALENTS_INFO format (AzerothCore variant):
+    // uint8  activeSpec
+    // uint8  unspentPoints
+    // be32   talentCount (metadata, may not match entry count)
+    // be16   entryCount (actual number of id+rank entries)
+    // Entry[entryCount]: { le32 id, uint8 rank }
+    // le32   glyphSlots
+    // le16   glyphIds[glyphSlots]
 
-    data = TalentsInfoData{};
+    const size_t startPos = packet.getReadPos();
+    const size_t remaining = packet.getSize() - startPos;
 
-    if (packet.getSize() - packet.getReadPos() < 3) {
-        LOG_ERROR("TalentsInfoParser: packet too short");
+    if (remaining < 2 + 4 + 2) {
+        LOG_ERROR("SMSG_TALENTS_INFO: packet too short (remaining=", remaining, ")");
         return false;
     }
 
+    data = TalentsInfoData{};
+
+    // Read header
     data.talentSpec = packet.readUInt8();
     data.unspentPoints = packet.readUInt8();
-    uint8_t talentCount = packet.readUInt8();
+
+    // These two counts are big-endian (network byte order)
+    uint32_t talentCountBE = packet.readUInt32();
+    uint32_t talentCount = __builtin_bswap32(talentCountBE);
+
+    uint16_t entryCountBE = packet.readUInt16();
+    uint16_t entryCount = __builtin_bswap16(entryCountBE);
+
+    // Sanity check: prevent corrupt packets from allocating excessive memory
+    if (entryCount > 64) {
+        LOG_ERROR("SMSG_TALENTS_INFO: entryCount too large (", entryCount, "), rejecting packet");
+        return false;
+    }
 
     LOG_INFO("SMSG_TALENTS_INFO: spec=", (int)data.talentSpec,
-             " unspentPoints=", (int)data.unspentPoints,
-             " talentCount=", (int)talentCount);
+             " unspent=", (int)data.unspentPoints,
+             " talentCount=", talentCount,
+             " entryCount=", entryCount);
 
-    data.talents.reserve(talentCount);
-    for (uint8_t i = 0; i < talentCount; ++i) {
+    // Parse learned entries (id + rank pairs)
+    // These may be talents, glyphs, or other learned abilities
+    data.talents.clear();
+    data.talents.reserve(entryCount);
+
+    for (uint16_t i = 0; i < entryCount; ++i) {
         if (packet.getSize() - packet.getReadPos() < 5) {
-            LOG_WARNING("TalentsInfoParser: truncated talent data at index ", (int)i);
-            break;
+            LOG_ERROR("SMSG_TALENTS_INFO: truncated entry list at i=", i);
+            return false;
         }
+        uint32_t id = packet.readUInt32();  // LE
+        uint8_t rank = packet.readUInt8();
+        data.talents.push_back({id, rank});
 
-        TalentInfo talent;
-        talent.talentId = packet.readUInt32();
-        talent.currentRank = packet.readUInt8();
-        data.talents.push_back(talent);
-
-        LOG_INFO("  Talent: id=", talent.talentId, " rank=", (int)talent.currentRank);
+        LOG_INFO("  Entry: id=", id, " rank=", (int)rank);
     }
+
+    // Parse glyph tail: glyphSlots + glyphIds[]
+    if (packet.getSize() - packet.getReadPos() < 1) {
+        LOG_WARNING("SMSG_TALENTS_INFO: no glyph tail data");
+        return true;  // Not fatal, older formats may not have glyphs
+    }
+
+    uint8_t glyphSlots = packet.readUInt8();
+
+    // Sanity check: Wrath has 6 glyph slots, cap at 12 for safety
+    if (glyphSlots > 12) {
+        LOG_WARNING("SMSG_TALENTS_INFO: glyphSlots too large (", (int)glyphSlots, "), clamping to 12");
+        glyphSlots = 12;
+    }
+
+    LOG_INFO("  GlyphSlots: ", (int)glyphSlots);
+
+    data.glyphs.clear();
+    data.glyphs.reserve(glyphSlots);
+
+    for (uint8_t i = 0; i < glyphSlots; ++i) {
+        if (packet.getSize() - packet.getReadPos() < 2) {
+            LOG_ERROR("SMSG_TALENTS_INFO: truncated glyph list at i=", i);
+            return false;
+        }
+        uint16_t glyphId = packet.readUInt16();  // LE
+        data.glyphs.push_back(glyphId);
+        if (glyphId != 0) {
+            LOG_INFO("    Glyph slot ", i, ": ", glyphId);
+        }
+    }
+
+    LOG_INFO("SMSG_TALENTS_INFO: bytesConsumed=", (packet.getReadPos() - startPos),
+             " bytesRemaining=", (packet.getSize() - packet.getReadPos()));
 
     return true;
 }

@@ -300,8 +300,12 @@ void TalentScreen::renderTalent(game::GameHandler& gameHandler,
         ImVec2 pMax = ImGui::GetItemRectMax();
         auto* drawList = ImGui::GetWindowDrawList();
 
+        // Display rank: if learned, show (rank+1) since ranks are 0-indexed
+        const auto& learned = gameHandler.getLearnedTalents();
+        uint8_t displayRank = (learned.find(talent.talentId) != learned.end()) ? currentRank + 1 : 0;
+
         char rankText[16];
-        snprintf(rankText, sizeof(rankText), "%u/%u", currentRank, talent.maxRank);
+        snprintf(rankText, sizeof(rankText), "%u/%u", displayRank, talent.maxRank);
 
         ImVec2 textSize = ImGui::CalcTextSize(rankText);
         ImVec2 textPos(pMax.x - textSize.x - 2, pMax.y - textSize.y - 2);
@@ -309,8 +313,8 @@ void TalentScreen::renderTalent(game::GameHandler& gameHandler,
         // Shadow
         drawList->AddText(ImVec2(textPos.x + 1, textPos.y + 1), IM_COL32(0, 0, 0, 255), rankText);
         // Text
-        ImU32 rankCol = currentRank == talent.maxRank ? IM_COL32(0, 255, 0, 255) :
-                        currentRank > 0 ? IM_COL32(255, 255, 0, 255) :
+        ImU32 rankCol = displayRank == talent.maxRank ? IM_COL32(0, 255, 0, 255) :
+                        displayRank > 0 ? IM_COL32(255, 255, 0, 255) :
                         IM_COL32(255, 255, 255, 255);
         drawList->AddText(textPos, rankCol, rankText);
     }
@@ -409,8 +413,19 @@ void TalentScreen::renderTalent(game::GameHandler& gameHandler,
                  " unspent=", static_cast<int>(gameHandler.getUnspentTalentPoints()));
 
         if (canLearn && prereqsMet) {
-            LOG_INFO("Sending CMSG_LEARN_TALENT for talent ", talent.talentId, " rank ", static_cast<int>(nextRank));
-            gameHandler.learnTalent(talent.talentId, nextRank);
+            // Rank is 0-indexed: first point = rank 0, second = rank 1, etc.
+            // Check if talent is already learned
+            const auto& learned = gameHandler.getLearnedTalents();
+            uint8_t desiredRank;
+            if (learned.find(talent.talentId) == learned.end()) {
+                // Not learned yet, learn first rank (0)
+                desiredRank = 0;
+            } else {
+                // Already learned, upgrade to next rank
+                desiredRank = currentRank + 1;
+            }
+            LOG_INFO("Sending CMSG_LEARN_TALENT for talent ", talent.talentId, " rank ", static_cast<int>(desiredRank), " (0-indexed)");
+            gameHandler.learnTalent(talent.talentId, desiredRank);
         } else {
             if (!canLearn) LOG_WARNING("Cannot learn: canLearn=false");
             if (!prereqsMet) LOG_WARNING("Cannot learn: prereqsMet=false");

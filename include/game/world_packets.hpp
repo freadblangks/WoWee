@@ -1768,6 +1768,7 @@ struct TalentsInfoData {
     uint8_t talentSpec = 0;           // Active spec (0 or 1 for dual-spec)
     uint8_t unspentPoints = 0;        // Talent points available
     std::vector<TalentInfo> talents;  // Learned talents
+    std::vector<uint32_t> glyphs;     // Glyph spell IDs
 
     bool isValid() const { return true; }
 };

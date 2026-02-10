@@ -913,6 +913,9 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
             (lowerName.find("well") != std::string::npos) ||
             (lowerName.find("base") != std::string::npos);
         bool lowPlatformLikeShape = lowWideShape || lowPlatformShape;
+        bool carpetOrRug =
+            (lowerName.find("carpet") != std::string::npos) ||
+            (lowerName.find("rug") != std::string::npos);
         gpuModel.collisionSmallSolidProp =
             !gpuModel.collisionSteppedFountain &&
             !gpuModel.collisionSteppedLowPlatform &&
@@ -921,7 +924,8 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
             !curbLikeName &&
             !lowPlatformLikeShape &&
             (smallSolidPropName || (genericSolidPropShape && !foliageName && !softTree));
-        gpuModel.collisionNoBlock = ((foliageName || softTree) &&
+        // Disable collision for foliage, soft trees, and decorative carpets/rugs
+        gpuModel.collisionNoBlock = ((foliageName || softTree || carpetOrRug) &&
                                      !forceSolidCurb);
     }
     gpuModel.boundMin = tightMin;

@@ -4627,6 +4627,17 @@ void GameHandler::handleTrainerList(network::Packet& packet) {
     trainerWindowOpen_ = true;
     gossipWindowOpen = false;
 
+    // Debug: log known spells
+    LOG_INFO("Known spells count: ", knownSpells.size());
+    if (knownSpells.size() <= 20) {
+        std::string spellList;
+        for (uint32_t id : knownSpells) {
+            if (!spellList.empty()) spellList += ", ";
+            spellList += std::to_string(id);
+        }
+        LOG_INFO("Known spells: ", spellList);
+    }
+
     // Ensure caches are populated
     loadSpellNameCache();
     loadSkillLineDbc();
@@ -4635,12 +4646,19 @@ void GameHandler::handleTrainerList(network::Packet& packet) {
 }
 
 void GameHandler::trainSpell(uint32_t spellId) {
-    if (state != WorldState::IN_WORLD || !socket) return;
+    LOG_INFO("trainSpell called: spellId=", spellId, " state=", (int)state, " socket=", (socket ? "yes" : "no"));
+    if (state != WorldState::IN_WORLD || !socket) {
+        LOG_WARNING("trainSpell: Not in world or no socket connection");
+        return;
+    }
+    LOG_INFO("Sending CMSG_TRAINER_BUY_SPELL: guid=", currentTrainerList_.trainerGuid,
+             " trainerId=", currentTrainerList_.trainerType, " spellId=", spellId);
     auto packet = TrainerBuySpellPacket::build(
         currentTrainerList_.trainerGuid,
         currentTrainerList_.trainerType,
         spellId);
     socket->send(packet);
+    LOG_INFO("CMSG_TRAINER_BUY_SPELL sent");
 }
 
 void GameHandler::closeTrainer() {

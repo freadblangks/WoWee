@@ -3689,6 +3689,19 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
                     bool canTrain = !alreadyKnown && spell->state == 1
                                   && prereqsMet && levelMet
                                   && (money >= spell->spellCost);
+
+                    // Debug logging for first spell to see why buttons are disabled
+                    static bool logged = false;
+                    if (!logged) {
+                        LOG_INFO("Trainer button debug: spellId=", spell->spellId,
+                                " alreadyKnown=", alreadyKnown, " state=", (int)spell->state,
+                                " prereqsMet=", prereqsMet, " levelMet=", levelMet,
+                                " canAfford=", (money >= spell->spellCost),
+                                " money=", money, " cost=", spell->spellCost,
+                                " canTrain=", canTrain);
+                        logged = true;
+                    }
+
                     if (!canTrain) ImGui::BeginDisabled();
                     if (ImGui::SmallButton("Train")) {
                         gameHandler.trainSpell(spell->spellId);

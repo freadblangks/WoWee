@@ -392,6 +392,9 @@ void Application::update(float deltaTime) {
             if (world) {
                 world->update(deltaTime);
             }
+            // Spawn NPCs once when entering world
+            spawnNpcs();
+
             // Process deferred online creature spawns (throttled)
             processCreatureSpawnQueue();
             processGameObjectSpawnQueue();
@@ -1404,16 +1407,29 @@ void Application::loadEquippedWeapons() {
 
 void Application::spawnNpcs() {
     if (npcsSpawned) return;
-    if (!assetManager || !assetManager->isInitialized()) return;
-    if (!renderer || !renderer->getCharacterRenderer() || !renderer->getCamera()) return;
-    if (!gameHandler) return;
+    LOG_INFO("spawnNpcs: checking preconditions...");
+    if (!assetManager || !assetManager->isInitialized()) {
+        LOG_INFO("spawnNpcs: assetManager not ready");
+        return;
+    }
+    if (!renderer || !renderer->getCharacterRenderer() || !renderer->getCamera()) {
+        LOG_INFO("spawnNpcs: renderer not ready");
+        return;
+    }
+    if (!gameHandler) {
+        LOG_INFO("spawnNpcs: gameHandler not ready");
+        return;
+    }
 
+    LOG_INFO("spawnNpcs: spawning NPCs...");
     if (npcManager) {
         npcManager->clear(renderer->getCharacterRenderer(), &gameHandler->getEntityManager());
     }
     npcManager = std::make_unique<game::NpcManager>();
     glm::vec3 playerSpawnGL = renderer->getCharacterPosition();
     glm::vec3 playerCanonical = core::coords::renderToCanonical(playerSpawnGL);
+    LOG_INFO("spawnNpcs: player position GL=(", playerSpawnGL.x, ",", playerSpawnGL.y, ",", playerSpawnGL.z,
+             ") canonical=(", playerCanonical.x, ",", playerCanonical.y, ",", playerCanonical.z, ")");
     std::string mapName = "Azeroth";
     if (auto* minimap = renderer->getMinimap()) {
         mapName = minimap->getMapName();

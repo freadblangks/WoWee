@@ -327,6 +327,8 @@ void Application::setState(AppState newState) {
                     }
                 });
             }
+            // Load quest marker models
+            loadQuestMarkerModels();
             break;
         }
         case AppState::DISCONNECTED:
@@ -402,6 +404,9 @@ void Application::update(float deltaTime) {
             if (npcManager && renderer && renderer->getCharacterRenderer()) {
                 npcManager->update(deltaTime, renderer->getCharacterRenderer());
             }
+
+            // Update 3D quest markers above NPCs
+            updateQuestMarkers();
 
             // Sync server run speed to camera controller
             if (renderer && gameHandler && renderer->getCameraController()) {
@@ -2979,6 +2984,140 @@ void Application::despawnOnlineGameObject(uint64_t guid) {
     gameObjectInstances_.erase(it);
 
     LOG_INFO("Despawned gameobject: guid=0x", std::hex, guid, std::dec);
+}
+
+void Application::loadQuestMarkerModels() {
+    if (!assetManager || !renderer) return;
+    auto* m2Renderer = renderer->getM2Renderer();
+    if (!m2Renderer) return;
+
+    // Load quest exclamation mark (yellow !)
+    {
+        std::string path = "World\\Generic\\PassiveDoodads\\Quest\\QuestExclamation.m2";
+        std::vector<uint8_t> m2Data = assetManager->readFile(path);
+        if (!m2Data.empty()) {
+            pipeline::M2Model model = pipeline::M2Loader::load(m2Data);
+            if (!model.vertices.empty()) {
+                questExclamationModelId_ = 60000;  // High ID to avoid collision
+                if (m2Renderer->loadModel(model, questExclamationModelId_)) {
+                    LOG_INFO("Loaded quest marker: ", path);
+                } else {
+                    LOG_WARNING("Failed to upload quest marker to GPU: ", path);
+                }
+            } else {
+                LOG_WARNING("Failed to parse quest marker: ", path);
+            }
+        } else {
+            LOG_WARNING("Failed to read quest marker: ", path);
+        }
+    }
+
+    // Load quest question mark (silver ?)
+    {
+        std::string path = "World\\Generic\\PassiveDoodads\\Quest\\QuestQuestionMark.m2";
+        std::vector<uint8_t> m2Data = assetManager->readFile(path);
+        if (!m2Data.empty()) {
+            pipeline::M2Model model = pipeline::M2Loader::load(m2Data);
+            if (!model.vertices.empty()) {
+                questQuestionMarkModelId_ = 60001;
+                if (m2Renderer->loadModel(model, questQuestionMarkModelId_)) {
+                    LOG_INFO("Loaded quest marker: ", path);
+                } else {
+                    LOG_WARNING("Failed to upload quest marker to GPU: ", path);
+                }
+            } else {
+                LOG_WARNING("Failed to parse quest marker: ", path);
+            }
+        } else {
+            LOG_WARNING("Failed to read quest marker: ", path);
+        }
+    }
+}
+
+void Application::updateQuestMarkers() {
+    if (!gameHandler || !renderer || questExclamationModelId_ == 0) return;
+
+    auto* m2Renderer = renderer->getM2Renderer();
+    if (!m2Renderer) return;
+
+    const auto& questStatuses = gameHandler->getNpcQuestStatuses();
+
+    // Remove markers for NPCs that no longer have quest status
+    std::vector<uint64_t> toRemove;
+    for (const auto& [guid, instanceId] : questMarkerInstances_) {
+        if (questStatuses.find(guid) == questStatuses.end()) {
+            m2Renderer->removeInstance(instanceId);
+            toRemove.push_back(guid);
+        }
+    }
+    for (uint64_t guid : toRemove) {
+        questMarkerInstances_.erase(guid);
+    }
+
+    // Update or create markers for NPCs with quest status
+    for (const auto& [guid, status] : questStatuses) {
+        // Determine which marker model to use
+        uint32_t markerModelId = 0;
+        bool shouldShow = false;
+
+        using game::QuestGiverStatus;
+        switch (status) {
+            case QuestGiverStatus::AVAILABLE:
+            case QuestGiverStatus::AVAILABLE_LOW:
+                markerModelId = questExclamationModelId_;
+                shouldShow = true;
+                break;
+            case QuestGiverStatus::REWARD:
+                markerModelId = questQuestionMarkModelId_;
+                shouldShow = true;
+                break;
+            case QuestGiverStatus::INCOMPLETE:
+                // Gray ? - for now just use regular ? (could load yellow variant later)
+                markerModelId = questQuestionMarkModelId_;
+                shouldShow = false;  // Don't show incomplete markers
+                break;
+            default:
+                shouldShow = false;
+                break;
+        }
+
+        // Get NPC entity position
+        auto entity = gameHandler->getEntityManager().getEntity(guid);
+        if (!entity) continue;
+
+        glm::vec3 canonical(entity->getX(), entity->getY(), entity->getZ());
+        glm::vec3 renderPos = coords::canonicalToRender(canonical);
+
+        // Offset marker above NPC head
+        glm::vec3 boundsCenter;
+        float boundsRadius = 0.0f;
+        float heightOffset = 3.0f;
+        if (getRenderBoundsForGuid(guid, boundsCenter, boundsRadius)) {
+            heightOffset = boundsRadius * 2.0f + 1.0f;
+        }
+        renderPos.z += heightOffset;
+
+        if (shouldShow && markerModelId != 0) {
+            // Check if marker already exists
+            auto it = questMarkerInstances_.find(guid);
+            if (it != questMarkerInstances_.end()) {
+                // Update existing marker position
+                m2Renderer->setInstancePosition(it->second, renderPos);
+            } else {
+                // Create new marker instance (billboarded, no rotation needed)
+                uint32_t instanceId = m2Renderer->createInstance(
+                    markerModelId, renderPos, glm::vec3(0.0f), 1.0f);
+                questMarkerInstances_[guid] = instanceId;
+            }
+        } else {
+            // Remove marker if it exists but shouldn't show
+            auto it = questMarkerInstances_.find(guid);
+            if (it != questMarkerInstances_.end()) {
+                m2Renderer->removeInstance(it->second);
+                questMarkerInstances_.erase(it);
+            }
+        }
+    }
 }
 
 } // namespace core

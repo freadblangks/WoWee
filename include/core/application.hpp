@@ -203,6 +203,13 @@ private:
     };
     std::vector<PendingGameObjectSpawn> pendingGameObjectSpawns_;
     void processGameObjectSpawnQueue();
+
+    // Quest marker 3D models (billboarded above NPCs)
+    uint32_t questExclamationModelId_ = 0;
+    uint32_t questQuestionMarkModelId_ = 0;
+    std::unordered_map<uint64_t, uint32_t> questMarkerInstances_;  // npcGuid → marker instanceId
+    void loadQuestMarkerModels();
+    void updateQuestMarkers();
 };
 
 } // namespace core

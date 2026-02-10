@@ -124,7 +124,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderVendorWindow(gameHandler);
     renderTrainerWindow(gameHandler);
     renderTaxiWindow(gameHandler);
-    renderQuestMarkers(gameHandler);  // 2D markers (3D M2 files not in MPQ)
+    // renderQuestMarkers(gameHandler);  // Disabled - using 3D billboard markers now
     renderMinimapMarkers(gameHandler);
     renderDeathScreen(gameHandler);
     renderResurrectDialog(gameHandler);

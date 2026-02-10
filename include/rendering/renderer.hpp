@@ -32,6 +32,7 @@ class CharacterRenderer;
 class WMORenderer;
 class M2Renderer;
 class Minimap;
+class QuestMarkerRenderer;
 class Shader;
 
 class Renderer {
@@ -105,6 +106,7 @@ public:
     WMORenderer* getWMORenderer() const { return wmoRenderer.get(); }
     M2Renderer* getM2Renderer() const { return m2Renderer.get(); }
     Minimap* getMinimap() const { return minimap.get(); }
+    QuestMarkerRenderer* getQuestMarkerRenderer() const { return questMarkerRenderer.get(); }
     const std::string& getCurrentZoneName() const { return currentZoneName; }
 
     // Third-person character follow
@@ -177,6 +179,7 @@ private:
     std::unique_ptr<WMORenderer> wmoRenderer;
     std::unique_ptr<M2Renderer> m2Renderer;
     std::unique_ptr<Minimap> minimap;
+    std::unique_ptr<QuestMarkerRenderer> questMarkerRenderer;
     std::unique_ptr<audio::MusicManager> musicManager;
     std::unique_ptr<audio::FootstepManager> footstepManager;
     std::unique_ptr<audio::ActivitySoundManager> activitySoundManager;

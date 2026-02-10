@@ -18,6 +18,7 @@
 #include "rendering/wmo_renderer.hpp"
 #include "rendering/m2_renderer.hpp"
 #include "rendering/minimap.hpp"
+#include "rendering/quest_marker_renderer.hpp"
 #include "rendering/shader.hpp"
 #include "pipeline/m2_loader.hpp"
 #include <algorithm>
@@ -329,6 +330,9 @@ bool Renderer::initialize(core::Window* win) {
         LOG_WARNING("Failed to initialize minimap");
         minimap.reset();
     }
+
+    // Create quest marker renderer (initialized later with AssetManager)
+    questMarkerRenderer = std::make_unique<QuestMarkerRenderer>();
 
     // Create M2 renderer (for doodads)
     m2Renderer = std::make_unique<M2Renderer>();
@@ -1871,6 +1875,11 @@ void Renderer::renderWorld(game::World* world) {
         waterRenderer->render(*camera, time);
     }
 
+    // Render quest markers (billboards above NPCs)
+    if (questMarkerRenderer && camera) {
+        questMarkerRenderer->render(*camera);
+    }
+
     // Full-screen underwater tint so WMO/M2/characters also feel submerged.
     if (false && underwater && underwaterOverlayShader && underwaterOverlayVAO) {
         glDisable(GL_DEPTH_TEST);
@@ -2224,6 +2233,9 @@ bool Renderer::loadTestTerrain(pipeline::AssetManager* assetManager, const std::
         if (movementSoundManager) {
             movementSoundManager->initialize(assetManager);
         }
+        if (questMarkerRenderer) {
+            questMarkerRenderer->initialize(assetManager);
+        }
         cachedAssetManager = assetManager;
     }
 
@@ -2322,6 +2334,9 @@ bool Renderer::loadTerrainArea(const std::string& mapName, int centerX, int cent
     }
     if (movementSoundManager && cachedAssetManager) {
         movementSoundManager->initialize(cachedAssetManager);
+    }
+    if (questMarkerRenderer && cachedAssetManager) {
+        questMarkerRenderer->initialize(cachedAssetManager);
     }
 
     // Wire ambient sound manager to terrain manager for emitter registration

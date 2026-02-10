@@ -23,6 +23,7 @@
 #include "rendering/wmo_renderer.hpp"
 #include "rendering/m2_renderer.hpp"
 #include "rendering/minimap.hpp"
+#include "rendering/quest_marker_renderer.hpp"
 #include "rendering/loading_screen.hpp"
 #include "audio/music_manager.hpp"
 #include "audio/footstep_manager.hpp"
@@ -3001,66 +3002,55 @@ void Application::loadQuestMarkerModels() {
 }
 
 void Application::updateQuestMarkers() {
-    if (!gameHandler || !renderer || questExclamationModelId_ == 0) {
+    if (!gameHandler || !renderer) {
+        return;
+    }
+
+    auto* questMarkerRenderer = renderer->getQuestMarkerRenderer();
+    if (!questMarkerRenderer) {
         static bool logged = false;
         if (!logged) {
-            LOG_INFO("updateQuestMarkers: skipped - gameHandler=", (gameHandler ? "yes" : "no"),
-                     " renderer=", (renderer ? "yes" : "no"),
-                     " questExclamationModelId=", questExclamationModelId_);
+            LOG_WARNING("QuestMarkerRenderer not available!");
             logged = true;
         }
         return;
     }
 
-    auto* m2Renderer = renderer->getM2Renderer();
-    if (!m2Renderer) return;
-
     const auto& questStatuses = gameHandler->getNpcQuestStatuses();
 
     static int logCounter = 0;
     if (++logCounter % 300 == 0) {  // Log every ~10 seconds at 30fps
-        LOG_INFO("Quest markers: ", questStatuses.size(), " NPCs with status, ",
-                 questMarkerInstances_.size(), " markers active");
+        LOG_INFO("Quest markers: ", questStatuses.size(), " NPCs with quest status");
     }
 
-    // Remove markers for NPCs that no longer have quest status
-    std::vector<uint64_t> toRemove;
-    for (const auto& [guid, instanceId] : questMarkerInstances_) {
-        if (questStatuses.find(guid) == questStatuses.end()) {
-            m2Renderer->removeInstance(instanceId);
-            toRemove.push_back(guid);
-        }
-    }
-    for (uint64_t guid : toRemove) {
-        questMarkerInstances_.erase(guid);
-    }
+    // Clear all markers (we'll re-add active ones)
+    questMarkerRenderer->clear();
 
-    // Update or create markers for NPCs with quest status
+    static bool firstRun = true;
+    int markersAdded = 0;
+
+    // Add markers for NPCs with quest status
     for (const auto& [guid, status] : questStatuses) {
-        // Determine which marker model to use
-        uint32_t markerModelId = 0;
-        bool shouldShow = false;
+        // Determine marker type
+        int markerType = -1;  // -1 = no marker
 
         using game::QuestGiverStatus;
         switch (status) {
             case QuestGiverStatus::AVAILABLE:
             case QuestGiverStatus::AVAILABLE_LOW:
-                markerModelId = questExclamationModelId_;
-                shouldShow = true;
+                markerType = 0;  // Available (yellow !)
                 break;
             case QuestGiverStatus::REWARD:
-                markerModelId = questQuestionMarkModelId_;
-                shouldShow = true;
+                markerType = 1;  // Turn-in (yellow ?)
                 break;
             case QuestGiverStatus::INCOMPLETE:
-                // Gray ? - for now just use regular ? (could load yellow variant later)
-                markerModelId = questQuestionMarkModelId_;
-                shouldShow = false;  // Don't show incomplete markers
+                markerType = 2;  // Incomplete (grey ?)
                 break;
             default:
-                shouldShow = false;
                 break;
         }
+
+        if (markerType < 0) continue;
 
         // Get NPC entity position
         auto entity = gameHandler->getEntityManager().getEntity(guid);
@@ -3069,35 +3059,22 @@ void Application::updateQuestMarkers() {
         glm::vec3 canonical(entity->getX(), entity->getY(), entity->getZ());
         glm::vec3 renderPos = coords::canonicalToRender(canonical);
 
-        // Offset marker above NPC head
+        // Get NPC bounding height for proper marker positioning
         glm::vec3 boundsCenter;
         float boundsRadius = 0.0f;
-        float heightOffset = 3.0f;
+        float boundingHeight = 2.0f;  // Default
         if (getRenderBoundsForGuid(guid, boundsCenter, boundsRadius)) {
-            heightOffset = boundsRadius * 2.0f + 1.0f;
+            boundingHeight = boundsRadius * 2.0f;
         }
-        renderPos.z += heightOffset;
 
-        if (shouldShow && markerModelId != 0) {
-            // Check if marker already exists
-            auto it = questMarkerInstances_.find(guid);
-            if (it != questMarkerInstances_.end()) {
-                // Update existing marker position
-                m2Renderer->setInstancePosition(it->second, renderPos);
-            } else {
-                // Create new marker instance (billboarded, no rotation needed)
-                uint32_t instanceId = m2Renderer->createInstance(
-                    markerModelId, renderPos, glm::vec3(0.0f), 1.0f);
-                questMarkerInstances_[guid] = instanceId;
-            }
-        } else {
-            // Remove marker if it exists but shouldn't show
-            auto it = questMarkerInstances_.find(guid);
-            if (it != questMarkerInstances_.end()) {
-                m2Renderer->removeInstance(it->second);
-                questMarkerInstances_.erase(it);
-            }
-        }
+        // Set the marker (renderer will handle positioning, bob, glow, etc.)
+        questMarkerRenderer->setMarker(guid, renderPos, markerType, boundingHeight);
+        markersAdded++;
+    }
+
+    if (firstRun && markersAdded > 0) {
+        LOG_INFO("Quest markers: Added ", markersAdded, " markers on first run");
+        firstRun = false;
     }
 }
 

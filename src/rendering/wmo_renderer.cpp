@@ -919,10 +919,11 @@ void WMORenderer::render(const Camera& camera, const glm::mat4& view, const glm:
             if (gi < instance.worldGroupBounds.size()) {
                 const auto& [gMin, gMax] = instance.worldGroupBounds[gi];
 
-                // Hard distance cutoff
+                // Hard distance cutoff (increased for better visibility of major structures)
+                // 500 units = 250000.0f squared (was 160 units / 25600.0f)
                 glm::vec3 closestPoint = glm::clamp(camPos, gMin, gMax);
                 float distSq = glm::dot(closestPoint - camPos, closestPoint - camPos);
-                if (distSq > 25600.0f) {
+                if (distSq > 250000.0f) {
                     result.distanceCulled++;
                     continue;
                 }
@@ -1019,20 +1020,44 @@ void WMORenderer::render(const Camera& camera, const glm::mat4& view, const glm:
         for (uint32_t gi : dl.visibleGroups) {
             const auto& group = model.groups[gi];
 
-            // Hide floating LOD shell groups that are positioned too high
-            // Groups 92/93 are at worldZ 200-225 (floating shell with massive height)
-            // Group 95 at worldZ=162 is legitimate (keep it)
-            glm::vec3 groupCenter = (group.boundingBoxMin + group.boundingBoxMax) * 0.5f;
-            glm::vec4 worldCenter = instance.modelMatrix * glm::vec4(groupCenter, 1.0f);
-            glm::vec3 size = group.boundingBoxMax - group.boundingBoxMin;
+            // STORMWIND.WMO specific fix: LOD shell visibility control
+            // Combination of distance culling + backface culling for best results
+            bool isLODShell = false;
+            if (instance.modelId == 10047) {
+                glm::vec3 groupCenter = (group.boundingBoxMin + group.boundingBoxMax) * 0.5f;
+                glm::vec4 worldCenter = instance.modelMatrix * glm::vec4(groupCenter, 1.0f);
+                glm::vec3 size = group.boundingBoxMax - group.boundingBoxMin;
 
-            // Skip groups that are both HIGH (worldZ > 180) AND very tall (sizeZ > 100)
-            // This catches groups 92 (worldZ=225, sizeZ=251) and 93 (worldZ=201, sizeZ=165)
-            if (worldCenter.z > 180.0f && size.z > 100.0f) {
-                continue;  // Skip floating LOD shell
+                // Detect LOD shell groups: Groups 92/93 at worldZ 200-225 with massive height
+                if (worldCenter.z > 195.0f && size.z > 160.0f) {
+                    // Measure distance to the actual group center, not WMO origin
+                    float distToGroup = glm::length(cameraPos - glm::vec3(worldCenter));
+
+                    static int logCounter = 0;
+                    if (logCounter++ % 300 == 0) {
+                        LOG_INFO("LOD Shell Group ", gi, ": worldZ=", worldCenter.z, " sizeZ=", size.z,
+                                 " distToGroup=", distToGroup, " (hiding if < 185)");
+                    }
+
+                    // Completely hide LOD shell when close (underneath/inside city)
+                    // NOTE: 185 units threshold - may need further tuning based on gameplay testing
+                    if (distToGroup < 185.0f) {
+                        continue;  // Skip rendering entirely when close
+                    }
+
+                    // When farther away, use backface culling to hide interior faces
+                    isLODShell = true;
+                    glEnable(GL_CULL_FACE);  // Enable backface culling for LOD shell
+                    glCullFace(GL_BACK);     // Cull back faces (reduces artifacts from outside)
+                }
             }
 
             renderGroup(group, model, instance.modelMatrix, view, projection);
+
+            // Restore culling state after LOD shell group
+            if (isLODShell) {
+                glDisable(GL_CULL_FACE);
+            }
         }
 
         lastPortalCulledGroups += dl.portalCulled;

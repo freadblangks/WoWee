@@ -130,6 +130,13 @@ public:
      */
     int getSurfaceCount() const { return static_cast<int>(surfaces.size()); }
 
+    /**
+     * Set fog parameters
+     */
+    void setFog(const glm::vec3& color, float start, float end) {
+        fogColor = color; fogStart = start; fogEnd = end;
+    }
+
 private:
     void createWaterMesh(WaterSurface& surface);
     void destroyWaterMesh(WaterSurface& surface);
@@ -140,6 +147,11 @@ private:
     std::unique_ptr<Shader> waterShader;
     std::vector<WaterSurface> surfaces;
     bool renderingEnabled = true;
+
+    // Fog parameters
+    glm::vec3 fogColor = glm::vec3(0.5f, 0.6f, 0.7f);
+    float fogStart = 800.0f;   // Match WMO renderer fog settings
+    float fogEnd = 1500.0f;
 };
 
 } // namespace rendering

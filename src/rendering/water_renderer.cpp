@@ -88,6 +88,10 @@ bool WaterRenderer::initialize() {
         uniform float shimmerStrength;
         uniform float alphaScale;
 
+        uniform vec3 uFogColor;
+        uniform float uFogStart;
+        uniform float uFogEnd;
+
         out vec4 FragColor;
 
         void main() {
@@ -139,7 +143,13 @@ bool WaterRenderer::initialize() {
             float distAlpha = mix(0.0, 0.5, distFade);  // Add up to 50% opacity at distance
 
             float alpha = clamp(waterAlpha * alphaScale * (0.68 + fresnel * 0.45) + distAlpha, 0.12, 0.95);
-            FragColor = vec4(result, alpha);
+
+            // Apply distance fog
+            float fogDist = length(viewPos - FragPos);
+            float fogFactor = clamp((uFogEnd - fogDist) / (uFogEnd - uFogStart), 0.0, 1.0);
+            vec3 finalColor = mix(uFogColor, result, fogFactor);
+
+            FragColor = vec4(finalColor, alpha);
         }
     )";
 
@@ -395,6 +405,9 @@ void WaterRenderer::render(const Camera& camera, float time) {
     waterShader->setUniform("projection", projection);
     waterShader->setUniform("viewPos", camera.getPosition());
     waterShader->setUniform("time", time);
+    waterShader->setUniform("uFogColor", fogColor);
+    waterShader->setUniform("uFogStart", fogStart);
+    waterShader->setUniform("uFogEnd", fogEnd);
 
     // Render each water surface
     for (const auto& surface : surfaces) {

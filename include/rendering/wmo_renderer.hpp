@@ -534,8 +534,8 @@ private:
 
     // Fog parameters
     glm::vec3 fogColor = glm::vec3(0.5f, 0.6f, 0.7f);
-    float fogStart = 400.0f;
-    float fogEnd = 1200.0f;
+    float fogStart = 3000.0f;   // Increased to allow clearer visibility at distance
+    float fogEnd = 4000.0f;    // Increased to match extended view distance
 
     // Shadow mapping
     GLuint shadowDepthTex = 0;

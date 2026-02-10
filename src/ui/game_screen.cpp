@@ -110,6 +110,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
 
     // ---- New UI elements ----
     renderActionBar(gameHandler);
+    renderBagBar(gameHandler);
     renderXpBar(gameHandler);
     renderCastBar(gameHandler);
     renderCombatText(gameHandler);
@@ -480,7 +481,7 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
             }
             if (ImGui::IsItemClicked()) {
                 std::string cmd = "xdg-open '" + url + "' &";
-                system(cmd.c_str());
+                [[maybe_unused]] int result = system(cmd.c_str());
             }
             ImGui::PopStyleColor();
 
@@ -2581,6 +2582,139 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
 }
 
 // ============================================================
+// Bag Bar
+// ============================================================
+
+void GameScreen::renderBagBar(game::GameHandler& gameHandler) {
+    auto* window = core::Application::getInstance().getWindow();
+    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
+    float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
+    auto* assetMgr = core::Application::getInstance().getAssetManager();
+
+    float slotSize = 42.0f;
+    float spacing = 4.0f;
+    float padding = 6.0f;
+
+    // 5 slots: backpack + 4 bags
+    float barW = 5 * slotSize + 4 * spacing + padding * 2;
+    float barH = slotSize + padding * 2;
+
+    // Position in bottom right corner
+    float barX = screenW - barW - 10.0f;
+    float barY = screenH - barH - 10.0f;
+
+    ImGui::SetNextWindowPos(ImVec2(barX, barY), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(barW, barH), ImGuiCond_Always);
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                             ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
+                             ImGuiWindowFlags_NoScrollbar;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.05f, 0.05f, 0.05f, 0.9f));
+
+    if (ImGui::Begin("##BagBar", nullptr, flags)) {
+        auto& inv = gameHandler.getInventory();
+
+        // Load backpack icon if needed
+        if (!backpackIconTexture_ && assetMgr && assetMgr->isInitialized()) {
+            auto blpData = assetMgr->readFile("Interface\\Buttons\\Button-Backpack-Up.blp");
+            if (!blpData.empty()) {
+                auto image = pipeline::BLPLoader::load(blpData);
+                if (image.isValid()) {
+                    glGenTextures(1, &backpackIconTexture_);
+                    glBindTexture(GL_TEXTURE_2D, backpackIconTexture_);
+                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, image.width, image.height, 0,
+                                 GL_RGBA, GL_UNSIGNED_BYTE, image.data.data());
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                    glBindTexture(GL_TEXTURE_2D, 0);
+                }
+            }
+        }
+
+        // Slots 1-4: Bag slots (leftmost)
+        for (int i = 0; i < 4; ++i) {
+            if (i > 0) ImGui::SameLine(0, spacing);
+            ImGui::PushID(i + 1);
+
+            game::EquipSlot bagSlot = static_cast<game::EquipSlot>(static_cast<int>(game::EquipSlot::BAG1) + i);
+            const auto& bagItem = inv.getEquipSlot(bagSlot);
+
+            GLuint bagIcon = 0;
+            if (!bagItem.empty() && bagItem.item.displayInfoId != 0) {
+                bagIcon = inventoryScreen.getItemIcon(bagItem.item.displayInfoId);
+            }
+
+            if (bagIcon) {
+                if (ImGui::ImageButton("##bag", (ImTextureID)(uintptr_t)bagIcon,
+                                       ImVec2(slotSize - 4, slotSize - 4),
+                                       ImVec2(0, 0), ImVec2(1, 1),
+                                       ImVec4(0.1f, 0.1f, 0.1f, 0.9f),
+                                       ImVec4(1, 1, 1, 1))) {
+                    // TODO: Open specific bag
+                    inventoryScreen.toggle();
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("%s", bagItem.item.name.c_str());
+                }
+            } else {
+                // Empty bag slot
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.15f, 0.15f, 0.8f));
+                if (ImGui::Button("##empty", ImVec2(slotSize, slotSize))) {
+                    // Empty slot - maybe show equipment to find a bag?
+                }
+                ImGui::PopStyleColor();
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Empty Bag Slot");
+                }
+            }
+
+            // Accept dragged item from inventory
+            if (ImGui::IsItemHovered() && inventoryScreen.isHoldingItem()) {
+                const auto& heldItem = inventoryScreen.getHeldItem();
+                // Check if held item is a bag (bagSlots > 0)
+                if (heldItem.bagSlots > 0 && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                    // Equip the bag to inventory
+                    auto& inventory = gameHandler.getInventory();
+                    inventory.setEquipSlot(bagSlot, heldItem);
+                    inventoryScreen.returnHeldItem(inventory);
+                }
+            }
+
+            ImGui::PopID();
+        }
+
+        // Backpack (rightmost slot)
+        ImGui::SameLine(0, spacing);
+        ImGui::PushID(0);
+        if (backpackIconTexture_) {
+            if (ImGui::ImageButton("##backpack", (ImTextureID)(uintptr_t)backpackIconTexture_,
+                                   ImVec2(slotSize - 4, slotSize - 4),
+                                   ImVec2(0, 0), ImVec2(1, 1),
+                                   ImVec4(0.1f, 0.1f, 0.1f, 0.9f),
+                                   ImVec4(1, 1, 1, 1))) {
+                inventoryScreen.toggle();
+            }
+        } else {
+            if (ImGui::Button("B", ImVec2(slotSize, slotSize))) {
+                inventoryScreen.toggle();
+            }
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Backpack");
+        }
+        ImGui::PopID();
+    }
+    ImGui::End();
+
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
+}
+
+// ============================================================
 // XP Bar
 // ============================================================
 
@@ -3353,6 +3487,11 @@ void GameScreen::renderQuestOfferRewardWindow(game::GameHandler& gameHandler) {
     const auto& quest = gameHandler.getQuestOfferReward();
     static int selectedChoice = -1;
 
+    // Auto-select if only one choice reward
+    if (quest.choiceRewards.size() == 1 && selectedChoice == -1) {
+        selectedChoice = 0;
+    }
+
     std::string processedTitle = replaceGenderPlaceholders(quest.title, gameHandler);
     if (ImGui::Begin(processedTitle.c_str(), &open, ImGuiWindowFlags_NoCollapse)) {
         if (!quest.rewardText.empty()) {
@@ -3365,19 +3504,74 @@ void GameScreen::renderQuestOfferRewardWindow(game::GameHandler& gameHandler) {
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 1.0f), "Choose a reward:");
+
             for (size_t i = 0; i < quest.choiceRewards.size(); ++i) {
                 const auto& item = quest.choiceRewards[i];
                 auto* info = gameHandler.getItemInfo(item.itemId);
-                char label[256];
-                if (info && info->valid)
-                    snprintf(label, sizeof(label), "%s x%u", info->name.c_str(), item.count);
-                else
-                    snprintf(label, sizeof(label), "Item %u x%u", item.itemId, item.count);
 
                 bool selected = (selectedChoice == static_cast<int>(i));
-                if (ImGui::Selectable(label, selected)) {
+
+                // Get item icon if we have displayInfoId
+                uint32_t iconTex = 0;
+                if (info && info->valid && info->displayInfoId != 0) {
+                    iconTex = inventoryScreen.getItemIcon(info->displayInfoId);
+                }
+
+                // Quality color
+                ImVec4 qualityColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f); // White (poor)
+                if (info && info->valid) {
+                    switch (info->quality) {
+                        case 1: qualityColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f); break; // Common (white)
+                        case 2: qualityColor = ImVec4(0.0f, 1.0f, 0.0f, 1.0f); break; // Uncommon (green)
+                        case 3: qualityColor = ImVec4(0.0f, 0.5f, 1.0f, 1.0f); break; // Rare (blue)
+                        case 4: qualityColor = ImVec4(0.64f, 0.21f, 0.93f, 1.0f); break; // Epic (purple)
+                        case 5: qualityColor = ImVec4(1.0f, 0.5f, 0.0f, 1.0f); break; // Legendary (orange)
+                    }
+                }
+
+                // Render item with icon
+                ImGui::PushID(static_cast<int>(i));
+                if (ImGui::Selectable("##reward", selected, 0, ImVec2(0, 40))) {
                     selectedChoice = static_cast<int>(i);
                 }
+
+                // Draw icon and text over the selectable
+                ImGui::SameLine();
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() - ImGui::GetItemRectSize().x + 4);
+
+                if (iconTex) {
+                    ImGui::Image((void*)(intptr_t)iconTex, ImVec2(36, 36));
+                    ImGui::SameLine();
+                }
+
+                ImGui::BeginGroup();
+                if (info && info->valid) {
+                    ImGui::TextColored(qualityColor, "%s", info->name.c_str());
+                    if (item.count > 1) {
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 0.7f), "x%u", item.count);
+                    }
+                    // Show stats
+                    if (info->armor > 0 || info->stamina > 0 || info->strength > 0 ||
+                        info->agility > 0 || info->intellect > 0 || info->spirit > 0) {
+                        std::string stats;
+                        if (info->armor > 0) stats += std::to_string(info->armor) + " Armor ";
+                        if (info->stamina > 0) stats += "+" + std::to_string(info->stamina) + " Sta ";
+                        if (info->strength > 0) stats += "+" + std::to_string(info->strength) + " Str ";
+                        if (info->agility > 0) stats += "+" + std::to_string(info->agility) + " Agi ";
+                        if (info->intellect > 0) stats += "+" + std::to_string(info->intellect) + " Int ";
+                        if (info->spirit > 0) stats += "+" + std::to_string(info->spirit) + " Spi ";
+                        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "%s", stats.c_str());
+                    }
+                } else {
+                    ImGui::TextColored(qualityColor, "Item %u", item.itemId);
+                    if (item.count > 0) {
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 0.7f), "x%u", item.count);
+                    }
+                }
+                ImGui::EndGroup();
+                ImGui::PopID();
             }
         }
 
@@ -3587,6 +3781,10 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
         uint32_t ms = static_cast<uint32_t>((money / 100) % 100);
         uint32_t mc = static_cast<uint32_t>(money % 100);
         ImGui::Text("Your money: %ug %us %uc", mg, ms, mc);
+
+        // Filter checkbox
+        static bool showUnavailable = false;
+        ImGui::Checkbox("Show unavailable spells", &showUnavailable);
         ImGui::Separator();
 
         if (trainer.spells.empty()) {
@@ -3596,23 +3794,25 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
             const auto& knownSpells = gameHandler.getKnownSpells();
             auto isKnown = [&](uint32_t id) {
                 if (id == 0) return true;
+                // Check if spell is in knownSpells list
                 bool found = std::find(knownSpells.begin(), knownSpells.end(), id) != knownSpells.end();
-                static int debugCount = 0;
-                if (debugCount < 5 && !found && id != 0) {
-                    LOG_INFO("isKnown(", id, ") = false, knownSpells.size()=", knownSpells.size());
-                    debugCount++;
+                if (found) return true;
+
+                // Also check if spell is in trainer list with state=2 (explicitly known)
+                // state=0 means unavailable (could be no prereqs, wrong level, etc.) - don't count as known
+                for (const auto& ts : trainer.spells) {
+                    if (ts.spellId == id && ts.state == 2) {
+                        return true;
+                    }
                 }
-                return found;
+                return false;
             };
             uint32_t playerLevel = gameHandler.getPlayerLevel();
 
             // Renders spell rows into the current table
             auto renderSpellRows = [&](const std::vector<const game::TrainerSpell*>& spells) {
                 for (const auto* spell : spells) {
-                    ImGui::TableNextRow();
-                    ImGui::PushID(static_cast<int>(spell->spellId));
-
-                    // Check prerequisites client-side
+                    // Check prerequisites client-side first
                     bool prereq1Met = isKnown(spell->chainNode1);
                     bool prereq2Met = isKnown(spell->chainNode2);
                     bool prereq3Met = isKnown(spell->chainNode3);
@@ -3620,12 +3820,30 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
                     bool levelMet = (spell->reqLevel == 0 || playerLevel >= spell->reqLevel);
                     bool alreadyKnown = isKnown(spell->spellId);
 
+                    // Dynamically determine effective state based on current prerequisites
+                    // Server sends state, but we override if prerequisites are now met
+                    uint8_t effectiveState = spell->state;
+                    if (spell->state == 1 && prereqsMet && levelMet) {
+                        // Server said unavailable, but we now meet all requirements
+                        effectiveState = 0;  // Treat as available
+                    }
+
+                    // Filter: skip unavailable spells if checkbox is unchecked
+                    // Use effectiveState so spells with newly met prereqs aren't filtered
+                    if (!showUnavailable && effectiveState == 1) {
+                        continue;
+                    }
+
+                    ImGui::TableNextRow();
+                    ImGui::PushID(static_cast<int>(spell->spellId));
+
                     ImVec4 color;
                     const char* statusLabel;
-                    if (alreadyKnown) {
+                    // WotLK trainer states: 0=available, 1=unavailable, 2=known
+                    if (effectiveState == 2 || alreadyKnown) {
                         color = ImVec4(0.3f, 0.9f, 0.3f, 1.0f);
                         statusLabel = "Known";
-                    } else if (spell->state == 1 && prereqsMet && levelMet) {
+                    } else if (effectiveState == 0) {
                         color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
                         statusLabel = "Available";
                     } else {
@@ -3693,7 +3911,8 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
 
                     // Train button - only enabled if available, affordable, prereqs met
                     ImGui::TableSetColumnIndex(3);
-                    bool canTrain = !alreadyKnown && spell->state == 1
+                    // Use effectiveState so newly available spells (after learning prereqs) can be trained
+                    bool canTrain = !alreadyKnown && effectiveState == 0
                                   && prereqsMet && levelMet
                                   && (money >= spell->spellCost);
 
@@ -4079,7 +4298,6 @@ void GameScreen::renderSettingsWindow() {
     constexpr bool kDefaultVsync = true;
     constexpr bool kDefaultShadows = false;
     constexpr int kDefaultMusicVolume = 30;
-    constexpr int kDefaultSfxVolume = 100;
     constexpr float kDefaultMouseSensitivity = 0.2f;
     constexpr bool kDefaultInvertMouse = false;
 

@@ -495,6 +495,8 @@ public:
         std::string title;
         std::string objectives;
         bool complete = false;
+        // Objective kill counts: objectiveIndex -> (current, required)
+        std::unordered_map<uint32_t, std::pair<uint32_t, uint32_t>> killCounts;
     };
     const std::vector<QuestLogEntry>& getQuestLog() const { return questLog_; }
     void abandonQuest(uint32_t questId);
@@ -697,7 +699,9 @@ private:
     void handleCooldownEvent(network::Packet& packet);
     void handleAuraUpdate(network::Packet& packet, bool isAll);
     void handleLearnedSpell(network::Packet& packet);
+    void handleSupercededSpell(network::Packet& packet);
     void handleRemovedSpell(network::Packet& packet);
+    void handleUnlearnSpells(network::Packet& packet);
 
     // ---- Phase 4 handlers ----
     void handleGroupInvite(network::Packet& packet);

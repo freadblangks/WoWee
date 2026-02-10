@@ -159,7 +159,9 @@ enum class Opcode : uint16_t {
     SMSG_UPDATE_AURA_DURATION        = 0x137,
     SMSG_INITIAL_SPELLS              = 0x12A,
     SMSG_LEARNED_SPELL               = 0x12B,
+    SMSG_SUPERCEDED_SPELL            = 0x12C,
     SMSG_REMOVED_SPELL               = 0x203,
+    SMSG_SEND_UNLEARN_SPELLS         = 0x41F,
     SMSG_SPELL_DELAYED               = 0x1E2,
     SMSG_AURA_UPDATE                 = 0x3FA,
     SMSG_AURA_UPDATE_ALL             = 0x495,
@@ -223,8 +225,11 @@ enum class Opcode : uint16_t {
     SMSG_QUESTGIVER_QUEST_INVALID    = 0x18F,
     SMSG_QUESTGIVER_QUEST_COMPLETE   = 0x191,
     CMSG_QUESTLOG_REMOVE_QUEST       = 0x194,
+    SMSG_QUESTUPDATE_ADD_KILL        = 0x196,  // Quest kill count update
+    SMSG_QUESTUPDATE_COMPLETE        = 0x195,  // Quest objectives completed
     CMSG_QUEST_QUERY                 = 0x05C,  // Client requests quest data
     SMSG_QUEST_QUERY_RESPONSE        = 0x05D,  // Server sends quest data
+    SMSG_QUESTLOG_FULL               = 0x1A3,  // Full quest log on login
 
     // ---- Phase 5: Vendor ----
     CMSG_LIST_INVENTORY              = 0x19E,
@@ -235,8 +240,10 @@ enum class Opcode : uint16_t {
     SMSG_BUY_FAILED                  = 0x1A5,
 
     // ---- Trainer ----
+    CMSG_TRAINER_LIST                = 0x01B0,
     SMSG_TRAINER_LIST                = 0x01B1,
     CMSG_TRAINER_BUY_SPELL           = 0x01B2,
+    SMSG_TRAINER_BUY_FAILED          = 0x01B4,
 
     // ---- Phase 5: Item/Equip ----
     CMSG_ITEM_QUERY_SINGLE           = 0x056,

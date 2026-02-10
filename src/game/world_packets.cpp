@@ -829,6 +829,8 @@ bool UpdateObjectParser::parseMovementBlock(network::Packet& packet, UpdateBlock
 }
 
 bool UpdateObjectParser::parseUpdateFields(network::Packet& packet, UpdateBlock& block) {
+    size_t startPos = packet.getReadPos();
+
     // Read number of blocks (each block is 32 fields = 32 bits)
     uint8_t blockCount = packet.readUInt8();
 
@@ -836,13 +838,20 @@ bool UpdateObjectParser::parseUpdateFields(network::Packet& packet, UpdateBlock&
         return true; // No fields to update
     }
 
-    LOG_DEBUG("  Parsing ", (int)blockCount, " field blocks");
+    uint32_t fieldsCapacity = blockCount * 32;
+    LOG_INFO("  UPDATE MASK PARSE:");
+    LOG_INFO("    maskBlockCount = ", (int)blockCount);
+    LOG_INFO("    fieldsCapacity (blocks * 32) = ", fieldsCapacity);
 
     // Read update mask
     std::vector<uint32_t> updateMask(blockCount);
     for (int i = 0; i < blockCount; ++i) {
         updateMask[i] = packet.readUInt32();
     }
+
+    // Find highest set bit
+    uint16_t highestSetBit = 0;
+    uint32_t valuesReadCount = 0;
 
     // Read field values for each bit set in mask
     for (int blockIdx = 0; blockIdx < blockCount; ++blockIdx) {
@@ -851,15 +860,27 @@ bool UpdateObjectParser::parseUpdateFields(network::Packet& packet, UpdateBlock&
         for (int bit = 0; bit < 32; ++bit) {
             if (mask & (1 << bit)) {
                 uint16_t fieldIndex = blockIdx * 32 + bit;
+                if (fieldIndex > highestSetBit) {
+                    highestSetBit = fieldIndex;
+                }
                 uint32_t value = packet.readUInt32();
                 block.fields[fieldIndex] = value;
+                valuesReadCount++;
 
                 LOG_DEBUG("    Field[", fieldIndex, "] = 0x", std::hex, value, std::dec);
             }
         }
     }
 
-    LOG_DEBUG("  Parsed ", block.fields.size(), " fields");
+    size_t endPos = packet.getReadPos();
+    size_t bytesUsed = endPos - startPos;
+    size_t bytesRemaining = packet.getSize() - endPos;
+
+    LOG_INFO("    highestSetBitIndex = ", highestSetBit);
+    LOG_INFO("    valuesReadCount = ", valuesReadCount);
+    LOG_INFO("    bytesUsedForFields = ", bytesUsed);
+    LOG_INFO("    bytesRemainingInPacket = ", bytesRemaining);
+    LOG_INFO("  Parsed ", block.fields.size(), " fields");
 
     return true;
 }
@@ -931,6 +952,10 @@ bool UpdateObjectParser::parse(network::Packet& packet, UpdateObjectData& data) 
 
     // Read block count
     data.blockCount = packet.readUInt32();
+
+    LOG_INFO("SMSG_UPDATE_OBJECT:");
+    LOG_INFO("  objectCount = ", data.blockCount);
+    LOG_INFO("  packetSize = ", packet.getSize());
 
     // Check for out-of-range objects first
     if (packet.getReadPos() + 1 <= packet.getSize()) {
@@ -1973,8 +1998,11 @@ bool XpGainParser::parse(network::Packet& packet, XpGainData& data) {
 // ============================================================
 
 bool InitialSpellsParser::parse(network::Packet& packet, InitialSpellsData& data) {
+    size_t packetSize = packet.getSize();
     data.talentSpec = packet.readUInt8();
     uint16_t spellCount = packet.readUInt16();
+
+    LOG_INFO("SMSG_INITIAL_SPELLS: packetSize=", packetSize, " bytes, spellCount=", spellCount);
 
     data.spellIds.reserve(spellCount);
     for (uint16_t i = 0; i < spellCount; ++i) {
@@ -1997,8 +2025,19 @@ bool InitialSpellsParser::parse(network::Packet& packet, InitialSpellsData& data
         data.cooldowns.push_back(entry);
     }
 
-    LOG_INFO("Initial spells: ", data.spellIds.size(), " spells, ",
+    LOG_INFO("Initial spells parsed: ", data.spellIds.size(), " spells, ",
              data.cooldowns.size(), " cooldowns");
+
+    // Log first 10 spell IDs for debugging
+    if (!data.spellIds.empty()) {
+        std::string first10;
+        for (size_t i = 0; i < std::min(size_t(10), data.spellIds.size()); ++i) {
+            if (!first10.empty()) first10 += ", ";
+            first10 += std::to_string(data.spellIds[i]);
+        }
+        LOG_INFO("First spells: ", first10);
+    }
+
     return true;
 }
 
@@ -2682,10 +2721,9 @@ bool TrainerListParser::parse(network::Packet& packet, TrainerListData& data) {
     return true;
 }
 
-network::Packet TrainerBuySpellPacket::build(uint64_t trainerGuid, uint32_t trainerId, uint32_t spellId) {
+network::Packet TrainerBuySpellPacket::build(uint64_t trainerGuid, uint32_t spellId) {
     network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_TRAINER_BUY_SPELL));
     packet.writeUInt64(trainerGuid);
-    packet.writeUInt32(trainerId);
     packet.writeUInt32(spellId);
     return packet;
 }

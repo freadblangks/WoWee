@@ -579,8 +579,14 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_LEARNED_SPELL:
             handleLearnedSpell(packet);
             break;
+        case Opcode::SMSG_SUPERCEDED_SPELL:
+            handleSupercededSpell(packet);
+            break;
         case Opcode::SMSG_REMOVED_SPELL:
             handleRemovedSpell(packet);
+            break;
+        case Opcode::SMSG_SEND_UNLEARN_SPELLS:
+            handleUnlearnSpells(packet);
             break;
 
         // ---- Phase 4: Group ----
@@ -682,11 +688,46 @@ void GameHandler::handlePacket(network::Packet& packet) {
             uint64_t guid = packet.readUInt64();
             uint32_t spellId = packet.readUInt32();
             (void)guid;
+
+            // Add to known spells immediately for prerequisite re-evaluation
+            // (SMSG_LEARNED_SPELL may come separately, but we need immediate update)
+            bool alreadyKnown = std::find(knownSpells.begin(), knownSpells.end(), spellId) != knownSpells.end();
+            if (!alreadyKnown) {
+                knownSpells.push_back(spellId);
+                LOG_INFO("Added spell ", spellId, " to known spells (trainer purchase)");
+            }
+
             const std::string& name = getSpellName(spellId);
             if (!name.empty())
                 addSystemChatMessage("You have learned " + name + ".");
             else
                 addSystemChatMessage("Spell learned.");
+            break;
+        }
+        case Opcode::SMSG_TRAINER_BUY_FAILED: {
+            // Server rejected the spell purchase
+            // Packet format: uint64 trainerGuid, uint32 spellId, uint32 errorCode
+            uint64_t trainerGuid = packet.readUInt64();
+            uint32_t spellId = packet.readUInt32();
+            uint32_t errorCode = 0;
+            if (packet.getSize() - packet.getReadPos() >= 4) {
+                errorCode = packet.readUInt32();
+            }
+            LOG_WARNING("Trainer buy spell failed: guid=", trainerGuid,
+                       " spellId=", spellId, " error=", errorCode);
+
+            const std::string& spellName = getSpellName(spellId);
+            std::string msg = "Cannot learn ";
+            if (!spellName.empty()) msg += spellName;
+            else msg += "spell #" + std::to_string(spellId);
+
+            // Common error reasons
+            if (errorCode == 0) msg += " (not enough money)";
+            else if (errorCode == 1) msg += " (not enough skill)";
+            else if (errorCode == 2) msg += " (already known)";
+            else if (errorCode != 0) msg += " (error " + std::to_string(errorCode) + ")";
+
+            addSystemChatMessage(msg);
             break;
         }
 
@@ -851,8 +892,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     case 19: reasonStr = "Can't take any more quests"; break;
                 }
                 LOG_WARNING("Quest invalid: reason=", failReason, " (", reasonStr, ")");
-                // Show error to user
-                addSystemChatMessage(std::string("Quest unavailable: ") + reasonStr);
+                // Only show error to user for real errors (not informational messages)
+                if (failReason != 13 && failReason != 18) {  // Don't spam "already on/completed"
+                    addSystemChatMessage(std::string("Quest unavailable: ") + reasonStr);
+                }
             }
             break;
         }
@@ -883,6 +926,52 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
             break;
         }
+        case Opcode::SMSG_QUESTUPDATE_ADD_KILL: {
+            // Quest kill count update
+            if (packet.getSize() - packet.getReadPos() >= 16) {
+                uint32_t questId = packet.readUInt32();
+                uint32_t entry = packet.readUInt32();  // Creature entry
+                uint32_t count = packet.readUInt32();  // Current kills
+                uint32_t reqCount = packet.readUInt32(); // Required kills
+
+                LOG_INFO("Quest kill update: questId=", questId, " entry=", entry,
+                         " count=", count, "/", reqCount);
+
+                // Update quest log with kill count
+                for (auto& quest : questLog_) {
+                    if (quest.questId == questId) {
+                        // Store kill progress (using entry as objective index)
+                        quest.killCounts[entry] = {count, reqCount};
+
+                        // Show progress message
+                        std::string progressMsg = quest.title + ": " +
+                                                std::to_string(count) + "/" +
+                                                std::to_string(reqCount);
+                        addSystemChatMessage(progressMsg);
+
+                        LOG_INFO("Updated kill count for quest ", questId, ": ",
+                                 count, "/", reqCount);
+                        break;
+                    }
+                }
+            }
+            break;
+        }
+        case Opcode::SMSG_QUESTUPDATE_COMPLETE: {
+            // Quest objectives completed - mark as ready to turn in
+            uint32_t questId = packet.readUInt32();
+            LOG_INFO("Quest objectives completed: questId=", questId);
+
+            for (auto& quest : questLog_) {
+                if (quest.questId == questId) {
+                    quest.complete = true;
+                    addSystemChatMessage("Quest Complete: " + quest.title);
+                    LOG_INFO("Marked quest ", questId, " as complete");
+                    break;
+                }
+            }
+            break;
+        }
         case Opcode::SMSG_QUEST_QUERY_RESPONSE: {
             // Quest data from server (big packet with title, objectives, rewards, etc.)
             LOG_INFO("SMSG_QUEST_QUERY_RESPONSE: packet size=", packet.getSize());
@@ -897,11 +986,50 @@ void GameHandler::handlePacket(network::Packet& packet) {
 
             LOG_INFO("  questId=", questId, " questMethod=", questMethod);
 
-            // We received quest template data - this means the quest exists
-            // Check if player has this quest active by checking if it's in gossip
-            // For now, just log that we received the data
-            // TODO: Parse full quest template (title, objectives, etc.)
+            // Parse quest title (after method comes level, flags, type, etc., then title string)
+            // Skip intermediate fields to get to title
+            if (packet.getReadPos() + 16 < packet.getSize()) {
+                packet.readUInt32(); // quest level
+                packet.readUInt32(); // min level
+                packet.readUInt32(); // sort ID (zone)
+                packet.readUInt32(); // quest type/info
+                packet.readUInt32(); // suggested players
+                packet.readUInt32(); // reputation objective faction
+                packet.readUInt32(); // reputation objective value
+                packet.readUInt32(); // required opposite faction
+                packet.readUInt32(); // next quest in chain
+                packet.readUInt32(); // XP ID
+                packet.readUInt32(); // reward or required money
+                packet.readUInt32(); // reward money max level
+                packet.readUInt32(); // reward spell
+                packet.readUInt32(); // reward spell cast
+                packet.readUInt32(); // reward honor
+                packet.readUInt32(); // reward honor multiplier
+                packet.readUInt32(); // source item ID
+                packet.readUInt32(); // quest flags
+                // ... there are many more fields before title, let's try to read title string
+                if (packet.getReadPos() + 1 < packet.getSize()) {
+                    std::string title = packet.readString();
+                    LOG_INFO("  Quest title: ", title);
 
+                    // Update quest log entry with title
+                    for (auto& q : questLog_) {
+                        if (q.questId == questId) {
+                            q.title = title;
+                            LOG_INFO("Updated quest log entry ", questId, " with title: ", title);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            break;
+        }
+        case Opcode::SMSG_QUESTLOG_FULL: {
+            LOG_INFO("***** RECEIVED SMSG_QUESTLOG_FULL *****");
+            LOG_INFO("  Packet size: ", packet.getSize());
+            LOG_INFO("  Server uses SMSG_QUESTLOG_FULL for quest log sync!");
+            // TODO: Parse quest log entries from this packet
             break;
         }
         case Opcode::SMSG_QUESTGIVER_REQUEST_ITEMS:
@@ -1801,8 +1929,89 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
 
                 // Extract XP / inventory slot / skill fields for player entity
                 if (block.guid == playerGuid && block.objectType == ObjectType::PLAYER) {
+                    // Store baseline snapshot on first update
+                    static bool baselineStored = false;
+                    static std::map<uint16_t, uint32_t> baselineFields;
+
+                    if (!baselineStored) {
+                        baselineFields = block.fields;
+                        baselineStored = true;
+                        LOG_INFO("===== BASELINE PLAYER FIELDS STORED =====");
+                        LOG_INFO("  Total fields: ", block.fields.size());
+                    }
+
+                    // Diff against baseline to find changes
+                    std::vector<uint16_t> changedIndices;
+                    std::vector<uint16_t> newIndices;
+                    std::vector<uint16_t> removedIndices;
+
+                    for (const auto& [idx, val] : block.fields) {
+                        auto it = baselineFields.find(idx);
+                        if (it == baselineFields.end()) {
+                            newIndices.push_back(idx);
+                        } else if (it->second != val) {
+                            changedIndices.push_back(idx);
+                        }
+                    }
+
+                    for (const auto& [idx, val] : baselineFields) {
+                        if (block.fields.find(idx) == block.fields.end()) {
+                            removedIndices.push_back(idx);
+                        }
+                    }
+
                     lastPlayerFields_ = block.fields;
                     detectInventorySlotBases(block.fields);
+
+                    // Debug: Show field changes
+                    LOG_INFO("Player update with ", block.fields.size(), " fields");
+
+                    if (!changedIndices.empty() || !newIndices.empty() || !removedIndices.empty()) {
+                        LOG_INFO("  ===== FIELD CHANGES DETECTED =====");
+                        if (!changedIndices.empty()) {
+                            LOG_INFO("  Changed fields (", changedIndices.size(), "):");
+                            std::sort(changedIndices.begin(), changedIndices.end());
+                            for (size_t i = 0; i < std::min(size_t(30), changedIndices.size()); ++i) {
+                                uint16_t idx = changedIndices[i];
+                                uint32_t oldVal = baselineFields[idx];
+                                uint32_t newVal = block.fields.at(idx);
+                                LOG_INFO("    [", idx, "]: ", oldVal, " -> ", newVal,
+                                         " (0x", std::hex, oldVal, " -> 0x", newVal, std::dec, ")");
+                            }
+                            if (changedIndices.size() > 30) {
+                                LOG_INFO("    ... (", changedIndices.size() - 30, " more)");
+                            }
+                        }
+                        if (!newIndices.empty()) {
+                            LOG_INFO("  New fields (", newIndices.size(), "):");
+                            std::sort(newIndices.begin(), newIndices.end());
+                            for (size_t i = 0; i < std::min(size_t(20), newIndices.size()); ++i) {
+                                uint16_t idx = newIndices[i];
+                                uint32_t val = block.fields.at(idx);
+                                LOG_INFO("    [", idx, "]: ", val, " (0x", std::hex, val, std::dec, ")");
+                            }
+                            if (newIndices.size() > 20) {
+                                LOG_INFO("    ... (", newIndices.size() - 20, " more)");
+                            }
+                        }
+                        if (!removedIndices.empty()) {
+                            LOG_INFO("  Removed fields (", removedIndices.size(), "):");
+                            std::sort(removedIndices.begin(), removedIndices.end());
+                            for (size_t i = 0; i < std::min(size_t(20), removedIndices.size()); ++i) {
+                                uint16_t idx = removedIndices[i];
+                                uint32_t val = baselineFields.at(idx);
+                                LOG_INFO("    [", idx, "]: was ", val, " (0x", std::hex, val, std::dec, ")");
+                            }
+                        }
+                    }
+
+                    uint16_t maxField = 0;
+                    for (const auto& [key, val] : block.fields) {
+                        if (key > maxField) maxField = key;
+                    }
+
+                    LOG_INFO("  Highest field index: ", maxField);
+
                     bool slotsChanged = false;
                     for (const auto& [key, val] : block.fields) {
                         if (key == 634) { playerXp_ = val; }                // PLAYER_XP
@@ -1813,7 +2022,41 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                 if (ch.guid == playerGuid) { ch.level = val; break; }
                             }
                         }
-                        else if (key == 1170) { playerMoneyCopper_ = val; }  // PLAYER_FIELD_COINAGE
+                        else if (key == 1170) {
+                            playerMoneyCopper_ = val;
+                            LOG_INFO("Money set from update fields: ", val, " copper");
+                        }  // PLAYER_FIELD_COINAGE
+                        // Parse quest log fields (PLAYER_QUEST_LOG_1_1 = UNIT_END + 10 = 158, stride 5)
+                        // Quest slots: 158, 163, 168, 173, ... (25 slots max = up to index 278)
+                        else if (key >= 158 && key < 283 && (key - 158) % 5 == 0) {
+                            uint32_t questId = val;
+                            if (questId != 0) {
+                                // Check if quest is already in log
+                                bool found = false;
+                                for (auto& q : questLog_) {
+                                    if (q.questId == questId) {
+                                        found = true;
+                                        break;
+                                    }
+                                }
+                                if (!found) {
+                                    // Add quest to log and request quest details
+                                    QuestLogEntry entry;
+                                    entry.questId = questId;
+                                    entry.complete = false;  // Will be updated by gossip or quest status packets
+                                    entry.title = "Quest #" + std::to_string(questId);
+                                    questLog_.push_back(entry);
+                                    LOG_INFO("Found quest in update fields: ", questId);
+
+                                    // Request quest details from server
+                                    if (socket) {
+                                        network::Packet qPkt(static_cast<uint16_t>(Opcode::CMSG_QUEST_QUERY));
+                                        qPkt.writeUInt32(questId);
+                                        socket->send(qPkt);
+                                    }
+                                }
+                            }
+                        }
                     }
                     if (applyInventoryFields(block.fields)) slotsChanged = true;
                     if (slotsChanged) rebuildOnlineInventory();
@@ -4175,6 +4418,45 @@ void GameHandler::handleRemovedSpell(network::Packet& packet) {
     LOG_INFO("Removed spell: ", spellId);
 }
 
+void GameHandler::handleSupercededSpell(network::Packet& packet) {
+    // Old spell replaced by new rank (e.g., Fireball Rank 1 -> Fireball Rank 2)
+    uint32_t oldSpellId = packet.readUInt32();
+    uint32_t newSpellId = packet.readUInt32();
+
+    // Remove old spell
+    knownSpells.erase(
+        std::remove(knownSpells.begin(), knownSpells.end(), oldSpellId),
+        knownSpells.end());
+
+    // Add new spell
+    knownSpells.push_back(newSpellId);
+
+    LOG_INFO("Spell superceded: ", oldSpellId, " -> ", newSpellId);
+
+    const std::string& newName = getSpellName(newSpellId);
+    if (!newName.empty()) {
+        addSystemChatMessage("Upgraded to " + newName);
+    }
+}
+
+void GameHandler::handleUnlearnSpells(network::Packet& packet) {
+    // Sent when unlearning multiple spells (e.g., spec change, respec)
+    uint32_t spellCount = packet.readUInt32();
+    LOG_INFO("Unlearning ", spellCount, " spells");
+
+    for (uint32_t i = 0; i < spellCount && packet.getSize() - packet.getReadPos() >= 4; ++i) {
+        uint32_t spellId = packet.readUInt32();
+        knownSpells.erase(
+            std::remove(knownSpells.begin(), knownSpells.end(), spellId),
+            knownSpells.end());
+        LOG_INFO("  Unlearned spell: ", spellId);
+    }
+
+    if (spellCount > 0) {
+        addSystemChatMessage("Unlearned " + std::to_string(spellCount) + " spells");
+    }
+}
+
 // ============================================================
 // Phase 4: Group/Party
 // ============================================================
@@ -4746,7 +5028,7 @@ void GameHandler::handleTrainerList(network::Packet& packet) {
 
     // Debug: log known spells
     LOG_INFO("Known spells count: ", knownSpells.size());
-    if (knownSpells.size() <= 20) {
+    if (knownSpells.size() <= 50) {
         std::string spellList;
         for (uint32_t id : knownSpells) {
             if (!spellList.empty()) spellList += ", ";
@@ -4754,6 +5036,21 @@ void GameHandler::handleTrainerList(network::Packet& packet) {
         }
         LOG_INFO("Known spells: ", spellList);
     }
+
+    // Check if specific prerequisite spells are known
+    bool has527 = std::find(knownSpells.begin(), knownSpells.end(), 527u) != knownSpells.end();
+    bool has25312 = std::find(knownSpells.begin(), knownSpells.end(), 25312u) != knownSpells.end();
+    LOG_INFO("Prerequisite check: 527=", has527, " 25312=", has25312);
+
+    // Debug: log first few trainer spells to see their state
+    LOG_INFO("Trainer spells received: ", currentTrainerList_.spells.size(), " spells");
+    for (size_t i = 0; i < std::min(size_t(5), currentTrainerList_.spells.size()); ++i) {
+        const auto& s = currentTrainerList_.spells[i];
+        LOG_INFO("  Spell[", i, "]: id=", s.spellId, " state=", (int)s.state,
+                 " cost=", s.spellCost, " reqLvl=", (int)s.reqLevel,
+                 " chain=(", s.chainNode1, ",", s.chainNode2, ",", s.chainNode3, ")");
+    }
+
 
     // Ensure caches are populated
     loadSpellNameCache();
@@ -4768,11 +5065,21 @@ void GameHandler::trainSpell(uint32_t spellId) {
         LOG_WARNING("trainSpell: Not in world or no socket connection");
         return;
     }
+
+    // Find spell cost in trainer list
+    uint32_t spellCost = 0;
+    for (const auto& spell : currentTrainerList_.spells) {
+        if (spell.spellId == spellId) {
+            spellCost = spell.spellCost;
+            break;
+        }
+    }
+    LOG_INFO("Player money: ", playerMoneyCopper_, " copper, spell cost: ", spellCost, " copper");
+
     LOG_INFO("Sending CMSG_TRAINER_BUY_SPELL: guid=", currentTrainerList_.trainerGuid,
-             " trainerId=", currentTrainerList_.trainerType, " spellId=", spellId);
+             " spellId=", spellId);
     auto packet = TrainerBuySpellPacket::build(
         currentTrainerList_.trainerGuid,
-        currentTrainerList_.trainerType,
         spellId);
     socket->send(packet);
     LOG_INFO("CMSG_TRAINER_BUY_SPELL sent");
@@ -6022,6 +6329,18 @@ void GameHandler::extractSkillFields(const std::map<uint16_t, uint32_t>& fields)
         if (skill.value == 0) continue;
         auto oldIt = playerSkills_.find(skillId);
         if (oldIt != playerSkills_.end() && skill.value > oldIt->second.value) {
+            // Filter out racial, generic, and hidden skills from announcements
+            // Category 5 = Attributes (Defense, etc.)
+            // Category 10 = Languages (Orcish, Common, etc.)
+            // Category 12 = Not Displayed (generic/hidden)
+            auto catIt = skillLineCategories_.find(skillId);
+            if (catIt != skillLineCategories_.end()) {
+                uint32_t category = catIt->second;
+                if (category == 5 || category == 10 || category == 12) {
+                    continue; // Skip announcement for racial/generic skills
+                }
+            }
+
             const std::string& name = getSkillName(skillId);
             std::string skillName = name.empty() ? ("Skill #" + std::to_string(skillId)) : name;
             addSystemChatMessage("Your skill in " + skillName + " has increased to " + std::to_string(skill.value) + ".");
@@ -6065,6 +6384,16 @@ void GameHandler::saveCharacterConfig() {
         out << "action_bar_" << i << "_type=" << static_cast<int>(actionBar[i].type) << "\n";
         out << "action_bar_" << i << "_id=" << actionBar[i].id << "\n";
     }
+
+    // Save quest log
+    out << "quest_log_count=" << questLog_.size() << "\n";
+    for (size_t i = 0; i < questLog_.size(); i++) {
+        const auto& quest = questLog_[i];
+        out << "quest_" << i << "_id=" << quest.questId << "\n";
+        out << "quest_" << i << "_title=" << quest.title << "\n";
+        out << "quest_" << i << "_complete=" << (quest.complete ? 1 : 0) << "\n";
+    }
+
     LOG_INFO("Character config saved to ", path);
 }
 

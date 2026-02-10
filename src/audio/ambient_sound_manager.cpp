@@ -66,6 +66,10 @@ bool AmbientSoundManager::initialize(pipeline::AssetManager* assets) {
     waterfallSounds_.resize(1);
     loadSound("Sound\\Doodad\\WaterFallSmall.wav", waterfallSounds_[0], assets);
 
+    // Load fountain sounds
+    fountainSounds_.resize(1);
+    loadSound("Sound\\Doodad\\FountainSmallMediumLoop.wav", fountainSounds_[0], assets);
+
     // Load wind/ambience sounds
     windSounds_.resize(1);
     bool windLoaded = loadSound("Sound\\Ambience\\ZoneAmbience\\ForestNormalDay.wav", windSounds_[0], assets);
@@ -304,7 +308,8 @@ void AmbientSoundManager::updatePositionalEmitters(float deltaTime, const glm::v
             isFire = true;
         } else if (emitter.type == AmbientType::WATER_SURFACE ||
                    emitter.type == AmbientType::RIVER ||
-                   emitter.type == AmbientType::WATERFALL) {
+                   emitter.type == AmbientType::WATERFALL ||
+                   emitter.type == AmbientType::FOUNTAIN) {
             maxDist = MAX_WATER_DISTANCE;
             isWater = true;
         }
@@ -375,6 +380,14 @@ void AmbientSoundManager::updatePositionalEmitters(float deltaTime, const glm::v
                 if (emitter.lastPlayTime >= 4.0f && !waterfallSounds_.empty() && waterfallSounds_[0].loaded) {
                     float volume = WATER_VOLUME * 1.2f * volumeScale_ * (1.0f - (distance / maxDist));
                     AudioEngine::instance().playSound3D(waterfallSounds_[0].data, emitter.position, volume);
+                    emitter.lastPlayTime = 0.0f;
+                }
+                break;
+
+            case AmbientType::FOUNTAIN:
+                if (emitter.lastPlayTime >= 6.0f && !fountainSounds_.empty() && fountainSounds_[0].loaded) {
+                    float volume = WATER_VOLUME * 0.8f * volumeScale_ * (1.0f - (distance / maxDist));
+                    AudioEngine::instance().playSound3D(fountainSounds_[0].data, emitter.position, volume);
                     emitter.lastPlayTime = 0.0f;
                 }
                 break;

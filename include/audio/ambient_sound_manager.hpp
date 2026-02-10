@@ -106,6 +106,7 @@ private:
     std::vector<AmbientSample> waterSounds_;
     std::vector<AmbientSample> riverSounds_;
     std::vector<AmbientSample> waterfallSounds_;
+    std::vector<AmbientSample> fountainSounds_;
     std::vector<AmbientSample> windSounds_;
     std::vector<AmbientSample> tavernSounds_;
     std::vector<AmbientSample> blacksmithSounds_;

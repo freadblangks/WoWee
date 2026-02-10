@@ -1008,8 +1008,23 @@ void WMORenderer::render(const Camera& camera, const glm::mat4& view, const glm:
             loggedStormwindGroups = true;  // Only log once to avoid spam
         }
 
-        for (uint32_t gi : dl.visibleGroups)
-            renderGroup(model.groups[gi], model, instance.modelMatrix, view, projection);
+        // Render groups with LOD shell culling
+        glm::vec3 cameraPos = camera.getPosition();
+        for (uint32_t gi : dl.visibleGroups) {
+            const auto& group = model.groups[gi];
+
+            // LOD shell culling: hide low-detail groups (<100 verts) when camera is close (<500 units)
+            // This prevents the floating "distant shell" from rendering when you're near the cathedral
+            glm::vec3 groupCenter = (group.boundingBoxMin + group.boundingBoxMax) * 0.5f;
+            glm::vec4 worldCenter = instance.modelMatrix * glm::vec4(groupCenter, 1.0f);
+            float distToGroup = glm::length(cameraPos - glm::vec3(worldCenter));
+
+            if (group.vertexCount < 100 && distToGroup < 500.0f) {
+                continue;  // Skip LOD shell when close
+            }
+
+            renderGroup(group, model, instance.modelMatrix, view, projection);
+        }
 
         lastPortalCulledGroups += dl.portalCulled;
         lastDistanceCulledGroups += dl.distanceCulled;

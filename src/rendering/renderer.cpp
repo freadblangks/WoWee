@@ -1425,6 +1425,34 @@ void Renderer::update(float deltaTime) {
         // Check if inside blacksmith (96048 = Goldshire blacksmith)
         bool isBlacksmith = (wmoId == 96048);
 
+        // Sync weather audio with visual weather system
+        if (weather) {
+            auto weatherType = weather->getWeatherType();
+            float intensity = weather->getIntensity();
+
+            audio::AmbientSoundManager::WeatherType audioWeatherType = audio::AmbientSoundManager::WeatherType::NONE;
+
+            if (weatherType == Weather::Type::RAIN) {
+                if (intensity < 0.33f) {
+                    audioWeatherType = audio::AmbientSoundManager::WeatherType::RAIN_LIGHT;
+                } else if (intensity < 0.66f) {
+                    audioWeatherType = audio::AmbientSoundManager::WeatherType::RAIN_MEDIUM;
+                } else {
+                    audioWeatherType = audio::AmbientSoundManager::WeatherType::RAIN_HEAVY;
+                }
+            } else if (weatherType == Weather::Type::SNOW) {
+                if (intensity < 0.33f) {
+                    audioWeatherType = audio::AmbientSoundManager::WeatherType::SNOW_LIGHT;
+                } else if (intensity < 0.66f) {
+                    audioWeatherType = audio::AmbientSoundManager::WeatherType::SNOW_MEDIUM;
+                } else {
+                    audioWeatherType = audio::AmbientSoundManager::WeatherType::SNOW_HEAVY;
+                }
+            }
+
+            ambientSoundManager->setWeather(audioWeatherType);
+        }
+
         ambientSoundManager->update(deltaTime, camPos, isIndoor, isSwimming, isBlacksmith);
     }
 

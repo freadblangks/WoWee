@@ -25,6 +25,26 @@ public:
     // Main update loop - called from renderer
     void update(float deltaTime, const glm::vec3& cameraPos, bool isIndoor, bool isSwimming = false, bool isBlacksmith = false);
 
+    // Weather control
+    enum class WeatherType { NONE, RAIN_LIGHT, RAIN_MEDIUM, RAIN_HEAVY, SNOW_LIGHT, SNOW_MEDIUM, SNOW_HEAVY };
+    void setWeather(WeatherType type);
+    WeatherType getCurrentWeather() const { return currentWeather_; }
+
+    // Zone ambience control
+    enum class ZoneType {
+        NONE,
+        FOREST_NORMAL,
+        FOREST_SNOW,
+        BEACH,
+        GRASSLANDS,
+        JUNGLE,
+        MARSH,
+        DESERT_CANYON,
+        DESERT_PLAINS
+    };
+    void setZoneType(ZoneType type);
+    ZoneType getCurrentZone() const { return currentZone_; }
+
     // Emitter management
     enum class AmbientType {
         FIREPLACE_SMALL,
@@ -77,6 +97,36 @@ private:
     std::vector<AmbientSample> tavernSounds_;
     std::vector<AmbientSample> blacksmithSounds_;
 
+    // Weather sound libraries
+    std::vector<AmbientSample> rainLightSounds_;
+    std::vector<AmbientSample> rainMediumSounds_;
+    std::vector<AmbientSample> rainHeavySounds_;
+    std::vector<AmbientSample> snowLightSounds_;
+    std::vector<AmbientSample> snowMediumSounds_;
+    std::vector<AmbientSample> snowHeavySounds_;
+
+    // Water ambience libraries
+    std::vector<AmbientSample> oceanSounds_;
+    std::vector<AmbientSample> underwaterSounds_;
+
+    // Zone ambience libraries (day and night versions)
+    std::vector<AmbientSample> forestNormalDaySounds_;
+    std::vector<AmbientSample> forestNormalNightSounds_;
+    std::vector<AmbientSample> forestSnowDaySounds_;
+    std::vector<AmbientSample> forestSnowNightSounds_;
+    std::vector<AmbientSample> beachDaySounds_;
+    std::vector<AmbientSample> beachNightSounds_;
+    std::vector<AmbientSample> grasslandsDaySounds_;
+    std::vector<AmbientSample> grasslandsNightSounds_;
+    std::vector<AmbientSample> jungleDaySounds_;
+    std::vector<AmbientSample> jungleNightSounds_;
+    std::vector<AmbientSample> marshDaySounds_;
+    std::vector<AmbientSample> marshNightSounds_;
+    std::vector<AmbientSample> desertCanyonDaySounds_;
+    std::vector<AmbientSample> desertCanyonNightSounds_;
+    std::vector<AmbientSample> desertPlainsDaySounds_;
+    std::vector<AmbientSample> desertPlainsNightSounds_;
+
     // Active emitters
     std::vector<AmbientEmitter> emitters_;
     uint64_t nextEmitterId_ = 1;
@@ -88,9 +138,15 @@ private:
     float cricketTimer_ = 0.0f;
     float windLoopTime_ = 0.0f;
     float blacksmithLoopTime_ = 0.0f;
+    float weatherLoopTime_ = 0.0f;
+    float oceanLoopTime_ = 0.0f;
+    float zoneLoopTime_ = 0.0f;
     bool wasIndoor_ = false;
     bool wasBlacksmith_ = false;
+    bool wasSwimming_ = false;
     bool initialized_ = false;
+    WeatherType currentWeather_ = WeatherType::NONE;
+    ZoneType currentZone_ = ZoneType::NONE;
 
     // Active audio tracking
     struct ActiveSound {
@@ -104,6 +160,9 @@ private:
     void updatePeriodicSounds(float deltaTime, bool isIndoor, bool isSwimming);
     void updateWindAmbience(float deltaTime, bool isIndoor);
     void updateBlacksmithAmbience(float deltaTime);
+    void updateWeatherAmbience(float deltaTime, bool isIndoor);
+    void updateWaterAmbience(float deltaTime, bool isSwimming);
+    void updateZoneAmbience(float deltaTime, bool isIndoor);
     bool loadSound(const std::string& path, AmbientSample& sample, pipeline::AssetManager* assets);
 
     // Time of day helpers

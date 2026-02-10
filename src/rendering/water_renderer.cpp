@@ -225,25 +225,6 @@ void WaterRenderer::loadFromTerrain(const pipeline::ADTTerrain& terrain, bool ap
             surface.maxHeight = layer.maxHeight;
             surface.liquidType = layer.liquidType;
 
-            // Stormwind-specific water height filtering (only apply in Stormwind area)
-            // Stormwind is at tiles approximately (28-35, 46-52) on Azeroth
-            bool isStormwindArea = (tileX >= 28 && tileX <= 35 && tileY >= 46 && tileY <= 52);
-            if (isStormwindArea) {
-                // Skip water in low-lying areas that shouldn't have water (basement/underground areas)
-                // Stormwind canals are at ~95-100 height, filter out anything below 85
-                if (layer.minHeight < 85.0f && layer.liquidType != 2) {  // Allow magma (type 2) underground
-                    LOG_INFO("  -> FILTERED (too low, Stormwind)");
-                    continue;
-                }
-
-                // Skip floating water surfaces that are too high (incorrect placements)
-                // Park moonwell and canals are at 95-105, filter out anything above 110
-                if (layer.minHeight > 110.0f) {
-                    LOG_INFO("  -> FILTERED (too high, Stormwind)");
-                    continue;
-                }
-            }
-
             // Store dimensions
             surface.xOffset = layer.x;
             surface.yOffset = layer.y;
@@ -274,6 +255,33 @@ void WaterRenderer::loadFromTerrain(const pipeline::ADTTerrain& terrain, bool ap
             }
             if (useFlat) {
                 surface.heights.resize(numVertices, layer.minHeight);
+            }
+
+            // Lower all terrain water in Stormwind area to prevent it from showing in tunnels/buildings/parks
+            // Only apply to Stormwind to avoid affecting water elsewhere
+            // Expanded bounds to cover all of Stormwind including outlying areas and park
+            bool isStormwindArea = (tileX >= 28 && tileX <= 50 && tileY >= 28 && tileY <= 52);
+            // Only lower high water (canal level >94) to avoid affecting moonwell and other low features
+            if (isStormwindArea && layer.minHeight > 94.0f) {
+                // Calculate approximate world position from tile coordinates
+                float tileWorldX = (32.0f - tileX) * 533.33333f;
+                float tileWorldY = (32.0f - tileY) * 533.33333f;
+
+                // Exclude moonwell area at (-8755.9, 1108.9) - don't lower water within 50 units
+                glm::vec3 moonwellPos(-8755.9f, 1108.9f, 96.1f);
+                float distToMoonwell = glm::distance(glm::vec2(tileWorldX, tileWorldY),
+                                                      glm::vec2(moonwellPos.x, moonwellPos.y));
+
+                if (distToMoonwell > 300.0f) {  // Terrain tiles are large, use bigger exclusion radius
+                    LOG_INFO("  -> LOWERING water at tile (", tileX, ",", tileY, ") from height ", layer.minHeight, " by 1 unit");
+                    for (float& h : surface.heights) {
+                        h -= 1.0f;
+                    }
+                    surface.minHeight -= 1.0f;
+                    surface.maxHeight -= 1.0f;
+                } else {
+                    LOG_INFO("  -> SKIPPING tile (", tileX, ",", tileY, ") - moonwell exclusion (dist: ", distToMoonwell, ")");
+                }
             }
 
             // Copy render mask
@@ -364,6 +372,37 @@ void WaterRenderer::loadFromWMO([[maybe_unused]] const pipeline::WMOLiquid& liqu
     surface.heights.assign(vertexCount, surface.origin.z);
     surface.minHeight = surface.origin.z;
     surface.maxHeight = surface.origin.z;
+
+    // Lower WMO water in Stormwind area to prevent it from showing in tunnels/buildings/parks
+    // Calculate tile coordinates from world position
+    int tileX = static_cast<int>(std::floor((32.0f - surface.origin.x / 533.33333f)));
+    int tileY = static_cast<int>(std::floor((32.0f - surface.origin.y / 533.33333f)));
+
+    // Log all WMO water to debug park issue
+    LOG_INFO("WMO water at pos=(", surface.origin.x, ",", surface.origin.y, ",", surface.origin.z,
+             ") tile=(", tileX, ",", tileY, ") wmoId=", wmoId);
+
+    // Expanded bounds to cover all of Stormwind including outlying areas and park
+    bool isStormwindArea = (tileX >= 28 && tileX <= 50 && tileY >= 28 && tileY <= 52);
+
+    // Only lower high WMO water (canal level >94) to avoid affecting moonwell and other low features
+    if (isStormwindArea && surface.origin.z > 94.0f) {
+        // Exclude moonwell area at (-8755.9, 1108.9) - don't lower water within 20 units
+        glm::vec3 moonwellPos(-8755.9f, 1108.9f, 96.1f);
+        float distToMoonwell = glm::distance(glm::vec2(surface.origin.x, surface.origin.y),
+                                              glm::vec2(moonwellPos.x, moonwellPos.y));
+
+        if (distToMoonwell > 20.0f) {
+            LOG_INFO("  -> LOWERING by 1 unit (dist to moonwell: ", distToMoonwell, ")");
+            for (float& h : surface.heights) {
+                h -= 1.0f;
+            }
+            surface.minHeight -= 1.0f;
+            surface.maxHeight -= 1.0f;
+        } else {
+            LOG_INFO("  -> SKIPPING (moonwell exclusion zone, dist: ", distToMoonwell, ")");
+        }
+    }
 
     // Skip WMO water that's clearly invalid (extremely high - above 300 units)
     // This is a conservative global filter that won't affect normal gameplay

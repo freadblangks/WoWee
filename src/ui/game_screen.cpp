@@ -3010,15 +3010,14 @@ void GameScreen::renderBuffBar(game::GameHandler& gameHandler) {
     }
     if (activeCount == 0) return;
 
-    auto* window = core::Application::getInstance().getWindow();
-    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
     auto* assetMgr = core::Application::getInstance().getAssetManager();
 
-    // Position below the minimap (minimap is 200px + 10px margin from top-right)
+    // Position below the player frame in top-left
     constexpr float ICON_SIZE = 32.0f;
     constexpr int ICONS_PER_ROW = 8;
     float barW = ICONS_PER_ROW * (ICON_SIZE + 4.0f) + 8.0f;
-    ImGui::SetNextWindowPos(ImVec2(screenW - barW - 10.0f, 220.0f), ImGuiCond_Always);
+    // Dock under player frame in top-left (player frame is at 10, 30 with ~110px height)
+    ImGui::SetNextWindowPos(ImVec2(10.0f, 145.0f), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(barW, 0), ImGuiCond_Always);
 
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |

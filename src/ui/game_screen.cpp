@@ -4649,11 +4649,15 @@ std::string GameScreen::getSettingsPath() {
 }
 
 std::string GameScreen::replaceGenderPlaceholders(const std::string& text, game::GameHandler& gameHandler) {
-    // Get player gender and pronouns
+    // Get player gender, pronouns, and name
     game::Gender gender = game::Gender::NONBINARY;
+    std::string playerName = "Adventurer";
     const auto* character = gameHandler.getActiveCharacter();
     if (character) {
         gender = character->gender;
+        if (!character->name.empty()) {
+            playerName = character->name;
+        }
     }
     game::Pronouns pronouns = game::Pronouns::forGender(gender);
 
@@ -4665,7 +4669,8 @@ std::string GameScreen::replaceGenderPlaceholders(const std::string& text, game:
         s.erase(s.find_last_not_of(" \t\n\r") + 1);
     };
 
-    // Replace pronoun placeholders first (simpler, no complex parsing)
+    // Replace simple placeholders first
+    // $n = player name
     // $p = subject pronoun (he/she/they)
     // $o = object pronoun (him/her/them)
     // $s = possessive adjective (his/her/their)
@@ -4678,6 +4683,7 @@ std::string GameScreen::replaceGenderPlaceholders(const std::string& text, game:
         std::string replacement;
 
         switch (code) {
+            case 'n': replacement = playerName; break;
             case 'p': replacement = pronouns.subject; break;
             case 'o': replacement = pronouns.object; break;
             case 's': replacement = pronouns.possessive; break;
@@ -4691,7 +4697,7 @@ std::string GameScreen::replaceGenderPlaceholders(const std::string& text, game:
                 continue;
         }
 
-        // Replace the pronoun placeholder
+        // Replace the placeholder
         result.replace(pos, 2, replacement);
         pos += replacement.length();
     }

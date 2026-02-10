@@ -6,12 +6,16 @@
 namespace wowee { namespace ui {
 
 namespace {
-// Helper function to replace gender placeholders and pronouns
+// Helper function to replace gender placeholders, pronouns, and name
 std::string replaceGenderPlaceholders(const std::string& text, game::GameHandler& gameHandler) {
     game::Gender gender = game::Gender::NONBINARY;
+    std::string playerName = "Adventurer";
     const auto* character = gameHandler.getActiveCharacter();
     if (character) {
         gender = character->gender;
+        if (!character->name.empty()) {
+            playerName = character->name;
+        }
     }
     game::Pronouns pronouns = game::Pronouns::forGender(gender);
 
@@ -22,7 +26,7 @@ std::string replaceGenderPlaceholders(const std::string& text, game::GameHandler
         s.erase(s.find_last_not_of(" \t\n\r") + 1);
     };
 
-    // Replace pronoun placeholders
+    // Replace simple placeholders
     size_t pos = 0;
     while ((pos = result.find('$', pos)) != std::string::npos) {
         if (pos + 1 >= result.length()) break;
@@ -31,6 +35,7 @@ std::string replaceGenderPlaceholders(const std::string& text, game::GameHandler
         std::string replacement;
 
         switch (code) {
+            case 'n': replacement = playerName; break;
             case 'p': replacement = pronouns.subject; break;
             case 'o': replacement = pronouns.object; break;
             case 's': replacement = pronouns.possessive; break;

@@ -306,7 +306,7 @@ void NpcVoiceManager::playSound(uint64_t npcGuid, VoiceType voiceType, SoundCate
     bool success = AudioEngine::instance().playSound3D(
         sample.data,
         position,
-        0.6f * volumeScale_,
+        1.0f * volumeScale_,
         pitchDist(rng_),
         60.0f
     );

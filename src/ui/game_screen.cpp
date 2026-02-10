@@ -677,10 +677,12 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
         }
 
         if (input.isKeyJustPressed(SDL_SCANCODE_ESCAPE)) {
-            if (showEscapeMenu) {
+            if (showSettingsWindow) {
+                // Close settings window if open
+                showSettingsWindow = false;
+            } else if (showEscapeMenu) {
                 showEscapeMenu = false;
                 showEscapeSettingsNotice = false;
-                showSettingsWindow = false;
             } else if (gameHandler.isCasting()) {
                 gameHandler.cancelCast();
             } else if (gameHandler.isLootWindowOpen()) {
@@ -4122,9 +4124,19 @@ void GameScreen::renderSettingsWindow() {
             // ============================================================
             if (ImGui::BeginTabItem("Video")) {
                 ImGui::Spacing();
-                ImGui::Checkbox("Fullscreen", &pendingFullscreen);
-                ImGui::Checkbox("VSync", &pendingVsync);
-                ImGui::Checkbox("Shadows", &pendingShadows);
+
+                if (ImGui::Checkbox("Fullscreen", &pendingFullscreen)) {
+                    window->setFullscreen(pendingFullscreen);
+                    saveSettings();
+                }
+                if (ImGui::Checkbox("VSync", &pendingVsync)) {
+                    window->setVsync(pendingVsync);
+                    saveSettings();
+                }
+                if (ImGui::Checkbox("Shadows", &pendingShadows)) {
+                    if (renderer) renderer->setShadowsEnabled(pendingShadows);
+                    saveSettings();
+                }
 
                 const char* resLabel = "Resolution";
                 const char* resItems[kResCount];
@@ -4133,7 +4145,10 @@ void GameScreen::renderSettingsWindow() {
                     snprintf(resBuf[i], sizeof(resBuf[i]), "%dx%d", kResolutions[i][0], kResolutions[i][1]);
                     resItems[i] = resBuf[i];
                 }
-                ImGui::Combo(resLabel, &pendingResIndex, resItems, kResCount);
+                if (ImGui::Combo(resLabel, &pendingResIndex, resItems, kResCount)) {
+                    window->applyResolution(kResolutions[pendingResIndex][0], kResolutions[pendingResIndex][1]);
+                    saveSettings();
+                }
 
                 ImGui::Spacing();
                 ImGui::Separator();
@@ -4144,6 +4159,11 @@ void GameScreen::renderSettingsWindow() {
                     pendingVsync = kDefaultVsync;
                     pendingShadows = kDefaultShadows;
                     pendingResIndex = defaultResIndex;
+                    window->setFullscreen(pendingFullscreen);
+                    window->setVsync(pendingVsync);
+                    window->applyResolution(kResolutions[pendingResIndex][0], kResolutions[pendingResIndex][1]);
+                    if (renderer) renderer->setShadowsEnabled(pendingShadows);
+                    saveSettings();
                 }
 
                 ImGui::EndTabItem();
@@ -4154,72 +4174,132 @@ void GameScreen::renderSettingsWindow() {
             // ============================================================
             if (ImGui::BeginTabItem("Audio")) {
                 ImGui::Spacing();
-        ImGui::BeginChild("AudioSettings", ImVec2(0, 360), true);
+                ImGui::BeginChild("AudioSettings", ImVec2(0, 360), true);
 
-        ImGui::Text("Master Volume");
-        ImGui::SliderInt("##MasterVolume", &pendingMasterVolume, 0, 100, "%d%%");
-        ImGui::Separator();
+                // Helper lambda to apply audio settings
+                auto applyAudioSettings = [&]() {
+                    if (!renderer) return;
+                    float masterScale = static_cast<float>(pendingMasterVolume) / 100.0f;
+                    if (auto* music = renderer->getMusicManager()) {
+                        music->setVolume(static_cast<int>(pendingMusicVolume * masterScale));
+                    }
+                    if (auto* ambient = renderer->getAmbientSoundManager()) {
+                        ambient->setVolumeScale(pendingAmbientVolume / 100.0f * masterScale);
+                    }
+                    if (auto* ui = renderer->getUiSoundManager()) {
+                        ui->setVolumeScale(pendingUiVolume / 100.0f * masterScale);
+                    }
+                    if (auto* combat = renderer->getCombatSoundManager()) {
+                        combat->setVolumeScale(pendingCombatVolume / 100.0f * masterScale);
+                    }
+                    if (auto* spell = renderer->getSpellSoundManager()) {
+                        spell->setVolumeScale(pendingSpellVolume / 100.0f * masterScale);
+                    }
+                    if (auto* movement = renderer->getMovementSoundManager()) {
+                        movement->setVolumeScale(pendingMovementVolume / 100.0f * masterScale);
+                    }
+                    if (auto* footstep = renderer->getFootstepManager()) {
+                        footstep->setVolumeScale(pendingFootstepVolume / 100.0f * masterScale);
+                    }
+                    if (auto* npcVoice = renderer->getNpcVoiceManager()) {
+                        npcVoice->setVolumeScale(pendingNpcVoiceVolume / 100.0f * masterScale);
+                    }
+                    if (auto* mount = renderer->getMountSoundManager()) {
+                        mount->setVolumeScale(pendingMountVolume / 100.0f * masterScale);
+                    }
+                    if (auto* activity = renderer->getActivitySoundManager()) {
+                        activity->setVolumeScale(pendingActivityVolume / 100.0f * masterScale);
+                    }
+                    saveSettings();
+                };
 
-        ImGui::Text("Music");
-        ImGui::SliderInt("##MusicVolume", &pendingMusicVolume, 0, 100, "%d%%");
+                ImGui::Text("Master Volume");
+                if (ImGui::SliderInt("##MasterVolume", &pendingMasterVolume, 0, 100, "%d%%")) {
+                    applyAudioSettings();
+                }
+                ImGui::Separator();
 
-        ImGui::Spacing();
-        ImGui::Text("Ambient Sounds");
-        ImGui::SliderInt("##AmbientVolume", &pendingAmbientVolume, 0, 100, "%d%%");
-        ImGui::TextWrapped("Weather, zones, cities, emitters");
+                ImGui::Text("Music");
+                if (ImGui::SliderInt("##MusicVolume", &pendingMusicVolume, 0, 100, "%d%%")) {
+                    applyAudioSettings();
+                }
 
-        ImGui::Spacing();
-        ImGui::Text("UI Sounds");
-        ImGui::SliderInt("##UiVolume", &pendingUiVolume, 0, 100, "%d%%");
-        ImGui::TextWrapped("Buttons, loot, quest complete");
+                ImGui::Spacing();
+                ImGui::Text("Ambient Sounds");
+                if (ImGui::SliderInt("##AmbientVolume", &pendingAmbientVolume, 0, 100, "%d%%")) {
+                    applyAudioSettings();
+                }
+                ImGui::TextWrapped("Weather, zones, cities, emitters");
 
-        ImGui::Spacing();
-        ImGui::Text("Combat Sounds");
-        ImGui::SliderInt("##CombatVolume", &pendingCombatVolume, 0, 100, "%d%%");
-        ImGui::TextWrapped("Weapon swings, impacts, grunts");
+                ImGui::Spacing();
+                ImGui::Text("UI Sounds");
+                if (ImGui::SliderInt("##UiVolume", &pendingUiVolume, 0, 100, "%d%%")) {
+                    applyAudioSettings();
+                }
+                ImGui::TextWrapped("Buttons, loot, quest complete");
 
-        ImGui::Spacing();
-        ImGui::Text("Spell Sounds");
-        ImGui::SliderInt("##SpellVolume", &pendingSpellVolume, 0, 100, "%d%%");
-        ImGui::TextWrapped("Magic casting and impacts");
+                ImGui::Spacing();
+                ImGui::Text("Combat Sounds");
+                if (ImGui::SliderInt("##CombatVolume", &pendingCombatVolume, 0, 100, "%d%%")) {
+                    applyAudioSettings();
+                }
+                ImGui::TextWrapped("Weapon swings, impacts, grunts");
 
-        ImGui::Spacing();
-        ImGui::Text("Movement Sounds");
-        ImGui::SliderInt("##MovementVolume", &pendingMovementVolume, 0, 100, "%d%%");
-        ImGui::TextWrapped("Water splashes, jump/land");
+                ImGui::Spacing();
+                ImGui::Text("Spell Sounds");
+                if (ImGui::SliderInt("##SpellVolume", &pendingSpellVolume, 0, 100, "%d%%")) {
+                    applyAudioSettings();
+                }
+                ImGui::TextWrapped("Magic casting and impacts");
 
-        ImGui::Spacing();
-        ImGui::Text("Footsteps");
-        ImGui::SliderInt("##FootstepVolume", &pendingFootstepVolume, 0, 100, "%d%%");
+                ImGui::Spacing();
+                ImGui::Text("Movement Sounds");
+                if (ImGui::SliderInt("##MovementVolume", &pendingMovementVolume, 0, 100, "%d%%")) {
+                    applyAudioSettings();
+                }
+                ImGui::TextWrapped("Water splashes, jump/land");
 
-        ImGui::Spacing();
-        ImGui::Text("NPC Voices");
-        ImGui::SliderInt("##NpcVoiceVolume", &pendingNpcVoiceVolume, 0, 100, "%d%%");
+                ImGui::Spacing();
+                ImGui::Text("Footsteps");
+                if (ImGui::SliderInt("##FootstepVolume", &pendingFootstepVolume, 0, 100, "%d%%")) {
+                    applyAudioSettings();
+                }
 
-        ImGui::Spacing();
-        ImGui::Text("Mount Sounds");
-        ImGui::SliderInt("##MountVolume", &pendingMountVolume, 0, 100, "%d%%");
+                ImGui::Spacing();
+                ImGui::Text("NPC Voices");
+                if (ImGui::SliderInt("##NpcVoiceVolume", &pendingNpcVoiceVolume, 0, 100, "%d%%")) {
+                    applyAudioSettings();
+                }
 
-        ImGui::Spacing();
-        ImGui::Text("Activity Sounds");
-        ImGui::SliderInt("##ActivityVolume", &pendingActivityVolume, 0, 100, "%d%%");
-        ImGui::TextWrapped("Swimming, eating, drinking");
+                ImGui::Spacing();
+                ImGui::Text("Mount Sounds");
+                if (ImGui::SliderInt("##MountVolume", &pendingMountVolume, 0, 100, "%d%%")) {
+                    applyAudioSettings();
+                }
 
-        ImGui::EndChild();
+                ImGui::Spacing();
+                ImGui::Text("Activity Sounds");
+                if (ImGui::SliderInt("##ActivityVolume", &pendingActivityVolume, 0, 100, "%d%%")) {
+                    applyAudioSettings();
+                }
+                ImGui::TextWrapped("Swimming, eating, drinking");
 
-        if (ImGui::Button("Restore Audio Defaults", ImVec2(-1, 0))) {
-            pendingMasterVolume = 100;
-            pendingMusicVolume = kDefaultMusicVolume;
-            pendingAmbientVolume = 100;
-            pendingUiVolume = 100;
-            pendingCombatVolume = 100;
-            pendingSpellVolume = 100;
-            pendingMovementVolume = 100;
-            pendingFootstepVolume = 100;
-            pendingNpcVoiceVolume = 100;
-            pendingMountVolume = 100;
-            pendingActivityVolume = 100;
-        }
+                ImGui::EndChild();
+
+                if (ImGui::Button("Restore Audio Defaults", ImVec2(-1, 0))) {
+                    pendingMasterVolume = 100;
+                    pendingMusicVolume = kDefaultMusicVolume;
+                    pendingAmbientVolume = 100;
+                    pendingUiVolume = 100;
+                    pendingCombatVolume = 100;
+                    pendingSpellVolume = 100;
+                    pendingMovementVolume = 100;
+                    pendingFootstepVolume = 100;
+                    pendingNpcVoiceVolume = 100;
+                    pendingMountVolume = 100;
+                    pendingActivityVolume = 100;
+                    applyAudioSettings();
+                }
 
                 ImGui::EndTabItem();
             }
@@ -4232,16 +4312,41 @@ void GameScreen::renderSettingsWindow() {
 
                 ImGui::Text("Controls");
                 ImGui::Separator();
-                ImGui::SliderFloat("Mouse Sensitivity", &pendingMouseSensitivity, 0.05f, 1.0f, "%.2f");
-                ImGui::Checkbox("Invert Mouse", &pendingInvertMouse);
+                if (ImGui::SliderFloat("Mouse Sensitivity", &pendingMouseSensitivity, 0.05f, 1.0f, "%.2f")) {
+                    if (renderer) {
+                        if (auto* cameraController = renderer->getCameraController()) {
+                            cameraController->setMouseSensitivity(pendingMouseSensitivity);
+                        }
+                    }
+                    saveSettings();
+                }
+                if (ImGui::Checkbox("Invert Mouse", &pendingInvertMouse)) {
+                    if (renderer) {
+                        if (auto* cameraController = renderer->getCameraController()) {
+                            cameraController->setInvertMouse(pendingInvertMouse);
+                        }
+                    }
+                    saveSettings();
+                }
 
                 ImGui::Spacing();
                 ImGui::Spacing();
 
                 ImGui::Text("Interface");
                 ImGui::Separator();
-                ImGui::SliderInt("UI Opacity", &pendingUiOpacity, 20, 100, "%d%%");
-                ImGui::Checkbox("Rotate Minimap", &pendingMinimapRotate);
+                if (ImGui::SliderInt("UI Opacity", &pendingUiOpacity, 20, 100, "%d%%")) {
+                    uiOpacity_ = static_cast<float>(pendingUiOpacity) / 100.0f;
+                    saveSettings();
+                }
+                if (ImGui::Checkbox("Rotate Minimap", &pendingMinimapRotate)) {
+                    minimapRotate_ = pendingMinimapRotate;
+                    if (renderer) {
+                        if (auto* minimap = renderer->getMinimap()) {
+                            minimap->setRotateWithCamera(minimapRotate_);
+                        }
+                    }
+                    saveSettings();
+                }
 
                 ImGui::Spacing();
                 ImGui::Separator();
@@ -4252,6 +4357,18 @@ void GameScreen::renderSettingsWindow() {
                     pendingInvertMouse = kDefaultInvertMouse;
                     pendingUiOpacity = 65;
                     pendingMinimapRotate = false;
+                    uiOpacity_ = 0.65f;
+                    minimapRotate_ = false;
+                    if (renderer) {
+                        if (auto* cameraController = renderer->getCameraController()) {
+                            cameraController->setMouseSensitivity(pendingMouseSensitivity);
+                            cameraController->setInvertMouse(pendingInvertMouse);
+                        }
+                        if (auto* minimap = renderer->getMinimap()) {
+                            minimap->setRotateWithCamera(minimapRotate_);
+                        }
+                    }
+                    saveSettings();
                 }
 
                 ImGui::EndTabItem();
@@ -4260,62 +4377,6 @@ void GameScreen::renderSettingsWindow() {
             ImGui::EndTabBar();
         }
 
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        if (ImGui::Button("Apply", ImVec2(-1, 0))) {
-            uiOpacity_ = static_cast<float>(pendingUiOpacity) / 100.0f;
-            minimapRotate_ = pendingMinimapRotate;
-            saveSettings();
-            window->setVsync(pendingVsync);
-            window->setFullscreen(pendingFullscreen);
-            window->applyResolution(kResolutions[pendingResIndex][0], kResolutions[pendingResIndex][1]);
-            if (renderer) {
-                renderer->setShadowsEnabled(pendingShadows);
-                if (auto* minimap = renderer->getMinimap()) {
-                    minimap->setRotateWithCamera(minimapRotate_);
-                }
-
-                // Apply all audio volume settings
-                float masterScale = static_cast<float>(pendingMasterVolume) / 100.0f;
-                if (auto* music = renderer->getMusicManager()) {
-                    music->setVolume(static_cast<int>(pendingMusicVolume * masterScale));
-                }
-                if (auto* ambient = renderer->getAmbientSoundManager()) {
-                    ambient->setVolumeScale(pendingAmbientVolume / 100.0f * masterScale);
-                }
-                if (auto* ui = renderer->getUiSoundManager()) {
-                    ui->setVolumeScale(pendingUiVolume / 100.0f * masterScale);
-                }
-                if (auto* combat = renderer->getCombatSoundManager()) {
-                    combat->setVolumeScale(pendingCombatVolume / 100.0f * masterScale);
-                }
-                if (auto* spell = renderer->getSpellSoundManager()) {
-                    spell->setVolumeScale(pendingSpellVolume / 100.0f * masterScale);
-                }
-                if (auto* movement = renderer->getMovementSoundManager()) {
-                    movement->setVolumeScale(pendingMovementVolume / 100.0f * masterScale);
-                }
-                if (auto* footstep = renderer->getFootstepManager()) {
-                    footstep->setVolumeScale(pendingFootstepVolume / 100.0f * masterScale);
-                }
-                if (auto* npcVoice = renderer->getNpcVoiceManager()) {
-                    npcVoice->setVolumeScale(pendingNpcVoiceVolume / 100.0f * masterScale);
-                }
-                if (auto* mount = renderer->getMountSoundManager()) {
-                    mount->setVolumeScale(pendingMountVolume / 100.0f * masterScale);
-                }
-                if (auto* activity = renderer->getActivitySoundManager()) {
-                    activity->setVolumeScale(pendingActivityVolume / 100.0f * masterScale);
-                }
-
-                if (auto* cameraController = renderer->getCameraController()) {
-                    cameraController->setMouseSensitivity(pendingMouseSensitivity);
-                    cameraController->setInvertMouse(pendingInvertMouse);
-                }
-            }
-        }
         ImGui::Spacing();
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f, 10.0f));
         if (ImGui::Button("Back to Game", ImVec2(-1, 0))) {

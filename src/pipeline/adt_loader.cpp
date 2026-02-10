@@ -205,6 +205,12 @@ void ADTLoader::parseMWMO(const uint8_t* data, size_t size, ADTTerrain& terrain)
 
     LOG_DEBUG("Loaded ", terrain.wmoNames.size(), " WMO names");
     for (size_t i = 0; i < terrain.wmoNames.size(); i++) {
+        LOG_DEBUG("  WMO[", i, "]: ", terrain.wmoNames[i]);
+        // Flag potential duplicate cathedral models
+        if (terrain.wmoNames[i].find("cathedral") != std::string::npos ||
+            terrain.wmoNames[i].find("Cathedral") != std::string::npos) {
+            LOG_INFO("*** CATHEDRAL WMO FOUND: ", terrain.wmoNames[i]);
+        }
     }
 }
 
@@ -261,6 +267,17 @@ void ADTLoader::parseMODF(const uint8_t* data, size_t size, ADTTerrain& terrain)
         placement.doodadSet = readUInt16(data, offset + 58);
 
         terrain.wmoPlacements.push_back(placement);
+
+        // Log cathedral placements with their positions to identify duplicates
+        if (placement.nameId < terrain.wmoNames.size()) {
+            const std::string& wmoName = terrain.wmoNames[placement.nameId];
+            if (wmoName.find("cathedral") != std::string::npos ||
+                wmoName.find("Cathedral") != std::string::npos) {
+                LOG_INFO("*** CATHEDRAL PLACEMENT: ", wmoName,
+                         " at (", placement.position[0], ", ",
+                         placement.position[1], ", ", placement.position[2], ")");
+            }
+        }
     }
 
     LOG_INFO("Loaded ", terrain.wmoPlacements.size(), " WMO placements");

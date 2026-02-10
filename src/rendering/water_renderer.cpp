@@ -139,10 +139,10 @@ bool WaterRenderer::initialize() {
 
             // Distance-based opacity: distant water is more opaque to hide underwater objects
             float dist = length(viewPos - FragPos);
-            float distFade = smoothstep(80.0, 400.0, dist);  // Start at 80 units, full opaque at 400
-            float distAlpha = mix(0.0, 0.5, distFade);  // Add up to 50% opacity at distance
+            float distFade = smoothstep(40.0, 300.0, dist);  // Start at 40 units, full opaque at 300
+            float distAlpha = mix(0.0, 0.75, distFade);  // Add up to 75% opacity at distance
 
-            float alpha = clamp(waterAlpha * alphaScale * (0.68 + fresnel * 0.45) + distAlpha, 0.12, 0.95);
+            float alpha = clamp(waterAlpha * alphaScale * (0.80 + fresnel * 0.45) + distAlpha, 0.20, 0.98);
 
             // Apply distance fog
             float fogDist = length(viewPos - FragPos);
@@ -224,6 +224,25 @@ void WaterRenderer::loadFromTerrain(const pipeline::ADTTerrain& terrain, bool ap
             surface.minHeight = layer.minHeight;
             surface.maxHeight = layer.maxHeight;
             surface.liquidType = layer.liquidType;
+
+            // Stormwind-specific water height filtering (only apply in Stormwind area)
+            // Stormwind is at tiles approximately (28-35, 46-52) on Azeroth
+            bool isStormwindArea = (tileX >= 28 && tileX <= 35 && tileY >= 46 && tileY <= 52);
+            if (isStormwindArea) {
+                // Skip water in low-lying areas that shouldn't have water (basement/underground areas)
+                // Stormwind canals are at ~95-100 height, filter out anything below 85
+                if (layer.minHeight < 85.0f && layer.liquidType != 2) {  // Allow magma (type 2) underground
+                    LOG_INFO("  -> FILTERED (too low, Stormwind)");
+                    continue;
+                }
+
+                // Skip floating water surfaces that are too high (incorrect placements)
+                // Park moonwell and canals are at 95-105, filter out anything above 110
+                if (layer.minHeight > 110.0f) {
+                    LOG_INFO("  -> FILTERED (too high, Stormwind)");
+                    continue;
+                }
+            }
 
             // Store dimensions
             surface.xOffset = layer.x;
@@ -346,6 +365,19 @@ void WaterRenderer::loadFromWMO([[maybe_unused]] const pipeline::WMOLiquid& liqu
     surface.minHeight = surface.origin.z;
     surface.maxHeight = surface.origin.z;
 
+    // Skip WMO water that's clearly invalid (extremely high - above 300 units)
+    // This is a conservative global filter that won't affect normal gameplay
+    if (surface.origin.z > 300.0f) {
+        LOG_INFO("WMO water filtered: height=", surface.origin.z, " wmoId=", wmoId, " (too high)");
+        return;
+    }
+
+    // Skip WMO water that's extremely low (deep underground where it shouldn't be)
+    if (surface.origin.z < -100.0f) {
+        LOG_INFO("WMO water filtered: height=", surface.origin.z, " wmoId=", wmoId, " (too low)");
+        return;
+    }
+
     size_t tileCount = static_cast<size_t>(surface.width) * static_cast<size_t>(surface.height);
     size_t maskBytes = (tileCount + 7) / 8;
     // WMO liquid flags vary across files; for now treat all WMO liquid tiles as
@@ -431,7 +463,7 @@ void WaterRenderer::render(const Camera& camera, float time) {
         float waveFreq = canalProfile ? 0.30f : 0.22f;     // Frequency maintained for visual
         float waveSpeed = canalProfile ? 1.20f : 2.00f;    // Speed maintained for animation
         float shimmerStrength = canalProfile ? 0.95f : 0.50f;
-        float alphaScale = canalProfile ? 0.72f : 1.00f;
+        float alphaScale = canalProfile ? 0.90f : 1.00f;   // Increased from 0.72 to make canal water less transparent
 
         waterShader->setUniform("waterColor", color);
         waterShader->setUniform("waterAlpha", alpha);

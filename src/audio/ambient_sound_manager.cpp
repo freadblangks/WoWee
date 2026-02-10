@@ -152,6 +152,37 @@ bool AmbientSoundManager::initialize(pipeline::AssetManager* assets) {
     desertPlainsNightSounds_.resize(1);
     bool desertPlainsNightLoaded = loadSound("Sound\\Ambience\\ZoneAmbience\\PlainsDesertNight.wav", desertPlainsNightSounds_[0], assets);
 
+    // Load city ambience sounds (day and night where available)
+    stormwindDaySounds_.resize(1);
+    bool stormwindDayLoaded = loadSound("Sound\\Ambience\\WMOAmbience\\StormwindDay.wav", stormwindDaySounds_[0], assets);
+
+    stormwindNightSounds_.resize(1);
+    bool stormwindNightLoaded = loadSound("Sound\\Ambience\\WMOAmbience\\StormwindNight.wav", stormwindNightSounds_[0], assets);
+
+    ironforgeSounds_.resize(1);
+    bool ironforgeLoaded = loadSound("Sound\\Ambience\\WMOAmbience\\Ironforge.wav", ironforgeSounds_[0], assets);
+
+    darnassusDaySounds_.resize(1);
+    bool darnassusDayLoaded = loadSound("Sound\\Ambience\\WMOAmbience\\DarnassusDay.wav", darnassusDaySounds_[0], assets);
+
+    darnassusNightSounds_.resize(1);
+    bool darnassusNightLoaded = loadSound("Sound\\Ambience\\WMOAmbience\\DarnassusNight.wav", darnassusNightSounds_[0], assets);
+
+    orgrimmarDaySounds_.resize(1);
+    bool orgrimmarDayLoaded = loadSound("Sound\\Ambience\\WMOAmbience\\OrgrimmarDay.wav", orgrimmarDaySounds_[0], assets);
+
+    orgrimmarNightSounds_.resize(1);
+    bool orgrimmarNightLoaded = loadSound("Sound\\Ambience\\WMOAmbience\\OrgrimmarNight.wav", orgrimmarNightSounds_[0], assets);
+
+    undercitySounds_.resize(1);
+    bool undercityLoaded = loadSound("Sound\\Ambience\\WMOAmbience\\Undercity.wav", undercitySounds_[0], assets);
+
+    thunderbluffDaySounds_.resize(1);
+    bool thunderbluffDayLoaded = loadSound("Sound\\Ambience\\WMOAmbience\\ThunderBluffDay.wav", thunderbluffDaySounds_[0], assets);
+
+    thunderbluffNightSounds_.resize(1);
+    bool thunderbluffNightLoaded = loadSound("Sound\\Ambience\\WMOAmbience\\ThunderBluffNight.wav", thunderbluffNightSounds_[0], assets);
+
     LOG_INFO("AmbientSoundManager: Wind loaded: ", windLoaded ? "YES" : "NO",
              ", Tavern loaded: ", tavernLoaded ? "YES" : "NO",
              ", Blacksmith loaded: ", blacksmithLoaded ? "YES" : "NO");
@@ -162,6 +193,9 @@ bool AmbientSoundManager::initialize(pipeline::AssetManager* assets) {
     LOG_INFO("AmbientSoundManager: Zone sounds - Forest: ", (forestDayLoaded && forestNightLoaded) ? "YES" : "NO",
              ", Beach: ", (beachDayLoaded && beachNightLoaded) ? "YES" : "NO",
              ", Desert: ", (desertCanyonDayLoaded && desertPlainsDayLoaded) ? "YES" : "NO");
+    LOG_INFO("AmbientSoundManager: City sounds - Stormwind: ", (stormwindDayLoaded && stormwindNightLoaded) ? "YES" : "NO",
+             ", Ironforge: ", ironforgeLoaded ? "YES" : "NO",
+             ", Orgrimmar: ", (orgrimmarDayLoaded && orgrimmarNightLoaded) ? "YES" : "NO");
 
     // Initialize timers with random offsets
     birdTimer_ = randomFloat(0.0f, 5.0f);
@@ -219,10 +253,11 @@ void AmbientSoundManager::update(float deltaTime, const glm::vec3& cameraPos, bo
         updateWindAmbience(deltaTime, isIndoor);
     }
 
-    // Update weather, water, and zone ambience
+    // Update weather, water, zone, and city ambience
     updateWeatherAmbience(deltaTime, isIndoor);
     updateWaterAmbience(deltaTime, isSwimming);
     updateZoneAmbience(deltaTime, isIndoor);
+    updateCityAmbience(deltaTime);
 
     // Track indoor state changes
     wasIndoor_ = isIndoor;
@@ -481,6 +516,15 @@ void AmbientSoundManager::setZoneType(ZoneType type) {
     }
 }
 
+void AmbientSoundManager::setCityType(CityType type) {
+    if (currentCity_ != type) {
+        LOG_INFO("AmbientSoundManager: City changed from ", static_cast<int>(currentCity_),
+                 " to ", static_cast<int>(type));
+        currentCity_ = type;
+        cityLoopTime_ = 12.0f;  // Play city ambience soon after entering
+    }
+}
+
 void AmbientSoundManager::updateWeatherAmbience(float deltaTime, bool isIndoor) {
     // Don't play weather sounds when indoors
     if (isIndoor || currentWeather_ == WeatherType::NONE) return;
@@ -559,8 +603,8 @@ void AmbientSoundManager::updateWaterAmbience(float deltaTime, bool isSwimming) 
 }
 
 void AmbientSoundManager::updateZoneAmbience(float deltaTime, bool isIndoor) {
-    // Don't play zone ambience when indoors
-    if (isIndoor || currentZone_ == ZoneType::NONE) return;
+    // Don't play zone ambience when indoors or in cities
+    if (isIndoor || currentZone_ == ZoneType::NONE || currentCity_ != CityType::NONE) return;
 
     zoneLoopTime_ += deltaTime;
 
@@ -606,6 +650,52 @@ void AmbientSoundManager::updateZoneAmbience(float deltaTime, bool isIndoor) {
             LOG_INFO("Playing zone ambience: type ", static_cast<int>(currentZone_),
                      " (", isDay ? "day" : "night", ")");
             zoneLoopTime_ = 0.0f;
+        }
+    }
+}
+
+void AmbientSoundManager::updateCityAmbience(float deltaTime) {
+    // Only play city ambience when actually in a city
+    if (currentCity_ == CityType::NONE) return;
+
+    cityLoopTime_ += deltaTime;
+
+    // Select appropriate sound library based on city type and time of day
+    const std::vector<AmbientSample>* cityLibrary = nullptr;
+    bool isDay = isDaytime();
+
+    switch (currentCity_) {
+        case CityType::STORMWIND:
+            cityLibrary = isDay ? &stormwindDaySounds_ : &stormwindNightSounds_;
+            break;
+        case CityType::IRONFORGE:
+            cityLibrary = &ironforgeSounds_;  // No day/night (underground)
+            break;
+        case CityType::DARNASSUS:
+            cityLibrary = isDay ? &darnassusDaySounds_ : &darnassusNightSounds_;
+            break;
+        case CityType::ORGRIMMAR:
+            cityLibrary = isDay ? &orgrimmarDaySounds_ : &orgrimmarNightSounds_;
+            break;
+        case CityType::UNDERCITY:
+            cityLibrary = &undercitySounds_;  // No day/night (underground)
+            break;
+        case CityType::THUNDERBLUFF:
+            cityLibrary = isDay ? &thunderbluffDaySounds_ : &thunderbluffNightSounds_;
+            break;
+        default:
+            return;
+    }
+
+    // Play city ambience sound if library is loaded and timer expired
+    if (cityLibrary && !cityLibrary->empty() && (*cityLibrary)[0].loaded) {
+        // Play every 20 seconds for city ambience (moderate intervals for urban atmosphere)
+        if (cityLoopTime_ >= 20.0f) {
+            float volume = 0.4f * volumeScale_;  // City ambience at moderate volume
+            AudioEngine::instance().playSound2D((*cityLibrary)[0].data, volume, 1.0f);
+            LOG_INFO("Playing city ambience: type ", static_cast<int>(currentCity_),
+                     " (", isDay ? "day" : "night", ")");
+            cityLoopTime_ = 0.0f;
         }
     }
 }

@@ -45,6 +45,19 @@ public:
     void setZoneType(ZoneType type);
     ZoneType getCurrentZone() const { return currentZone_; }
 
+    // City ambience control
+    enum class CityType {
+        NONE,
+        STORMWIND,
+        IRONFORGE,
+        DARNASSUS,
+        ORGRIMMAR,
+        UNDERCITY,
+        THUNDERBLUFF
+    };
+    void setCityType(CityType type);
+    CityType getCurrentCity() const { return currentCity_; }
+
     // Emitter management
     enum class AmbientType {
         FIREPLACE_SMALL,
@@ -127,6 +140,18 @@ private:
     std::vector<AmbientSample> desertPlainsDaySounds_;
     std::vector<AmbientSample> desertPlainsNightSounds_;
 
+    // City ambience libraries (day and night versions)
+    std::vector<AmbientSample> stormwindDaySounds_;
+    std::vector<AmbientSample> stormwindNightSounds_;
+    std::vector<AmbientSample> ironforgeSounds_;  // No separate day/night
+    std::vector<AmbientSample> darnassusDaySounds_;
+    std::vector<AmbientSample> darnassusNightSounds_;
+    std::vector<AmbientSample> orgrimmarDaySounds_;
+    std::vector<AmbientSample> orgrimmarNightSounds_;
+    std::vector<AmbientSample> undercitySounds_;  // No separate day/night (underground)
+    std::vector<AmbientSample> thunderbluffDaySounds_;
+    std::vector<AmbientSample> thunderbluffNightSounds_;
+
     // Active emitters
     std::vector<AmbientEmitter> emitters_;
     uint64_t nextEmitterId_ = 1;
@@ -141,12 +166,14 @@ private:
     float weatherLoopTime_ = 0.0f;
     float oceanLoopTime_ = 0.0f;
     float zoneLoopTime_ = 0.0f;
+    float cityLoopTime_ = 0.0f;
     bool wasIndoor_ = false;
     bool wasBlacksmith_ = false;
     bool wasSwimming_ = false;
     bool initialized_ = false;
     WeatherType currentWeather_ = WeatherType::NONE;
     ZoneType currentZone_ = ZoneType::NONE;
+    CityType currentCity_ = CityType::NONE;
 
     // Active audio tracking
     struct ActiveSound {
@@ -163,6 +190,7 @@ private:
     void updateWeatherAmbience(float deltaTime, bool isIndoor);
     void updateWaterAmbience(float deltaTime, bool isSwimming);
     void updateZoneAmbience(float deltaTime, bool isIndoor);
+    void updateCityAmbience(float deltaTime);
     bool loadSound(const std::string& path, AmbientSample& sample, pipeline::AssetManager* assets);
 
     // Time of day helpers

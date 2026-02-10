@@ -1652,7 +1652,7 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
     shader->setUniform("uView", view);
     shader->setUniform("uProjection", projection);
     shader->setUniform("uLightDir", lightDir);
-    shader->setUniform("uLightColor", glm::vec3(1.5f, 1.4f, 1.3f));
+    shader->setUniform("uLightColor", lightColor);
     shader->setUniform("uSpecularIntensity", onTaxi_ ? 0.0f : 0.5f);  // Disable specular during taxi for performance
     shader->setUniform("uAmbientColor", ambientColor);
     shader->setUniform("uViewPos", camera.getPosition());

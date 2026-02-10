@@ -98,13 +98,18 @@ void StarField::shutdown() {
     stars.clear();
 }
 
-void StarField::render(const Camera& camera, float timeOfDay) {
+void StarField::render(const Camera& camera, float timeOfDay,
+                       float cloudDensity, float fogDensity) {
     if (!renderingEnabled || vao == 0 || !starShader || stars.empty()) {
         return;
     }
 
     // Get star intensity based on time of day
     float intensity = getStarIntensity(timeOfDay);
+
+    // Reduce intensity based on cloud density and fog (more clouds/fog = fewer visible stars)
+    intensity *= (1.0f - glm::clamp(cloudDensity * 0.7f, 0.0f, 1.0f));
+    intensity *= (1.0f - glm::clamp(fogDensity * 0.3f, 0.0f, 1.0f));
 
     // Don't render if stars would be invisible
     if (intensity <= 0.01f) {

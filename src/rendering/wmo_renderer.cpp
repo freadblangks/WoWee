@@ -583,6 +583,21 @@ void WMORenderer::clearCollisionFocus() {
     collisionFocusEnabled = false;
 }
 
+void WMORenderer::setLighting(const float lightDirIn[3], const float lightColorIn[3],
+                               const float ambientColorIn[3]) {
+    lightDir[0] = lightDirIn[0];
+    lightDir[1] = lightDirIn[1];
+    lightDir[2] = lightDirIn[2];
+
+    lightColor[0] = lightColorIn[0];
+    lightColor[1] = lightColorIn[1];
+    lightColor[2] = lightColorIn[2];
+
+    ambientColor[0] = ambientColorIn[0];
+    ambientColor[1] = ambientColorIn[1];
+    ambientColor[2] = ambientColorIn[2];
+}
+
 void WMORenderer::resetQueryStats() {
     queryTimeMs = 0.0;
     queryCallCount = 0;
@@ -802,10 +817,10 @@ void WMORenderer::render(const Camera& camera, const glm::mat4& view, const glm:
     shader->setUniform("uView", view);
     shader->setUniform("uProjection", projection);
     shader->setUniform("uViewPos", camera.getPosition());
-    shader->setUniform("uLightDir", glm::vec3(-0.3f, -0.7f, -0.6f));  // Default sun direction
-    shader->setUniform("uLightColor", glm::vec3(1.5f, 1.4f, 1.3f));
+    shader->setUniform("uLightDir", glm::vec3(lightDir[0], lightDir[1], lightDir[2]));
+    shader->setUniform("uLightColor", glm::vec3(lightColor[0], lightColor[1], lightColor[2]));
     shader->setUniform("uSpecularIntensity", 0.5f);
-    shader->setUniform("uAmbientColor", glm::vec3(0.55f, 0.55f, 0.6f));
+    shader->setUniform("uAmbientColor", glm::vec3(ambientColor[0], ambientColor[1], ambientColor[2]));
     shader->setUniform("uFogColor", fogColor);
     shader->setUniform("uFogStart", fogStart);
     shader->setUniform("uFogEnd", fogEnd);

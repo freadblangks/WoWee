@@ -125,9 +125,15 @@ void Celestial::shutdown() {
     celestialShader.reset();
 }
 
-void Celestial::render(const Camera& camera, float timeOfDay) {
+void Celestial::render(const Camera& camera, float timeOfDay,
+                       const glm::vec3* sunDir, const glm::vec3* sunColor, float gameTime) {
     if (!renderingEnabled || vao == 0 || !celestialShader) {
         return;
+    }
+
+    // Update moon phases from game time if available (deterministic)
+    if (gameTime >= 0.0f) {
+        updatePhasesFromGameTime(gameTime);
     }
 
     // Enable blending for celestial glow
@@ -137,16 +143,21 @@ void Celestial::render(const Camera& camera, float timeOfDay) {
     // Disable depth writing (but keep depth testing)
     glDepthMask(GL_FALSE);
 
-    // Render sun and moon
-    renderSun(camera, timeOfDay);
-    renderMoon(camera, timeOfDay);
+    // Render sun and moons (pass lighting parameters)
+    renderSun(camera, timeOfDay, sunDir, sunColor);
+    renderMoon(camera, timeOfDay);  // White Lady (primary moon)
+
+    if (dualMoonMode_) {
+        renderBlueChild(camera, timeOfDay);  // Blue Child (secondary moon)
+    }
 
     // Restore state
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
 }
 
-void Celestial::renderSun(const Camera& camera, float timeOfDay) {
+void Celestial::renderSun(const Camera& camera, float timeOfDay,
+                          const glm::vec3* sunDir, const glm::vec3* sunColor) {
     // Sun visible from 5:00 to 19:00
     if (timeOfDay < 5.0f || timeOfDay >= 19.0f) {
         return;
@@ -154,8 +165,16 @@ void Celestial::renderSun(const Camera& camera, float timeOfDay) {
 
     celestialShader->use();
 
-    // Get sun position
-    glm::vec3 sunPos = getSunPosition(timeOfDay);
+    // Get sun position (use lighting direction if provided)
+    glm::vec3 sunPos;
+    if (sunDir) {
+        // Place sun along the lighting direction at far distance
+        const float sunDistance = 800.0f;
+        sunPos = -*sunDir * sunDistance;  // Negative because light comes FROM sun
+    } else {
+        // Fallback to time-based position
+        sunPos = getSunPosition(timeOfDay);
+    }
 
     // Create model matrix
     glm::mat4 model = glm::mat4(1.0f);
@@ -170,8 +189,8 @@ void Celestial::renderSun(const Camera& camera, float timeOfDay) {
     celestialShader->setUniform("view", view);
     celestialShader->setUniform("projection", projection);
 
-    // Sun color and intensity
-    glm::vec3 color = getSunColor(timeOfDay);
+    // Sun color and intensity (use lighting color if provided)
+    glm::vec3 color = sunColor ? *sunColor : getSunColor(timeOfDay);
     float intensity = getSunIntensity(timeOfDay);
 
     celestialShader->setUniform("celestialColor", color);
@@ -224,7 +243,61 @@ void Celestial::renderMoon(const Camera& camera, float timeOfDay) {
 
     celestialShader->setUniform("celestialColor", color);
     celestialShader->setUniform("intensity", intensity);
-    celestialShader->setUniform("moonPhase", moonPhase);
+    celestialShader->setUniform("moonPhase", whiteLadyPhase_);
+
+    // Render quad
+    glBindVertexArray(vao);
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr);
+    glBindVertexArray(0);
+}
+
+void Celestial::renderBlueChild(const Camera& camera, float timeOfDay) {
+    // Blue Child visible from 19:00 to 5:00 (night, same as White Lady)
+    if (timeOfDay >= 5.0f && timeOfDay < 19.0f) {
+        return;
+    }
+
+    celestialShader->use();
+
+    // Get moon position (offset slightly from White Lady)
+    glm::vec3 moonPos = getMoonPosition(timeOfDay);
+    // Offset Blue Child to the right and slightly lower
+    moonPos.x += 80.0f;   // Right offset
+    moonPos.z -= 40.0f;   // Slightly lower
+
+    // Create model matrix (smaller than White Lady)
+    glm::mat4 model = glm::mat4(1.0f);
+    model = glm::translate(model, moonPos);
+    model = glm::scale(model, glm::vec3(30.0f, 30.0f, 1.0f));  // 30 unit diameter (smaller)
+
+    // Set uniforms
+    glm::mat4 view = camera.getViewMatrix();
+    glm::mat4 projection = camera.getProjectionMatrix();
+
+    celestialShader->setUniform("model", model);
+    celestialShader->setUniform("view", view);
+    celestialShader->setUniform("projection", projection);
+
+    // Blue Child color (pale blue tint)
+    glm::vec3 color = glm::vec3(0.7f, 0.8f, 1.0f);
+
+    // Fade in/out at transitions (same as White Lady)
+    float intensity = 1.0f;
+    if (timeOfDay >= 19.0f && timeOfDay < 21.0f) {
+        // Fade in (19:00-21:00)
+        intensity = (timeOfDay - 19.0f) / 2.0f;
+    }
+    else if (timeOfDay >= 3.0f && timeOfDay < 5.0f) {
+        // Fade out (3:00-5:00)
+        intensity = 1.0f - (timeOfDay - 3.0f) / 2.0f;
+    }
+
+    // Blue Child is dimmer than White Lady
+    intensity *= 0.7f;
+
+    celestialShader->setUniform("celestialColor", color);
+    celestialShader->setUniform("intensity", intensity);
+    celestialShader->setUniform("moonPhase", blueChildPhase_);
 
     // Render quad
     glBindVertexArray(vao);
@@ -396,16 +469,49 @@ void Celestial::update(float deltaTime) {
     // Update moon phase timer
     moonPhaseTimer += deltaTime;
 
-    // Moon completes full cycle in MOON_CYCLE_DURATION seconds
-    moonPhase = std::fmod(moonPhaseTimer / MOON_CYCLE_DURATION, 1.0f);
+    // White Lady completes full cycle in MOON_CYCLE_DURATION seconds
+    whiteLadyPhase_ = std::fmod(moonPhaseTimer / MOON_CYCLE_DURATION, 1.0f);
+
+    // Blue Child has a different cycle rate (slightly faster, 3.5 minutes)
+    constexpr float BLUE_CHILD_CYCLE = 210.0f;
+    blueChildPhase_ = std::fmod(moonPhaseTimer / BLUE_CHILD_CYCLE, 1.0f);
 }
 
 void Celestial::setMoonPhase(float phase) {
-    // Clamp phase to 0.0-1.0
-    moonPhase = glm::clamp(phase, 0.0f, 1.0f);
+    // Set White Lady phase (primary moon)
+    whiteLadyPhase_ = glm::clamp(phase, 0.0f, 1.0f);
 
-    // Update timer to match phase
-    moonPhaseTimer = moonPhase * MOON_CYCLE_DURATION;
+    // Update timer to match White Lady phase
+    moonPhaseTimer = whiteLadyPhase_ * MOON_CYCLE_DURATION;
+}
+
+void Celestial::setBlueChildPhase(float phase) {
+    // Set Blue Child phase (secondary moon)
+    blueChildPhase_ = glm::clamp(phase, 0.0f, 1.0f);
+}
+
+float Celestial::computePhaseFromGameTime(float gameTime, float cycleDays) const {
+    // WoW game time: 1 game day = 24 real minutes = 1440 seconds
+    constexpr float SECONDS_PER_GAME_DAY = 1440.0f;
+
+    // Convert game time to game days
+    float gameDays = gameTime / SECONDS_PER_GAME_DAY;
+
+    // Compute phase as fraction of lunar cycle (0.0-1.0)
+    float phase = std::fmod(gameDays / cycleDays, 1.0f);
+
+    // Ensure positive (fmod can return negative for negative input)
+    if (phase < 0.0f) {
+        phase += 1.0f;
+    }
+
+    return phase;
+}
+
+void Celestial::updatePhasesFromGameTime(float gameTime) {
+    // Compute deterministic phases from server game time
+    whiteLadyPhase_ = computePhaseFromGameTime(gameTime, WHITE_LADY_CYCLE_DAYS);
+    blueChildPhase_ = computePhaseFromGameTime(gameTime, BLUE_CHILD_CYCLE_DAYS);
 }
 
 } // namespace rendering

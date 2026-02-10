@@ -179,6 +179,9 @@ public:
         fogColor = color; fogStart = start; fogEnd = end;
     }
 
+    void setLighting(const float lightDir[3], const float lightColor[3],
+                     const float ambientColor[3]);
+
     void setShadowMap(GLuint depthTex, const glm::mat4& lightSpace) {
         shadowDepthTex = depthTex; lightSpaceMatrix = lightSpace; shadowEnabled = true;
     }
@@ -536,6 +539,11 @@ private:
     glm::vec3 fogColor = glm::vec3(0.5f, 0.6f, 0.7f);
     float fogStart = 3000.0f;   // Increased to allow clearer visibility at distance
     float fogEnd = 4000.0f;    // Increased to match extended view distance
+
+    // Lighting parameters
+    float lightDir[3] = {-0.3f, -0.7f, -0.6f};
+    float lightColor[3] = {1.5f, 1.4f, 1.3f};
+    float ambientColor[3] = {0.55f, 0.55f, 0.6f};
 
     // Shadow mapping
     GLuint shadowDepthTex = 0;

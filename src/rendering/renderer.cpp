@@ -1764,14 +1764,27 @@ void Renderer::renderWorld(game::World* world) {
         skybox->render(*camera, timeOfDay);
     }
 
-    // Render stars after skybox
-    if (starField && camera) {
-        starField->render(*camera, timeOfDay);
+    // Get lighting parameters for celestial rendering
+    const glm::vec3* sunDir = nullptr;
+    const glm::vec3* sunColor = nullptr;
+    float cloudDensity = 0.0f;
+    float fogDensity = 0.0f;
+    if (lightingManager) {
+        const auto& lighting = lightingManager->getLightingParams();
+        sunDir = &lighting.directionalDir;
+        sunColor = &lighting.diffuseColor;
+        cloudDensity = lighting.cloudDensity;
+        fogDensity = lighting.fogDensity;
     }
 
-    // Render celestial bodies (sun/moon) after stars
+    // Render stars after skybox (affected by cloud/fog density)
+    if (starField && camera) {
+        starField->render(*camera, timeOfDay, cloudDensity, fogDensity);
+    }
+
+    // Render celestial bodies (sun/moon) after stars (sun uses lighting direction/color)
     if (celestial && camera) {
-        celestial->render(*camera, timeOfDay);
+        celestial->render(*camera, timeOfDay, sunDir, sunColor);
     }
 
     // Render clouds after celestial bodies
@@ -1781,12 +1794,43 @@ void Renderer::renderWorld(game::World* world) {
 
     // Render lens flare (screen-space effect, render after celestial bodies)
     if (lensFlare && camera && celestial) {
-        glm::vec3 sunPosition = celestial->getSunPosition(timeOfDay);
+        // Use lighting direction for sun position if available
+        glm::vec3 sunPosition;
+        if (sunDir) {
+            const float sunDistance = 800.0f;
+            sunPosition = -*sunDir * sunDistance;
+        } else {
+            sunPosition = celestial->getSunPosition(timeOfDay);
+        }
         lensFlare->render(*camera, sunPosition, timeOfDay);
     }
 
-    // Update fog across all renderers based on time of day (match sky color)
-    if (skybox) {
+    // Apply lighting and fog to all renderers
+    if (lightingManager) {
+        const auto& lighting = lightingManager->getLightingParams();
+
+        float lightDir[3] = {lighting.directionalDir.x, lighting.directionalDir.y, lighting.directionalDir.z};
+        float lightColor[3] = {lighting.diffuseColor.r, lighting.diffuseColor.g, lighting.diffuseColor.b};
+        float ambientColor[3] = {lighting.ambientColor.r, lighting.ambientColor.g, lighting.ambientColor.b};
+        float fogColorArray[3] = {lighting.fogColor.r, lighting.fogColor.g, lighting.fogColor.b};
+
+        if (wmoRenderer) {
+            wmoRenderer->setLighting(lightDir, lightColor, ambientColor);
+            wmoRenderer->setFog(glm::vec3(fogColorArray[0], fogColorArray[1], fogColorArray[2]),
+                                lighting.fogStart, lighting.fogEnd);
+        }
+        if (m2Renderer) {
+            m2Renderer->setLighting(lightDir, lightColor, ambientColor);
+            m2Renderer->setFog(glm::vec3(fogColorArray[0], fogColorArray[1], fogColorArray[2]),
+                               lighting.fogStart, lighting.fogEnd);
+        }
+        if (characterRenderer) {
+            characterRenderer->setLighting(lightDir, lightColor, ambientColor);
+            characterRenderer->setFog(glm::vec3(fogColorArray[0], fogColorArray[1], fogColorArray[2]),
+                                      lighting.fogStart, lighting.fogEnd);
+        }
+    } else if (skybox) {
+        // Fallback to skybox-based fog if no lighting manager
         glm::vec3 horizonColor = skybox->getHorizonColor(timeOfDay);
         if (wmoRenderer) wmoRenderer->setFog(horizonColor, 100.0f, 600.0f);
         if (m2Renderer) m2Renderer->setFog(horizonColor, 100.0f, 600.0f);

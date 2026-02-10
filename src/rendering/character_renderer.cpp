@@ -1163,8 +1163,8 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
     characterShader->use();
     characterShader->setUniform("uView", view);
     characterShader->setUniform("uProjection", projection);
-    characterShader->setUniform("uLightDir", glm::vec3(0.0f, -1.0f, 0.3f));
-    characterShader->setUniform("uLightColor", glm::vec3(1.5f, 1.4f, 1.3f));
+    characterShader->setUniform("uLightDir", lightDir);
+    characterShader->setUniform("uLightColor", lightColor);
     characterShader->setUniform("uSpecularIntensity", 0.5f);
     characterShader->setUniform("uViewPos", camera.getPosition());
 

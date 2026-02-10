@@ -9,10 +9,12 @@ A native C++ client for World of Warcraft 3.3.5a (Wrath of the Lich King) with a
 ### Rendering Engine
 - **Terrain** -- Multi-tile streaming with async loading, texture splatting (4 layers), frustum culling
 - **Water** -- Animated surfaces, reflections, refractions, Fresnel effect
-- **Sky** -- Dynamic day/night cycle, sun/moon with orbital movement
-- **Stars** -- 1000+ procedurally placed stars (night-only)
-- **Atmosphere** -- Procedural clouds (FBM noise), lens flare with chromatic aberration
-- **Moon Phases** -- 8 realistic lunar phases with elliptical terminator
+- **Sky System** -- WoW-accurate DBC-driven lighting with skybox authority
+  - **Skybox** -- Camera-locked celestial sphere (M2 model support, gradient fallback)
+  - **Celestial Bodies** -- Sun (lighting-driven), White Lady + Blue Child (Azeroth's two moons)
+  - **Moon Phases** -- Server time-driven deterministic phases (30-day / 27-day cycles)
+  - **Stars** -- Baked into skybox assets (procedural fallback for development/debug only)
+- **Atmosphere** -- Procedural clouds (FBM noise), lens flare with chromatic aberration, cloud/fog star occlusion
 - **Weather** -- Rain and snow particle systems (2000 particles, camera-relative)
 - **Characters** -- Skeletal animation with GPU vertex skinning (256 bones), race-aware textures
 - **Buildings** -- WMO renderer with multi-material batches, frustum culling, 160-unit distance culling
@@ -124,8 +126,8 @@ make -j$(nproc)
 | F1 | Performance HUD |
 | F2 | Wireframe mode |
 | F9 | Toggle time progression |
-| F10 | Toggle sun/moon |
-| F11 | Toggle stars |
+| F10 | Toggle celestial bodies (sun + moons) |
+| F11 | Toggle procedural stars (debug mode) |
 | +/- | Change time of day |
 | C | Toggle clouds |
 | L | Toggle lens flare |
@@ -145,6 +147,7 @@ make -j$(nproc)
 - [Authentication](docs/authentication.md) -- SRP6 auth protocol details
 - [Server Setup](docs/server-setup.md) -- Local server configuration
 - [Single Player](docs/single-player.md) -- Offline mode
+- [Sky System](docs/SKY_SYSTEM.md) -- Celestial bodies, Azeroth astronomy, and WoW-accurate sky rendering
 - [SRP Implementation](docs/srp-implementation.md) -- Cryptographic details
 - [Packet Framing](docs/packet-framing.md) -- Network protocol framing
 - [Realm List](docs/realm-list.md) -- Realm selection system
@@ -158,6 +161,13 @@ make -j$(nproc)
 - **Architecture**: Modular design with clear separation (core, rendering, networking, game logic, asset pipeline, UI, audio)
 - **Networking**: Non-blocking TCP, SRP6a authentication, RC4 encryption, WoW 3.3.5a protocol
 - **Asset Loading**: Async terrain streaming, lazy loading, MPQ archive support
+- **Sky System**: WoW-accurate DBC-driven architecture
+  - **Skybox Authority**: Stars baked into M2 sky dome models (not procedurally generated)
+  - **Lore-Accurate Moons**: White Lady (30-day cycle) + Blue Child (27-day cycle)
+  - **Deterministic Phases**: Computed from server game time (consistent across sessions)
+  - **Camera-Locked**: Sky dome uses rotation-only transform (translation ignored)
+  - **No Latitude Math**: Per-zone artistic constants, not Earth-like planetary simulation
+  - **Zone Identity**: Different skyboxes per continent (Azeroth, Outland, Northrend)
 
 ## License
 

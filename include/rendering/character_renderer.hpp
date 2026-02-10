@@ -88,6 +88,13 @@ public:
         fogColor = color; fogStart = start; fogEnd = end;
     }
 
+    void setLighting(const float lightDirIn[3], const float lightColorIn[3],
+                     const float ambientColorIn[3]) {
+        lightDir = glm::vec3(lightDirIn[0], lightDirIn[1], lightDirIn[2]);
+        lightColor = glm::vec3(lightColorIn[0], lightColorIn[1], lightColorIn[2]);
+        ambientColor = glm::vec3(ambientColorIn[0], ambientColorIn[1], ambientColorIn[2]);
+    }
+
     void setShadowMap(GLuint depthTex, const glm::mat4& lightSpace) {
         shadowDepthTex = depthTex; lightSpaceMatrix = lightSpace; shadowEnabled = true;
     }
@@ -205,6 +212,11 @@ private:
     glm::vec3 fogColor = glm::vec3(0.5f, 0.6f, 0.7f);
     float fogStart = 400.0f;
     float fogEnd = 1200.0f;
+
+    // Lighting parameters
+    glm::vec3 lightDir = glm::vec3(0.0f, -1.0f, 0.3f);
+    glm::vec3 lightColor = glm::vec3(1.5f, 1.4f, 1.3f);
+    glm::vec3 ambientColor = glm::vec3(0.4f, 0.4f, 0.45f);
 
     // Shadow mapping
     GLuint shadowDepthTex = 0;

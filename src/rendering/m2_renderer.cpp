@@ -1682,9 +1682,10 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
         // Small props (barrels, lanterns, etc.) now use same distance as larger objects
         if (distSq > effectiveMaxDistSq) continue;
 
-        // Frustum cull with padding to prevent edge pop-out
-        // Add 20% radius padding so objects smoothly exit viewport
-        if (cullRadius > 0.0f && !frustum.intersectsSphere(instance.position, cullRadius * 1.2f)) continue;
+        // Frustum cull with very generous padding to prevent edge pop-out during camera rotation
+        // Add 150% radius padding (+ minimum 5 units) so objects remain visible at viewport edges
+        float paddedRadius = std::max(cullRadius * 2.5f, cullRadius + 5.0f);
+        if (cullRadius > 0.0f && !frustum.intersectsSphere(instance.position, paddedRadius)) continue;
 
         sortedVisible_.push_back({i, instance.modelId, distSq, effectiveMaxDistSq});
     }

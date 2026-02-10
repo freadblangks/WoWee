@@ -345,6 +345,9 @@ public:
     using NpcDeathCallback = std::function<void(uint64_t guid)>;
     void setNpcDeathCallback(NpcDeathCallback cb) { npcDeathCallback_ = std::move(cb); }
 
+    using NpcAggroCallback = std::function<void(uint64_t guid, const glm::vec3& position)>;
+    void setNpcAggroCallback(NpcAggroCallback cb) { npcAggroCallback_ = std::move(cb); }
+
     // NPC respawn callback (health 0 → >0, resets animation to idle)
     using NpcRespawnCallback = std::function<void(uint64_t guid)>;
     void setNpcRespawnCallback(NpcRespawnCallback cb) { npcRespawnCallback_ = std::move(cb); }
@@ -360,6 +363,12 @@ public:
     // NPC greeting callback (plays voice line when NPC is clicked)
     using NpcGreetingCallback = std::function<void(uint64_t guid, const glm::vec3& position)>;
     void setNpcGreetingCallback(NpcGreetingCallback cb) { npcGreetingCallback_ = std::move(cb); }
+
+    using NpcFarewellCallback = std::function<void(uint64_t guid, const glm::vec3& position)>;
+    void setNpcFarewellCallback(NpcFarewellCallback cb) { npcFarewellCallback_ = std::move(cb); }
+
+    using NpcVendorCallback = std::function<void(uint64_t guid, const glm::vec3& position)>;
+    void setNpcVendorCallback(NpcVendorCallback cb) { npcVendorCallback_ = std::move(cb); }
 
     // XP tracking
     uint32_t getPlayerXp() const { return playerXp_; }
@@ -1031,10 +1040,13 @@ private:
     void extractSkillFields(const std::map<uint16_t, uint32_t>& fields);
 
     NpcDeathCallback npcDeathCallback_;
+    NpcAggroCallback npcAggroCallback_;
     NpcRespawnCallback npcRespawnCallback_;
     MeleeSwingCallback meleeSwingCallback_;
     NpcSwingCallback npcSwingCallback_;
     NpcGreetingCallback npcGreetingCallback_;
+    NpcFarewellCallback npcFarewellCallback_;
+    NpcVendorCallback npcVendorCallback_;
     MountCallback mountCallback_;
     TaxiPrecacheCallback taxiPrecacheCallback_;
     TaxiOrientationCallback taxiOrientationCallback_;

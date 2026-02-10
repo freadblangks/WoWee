@@ -303,7 +303,7 @@ void AmbientSoundManager::updateBlacksmithAmbience(float deltaTime) {
                 }
             }
 
-            float volume = 0.35f * volumeScale_;  // Reduced from 0.7
+            float volume = 0.25f * volumeScale_;  // Reduced 30% from 0.35
             float pitch = 1.6f;  // Higher pitch for metallic clink
             AudioEngine::instance().playSound2D(blacksmithSounds_[index].data, volume, pitch);
             LOG_INFO("Playing blacksmith ambience (hammer strike)");

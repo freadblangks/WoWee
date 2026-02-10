@@ -3565,6 +3565,15 @@ void GameHandler::handleAttackStart(network::Packet& packet) {
     } else if (data.victimGuid == playerGuid && data.attackerGuid != 0) {
         hostileAttackers_.insert(data.attackerGuid);
         autoTargetAttacker(data.attackerGuid);
+
+        // Play aggro sound when NPC attacks player
+        if (npcAggroCallback_) {
+            auto entity = entityManager.getEntity(data.attackerGuid);
+            if (entity && entity->getType() == ObjectType::UNIT) {
+                glm::vec3 pos(entity->getX(), entity->getY(), entity->getZ());
+                npcAggroCallback_(data.attackerGuid, pos);
+            }
+        }
     }
 }
 
@@ -4575,6 +4584,16 @@ void GameHandler::handleGossipMessage(network::Packet& packet) {
 
 void GameHandler::handleGossipComplete(network::Packet& packet) {
     (void)packet;
+
+    // Play farewell sound before closing
+    if (npcFarewellCallback_ && currentGossip.npcGuid != 0) {
+        auto entity = entityManager.getEntity(currentGossip.npcGuid);
+        if (entity && entity->getType() == ObjectType::UNIT) {
+            glm::vec3 pos(entity->getX(), entity->getY(), entity->getZ());
+            npcFarewellCallback_(currentGossip.npcGuid, pos);
+        }
+    }
+
     gossipWindowOpen = false;
     currentGossip = GossipMessageData{};
 }
@@ -4583,6 +4602,15 @@ void GameHandler::handleListInventory(network::Packet& packet) {
     if (!ListInventoryParser::parse(packet, currentVendorItems)) return;
     vendorWindowOpen = true;
     gossipWindowOpen = false; // Close gossip if vendor opens
+
+    // Play vendor sound
+    if (npcVendorCallback_ && currentVendorItems.vendorGuid != 0) {
+        auto entity = entityManager.getEntity(currentVendorItems.vendorGuid);
+        if (entity && entity->getType() == ObjectType::UNIT) {
+            glm::vec3 pos(entity->getX(), entity->getY(), entity->getZ());
+            npcVendorCallback_(currentVendorItems.vendorGuid, pos);
+        }
+    }
 
     // Query item info for all vendor items so we can show names
     for (const auto& item : currentVendorItems.items) {

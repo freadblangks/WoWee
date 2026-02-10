@@ -47,26 +47,50 @@ public:
     bool initialize(pipeline::AssetManager* assets);
     void shutdown();
 
-    // Play greeting sound for NPC at given position
+    // Play NPC interaction sounds
     void playGreeting(uint64_t npcGuid, VoiceType voiceType, const glm::vec3& position);
+    void playFarewell(uint64_t npcGuid, VoiceType voiceType, const glm::vec3& position);
+    void playVendor(uint64_t npcGuid, VoiceType voiceType, const glm::vec3& position);
+    void playPissed(uint64_t npcGuid, VoiceType voiceType, const glm::vec3& position);
+
+    // Play NPC combat sounds
+    void playAggro(uint64_t npcGuid, VoiceType voiceType, const glm::vec3& position);
+    void playFlee(uint64_t npcGuid, VoiceType voiceType, const glm::vec3& position);
 
     void setVolumeScale(float scale) { volumeScale_ = scale; }
     float getVolumeScale() const { return volumeScale_; }
 
 private:
+    enum class SoundCategory {
+        GREETING,
+        FAREWELL,
+        VENDOR,
+        PISSED,
+        AGGRO,
+        FLEE
+    };
+
     void loadVoiceSounds();
     bool loadSound(const std::string& path, VoiceSample& sample);
     VoiceType detectVoiceType(uint32_t creatureEntry) const;
+    void playSound(uint64_t npcGuid, VoiceType voiceType, SoundCategory category, const glm::vec3& position);
 
     pipeline::AssetManager* assetManager_ = nullptr;
     float volumeScale_ = 1.0f;
 
-    // Voice samples grouped by type
-    std::unordered_map<VoiceType, std::vector<VoiceSample>> voiceLibrary_;
+    // Voice samples grouped by type and category
+    std::unordered_map<VoiceType, std::vector<VoiceSample>> greetingLibrary_;
+    std::unordered_map<VoiceType, std::vector<VoiceSample>> farewellLibrary_;
+    std::unordered_map<VoiceType, std::vector<VoiceSample>> vendorLibrary_;
+    std::unordered_map<VoiceType, std::vector<VoiceSample>> pissedLibrary_;
+    std::unordered_map<VoiceType, std::vector<VoiceSample>> aggroLibrary_;
+    std::unordered_map<VoiceType, std::vector<VoiceSample>> fleeLibrary_;
 
     // Cooldown tracking (prevent spam clicking same NPC)
     std::unordered_map<uint64_t, std::chrono::steady_clock::time_point> lastPlayTime_;
+    std::unordered_map<uint64_t, int> clickCount_;  // Track clicks for pissed sounds
     static constexpr float GREETING_COOLDOWN = 2.0f;  // seconds
+    static constexpr int PISSED_CLICK_THRESHOLD = 5;  // clicks before pissed
 
     std::mt19937 rng_;
 };

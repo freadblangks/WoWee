@@ -834,6 +834,57 @@ void Application::setupUICallbacks() {
         }
     });
 
+    // NPC farewell callback - play farewell voice line
+    gameHandler->setNpcFarewellCallback([this](uint64_t guid, const glm::vec3& position) {
+        if (renderer && renderer->getNpcVoiceManager()) {
+            glm::vec3 renderPos = core::coords::canonicalToRender(position);
+
+            audio::VoiceType voiceType = audio::VoiceType::GENERIC;
+            auto entity = gameHandler->getEntityManager().getEntity(guid);
+            if (entity && entity->getType() == game::ObjectType::UNIT) {
+                auto unit = std::static_pointer_cast<game::Unit>(entity);
+                uint32_t displayId = unit->getDisplayId();
+                voiceType = detectVoiceTypeFromDisplayId(displayId);
+            }
+
+            renderer->getNpcVoiceManager()->playFarewell(guid, voiceType, renderPos);
+        }
+    });
+
+    // NPC vendor callback - play vendor voice line
+    gameHandler->setNpcVendorCallback([this](uint64_t guid, const glm::vec3& position) {
+        if (renderer && renderer->getNpcVoiceManager()) {
+            glm::vec3 renderPos = core::coords::canonicalToRender(position);
+
+            audio::VoiceType voiceType = audio::VoiceType::GENERIC;
+            auto entity = gameHandler->getEntityManager().getEntity(guid);
+            if (entity && entity->getType() == game::ObjectType::UNIT) {
+                auto unit = std::static_pointer_cast<game::Unit>(entity);
+                uint32_t displayId = unit->getDisplayId();
+                voiceType = detectVoiceTypeFromDisplayId(displayId);
+            }
+
+            renderer->getNpcVoiceManager()->playVendor(guid, voiceType, renderPos);
+        }
+    });
+
+    // NPC aggro callback - play combat start voice line
+    gameHandler->setNpcAggroCallback([this](uint64_t guid, const glm::vec3& position) {
+        if (renderer && renderer->getNpcVoiceManager()) {
+            glm::vec3 renderPos = core::coords::canonicalToRender(position);
+
+            audio::VoiceType voiceType = audio::VoiceType::GENERIC;
+            auto entity = gameHandler->getEntityManager().getEntity(guid);
+            if (entity && entity->getType() == game::ObjectType::UNIT) {
+                auto unit = std::static_pointer_cast<game::Unit>(entity);
+                uint32_t displayId = unit->getDisplayId();
+                voiceType = detectVoiceTypeFromDisplayId(displayId);
+            }
+
+            renderer->getNpcVoiceManager()->playAggro(guid, voiceType, renderPos);
+        }
+    });
+
     // "Create Character" button on character screen
     uiManager->getCharacterScreen().setOnCreateCharacter([this]() {
         uiManager->getCharacterCreateScreen().reset();
@@ -1936,32 +1987,41 @@ audio::VoiceType Application::detectVoiceTypeFromDisplayId(uint32_t displayId) c
     // Look up display data
     auto itDisplay = displayDataMap_.find(displayId);
     if (itDisplay == displayDataMap_.end() || itDisplay->second.extraDisplayId == 0) {
+        LOG_INFO("Voice detection: displayId ", displayId, " -> GENERIC (no display data)");
         return audio::VoiceType::GENERIC;  // Not a humanoid or no extra data
     }
 
     // Look up humanoid extra data (race/sex info)
     auto itExtra = humanoidExtraMap_.find(itDisplay->second.extraDisplayId);
     if (itExtra == humanoidExtraMap_.end()) {
+        LOG_INFO("Voice detection: displayId ", displayId, " -> GENERIC (no humanoid extra data)");
         return audio::VoiceType::GENERIC;
     }
 
     uint8_t raceId = itExtra->second.raceId;
     uint8_t sexId = itExtra->second.sexId;
 
+    const char* raceName = "Unknown";
+    const char* sexName = (sexId == 0) ? "Male" : "Female";
+
     // Map (raceId, sexId) to VoiceType
     // Race IDs: 1=Human, 2=Orc, 3=Dwarf, 4=NightElf, 5=Undead, 6=Tauren, 7=Gnome, 8=Troll
     // Sex IDs: 0=Male, 1=Female
+    audio::VoiceType result;
     switch (raceId) {
-        case 1: return (sexId == 0) ? audio::VoiceType::HUMAN_MALE : audio::VoiceType::HUMAN_FEMALE;
-        case 2: return (sexId == 0) ? audio::VoiceType::ORC_MALE : audio::VoiceType::ORC_FEMALE;
-        case 3: return (sexId == 0) ? audio::VoiceType::DWARF_MALE : audio::VoiceType::GENERIC;  // No dwarf female voices loaded
-        case 4: return (sexId == 0) ? audio::VoiceType::NIGHTELF_MALE : audio::VoiceType::NIGHTELF_FEMALE;
-        case 5: return (sexId == 0) ? audio::VoiceType::UNDEAD_MALE : audio::VoiceType::UNDEAD_FEMALE;
-        case 6: return (sexId == 0) ? audio::VoiceType::TAUREN_MALE : audio::VoiceType::TAUREN_FEMALE;
-        case 7: return (sexId == 0) ? audio::VoiceType::GNOME_MALE : audio::VoiceType::GNOME_FEMALE;
-        case 8: return (sexId == 0) ? audio::VoiceType::TROLL_MALE : audio::VoiceType::TROLL_FEMALE;
-        default: return audio::VoiceType::GENERIC;
+        case 1: raceName = "Human"; result = (sexId == 0) ? audio::VoiceType::HUMAN_MALE : audio::VoiceType::HUMAN_FEMALE; break;
+        case 2: raceName = "Orc"; result = (sexId == 0) ? audio::VoiceType::ORC_MALE : audio::VoiceType::ORC_FEMALE; break;
+        case 3: raceName = "Dwarf"; result = (sexId == 0) ? audio::VoiceType::DWARF_MALE : audio::VoiceType::GENERIC; break;
+        case 4: raceName = "NightElf"; result = (sexId == 0) ? audio::VoiceType::NIGHTELF_MALE : audio::VoiceType::NIGHTELF_FEMALE; break;
+        case 5: raceName = "Undead"; result = (sexId == 0) ? audio::VoiceType::UNDEAD_MALE : audio::VoiceType::UNDEAD_FEMALE; break;
+        case 6: raceName = "Tauren"; result = (sexId == 0) ? audio::VoiceType::TAUREN_MALE : audio::VoiceType::TAUREN_FEMALE; break;
+        case 7: raceName = "Gnome"; result = (sexId == 0) ? audio::VoiceType::GNOME_MALE : audio::VoiceType::GNOME_FEMALE; break;
+        case 8: raceName = "Troll"; result = (sexId == 0) ? audio::VoiceType::TROLL_MALE : audio::VoiceType::TROLL_FEMALE; break;
+        default: result = audio::VoiceType::GENERIC; break;
     }
+
+    LOG_INFO("Voice detection: displayId ", displayId, " -> ", raceName, " ", sexName, " (race=", (int)raceId, ", sex=", (int)sexId, ")");
+    return result;
 }
 
 void Application::buildGameObjectDisplayLookups() {

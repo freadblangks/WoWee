@@ -4312,9 +4312,32 @@ void GameHandler::selectGossipOption(uint32_t optionId) {
 
 void GameHandler::selectGossipQuest(uint32_t questId) {
     if (state != WorldState::IN_WORLD || !socket || !gossipWindowOpen) return;
-    LOG_INFO("Selecting gossip quest: questId=", questId, " npcGuid=", currentGossip.npcGuid);
-    auto packet = QuestgiverQueryQuestPacket::build(currentGossip.npcGuid, questId);
-    socket->send(packet);
+
+    // Check if quest is in our quest log and completable
+    bool isInLog = false;
+    bool isCompletable = false;
+    for (const auto& quest : questLog_) {
+        if (quest.questId == questId) {
+            isInLog = true;
+            isCompletable = quest.complete;
+            break;
+        }
+    }
+
+    if (isInLog && isCompletable) {
+        // Quest is ready to turn in - request reward
+        LOG_INFO("Turning in quest: questId=", questId, " npcGuid=", currentGossip.npcGuid);
+        network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_QUESTGIVER_REQUEST_REWARD));
+        packet.writeUInt64(currentGossip.npcGuid);
+        packet.writeUInt32(questId);
+        socket->send(packet);
+    } else {
+        // New quest or not completable - query details
+        LOG_INFO("Querying quest details: questId=", questId, " npcGuid=", currentGossip.npcGuid);
+        auto packet = QuestgiverQueryQuestPacket::build(currentGossip.npcGuid, questId);
+        socket->send(packet);
+    }
+
     gossipWindowOpen = false;
 }
 

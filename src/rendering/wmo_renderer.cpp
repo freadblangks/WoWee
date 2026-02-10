@@ -1014,9 +1014,22 @@ void WMORenderer::render(const Camera& camera, const glm::mat4& view, const glm:
             loggedStormwindGroups = true;  // Only log once to avoid spam
         }
 
-        // Render groups (culling disabled for debugging)
+        // Render groups with floating LOD shell culling
+        glm::vec3 cameraPos = camera.getPosition();
         for (uint32_t gi : dl.visibleGroups) {
-            renderGroup(model.groups[gi], model, instance.modelMatrix, view, projection);
+            const auto& group = model.groups[gi];
+
+            // Hide floating LOD shell groups that are positioned too high
+            // Groups 92/93 are at worldZ 200-225 (floating shell)
+            // Normal cathedral groups are at worldZ 98-122
+            glm::vec3 groupCenter = (group.boundingBoxMin + group.boundingBoxMax) * 0.5f;
+            glm::vec4 worldCenter = instance.modelMatrix * glm::vec4(groupCenter, 1.0f);
+
+            if (worldCenter.z > 150.0f) {
+                continue;  // Skip groups positioned above Z=150 (floating LOD shell)
+            }
+
+            renderGroup(group, model, instance.modelMatrix, view, projection);
         }
 
         lastPortalCulledGroups += dl.portalCulled;

@@ -5,6 +5,93 @@
 
 namespace wowee { namespace ui {
 
+namespace {
+// Helper function to replace gender placeholders and pronouns
+std::string replaceGenderPlaceholders(const std::string& text, game::GameHandler& gameHandler) {
+    game::Gender gender = game::Gender::NONBINARY;
+    const auto* character = gameHandler.getActiveCharacter();
+    if (character) {
+        gender = character->gender;
+    }
+    game::Pronouns pronouns = game::Pronouns::forGender(gender);
+
+    std::string result = text;
+
+    auto trim = [](std::string& s) {
+        s.erase(0, s.find_first_not_of(" \t\n\r"));
+        s.erase(s.find_last_not_of(" \t\n\r") + 1);
+    };
+
+    // Replace pronoun placeholders
+    size_t pos = 0;
+    while ((pos = result.find('$', pos)) != std::string::npos) {
+        if (pos + 1 >= result.length()) break;
+
+        char code = result[pos + 1];
+        std::string replacement;
+
+        switch (code) {
+            case 'p': replacement = pronouns.subject; break;
+            case 'o': replacement = pronouns.object; break;
+            case 's': replacement = pronouns.possessive; break;
+            case 'S': replacement = pronouns.possessiveP; break;
+            case 'g': pos++; continue;
+            default: pos++; continue;
+        }
+
+        result.replace(pos, 2, replacement);
+        pos += replacement.length();
+    }
+
+    // Replace $g placeholders
+    pos = 0;
+    while ((pos = result.find("$g", pos)) != std::string::npos) {
+        size_t endPos = result.find(';', pos);
+        if (endPos == std::string::npos) break;
+
+        std::string placeholder = result.substr(pos + 2, endPos - pos - 2);
+
+        std::vector<std::string> parts;
+        size_t start = 0;
+        size_t colonPos;
+        while ((colonPos = placeholder.find(':', start)) != std::string::npos) {
+            std::string part = placeholder.substr(start, colonPos - start);
+            trim(part);
+            parts.push_back(part);
+            start = colonPos + 1;
+        }
+        std::string lastPart = placeholder.substr(start);
+        trim(lastPart);
+        parts.push_back(lastPart);
+
+        std::string replacement;
+        if (parts.size() >= 3) {
+            switch (gender) {
+                case game::Gender::MALE: replacement = parts[0]; break;
+                case game::Gender::FEMALE: replacement = parts[1]; break;
+                case game::Gender::NONBINARY: replacement = parts[2]; break;
+            }
+        } else if (parts.size() >= 2) {
+            switch (gender) {
+                case game::Gender::MALE: replacement = parts[0]; break;
+                case game::Gender::FEMALE: replacement = parts[1]; break;
+                case game::Gender::NONBINARY:
+                    replacement = parts[0].length() <= parts[1].length() ? parts[0] : parts[1];
+                    break;
+            }
+        } else {
+            pos = endPos + 1;
+            continue;
+        }
+
+        result.replace(pos, endPos - pos + 1, replacement);
+        pos += replacement.length();
+    }
+
+    return result;
+}
+} // anonymous namespace
+
 void QuestLogScreen::render(game::GameHandler& gameHandler) {
     // L key toggle (edge-triggered)
     bool uiWantsKeyboard = ImGui::GetIO().WantCaptureKeyboard;
@@ -64,7 +151,8 @@ void QuestLogScreen::render(game::GameHandler& gameHandler) {
 
                 if (!sel.objectives.empty()) {
                     ImGui::Separator();
-                    ImGui::TextWrapped("%s", sel.objectives.c_str());
+                    std::string processedObjectives = replaceGenderPlaceholders(sel.objectives, gameHandler);
+                    ImGui::TextWrapped("%s", processedObjectives.c_str());
                 }
 
                 // Abandon button

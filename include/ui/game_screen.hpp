@@ -80,10 +80,13 @@ private:
     bool pendingInvertMouse = false;
     int pendingUiOpacity = 65;
     bool pendingMinimapRotate = false;
+    bool pendingMinimapSquare = false;
 
     // UI element transparency (0.0 = fully transparent, 1.0 = fully opaque)
     float uiOpacity_ = 0.65f;
     bool minimapRotate_ = false;
+    bool minimapSquare_ = false;
+    bool minimapSettingsApplied_ = false;
 
     /**
      * Render player info window
@@ -193,6 +196,9 @@ private:
     GLuint actionBarDragIcon_ = 0;
 
     static std::string getSettingsPath();
+
+    // Gender placeholder replacement
+    std::string replaceGenderPlaceholders(const std::string& text, game::GameHandler& gameHandler);
 
     // Left-click targeting: distinguish click from camera drag
     glm::vec2 leftClickPressPos_ = glm::vec2(0.0f);

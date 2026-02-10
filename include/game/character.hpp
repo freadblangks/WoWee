@@ -45,8 +45,40 @@ enum class Class : uint8_t {
  */
 enum class Gender : uint8_t {
     MALE = 0,
-    FEMALE = 1
+    FEMALE = 1,
+    NONBINARY = 2
 };
+
+/**
+ * Pronoun set for text substitution
+ */
+struct Pronouns {
+    std::string subject;      // he/she/they
+    std::string object;       // him/her/them
+    std::string possessive;   // his/her/their
+    std::string possessiveP;  // his/hers/theirs
+
+    static Pronouns forGender(Gender gender) {
+        switch (gender) {
+            case Gender::MALE:
+                return {"he", "him", "his", "his"};
+            case Gender::FEMALE:
+                return {"she", "her", "her", "hers"};
+            case Gender::NONBINARY:
+                return {"they", "them", "their", "theirs"};
+            default:
+                return {"they", "them", "their", "theirs"};
+        }
+    }
+};
+
+/**
+ * Convert gender to server-compatible value (WoW 3.3.5a only supports binary genders)
+ * Nonbinary is mapped to MALE for server communication while preserving client-side identity
+ */
+inline Gender toServerGender(Gender gender) {
+    return (gender == Gender::FEMALE) ? Gender::FEMALE : Gender::MALE;
+}
 
 /**
  * Equipment item data

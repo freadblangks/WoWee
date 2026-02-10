@@ -5924,6 +5924,7 @@ void GameHandler::saveCharacterConfig() {
     }
 
     out << "character_guid=" << playerGuid << "\n";
+    out << "gender=" << static_cast<int>(ch->gender) << "\n";
     for (int i = 0; i < ACTION_BAR_SLOTS; i++) {
         out << "action_bar_" << i << "_type=" << static_cast<int>(actionBar[i].type) << "\n";
         out << "action_bar_" << i << "_id=" << actionBar[i].id << "\n";
@@ -5943,6 +5944,7 @@ void GameHandler::loadCharacterConfig() {
     std::array<int, ACTION_BAR_SLOTS> types{};
     std::array<uint32_t, ACTION_BAR_SLOTS> ids{};
     bool hasSlots = false;
+    int savedGender = -1;
 
     std::string line;
     while (std::getline(in, line)) {
@@ -5953,6 +5955,8 @@ void GameHandler::loadCharacterConfig() {
 
         if (key == "character_guid") {
             try { savedGuid = std::stoull(val); } catch (...) {}
+        } else if (key == "gender") {
+            try { savedGender = std::stoi(val); } catch (...) {}
         } else if (key.rfind("action_bar_", 0) == 0) {
             // Parse action_bar_N_type or action_bar_N_id
             size_t firstUnderscore = 11; // length of "action_bar_"
@@ -5978,6 +5982,17 @@ void GameHandler::loadCharacterConfig() {
     if (savedGuid != 0 && savedGuid != playerGuid) {
         LOG_WARNING("Character config guid mismatch for ", ch->name, ", using defaults");
         return;
+    }
+
+    // Apply saved gender (allows nonbinary to persist even though server only stores male/female)
+    if (savedGender >= 0 && savedGender <= 2) {
+        for (auto& character : characters) {
+            if (character.guid == playerGuid) {
+                character.gender = static_cast<Gender>(savedGender);
+                LOG_INFO("Applied saved gender: ", getGenderName(character.gender));
+                break;
+            }
+        }
     }
 
     if (hasSlots) {

@@ -257,10 +257,13 @@ const char* getAuthResultString(AuthResult result) {
 network::Packet CharCreatePacket::build(const CharCreateData& data) {
     network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_CHAR_CREATE));
 
+    // Convert nonbinary gender to server-compatible value (servers only support male/female)
+    Gender serverGender = toServerGender(data.gender);
+
     packet.writeString(data.name);  // null-terminated name
     packet.writeUInt8(static_cast<uint8_t>(data.race));
     packet.writeUInt8(static_cast<uint8_t>(data.characterClass));
-    packet.writeUInt8(static_cast<uint8_t>(data.gender));
+    packet.writeUInt8(static_cast<uint8_t>(serverGender));
     packet.writeUInt8(data.skin);
     packet.writeUInt8(data.face);
     packet.writeUInt8(data.hairStyle);
@@ -272,6 +275,7 @@ network::Packet CharCreatePacket::build(const CharCreateData& data) {
               " race=", static_cast<int>(data.race),
               " class=", static_cast<int>(data.characterClass),
               " gender=", static_cast<int>(data.gender),
+              " (server gender=", static_cast<int>(serverGender), ")",
               " skin=", static_cast<int>(data.skin),
               " face=", static_cast<int>(data.face),
               " hair=", static_cast<int>(data.hairStyle),

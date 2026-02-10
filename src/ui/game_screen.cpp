@@ -72,6 +72,18 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     float prevAlpha = ImGui::GetStyle().Alpha;
     ImGui::GetStyle().Alpha = uiOpacity_;
 
+    // Apply initial minimap settings when renderer becomes available
+    if (!minimapSettingsApplied_) {
+        auto* renderer = core::Application::getInstance().getRenderer();
+        if (renderer) {
+            if (auto* minimap = renderer->getMinimap()) {
+                minimap->setRotateWithCamera(minimapRotate_);
+                minimap->setSquareShape(minimapSquare_);
+                minimapSettingsApplied_ = true;
+            }
+        }
+    }
+
     // Process targeting input before UI windows
     processTargetInput(gameHandler);
 
@@ -3115,8 +3127,9 @@ void GameScreen::renderGossipWindow(game::GameHandler& gameHandler) {
         for (const auto& opt : gossip.options) {
             ImGui::PushID(static_cast<int>(opt.id));
             const char* icon = (opt.icon < 11) ? gossipIcons[opt.icon] : "[Option]";
+            std::string processedText = replaceGenderPlaceholders(opt.text, gameHandler);
             char label[256];
-            snprintf(label, sizeof(label), "%s %s", icon, opt.text.c_str());
+            snprintf(label, sizeof(label), "%s %s", icon, processedText.c_str());
             if (ImGui::Selectable(label)) {
                 gameHandler.selectGossipOption(opt.id);
             }
@@ -3191,10 +3204,12 @@ void GameScreen::renderQuestDetailsWindow(game::GameHandler& gameHandler) {
 
     bool open = true;
     const auto& quest = gameHandler.getQuestDetails();
-    if (ImGui::Begin(quest.title.c_str(), &open)) {
+    std::string processedTitle = replaceGenderPlaceholders(quest.title, gameHandler);
+    if (ImGui::Begin(processedTitle.c_str(), &open)) {
         // Quest description
         if (!quest.details.empty()) {
-            ImGui::TextWrapped("%s", quest.details.c_str());
+            std::string processedDetails = replaceGenderPlaceholders(quest.details, gameHandler);
+            ImGui::TextWrapped("%s", processedDetails.c_str());
         }
 
         // Objectives
@@ -3202,7 +3217,8 @@ void GameScreen::renderQuestDetailsWindow(game::GameHandler& gameHandler) {
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 1.0f), "Objectives:");
-            ImGui::TextWrapped("%s", quest.objectives.c_str());
+            std::string processedObjectives = replaceGenderPlaceholders(quest.objectives, gameHandler);
+            ImGui::TextWrapped("%s", processedObjectives.c_str());
         }
 
         // Rewards
@@ -3264,9 +3280,11 @@ void GameScreen::renderQuestRequestItemsWindow(game::GameHandler& gameHandler) {
 
     bool open = true;
     const auto& quest = gameHandler.getQuestRequestItems();
-    if (ImGui::Begin(quest.title.c_str(), &open, ImGuiWindowFlags_NoCollapse)) {
+    std::string processedTitle = replaceGenderPlaceholders(quest.title, gameHandler);
+    if (ImGui::Begin(processedTitle.c_str(), &open, ImGuiWindowFlags_NoCollapse)) {
         if (!quest.completionText.empty()) {
-            ImGui::TextWrapped("%s", quest.completionText.c_str());
+            std::string processedCompletionText = replaceGenderPlaceholders(quest.completionText, gameHandler);
+            ImGui::TextWrapped("%s", processedCompletionText.c_str());
         }
 
         // Required items
@@ -3335,9 +3353,11 @@ void GameScreen::renderQuestOfferRewardWindow(game::GameHandler& gameHandler) {
     const auto& quest = gameHandler.getQuestOfferReward();
     static int selectedChoice = -1;
 
-    if (ImGui::Begin(quest.title.c_str(), &open, ImGuiWindowFlags_NoCollapse)) {
+    std::string processedTitle = replaceGenderPlaceholders(quest.title, gameHandler);
+    if (ImGui::Begin(processedTitle.c_str(), &open, ImGuiWindowFlags_NoCollapse)) {
         if (!quest.rewardText.empty()) {
-            ImGui::TextWrapped("%s", quest.rewardText.c_str());
+            std::string processedRewardText = replaceGenderPlaceholders(quest.rewardText, gameHandler);
+            ImGui::TextWrapped("%s", processedRewardText.c_str());
         }
 
         // Choice rewards (pick one)
@@ -3771,6 +3791,7 @@ void GameScreen::renderEscapeMenu() {
             showEscapeSettingsNotice = false;
             showSettingsWindow = true;
             settingsInit = false;
+            showEscapeMenu = false;
         }
 
         ImGui::Spacing();
@@ -4095,9 +4116,11 @@ void GameScreen::renderSettingsWindow() {
         }
         pendingUiOpacity = static_cast<int>(uiOpacity_ * 100.0f + 0.5f);
         pendingMinimapRotate = minimapRotate_;
+        pendingMinimapSquare = minimapSquare_;
         if (renderer) {
             if (auto* minimap = renderer->getMinimap()) {
                 minimap->setRotateWithCamera(minimapRotate_);
+                minimap->setSquareShape(minimapSquare_);
             }
         }
         settingsInit = true;
@@ -4347,6 +4370,35 @@ void GameScreen::renderSettingsWindow() {
                     }
                     saveSettings();
                 }
+                if (ImGui::Checkbox("Square Minimap", &pendingMinimapSquare)) {
+                    minimapSquare_ = pendingMinimapSquare;
+                    if (renderer) {
+                        if (auto* minimap = renderer->getMinimap()) {
+                            minimap->setSquareShape(minimapSquare_);
+                        }
+                    }
+                    saveSettings();
+                }
+                // Zoom controls
+                ImGui::Text("Minimap Zoom:");
+                ImGui::SameLine();
+                if (ImGui::Button("  -  ")) {
+                    if (renderer) {
+                        if (auto* minimap = renderer->getMinimap()) {
+                            minimap->zoomOut();
+                            saveSettings();
+                        }
+                    }
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("  +  ")) {
+                    if (renderer) {
+                        if (auto* minimap = renderer->getMinimap()) {
+                            minimap->zoomIn();
+                            saveSettings();
+                        }
+                    }
+                }
 
                 ImGui::Spacing();
                 ImGui::Separator();
@@ -4357,8 +4409,10 @@ void GameScreen::renderSettingsWindow() {
                     pendingInvertMouse = kDefaultInvertMouse;
                     pendingUiOpacity = 65;
                     pendingMinimapRotate = false;
+                    pendingMinimapSquare = false;
                     uiOpacity_ = 0.65f;
                     minimapRotate_ = false;
+                    minimapSquare_ = false;
                     if (renderer) {
                         if (auto* cameraController = renderer->getCameraController()) {
                             cameraController->setMouseSensitivity(pendingMouseSensitivity);
@@ -4366,6 +4420,7 @@ void GameScreen::renderSettingsWindow() {
                         }
                         if (auto* minimap = renderer->getMinimap()) {
                             minimap->setRotateWithCamera(minimapRotate_);
+                            minimap->setSquareShape(minimapSquare_);
                         }
                     }
                     saveSettings();
@@ -4559,6 +4614,26 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
             ImVec2(sx - textSize.x * 0.5f, sy - textSize.y * 0.5f),
             IM_COL32(0, 0, 0, 255), marker);
     }
+
+    // Add zoom buttons at the bottom edge of the minimap
+    ImGui::SetNextWindowPos(ImVec2(centerX - 30, centerY + mapRadius - 30), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(60, 24), ImGuiCond_Always);
+    ImGuiWindowFlags zoomFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                  ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+                                  ImGuiWindowFlags_NoBackground;
+    if (ImGui::Begin("##MinimapZoom", nullptr, zoomFlags)) {
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(2, 0));
+        if (ImGui::SmallButton("-")) {
+            if (minimap) minimap->zoomOut();
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("+")) {
+            if (minimap) minimap->zoomIn();
+        }
+        ImGui::PopStyleVar(2);
+    }
+    ImGui::End();
 }
 
 std::string GameScreen::getSettingsPath() {
@@ -4573,6 +4648,120 @@ std::string GameScreen::getSettingsPath() {
     return dir + "/settings.cfg";
 }
 
+std::string GameScreen::replaceGenderPlaceholders(const std::string& text, game::GameHandler& gameHandler) {
+    // Get player gender and pronouns
+    game::Gender gender = game::Gender::NONBINARY;
+    const auto* character = gameHandler.getActiveCharacter();
+    if (character) {
+        gender = character->gender;
+    }
+    game::Pronouns pronouns = game::Pronouns::forGender(gender);
+
+    std::string result = text;
+
+    // Helper to trim whitespace
+    auto trim = [](std::string& s) {
+        s.erase(0, s.find_first_not_of(" \t\n\r"));
+        s.erase(s.find_last_not_of(" \t\n\r") + 1);
+    };
+
+    // Replace pronoun placeholders first (simpler, no complex parsing)
+    // $p = subject pronoun (he/she/they)
+    // $o = object pronoun (him/her/them)
+    // $s = possessive adjective (his/her/their)
+    // $S = possessive pronoun (his/hers/theirs)
+    size_t pos = 0;
+    while ((pos = result.find('$', pos)) != std::string::npos) {
+        if (pos + 1 >= result.length()) break;
+
+        char code = result[pos + 1];
+        std::string replacement;
+
+        switch (code) {
+            case 'p': replacement = pronouns.subject; break;
+            case 'o': replacement = pronouns.object; break;
+            case 's': replacement = pronouns.possessive; break;
+            case 'S': replacement = pronouns.possessiveP; break;
+            case 'g':
+                // Handle $g separately below
+                pos++;
+                continue;
+            default:
+                pos++;
+                continue;
+        }
+
+        // Replace the pronoun placeholder
+        result.replace(pos, 2, replacement);
+        pos += replacement.length();
+    }
+
+    // Find and replace all $g placeholders (gender-specific text)
+    // Format: $g<male>:<female>; or $g<male>:<female>:<nonbinary>;
+    pos = 0;
+    while ((pos = result.find("$g", pos)) != std::string::npos) {
+        size_t endPos = result.find(';', pos);
+        if (endPos == std::string::npos) break;
+
+        std::string placeholder = result.substr(pos + 2, endPos - pos - 2);
+
+        // Split by colons
+        std::vector<std::string> parts;
+        size_t start = 0;
+        size_t colonPos;
+        while ((colonPos = placeholder.find(':', start)) != std::string::npos) {
+            std::string part = placeholder.substr(start, colonPos - start);
+            trim(part);
+            parts.push_back(part);
+            start = colonPos + 1;
+        }
+        // Add the last part
+        std::string lastPart = placeholder.substr(start);
+        trim(lastPart);
+        parts.push_back(lastPart);
+
+        // Select appropriate text based on gender
+        std::string replacement;
+        if (parts.size() >= 3) {
+            // Three options: male, female, nonbinary
+            switch (gender) {
+                case game::Gender::MALE:
+                    replacement = parts[0];
+                    break;
+                case game::Gender::FEMALE:
+                    replacement = parts[1];
+                    break;
+                case game::Gender::NONBINARY:
+                    replacement = parts[2];
+                    break;
+            }
+        } else if (parts.size() >= 2) {
+            // Two options: male, female (use first for nonbinary)
+            switch (gender) {
+                case game::Gender::MALE:
+                    replacement = parts[0];
+                    break;
+                case game::Gender::FEMALE:
+                    replacement = parts[1];
+                    break;
+                case game::Gender::NONBINARY:
+                    // Default to gender-neutral: use the shorter/simpler option
+                    replacement = parts[0].length() <= parts[1].length() ? parts[0] : parts[1];
+                    break;
+            }
+        } else {
+            // Malformed placeholder
+            pos = endPos + 1;
+            continue;
+        }
+
+        result.replace(pos, endPos - pos + 1, replacement);
+        pos += replacement.length();
+    }
+
+    return result;
+}
+
 void GameScreen::saveSettings() {
     std::string path = getSettingsPath();
     std::filesystem::path dir = std::filesystem::path(path).parent_path();
@@ -4585,8 +4774,28 @@ void GameScreen::saveSettings() {
         return;
     }
 
+    // Interface
     out << "ui_opacity=" << pendingUiOpacity << "\n";
     out << "minimap_rotate=" << (pendingMinimapRotate ? 1 : 0) << "\n";
+    out << "minimap_square=" << (pendingMinimapSquare ? 1 : 0) << "\n";
+
+    // Audio
+    out << "master_volume=" << pendingMasterVolume << "\n";
+    out << "music_volume=" << pendingMusicVolume << "\n";
+    out << "ambient_volume=" << pendingAmbientVolume << "\n";
+    out << "ui_volume=" << pendingUiVolume << "\n";
+    out << "combat_volume=" << pendingCombatVolume << "\n";
+    out << "spell_volume=" << pendingSpellVolume << "\n";
+    out << "movement_volume=" << pendingMovementVolume << "\n";
+    out << "footstep_volume=" << pendingFootstepVolume << "\n";
+    out << "npc_voice_volume=" << pendingNpcVoiceVolume << "\n";
+    out << "mount_volume=" << pendingMountVolume << "\n";
+    out << "activity_volume=" << pendingActivityVolume << "\n";
+
+    // Controls
+    out << "mouse_sensitivity=" << pendingMouseSensitivity << "\n";
+    out << "invert_mouse=" << (pendingInvertMouse ? 1 : 0) << "\n";
+
     LOG_INFO("Settings saved to ", path);
 }
 
@@ -4602,21 +4811,39 @@ void GameScreen::loadSettings() {
         std::string key = line.substr(0, eq);
         std::string val = line.substr(eq + 1);
 
-        if (key == "ui_opacity") {
-            try {
+        try {
+            // Interface
+            if (key == "ui_opacity") {
                 int v = std::stoi(val);
                 if (v >= 20 && v <= 100) {
                     pendingUiOpacity = v;
                     uiOpacity_ = static_cast<float>(v) / 100.0f;
                 }
-            } catch (...) {}
-        } else if (key == "minimap_rotate") {
-            try {
+            } else if (key == "minimap_rotate") {
                 int v = std::stoi(val);
                 minimapRotate_ = (v != 0);
                 pendingMinimapRotate = minimapRotate_;
-            } catch (...) {}
-        }
+            } else if (key == "minimap_square") {
+                int v = std::stoi(val);
+                minimapSquare_ = (v != 0);
+                pendingMinimapSquare = minimapSquare_;
+            }
+            // Audio
+            else if (key == "master_volume") pendingMasterVolume = std::clamp(std::stoi(val), 0, 100);
+            else if (key == "music_volume") pendingMusicVolume = std::clamp(std::stoi(val), 0, 100);
+            else if (key == "ambient_volume") pendingAmbientVolume = std::clamp(std::stoi(val), 0, 100);
+            else if (key == "ui_volume") pendingUiVolume = std::clamp(std::stoi(val), 0, 100);
+            else if (key == "combat_volume") pendingCombatVolume = std::clamp(std::stoi(val), 0, 100);
+            else if (key == "spell_volume") pendingSpellVolume = std::clamp(std::stoi(val), 0, 100);
+            else if (key == "movement_volume") pendingMovementVolume = std::clamp(std::stoi(val), 0, 100);
+            else if (key == "footstep_volume") pendingFootstepVolume = std::clamp(std::stoi(val), 0, 100);
+            else if (key == "npc_voice_volume") pendingNpcVoiceVolume = std::clamp(std::stoi(val), 0, 100);
+            else if (key == "mount_volume") pendingMountVolume = std::clamp(std::stoi(val), 0, 100);
+            else if (key == "activity_volume") pendingActivityVolume = std::clamp(std::stoi(val), 0, 100);
+            // Controls
+            else if (key == "mouse_sensitivity") pendingMouseSensitivity = std::clamp(std::stof(val), 0.05f, 1.0f);
+            else if (key == "invert_mouse") pendingInvertMouse = (std::stoi(val) != 0);
+        } catch (...) {}
     }
     LOG_INFO("Settings loaded from ", path);
 }

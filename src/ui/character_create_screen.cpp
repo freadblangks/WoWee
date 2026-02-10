@@ -362,6 +362,8 @@ void CharacterCreateScreen::render(game::GameHandler& /*gameHandler*/) {
     ImGui::RadioButton("Male", &genderIndex, 0);
     ImGui::SameLine();
     ImGui::RadioButton("Female", &genderIndex, 1);
+    ImGui::SameLine();
+    ImGui::RadioButton("Nonbinary", &genderIndex, 2);
 
     ImGui::Spacing();
     ImGui::Separator();

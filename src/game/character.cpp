@@ -88,50 +88,54 @@ const char* getGenderName(Gender gender) {
     switch (gender) {
         case Gender::MALE:      return "Male";
         case Gender::FEMALE:    return "Female";
+        case Gender::NONBINARY: return "Nonbinary";
         default:                return "Unknown";
     }
 }
 
 std::string getPlayerModelPath(Race race, Gender gender) {
+    // For nonbinary, default to male model (can be extended later for model selection)
+    bool useFemale = (gender == Gender::FEMALE);
+
     switch (race) {
         case Race::HUMAN:
-            return gender == Gender::FEMALE
+            return useFemale
                 ? "Character\\Human\\Female\\HumanFemale.m2"
                 : "Character\\Human\\Male\\HumanMale.m2";
         case Race::ORC:
-            return gender == Gender::FEMALE
+            return useFemale
                 ? "Character\\Orc\\Female\\OrcFemale.m2"
                 : "Character\\Orc\\Male\\OrcMale.m2";
         case Race::DWARF:
-            return gender == Gender::FEMALE
+            return useFemale
                 ? "Character\\Dwarf\\Female\\DwarfFemale.m2"
                 : "Character\\Dwarf\\Male\\DwarfMale.m2";
         case Race::NIGHT_ELF:
-            return gender == Gender::FEMALE
+            return useFemale
                 ? "Character\\NightElf\\Female\\NightElfFemale.m2"
                 : "Character\\NightElf\\Male\\NightElfMale.m2";
         case Race::UNDEAD:
-            return gender == Gender::FEMALE
+            return useFemale
                 ? "Character\\Scourge\\Female\\ScourgeFemale.m2"
                 : "Character\\Scourge\\Male\\ScourgeMale.m2";
         case Race::TAUREN:
-            return gender == Gender::FEMALE
+            return useFemale
                 ? "Character\\Tauren\\Female\\TaurenFemale.m2"
                 : "Character\\Tauren\\Male\\TaurenMale.m2";
         case Race::GNOME:
-            return gender == Gender::FEMALE
+            return useFemale
                 ? "Character\\Gnome\\Female\\GnomeFemale.m2"
                 : "Character\\Gnome\\Male\\GnomeMale.m2";
         case Race::TROLL:
-            return gender == Gender::FEMALE
+            return useFemale
                 ? "Character\\Troll\\Female\\TrollFemale.m2"
                 : "Character\\Troll\\Male\\TrollMale.m2";
         case Race::BLOOD_ELF:
-            return gender == Gender::FEMALE
+            return useFemale
                 ? "Character\\BloodElf\\Female\\BloodElfFemale.m2"
                 : "Character\\BloodElf\\Male\\BloodElfMale.m2";
         case Race::DRAENEI:
-            return gender == Gender::FEMALE
+            return useFemale
                 ? "Character\\Draenei\\Female\\DraeneiFemale.m2"
                 : "Character\\Draenei\\Male\\DraeneiMale.m2";
         default:

@@ -143,6 +143,7 @@ bool Minimap::initialize(int size) {
         uniform float uRotation;
         uniform float uArrowRotation;
         uniform float uZoomRadius;
+        uniform bool uSquareShape;
 
         out vec4 FragColor;
 
@@ -168,7 +169,8 @@ bool Minimap::initialize(int size) {
         void main() {
             vec2 centered = TexCoord - 0.5;
             float dist = length(centered);
-            if (dist > 0.5) discard;
+            float maxDist = uSquareShape ? max(abs(centered.x), abs(centered.y)) : dist;
+            if (maxDist > 0.5) discard;
 
             // Rotate screen coords → composite UV offset
             // Composite: U increases east, V increases south
@@ -186,9 +188,9 @@ bool Minimap::initialize(int size) {
             vec2 uv = uPlayerUV + offset;
             vec3 color = texture(uComposite, uv).rgb;
 
-            // Thin dark border at circle edge
-            if (dist > 0.49) {
-                color = mix(color, vec3(0.08), smoothstep(0.49, 0.5, dist));
+            // Thin dark border at edge
+            if (maxDist > 0.49) {
+                color = mix(color, vec3(0.08), smoothstep(0.49, 0.5, maxDist));
             }
 
             // Player arrow at center (always points up = forward)
@@ -509,6 +511,7 @@ void Minimap::renderQuad(const Camera& playerCamera, const glm::vec3& centerWorl
         arrowRotation = std::atan2(-fwd.x, fwd.y);
     }
     quadShader->setUniform("uArrowRotation", arrowRotation);
+    quadShader->setUniform("uSquareShape", squareShape);
 
     quadShader->setUniform("uComposite", 0);
     glActiveTexture(GL_TEXTURE0);

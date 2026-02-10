@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <algorithm>
 
 namespace wowee {
 namespace pipeline { class AssetManager; }
@@ -35,6 +36,12 @@ public:
     void setViewRadius(float radius) { viewRadius = radius; }
     void setRotateWithCamera(bool rotate) { rotateWithCamera = rotate; }
     bool isRotateWithCamera() const { return rotateWithCamera; }
+
+    void setSquareShape(bool square) { squareShape = square; }
+    bool isSquareShape() const { return squareShape; }
+
+    void zoomIn() { viewRadius = std::max(100.0f, viewRadius - 50.0f); }
+    void zoomOut() { viewRadius = std::min(800.0f, viewRadius + 50.0f); }
 
     // Public accessors for WorldMap
     GLuint getOrLoadTileTexture(int tileX, int tileY);
@@ -79,6 +86,7 @@ private:
     float viewRadius = 400.0f;  // world units visible in minimap radius
     bool enabled = true;
     bool rotateWithCamera = false;
+    bool squareShape = false;
 
     // Throttling
     float updateIntervalSec = 0.25f;

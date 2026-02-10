@@ -2729,6 +2729,65 @@ network::Packet TrainerBuySpellPacket::build(uint64_t trainerGuid, uint32_t spel
 }
 
 // ============================================================
+// Talents
+// ============================================================
+
+bool TalentsInfoParser::parse(network::Packet& packet, TalentsInfoData& data) {
+    // WotLK 3.3.5a SMSG_TALENTS_INFO format:
+    // uint8 talentSpec (0 or 1 for dual-spec)
+    // uint8 unspentPoints
+    // uint8 talentCount
+    // for each talent:
+    //   uint32 talentId
+    //   uint8 currentRank (0-5)
+
+    data = TalentsInfoData{};
+
+    if (packet.getSize() - packet.getReadPos() < 3) {
+        LOG_ERROR("TalentsInfoParser: packet too short");
+        return false;
+    }
+
+    data.talentSpec = packet.readUInt8();
+    data.unspentPoints = packet.readUInt8();
+    uint8_t talentCount = packet.readUInt8();
+
+    LOG_INFO("SMSG_TALENTS_INFO: spec=", (int)data.talentSpec,
+             " unspentPoints=", (int)data.unspentPoints,
+             " talentCount=", (int)talentCount);
+
+    data.talents.reserve(talentCount);
+    for (uint8_t i = 0; i < talentCount; ++i) {
+        if (packet.getSize() - packet.getReadPos() < 5) {
+            LOG_WARNING("TalentsInfoParser: truncated talent data at index ", (int)i);
+            break;
+        }
+
+        TalentInfo talent;
+        talent.talentId = packet.readUInt32();
+        talent.currentRank = packet.readUInt8();
+        data.talents.push_back(talent);
+
+        LOG_INFO("  Talent: id=", talent.talentId, " rank=", (int)talent.currentRank);
+    }
+
+    return true;
+}
+
+network::Packet LearnTalentPacket::build(uint32_t talentId, uint32_t requestedRank) {
+    network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_LEARN_TALENT));
+    packet.writeUInt32(talentId);
+    packet.writeUInt32(requestedRank);
+    return packet;
+}
+
+network::Packet TalentWipeConfirmPacket::build(bool accept) {
+    network::Packet packet(static_cast<uint16_t>(Opcode::MSG_TALENT_WIPE_CONFIRM));
+    packet.writeUInt32(accept ? 1 : 0);
+    return packet;
+}
+
+// ============================================================
 // Death/Respawn
 // ============================================================
 

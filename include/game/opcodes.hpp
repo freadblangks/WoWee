@@ -168,6 +168,11 @@ enum class Opcode : uint16_t {
     SMSG_SET_FLAT_SPELL_MODIFIER     = 0x266,
     SMSG_SET_PCT_SPELL_MODIFIER      = 0x267,
 
+    // ---- Talents ----
+    SMSG_TALENTS_INFO                = 0x4C0,
+    CMSG_LEARN_TALENT                = 0x251,
+    MSG_TALENT_WIPE_CONFIRM          = 0x2AB,
+
     // ---- Phase 4: Group/Party ----
     CMSG_GROUP_INVITE                = 0x06E,
     SMSG_GROUP_INVITE                = 0x06F,

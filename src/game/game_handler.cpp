@@ -589,6 +589,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
             handleUnlearnSpells(packet);
             break;
 
+        // ---- Talents ----
+        case Opcode::SMSG_TALENTS_INFO:
+            handleTalentsInfo(packet);
+            break;
+
         // ---- Phase 4: Group ----
         case Opcode::SMSG_GROUP_INVITE:
             handleGroupInvite(packet);
@@ -4458,6 +4463,96 @@ void GameHandler::handleUnlearnSpells(network::Packet& packet) {
 }
 
 // ============================================================
+// Talents
+// ============================================================
+
+void GameHandler::handleTalentsInfo(network::Packet& packet) {
+    TalentsInfoData data;
+    if (!TalentsInfoParser::parse(packet, data)) return;
+
+    // Ensure talent DBCs are loaded
+    loadTalentDbc();
+
+    // Validate spec number
+    if (data.talentSpec > 1) {
+        LOG_WARNING("Invalid talent spec: ", (int)data.talentSpec);
+        return;
+    }
+
+    // Store talents for this spec
+    unspentTalentPoints_[data.talentSpec] = data.unspentPoints;
+
+    // Clear and rebuild learned talents map for this spec
+    learnedTalents_[data.talentSpec].clear();
+    for (const auto& talent : data.talents) {
+        if (talent.currentRank > 0) {
+            learnedTalents_[data.talentSpec][talent.talentId] = talent.currentRank;
+        }
+    }
+
+    LOG_INFO("Talents loaded: spec=", (int)data.talentSpec,
+             " unspent=", (int)unspentTalentPoints_[data.talentSpec],
+             " learned=", learnedTalents_[data.talentSpec].size());
+
+    // If this is the first spec received, set it as active
+    static bool firstSpecReceived = false;
+    if (!firstSpecReceived) {
+        firstSpecReceived = true;
+        activeTalentSpec_ = data.talentSpec;
+
+        // Show message to player about active spec
+        if (unspentTalentPoints_[data.talentSpec] > 0) {
+            std::string msg = "You have " + std::to_string(unspentTalentPoints_[data.talentSpec]) +
+                             " unspent talent point";
+            if (unspentTalentPoints_[data.talentSpec] > 1) msg += "s";
+            msg += " in spec " + std::to_string(data.talentSpec + 1);
+            addSystemChatMessage(msg);
+        }
+    }
+}
+
+void GameHandler::learnTalent(uint32_t talentId, uint32_t requestedRank) {
+    if (state != WorldState::IN_WORLD || !socket) {
+        LOG_WARNING("learnTalent: Not in world or no socket connection");
+        return;
+    }
+
+    LOG_INFO("Requesting to learn talent: id=", talentId, " rank=", requestedRank);
+
+    auto packet = LearnTalentPacket::build(talentId, requestedRank);
+    socket->send(packet);
+}
+
+void GameHandler::switchTalentSpec(uint8_t newSpec) {
+    if (newSpec > 1) {
+        LOG_WARNING("Invalid talent spec: ", (int)newSpec);
+        return;
+    }
+
+    if (newSpec == activeTalentSpec_) {
+        LOG_INFO("Already on spec ", (int)newSpec);
+        return;
+    }
+
+    // For now, just switch locally. In a real implementation, we'd send
+    // MSG_TALENT_WIPE_CONFIRM to the server to trigger a spec switch.
+    // The server would respond with new SMSG_TALENTS_INFO for the new spec.
+    activeTalentSpec_ = newSpec;
+
+    LOG_INFO("Switched to talent spec ", (int)newSpec,
+             " (unspent=", (int)unspentTalentPoints_[newSpec],
+             ", learned=", learnedTalents_[newSpec].size(), ")");
+
+    std::string msg = "Switched to spec " + std::to_string(newSpec + 1);
+    if (unspentTalentPoints_[newSpec] > 0) {
+        msg += " (" + std::to_string(unspentTalentPoints_[newSpec]) + " unspent point";
+        if (unspentTalentPoints_[newSpec] > 1) msg += "s";
+        msg += ")";
+    }
+    addSystemChatMessage(msg);
+}
+
+// ============================================================
 // Phase 4: Group/Party
 // ============================================================
 
@@ -5193,6 +5288,99 @@ void GameHandler::categorizeTrainerSpells() {
     }
 
     LOG_INFO("Trainer: Categorized into ", trainerTabs_.size(), " tabs");
+}
+
+void GameHandler::loadTalentDbc() {
+    if (talentDbcLoaded_) return;
+    talentDbcLoaded_ = true;
+
+    auto* am = core::Application::getInstance().getAssetManager();
+    if (!am || !am->isInitialized()) return;
+
+    // Load Talent.dbc
+    auto talentDbc = am->loadDBC("Talent.dbc");
+    if (talentDbc && talentDbc->isLoaded()) {
+        // Talent.dbc structure (WoW 3.3.5a):
+        // 0: TalentID
+        // 1: TalentTabID
+        // 2: Row (tier)
+        // 3: Column
+        // 4-8: RankID[0-4] (spell IDs for ranks 1-5)
+        // 9-11: PrereqTalent[0-2]
+        // 12-14: PrereqRank[0-2]
+        // (other fields less relevant for basic functionality)
+
+        uint32_t count = talentDbc->getRecordCount();
+        for (uint32_t i = 0; i < count; ++i) {
+            TalentEntry entry;
+            entry.talentId = talentDbc->getUInt32(i, 0);
+            if (entry.talentId == 0) continue;
+
+            entry.tabId = talentDbc->getUInt32(i, 1);
+            entry.row = static_cast<uint8_t>(talentDbc->getUInt32(i, 2));
+            entry.column = static_cast<uint8_t>(talentDbc->getUInt32(i, 3));
+
+            // Rank spells (1-5 ranks)
+            for (int r = 0; r < 5; ++r) {
+                entry.rankSpells[r] = talentDbc->getUInt32(i, 4 + r);
+            }
+
+            // Prerequisites
+            for (int p = 0; p < 3; ++p) {
+                entry.prereqTalent[p] = talentDbc->getUInt32(i, 9 + p);
+                entry.prereqRank[p] = static_cast<uint8_t>(talentDbc->getUInt32(i, 12 + p));
+            }
+
+            // Calculate max rank
+            entry.maxRank = 0;
+            for (int r = 0; r < 5; ++r) {
+                if (entry.rankSpells[r] != 0) {
+                    entry.maxRank = r + 1;
+                }
+            }
+
+            talentCache_[entry.talentId] = entry;
+        }
+        LOG_INFO("Loaded ", talentCache_.size(), " talents from Talent.dbc");
+    } else {
+        LOG_WARNING("Could not load Talent.dbc");
+    }
+
+    // Load TalentTab.dbc
+    auto tabDbc = am->loadDBC("TalentTab.dbc");
+    if (tabDbc && tabDbc->isLoaded()) {
+        // TalentTab.dbc structure (WoW 3.3.5a):
+        // 0: TalentTabID
+        // 1-17: Name (16 localized strings + flags = 17 fields)
+        // 18: SpellIconID
+        // 19: RaceMask
+        // 20: ClassMask
+        // 21: PetTalentMask
+        // 22: OrderIndex
+        // 23-39: BackgroundFile (16 localized strings + flags = 17 fields)
+
+        uint32_t count = tabDbc->getRecordCount();
+        for (uint32_t i = 0; i < count; ++i) {
+            TalentTabEntry entry;
+            entry.tabId = tabDbc->getUInt32(i, 0);
+            if (entry.tabId == 0) continue;
+
+            entry.name = tabDbc->getString(i, 1);
+            entry.classMask = tabDbc->getUInt32(i, 20);
+            entry.orderIndex = static_cast<uint8_t>(tabDbc->getUInt32(i, 22));
+            entry.backgroundFile = tabDbc->getString(i, 23);
+
+            talentTabCache_[entry.tabId] = entry;
+
+            // Log first few tabs to debug class mask issue
+            if (talentTabCache_.size() <= 10) {
+                LOG_INFO("  Tab ", entry.tabId, ": ", entry.name, " (classMask=0x", std::hex, entry.classMask, std::dec, ")");
+            }
+        }
+        LOG_INFO("Loaded ", talentTabCache_.size(), " talent tabs from TalentTab.dbc");
+    } else {
+        LOG_WARNING("Could not load TalentTab.dbc");
+    }
 }
 
 static const std::string EMPTY_STRING;

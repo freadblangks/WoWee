@@ -78,6 +78,26 @@ using WorldConnectFailureCallback = std::function<void(const std::string& reason
  */
 class GameHandler {
 public:
+    // Talent data structures (must be public for use in templates)
+    struct TalentEntry {
+        uint32_t talentId = 0;
+        uint32_t tabId = 0;           // Which talent tree
+        uint8_t row = 0;              // Tier (0-10)
+        uint8_t column = 0;           // Column (0-3)
+        uint32_t rankSpells[5] = {};  // Spell IDs for ranks 1-5
+        uint32_t prereqTalent[3] = {}; // Required talents
+        uint8_t prereqRank[3] = {};   // Required ranks
+        uint8_t maxRank = 0;          // Number of ranks (1-5)
+    };
+
+    struct TalentTabEntry {
+        uint32_t tabId = 0;
+        std::string name;
+        uint32_t classMask = 0;       // Which classes can use this tab
+        uint8_t orderIndex = 0;       // Display order (0-2)
+        std::string backgroundFile;   // Texture path
+    };
+
     GameHandler();
     ~GameHandler();
 
@@ -327,6 +347,35 @@ public:
     float getCastProgress() const { return castTimeTotal > 0 ? (castTimeTotal - castTimeRemaining) / castTimeTotal : 0.0f; }
     float getCastTimeRemaining() const { return castTimeRemaining; }
 
+    // Talents
+    uint8_t getActiveTalentSpec() const { return activeTalentSpec_; }
+    uint8_t getUnspentTalentPoints() const { return unspentTalentPoints_[activeTalentSpec_]; }
+    uint8_t getUnspentTalentPoints(uint8_t spec) const { return spec < 2 ? unspentTalentPoints_[spec] : 0; }
+    const std::unordered_map<uint32_t, uint8_t>& getLearnedTalents() const { return learnedTalents_[activeTalentSpec_]; }
+    const std::unordered_map<uint32_t, uint8_t>& getLearnedTalents(uint8_t spec) const {
+        static std::unordered_map<uint32_t, uint8_t> empty;
+        return spec < 2 ? learnedTalents_[spec] : empty;
+    }
+    uint8_t getTalentRank(uint32_t talentId) const {
+        auto it = learnedTalents_[activeTalentSpec_].find(talentId);
+        return (it != learnedTalents_[activeTalentSpec_].end()) ? it->second : 0;
+    }
+    void learnTalent(uint32_t talentId, uint32_t requestedRank);
+    void switchTalentSpec(uint8_t newSpec);
+
+    // Talent DBC access
+    const TalentEntry* getTalentEntry(uint32_t talentId) const {
+        auto it = talentCache_.find(talentId);
+        return (it != talentCache_.end()) ? &it->second : nullptr;
+    }
+    const TalentTabEntry* getTalentTabEntry(uint32_t tabId) const {
+        auto it = talentTabCache_.find(tabId);
+        return (it != talentTabCache_.end()) ? &it->second : nullptr;
+    }
+    const std::unordered_map<uint32_t, TalentEntry>& getAllTalents() const { return talentCache_; }
+    const std::unordered_map<uint32_t, TalentTabEntry>& getAllTalentTabs() const { return talentTabCache_; }
+    void loadTalentDbc();
+
     // Action bar
     static constexpr int ACTION_BAR_SLOTS = 12;
     std::array<ActionBarSlot, ACTION_BAR_SLOTS>& getActionBar() { return actionBar; }
@@ -436,6 +485,10 @@ public:
 
     // Player GUID
     uint64_t getPlayerGuid() const { return playerGuid; }
+    uint8_t getPlayerClass() const {
+        const Character* ch = getActiveCharacter();
+        return ch ? static_cast<uint8_t>(ch->characterClass) : 0;
+    }
     void setPlayerGuid(uint64_t guid) { playerGuid = guid; }
 
     // Player death state
@@ -703,6 +756,9 @@ private:
     void handleRemovedSpell(network::Packet& packet);
     void handleUnlearnSpells(network::Packet& packet);
 
+    // ---- Talent handlers ----
+    void handleTalentsInfo(network::Packet& packet);
+
     // ---- Phase 4 handlers ----
     void handleGroupInvite(network::Packet& packet);
     void handleGroupDecline(network::Packet& packet);
@@ -918,6 +974,14 @@ private:
     bool casting = false;
     uint32_t currentCastSpellId = 0;
     float castTimeRemaining = 0.0f;
+
+    // Talents (dual-spec support)
+    uint8_t activeTalentSpec_ = 0;                              // Currently active spec (0 or 1)
+    uint8_t unspentTalentPoints_[2] = {0, 0};                   // Unspent points per spec
+    std::unordered_map<uint32_t, uint8_t> learnedTalents_[2];  // Learned talents per spec
+    std::unordered_map<uint32_t, TalentEntry> talentCache_;      // talentId -> entry
+    std::unordered_map<uint32_t, TalentTabEntry> talentTabCache_; // tabId -> entry
+    bool talentDbcLoaded_ = false;
     float castTimeTotal = 0.0f;
     std::array<ActionBarSlot, 12> actionBar{};
     std::vector<AuraSlot> playerAuras;

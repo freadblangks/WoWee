@@ -145,6 +145,7 @@ private:
 
     // ---- New UI renders ----
     void renderActionBar(game::GameHandler& gameHandler);
+    void renderBagBar(game::GameHandler& gameHandler);
     void renderXpBar(game::GameHandler& gameHandler);
     void renderCastBar(game::GameHandler& gameHandler);
     void renderCombatText(game::GameHandler& gameHandler);
@@ -194,6 +195,10 @@ private:
     // Action bar drag state (-1 = not dragging)
     int actionBarDragSlot_ = -1;
     GLuint actionBarDragIcon_ = 0;
+
+    // Bag bar textures
+    GLuint backpackIconTexture_ = 0;
+    GLuint emptyBagSlotTexture_ = 0;
 
     static std::string getSettingsPath();
 

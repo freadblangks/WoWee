@@ -1754,6 +1754,43 @@ public:
 };
 
 // ============================================================
+// Talents
+// ============================================================
+
+/** Talent info for a single talent */
+struct TalentInfo {
+    uint32_t talentId = 0;      // Talent.dbc ID
+    uint8_t currentRank = 0;    // 0-5 (0 = not learned)
+};
+
+/** SMSG_TALENTS_INFO data */
+struct TalentsInfoData {
+    uint8_t talentSpec = 0;           // Active spec (0 or 1 for dual-spec)
+    uint8_t unspentPoints = 0;        // Talent points available
+    std::vector<TalentInfo> talents;  // Learned talents
+
+    bool isValid() const { return true; }
+};
+
+/** SMSG_TALENTS_INFO parser */
+class TalentsInfoParser {
+public:
+    static bool parse(network::Packet& packet, TalentsInfoData& data);
+};
+
+/** CMSG_LEARN_TALENT packet builder */
+class LearnTalentPacket {
+public:
+    static network::Packet build(uint32_t talentId, uint32_t requestedRank);
+};
+
+/** MSG_TALENT_WIPE_CONFIRM packet builder */
+class TalentWipeConfirmPacket {
+public:
+    static network::Packet build(bool accept);
+};
+
+// ============================================================
 // Taxi / Flight Paths
 // ============================================================
 

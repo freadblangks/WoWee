@@ -174,4 +174,8 @@ This project does not include any Blizzard Entertainment proprietary data, asset
 
 ## Known Issues
 
-- Stormwind Mage Quarter: around the Moonwell area, water is currently overflowing into nearby geometry and should be constrained to the proper liquid volume.
+### Water Rendering
+- **Stormwind Canal Overflow**: Canal water surfaces extend spatially beyond their intended boundaries, causing water to appear in tunnels, buildings, and the park. This is due to oversized water mesh extents in the WoW data files.
+  - **Current Workaround**: Water heights are lowered by 1 unit in Stormwind (tiles 28-50, 28-52) for surfaces above 94 units, with a 20-unit exclusion zone around the moonwell (-8755.9, 1108.9, 96.1). This hides most problem water while keeping canals and the moonwell functional.
+  - **Limitation**: Some park water may still be visible. The workaround uses hardcoded coordinates and height thresholds rather than fixing the root cause.
+  - **Proper Fix**: Would require trimming water surface meshes to actual boundaries in ADT/WMO data, or implementing spatial clipping at render time.

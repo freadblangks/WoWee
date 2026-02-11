@@ -128,6 +128,19 @@ void MountSoundManager::loadMountSounds() {
         }
     }
 
+    // Ground mount idle ambient (snorts and whinnies only)
+    std::vector<std::string> horseIdlePaths = {
+        "Sound\\Creature\\Horse\\mHorseStand3A.wav",  // Snort
+        "Sound\\Creature\\Horse\\mHorseAggroA.wav",   // Whinny
+    };
+
+    for (const auto& path : horseIdlePaths) {
+        MountSample sample;
+        if (loadSound(path, sample)) {
+            horseIdleSounds_.push_back(std::move(sample));
+        }
+    }
+
     if (!wingFlapSounds_.empty()) {
         LOG_INFO("Loaded ", wingFlapSounds_.size(), " wing flap sounds");
     }
@@ -145,6 +158,9 @@ void MountSoundManager::loadMountSounds() {
     }
     if (!horseLandSounds_.empty()) {
         LOG_INFO("Loaded ", horseLandSounds_.size(), " horse land sounds");
+    }
+    if (!horseIdleSounds_.empty()) {
+        LOG_INFO("Loaded ", horseIdleSounds_.size(), " horse idle sounds (snorts/whinnies)");
     }
 }
 
@@ -305,22 +321,16 @@ void MountSoundManager::playLandSound() {
 void MountSoundManager::playIdleSound() {
     if (!mounted_ || moving_) return;
 
-    // Ambient idle sounds (snort, breath, soft neigh)
-    if (currentMountType_ == MountType::GROUND && !horseBreathSounds_.empty()) {
+    // Ambient idle sounds (snorts and whinnies only for ground mounts)
+    if (currentMountType_ == MountType::GROUND && !horseIdleSounds_.empty()) {
         static std::mt19937 rng(std::random_device{}());
-        std::uniform_int_distribution<size_t> dist(0, horseBreathSounds_.size() - 1);
-        const auto& sample = horseBreathSounds_[dist(rng)];
+        std::uniform_int_distribution<size_t> dist(0, horseIdleSounds_.size() - 1);
+        const auto& sample = horseIdleSounds_[dist(rng)];
         if (!sample.data.empty()) {
-            AudioEngine::instance().playSound2D(sample.data, 0.3f * volumeScale_, 0.95f);
-        }
-    } else if (currentMountType_ == MountType::FLYING && !wingIdleSounds_.empty()) {
-        static std::mt19937 rng(std::random_device{}());
-        std::uniform_int_distribution<size_t> dist(0, wingIdleSounds_.size() - 1);
-        const auto& sample = wingIdleSounds_[dist(rng)];
-        if (!sample.data.empty()) {
-            AudioEngine::instance().playSound2D(sample.data, 0.25f * volumeScale_, 1.0f);
+            AudioEngine::instance().playSound2D(sample.data, 0.35f * volumeScale_, 0.95f);
         }
     }
+    // No idle sounds for flying mounts (wing sounds were too aggressive)
 }
 
 MountType MountSoundManager::detectMountType(uint32_t creatureDisplayId) const {

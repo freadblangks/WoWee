@@ -84,6 +84,7 @@ private:
     std::vector<MountSample> horseMoveSounds_;
     std::vector<MountSample> horseJumpSounds_;   // Jump effort sounds
     std::vector<MountSample> horseLandSounds_;   // Landing thud sounds
+    std::vector<MountSample> horseIdleSounds_;   // Snorts and whinnies for idle
 
     // Sound state tracking
     bool playingMovementSound_ = false;

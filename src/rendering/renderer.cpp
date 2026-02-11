@@ -1102,19 +1102,19 @@ void Renderer::updateCharacterAnimation() {
                 mountActiveFidget_ = 0;  // Cancel any active fidget
             }
 
-            // Idle ambient sounds: DISABLED for now (too frequent/annoying)
-            // if (!moving && mountSoundManager) {
-            //     mountIdleSoundTimer_ += lastDeltaTime_;
-            //     static float nextIdleSoundTime = 8.0f + (rand() % 8);  // 8-15 seconds
-            //
-            //     if (mountIdleSoundTimer_ >= nextIdleSoundTime) {
-            //         mountSoundManager->playIdleSound();
-            //         mountIdleSoundTimer_ = 0.0f;
-            //         nextIdleSoundTime = 8.0f + (rand() % 8);  // Randomize next sound time
-            //     }
-            // } else if (moving) {
-            //     mountIdleSoundTimer_ = 0.0f;  // Reset timer when moving
-            // }
+            // Idle ambient sounds: snorts and whinnies only, less frequent
+            if (!moving && mountSoundManager) {
+                mountIdleSoundTimer_ += lastDeltaTime_;
+                static float nextIdleSoundTime = 20.0f + (rand() % 21);  // 20-40 seconds
+
+                if (mountIdleSoundTimer_ >= nextIdleSoundTime) {
+                    mountSoundManager->playIdleSound();
+                    mountIdleSoundTimer_ = 0.0f;
+                    nextIdleSoundTime = 20.0f + (rand() % 21);  // Randomize next sound time
+                }
+            } else if (moving) {
+                mountIdleSoundTimer_ = 0.0f;  // Reset timer when moving
+            }
 
             // Only update animation if it changed and we're not in an action sequence or playing a fidget
             if (mountAction_ == MountAction::None && mountActiveFidget_ == 0 && (!haveMountState || curMountAnim != mountAnimId)) {

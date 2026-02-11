@@ -1089,8 +1089,15 @@ void Renderer::updateCharacterAnimation() {
                 }
             }
 
-            // Check if active fidget has completed
-            if (mountActiveFidget_ != 0) {
+            // Cancel active fidget immediately if movement starts
+            if (moving && mountActiveFidget_ != 0) {
+                mountActiveFidget_ = 0;
+                // Force play run animation to stop fidget immediately
+                characterRenderer->playAnimation(mountInstanceId_, mountAnimId, true);
+            }
+
+            // Check if active fidget has completed (only when not moving)
+            if (!moving && mountActiveFidget_ != 0) {
                 uint32_t curAnim = 0;
                 float curTime = 0.0f, curDur = 0.0f;
                 if (characterRenderer->getAnimationState(mountInstanceId_, curAnim, curTime, curDur)) {
@@ -1120,9 +1127,9 @@ void Renderer::updateCharacterAnimation() {
 
                     LOG_INFO("Mount idle fidget: playing anim ", fidgetAnim);
                 }
-            } else if (moving) {
+            }
+            if (moving) {
                 mountIdleFidgetTimer_ = 0.0f;  // Reset timer when moving
-                mountActiveFidget_ = 0;  // Cancel any active fidget
             }
 
             // Idle ambient sounds: snorts and whinnies only, infrequent

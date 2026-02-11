@@ -2688,9 +2688,10 @@ uint32_t M2Renderer::getTotalTriangleCount() const {
     return total;
 }
 
-std::optional<float> M2Renderer::getFloorHeight(float glX, float glY, float glZ) const {
+std::optional<float> M2Renderer::getFloorHeight(float glX, float glY, float glZ, float* outNormalZ) const {
     QueryTimer timer(&queryTimeMs, &queryCallCount);
     std::optional<float> bestFloor;
+    float bestNormalZ = 1.0f;  // Default to flat
 
     glm::vec3 queryMin(glX - 2.0f, glY - 2.0f, glZ - 6.0f);
     glm::vec3 queryMax(glX + 2.0f, glY + 2.0f, glZ + 8.0f);
@@ -2745,12 +2746,13 @@ std::optional<float> M2Renderer::getFloorHeight(float glX, float glY, float glZ)
                 float hitZ = rayOrigin.z - tHit;
 
                 // Walkable normal check (world space)
+                glm::vec3 worldN(0.0f, 0.0f, 1.0f);  // Default to flat
                 glm::vec3 localN = glm::cross(v1 - v0, v2 - v0);
                 float nLen = glm::length(localN);
                 if (nLen > 0.001f) {
                     localN /= nLen;
                     if (localN.z < 0.0f) localN = -localN;
-                    glm::vec3 worldN = glm::normalize(
+                    worldN = glm::normalize(
                         glm::vec3(instance.modelMatrix * glm::vec4(localN, 0.0f)));
                     if (std::abs(worldN.z) < 0.35f) continue; // too steep (~70° max slope)
                 }
@@ -2758,6 +2760,7 @@ std::optional<float> M2Renderer::getFloorHeight(float glX, float glY, float glZ)
                 if (hitZ <= localPos.z + 3.0f && hitZ > bestHitZ) {
                     bestHitZ = hitZ;
                     hitAny = true;
+                    bestNormalZ = std::abs(worldN.z);  // Store normal for output
                 }
             }
 
@@ -2820,6 +2823,11 @@ std::optional<float> M2Renderer::getFloorHeight(float glX, float glY, float glZ)
         if (!bestFloor || worldTop.z > *bestFloor) {
             bestFloor = worldTop.z;
         }
+    }
+
+    // Output surface normal if requested
+    if (outNormalZ) {
+        *outNormalZ = bestNormalZ;
     }
 
     return bestFloor;

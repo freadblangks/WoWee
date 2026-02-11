@@ -286,7 +286,7 @@ public:
      * @param glY World Y
      * @param glZ Query/reference Z (used to ignore unreachable tops)
      */
-    std::optional<float> getFloorHeight(float glX, float glY, float glZ) const;
+    std::optional<float> getFloorHeight(float glX, float glY, float glZ, float* outNormalZ = nullptr) const;
 
     /**
      * Raycast against M2 bounding boxes for camera collision

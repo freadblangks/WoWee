@@ -592,6 +592,9 @@ void CameraController::update(float deltaTime) {
             // 1. Center-only sample for terrain/WMO floor selection.
             //    Using only the center prevents tunnel entrances from snapping
             //    to terrain when offset samples miss the WMO floor geometry.
+            // Slope limit: reject surfaces too steep to walk (prevent clipping)
+            constexpr float MIN_WALKABLE_NORMAL = 0.7f;  // ~45° max slope
+
             std::optional<float> groundH;
             {
                 // Collision cache: skip expensive checks if barely moved (15cm threshold)
@@ -609,9 +612,16 @@ void CameraController::update(float deltaTime) {
                         terrainH = terrainManager->getHeightAt(targetPos.x, targetPos.y);
                     }
                     float wmoProbeZ = std::max(targetPos.z, lastGroundZ) + stepUpBudget + 0.5f;
+                    float wmoNormalZ = 1.0f;
                     if (wmoRenderer) {
-                        wmoH = wmoRenderer->getFloorHeight(targetPos.x, targetPos.y, wmoProbeZ);
+                        wmoH = wmoRenderer->getFloorHeight(targetPos.x, targetPos.y, wmoProbeZ, &wmoNormalZ);
                     }
+
+                    // Reject steep WMO slopes
+                    if (wmoH && wmoNormalZ < MIN_WALKABLE_NORMAL) {
+                        wmoH = std::nullopt;  // Treat as unwalkable
+                    }
+
                     groundH = selectReachableFloor(terrainH, wmoH, targetPos.z, stepUpBudget);
 
                     // Update cache
@@ -636,8 +646,15 @@ void CameraController::update(float deltaTime) {
                 };
                 float m2ProbeZ = std::max(targetPos.z, lastGroundZ) + 6.0f;
                 for (const auto& o : offsets) {
+                    float m2NormalZ = 1.0f;
                     auto m2H = m2Renderer->getFloorHeight(
-                        targetPos.x + o.x, targetPos.y + o.y, m2ProbeZ);
+                        targetPos.x + o.x, targetPos.y + o.y, m2ProbeZ, &m2NormalZ);
+
+                    // Reject steep M2 slopes
+                    if (m2H && m2NormalZ < MIN_WALKABLE_NORMAL) {
+                        continue;  // Skip unwalkable M2 surface
+                    }
+
                     // Prefer M2 floors (ships, platforms) even if slightly lower than terrain
                     // to prevent falling through ship decks to water below
                     if (m2H && *m2H <= targetPos.z + stepUpBudget) {

@@ -27,6 +27,7 @@ struct TransportPath {
     std::vector<TimedPoint> points;  // Time-indexed waypoints (includes duplicate first point at end for wrap)
     bool looping;  // Set to false after adding explicit wrap point
     uint32_t durationMs;   // Total loop duration in ms (includes wrap segment if added)
+    bool zOnly;    // True if path only has Z movement (elevator/bobbing), false if real XY travel
 };
 
 struct ActiveTransport {
@@ -100,7 +101,7 @@ private:
     std::unordered_map<uint64_t, ActiveTransport> transports_;
     std::unordered_map<uint32_t, TransportPath> paths_;  // Indexed by transportEntry (pathId from TransportAnimation.dbc)
     rendering::WMORenderer* wmoRenderer_ = nullptr;
-    bool clientSideAnimation_ = true;  // Enable client animation - smooth movement, synced with server updates
+    bool clientSideAnimation_ = false;  // DISABLED - use server positions instead of client prediction
     float elapsedTime_ = 0.0f;  // Total elapsed time (seconds)
 };
 

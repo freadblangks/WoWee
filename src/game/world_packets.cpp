@@ -581,6 +581,34 @@ network::Packet MovementPacket::build(Opcode opcode, const MovementInfo& info, u
         packet.writeBytes(reinterpret_cast<const uint8_t*>(&info.jumpXYSpeed), sizeof(float));
     }
 
+    // Write transport data if on transport
+    if (info.hasFlag(MovementFlags::ONTRANSPORT)) {
+        // Write packed transport GUID
+        uint8_t transMask = 0;
+        uint8_t transGuidBytes[8];
+        int transGuidByteCount = 0;
+        for (int i = 0; i < 8; i++) {
+            uint8_t byte = static_cast<uint8_t>((info.transportGuid >> (i * 8)) & 0xFF);
+            if (byte != 0) {
+                transMask |= (1 << i);
+                transGuidBytes[transGuidByteCount++] = byte;
+            }
+        }
+        packet.writeUInt8(transMask);
+        for (int i = 0; i < transGuidByteCount; i++) {
+            packet.writeUInt8(transGuidBytes[i]);
+        }
+
+        // Write transport local position
+        packet.writeBytes(reinterpret_cast<const uint8_t*>(&info.transportX), sizeof(float));
+        packet.writeBytes(reinterpret_cast<const uint8_t*>(&info.transportY), sizeof(float));
+        packet.writeBytes(reinterpret_cast<const uint8_t*>(&info.transportZ), sizeof(float));
+        packet.writeBytes(reinterpret_cast<const uint8_t*>(&info.transportO), sizeof(float));
+
+        // Write transport time
+        packet.writeUInt32(info.transportTime);
+    }
+
     // Detailed hex dump for debugging
     static int mvLog = 5;
     if (mvLog-- > 0) {
@@ -596,7 +624,11 @@ network::Packet MovementPacket::build(Opcode opcode, const MovementInfo& info, u
                  " flags=0x", std::hex, info.flags, std::dec,
                  " flags2=0x", std::hex, info.flags2, std::dec,
                  " pos=(", info.x, ",", info.y, ",", info.z, ",", info.orientation, ")",
-                 " fallTime=", info.fallTime);
+                 " fallTime=", info.fallTime,
+                 (info.hasFlag(MovementFlags::ONTRANSPORT) ?
+                  " ONTRANSPORT guid=0x" + std::to_string(info.transportGuid) +
+                  " localPos=(" + std::to_string(info.transportX) + "," +
+                  std::to_string(info.transportY) + "," + std::to_string(info.transportZ) + ")" : ""));
         LOG_INFO("MOVEPKT hex: ", hex);
     }
 

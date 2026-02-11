@@ -903,16 +903,10 @@ void Application::setupUICallbacks() {
         // Register the transport with spawn position (prevents rendering at origin until server update)
         transportManager->registerTransport(guid, wmoInstanceId, pathId, canonicalSpawnPos);
 
-        if (clientAnim) {
-            LOG_INFO("Transport registered - client-side animation enabled");
-        } else {
-            // Only call updateServerTransport if client animation is disabled
-            // This sets the exact spawn position for server-controlled transports
-            // Coordinates are already canonical (converted in game_handler.cpp)
-            glm::vec3 canonicalPos(x, y, z);
-            transportManager->updateServerTransport(guid, canonicalPos, orientation);
-            LOG_INFO("Transport registered - server-controlled movement");
-        }
+        // Server-authoritative movement - set initial position from spawn data
+        glm::vec3 canonicalPos(x, y, z);
+        transportManager->updateServerTransport(guid, canonicalPos, orientation);
+        LOG_INFO("Transport registered - server-authoritative movement");
     });
 
     // Transport move callback (online mode) - update transport gameobject positions
@@ -1790,6 +1784,12 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
     if (gameHandler && gameHandler->getTransportManager() && renderer->getWMORenderer()) {
         gameHandler->getTransportManager()->setWMORenderer(renderer->getWMORenderer());
         LOG_INFO("TransportManager connected to WMORenderer for online mode");
+    }
+
+    // Connect WMORenderer to M2Renderer (for hierarchical transforms: doodads following WMO parents)
+    if (renderer->getWMORenderer() && renderer->getM2Renderer()) {
+        renderer->getWMORenderer()->setM2Renderer(renderer->getM2Renderer());
+        LOG_INFO("WMORenderer connected to M2Renderer for hierarchical doodad transforms");
     }
 
     showProgress("Loading character model...", 0.05f);
@@ -2870,6 +2870,65 @@ void Application::spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_t 
             LOG_INFO("Spawned gameobject WMO: guid=0x", std::hex, guid, std::dec,
                      " displayId=", displayId, " at (", x, ", ", y, ", ", z, ")");
 
+            // Spawn WMO doodads (chairs, furniture, etc.) as child M2 instances
+            // TODO: Re-enable after implementing deferred/background loading
+            // Currently disabled - spawning 134 doodads synchronously causes massive slowdown
+            bool isTransport = false;
+            if (gameHandler) {
+                std::string lowerModelPath = modelPath;
+                std::transform(lowerModelPath.begin(), lowerModelPath.end(), lowerModelPath.begin(),
+                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                isTransport = (lowerModelPath.find("transport") != std::string::npos);
+            }
+
+            auto* m2Renderer = renderer->getM2Renderer();
+            if (false && m2Renderer && isTransport) {  // DISABLED - too slow
+                const auto* doodadTemplates = wmoRenderer->getDoodadTemplates(modelId);
+                if (doodadTemplates && !doodadTemplates->empty()) {
+                    LOG_INFO("Spawning ", doodadTemplates->size(), " doodads for transport WMO instance ", instanceId);
+                    int spawnedDoodads = 0;
+
+                    for (const auto& doodadTemplate : *doodadTemplates) {
+                        // Load M2 model (may be cached)
+                        uint32_t doodadModelId = static_cast<uint32_t>(std::hash<std::string>{}(doodadTemplate.m2Path));
+                        auto m2Data = assetManager->readFile(doodadTemplate.m2Path);
+                        if (m2Data.empty()) continue;
+
+                        pipeline::M2Model m2Model = pipeline::M2Loader::load(m2Data);
+                        std::string skinPath = doodadTemplate.m2Path.substr(0, doodadTemplate.m2Path.size() - 3) + "00.skin";
+                        std::vector<uint8_t> skinData = assetManager->readFile(skinPath);
+                        if (!skinData.empty()) {
+                            pipeline::M2Loader::loadSkin(skinData, m2Model);
+                        }
+                        if (!m2Model.isValid()) continue;
+
+                        // Load model to renderer (cached if already loaded)
+                        m2Renderer->loadModel(m2Model, doodadModelId);
+
+                        // Create M2 instance at world origin (transform will be updated by WMO parent)
+                        uint32_t m2InstanceId = m2Renderer->createInstance(doodadModelId, glm::vec3(0.0f), glm::vec3(0.0f), 1.0f);
+                        if (m2InstanceId == 0) continue;
+
+                        // Link doodad to WMO instance
+                        wmoRenderer->addDoodadToInstance(instanceId, m2InstanceId, doodadTemplate.localTransform);
+                        spawnedDoodads++;
+                    }
+
+                    if (spawnedDoodads > 0) {
+                        LOG_INFO("Spawned ", spawnedDoodads, " doodads for transport WMO instance ", instanceId);
+
+                        // Initial transform update to position doodads correctly
+                        // (subsequent updates will happen automatically via setInstanceTransform)
+                        glm::mat4 wmoTransform(1.0f);
+                        wmoTransform = glm::translate(wmoTransform, renderPos);
+                        wmoTransform = glm::rotate(wmoTransform, renderYaw, glm::vec3(0, 0, 1));
+                        wmoRenderer->setInstanceTransform(instanceId, wmoTransform);
+                    }
+                } else {
+                    LOG_INFO("Transport WMO has no doodads or templates not available");
+                }
+            }
+
             // Check if this is a transport and notify via special method
             if (gameHandler) {
                 std::string lowerModelPath = modelPath;
@@ -3284,6 +3343,12 @@ void Application::setupTestTransport() {
 
     // Connect transport manager to WMO renderer
     transportManager->setWMORenderer(wmoRenderer);
+
+    // Connect WMORenderer to M2Renderer (for hierarchical transforms: doodads following WMO parents)
+    if (renderer->getM2Renderer()) {
+        wmoRenderer->setM2Renderer(renderer->getM2Renderer());
+        LOG_INFO("WMORenderer connected to M2Renderer for test transport doodad transforms");
+    }
 
     // Define a simple circular path around Stormwind harbor (canonical coordinates)
     // These coordinates are approximate - adjust based on actual harbor layout

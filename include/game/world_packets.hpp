@@ -411,6 +411,14 @@ struct MovementInfo {
     float jumpCosAngle = 0.0f;      // Jump horizontal cos
     float jumpXYSpeed = 0.0f;       // Jump horizontal speed
 
+    // Transport fields (when ONTRANSPORT flag is set)
+    uint64_t transportGuid = 0;     // GUID of transport (boat/zeppelin/etc)
+    float transportX = 0.0f;        // Local position on transport
+    float transportY = 0.0f;
+    float transportZ = 0.0f;
+    float transportO = 0.0f;        // Local orientation on transport
+    uint32_t transportTime = 0;     // Transport movement timestamp
+
     bool hasFlag(MovementFlags flag) const {
         return (flags & static_cast<uint32_t>(flag)) != 0;
     }

@@ -21,6 +21,7 @@ namespace rendering {
 class Camera;
 class Shader;
 class Frustum;
+class M2Renderer;
 
 /**
  * WMO (World Model Object) Renderer
@@ -48,6 +49,11 @@ public:
      * Cleanup GPU resources
      */
     void shutdown();
+
+    /**
+     * Set M2 renderer for hierarchical transform updates (doodads follow parent WMO)
+     */
+    void setM2Renderer(M2Renderer* renderer) { m2Renderer_ = renderer; }
 
     /**
      * Load WMO model and create GPU resources
@@ -88,6 +94,27 @@ public:
      * @param transform World transform matrix
      */
     void setInstanceTransform(uint32_t instanceId, const glm::mat4& transform);
+
+    /**
+     * Add doodad (child M2) to WMO instance
+     * @param instanceId WMO instance to add doodad to
+     * @param m2InstanceId M2 instance ID of the doodad
+     * @param localTransform Local transform relative to WMO origin
+     */
+    void addDoodadToInstance(uint32_t instanceId, uint32_t m2InstanceId, const glm::mat4& localTransform);
+
+    // Forward declare DoodadTemplate for public API
+    struct DoodadTemplate {
+        std::string m2Path;
+        glm::mat4 localTransform;
+    };
+
+    /**
+     * Get doodad templates for a WMO model
+     * @param modelId WMO model ID
+     * @return Vector of doodad templates (empty if no doodads or model not found)
+     */
+    const std::vector<DoodadTemplate>* getDoodadTemplates(uint32_t modelId) const;
 
     /**
      * Remove WMO instance
@@ -363,6 +390,10 @@ private:
         glm::vec3 boundingBoxMax;
         bool isLowPlatform = false;
 
+        // Doodad templates (M2 models placed in WMO, stored for instancing)
+        // Uses the public DoodadTemplate struct defined above
+        std::vector<DoodadTemplate> doodadTemplates;
+
         // Texture handles for this model (indexed by texture path order)
         std::vector<GLuint> textures;
 
@@ -509,6 +540,9 @@ private:
 
     // Asset manager for loading textures
     pipeline::AssetManager* assetManager = nullptr;
+
+    // M2 renderer for hierarchical transforms (doodads following WMO parent)
+    M2Renderer* m2Renderer_ = nullptr;
 
     // Current map name for zone-specific floor cache
     std::string mapName_;

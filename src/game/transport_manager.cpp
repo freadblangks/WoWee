@@ -55,6 +55,16 @@ void TransportManager::registerTransport(uint64_t guid, uint32_t wmoInstanceId, 
         glm::vec3 offset0 = evalTimedCatmullRom(path, 0);
         transport.basePosition = spawnWorldPos - offset0;  // Infer base from spawn
         transport.position = spawnWorldPos;  // Start at spawn position (base + offset0)
+
+        // Sanity check: firstWaypoint should match spawnWorldPos
+        glm::vec3 firstWaypoint = path.points[0].pos;
+        glm::vec3 waypointDiff = spawnWorldPos - firstWaypoint;
+        if (glm::length(waypointDiff) > 1.0f) {
+            LOG_WARNING("Transport 0x", std::hex, guid, std::dec, " path ", pathId,
+                       ": firstWaypoint mismatch! spawnPos=(", spawnWorldPos.x, ",", spawnWorldPos.y, ",", spawnWorldPos.z, ")",
+                       " firstWaypoint=(", firstWaypoint.x, ",", firstWaypoint.y, ",", firstWaypoint.z, ")",
+                       " diff=(", waypointDiff.x, ",", waypointDiff.y, ",", waypointDiff.z, ")");
+        }
     }
 
     transport.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);  // Identity quaternion
@@ -64,7 +74,8 @@ void TransportManager::registerTransport(uint64_t guid, uint32_t wmoInstanceId, 
     transport.localClockMs = 0;
     transport.hasServerClock = false;
     transport.serverClockOffsetMs = 0;
-    transport.useClientAnimation = clientSideAnimation_;  // Enable client animation by default
+    // Server-authoritative movement only - no client-side animation
+    transport.useClientAnimation = false;
     transport.serverYaw = 0.0f;
     transport.hasServerYaw = false;
     transport.lastServerUpdate = 0.0f;
@@ -128,33 +139,53 @@ void TransportManager::loadPathFromNodes(uint32_t pathId, const std::vector<glm:
 
     TransportPath path;
     path.pathId = pathId;
-    path.looping = looping;
+    path.zOnly = false;  // Manually loaded paths are assumed to have XY movement
 
-    // Convert waypoints to TimedPoint (for fallback paths, use arbitrary timing)
+    // Helper: compute segment duration from distance and speed
+    auto segMsFromDist = [&](float dist) -> uint32_t {
+        if (speed <= 0.0f) return 1000;
+        return (uint32_t)((dist / speed) * 1000.0f);
+    };
+
     // Single point = stationary (durationMs = 0)
-    // Multiple points = assume constant speed
-    path.points.reserve(waypoints.size());
     if (waypoints.size() == 1) {
         path.points.push_back({0, waypoints[0]});
-        path.durationMs = 0;  // Stationary
-    } else {
-        // Calculate cumulative time based on distance and speed
-        uint32_t cumulativeMs = 0;
-        path.points.push_back({0, waypoints[0]});
-        for (size_t i = 1; i < waypoints.size(); i++) {
-            float dist = glm::distance(waypoints[i-1], waypoints[i]);
-            uint32_t segmentMs = speed > 0.0f ? (uint32_t)((dist / speed) * 1000.0f) : 1000;
-            cumulativeMs += segmentMs;
-            path.points.push_back({cumulativeMs, waypoints[i]});
-        }
-        path.durationMs = cumulativeMs;
+        path.durationMs = 0;
+        path.looping = false;
+        paths_[pathId] = path;
+        LOG_INFO("TransportManager: Loaded stationary path ", pathId);
+        return;
     }
 
+    // Multiple points: calculate cumulative time based on distance and speed
+    path.points.reserve(waypoints.size() + (looping ? 1 : 0));
+    uint32_t cumulativeMs = 0;
+    path.points.push_back({0, waypoints[0]});
+
+    for (size_t i = 1; i < waypoints.size(); i++) {
+        float dist = glm::distance(waypoints[i-1], waypoints[i]);
+        cumulativeMs += glm::max(1u, segMsFromDist(dist));
+        path.points.push_back({cumulativeMs, waypoints[i]});
+    }
+
+    // Add explicit wrap segment (last → first) for looping paths
+    if (looping) {
+        float wrapDist = glm::distance(waypoints.back(), waypoints.front());
+        uint32_t wrapMs = glm::max(1u, segMsFromDist(wrapDist));
+        cumulativeMs += wrapMs;
+        path.points.push_back({cumulativeMs, waypoints.front()});  // Duplicate first point
+        path.looping = false;  // Time-closed path, no need for index wrapping
+    } else {
+        path.looping = false;
+    }
+
+    path.durationMs = cumulativeMs;
     paths_[pathId] = path;
 
     LOG_INFO("TransportManager: Loaded path ", pathId,
-             " with ", waypoints.size(), " waypoints, "
-             "looping=", looping, ", speed=", speed);
+             " with ", waypoints.size(), " waypoints",
+             (looping ? " + wrap segment" : ""),
+             ", duration=", path.durationMs, "ms, speed=", speed);
 }
 
 void TransportManager::setDeckBounds(uint64_t guid, const glm::vec3& min, const glm::vec3& max) {
@@ -270,24 +301,34 @@ glm::vec3 TransportManager::evalTimedCatmullRom(const TransportPath& path, uint3
         }
     }
 
-    // Handle not found (wraparound or timing gaps)
+    // Handle not found (timing gaps or past last segment)
     if (!found) {
-        segmentIdx = path.looping ? (path.points.size() - 1) :
-                     (path.points.size() >= 2 ? path.points.size() - 2 : 0);
+        // For time-closed paths (explicit wrap point), last valid segment is points.size() - 2
+        segmentIdx = (path.points.size() >= 2) ? (path.points.size() - 2) : 0;
     }
 
     size_t numPoints = path.points.size();
 
     // Get 4 control points for Catmull-Rom
-    size_t p0Idx = (segmentIdx == 0) ? (path.looping ? numPoints - 1 : 0) : segmentIdx - 1;
-    size_t p1Idx = segmentIdx;
-    size_t p2Idx = (segmentIdx + 1) % numPoints;
-    size_t p3Idx = (segmentIdx + 2) % numPoints;
+    // Helper to clamp index (no wrapping for non-looping paths)
+    auto idxClamp = [&](size_t i) -> size_t {
+        return (i >= numPoints) ? (numPoints - 1) : i;
+    };
 
-    if (!path.looping) {
-        if (segmentIdx == 0) p0Idx = 0;
-        if (segmentIdx >= numPoints - 2) p3Idx = numPoints - 1;
-        if (segmentIdx >= numPoints - 1) p2Idx = numPoints - 1;
+    size_t p0Idx, p1Idx, p2Idx, p3Idx;
+    p1Idx = segmentIdx;
+
+    if (path.looping) {
+        // Index-wrapped path (old DBC style with looping=true)
+        p0Idx = (segmentIdx == 0) ? (numPoints - 1) : (segmentIdx - 1);
+        p2Idx = (segmentIdx + 1) % numPoints;
+        p3Idx = (segmentIdx + 2) % numPoints;
+    } else {
+        // Time-closed path (explicit wrap point at end, looping=false)
+        // No index wrapping - points are sequential with possible duplicate at end
+        p0Idx = (segmentIdx == 0) ? 0 : (segmentIdx - 1);
+        p2Idx = idxClamp(segmentIdx + 1);
+        p3Idx = idxClamp(segmentIdx + 2);
     }
 
     glm::vec3 p0 = path.points[p0Idx].pos;
@@ -337,24 +378,34 @@ glm::quat TransportManager::orientationFromTangent(const TransportPath& path, ui
         }
     }
 
-    // Handle not found (wraparound or timing gaps)
+    // Handle not found (timing gaps or past last segment)
     if (!found) {
-        segmentIdx = path.looping ? (path.points.size() - 1) :
-                     (path.points.size() >= 2 ? path.points.size() - 2 : 0);
+        // For time-closed paths (explicit wrap point), last valid segment is points.size() - 2
+        segmentIdx = (path.points.size() >= 2) ? (path.points.size() - 2) : 0;
     }
 
     size_t numPoints = path.points.size();
 
-    // Get 4 control points
-    size_t p0Idx = (segmentIdx == 0) ? (path.looping ? numPoints - 1 : 0) : segmentIdx - 1;
-    size_t p1Idx = segmentIdx;
-    size_t p2Idx = (segmentIdx + 1) % numPoints;
-    size_t p3Idx = (segmentIdx + 2) % numPoints;
+    // Get 4 control points for tangent calculation
+    // Helper to clamp index (no wrapping for non-looping paths)
+    auto idxClamp = [&](size_t i) -> size_t {
+        return (i >= numPoints) ? (numPoints - 1) : i;
+    };
 
-    if (!path.looping) {
-        if (segmentIdx == 0) p0Idx = 0;
-        if (segmentIdx >= numPoints - 2) p3Idx = numPoints - 1;
-        if (segmentIdx >= numPoints - 1) p2Idx = numPoints - 1;
+    size_t p0Idx, p1Idx, p2Idx, p3Idx;
+    p1Idx = segmentIdx;
+
+    if (path.looping) {
+        // Index-wrapped path (old DBC style with looping=true)
+        p0Idx = (segmentIdx == 0) ? (numPoints - 1) : (segmentIdx - 1);
+        p2Idx = (segmentIdx + 1) % numPoints;
+        p3Idx = (segmentIdx + 2) % numPoints;
+    } else {
+        // Time-closed path (explicit wrap point at end, looping=false)
+        // No index wrapping - points are sequential with possible duplicate at end
+        p0Idx = (segmentIdx == 0) ? 0 : (segmentIdx - 1);
+        p2Idx = idxClamp(segmentIdx + 1);
+        p3Idx = idxClamp(segmentIdx + 2);
     }
 
     glm::vec3 p0 = path.points[p0Idx].pos;
@@ -460,6 +511,24 @@ void TransportManager::updateServerTransport(uint64_t guid, const glm::vec3& pos
     }
 
     const auto& path = pathIt->second;
+
+    // Z-only paths (elevator/bobbing): server is authoritative, no projection needed
+    if (path.zOnly) {
+        transport->position = position;
+        transport->serverYaw = orientation;
+        transport->hasServerYaw = true;
+        transport->rotation = glm::angleAxis(transport->serverYaw, glm::vec3(0.0f, 0.0f, 1.0f));
+        transport->useClientAnimation = false;  // Server-driven
+
+        updateTransformMatrices(*transport);
+        if (wmoRenderer_) {
+            wmoRenderer_->setInstanceTransform(transport->wmoInstanceId, transport->transform);
+        }
+
+        LOG_INFO("TransportManager: Z-only transport 0x", std::hex, guid, std::dec,
+                 " updated from server: pos=(", position.x, ", ", position.y, ", ", position.z, ")");
+        return;
+    }
 
     // Seed basePosition from t=0 assumption before first search
     // (t=0 corresponds to spawn point / first path point)
@@ -659,6 +728,14 @@ bool TransportManager::loadTransportAnimationDBC(pipeline::AssetManager* assetMg
                      " u32=(", ux, ",", uy, ",", uz, ")");
         }
 
+        // DIAGNOSTIC: Log ALL records for problematic ferries (20655, 20657, 149046)
+        // AND first few records for known-good transports to verify DBC reading
+        if (i < 5 || transportEntry == 2074 ||
+            transportEntry == 20655 || transportEntry == 20657 || transportEntry == 149046) {
+            LOG_INFO("RAW DBC [", i, "] entry=", transportEntry, " t=", timeIndex,
+                     " raw=(", posX, ",", posY, ",", posZ, ")");
+        }
+
         waypointsByTransport[transportEntry].push_back({timeIndex, glm::vec3(posX, posY, posZ)});
     }
 
@@ -687,11 +764,26 @@ bool TransportManager::loadTransportAnimationDBC(pipeline::AssetManager* assetMg
             // TransportAnimation.dbc uses server coordinates - convert to canonical
             glm::vec3 canonical = core::coords::serverToCanonical(pos);
 
+            // CRITICAL: Detect if serverToCanonical is zeroing nonzero inputs
+            if ((pos.x != 0.0f || pos.y != 0.0f || pos.z != 0.0f) &&
+                (canonical.x == 0.0f && canonical.y == 0.0f && canonical.z == 0.0f)) {
+                LOG_ERROR("serverToCanonical ZEROED! entry=", transportEntry,
+                          " server=(", pos.x, ",", pos.y, ",", pos.z, ")",
+                          " → canon=(", canonical.x, ",", canonical.y, ",", canonical.z, ")");
+            }
+
             // Debug waypoint conversion for first transport (entry 2074)
             if (transportEntry == 2074 && idx < 5) {
                 LOG_INFO("COORD CONVERT: entry=", transportEntry, " t=", tMs,
                          " serverPos=(", pos.x, ", ", pos.y, ", ", pos.z, ")",
                          " → canonical=(", canonical.x, ", ", canonical.y, ", ", canonical.z, ")");
+            }
+
+            // DIAGNOSTIC: Log ALL conversions for problematic ferries
+            if (transportEntry == 20655 || transportEntry == 20657 || transportEntry == 149046) {
+                LOG_INFO("CONVERT ", transportEntry, " t=", tMs,
+                         " server=(", pos.x, ",", pos.y, ",", pos.z, ")",
+                         " → canon=(", canonical.x, ",", canonical.y, ",", canonical.z, ")");
             }
 
             timedPoints.push_back({tMs - t0, canonical});  // Normalize: subtract first timeIndex
@@ -720,14 +812,30 @@ bool TransportManager::loadTransportAnimationDBC(pipeline::AssetManager* assetMg
 
         uint32_t durationMs = lastTimeMs + wrapMs;
 
+        // Detect Z-only paths (elevator/bobbing animation, not real XY travel)
+        float minX = timedPoints[0].pos.x;
+        float maxX = timedPoints[0].pos.x;
+        float minY = timedPoints[0].pos.y;
+        float maxY = timedPoints[0].pos.y;
+        for (const auto& pt : timedPoints) {
+            minX = std::min(minX, pt.pos.x);
+            maxX = std::max(maxX, pt.pos.x);
+            minY = std::min(minY, pt.pos.y);
+            maxY = std::max(maxY, pt.pos.y);
+        }
+        float rangeX = maxX - minX;
+        float rangeY = maxY - minY;
+        bool isZOnly = (rangeX < 0.01f && rangeY < 0.01f);
+
         // Store path
         TransportPath path;
         path.pathId = transportEntry;
         path.points = timedPoints;
-        // Keep looping=true even with duplicate wrap point for smooth control point selection at seam
-        // This prevents kinks on the last segment approaching the wrap
-        path.looping = true;
+        // CRITICAL: We added an explicit wrap point (last → first), so this is TIME-CLOSED, not index-wrapped
+        // Setting looping=false ensures evalTimedCatmullRom uses clamp logic (not modulo) for control points
+        path.looping = false;
         path.durationMs = durationMs;
+        path.zOnly = isZOnly;
         paths_[transportEntry] = path;
         pathsLoaded++;
 
@@ -738,6 +846,7 @@ bool TransportManager::loadTransportAnimationDBC(pipeline::AssetManager* assetMg
         glm::vec3 lastOffset = timedPoints[timedPoints.size() - 2].pos;  // -2 to skip wrap duplicate
         LOG_INFO("  Transport ", transportEntry, ": ", timedPoints.size() - 1, " waypoints + wrap, ",
                  durationMs, "ms duration (wrap=", wrapMs, "ms, t0_normalized=", timedPoints[0].tMs, "ms)",
+                 " rangeXY=(", rangeX, ",", rangeY, ") ", (isZOnly ? "[Z-ONLY]" : "[XY-PATH]"),
                  " firstOffset=(", firstOffset.x, ", ", firstOffset.y, ", ", firstOffset.z, ")",
                  " midOffset=(", midOffset.x, ", ", midOffset.y, ", ", midOffset.z, ")",
                  " lastOffset=(", lastOffset.x, ", ", lastOffset.y, ", ", lastOffset.z, ")");

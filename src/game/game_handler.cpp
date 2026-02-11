@@ -1775,8 +1775,24 @@ void GameHandler::sendMovement(Opcode opcode) {
             break;
     }
 
+    // Add transport data if player is on a transport
+    if (isOnTransport()) {
+        movementInfo.flags |= static_cast<uint32_t>(MovementFlags::ONTRANSPORT);
+        movementInfo.transportGuid = playerTransportGuid_;
+        movementInfo.transportX = playerTransportOffset_.x;
+        movementInfo.transportY = playerTransportOffset_.y;
+        movementInfo.transportZ = playerTransportOffset_.z;
+        movementInfo.transportO = movementInfo.orientation;  // Use same orientation as player
+        movementInfo.transportTime = movementInfo.time;      // Use same timestamp
+    } else {
+        // Clear transport flag if not on transport
+        movementInfo.flags &= ~static_cast<uint32_t>(MovementFlags::ONTRANSPORT);
+        movementInfo.transportGuid = 0;
+    }
+
     LOG_DEBUG("Sending movement packet: opcode=0x", std::hex,
-              static_cast<uint16_t>(opcode), std::dec);
+              static_cast<uint16_t>(opcode), std::dec,
+              (isOnTransport() ? " ONTRANSPORT" : ""));
 
     // Convert canonical → server coordinates for the wire
     MovementInfo wireInfo = movementInfo;
@@ -1784,6 +1800,15 @@ void GameHandler::sendMovement(Opcode opcode) {
     wireInfo.x = serverPos.x;
     wireInfo.y = serverPos.y;
     wireInfo.z = serverPos.z;
+
+    // Also convert transport local position to server coordinates if on transport
+    if (isOnTransport()) {
+        glm::vec3 serverTransportPos = core::coords::canonicalToServer(
+            glm::vec3(wireInfo.transportX, wireInfo.transportY, wireInfo.transportZ));
+        wireInfo.transportX = serverTransportPos.x;
+        wireInfo.transportY = serverTransportPos.y;
+        wireInfo.transportZ = serverTransportPos.z;
+    }
 
     // Build and send movement packet
     auto packet = MovementPacket::build(opcode, wireInfo, playerGuid);
@@ -1869,7 +1894,9 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     if (block.guid == playerGuid) {
                         if (block.onTransport) {
                             playerTransportGuid_ = block.transportGuid;
-                            playerTransportOffset_ = glm::vec3(block.transportX, block.transportY, block.transportZ);
+                            // Convert transport offset from server → canonical coordinates
+                            glm::vec3 serverOffset(block.transportX, block.transportY, block.transportZ);
+                            playerTransportOffset_ = core::coords::serverToCanonical(serverOffset);
                             LOG_INFO("Player on transport: 0x", std::hex, playerTransportGuid_, std::dec,
                                      " offset=(", playerTransportOffset_.x, ", ", playerTransportOffset_.y, ", ", playerTransportOffset_.z, ")");
                         } else {
@@ -2359,6 +2386,21 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         movementInfo.y = pos.y;
                         movementInfo.z = pos.z;
                         movementInfo.orientation = block.orientation;
+
+                        // Track player-on-transport state from MOVEMENT updates
+                        if (block.onTransport) {
+                            playerTransportGuid_ = block.transportGuid;
+                            // Convert transport offset from server → canonical coordinates
+                            glm::vec3 serverOffset(block.transportX, block.transportY, block.transportZ);
+                            playerTransportOffset_ = core::coords::serverToCanonical(serverOffset);
+                            LOG_INFO("Player on transport (MOVEMENT): 0x", std::hex, playerTransportGuid_, std::dec);
+                        } else {
+                            if (playerTransportGuid_ != 0) {
+                                LOG_INFO("Player left transport (MOVEMENT)");
+                                playerTransportGuid_ = 0;
+                                playerTransportOffset_ = glm::vec3(0.0f);
+                            }
+                        }
                     }
 
                     // Fire transport move callback if this is a known transport

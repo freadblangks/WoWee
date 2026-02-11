@@ -1,4 +1,5 @@
 #include "rendering/wmo_renderer.hpp"
+#include "rendering/m2_renderer.hpp"
 #include "rendering/texture.hpp"
 #include "rendering/shader.hpp"
 #include "rendering/camera.hpp"
@@ -438,6 +439,49 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
                                          " refs: ", modelData.portalRefs.size());
     }
 
+    // Store doodad templates (M2 models placed in WMO) for instancing later
+    if (!model.doodadSets.empty() && !model.doodads.empty()) {
+        const auto& doodadSet = model.doodadSets[0];  // Use first doodad set
+        for (uint32_t di = 0; di < doodadSet.count; di++) {
+            uint32_t doodadIdx = doodadSet.startIndex + di;
+            if (doodadIdx >= model.doodads.size()) break;
+
+            const auto& doodad = model.doodads[doodadIdx];
+            auto nameIt = model.doodadNames.find(doodad.nameIndex);
+            if (nameIt == model.doodadNames.end()) continue;
+
+            std::string m2Path = nameIt->second;
+            if (m2Path.empty()) continue;
+
+            // Convert .mdx/.mdl to .m2
+            if (m2Path.size() > 4) {
+                std::string ext = m2Path.substr(m2Path.size() - 4);
+                for (char& c : ext) c = std::tolower(c);
+                if (ext == ".mdx" || ext == ".mdl") {
+                    m2Path = m2Path.substr(0, m2Path.size() - 4) + ".m2";
+                }
+            }
+
+            // Build doodad's local transform (WoW coordinates)
+            // WMO doodads use quaternion rotation (X/Y swapped for correct orientation)
+            glm::quat fixedRotation(doodad.rotation.w, doodad.rotation.y, doodad.rotation.x, doodad.rotation.z);
+
+            glm::mat4 localTransform(1.0f);
+            localTransform = glm::translate(localTransform, doodad.position);
+            localTransform *= glm::mat4_cast(fixedRotation);
+            localTransform = glm::scale(localTransform, glm::vec3(doodad.scale));
+
+            DoodadTemplate doodadTemplate;
+            doodadTemplate.m2Path = m2Path;
+            doodadTemplate.localTransform = localTransform;
+            modelData.doodadTemplates.push_back(doodadTemplate);
+        }
+
+        if (!modelData.doodadTemplates.empty()) {
+            core::Logger::getInstance().info("WMO has ", modelData.doodadTemplates.size(), " doodad templates");
+        }
+    }
+
     loadedModels[id] = std::move(modelData);
     core::Logger::getInstance().info("WMO model ", id, " loaded successfully (", loadedGroups, " groups)");
     return true;
@@ -594,7 +638,37 @@ void WMORenderer::setInstanceTransform(uint32_t instanceId, const glm::mat4& tra
             inst.worldGroupBounds.emplace_back(gMin, gMax);
         }
     }
-    rebuildSpatialIndex();
+
+    // Propagate transform to child M2 doodads (chairs, furniture on transports)
+    if (m2Renderer_ && !inst.doodads.empty()) {
+        for (const auto& doodad : inst.doodads) {
+            glm::mat4 worldTransform = inst.modelMatrix * doodad.localTransform;
+            m2Renderer_->setInstanceTransform(doodad.m2InstanceId, worldTransform);
+        }
+    }
+
+    // NOTE: Don't rebuild spatial index on every transform update - causes flickering
+    // Spatial grid is only used for collision queries, render iterates all instances
+    // rebuildSpatialIndex();
+}
+
+void WMORenderer::addDoodadToInstance(uint32_t instanceId, uint32_t m2InstanceId, const glm::mat4& localTransform) {
+    auto it = std::find_if(instances.begin(), instances.end(),
+                          [instanceId](const WMOInstance& inst) { return inst.id == instanceId; });
+    if (it != instances.end()) {
+        WMOInstance::DoodadInfo doodad;
+        doodad.m2InstanceId = m2InstanceId;
+        doodad.localTransform = localTransform;
+        it->doodads.push_back(doodad);
+    }
+}
+
+const std::vector<WMORenderer::DoodadTemplate>* WMORenderer::getDoodadTemplates(uint32_t modelId) const {
+    auto it = loadedModels.find(modelId);
+    if (it != loadedModels.end() && !it->second.doodadTemplates.empty()) {
+        return &it->second.doodadTemplates;
+    }
+    return nullptr;
 }
 
 void WMORenderer::removeInstance(uint32_t instanceId) {

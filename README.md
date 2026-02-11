@@ -1,4 +1,4 @@
-# Wowee
+# Wowee - World Of Warcraft Engine Experiment
 
 <p align="center">
   <img src="assets/Wowee.png" alt="Wowee Logo" width="240" />

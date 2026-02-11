@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <cstdint>
+#include <vector>
 #include <glm/glm.hpp>
 
 namespace wowee {
@@ -313,6 +314,7 @@ private:
         uint32_t rearUp = 0;     // Rear-up / special flourish
         uint32_t run = 0;        // Run animation (discovered, don't assume)
         uint32_t stand = 0;      // Stand animation (discovered)
+        std::vector<uint32_t> fidgets;  // Idle fidget animations (head turn, tail swish, etc.)
     };
 
     enum class MountAction { None, Jump, RearUp };
@@ -326,6 +328,8 @@ private:
     MountAction mountAction_ = MountAction::None;  // Current mount action (jump/rear-up)
     uint32_t mountActionPhase_ = 0;  // 0=start, 1=loop, 2=end (for jump chaining)
     MountAnimSet mountAnims_;  // Cached animation IDs for current mount
+    float mountIdleFidgetTimer_ = 0.0f;  // Timer for random idle fidgets
+    float mountIdleSoundTimer_ = 0.0f;   // Timer for ambient idle sounds
     bool taxiFlight_ = false;
 
     bool terrainEnabled = true;

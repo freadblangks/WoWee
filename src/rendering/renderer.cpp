@@ -713,6 +713,17 @@ void Renderer::setMounted(uint32_t mountInstId, uint32_t mountDisplayId, float h
     mountAnims_.run       = findFirst({5, 4});       // Run/Walk
     mountAnims_.stand     = findFirst({0});          // Stand (almost always 0)
 
+    // Discover idle fidget animations (head turn, tail swish, weight shift)
+    mountAnims_.fidgets.clear();
+    for (const auto& seq : sequences) {
+        bool isLoop = (seq.flags & 0x01) == 0;
+        if (!isLoop && seq.duration >= 500 && seq.duration <= 1500 &&
+            std::abs(seq.movingSpeed) < 0.1f && seq.id >= 1 && seq.id <= 10) {
+            // Likely a fidget: non-looping, short, stationary, low ID near stand
+            mountAnims_.fidgets.push_back(seq.id);
+        }
+    }
+
     // Ensure we have fallbacks for movement
     if (mountAnims_.stand == 0) mountAnims_.stand = 0;  // Force 0 even if not found
     if (mountAnims_.run == 0) mountAnims_.run = mountAnims_.stand;  // Fallback to stand if no run
@@ -722,7 +733,8 @@ void Renderer::setMounted(uint32_t mountInstId, uint32_t mountDisplayId, float h
         " jumpEnd=", mountAnims_.jumpEnd,
         " rearUp=", mountAnims_.rearUp,
         " run=", mountAnims_.run,
-        " stand=", mountAnims_.stand);
+        " stand=", mountAnims_.stand,
+        " fidgets=", mountAnims_.fidgets.size());
 
     // Notify mount sound manager
     if (mountSoundManager) {
@@ -1027,6 +1039,41 @@ void Renderer::updateCharacterAnimation() {
                 } else {
                     mountAnimId = ANIM_RUN;
                 }
+            }
+
+            // Idle fidgets: random one-shot animations when standing still
+            if (!moving && mountAction_ == MountAction::None && !mountAnims_.fidgets.empty()) {
+                mountIdleFidgetTimer_ += lastDeltaTime_;
+                static float nextFidgetTime = 6.0f + (rand() % 7);  // 6-12 seconds
+
+                if (mountIdleFidgetTimer_ >= nextFidgetTime) {
+                    // Trigger random fidget animation
+                    static std::mt19937 rng(std::random_device{}());
+                    std::uniform_int_distribution<size_t> dist(0, mountAnims_.fidgets.size() - 1);
+                    uint32_t fidgetAnim = mountAnims_.fidgets[dist(rng)];
+
+                    characterRenderer->playAnimation(mountInstanceId_, fidgetAnim, false);
+                    mountIdleFidgetTimer_ = 0.0f;
+                    nextFidgetTime = 6.0f + (rand() % 7);  // Randomize next fidget time
+
+                    LOG_INFO("Mount idle fidget: playing anim ", fidgetAnim);
+                }
+            } else if (moving) {
+                mountIdleFidgetTimer_ = 0.0f;  // Reset timer when moving
+            }
+
+            // Idle ambient sounds: random snorts/stomps/breaths when standing still
+            if (!moving && mountSoundManager) {
+                mountIdleSoundTimer_ += lastDeltaTime_;
+                static float nextIdleSoundTime = 8.0f + (rand() % 8);  // 8-15 seconds
+
+                if (mountIdleSoundTimer_ >= nextIdleSoundTime) {
+                    mountSoundManager->playIdleSound();
+                    mountIdleSoundTimer_ = 0.0f;
+                    nextIdleSoundTime = 8.0f + (rand() % 8);  // Randomize next sound time
+                }
+            } else if (moving) {
+                mountIdleSoundTimer_ = 0.0f;  // Reset timer when moving
             }
 
             // Only update animation if it changed and we're not in an action sequence

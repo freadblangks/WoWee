@@ -302,6 +302,27 @@ void MountSoundManager::playLandSound() {
     }
 }
 
+void MountSoundManager::playIdleSound() {
+    if (!mounted_ || moving_) return;
+
+    // Ambient idle sounds (snort, breath, soft neigh)
+    if (currentMountType_ == MountType::GROUND && !horseBreathSounds_.empty()) {
+        static std::mt19937 rng(std::random_device{}());
+        std::uniform_int_distribution<size_t> dist(0, horseBreathSounds_.size() - 1);
+        const auto& sample = horseBreathSounds_[dist(rng)];
+        if (!sample.data.empty()) {
+            AudioEngine::instance().playSound2D(sample.data, 0.3f * volumeScale_, 0.95f);
+        }
+    } else if (currentMountType_ == MountType::FLYING && !wingIdleSounds_.empty()) {
+        static std::mt19937 rng(std::random_device{}());
+        std::uniform_int_distribution<size_t> dist(0, wingIdleSounds_.size() - 1);
+        const auto& sample = wingIdleSounds_[dist(rng)];
+        if (!sample.data.empty()) {
+            AudioEngine::instance().playSound2D(sample.data, 0.25f * volumeScale_, 1.0f);
+        }
+    }
+}
+
 MountType MountSoundManager::detectMountType(uint32_t creatureDisplayId) const {
     // TODO: Load from CreatureDisplayInfo.dbc or CreatureModelData.dbc
     // For now, use simple heuristics based on common display IDs

@@ -54,6 +54,7 @@ public:
     void playRearUpSound();   // Rear-up flourish (whinny/roar)
     void playJumpSound();     // Jump start (grunt/snort)
     void playLandSound();     // Landing (thud/hoof)
+    void playIdleSound();     // Ambient idle (snort/stomp/breath)
 
     bool isMounted() const { return mounted_; }
     void setVolumeScale(float scale) { volumeScale_ = scale; }

@@ -735,9 +735,15 @@ void Renderer::setMounted(uint32_t mountInstId, uint32_t mountDisplayId, float h
                 " speed=", seq.movingSpeed);
         }
 
-        // Select fidgets: non-looping + (frequency OR replay) + stationary
+        // Exclude known problematic animations: death (5,6), combat (16-21), wounds (7-9)
+        bool isDeathOrWound = (seq.id >= 5 && seq.id <= 9);
+        bool isCombat = (seq.id >= 16 && seq.id <= 21);
+        bool isSpecial = (seq.id == 2 || seq.id == 3);  // Often aggressive specials
+
+        // Select fidgets: non-looping + (frequency OR replay) + stationary + not death/combat
         // Relaxed: some mounts may only have one of the markers
-        if (!isLoop && (hasFrequency || hasReplay) && isStationary && reasonableDuration) {
+        if (!isLoop && (hasFrequency || hasReplay) && isStationary && reasonableDuration &&
+            !isDeathOrWound && !isCombat && !isSpecial) {
             // Bonus: chains back to stand (indicates idle behavior)
             bool chainsToStand = (seq.nextAnimation == (int16_t)mountAnims_.stand) ||
                                  (seq.aliasNext == mountAnims_.stand) ||

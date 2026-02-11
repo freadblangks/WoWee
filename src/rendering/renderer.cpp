@@ -716,14 +716,24 @@ void Renderer::setMounted(uint32_t mountInstId, uint32_t mountDisplayId, float h
     // Discover idle fidget animations (head turn, tail swish, weight shift)
     mountAnims_.fidgets.clear();
     core::Logger::getInstance().info("Scanning for fidget animations in ", sequences.size(), " sequences");
+
+    // Log ALL non-looping, short, stationary animations to help identify fidgets
     for (const auto& seq : sequences) {
         bool isLoop = (seq.flags & 0x01) == 0;
-        // Relaxed criteria: non-looping, 500-3000ms, stationary, ID 1-20
-        if (!isLoop && seq.duration >= 500 && seq.duration <= 3000 &&
-            std::abs(seq.movingSpeed) < 0.1f && seq.id >= 1 && seq.id <= 20) {
-            // Likely a fidget: non-looping, short, stationary, low ID
+        if (!isLoop && seq.duration >= 400 && seq.duration <= 2000 && std::abs(seq.movingSpeed) < 0.05f) {
+            core::Logger::getInstance().info("  Candidate: id=", seq.id, " dur=", seq.duration, "ms speed=", seq.movingSpeed, " flags=0x", std::hex, seq.flags, std::dec);
+        }
+    }
+
+    // Conservative selection: very short, very stationary, exclude known combat IDs
+    for (const auto& seq : sequences) {
+        bool isLoop = (seq.flags & 0x01) == 0;
+        // Strict: 500-1200ms, nearly stationary, exclude combat range (16-21) and specials (2-3)
+        if (!isLoop && seq.duration >= 500 && seq.duration <= 1200 &&
+            std::abs(seq.movingSpeed) < 0.01f &&
+            seq.id != 2 && seq.id != 3 && (seq.id < 16 || seq.id > 21)) {
             mountAnims_.fidgets.push_back(seq.id);
-            core::Logger::getInstance().info("  Found fidget: id=", seq.id, " duration=", seq.duration, "ms");
+            core::Logger::getInstance().info("  >> Selected fidget: id=", seq.id);
         }
     }
 

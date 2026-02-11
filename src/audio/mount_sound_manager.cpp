@@ -25,7 +25,8 @@ bool MountSoundManager::initialize(pipeline::AssetManager* assets) {
     loadMountSounds();
 
     int totalSamples = wingFlapSounds_.size() + wingIdleSounds_.size() +
-                       horseBreathSounds_.size() + horseMoveSounds_.size();
+                       horseBreathSounds_.size() + horseMoveSounds_.size() +
+                       horseJumpSounds_.size() + horseLandSounds_.size();
     LOG_INFO("Mount sound manager initialized (", totalSamples, " clips)");
     return true;
 }
@@ -45,11 +46,11 @@ void MountSoundManager::loadMountSounds() {
 
     // Flying mount wing flaps (movement)
     std::vector<std::string> wingFlapPaths = {
-        "Sound\\Creature\\Gryphon\\GryphonWingFlap1.wav",
-        "Sound\\Creature\\Gryphon\\GryphonWingFlap2.wav",
-        "Sound\\Creature\\Gryphon\\GryphonWingFlap3.wav",
-        "Sound\\Creature\\WindRider\\WindRiderWingFlap1.wav",
-        "Sound\\Creature\\WindRider\\WindRiderWingFlap2.wav",
+        "Sound\\Creature\\Dragons\\HugeWingFlap1.wav",
+        "Sound\\Creature\\Dragons\\HugeWingFlap2.wav",
+        "Sound\\Creature\\Dragons\\HugeWingFlap3.wav",
+        "Sound\\Creature\\DragonWhelp\\mDragonWhelpWingFlapA.wav",
+        "Sound\\Creature\\DragonWhelp\\mDragonWhelpWingFlapB.wav",
     };
 
     for (const auto& path : wingFlapPaths) {
@@ -59,11 +60,11 @@ void MountSoundManager::loadMountSounds() {
         }
     }
 
-    // Flying mount idle/hovering
+    // Flying mount idle/hovering (screeches/calls)
     std::vector<std::string> wingIdlePaths = {
-        "Sound\\Creature\\Gryphon\\GryphonIdle1.wav",
-        "Sound\\Creature\\Gryphon\\GryphonIdle2.wav",
-        "Sound\\Creature\\WindRider\\WindRiderIdle1.wav",
+        "Sound\\Creature\\DragonHawk\\DragonHawkPreAggro.wav",
+        "Sound\\Creature\\DragonHawk\\DragonHawkAggro.wav",
+        "Sound\\Creature\\Dragons\\DragonPreAggro.wav",
     };
 
     for (const auto& path : wingIdlePaths) {
@@ -73,11 +74,12 @@ void MountSoundManager::loadMountSounds() {
         }
     }
 
-    // Ground mount breathing/idle
+    // Ground mount breathing/idle (per creature family)
     std::vector<std::string> horseBreathPaths = {
-        "Sound\\Creature\\Horse\\HorseBreath1.wav",
-        "Sound\\Creature\\Horse\\HorseBreath2.wav",
-        "Sound\\Creature\\Horse\\HorseSnort1.wav",
+        "Sound\\Creature\\Horse\\mHorseStand3A.wav",
+        "Sound\\Creature\\Ram\\RamPreAggro.wav",
+        "Sound\\Creature\\Wolf\\mWolfFidget2a.wav",
+        "Sound\\Creature\\Tiger\\mTigerStand2A.wav",
     };
 
     for (const auto& path : horseBreathPaths) {
@@ -87,16 +89,42 @@ void MountSoundManager::loadMountSounds() {
         }
     }
 
-    // Ground mount movement ambient
+    // Ground mount movement ambient (alerts/whinnies)
     std::vector<std::string> horseMovePaths = {
-        "Sound\\Creature\\Horse\\HorseWhinny1.wav",
-        "Sound\\Creature\\Horse\\HorseWhinny2.wav",
+        "Sound\\Creature\\Horse\\mHorseAggroA.wav",
     };
 
     for (const auto& path : horseMovePaths) {
         MountSample sample;
         if (loadSound(path, sample)) {
             horseMoveSounds_.push_back(std::move(sample));
+        }
+    }
+
+    // Ground mount jump effort sounds
+    std::vector<std::string> horseJumpPaths = {
+        "Sound\\Creature\\Horse\\mHorseAttackA.wav",
+        "Sound\\Creature\\Horse\\mHorseAttackB.wav",
+        "Sound\\Creature\\Horse\\mHorseAttackC.wav",
+    };
+
+    for (const auto& path : horseJumpPaths) {
+        MountSample sample;
+        if (loadSound(path, sample)) {
+            horseJumpSounds_.push_back(std::move(sample));
+        }
+    }
+
+    // Ground mount landing thud sounds
+    std::vector<std::string> horseLandPaths = {
+        "Sound\\Creature\\Horse\\mHorseWoundA.wav",
+        "Sound\\Creature\\Horse\\mHorseWoundB.wav",
+    };
+
+    for (const auto& path : horseLandPaths) {
+        MountSample sample;
+        if (loadSound(path, sample)) {
+            horseLandSounds_.push_back(std::move(sample));
         }
     }
 
@@ -111,6 +139,12 @@ void MountSoundManager::loadMountSounds() {
     }
     if (!horseMoveSounds_.empty()) {
         LOG_INFO("Loaded ", horseMoveSounds_.size(), " horse move sounds");
+    }
+    if (!horseJumpSounds_.empty()) {
+        LOG_INFO("Loaded ", horseJumpSounds_.size(), " horse jump sounds");
+    }
+    if (!horseLandSounds_.empty()) {
+        LOG_INFO("Loaded ", horseLandSounds_.size(), " horse land sounds");
     }
 }
 
@@ -146,11 +180,13 @@ void MountSoundManager::onMount(uint32_t creatureDisplayId, bool isFlying) {
     mounted_ = true;
     currentDisplayId_ = creatureDisplayId;
     currentMountType_ = detectMountType(creatureDisplayId);
+    currentMountFamily_ = detectMountFamily(creatureDisplayId);
     flying_ = isFlying;
     moving_ = false;
 
     LOG_INFO("Mount sound: mounted on display ID ", creatureDisplayId,
              " type=", static_cast<int>(currentMountType_),
+             " family=", static_cast<int>(currentMountFamily_),
              " flying=", flying_);
 
     updateMountSounds();
@@ -225,14 +261,14 @@ void MountSoundManager::playJumpSound() {
     if (elapsed < 200) return;
     lastActionSoundTime_ = now;
 
-    // Shorter, quieter sound for jump start
-    if (currentMountType_ == MountType::GROUND && !horseBreathSounds_.empty()) {
-        // Ground mounts: grunt/snort
+    // Jump effort sound
+    if (currentMountType_ == MountType::GROUND && !horseJumpSounds_.empty()) {
+        // TODO: Select family-specific sounds once organized by family
         static std::mt19937 rng(std::random_device{}());
-        std::uniform_int_distribution<size_t> dist(0, horseBreathSounds_.size() - 1);
-        const auto& sample = horseBreathSounds_[dist(rng)];
+        std::uniform_int_distribution<size_t> dist(0, horseJumpSounds_.size() - 1);
+        const auto& sample = horseJumpSounds_[dist(rng)];
         if (!sample.data.empty()) {
-            AudioEngine::instance().playSound2D(sample.data, 0.5f * volumeScale_, 1.2f);
+            AudioEngine::instance().playSound2D(sample.data, 0.5f * volumeScale_, 1.1f);
         }
     } else if (currentMountType_ == MountType::FLYING && !wingFlapSounds_.empty()) {
         // Flying mounts: wing whoosh
@@ -255,13 +291,13 @@ void MountSoundManager::playLandSound() {
     lastActionSoundTime_ = now;
 
     // Landing thud/hoof sound
-    if (currentMountType_ == MountType::GROUND && !horseBreathSounds_.empty()) {
-        // Ground mounts: hoof thud (use breath as placeholder for now)
+    if (currentMountType_ == MountType::GROUND && !horseLandSounds_.empty()) {
+        // Ground mounts: hoof thud / impact
         static std::mt19937 rng(std::random_device{}());
-        std::uniform_int_distribution<size_t> dist(0, horseBreathSounds_.size() - 1);
-        const auto& sample = horseBreathSounds_[dist(rng)];
+        std::uniform_int_distribution<size_t> dist(0, horseLandSounds_.size() - 1);
+        const auto& sample = horseLandSounds_[dist(rng)];
         if (!sample.data.empty()) {
-            AudioEngine::instance().playSound2D(sample.data, 0.6f * volumeScale_, 0.8f);  // Lower pitch for thud
+            AudioEngine::instance().playSound2D(sample.data, 0.6f * volumeScale_, 0.85f);  // Lower pitch for thud
         }
     }
 }
@@ -284,6 +320,33 @@ MountType MountSoundManager::detectMountType(uint32_t creatureDisplayId) const {
 
     // Most other mounts are ground
     return MountType::GROUND;
+}
+
+MountFamily MountSoundManager::detectMountFamily(uint32_t creatureDisplayId) const {
+    // Heuristic creature family detection based on common display ID ranges
+    // TODO: Replace with proper CreatureModelData.dbc lookup
+
+    // Horses: ~14000-14999 range (includes many horse variants)
+    if (creatureDisplayId >= 14000 && creatureDisplayId < 15000) return MountFamily::HORSE;
+
+    // Rams: ~14349-14375 range
+    if (creatureDisplayId >= 14349 && creatureDisplayId <= 14375) return MountFamily::RAM;
+
+    // Wolves: ~207-217, ~2326-2329 ranges
+    if ((creatureDisplayId >= 207 && creatureDisplayId <= 217) ||
+        (creatureDisplayId >= 2326 && creatureDisplayId <= 2329)) return MountFamily::WOLF;
+
+    // Tigers/Cats: ~6442-6473 range
+    if (creatureDisplayId >= 6442 && creatureDisplayId <= 6473) return MountFamily::TIGER;
+
+    // Raptors: ~6466-6474 range
+    if (creatureDisplayId >= 6466 && creatureDisplayId <= 6474) return MountFamily::RAPTOR;
+
+    // Dragons/Drakes
+    if (creatureDisplayId >= 25800 && creatureDisplayId <= 25900) return MountFamily::DRAGON;
+
+    // Default to horse for unknown ground mounts
+    return MountFamily::HORSE;
 }
 
 void MountSoundManager::updateMountSounds() {

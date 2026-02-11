@@ -17,6 +17,16 @@ enum class MountType {
     SWIMMING     // Sea turtle, etc.
 };
 
+enum class MountFamily {
+    UNKNOWN,
+    HORSE,
+    RAM,
+    WOLF,
+    TIGER,
+    RAPTOR,
+    DRAGON
+};
+
 struct MountSample {
     std::string path;
     std::vector<uint8_t> data;
@@ -51,6 +61,7 @@ public:
 
 private:
     MountType detectMountType(uint32_t creatureDisplayId) const;
+    MountFamily detectMountFamily(uint32_t creatureDisplayId) const;
     void updateMountSounds();
     void stopAllMountSounds();
     void loadMountSounds();
@@ -61,6 +72,7 @@ private:
     bool moving_ = false;
     bool flying_ = false;
     MountType currentMountType_ = MountType::NONE;
+    MountFamily currentMountFamily_ = MountFamily::UNKNOWN;
     uint32_t currentDisplayId_ = 0;
     float volumeScale_ = 1.0f;
 
@@ -69,6 +81,8 @@ private:
     std::vector<MountSample> wingIdleSounds_;
     std::vector<MountSample> horseBreathSounds_;
     std::vector<MountSample> horseMoveSounds_;
+    std::vector<MountSample> horseJumpSounds_;   // Jump effort sounds
+    std::vector<MountSample> horseLandSounds_;   // Landing thud sounds
 
     // Sound state tracking
     bool playingMovementSound_ = false;

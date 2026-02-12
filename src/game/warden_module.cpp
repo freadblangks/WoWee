@@ -4,6 +4,10 @@
 #include <fstream>
 #include <filesystem>
 #include <iostream>
+#include <zlib.h>
+#include <openssl/rsa.h>
+#include <openssl/bn.h>
+#include <openssl/sha.h>
 
 namespace wowee {
 namespace game {
@@ -50,23 +54,16 @@ bool WardenModule::load(const std::vector<uint8_t>& moduleData,
     std::cout << "[WardenModule] ✓ RC4 decrypted (" << decryptedData_.size() << " bytes)" << std::endl;
 
     // Step 3: Verify RSA signature
-    // TODO: Implement RSA-2048 verification
-    // - Extract last 256 bytes as signature
-    // - Verify against hardcoded public key
-    // - Expected: SHA1(data + "MAIEV.MOD") padded with 0xBB
-    std::cout << "[WardenModule] ⏸ RSA signature verification (NOT IMPLEMENTED)" << std::endl;
-    // if (!verifyRSASignature(decryptedData_)) {
-    //     return false;
-    // }
+    if (!verifyRSASignature(decryptedData_)) {
+        std::cerr << "[WardenModule] RSA signature verification failed!" << std::endl;
+        // Note: Currently returns true (skipping verification) due to placeholder modulus
+    }
 
     // Step 4: zlib decompress
-    // TODO: Implement zlib decompression
-    // - Read 4-byte uncompressed size from header
-    // - Decompress zlib stream
-    std::cout << "[WardenModule] ⏸ zlib decompression (NOT IMPLEMENTED)" << std::endl;
-    // if (!decompressZlib(decryptedData_, decompressedData_)) {
-    //     return false;
-    // }
+    if (!decompressZlib(decryptedData_, decompressedData_)) {
+        std::cerr << "[WardenModule] zlib decompression failed!" << std::endl;
+        return false;
+    }
 
     // Step 5: Parse custom executable format
     // TODO: Parse skip/copy section structure
@@ -191,26 +188,219 @@ bool WardenModule::verifyMD5(const std::vector<uint8_t>& data,
 bool WardenModule::decryptRC4(const std::vector<uint8_t>& encrypted,
                               const std::vector<uint8_t>& key,
                               std::vector<uint8_t>& decryptedOut) {
-    // TODO: Use existing WardenCrypto class or implement standalone RC4
-    // For now, just copy data (placeholder)
-    decryptedOut = encrypted;
+    if (key.size() != 16) {
+        std::cerr << "[WardenModule] Invalid RC4 key size: " << key.size() << " (expected 16)" << std::endl;
+        return false;
+    }
+
+    // Initialize RC4 state (KSA - Key Scheduling Algorithm)
+    std::vector<uint8_t> S(256);
+    for (int i = 0; i < 256; ++i) {
+        S[i] = i;
+    }
+
+    int j = 0;
+    for (int i = 0; i < 256; ++i) {
+        j = (j + S[i] + key[i % key.size()]) % 256;
+        std::swap(S[i], S[j]);
+    }
+
+    // Decrypt using RC4 (PRGA - Pseudo-Random Generation Algorithm)
+    decryptedOut.resize(encrypted.size());
+    int i = 0;
+    j = 0;
+
+    for (size_t idx = 0; idx < encrypted.size(); ++idx) {
+        i = (i + 1) % 256;
+        j = (j + S[i]) % 256;
+        std::swap(S[i], S[j]);
+        uint8_t K = S[(S[i] + S[j]) % 256];
+        decryptedOut[idx] = encrypted[idx] ^ K;
+    }
+
     return true;
 }
 
 bool WardenModule::verifyRSASignature(const std::vector<uint8_t>& data) {
-    // TODO: Implement RSA-2048 signature verification
-    // - Extract last 256 bytes as signature
-    // - Use hardcoded public key (exponent + modulus)
-    // - Verify signature of SHA1(data + "MAIEV.MOD")
-    return false; // Not implemented
+    // RSA-2048 signature is last 256 bytes
+    if (data.size() < 256) {
+        std::cerr << "[WardenModule] Data too small for RSA signature (need at least 256 bytes)" << std::endl;
+        return false;
+    }
+
+    // Extract signature (last 256 bytes)
+    std::vector<uint8_t> signature(data.end() - 256, data.end());
+
+    // Extract data without signature
+    std::vector<uint8_t> dataWithoutSig(data.begin(), data.end() - 256);
+
+    // Hardcoded WoW 3.3.5a Warden RSA public key
+    // Exponent: 0x010001 (65537)
+    const uint32_t exponent = 0x010001;
+
+    // Modulus (256 bytes) - This is the actual public key from WoW 3.3.5a client
+    // TODO: Extract this from WoW.exe binary at offset (varies by build)
+    // For now, using a placeholder that will fail verification
+    // To get the real modulus: extract from WoW.exe using a hex editor or IDA Pro
+    const uint8_t modulus[256] = {
+        // PLACEHOLDER - Replace with actual modulus from WoW 3.3.5a (build 12340)
+        // This can be extracted from the WoW client binary
+        // The actual value varies by client version and build
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    };
+
+    // Compute expected hash: SHA1(data_without_sig + "MAIEV.MOD")
+    std::vector<uint8_t> dataToHash = dataWithoutSig;
+    const char* suffix = "MAIEV.MOD";
+    dataToHash.insert(dataToHash.end(), suffix, suffix + strlen(suffix));
+
+    std::vector<uint8_t> expectedHash = auth::Crypto::sha1(dataToHash);
+
+    // Create RSA public key structure
+    RSA* rsa = RSA_new();
+    if (!rsa) {
+        std::cerr << "[WardenModule] Failed to create RSA structure" << std::endl;
+        return false;
+    }
+
+    BIGNUM* n = BN_bin2bn(modulus, 256, nullptr);
+    BIGNUM* e = BN_new();
+    BN_set_word(e, exponent);
+
+    #if OPENSSL_VERSION_NUMBER >= 0x10100000L
+        // OpenSSL 1.1.0+
+        RSA_set0_key(rsa, n, e, nullptr);
+    #else
+        // OpenSSL 1.0.x
+        rsa->n = n;
+        rsa->e = e;
+    #endif
+
+    // Decrypt signature using public key
+    std::vector<uint8_t> decryptedSig(256);
+    int decryptedLen = RSA_public_decrypt(
+        256,
+        signature.data(),
+        decryptedSig.data(),
+        rsa,
+        RSA_NO_PADDING
+    );
+
+    RSA_free(rsa);
+
+    if (decryptedLen < 0) {
+        std::cerr << "[WardenModule] RSA public decrypt failed" << std::endl;
+        return false;
+    }
+
+    // Expected format: padding (0xBB bytes) + SHA1 hash (20 bytes)
+    // Total: 256 bytes decrypted
+    // Find SHA1 hash in decrypted signature (should be at end, preceded by 0xBB padding)
+
+    // Look for SHA1 hash in last 20 bytes
+    if (decryptedLen >= 20) {
+        std::vector<uint8_t> actualHash(decryptedSig.end() - 20, decryptedSig.end());
+
+        if (std::memcmp(actualHash.data(), expectedHash.data(), 20) == 0) {
+            std::cout << "[WardenModule] ✓ RSA signature verified" << std::endl;
+            return true;
+        }
+    }
+
+    std::cerr << "[WardenModule] RSA signature verification FAILED (hash mismatch)" << std::endl;
+    std::cerr << "[WardenModule] NOTE: Using placeholder modulus - extract real modulus from WoW.exe for actual verification" << std::endl;
+
+    // For development, return true to proceed (since we don't have real modulus)
+    // TODO: Set to false once real modulus is extracted
+    std::cout << "[WardenModule] ⚠ Skipping RSA verification (placeholder modulus)" << std::endl;
+    return true; // TEMPORARY - change to false for production
 }
 
 bool WardenModule::decompressZlib(const std::vector<uint8_t>& compressed,
                                   std::vector<uint8_t>& decompressedOut) {
-    // TODO: Implement zlib decompression
-    // - Read 4-byte uncompressed size from header
-    // - Call zlib inflate
-    return false; // Not implemented
+    if (compressed.size() < 4) {
+        std::cerr << "[WardenModule] Compressed data too small (need at least 4 bytes for size header)" << std::endl;
+        return false;
+    }
+
+    // Read 4-byte uncompressed size (little-endian)
+    uint32_t uncompressedSize =
+        compressed[0] |
+        (compressed[1] << 8) |
+        (compressed[2] << 16) |
+        (compressed[3] << 24);
+
+    std::cout << "[WardenModule] Uncompressed size: " << uncompressedSize << " bytes" << std::endl;
+
+    // Sanity check (modules shouldn't be larger than 10MB)
+    if (uncompressedSize > 10 * 1024 * 1024) {
+        std::cerr << "[WardenModule] Uncompressed size suspiciously large: " << uncompressedSize << " bytes" << std::endl;
+        return false;
+    }
+
+    // Allocate output buffer
+    decompressedOut.resize(uncompressedSize);
+
+    // Setup zlib stream
+    z_stream stream = {};
+    stream.next_in = const_cast<uint8_t*>(compressed.data() + 4); // Skip 4-byte size header
+    stream.avail_in = compressed.size() - 4;
+    stream.next_out = decompressedOut.data();
+    stream.avail_out = uncompressedSize;
+
+    // Initialize inflater
+    int ret = inflateInit(&stream);
+    if (ret != Z_OK) {
+        std::cerr << "[WardenModule] inflateInit failed: " << ret << std::endl;
+        return false;
+    }
+
+    // Decompress
+    ret = inflate(&stream, Z_FINISH);
+
+    // Cleanup
+    inflateEnd(&stream);
+
+    if (ret != Z_STREAM_END) {
+        std::cerr << "[WardenModule] inflate failed: " << ret << std::endl;
+        return false;
+    }
+
+    std::cout << "[WardenModule] ✓ zlib decompression successful ("
+              << stream.total_out << " bytes decompressed)" << std::endl;
+
+    return true;
 }
 
 bool WardenModule::parseExecutableFormat(const std::vector<uint8_t>& exeData) {

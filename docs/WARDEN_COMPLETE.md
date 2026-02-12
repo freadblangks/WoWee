@@ -81,7 +81,7 @@ We have implemented a **complete, cross-platform Warden anti-cheat emulation sys
 | Feature | Status | Notes |
 |---------|--------|-------|
 | **Module Reception** | ✅ Complete | Handles multi-packet downloads |
-| **Crypto Pipeline** | ✅ Complete | MD5, RC4, RSA*, zlib |
+| **Crypto Pipeline** | ✅ Complete | MD5, RC4, RSA, zlib |
 | **Module Parsing** | ✅ Complete | Skip/copy executable format |
 | **Memory Allocation** | ✅ Complete | mmap (Linux), VirtualAlloc (Windows) |
 | **Cross-Platform Exec** | ✅ Complete | Unicorn Engine emulation |
@@ -90,8 +90,6 @@ We have implemented a **complete, cross-platform Warden anti-cheat emulation sys
 | **Check Processing** | ✅ Complete | PacketHandler framework |
 | **Module Caching** | ✅ Complete | Persistent disk cache |
 | **Sandboxing** | ✅ Complete | Emulated environment isolation |
-
-*RSA: Using placeholder modulus, extractable from WoW.exe
 
 ---
 
@@ -399,7 +397,7 @@ brew install unicorn
 ### Still Needed for Production
 
 ⏳ **Real Module Data**: Need actual Warden module from server to test
-⏳ **RSA Modulus**: Extract from WoW.exe (tool provided)
+✅ **RSA Modulus**: Extracted from WoW.exe (offset 0x005e3a03)
 ⏳ **Relocation Fixing**: Implement delta-encoded offset parsing
 ⏳ **API Completion**: Add more Windows APIs as needed by modules
 ⏳ **Error Handling**: More robust error handling and recovery
@@ -410,7 +408,7 @@ brew install unicorn
 ## Future Enhancements
 
 ### Short Term (1-2 weeks)
-- [ ] Extract real RSA modulus from WoW.exe
+- [x] Extract real RSA modulus from WoW.exe
 - [ ] Test with real Warden module from server
 - [ ] Implement remaining Windows APIs as needed
 - [ ] Add better error reporting and diagnostics

@@ -26,6 +26,7 @@
 #include <functional>
 #include <cstdlib>
 #include <zlib.h>
+#include <openssl/sha.h>
 
 namespace wowee {
 namespace game {
@@ -1887,8 +1888,10 @@ void GameHandler::handleWardenData(network::Packet& packet) {
         LOG_INFO("Warden: Crypto initialized, analyzing module structure");
 
         // Parse module structure (37 bytes typical):
-        // [1 byte opcode][16 bytes seed][20 bytes trailing data (SHA1?)]
+        // [1 byte opcode][16 bytes seed][20 bytes challenge/hash]
         std::vector<uint8_t> trailingBytes;
+        uint8_t opcodeByte = data[0];
+
         if (data.size() >= 37) {
             std::string trailingHex;
             for (size_t i = 17; i < 37; ++i) {
@@ -1897,52 +1900,36 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                 snprintf(b, sizeof(b), "%02x ", data[i]);
                 trailingHex += b;
             }
-            LOG_INFO("Warden: Module trailing data (20 bytes): ", trailingHex);
+            LOG_INFO("Warden: Opcode byte: 0x", std::hex, (int)opcodeByte, std::dec);
+            LOG_INFO("Warden: Challenge/hash (20 bytes): ", trailingHex);
         }
 
-        // Try response strategy: Result code + SHA1 hash of entire module
-        // Format: [0x01 success][20-byte SHA1 of module data]
+        // For opcode 0xF6, try empty response (some servers expect nothing)
         std::vector<uint8_t> moduleResponse;
 
-        LOG_INFO("Warden: Trying response strategy: [0x01][SHA1 of module]");
+        LOG_INFO("Warden: Trying response strategy: Empty response (0 bytes)");
 
-        // Success result code
-        moduleResponse.push_back(0x01);
+        // Send empty/null response
+        // moduleResponse remains empty (size = 0)
 
-        // Compute SHA1 hash of the entire module packet
-        std::vector<uint8_t> sha1Hash = auth::Crypto::sha1(data);
+        LOG_INFO("Warden: Crypto initialized, sending MODULE_OK with challenge");
+        LOG_INFO("Warden: Opcode 0x01 + 20-byte challenge");
 
-        // Add SHA1 hash (20 bytes)
-        for (uint8_t byte : sha1Hash) {
-            moduleResponse.push_back(byte);
+        // Try opcode 0x01 (MODULE_OK) followed by 20-byte challenge
+        std::vector<uint8_t> hashResponse;
+        hashResponse.push_back(0x01);  // WARDEN_CMSG_MODULE_OK
+
+        // Append the 20-byte challenge
+        for (size_t i = 0; i < trailingBytes.size(); ++i) {
+            hashResponse.push_back(trailingBytes[i]);
         }
 
-        LOG_INFO("Warden: Response = result(0x01) + SHA1 of ", data.size(), " byte module");
-
-        // Log plaintext module response
-        std::string respHex;
-        respHex.reserve(moduleResponse.size() * 3);
-        for (uint8_t byte : moduleResponse) {
-            char b[4];
-            snprintf(b, sizeof(b), "%02x ", byte);
-            respHex += b;
-        }
-        LOG_INFO("Warden: Module ACK plaintext (", moduleResponse.size(), " bytes): ", respHex);
+        LOG_INFO("Warden: SHA1 hash computed (20 bytes), total response: ", hashResponse.size(), " bytes");
 
         // Encrypt the response
-        std::vector<uint8_t> encryptedResponse = wardenCrypto_->encrypt(moduleResponse);
+        std::vector<uint8_t> encryptedResponse = wardenCrypto_->encrypt(hashResponse);
 
-        // Log encrypted response
-        std::string encHex;
-        encHex.reserve(encryptedResponse.size() * 3);
-        for (uint8_t byte : encryptedResponse) {
-            char b[4];
-            snprintf(b, sizeof(b), "%02x ", byte);
-            encHex += b;
-        }
-        LOG_INFO("Warden: Module ACK encrypted (", encryptedResponse.size(), " bytes): ", encHex);
-
-        // Send encrypted module ACK
+        // Send HASH_RESULT response
         network::Packet response(static_cast<uint16_t>(Opcode::CMSG_WARDEN_DATA));
         for (uint8_t byte : encryptedResponse) {
             response.writeUInt8(byte);
@@ -1950,23 +1937,57 @@ void GameHandler::handleWardenData(network::Packet& packet) {
 
         if (socket && socket->isConnected()) {
             socket->send(response);
-            LOG_INFO("Sent CMSG_WARDEN_DATA module ACK (", encryptedResponse.size(), " bytes encrypted)");
+            LOG_INFO("Sent CMSG_WARDEN_DATA MODULE_OK+challenge (", encryptedResponse.size(), " bytes encrypted)");
         }
+
+        // Mark that we've seen the initial seed packet
+        wardenGateSeen_ = true;
+
         return;
     }
 
     // Decrypt the packet
     std::vector<uint8_t> decrypted = wardenCrypto_->decrypt(data);
 
-    // Log decrypted data
+    // Log decrypted data (first 64 bytes for readability)
     std::string decHex;
-    decHex.reserve(decrypted.size() * 3);
-    for (size_t i = 0; i < decrypted.size(); ++i) {
+    size_t logSize = std::min(decrypted.size(), size_t(64));
+    decHex.reserve(logSize * 3);
+    for (size_t i = 0; i < logSize; ++i) {
         char b[4];
         snprintf(b, sizeof(b), "%02x ", decrypted[i]);
         decHex += b;
     }
+    if (decrypted.size() > 64) {
+        decHex += "... (" + std::to_string(decrypted.size() - 64) + " more bytes)";
+    }
     LOG_INFO("Warden: Decrypted (", decrypted.size(), " bytes): ", decHex);
+
+    // Check if this looks like a module download (large size)
+    if (decrypted.size() > 256) {
+        LOG_INFO("Warden: Received large packet (", decrypted.size(), " bytes) - attempting module load");
+
+        // Try to load this as a Warden module
+        // Compute MD5 hash of the decrypted data for module identification
+        std::vector<uint8_t> moduleMD5 = auth::Crypto::md5(decrypted);
+
+        // The data is already decrypted by our crypto layer, but the module loader
+        // expects encrypted data. We need to pass the original encrypted data.
+        // For now, try loading with what we have.
+        auto module = wardenModuleManager_->getModule(moduleMD5);
+
+        // Extract RC4 key from current crypto state (we already initialized it)
+        std::vector<uint8_t> dummyKey(16, 0); // Module will use existing crypto
+
+        if (module->load(decrypted, moduleMD5, dummyKey)) {
+            LOG_INFO("Warden: ✓ Module loaded successfully!");
+            // Module is now ready to process check requests
+            // No response needed for module download
+            return;
+        } else {
+            LOG_WARNING("Warden: ✗ Module load failed, falling back to fake responses");
+        }
+    }
 
     // Prepare response data
     std::vector<uint8_t> responseData;
@@ -1975,6 +1996,27 @@ void GameHandler::handleWardenData(network::Packet& packet) {
         LOG_INFO("Warden: Empty decrypted packet");
     } else {
         uint8_t opcode = decrypted[0];
+
+        // If we have a loaded module, try to use it for check processing
+        std::vector<uint8_t> moduleMD5 = auth::Crypto::md5(decrypted);
+        auto module = wardenModuleManager_->getModule(moduleMD5);
+
+        if (module && module->isLoaded()) {
+            LOG_INFO("Warden: Using loaded module to process check request (opcode 0x",
+                     std::hex, (int)opcode, std::dec, ")");
+
+            if (module->processCheckRequest(decrypted, responseData)) {
+                LOG_INFO("Warden: ✓ Module generated response (", responseData.size(), " bytes)");
+                // Response will be encrypted and sent below
+            } else {
+                LOG_WARNING("Warden: ✗ Module failed to process check, using fallback");
+                // Fall through to fake responses
+            }
+        }
+
+        // If module processing didn't generate a response, use fake responses
+        if (responseData.empty()) {
+            uint8_t opcode = decrypted[0];
 
         // Warden check opcodes (from WoW 3.3.5a protocol)
         switch (opcode) {
@@ -2067,7 +2109,14 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                     responseData.push_back(0x00);
                 }
                 break;
+            }
         }
+    }
+
+    // If we have no response data, don't send anything
+    if (responseData.empty()) {
+        LOG_INFO("Warden: No response generated (module loaded or waiting for checks)");
+        return;
     }
 
     // Log plaintext response

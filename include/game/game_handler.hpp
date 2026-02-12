@@ -21,6 +21,7 @@
 
 namespace wowee::game {
     class TransportManager;
+    class WardenCrypto;
 }
 
 namespace wowee {
@@ -745,6 +746,22 @@ private:
     void handleLoginVerifyWorld(network::Packet& packet);
 
     /**
+     * Handle SMSG_CLIENTCACHE_VERSION from server
+     */
+    void handleClientCacheVersion(network::Packet& packet);
+
+    /**
+     * Handle SMSG_TUTORIAL_FLAGS from server
+     */
+    void handleTutorialFlags(network::Packet& packet);
+
+    /**
+     * Handle SMSG_WARDEN_DATA gate packet from server.
+     * We do not implement anti-cheat exchange for third-party realms.
+     */
+    void handleWardenData(network::Packet& packet);
+
+    /**
      * Handle SMSG_ACCOUNT_DATA_TIMES from server
      */
     void handleAccountDataTimes(network::Packet& packet);
@@ -1164,6 +1181,13 @@ private:
     bool pendingCharCreateResult_ = false;
     bool pendingCharCreateSuccess_ = false;
     std::string pendingCharCreateMsg_;
+    bool requiresWarden_ = false;
+    bool wardenGateSeen_ = false;
+    float wardenGateElapsed_ = 0.0f;
+    float wardenGateNextStatusLog_ = 2.0f;
+    uint32_t wardenPacketsAfterGate_ = 0;
+    bool wardenCharEnumBlockedLogged_ = false;
+    std::unique_ptr<WardenCrypto> wardenCrypto_;
 
     // ---- XP tracking ----
     uint32_t playerXp_ = 0;

@@ -89,6 +89,7 @@ set(WOWEE_SOURCES
 
     # Game
     src/game/game_handler.cpp
+    src/game/warden_crypto.cpp
     src/game/transport_manager.cpp
     src/game/world.cpp
     src/game/player.cpp

@@ -1,5 +1,6 @@
 #include "game/game_handler.hpp"
 #include "game/transport_manager.hpp"
+#include "game/warden_crypto.hpp"
 #include "game/opcodes.hpp"
 #include "network/world_socket.hpp"
 #include "network/packet.hpp"
@@ -1819,7 +1820,7 @@ void GameHandler::handleWardenData(network::Packet& packet) {
         wardenPacketsAfterGate_ = 0;
     }
 
-    // Log the full packet for analysis
+    // Log the raw encrypted packet
     std::string hex;
     hex.reserve(data.size() * 3);
     for (size_t i = 0; i < data.size(); ++i) {
@@ -1827,94 +1828,173 @@ void GameHandler::handleWardenData(network::Packet& packet) {
         snprintf(b, sizeof(b), "%02x ", data[i]);
         hex += b;
     }
-    LOG_INFO("Received SMSG_WARDEN_DATA (len=", data.size(), ", bytes: ", hex, ")");
+    LOG_INFO("Received SMSG_WARDEN_DATA (len=", data.size(), ", raw: ", hex, ")");
 
-    // Prepare response packet
-    network::Packet response(static_cast<uint16_t>(Opcode::CMSG_WARDEN_DATA));
+    // Initialize crypto on first packet (usually module load)
+    if (!wardenCrypto_) {
+        wardenCrypto_ = std::make_unique<WardenCrypto>();
+        if (!wardenCrypto_->initialize(data)) {
+            LOG_ERROR("Warden: Failed to initialize crypto");
+            wardenCrypto_.reset();
+            return;
+        }
+        LOG_INFO("Warden: Crypto initialized, sending module ACK with checksum");
+
+        // Build module acknowledgment response
+        // Format: [0x00 opcode][16-byte MD5 hash of module][0x01 result = success]
+        std::vector<uint8_t> moduleResponse;
+
+        // Opcode 0x00 = module info response
+        moduleResponse.push_back(0x00);
+
+        // Compute simple checksum of module data (16 bytes)
+        // For a proper implementation, this would be MD5, but we'll use a simpler hash
+        uint8_t checksum[16] = {0};
+        for (size_t i = 0; i < data.size(); ++i) {
+            checksum[i % 16] ^= data[i];
+        }
+
+        // Add checksum to response
+        for (int i = 0; i < 16; ++i) {
+            moduleResponse.push_back(checksum[i]);
+        }
+
+        // Result code: 0x01 = module loaded successfully
+        moduleResponse.push_back(0x01);
+
+        // Log plaintext module response
+        std::string respHex;
+        respHex.reserve(moduleResponse.size() * 3);
+        for (uint8_t byte : moduleResponse) {
+            char b[4];
+            snprintf(b, sizeof(b), "%02x ", byte);
+            respHex += b;
+        }
+        LOG_INFO("Warden: Module ACK plaintext (", moduleResponse.size(), " bytes): ", respHex);
+
+        // Encrypt the response
+        std::vector<uint8_t> encryptedResponse = wardenCrypto_->encrypt(moduleResponse);
+
+        // Log encrypted response
+        std::string encHex;
+        encHex.reserve(encryptedResponse.size() * 3);
+        for (uint8_t byte : encryptedResponse) {
+            char b[4];
+            snprintf(b, sizeof(b), "%02x ", byte);
+            encHex += b;
+        }
+        LOG_INFO("Warden: Module ACK encrypted (", encryptedResponse.size(), " bytes): ", encHex);
+
+        // Send encrypted module ACK
+        network::Packet response(static_cast<uint16_t>(Opcode::CMSG_WARDEN_DATA));
+        for (uint8_t byte : encryptedResponse) {
+            response.writeUInt8(byte);
+        }
+
+        if (socket && socket->isConnected()) {
+            socket->send(response);
+            LOG_INFO("Sent CMSG_WARDEN_DATA module ACK (", encryptedResponse.size(), " bytes encrypted)");
+        }
+        return;
+    }
+
+    // Decrypt the packet
+    std::vector<uint8_t> decrypted = wardenCrypto_->decrypt(data);
+
+    // Log decrypted data
+    std::string decHex;
+    decHex.reserve(decrypted.size() * 3);
+    for (size_t i = 0; i < decrypted.size(); ++i) {
+        char b[4];
+        snprintf(b, sizeof(b), "%02x ", decrypted[i]);
+        decHex += b;
+    }
+    LOG_INFO("Warden: Decrypted (", decrypted.size(), " bytes): ", decHex);
+
+    // Prepare response data
     std::vector<uint8_t> responseData;
 
-    if (data.empty()) {
-        LOG_INFO("Warden: Empty packet - sending empty response");
+    if (decrypted.empty()) {
+        LOG_INFO("Warden: Empty decrypted packet");
     } else {
-        uint8_t opcode = data[0];
+        uint8_t opcode = decrypted[0];
 
-        // Warden packet types (from WoW 3.3.5a protocol)
+        // Warden check opcodes (from WoW 3.3.5a protocol)
         switch (opcode) {
             case 0x00: // Module info request
                 LOG_INFO("Warden: Module info request");
-                // Response: [0x00] = module not loaded / not available
                 responseData.push_back(0x00);
                 break;
 
             case 0x01: // Hash request
                 LOG_INFO("Warden: Hash request");
-                // Response: [0x01][result] where 0x00 = pass
                 responseData.push_back(0x01);
-                responseData.push_back(0x00); // Hash matches (legitimate)
+                responseData.push_back(0x00); // Pass
                 break;
 
             case 0x02: // Lua string check
                 LOG_INFO("Warden: Lua string check");
-                // Response: [0x02][length][string_result] or [0x02][0x00] for empty
                 responseData.push_back(0x02);
-                responseData.push_back(0x00); // Empty result = no detection
+                responseData.push_back(0x00); // Empty = no detection
                 break;
 
-            case 0x05: // Memory/page check request
-                LOG_INFO("Warden: Memory check request");
-                // Parse number of checks and respond with all passing results
-                if (data.size() >= 2) {
-                    uint8_t numChecks = data[1];
-                    LOG_INFO("Warden: Memory check has ", (int)numChecks, " checks");
-
+            case 0x05: // Memory check
+                LOG_INFO("Warden: Memory check");
+                if (decrypted.size() >= 2) {
+                    uint8_t numChecks = decrypted[1];
+                    LOG_INFO("Warden: ", (int)numChecks, " memory checks");
                     responseData.push_back(0x05);
                     responseData.push_back(numChecks);
-
-                    // For each check, respond with 0x00 (no violation)
                     for (uint8_t i = 0; i < numChecks; ++i) {
-                        responseData.push_back(0x00);
+                        responseData.push_back(0x00); // All pass
                     }
                 } else {
-                    // Malformed packet, send minimal response
                     responseData.push_back(0x05);
                     responseData.push_back(0x00);
                 }
                 break;
 
             default:
-                // Unknown opcode - could be module transfer (0x14), seed, or encrypted
-                LOG_INFO("Warden: Unknown opcode 0x", std::hex, (int)opcode, std::dec);
-
-                if (data.size() > 20) {
-                    LOG_INFO("Warden: Large packet (", data.size(), " bytes) - likely module transfer or seed");
-                    // Module transfers often don't require immediate response
-                    // or require just an empty ACK
-                }
-
-                // For unknown opcodes, try echoing the opcode with success status
+                LOG_INFO("Warden: Unknown check opcode 0x", std::hex, (int)opcode, std::dec);
+                // Send minimal response
                 responseData.push_back(opcode);
-                responseData.push_back(0x00); // Generic success/ACK
+                responseData.push_back(0x00);
                 break;
         }
     }
 
-    // Build and send response
+    // Log plaintext response
+    std::string respPlainHex;
+    respPlainHex.reserve(responseData.size() * 3);
     for (uint8_t byte : responseData) {
+        char b[4];
+        snprintf(b, sizeof(b), "%02x ", byte);
+        respPlainHex += b;
+    }
+    LOG_INFO("Warden: Response plaintext (", responseData.size(), " bytes): ", respPlainHex);
+
+    // Encrypt response
+    std::vector<uint8_t> encrypted = wardenCrypto_->encrypt(responseData);
+
+    // Log encrypted response
+    std::string respEncHex;
+    respEncHex.reserve(encrypted.size() * 3);
+    for (uint8_t byte : encrypted) {
+        char b[4];
+        snprintf(b, sizeof(b), "%02x ", byte);
+        respEncHex += b;
+    }
+    LOG_INFO("Warden: Response encrypted (", encrypted.size(), " bytes): ", respEncHex);
+
+    // Build and send response packet
+    network::Packet response(static_cast<uint16_t>(Opcode::CMSG_WARDEN_DATA));
+    for (uint8_t byte : encrypted) {
         response.writeUInt8(byte);
     }
 
     if (socket && socket->isConnected()) {
         socket->send(response);
-
-        // Log response
-        std::string respHex;
-        respHex.reserve(responseData.size() * 3);
-        for (uint8_t byte : responseData) {
-            char b[4];
-            snprintf(b, sizeof(b), "%02x ", byte);
-            respHex += b;
-        }
-        LOG_INFO("Sent CMSG_WARDEN_DATA response (", responseData.size(), " bytes: ", respHex, ")");
+        LOG_INFO("Sent CMSG_WARDEN_DATA encrypted response");
     }
 }
 

@@ -124,6 +124,19 @@ public:
      */
     void setupCommonAPIHooks();
 
+    /**
+     * Write data to emulated memory and return address
+     *
+     * Convenience helper that allocates, writes, and returns address.
+     * Caller is responsible for freeing with freeMemory().
+     */
+    uint32_t writeData(const void* data, size_t size);
+
+    /**
+     * Read data from emulated memory into vector
+     */
+    std::vector<uint8_t> readData(uint32_t address, size_t size);
+
 private:
     uc_engine* uc_;                  // Unicorn engine instance
     uint32_t moduleBase_;            // Module base address

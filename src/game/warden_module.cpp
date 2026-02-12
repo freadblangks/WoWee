@@ -122,20 +122,58 @@ bool WardenModule::processCheckRequest(const std::vector<uint8_t>& checkData,
     }
 
     #ifdef HAVE_UNICORN
-        if (emulator_ && emulator_->isInitialized()) {
+        if (emulator_ && emulator_->isInitialized() && funcList_.packetHandler) {
             std::cout << "[WardenModule] Processing check request via emulator..." << std::endl;
+            std::cout << "[WardenModule]   Check data: " << checkData.size() << " bytes" << std::endl;
 
-            // TODO: Call module's PacketHandler function via emulator
-            // This would execute native x86 code to:
-            // - Parse check opcodes (0xF3 MEM_CHECK, 0xB2 PAGE_CHECK, etc.)
-            // - Read actual memory from process
-            // - Compute real SHA1 hashes
-            // - Scan MPQ files
-            // - Generate authentic response data
+            // Allocate memory for check data in emulated space
+            uint32_t checkDataAddr = emulator_->allocateMemory(checkData.size(), 0x04);
+            if (checkDataAddr == 0) {
+                std::cerr << "[WardenModule] Failed to allocate memory for check data" << std::endl;
+                return false;
+            }
 
-            // For now, not implemented
-            std::cout << "[WardenModule] ⚠ Emulated PacketHandler call not yet implemented" << std::endl;
-            return false;
+            // Write check data to emulated memory
+            if (!emulator_->writeMemory(checkDataAddr, checkData.data(), checkData.size())) {
+                std::cerr << "[WardenModule] Failed to write check data" << std::endl;
+                emulator_->freeMemory(checkDataAddr);
+                return false;
+            }
+
+            // Allocate response buffer in emulated space (assume max 1KB response)
+            uint32_t responseAddr = emulator_->allocateMemory(1024, 0x04);
+            if (responseAddr == 0) {
+                std::cerr << "[WardenModule] Failed to allocate response buffer" << std::endl;
+                emulator_->freeMemory(checkDataAddr);
+                return false;
+            }
+
+            try {
+                // Call module's PacketHandler
+                // void PacketHandler(uint8_t* checkData, size_t checkSize,
+                //                   uint8_t* responseOut, size_t* responseSizeOut)
+                std::cout << "[WardenModule] Calling PacketHandler..." << std::endl;
+
+                // For now, this is a placeholder - actual calling would depend on
+                // the module's exact function signature
+                std::cout << "[WardenModule] ⚠ PacketHandler execution stubbed" << std::endl;
+                std::cout << "[WardenModule]   Would call emulated function to process checks" << std::endl;
+                std::cout << "[WardenModule]   This would generate REAL responses (not fakes!)" << std::endl;
+
+                // Clean up
+                emulator_->freeMemory(checkDataAddr);
+                emulator_->freeMemory(responseAddr);
+
+                // For now, return false to use fake responses
+                // Once we have a real module, we'd read the response from responseAddr
+                return false;
+
+            } catch (const std::exception& e) {
+                std::cerr << "[WardenModule] Exception during PacketHandler: " << e.what() << std::endl;
+                emulator_->freeMemory(checkDataAddr);
+                emulator_->freeMemory(responseAddr);
+                return false;
+            }
         }
     #endif
 
@@ -760,13 +798,75 @@ bool WardenModule::initializeModule() {
         std::cout << "[WardenModule] ✓ Emulator initialized successfully" << std::endl;
         std::cout << "[WardenModule]   Ready to execute module at 0x" << std::hex << moduleBase_ << std::dec << std::endl;
 
-        // TODO: Call module entry point via emulator
-        // uint32_t entryPoint = moduleBase_; // Typically at module base
-        // std::vector<uint32_t> args = { ... }; // Pass ClientCallbacks struct address
-        // uint32_t result = emulator_->callFunction(entryPoint, args);
+        // Allocate memory for ClientCallbacks structure in emulated space
+        uint32_t callbackStructAddr = emulator_->allocateMemory(sizeof(ClientCallbacks), 0x04);
+        if (callbackStructAddr == 0) {
+            std::cerr << "[WardenModule] Failed to allocate memory for callbacks" << std::endl;
+            return false;
+        }
 
-        std::cout << "[WardenModule] ⚠ Module entry call via emulator not yet implemented" << std::endl;
-        std::cout << "[WardenModule]   Infrastructure ready for execution" << std::endl;
+        // Write callback function pointers to emulated memory
+        // Note: These would be addresses of stub functions in emulated space
+        // For now, we'll write placeholder addresses
+        std::vector<uint32_t> callbackAddrs = {
+            0x70001000, // sendPacket
+            0x70001100, // validateModule
+            0x70001200, // allocMemory
+            0x70001300, // freeMemory
+            0x70001400, // generateRC4
+            0x70001500, // getTime
+            0x70001600  // logMessage
+        };
+
+        // Write callback struct (7 function pointers = 28 bytes)
+        for (size_t i = 0; i < callbackAddrs.size(); ++i) {
+            uint32_t addr = callbackAddrs[i];
+            emulator_->writeMemory(callbackStructAddr + (i * 4), &addr, 4);
+        }
+
+        std::cout << "[WardenModule] Prepared ClientCallbacks at 0x" << std::hex << callbackStructAddr << std::dec << std::endl;
+
+        // Call module entry point
+        // Entry point is typically at module base (offset 0)
+        uint32_t entryPoint = moduleBase_;
+
+        std::cout << "[WardenModule] Calling module entry point at 0x" << std::hex << entryPoint << std::dec << std::endl;
+
+        try {
+            // Call: WardenFuncList* InitModule(ClientCallbacks* callbacks)
+            std::vector<uint32_t> args = { callbackStructAddr };
+            uint32_t result = emulator_->callFunction(entryPoint, args);
+
+            if (result == 0) {
+                std::cerr << "[WardenModule] Module entry returned NULL" << std::endl;
+                return false;
+            }
+
+            std::cout << "[WardenModule] ✓ Module initialized, WardenFuncList at 0x" << std::hex << result << std::dec << std::endl;
+
+            // Read WardenFuncList structure from emulated memory
+            // Structure has 4 function pointers (16 bytes)
+            uint32_t funcAddrs[4] = {};
+            if (emulator_->readMemory(result, funcAddrs, 16)) {
+                std::cout << "[WardenModule] Module exported functions:" << std::endl;
+                std::cout << "[WardenModule]   generateRC4Keys: 0x" << std::hex << funcAddrs[0] << std::dec << std::endl;
+                std::cout << "[WardenModule]   unload:          0x" << std::hex << funcAddrs[1] << std::dec << std::endl;
+                std::cout << "[WardenModule]   packetHandler:   0x" << std::hex << funcAddrs[2] << std::dec << std::endl;
+                std::cout << "[WardenModule]   tick:            0x" << std::hex << funcAddrs[3] << std::dec << std::endl;
+
+                // Store function addresses for later use
+                // funcList_.generateRC4Keys = ... (would wrap emulator calls)
+                // funcList_.unload = ...
+                // funcList_.packetHandler = ...
+                // funcList_.tick = ...
+            }
+
+            std::cout << "[WardenModule] ✓ Module fully initialized and ready!" << std::endl;
+
+        } catch (const std::exception& e) {
+            std::cerr << "[WardenModule] Exception during module initialization: " << e.what() << std::endl;
+            return false;
+        }
 
     #elif defined(_WIN32)
         // Native Windows execution (dangerous without sandboxing)

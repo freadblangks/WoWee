@@ -151,6 +151,25 @@ void WardenEmulator::setupCommonAPIHooks() {
     std::cout << "[WardenEmulator] ✓ Common API hooks registered" << std::endl;
 }
 
+uint32_t WardenEmulator::writeData(const void* data, size_t size) {
+    uint32_t addr = allocateMemory(size, 0x04);
+    if (addr != 0) {
+        if (!writeMemory(addr, data, size)) {
+            freeMemory(addr);
+            return 0;
+        }
+    }
+    return addr;
+}
+
+std::vector<uint8_t> WardenEmulator::readData(uint32_t address, size_t size) {
+    std::vector<uint8_t> result(size);
+    if (!readMemory(address, result.data(), size)) {
+        return {};
+    }
+    return result;
+}
+
 uint32_t WardenEmulator::callFunction(uint32_t address, const std::vector<uint32_t>& args) {
     if (!uc_) {
         std::cerr << "[WardenEmulator] Not initialized" << std::endl;

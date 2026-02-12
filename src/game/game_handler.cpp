@@ -1485,6 +1485,10 @@ void GameHandler::requestCharacterList() {
 
     LOG_INFO("Requesting character list from server...");
 
+    // Prevent the UI from showing/selecting stale characters while we wait for the new SMSG_CHAR_ENUM.
+    // This matters after character create/delete where the old list can linger for a few frames.
+    characters.clear();
+
     // Build CMSG_CHAR_ENUM packet (no body, just opcode)
     auto packet = CharEnumPacket::build();
 
@@ -1662,6 +1666,10 @@ void GameHandler::selectCharacter(uint64_t characterGuid) {
         LOG_WARNING("Cannot select character in state: ", (int)state);
         return;
     }
+
+    // Make the selected character authoritative in GameHandler.
+    // This avoids relying on UI/Application ordering for appearance-dependent logic.
+    activeCharacterGuid_ = characterGuid;
 
     LOG_INFO("========================================");
     LOG_INFO("   ENTERING WORLD");
@@ -5978,6 +5986,28 @@ void GameHandler::autoEquipItemBySlot(int backpackIndex) {
         auto packet = AutoEquipItemPacket::build(0xFF, static_cast<uint8_t>(23 + backpackIndex));
         socket->send(packet);
     }
+}
+
+void GameHandler::unequipToBackpack(EquipSlot equipSlot) {
+    if (state != WorldState::IN_WORLD || !socket) return;
+
+    int freeSlot = inventory.findFreeBackpackSlot();
+    if (freeSlot < 0) {
+        addSystemChatMessage("Cannot unequip: no free backpack slots.");
+        return;
+    }
+
+    // Use SWAP_ITEM for cross-container moves. For inventory slots we address bag as 0xFF.
+    uint8_t srcBag = 0xFF;
+    uint8_t srcSlot = static_cast<uint8_t>(equipSlot);
+    uint8_t dstBag = 0xFF;
+    uint8_t dstSlot = static_cast<uint8_t>(23 + freeSlot);
+
+    LOG_INFO("UnequipToBackpack: equipSlot=", (int)srcSlot,
+             " -> backpackIndex=", freeSlot, " (dstSlot=", (int)dstSlot, ")");
+
+    auto packet = SwapItemPacket::build(dstBag, dstSlot, srcBag, srcSlot);
+    socket->send(packet);
 }
 
 void GameHandler::useItemBySlot(int backpackIndex) {

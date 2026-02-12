@@ -7,6 +7,7 @@
 #include <functional>
 #include <vector>
 #include <memory>
+#include <cstdint>
 
 namespace wowee {
 namespace game { class GameHandler; }
@@ -38,6 +39,10 @@ private:
     int maxSkin = 9, maxFace = 9, maxHairStyle = 11, maxHairColor = 9, maxFacialHair = 8;
     std::string statusMessage;
     bool statusIsError = false;
+
+    // For many races/styles, CharSections hair color IDs are not guaranteed to be contiguous.
+    // We expose an index (hairColor) in the UI and map it to the actual DBC hairColorId here.
+    std::vector<uint8_t> hairColorIds_;
 
     std::vector<game::Class> availableClasses;
     void updateAvailableClasses();

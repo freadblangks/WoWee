@@ -150,11 +150,12 @@ bool CharacterPreview::loadCharacter(game::Race race, game::Gender gender,
     uint32_t targetRaceId = static_cast<uint32_t>(race);
     uint32_t targetSexId = (gender == game::Gender::FEMALE) ? 1u : 0u;
 
-    std::string bodySkinPath;
     std::string faceLowerPath;
     std::string faceUpperPath;
     std::string hairScalpPath;
     std::vector<std::string> underwearPaths;
+    bodySkinPath_.clear();
+    baseLayers_.clear();
 
     auto charSectionsDbc = assetManager_->loadDBC("CharSections.dbc");
     if (charSectionsDbc) {
@@ -177,7 +178,7 @@ bool CharacterPreview::loadCharacter(game::Race race, game::Gender gender,
                 variationIndex == 0 && colorIndex == static_cast<uint32_t>(skin)) {
                 std::string tex1 = charSectionsDbc->getString(r, 4);
                 if (!tex1.empty()) {
-                    bodySkinPath = tex1;
+                    bodySkinPath_ = tex1;
                     foundSkin = true;
                 }
             }
@@ -217,8 +218,8 @@ bool CharacterPreview::loadCharacter(game::Race race, game::Gender gender,
 
     // Assign texture filenames on model before GPU upload
     for (auto& tex : model.textures) {
-        if (tex.type == 1 && tex.filename.empty() && !bodySkinPath.empty()) {
-            tex.filename = bodySkinPath;
+        if (tex.type == 1 && tex.filename.empty() && !bodySkinPath_.empty()) {
+            tex.filename = bodySkinPath_;
         } else if (tex.type == 6 && tex.filename.empty() && !hairScalpPath.empty()) {
             tex.filename = hairScalpPath;
         }
@@ -247,9 +248,9 @@ bool CharacterPreview::loadCharacter(game::Race race, game::Gender gender,
     }
 
     // Composite body skin + face + underwear overlays
-    if (!bodySkinPath.empty()) {
+    if (!bodySkinPath_.empty()) {
         std::vector<std::string> layers;
-        layers.push_back(bodySkinPath);
+        layers.push_back(bodySkinPath_);
         // Face lower texture composited onto body at the face region
         if (!faceLowerPath.empty()) {
             layers.push_back(faceLowerPath);
@@ -260,6 +261,12 @@ bool CharacterPreview::loadCharacter(game::Race race, game::Gender gender,
         for (const auto& up : underwearPaths) {
             layers.push_back(up);
         }
+
+        // Cache for later equipment compositing.
+        // Keep baseLayers_ without the base skin (compositeWithRegions takes basePath separately).
+        if (!faceLowerPath.empty()) baseLayers_.push_back(faceLowerPath);
+        if (!faceUpperPath.empty()) baseLayers_.push_back(faceUpperPath);
+        for (const auto& up : underwearPaths) baseLayers_.push_back(up);
 
         if (layers.size() > 1) {
             GLuint compositeTex = charRenderer_->compositeTextures(layers);
@@ -319,11 +326,171 @@ bool CharacterPreview::loadCharacter(game::Race race, game::Gender gender,
     // Play idle animation (Stand = animation ID 0)
     charRenderer_->playAnimation(instanceId_, 0, true);
 
+    // Cache core appearance for later equipment geosets.
+    race_ = race;
+    gender_ = gender;
+    useFemaleModel_ = useFemaleModel;
+    hairStyle_ = hairStyle;
+    facialHair_ = facialHair;
+
+    // Cache the type-1 texture slot index so applyEquipment can update it.
+    skinTextureSlotIndex_ = 0;
+    for (size_t ti = 0; ti < model.textures.size(); ti++) {
+        if (model.textures[ti].type == 1) {
+            skinTextureSlotIndex_ = static_cast<uint32_t>(ti);
+            break;
+        }
+    }
+
     modelLoaded_ = true;
     LOG_INFO("CharacterPreview: loaded ", m2Path,
              " skin=", (int)skin, " face=", (int)face,
              " hair=", (int)hairStyle, " hairColor=", (int)hairColor,
              " facial=", (int)facialHair);
+    return true;
+}
+
+bool CharacterPreview::applyEquipment(const std::vector<game::EquipmentItem>& equipment) {
+    if (!modelLoaded_ || instanceId_ == 0 || !charRenderer_ || !assetManager_ || !assetManager_->isInitialized()) {
+        return false;
+    }
+
+    auto displayInfoDbc = assetManager_->loadDBC("ItemDisplayInfo.dbc");
+    if (!displayInfoDbc || !displayInfoDbc->isLoaded()) {
+        return false;
+    }
+
+    auto hasInvType = [&](std::initializer_list<uint8_t> types) -> bool {
+        for (const auto& it : equipment) {
+            if (it.displayModel == 0) continue;
+            for (uint8_t t : types) {
+                if (it.inventoryType == t) return true;
+            }
+        }
+        return false;
+    };
+
+    auto findDisplayId = [&](std::initializer_list<uint8_t> types) -> uint32_t {
+        for (const auto& it : equipment) {
+            if (it.displayModel == 0) continue;
+            for (uint8_t t : types) {
+                if (it.inventoryType == t) return it.displayModel; // ItemDisplayInfo ID (3.3.5a char enum)
+            }
+        }
+        return 0;
+    };
+
+    auto getGeosetGroup = [&](uint32_t displayInfoId, int groupField) -> uint32_t {
+        if (displayInfoId == 0) return 0;
+        int32_t recIdx = displayInfoDbc->findRecordById(displayInfoId);
+        if (recIdx < 0) return 0;
+        return displayInfoDbc->getUInt32(static_cast<uint32_t>(recIdx), 7 + groupField);
+    };
+
+    // --- Geosets ---
+    std::unordered_set<uint16_t> geosets;
+    for (uint16_t i = 0; i <= 18; i++) geosets.insert(i);
+    geosets.insert(static_cast<uint16_t>(100 + hairStyle_ + 1));    // Hair style
+    geosets.insert(static_cast<uint16_t>(200 + facialHair_ + 1));  // Facial hair
+    geosets.insert(701);   // Ears
+
+    // Default naked geosets
+    uint16_t geosetGloves = 301;
+    uint16_t geosetBoots = 401;
+    uint16_t geosetChest = 501;
+    uint16_t geosetPants = 1301;
+
+    // Chest/Shirt/Robe
+    {
+        uint32_t did = findDisplayId({4, 5, 20});
+        uint32_t gg = getGeosetGroup(did, 0);
+        if (gg > 0) geosetChest = static_cast<uint16_t>(501 + gg);
+        // Robe kilt legs
+        uint32_t gg3 = getGeosetGroup(did, 2);
+        if (gg3 > 0) geosetPants = static_cast<uint16_t>(1301 + gg3);
+    }
+    // Legs
+    {
+        uint32_t did = findDisplayId({7});
+        uint32_t gg = getGeosetGroup(did, 0);
+        if (gg > 0) geosetPants = static_cast<uint16_t>(1301 + gg);
+    }
+    // Feet
+    {
+        uint32_t did = findDisplayId({8});
+        uint32_t gg = getGeosetGroup(did, 0);
+        if (gg > 0) geosetBoots = static_cast<uint16_t>(401 + gg);
+    }
+    // Hands
+    {
+        uint32_t did = findDisplayId({10});
+        uint32_t gg = getGeosetGroup(did, 0);
+        if (gg > 0) geosetGloves = static_cast<uint16_t>(301 + gg);
+    }
+
+    geosets.insert(geosetGloves);
+    geosets.insert(geosetBoots);
+    geosets.insert(geosetChest);
+    geosets.insert(geosetPants);
+    geosets.insert(hasInvType({16}) ? 1502 : 1501); // Cloak mesh toggle (visual may still be limited)
+    if (hasInvType({19})) geosets.insert(1201);     // Tabard mesh toggle
+
+    // Hide hair under helmets (helmets are separate models; this still avoids hair clipping)
+    if (hasInvType({1})) {
+        geosets.erase(static_cast<uint16_t>(100 + hairStyle_ + 1));
+        geosets.insert(1);   // Bald scalp cap
+        geosets.insert(101); // Default group-1 connector
+    }
+
+    charRenderer_->setActiveGeosets(instanceId_, geosets);
+
+    // --- Textures (equipment overlays onto body skin) ---
+    if (bodySkinPath_.empty()) return true; // geosets applied, but can't composite
+
+    static const char* componentDirs[] = {
+        "ArmUpperTexture", "ArmLowerTexture", "HandTexture",
+        "TorsoUpperTexture", "TorsoLowerTexture",
+        "LegUpperTexture", "LegLowerTexture", "FootTexture",
+    };
+
+    std::vector<std::pair<int, std::string>> regionLayers;
+    regionLayers.reserve(32);
+
+    for (const auto& it : equipment) {
+        if (it.displayModel == 0) continue;
+        int32_t recIdx = displayInfoDbc->findRecordById(it.displayModel);
+        if (recIdx < 0) continue;
+
+        for (int region = 0; region < 8; region++) {
+            uint32_t fieldIdx = 15 + region; // texture_1..texture_8
+            std::string texName = displayInfoDbc->getString(static_cast<uint32_t>(recIdx), fieldIdx);
+            if (texName.empty()) continue;
+
+            std::string base = "Item\\TextureComponents\\" +
+                std::string(componentDirs[region]) + "\\" + texName;
+
+            std::string genderSuffix = (gender_ == game::Gender::FEMALE) ? "_F.blp" : "_M.blp";
+            std::string genderPath = base + genderSuffix;
+            std::string unisexPath = base + "_U.blp";
+            std::string fullPath;
+            if (assetManager_->fileExists(genderPath)) {
+                fullPath = genderPath;
+            } else if (assetManager_->fileExists(unisexPath)) {
+                fullPath = unisexPath;
+            } else {
+                fullPath = base + ".blp";
+            }
+            regionLayers.emplace_back(region, fullPath);
+        }
+    }
+
+    if (!regionLayers.empty()) {
+        GLuint newTex = charRenderer_->compositeWithRegions(bodySkinPath_, baseLayers_, regionLayers);
+        if (newTex != 0) {
+            charRenderer_->setModelTexture(PREVIEW_MODEL_ID, skinTextureSlotIndex_, newTex);
+        }
+    }
+
     return true;
 }
 

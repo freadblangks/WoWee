@@ -4,8 +4,12 @@
 #include <imgui.h>
 #include <string>
 #include <functional>
+#include <memory>
 
-namespace wowee { namespace ui {
+namespace wowee {
+namespace pipeline { class AssetManager; }
+namespace rendering { class CharacterPreview; }
+namespace ui {
 
 /**
  * Character selection screen UI
@@ -21,6 +25,11 @@ public:
      * @param gameHandler Reference to game handler
      */
     void render(game::GameHandler& gameHandler);
+
+    void setAssetManager(pipeline::AssetManager* am) {
+        assetManager_ = am;
+        previewInitialized_ = false;
+    }
 
     /**
      * Set callback for character selection
@@ -83,6 +92,17 @@ private:
     static std::string getConfigDir();
     void saveLastCharacter(uint64_t guid);
     uint64_t loadLastCharacter();
+
+    // Preview (3D character portrait)
+    pipeline::AssetManager* assetManager_ = nullptr;
+    std::unique_ptr<rendering::CharacterPreview> preview_;
+    bool previewInitialized_ = false;
+    uint64_t previewGuid_ = 0;
+    uint32_t previewAppearanceBytes_ = 0;
+    uint8_t previewFacialFeatures_ = 0;
+    bool previewUseFemaleModel_ = false;
+    uint64_t previewEquipHash_ = 0;
 };
 
-}} // namespace wowee::ui
+} // namespace ui
+} // namespace wowee

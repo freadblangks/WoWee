@@ -1257,16 +1257,16 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
         // Bind VAO and draw
         glBindVertexArray(gpuModel.vao);
 
-        if (!gpuModel.data.batches.empty()) {
-            bool applyGeosetFilter = !instance.activeGeosets.empty();
-            if (applyGeosetFilter) {
-                bool hasRenderableGeoset = false;
-                for (const auto& batch : gpuModel.data.batches) {
-                    if (instance.activeGeosets.find(batch.submeshId) != instance.activeGeosets.end()) {
-                        hasRenderableGeoset = true;
-                        break;
-                    }
-                }
+	        if (!gpuModel.data.batches.empty()) {
+	            bool applyGeosetFilter = !instance.activeGeosets.empty();
+	            if (applyGeosetFilter) {
+	                bool hasRenderableGeoset = false;
+	                for (const auto& batch : gpuModel.data.batches) {
+	                    if (instance.activeGeosets.find(batch.submeshId) != instance.activeGeosets.end()) {
+	                        hasRenderableGeoset = true;
+	                        break;
+	                    }
+	                }
                 if (!hasRenderableGeoset) {
                     static std::unordered_set<uint32_t> loggedGeosetFallback;
                     if (loggedGeosetFallback.insert(instance.id).second) {
@@ -1274,13 +1274,64 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
                                     instance.id, " (model ", instance.modelId,
                                     "); rendering all batches as fallback");
                     }
-                    applyGeosetFilter = false;
-                }
-            }
+	                    applyGeosetFilter = false;
+	                }
+	            }
 
-            // One-time debug dump of rendered batches per model
-            static std::unordered_set<uint32_t> dumpedModels;
-            if (dumpedModels.find(instance.modelId) == dumpedModels.end()) {
+	            auto resolveBatchTexture = [&](const M2ModelGPU& gm, const pipeline::M2Batch& b) -> GLuint {
+	                // A skin batch can reference multiple textures (b.textureCount) starting at b.textureIndex.
+	                // We currently bind only a single texture, so pick the most appropriate one.
+	                //
+	                // This matters for hair: the first texture in the combo can be a mask/empty slot,
+	                // causing the hair to render as solid white.
+	                if (b.textureIndex == 0xFFFF) return whiteTexture;
+	                if (gm.data.textureLookup.empty() || gm.textureIds.empty()) return whiteTexture;
+
+	                uint32_t comboCount = b.textureCount ? static_cast<uint32_t>(b.textureCount) : 1u;
+	                comboCount = std::min<uint32_t>(comboCount, 8u);
+
+	                struct Candidate { GLuint id; uint32_t type; };
+	                Candidate first{whiteTexture, 0};
+	                bool hasFirst = false;
+	                Candidate firstNonWhite{whiteTexture, 0};
+	                bool hasFirstNonWhite = false;
+
+	                for (uint32_t i = 0; i < comboCount; i++) {
+	                    uint32_t lookupPos = static_cast<uint32_t>(b.textureIndex) + i;
+	                    if (lookupPos >= gm.data.textureLookup.size()) break;
+	                    uint16_t texSlot = gm.data.textureLookup[lookupPos];
+	                    if (texSlot >= gm.textureIds.size()) continue;
+
+	                    GLuint texId = gm.textureIds[texSlot];
+	                    uint32_t texType = (texSlot < gm.data.textures.size()) ? gm.data.textures[texSlot].type : 0;
+
+	                    if (!hasFirst) {
+	                        first = {texId, texType};
+	                        hasFirst = true;
+	                    }
+
+	                    if (texId == 0 || texId == whiteTexture) continue;
+
+	                    // Prefer the hair texture slot (type 6) whenever present in the combo.
+	                    // Humanoid scalp meshes can live in group 0, so group-based checks are insufficient.
+	                    if (texType == 6) {
+	                        return texId;
+	                    }
+
+	                    if (!hasFirstNonWhite) {
+	                        firstNonWhite = {texId, texType};
+	                        hasFirstNonWhite = true;
+	                    }
+	                }
+
+	                if (hasFirstNonWhite) return firstNonWhite.id;
+	                if (hasFirst && first.id != 0) return first.id;
+	                return whiteTexture;
+	            };
+
+	            // One-time debug dump of rendered batches per model
+	            static std::unordered_set<uint32_t> dumpedModels;
+	            if (dumpedModels.find(instance.modelId) == dumpedModels.end()) {
                 dumpedModels.insert(instance.modelId);
                 int bIdx = 0;
                 int rendered = 0, skipped = 0;
@@ -1289,24 +1340,11 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
                         (b.submeshId / 100 != 0) &&
                         instance.activeGeosets.find(b.submeshId) == instance.activeGeosets.end();
 
-                    GLuint resolvedTex = whiteTexture;
-                    std::string texInfo = "white(fallback)";
-                    if (b.textureIndex != 0xFFFF && b.textureIndex < gpuModel.data.textureLookup.size()) {
-                        uint16_t lk = gpuModel.data.textureLookup[b.textureIndex];
-                        if (lk < gpuModel.textureIds.size()) {
-                            resolvedTex = gpuModel.textureIds[lk];
-                            texInfo = "lookup[" + std::to_string(b.textureIndex) + "]->tex[" + std::to_string(lk) + "]=GL" + std::to_string(resolvedTex);
-                        } else {
-                            texInfo = "lookup[" + std::to_string(b.textureIndex) + "]->OOB(" + std::to_string(lk) + ")";
-                        }
-                    } else if (b.textureIndex == 0xFFFF) {
-                        texInfo = "texIdx=FFFF";
-                    } else {
-                        texInfo = "texIdx=" + std::to_string(b.textureIndex) + " OOB(lookupSz=" + std::to_string(gpuModel.data.textureLookup.size()) + ")";
-                    }
+	                    GLuint resolvedTex = resolveBatchTexture(gpuModel, b);
+	                    std::string texInfo = "GL" + std::to_string(resolvedTex);
 
-                    if (filtered) skipped++; else rendered++;
-                    LOG_DEBUG("Batch ", bIdx, ": submesh=", b.submeshId,
+	                    if (filtered) skipped++; else rendered++;
+	                    LOG_DEBUG("Batch ", bIdx, ": submesh=", b.submeshId,
                               " level=", b.submeshLevel,
                               " idxStart=", b.indexStart, " idxCount=", b.indexCount,
                               " tex=", texInfo,
@@ -1317,28 +1355,22 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
                           gpuModel.textureIds.size(), " textures loaded, ",
                           gpuModel.data.textureLookup.size(), " in lookup table");
                 for (size_t t = 0; t < gpuModel.data.textures.size(); t++) {
-                }
-            }
+	                }
+	            }
 
-            // Draw batches (submeshes) with per-batch textures
-            // Geoset filtering: skip batches whose submeshId is not in activeGeosets.
-            // For character models, group 0 (body/scalp) is also filtered so that only
-            // the correct scalp mesh renders (not all overlapping variants).
-            for (const auto& batch : gpuModel.data.batches) {
+	            // Draw batches (submeshes) with per-batch textures
+	            // Geoset filtering: skip batches whose submeshId is not in activeGeosets.
+	            // For character models, group 0 (body/scalp) is also filtered so that only
+	            // the correct scalp mesh renders (not all overlapping variants).
+	            for (const auto& batch : gpuModel.data.batches) {
                 if (applyGeosetFilter) {
                     if (instance.activeGeosets.find(batch.submeshId) == instance.activeGeosets.end()) {
                         continue;
                     }
                 }
 
-                // Resolve texture for this batch
-                GLuint texId = whiteTexture;
-                if (batch.textureIndex < gpuModel.data.textureLookup.size()) {
-                    uint16_t lookupIdx = gpuModel.data.textureLookup[batch.textureIndex];
-                    if (lookupIdx < gpuModel.textureIds.size()) {
-                        texId = gpuModel.textureIds[lookupIdx];
-                    }
-                }
+	                // Resolve texture for this batch (prefer hair textures for hair geosets).
+	                GLuint texId = resolveBatchTexture(gpuModel, batch);
 
                 // For body parts with white/fallback texture, use skin (type 1) texture
                 // This handles humanoid models where some body parts use different texture slots

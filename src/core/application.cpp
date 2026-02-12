@@ -131,6 +131,13 @@ bool Application::initialize() {
         // Eagerly load creature display DBC lookups so first spawn doesn't stall
         buildCreatureDisplayLookups();
 
+        // Ensure the main in-world CharacterRenderer can load textures immediately.
+        // Previously this was only wired during terrain initialization, which meant early spawns
+        // (before terrain load) would render with white fallback textures (notably hair).
+        if (renderer && renderer->getCharacterRenderer()) {
+            renderer->getCharacterRenderer()->setAssetManager(assetManager.get());
+        }
+
         // Load transport paths from TransportAnimation.dbc
         if (gameHandler && gameHandler->getTransportManager()) {
             gameHandler->getTransportManager()->loadTransportAnimationDBC(assetManager.get());
@@ -314,6 +321,26 @@ void Application::setState(AppState newState) {
             break;
         case AppState::CHARACTER_SELECTION:
             // Show character screen
+            if (uiManager && assetManager) {
+                uiManager->getCharacterScreen().setAssetManager(assetManager.get());
+            }
+            // Ensure no stale in-world player model leaks into the next login attempt.
+            // If we reuse a previously spawned instance without forcing a respawn, appearance (notably hair) can desync.
+            npcsSpawned = false;
+            playerCharacterSpawned = false;
+            weaponsSheathed_ = false;
+            wasAutoAttacking_ = false;
+            spawnedPlayerGuid_ = 0;
+            spawnedAppearanceBytes_ = 0;
+            spawnedFacialFeatures_ = 0;
+            if (renderer && renderer->getCharacterRenderer()) {
+                uint32_t oldInst = renderer->getCharacterInstanceId();
+                if (oldInst > 0) {
+                    renderer->setCharacterFollow(0);
+                    renderer->clearMount();
+                    renderer->getCharacterRenderer()->removeInstance(oldInst);
+                }
+            }
             break;
         case AppState::IN_GAME: {
             // Wire up movement opcodes from camera controller
@@ -1829,29 +1856,37 @@ void Application::spawnPlayerCharacter() {
         glm::vec3(0.0f), 1.0f);  // Scale 1.0 = normal WoW character size
 
     if (instanceId > 0) {
-        // Set up third-person follow
-        renderer->getCharacterPosition() = spawnPos;
-        renderer->setCharacterFollow(instanceId);
+	        // Set up third-person follow
+	        renderer->getCharacterPosition() = spawnPos;
+	        renderer->setCharacterFollow(instanceId);
 
-        // Default geosets for naked human male
-        // Use actual submesh IDs from the model (logged at load time)
-        std::unordered_set<uint16_t> activeGeosets;
-        // Body parts (group 0: IDs 0-99) - humanoid models may have many body submeshes
-        for (uint16_t i = 0; i < 100; i++) {
-            activeGeosets.insert(i);
-        }
-        // Equipment groups: "01" = bare skin, "02" = first equipped variant
-        activeGeosets.insert(101);   // Hair style 1
-        activeGeosets.insert(201);   // Facial hair: none
-        activeGeosets.insert(301);   // Gloves: bare hands
-        activeGeosets.insert(401);   // Boots: bare feet
-        activeGeosets.insert(501);   // Chest: bare
-        activeGeosets.insert(701);   // Ears: default
-        activeGeosets.insert(1301);  // Trousers: bare legs
-        activeGeosets.insert(1501);  // Back body (cloak=none)
-        // 1703 = DK eye glow mesh — skip for normal characters
-        // Normal eyes are part of the face texture on the body mesh
-        charRenderer->setActiveGeosets(instanceId, activeGeosets);
+	        // Default geosets for the active character (match CharacterPreview logic).
+	        // Previous hardcoded values (notably always inserting 101) caused wrong hair meshes in-world.
+	        std::unordered_set<uint16_t> activeGeosets;
+	        // Body parts (group 0)
+	        for (uint16_t i = 0; i <= 18; i++) activeGeosets.insert(i);
+
+	        uint8_t hairStyleId = 0;
+	        uint8_t facialId = 0;
+	        if (gameHandler) {
+	            if (const game::Character* ch = gameHandler->getActiveCharacter()) {
+	                hairStyleId = static_cast<uint8_t>((ch->appearanceBytes >> 16) & 0xFF);
+	                facialId = ch->facialFeatures;
+	            }
+	        }
+	        // Hair style geoset: group 1 = 100 + variation + 1
+	        activeGeosets.insert(static_cast<uint16_t>(100 + hairStyleId + 1));
+	        // Facial hair geoset: group 2 = 200 + variation + 1
+	        activeGeosets.insert(static_cast<uint16_t>(200 + facialId + 1));
+	        activeGeosets.insert(301);   // Gloves: bare hands
+	        activeGeosets.insert(401);   // Boots: bare feet
+	        activeGeosets.insert(501);   // Chest: bare
+	        activeGeosets.insert(701);   // Ears: default
+	        activeGeosets.insert(1301);  // Trousers: bare legs
+	        activeGeosets.insert(1501);  // Back body (cloak=none)
+	        // 1703 = DK eye glow mesh — skip for normal characters
+	        // Normal eyes are part of the face texture on the body mesh
+	        charRenderer->setActiveGeosets(instanceId, activeGeosets);
 
         // Play idle animation (Stand = animation ID 0)
         charRenderer->playAnimation(instanceId, 0, true);
@@ -1860,6 +1895,18 @@ void Application::spawnPlayerCharacter() {
                 static_cast<int>(spawnPos.y), ", ",
                 static_cast<int>(spawnPos.z), ")");
         playerCharacterSpawned = true;
+
+        // Track which character's appearance this instance represents so we can
+        // respawn if the user logs into a different character without restarting.
+        spawnedPlayerGuid_ = gameHandler ? gameHandler->getActiveCharacterGuid() : 0;
+        spawnedAppearanceBytes_ = 0;
+        spawnedFacialFeatures_ = 0;
+        if (gameHandler) {
+            if (const game::Character* ch = gameHandler->getActiveCharacter()) {
+                spawnedAppearanceBytes_ = ch->appearanceBytes;
+                spawnedFacialFeatures_ = ch->facialFeatures;
+            }
+        }
 
         // Set up camera controller for first-person player hiding
         if (renderer->getCameraController()) {
@@ -2235,11 +2282,40 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
     if (gameHandler) {
         const game::Character* activeChar = gameHandler->getActiveCharacter();
         if (activeChar) {
-            if (!playerCharacterSpawned) {
+            const uint64_t activeGuid = gameHandler->getActiveCharacterGuid();
+            const bool appearanceChanged =
+                (activeGuid != spawnedPlayerGuid_) ||
+                (activeChar->appearanceBytes != spawnedAppearanceBytes_) ||
+                (activeChar->facialFeatures != spawnedFacialFeatures_) ||
+                (activeChar->race != playerRace_) ||
+                (activeChar->gender != playerGender_) ||
+                (activeChar->characterClass != playerClass_);
+
+            if (!playerCharacterSpawned || appearanceChanged) {
+                if (appearanceChanged) {
+                    LOG_INFO("Respawning player model for new/changed character: guid=0x",
+                             std::hex, activeGuid, std::dec);
+                }
+                // Remove old instance so we don't keep stale visuals.
+                if (renderer && renderer->getCharacterRenderer()) {
+                    uint32_t oldInst = renderer->getCharacterInstanceId();
+                    if (oldInst > 0) {
+                        renderer->setCharacterFollow(0);
+                        renderer->clearMount();
+                        renderer->getCharacterRenderer()->removeInstance(oldInst);
+                    }
+                }
+                playerCharacterSpawned = false;
+                spawnedPlayerGuid_ = 0;
+                spawnedAppearanceBytes_ = 0;
+                spawnedFacialFeatures_ = 0;
+
                 playerRace_ = activeChar->race;
                 playerGender_ = activeChar->gender;
                 playerClass_ = activeChar->characterClass;
                 spawnSnapToGround = false;
+                weaponsSheathed_ = false;
+                loadEquippedWeapons(); // will no-op until instance exists
                 spawnPlayerCharacter();
             }
             renderer->getCharacterPosition() = spawnRender;

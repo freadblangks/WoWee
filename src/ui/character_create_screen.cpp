@@ -49,6 +49,7 @@ void CharacterCreateScreen::reset() {
     maxFacialHair = 8;
     statusMessage.clear();
     statusIsError = false;
+    hairColorIds_.clear();
     updateAvailableClasses();
 
     // Reset preview tracking to force model reload on next render
@@ -114,13 +115,19 @@ void CharacterCreateScreen::updatePreviewIfNeeded() {
 
     if (changed) {
         bool useFemaleModel = (genderIndex == 2 && bodyTypeIndex == 1);  // Nonbinary + Feminine
+        uint8_t hairColorId = 0;
+        if (!hairColorIds_.empty() && hairColor >= 0 && hairColor < static_cast<int>(hairColorIds_.size())) {
+            hairColorId = hairColorIds_[hairColor];
+        } else {
+            hairColorId = static_cast<uint8_t>(hairColor);
+        }
         preview_->loadCharacter(
             allRaces[raceIndex],
             static_cast<game::Gender>(genderIndex),
             static_cast<uint8_t>(skin),
             static_cast<uint8_t>(face),
             static_cast<uint8_t>(hairStyle),
-            static_cast<uint8_t>(hairColor),
+            hairColorId,
             static_cast<uint8_t>(facialHair),
             useFemaleModel);
 
@@ -153,6 +160,7 @@ void CharacterCreateScreen::updateAppearanceRanges() {
     maxHairStyle = 11;
     maxHairColor = 9;
     maxFacialHair = 8;
+    hairColorIds_.clear();
 
     if (!assetManager_) return;
     auto dbc = assetManager_->loadDBC("CharSections.dbc");
@@ -189,7 +197,7 @@ void CharacterCreateScreen::updateAppearanceRanges() {
     }
 
     int faceMax = -1;
-    int hairColorMax = -1;
+    std::vector<uint8_t> hairColorIds;
     for (uint32_t r = 0; r < dbc->getRecordCount(); r++) {
         uint32_t raceId = dbc->getUInt32(r, 1);
         uint32_t sexId = dbc->getUInt32(r, 2);
@@ -202,7 +210,9 @@ void CharacterCreateScreen::updateAppearanceRanges() {
         if (baseSection == 1 && colorIndex == static_cast<uint32_t>(skin)) {
             faceMax = std::max(faceMax, static_cast<int>(variationIndex));
         } else if (baseSection == 3 && variationIndex == static_cast<uint32_t>(hairStyle)) {
-            hairColorMax = std::max(hairColorMax, static_cast<int>(colorIndex));
+            if (colorIndex <= 255) {
+                hairColorIds.push_back(static_cast<uint8_t>(colorIndex));
+            }
         }
     }
 
@@ -210,9 +220,15 @@ void CharacterCreateScreen::updateAppearanceRanges() {
         maxFace = faceMax;
         if (face > maxFace) face = maxFace;
     }
-    if (hairColorMax >= 0) {
-        maxHairColor = hairColorMax;
+
+    // Hair colors: use actual available DBC IDs (not "0..maxId"), since IDs may be sparse.
+    if (!hairColorIds.empty()) {
+        std::sort(hairColorIds.begin(), hairColorIds.end());
+        hairColorIds.erase(std::unique(hairColorIds.begin(), hairColorIds.end()), hairColorIds.end());
+        hairColorIds_ = std::move(hairColorIds);
+        maxHairColor = std::max(0, static_cast<int>(hairColorIds_.size()) - 1);
         if (hairColor > maxHairColor) hairColor = maxHairColor;
+        if (hairColor < 0) hairColor = 0;
     }
     int facialMax = -1;
     auto facialDbc = assetManager_->loadDBC("CharacterFacialHairStyles.dbc");
@@ -450,7 +466,11 @@ void CharacterCreateScreen::render(game::GameHandler& /*gameHandler*/) {
             data.skin = static_cast<uint8_t>(skin);
             data.face = static_cast<uint8_t>(face);
             data.hairStyle = static_cast<uint8_t>(hairStyle);
-            data.hairColor = static_cast<uint8_t>(hairColor);
+            if (!hairColorIds_.empty() && hairColor >= 0 && hairColor < static_cast<int>(hairColorIds_.size())) {
+                data.hairColor = hairColorIds_[hairColor];
+            } else {
+                data.hairColor = static_cast<uint8_t>(hairColor);
+            }
             data.facialHair = static_cast<uint8_t>(facialHair);
             if (onCreate) {
                 onCreate(data);

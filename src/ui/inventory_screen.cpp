@@ -1105,7 +1105,16 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
                 if (kind == SlotKind::BACKPACK && backpackIndex >= 0) {
                     pickupFromBackpack(inventory, backpackIndex);
                 } else if (kind == SlotKind::EQUIPMENT) {
-                    pickupFromEquipment(inventory, equipSlot);
+                    if (gameHandler_) {
+                        // Online mode: don't mutate local equipment state.
+                        game::MessageChatData msg{};
+                        msg.type = game::ChatType::SYSTEM;
+                        msg.language = game::ChatLanguage::UNIVERSAL;
+                        msg.message = "Moving equipped items not supported yet (online mode).";
+                        gameHandler_->addLocalChatMessage(msg);
+                    } else {
+                        pickupFromEquipment(inventory, equipSlot);
+                    }
                 }
             } else {
                 if (kind == SlotKind::BACKPACK && backpackIndex >= 0) {
@@ -1126,13 +1135,19 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
                 // Sell to vendor
                 gameHandler_->sellItemBySlot(backpackIndex);
             } else if (kind == SlotKind::EQUIPMENT) {
-                // Unequip: move to free backpack slot
-                int freeSlot = inventory.findFreeBackpackSlot();
-                if (freeSlot >= 0) {
-                    inventory.setBackpackSlot(freeSlot, item);
-                    inventory.clearEquipSlot(equipSlot);
-                    equipmentDirty = true;
-                    inventoryDirty = true;
+                if (gameHandler_) {
+                    // Online mode: request server-side unequip (move to first free backpack slot).
+                    LOG_INFO("UI unequip request: equipSlot=", (int)equipSlot);
+                    gameHandler_->unequipToBackpack(equipSlot);
+                } else {
+                    // Offline mode: Unequip: move to free backpack slot
+                    int freeSlot = inventory.findFreeBackpackSlot();
+                    if (freeSlot >= 0) {
+                        inventory.setBackpackSlot(freeSlot, item);
+                        inventory.clearEquipSlot(equipSlot);
+                        equipmentDirty = true;
+                        inventoryDirty = true;
+                    }
                 }
             } else if (kind == SlotKind::BACKPACK && backpackIndex >= 0) {
                 if (gameHandler_) {

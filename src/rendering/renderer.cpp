@@ -1231,7 +1231,12 @@ void Renderer::updateCharacterAnimation() {
             // Keep seat offset minimal; large offsets amplify visible bobble.
             glm::vec3 seatOffset = glm::vec3(0.0f, 0.0f, taxiFlight_ ? 0.04f : 0.08f);
             glm::vec3 targetRiderPos = mountSeatPos + seatOffset;
-            if (!mountSeatSmoothingInit_) {
+            // When moving, smoothing the seat position produces visible lag that looks like
+            // the rider sliding toward the rump. Anchor rigidly while moving.
+            if (moving) {
+                mountSeatSmoothingInit_ = false;
+                smoothedMountSeatPos_ = targetRiderPos;
+            } else if (!mountSeatSmoothingInit_) {
                 smoothedMountSeatPos_ = targetRiderPos;
                 mountSeatSmoothingInit_ = true;
             } else {

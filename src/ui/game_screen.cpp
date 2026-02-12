@@ -2201,8 +2201,20 @@ void GameScreen::updateCharacterGeosets(game::Inventory& inventory) {
     for (uint16_t i = 0; i <= 18; i++) {
         geosets.insert(i);
     }
-    geosets.insert(101);  // Hair
-    geosets.insert(201);  // Facial
+    // Hair/facial geosets must match the active character's appearance, otherwise
+    // we end up forcing a default hair mesh (often perceived as "wrong hair").
+    {
+        uint8_t hairStyleId = 0;
+        uint8_t facialId = 0;
+        if (auto* gh = app.getGameHandler()) {
+            if (const auto* ch = gh->getActiveCharacter()) {
+                hairStyleId = static_cast<uint8_t>((ch->appearanceBytes >> 16) & 0xFF);
+                facialId = ch->facialFeatures;
+            }
+        }
+        geosets.insert(static_cast<uint16_t>(100 + hairStyleId + 1)); // Group 1 hair
+        geosets.insert(static_cast<uint16_t>(200 + facialId + 1));    // Group 2 facial
+    }
     geosets.insert(701);  // Ears
 
     // Chest/Shirt: inventoryType 4 (shirt), 5 (chest), 20 (robe)

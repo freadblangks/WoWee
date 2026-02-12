@@ -6,6 +6,7 @@
 #include <iomanip>
 #include <sstream>
 #include <cstdio>
+#include <fstream>
 
 namespace {
 constexpr size_t kMaxReceiveBufferBytes = 8 * 1024 * 1024;
@@ -129,6 +130,64 @@ void WorldSocket::send(const Packet& packet) {
     const auto& data = packet.getData();
     uint16_t opcode = packet.getOpcode();
     uint16_t payloadLen = static_cast<uint16_t>(data.size());
+
+    // Debug: parse and log character-create payload fields (helps diagnose appearance issues).
+    if (opcode == 0x036) { // CMSG_CHAR_CREATE
+        size_t pos = 0;
+        std::string name;
+        while (pos < data.size()) {
+            uint8_t c = data[pos++];
+            if (c == 0) break;
+            name.push_back(static_cast<char>(c));
+        }
+        auto rd8 = [&](uint8_t& out) -> bool {
+            if (pos >= data.size()) return false;
+            out = data[pos++];
+            return true;
+        };
+        uint8_t race = 0, cls = 0, gender = 0;
+        uint8_t skin = 0, face = 0, hairStyle = 0, hairColor = 0, facial = 0, outfit = 0;
+        bool ok =
+            rd8(race) && rd8(cls) && rd8(gender) &&
+            rd8(skin) && rd8(face) && rd8(hairStyle) && rd8(hairColor) && rd8(facial) && rd8(outfit);
+        if (ok) {
+            LOG_INFO("CMSG_CHAR_CREATE payload: name='", name,
+                     "' race=", (int)race, " class=", (int)cls, " gender=", (int)gender,
+                     " skin=", (int)skin, " face=", (int)face,
+                     " hairStyle=", (int)hairStyle, " hairColor=", (int)hairColor,
+                     " facial=", (int)facial, " outfit=", (int)outfit,
+                     " payloadLen=", payloadLen);
+            // Persist to disk so we can compare TX vs DB even if the console scrolls away.
+            std::ofstream f("charcreate_payload.log", std::ios::app);
+            if (f.is_open()) {
+                f << "name='" << name << "'"
+                  << " race=" << (int)race
+                  << " class=" << (int)cls
+                  << " gender=" << (int)gender
+                  << " skin=" << (int)skin
+                  << " face=" << (int)face
+                  << " hairStyle=" << (int)hairStyle
+                  << " hairColor=" << (int)hairColor
+                  << " facial=" << (int)facial
+                  << " outfit=" << (int)outfit
+                  << " payloadLen=" << payloadLen
+                  << "\n";
+            }
+        } else {
+            LOG_WARNING("CMSG_CHAR_CREATE payload too short to parse (name='", name,
+                        "' payloadLen=", payloadLen, " pos=", pos, ")");
+        }
+    }
+
+    if (opcode == 0x10C || opcode == 0x10D) { // CMSG_SWAP_ITEM / CMSG_SWAP_INV_ITEM
+        std::string hex;
+        for (size_t i = 0; i < data.size(); i++) {
+            char buf[4];
+            snprintf(buf, sizeof(buf), "%02x ", data[i]);
+            hex += buf;
+        }
+        LOG_INFO("WS TX opcode=0x", std::hex, opcode, std::dec, " payloadLen=", payloadLen, " data=[", hex, "]");
+    }
 
     // WotLK 3.3.5 CMSG header (6 bytes total):
     // - size (2 bytes, big-endian) = payloadLen + 4 (opcode is 4 bytes for CMSG)

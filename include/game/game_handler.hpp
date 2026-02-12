@@ -236,6 +236,7 @@ public:
     Inventory& getInventory() { return inventory; }
     const Inventory& getInventory() const { return inventory; }
     bool consumeOnlineEquipmentDirty() { bool d = onlineEquipDirty_; onlineEquipDirty_ = false; return d; }
+    void unequipToBackpack(EquipSlot equipSlot);
 
     // Targeting
     void setTarget(uint64_t guid);

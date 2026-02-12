@@ -117,6 +117,9 @@ private:
     game::Race playerRace_ = game::Race::HUMAN;
     game::Gender playerGender_ = game::Gender::MALE;
     game::Class playerClass_ = game::Class::WARRIOR;
+    uint64_t spawnedPlayerGuid_ = 0;
+    uint32_t spawnedAppearanceBytes_ = 0;
+    uint8_t spawnedFacialFeatures_ = 0;
 
     // Weapon model ID counter (starting high to avoid collision with character model IDs)
     uint32_t nextWeaponModelId_ = 1000;

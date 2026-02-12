@@ -7,8 +7,18 @@ RealmScreen::RealmScreen() {
 }
 
 void RealmScreen::render(auth::AuthHandler& authHandler) {
-    ImGui::SetNextWindowSize(ImVec2(700, 500), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Realm Selection", nullptr, ImGuiWindowFlags_NoCollapse);
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    const ImVec2 pad(24.0f, 24.0f);
+    ImVec2 winSize(vp->Size.x - pad.x * 2.0f, vp->Size.y - pad.y * 2.0f);
+    if (winSize.x < 720.0f) winSize.x = 720.0f;
+    if (winSize.y < 540.0f) winSize.y = 540.0f;
+
+    ImGui::SetNextWindowPos(ImVec2(vp->Pos.x + (vp->Size.x - winSize.x) * 0.5f,
+                                   vp->Pos.y + (vp->Size.y - winSize.y) * 0.5f),
+                            ImGuiCond_Always);
+    ImGui::SetNextWindowSize(winSize, ImGuiCond_Always);
+    ImGui::Begin("Realm Selection", nullptr,
+                 ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
 
     ImGui::Text("Select a Realm");
     ImGui::Separator();

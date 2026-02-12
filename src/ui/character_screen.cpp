@@ -1,4 +1,8 @@
 #include "ui/character_screen.hpp"
+#include "rendering/character_preview.hpp"
+#include "pipeline/asset_manager.hpp"
+#include "core/application.hpp"
+#include "core/logger.hpp"
 #include <imgui.h>
 #include <cstdlib>
 #include <filesystem>
@@ -11,26 +15,59 @@ namespace wowee { namespace ui {
 CharacterScreen::CharacterScreen() {
 }
 
-void CharacterScreen::render(game::GameHandler& gameHandler) {
-    // Size the window to fill most of the viewport
-    ImVec2 vpSize = ImGui::GetMainViewport()->Size;
-    ImVec2 winSize(vpSize.x * 0.6f, vpSize.y * 0.7f);
-    if (winSize.x < 700.0f) winSize.x = 700.0f;
-    if (winSize.y < 500.0f) winSize.y = 500.0f;
-    ImGui::SetNextWindowSize(winSize, ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowPos(
-        ImVec2(vpSize.x * 0.5f, vpSize.y * 0.5f),
-        ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+static uint64_t hashEquipment(const std::vector<game::EquipmentItem>& eq) {
+    // FNV-1a 64-bit over (displayModel, inventoryType, enchantment)
+    uint64_t h = 1469598103934665603ull;
+    auto mix8 = [&](uint8_t b) {
+        h ^= b;
+        h *= 1099511628211ull;
+    };
+    auto mix32 = [&](uint32_t v) {
+        mix8(static_cast<uint8_t>(v & 0xFF));
+        mix8(static_cast<uint8_t>((v >> 8) & 0xFF));
+        mix8(static_cast<uint8_t>((v >> 16) & 0xFF));
+        mix8(static_cast<uint8_t>((v >> 24) & 0xFF));
+    };
+    for (const auto& it : eq) {
+        mix32(it.displayModel);
+        mix8(it.inventoryType);
+        mix32(it.enchantment);
+    }
+    return h;
+}
 
-    ImGui::Begin("Character Selection", nullptr, ImGuiWindowFlags_NoCollapse);
+void CharacterScreen::render(game::GameHandler& gameHandler) {
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    const ImVec2 pad(24.0f, 24.0f);
+    ImVec2 winSize(vp->Size.x - pad.x * 2.0f, vp->Size.y - pad.y * 2.0f);
+    if (winSize.x < 860.0f) winSize.x = 860.0f;
+    if (winSize.y < 620.0f) winSize.y = 620.0f;
+
+    ImGui::SetNextWindowPos(ImVec2(vp->Pos.x + (vp->Size.x - winSize.x) * 0.5f,
+                                   vp->Pos.y + (vp->Size.y - winSize.y) * 0.5f),
+                            ImGuiCond_Always);
+    ImGui::SetNextWindowSize(winSize, ImGuiCond_Always);
+
+    ImGui::Begin("Character Selection", nullptr,
+                 ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+
+    // Ensure we can render a preview even if the state transition hook didn't inject the AssetManager.
+    if (!assetManager_) {
+        assetManager_ = core::Application::getInstance().getAssetManager();
+    }
 
     // Get character list
     const auto& characters = gameHandler.getCharacters();
 
-    // Request character list if not available
-    if (characters.empty() && gameHandler.getState() == game::WorldState::READY) {
+    // Request character list if not available.
+    // Also show a loading state while CHAR_LIST_REQUESTED is in-flight (characters may be cleared to avoid stale UI).
+    if (characters.empty() &&
+        (gameHandler.getState() == game::WorldState::READY ||
+         gameHandler.getState() == game::WorldState::CHAR_LIST_REQUESTED)) {
         ImGui::Text("Loading characters...");
-        gameHandler.requestCharacterList();
+        if (gameHandler.getState() == game::WorldState::READY) {
+            gameHandler.requestCharacterList();
+        }
         ImGui::End();
         return;
     }
@@ -52,6 +89,22 @@ void CharacterScreen::render(game::GameHandler& gameHandler) {
         if (ImGui::Button("Create Character", ImVec2(160, 36))) { if (onCreateCharacter) onCreateCharacter(); }
         ImGui::End();
         return;
+    }
+
+    // If the list refreshed, keep selection stable by GUID.
+    if (selectedCharacterGuid != 0) {
+        const bool needReselect =
+            (selectedCharacterIndex < 0) ||
+            (selectedCharacterIndex >= static_cast<int>(characters.size())) ||
+            (characters[static_cast<size_t>(selectedCharacterIndex)].guid != selectedCharacterGuid);
+        if (needReselect) {
+            for (size_t i = 0; i < characters.size(); ++i) {
+                if (characters[i].guid == selectedCharacterGuid) {
+                    selectedCharacterIndex = static_cast<int>(i);
+                    break;
+                }
+            }
+        }
     }
 
     // Restore last-selected character (once per screen visit)
@@ -99,7 +152,7 @@ void CharacterScreen::render(game::GameHandler& gameHandler) {
 
     // ── Two-column layout: character list (left) | details (right) ──
     float availW = ImGui::GetContentRegionAvail().x;
-    float detailPanelW = 260.0f;
+    float detailPanelW = 360.0f;
     float listW = availW - detailPanelW - ImGui::GetStyle().ItemSpacing.x;
     if (listW < 300.0f) { listW = availW; detailPanelW = 0.0f; }
 
@@ -174,8 +227,82 @@ void CharacterScreen::render(game::GameHandler& gameHandler) {
 
         const auto& character = characters[selectedCharacterIndex];
 
+        // Keep the 3D preview in sync with the selected character.
+        if (assetManager_ && assetManager_->isInitialized()) {
+            if (!preview_) {
+                preview_ = std::make_unique<rendering::CharacterPreview>();
+            }
+            if (!previewInitialized_) {
+                previewInitialized_ = preview_->initialize(assetManager_);
+                if (!previewInitialized_) {
+                    LOG_WARNING("CharacterScreen: failed to init CharacterPreview");
+                    preview_.reset();
+                }
+            }
+            if (preview_) {
+                const uint64_t equipHash = hashEquipment(character.equipment);
+                const bool changed =
+                    (previewGuid_ != character.guid) ||
+                    (previewAppearanceBytes_ != character.appearanceBytes) ||
+                    (previewFacialFeatures_ != character.facialFeatures) ||
+                    (previewUseFemaleModel_ != character.useFemaleModel) ||
+                    (previewEquipHash_ != equipHash) ||
+                    (!preview_->isModelLoaded());
+
+                if (changed) {
+                    uint8_t skin = character.appearanceBytes & 0xFF;
+                    uint8_t face = (character.appearanceBytes >> 8) & 0xFF;
+                    uint8_t hairStyle = (character.appearanceBytes >> 16) & 0xFF;
+                    uint8_t hairColor = (character.appearanceBytes >> 24) & 0xFF;
+
+                    if (preview_->loadCharacter(character.race, character.gender,
+                                                skin, face, hairStyle, hairColor,
+                                                character.facialFeatures, character.useFemaleModel)) {
+                        preview_->applyEquipment(character.equipment);
+                    }
+
+                    previewGuid_ = character.guid;
+                    previewAppearanceBytes_ = character.appearanceBytes;
+                    previewFacialFeatures_ = character.facialFeatures;
+                    previewUseFemaleModel_ = character.useFemaleModel;
+                    previewEquipHash_ = equipHash;
+                }
+
+                // Drive preview animation and render to its FBO.
+                preview_->update(ImGui::GetIO().DeltaTime);
+                preview_->render();
+            }
+        }
+
         ImGui::SameLine();
         ImGui::BeginChild("CharDetails", ImVec2(detailPanelW, listH), true);
+
+        // 3D preview portrait
+        if (preview_ && preview_->getTextureId() != 0) {
+            float imgW = ImGui::GetContentRegionAvail().x;
+            float imgH = imgW * (static_cast<float>(preview_->getHeight()) /
+                                 static_cast<float>(preview_->getWidth()));
+            // Clamp to avoid taking the entire panel
+            float maxH = 320.0f;
+            if (imgH > maxH) {
+                imgH = maxH;
+                imgW = imgH * (static_cast<float>(preview_->getWidth()) /
+                               static_cast<float>(preview_->getHeight()));
+            }
+            ImGui::Image(
+                static_cast<ImTextureID>(preview_->getTextureId()),
+                ImVec2(imgW, imgH),
+                ImVec2(0.0f, 1.0f),  // flip Y for OpenGL
+                ImVec2(1.0f, 0.0f));
+
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+                preview_->rotate(ImGui::GetIO().MouseDelta.x * 0.2f);
+            }
+            ImGui::Spacing();
+        } else if (!assetManager_ || !assetManager_->isInitialized()) {
+            ImGui::TextDisabled("Preview unavailable (assets not loaded)");
+            ImGui::Spacing();
+        }
 
         ImGui::TextColored(getFactionColor(character.race), "%s", character.name.c_str());
         ImGui::Separator();

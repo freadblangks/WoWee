@@ -2398,6 +2398,22 @@ network::Packet AutoEquipItemPacket::build(uint8_t srcBag, uint8_t srcSlot) {
     return packet;
 }
 
+network::Packet SwapItemPacket::build(uint8_t dstBag, uint8_t dstSlot, uint8_t srcBag, uint8_t srcSlot) {
+    network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_SWAP_ITEM));
+    packet.writeUInt8(dstBag);
+    packet.writeUInt8(dstSlot);
+    packet.writeUInt8(srcBag);
+    packet.writeUInt8(srcSlot);
+    return packet;
+}
+
+network::Packet SwapInvItemPacket::build(uint8_t srcSlot, uint8_t dstSlot) {
+    network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_SWAP_INV_ITEM));
+    packet.writeUInt8(srcSlot);
+    packet.writeUInt8(dstSlot);
+    return packet;
+}
+
 network::Packet LootMoneyPacket::build() {
     network::Packet packet(static_cast<uint16_t>(Opcode::CMSG_LOOT_MONEY));
     return packet;

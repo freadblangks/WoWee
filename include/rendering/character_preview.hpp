@@ -4,6 +4,8 @@
 #include <GL/glew.h>
 #include <memory>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 namespace wowee {
 namespace pipeline { class AssetManager; }
@@ -24,6 +26,9 @@ public:
                        uint8_t skin, uint8_t face,
                        uint8_t hairStyle, uint8_t hairColor,
                        uint8_t facialHair, bool useFemaleModel = false);
+
+    // Apply equipment overlays/geosets using SMSG_CHAR_ENUM equipment data (ItemDisplayInfo.dbc).
+    bool applyEquipment(const std::vector<game::EquipmentItem>& equipment);
 
     void update(float deltaTime);
     void render();
@@ -56,6 +61,16 @@ private:
     uint32_t instanceId_ = 0;
     bool modelLoaded_ = false;
     float modelYaw_ = 180.0f;
+
+    // Cached info from loadCharacter() for later recompositing.
+    game::Race race_ = game::Race::HUMAN;
+    game::Gender gender_ = game::Gender::MALE;
+    bool useFemaleModel_ = false;
+    uint8_t hairStyle_ = 0;
+    uint8_t facialHair_ = 0;
+    std::string bodySkinPath_;
+    std::vector<std::string> baseLayers_; // face + underwear, etc.
+    uint32_t skinTextureSlotIndex_ = 0;
 };
 
 } // namespace rendering

@@ -261,6 +261,8 @@ enum class Opcode : uint16_t {
     SMSG_ITEM_QUERY_SINGLE_RESPONSE  = 0x058,
     CMSG_USE_ITEM                    = 0x00AB,
     CMSG_AUTOEQUIP_ITEM              = 0x10A,
+    CMSG_SWAP_ITEM                   = 0x10C,
+    CMSG_SWAP_INV_ITEM               = 0x10D,
     SMSG_INVENTORY_CHANGE_FAILURE    = 0x112,
     CMSG_INSPECT                     = 0x114,
     SMSG_INSPECT_RESULTS             = 0x115,

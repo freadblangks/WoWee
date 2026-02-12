@@ -1495,6 +1495,21 @@ public:
     static network::Packet build(uint8_t srcBag, uint8_t srcSlot);
 };
 
+/** CMSG_SWAP_ITEM packet builder */
+class SwapItemPacket {
+public:
+    // Order matches AzerothCore handler: destBag, destSlot, srcBag, srcSlot.
+    static network::Packet build(uint8_t dstBag, uint8_t dstSlot, uint8_t srcBag, uint8_t srcSlot);
+};
+
+/** CMSG_SWAP_INV_ITEM packet builder */
+class SwapInvItemPacket {
+public:
+    // WoW inventory: slots are in the "inventory" range (equipment 0-18, bags 19-22, backpack 23-38).
+    // This swaps two inventory slots directly.
+    static network::Packet build(uint8_t srcSlot, uint8_t dstSlot);
+};
+
 /** CMSG_LOOT_MONEY packet builder (empty body) */
 class LootMoneyPacket {
 public:

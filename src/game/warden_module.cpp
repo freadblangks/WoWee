@@ -9,6 +9,11 @@
 #include <openssl/bn.h>
 #include <openssl/sha.h>
 
+#ifndef _WIN32
+    #include <sys/mman.h>
+    #include <cerrno>
+#endif
+
 namespace wowee {
 namespace game {
 
@@ -66,22 +71,16 @@ bool WardenModule::load(const std::vector<uint8_t>& moduleData,
     }
 
     // Step 5: Parse custom executable format
-    // TODO: Parse skip/copy section structure
-    // - Read alternating [2-byte length][data] sections
-    // - Skip sections are ignored, copy sections loaded
-    std::cout << "[WardenModule] ⏸ Executable format parsing (NOT IMPLEMENTED)" << std::endl;
-    // if (!parseExecutableFormat(decompressedData_)) {
-    //     return false;
-    // }
+    if (!parseExecutableFormat(decompressedData_)) {
+        std::cerr << "[WardenModule] Executable format parsing failed!" << std::endl;
+        return false;
+    }
 
     // Step 6: Apply relocations
-    // TODO: Fix absolute address references
-    // - Delta-encoded offsets with high-bit continuation
-    // - Update all pointers relative to module base
-    std::cout << "[WardenModule] ⏸ Address relocations (NOT IMPLEMENTED)" << std::endl;
-    // if (!applyRelocations()) {
-    //     return false;
-    // }
+    if (!applyRelocations()) {
+        std::cerr << "[WardenModule] Address relocations failed!" << std::endl;
+        return false;
+    }
 
     // Step 7: Bind APIs
     // TODO: Resolve kernel32.dll, user32.dll imports
@@ -157,12 +156,27 @@ void WardenModule::generateRC4Keys(uint8_t* packet) {
 
 void WardenModule::unload() {
     if (moduleMemory_) {
-        // TODO: Free executable memory region
-        // - Call module's Unload() function first
-        // - Free allocated memory
-        // - Clear function pointers
+        // Call module's Unload() function if loaded
+        if (loaded_ && funcList_.unload) {
+            std::cout << "[WardenModule] Calling module unload callback..." << std::endl;
+            // TODO: Implement callback when execution layer is complete
+            // funcList_.unload(nullptr);
+        }
+
+        // Free executable memory region
+        std::cout << "[WardenModule] Freeing " << moduleSize_ << " bytes of executable memory" << std::endl;
+        #ifdef _WIN32
+            VirtualFree(moduleMemory_, 0, MEM_RELEASE);
+        #else
+            munmap(moduleMemory_, moduleSize_);
+        #endif
+
         moduleMemory_ = nullptr;
+        moduleSize_ = 0;
     }
+
+    // Clear function pointers
+    funcList_ = {};
 
     loaded_ = false;
     moduleData_.clear();
@@ -404,26 +418,171 @@ bool WardenModule::decompressZlib(const std::vector<uint8_t>& compressed,
 }
 
 bool WardenModule::parseExecutableFormat(const std::vector<uint8_t>& exeData) {
-    // TODO: Parse custom skip/copy executable format
-    //
-    // Format:
-    // [4 bytes] Final code size
-    // [2 bytes] Skip section length
-    // [N bytes] Code to skip
-    // [2 bytes] Copy section length
-    // [M bytes] Code to copy
-    // ... (alternating skip/copy until end)
-    //
-    // Allocate moduleMemory_ and populate with copy sections
+    if (exeData.size() < 4) {
+        std::cerr << "[WardenModule] Executable data too small for header" << std::endl;
+        return false;
+    }
 
-    return false; // Not implemented
+    // Read final code size (little-endian 4 bytes)
+    uint32_t finalCodeSize =
+        exeData[0] |
+        (exeData[1] << 8) |
+        (exeData[2] << 16) |
+        (exeData[3] << 24);
+
+    std::cout << "[WardenModule] Final code size: " << finalCodeSize << " bytes" << std::endl;
+
+    // Sanity check (executable shouldn't be larger than 5MB)
+    if (finalCodeSize > 5 * 1024 * 1024 || finalCodeSize == 0) {
+        std::cerr << "[WardenModule] Invalid final code size: " << finalCodeSize << std::endl;
+        return false;
+    }
+
+    // Allocate executable memory
+    // Note: On Linux, we'll use mmap with PROT_EXEC
+    // On Windows, would use VirtualAlloc with PAGE_EXECUTE_READWRITE
+    #ifdef _WIN32
+        moduleMemory_ = VirtualAlloc(
+            nullptr,
+            finalCodeSize,
+            MEM_COMMIT | MEM_RESERVE,
+            PAGE_EXECUTE_READWRITE
+        );
+        if (!moduleMemory_) {
+            std::cerr << "[WardenModule] VirtualAlloc failed" << std::endl;
+            return false;
+        }
+    #else
+        #include <sys/mman.h>
+        moduleMemory_ = mmap(
+            nullptr,
+            finalCodeSize,
+            PROT_READ | PROT_WRITE | PROT_EXEC,
+            MAP_PRIVATE | MAP_ANONYMOUS,
+            -1,
+            0
+        );
+        if (moduleMemory_ == MAP_FAILED) {
+            std::cerr << "[WardenModule] mmap failed: " << strerror(errno) << std::endl;
+            moduleMemory_ = nullptr;
+            return false;
+        }
+    #endif
+
+    moduleSize_ = finalCodeSize;
+    std::memset(moduleMemory_, 0, moduleSize_); // Zero-initialize
+
+    std::cout << "[WardenModule] Allocated " << moduleSize_ << " bytes of executable memory at "
+              << moduleMemory_ << std::endl;
+
+    // Parse skip/copy sections
+    size_t pos = 4; // Skip 4-byte size header
+    size_t destOffset = 0;
+    bool isSkipSection = true; // Alternates: skip, copy, skip, copy, ...
+    int sectionCount = 0;
+
+    while (pos + 2 <= exeData.size()) {
+        // Read 2-byte section length (little-endian)
+        uint16_t sectionLength = exeData[pos] | (exeData[pos + 1] << 8);
+        pos += 2;
+
+        if (sectionLength == 0) {
+            break; // End of sections
+        }
+
+        if (pos + sectionLength > exeData.size()) {
+            std::cerr << "[WardenModule] Section extends beyond data bounds" << std::endl;
+            #ifdef _WIN32
+                VirtualFree(moduleMemory_, 0, MEM_RELEASE);
+            #else
+                munmap(moduleMemory_, moduleSize_);
+            #endif
+            moduleMemory_ = nullptr;
+            return false;
+        }
+
+        if (isSkipSection) {
+            // Skip section - advance destination offset without copying
+            destOffset += sectionLength;
+            std::cout << "[WardenModule]   Skip section: " << sectionLength << " bytes (dest offset now "
+                      << destOffset << ")" << std::endl;
+        } else {
+            // Copy section - copy code to module memory
+            if (destOffset + sectionLength > moduleSize_) {
+                std::cerr << "[WardenModule] Copy section exceeds module size" << std::endl;
+                #ifdef _WIN32
+                    VirtualFree(moduleMemory_, 0, MEM_RELEASE);
+                #else
+                    munmap(moduleMemory_, moduleSize_);
+                #endif
+                moduleMemory_ = nullptr;
+                return false;
+            }
+
+            std::memcpy(
+                static_cast<uint8_t*>(moduleMemory_) + destOffset,
+                exeData.data() + pos,
+                sectionLength
+            );
+
+            std::cout << "[WardenModule]   Copy section: " << sectionLength << " bytes to offset "
+                      << destOffset << std::endl;
+
+            destOffset += sectionLength;
+        }
+
+        pos += sectionLength;
+        isSkipSection = !isSkipSection; // Alternate
+        sectionCount++;
+    }
+
+    std::cout << "[WardenModule] ✓ Parsed " << sectionCount << " sections, final offset: "
+              << destOffset << "/" << finalCodeSize << std::endl;
+
+    if (destOffset != finalCodeSize) {
+        std::cerr << "[WardenModule] WARNING: Final offset " << destOffset
+                  << " doesn't match expected size " << finalCodeSize << std::endl;
+    }
+
+    return true;
 }
 
 bool WardenModule::applyRelocations() {
-    // TODO: Fix absolute address references
-    // - Delta-encoded offsets (multi-byte with high-bit continuation)
-    // - Update pointers relative to moduleMemory_ base address
-    return false; // Not implemented
+    if (!moduleMemory_ || moduleSize_ == 0) {
+        std::cerr << "[WardenModule] No module memory allocated for relocations" << std::endl;
+        return false;
+    }
+
+    // Relocations are embedded in the decompressed data after the executable sections
+    // Format: Delta-encoded offsets with high-bit continuation
+    //
+    // Each offset is encoded as variable-length bytes:
+    // - If high bit (0x80) is set, read next byte and combine
+    // - Continue until byte without high bit
+    // - Final value is delta from previous relocation offset
+    //
+    // For each relocation offset:
+    // - Read 4-byte pointer at that offset
+    // - Add module base address to make it absolute
+    // - Write back to memory
+
+    std::cout << "[WardenModule] Applying relocations to module at " << moduleMemory_ << std::endl;
+
+    // NOTE: Relocation data format and location varies by module
+    // Without a real module to test against, we can't implement this accurately
+    // This is a placeholder that would need to be filled in with actual logic
+    // once we have real Warden module data to analyze
+
+    std::cout << "[WardenModule] ⚠ Relocation application is STUB (needs real module data)" << std::endl;
+    std::cout << "[WardenModule]   Would parse delta-encoded offsets and fix absolute references" << std::endl;
+
+    // Placeholder: Assume no relocations or already position-independent
+    // Real implementation would:
+    // 1. Find relocation table in module data
+    // 2. Decode delta offsets
+    // 3. For each offset: *(uint32_t*)(moduleMemory + offset) += (uintptr_t)moduleMemory_
+
+    return true; // Return true to continue (stub implementation)
 }
 
 bool WardenModule::bindAPIs() {

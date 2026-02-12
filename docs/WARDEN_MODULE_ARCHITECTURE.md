@@ -102,13 +102,13 @@ Step 1: Verify MD5      ✅ Implemented (uses auth::Crypto::md5)
 Step 2: RC4 Decrypt     ✅ Implemented (standalone RC4 in WardenModule)
 Step 3: RSA Verify      ✅ Implemented (OpenSSL, placeholder modulus)
 Step 4: zlib Decompress ✅ Implemented (zlib library)
-Step 5: Parse Exe       ❌ TODO (custom skip/copy format)
-Step 6: Relocations     ❌ TODO (delta-encoded offsets)
+Step 5: Parse Exe       ✅ Implemented (custom skip/copy format, mmap/VirtualAlloc)
+Step 6: Relocations     ⚠️  STUB (needs real module data for delta decoding)
 Step 7: Bind APIs       ❌ TODO (kernel32.dll, user32.dll imports)
 Step 8: Initialize      ❌ TODO (call module entry point)
 ```
 
-**Current Behavior**: Steps 1-4 succeed (validation layer complete), steps 5-8 are logged as "NOT IMPLEMENTED". Module is marked as NOT loaded (`loaded_ = false`) until execution layer is complete.
+**Current Behavior**: Steps 1-6 implemented (steps 5-6 need real module data), steps 7-8 are logged as "NOT IMPLEMENTED". Module is marked as NOT loaded (`loaded_ = false`) until execution layer is complete.
 
 ---
 
@@ -356,17 +356,22 @@ SHA1(module_data + "MAIEV.MOD") padded with 0xBB bytes
   - PRGA (Pseudo-Random Generation Algorithm)
   - Used for module decryption (separate from WardenCrypto)
 
-### Phase 4: Executable Loader (TODO - 2-3 weeks)
+### Phase 4: Executable Loader (PARTIALLY COMPLETE ⚠️)
 
-- [ ] Parse custom skip/copy executable format
+- [x] Parse custom skip/copy executable format
   - Read alternating skip/copy sections (2-byte length + data)
-  - Allocate executable memory region
+  - Allocate executable memory region (mmap on Linux, VirtualAlloc on Windows)
   - Copy code sections to memory
-- [ ] Implement address relocation
+  - Sanity checks (max 5MB code size, boundary validation)
+- [x] Memory allocation with execution permissions
+  - Linux: mmap with PROT_READ | PROT_WRITE | PROT_EXEC
+  - Windows: VirtualAlloc with PAGE_EXECUTE_READWRITE
+  - Proper cleanup in unload() (munmap/VirtualFree)
+- [ ] Implement address relocation (STUB)
   - Parse delta-encoded offsets (multi-byte with high-bit continuation)
   - Fix absolute references relative to module base address
   - Update pointer tables
-- [ ] Set memory permissions (VirtualProtect equivalent)
+  - ⚠️ Needs real Warden module data to implement correctly
 
 ### Phase 5: API Binding (TODO - 1 week)
 
@@ -408,12 +413,12 @@ SHA1(module_data + "MAIEV.MOD") padded with 0xBB bytes
 |-------|----------|------------|--------|
 | Phase 1: Crypto | - | ⭐⭐ | ✅ DONE |
 | Phase 2: Foundation | - | ⭐ | ✅ DONE |
-| Phase 3: Validation | 1 week | ⭐⭐⭐ | ✅ DONE |
-| Phase 4: Executable Loader | 2-3 weeks | ⭐⭐⭐⭐⭐ | 🔜 NEXT |
-| Phase 5: API Binding | 1 week | ⭐⭐⭐ | ⏳ TODO |
+| Phase 3: Validation | - | ⭐⭐⭐ | ✅ DONE |
+| Phase 4: Executable Loader | Partial | ⭐⭐⭐⭐⭐ | ⚠️ PARTIAL (needs real module) |
+| Phase 5: API Binding | 1 week | ⭐⭐⭐ | 🔜 NEXT |
 | Phase 6: Execution Engine | 2-3 weeks | ⭐⭐⭐⭐⭐ | ⏳ TODO |
 | Phase 7: Testing | 1-2 weeks | ⭐⭐⭐⭐ | ⏳ TODO |
-| **TOTAL** | **~2 months remaining** | **Very High** | **3/7 done** |
+| **TOTAL** | **~1.5 months remaining** | **Very High** | **4/7 underway** |
 
 ---
 
@@ -535,6 +540,8 @@ sendWardenResponse(encrypted);
 ---
 
 **Last Updated**: 2026-02-12
-**Status**: Phase 3 (Validation Layer) COMPLETE ✅
-**Next Step**: Phase 4 (Executable Loader) - Parse skip/copy format, allocate memory
-**Remaining**: ~2 months (phases 4-7)
+**Status**: Phase 4 (Executable Loader) PARTIAL ⚠️
+**What Works**: Module parsing, memory allocation, skip/copy sections
+**What's Stubbed**: Relocations (needs real module data to test)
+**Next Step**: Phase 5 (API Binding) - Resolve kernel32.dll/user32.dll imports
+**Remaining**: ~1.5 months (phases 5-7)

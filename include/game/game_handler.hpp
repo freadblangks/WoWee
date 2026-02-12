@@ -22,6 +22,7 @@
 namespace wowee::game {
     class TransportManager;
     class WardenCrypto;
+    class WardenModuleManager;
 }
 
 namespace wowee {
@@ -1188,6 +1189,7 @@ private:
     uint32_t wardenPacketsAfterGate_ = 0;
     bool wardenCharEnumBlockedLogged_ = false;
     std::unique_ptr<WardenCrypto> wardenCrypto_;
+    std::unique_ptr<WardenModuleManager> wardenModuleManager_;
 
     // ---- XP tracking ----
     uint32_t playerXp_ = 0;

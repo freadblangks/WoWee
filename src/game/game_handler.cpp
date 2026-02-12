@@ -1,6 +1,7 @@
 #include "game/game_handler.hpp"
 #include "game/transport_manager.hpp"
 #include "game/warden_crypto.hpp"
+#include "game/warden_module.hpp"
 #include "game/opcodes.hpp"
 #include "network/world_socket.hpp"
 #include "network/packet.hpp"
@@ -71,6 +72,9 @@ GameHandler::GameHandler() {
 
     // Initialize transport manager
     transportManager_ = std::make_unique<TransportManager>();
+
+    // Initialize Warden module manager
+    wardenModuleManager_ = std::make_unique<WardenModuleManager>();
 
     // Default spells always available
     knownSpells.push_back(6603);  // Attack

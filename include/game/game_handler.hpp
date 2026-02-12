@@ -427,6 +427,8 @@ public:
     uint32_t getPlayerXp() const { return playerXp_; }
     uint32_t getPlayerNextLevelXp() const { return playerNextLevelXp_; }
     uint32_t getPlayerLevel() const { return serverPlayerLevel_; }
+    const std::vector<uint32_t>& getPlayerExploredZoneMasks() const { return playerExploredZones_; }
+    bool hasPlayerExploredZoneMasks() const { return hasPlayerExploredZones_; }
     static uint32_t killXp(uint32_t playerLevel, uint32_t victimLevel);
 
     // Server time (for deterministic moon phases, etc.)
@@ -1085,11 +1087,8 @@ private:
     float taxiLandingCooldown_ = 0.0f;  // Prevent re-entering taxi right after landing
     size_t taxiClientIndex_ = 0;
     std::vector<glm::vec3> taxiClientPath_;
-    float taxiClientSpeed_ = 18.0f;  // Reduced from 32 to prevent loading hitches
+    float taxiClientSpeed_ = 32.0f;
     float taxiClientSegmentProgress_ = 0.0f;
-    bool taxiMountingDelay_ = false;  // Delay before flight starts (terrain precache time)
-    float taxiMountingTimer_ = 0.0f;
-    std::vector<uint32_t> taxiPendingPath_;  // Path nodes waiting for mounting delay
     bool taxiRecoverPending_ = false;
     uint32_t taxiRecoverMapId_ = 0;
     glm::vec3 taxiRecoverPos_{0.0f};
@@ -1144,9 +1143,15 @@ private:
     std::unordered_map<uint32_t, uint32_t> spellToSkillLine_;      // spellID -> skillLineID
     bool skillLineDbcLoaded_ = false;
     bool skillLineAbilityLoaded_ = false;
+    static constexpr uint16_t PLAYER_EXPLORED_ZONES_START = 1041;  // 3.3.5a UpdateFields
+    static constexpr size_t PLAYER_EXPLORED_ZONES_COUNT = 128;
+    std::vector<uint32_t> playerExploredZones_ =
+        std::vector<uint32_t>(PLAYER_EXPLORED_ZONES_COUNT, 0u);
+    bool hasPlayerExploredZones_ = false;
     void loadSkillLineDbc();
     void loadSkillLineAbilityDbc();
     void extractSkillFields(const std::map<uint16_t, uint32_t>& fields);
+    void extractExploredZoneFields(const std::map<uint16_t, uint32_t>& fields);
 
     NpcDeathCallback npcDeathCallback_;
     NpcAggroCallback npcAggroCallback_;

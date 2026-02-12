@@ -1,6 +1,9 @@
 #pragma once
 
 #include <string>
+#include <cstdint>
+#include <unordered_map>
+#include <vector>
 
 namespace wowee {
 namespace pipeline { class AssetManager; }
@@ -23,6 +26,7 @@ public:
     void setVolume(int volume);
     int getVolume() const { return volumePercent; }
     void setUnderwaterMode(bool underwater);
+    void preloadMusic(const std::string& mpqPath);
 
     bool isPlaying() const { return playing; }
     bool isInitialized() const { return assetManager != nullptr; }
@@ -41,6 +45,8 @@ private:
     std::string pendingTrack;
     float fadeTimer = 0.0f;
     float fadeDuration = 0.0f;
+
+    std::unordered_map<std::string, std::vector<uint8_t>> musicDataCache_;
 };
 
 } // namespace audio

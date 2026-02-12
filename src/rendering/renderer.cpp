@@ -557,6 +557,9 @@ void Renderer::setCharacterFollow(uint32_t instanceId) {
 void Renderer::setMounted(uint32_t mountInstId, uint32_t mountDisplayId, float heightOffset) {
     mountInstanceId_ = mountInstId;
     mountHeightOffset_ = heightOffset;
+    mountSeatAttachmentId_ = -1;
+    smoothedMountSeatPos_ = characterPosition;
+    mountSeatSmoothingInit_ = false;
     mountAction_ = MountAction::None;  // Clear mount action state
     mountActionPhase_ = 0;
     charAnimState = CharAnimState::MOUNT;
@@ -796,6 +799,9 @@ void Renderer::clearMount() {
     mountHeightOffset_ = 0.0f;
     mountPitch_ = 0.0f;
     mountRoll_ = 0.0f;
+    mountSeatAttachmentId_ = -1;
+    smoothedMountSeatPos_ = glm::vec3(0.0f);
+    mountSeatSmoothingInit_ = false;
     mountAction_ = MountAction::None;
     mountActionPhase_ = 0;
     charAnimState = CharAnimState::IDLE;
@@ -954,6 +960,10 @@ void Renderer::updateCharacterAnimation() {
         if (mountInstanceId_ > 0) {
             characterRenderer->setInstancePosition(mountInstanceId_, characterPosition);
             float yawRad = glm::radians(characterYaw);
+            if (taxiFlight_) {
+                // Taxi mounts commonly use a different model-forward axis than player rigs.
+                yawRad += 1.57079632679f;
+            }
 
             // Procedural lean into turns (ground mounts only, optional enhancement)
             if (!taxiFlight_ && moving && lastDeltaTime_ > 0.0f) {
@@ -1164,22 +1174,53 @@ void Renderer::updateCharacterAnimation() {
 
         // Use mount's attachment point for proper bone-driven rider positioning
         glm::mat4 mountSeatTransform;
-        if (characterRenderer->getAttachmentTransform(mountInstanceId_, 0, mountSeatTransform)) {
+        bool haveSeat = false;
+        if (mountSeatAttachmentId_ >= 0) {
+            haveSeat = characterRenderer->getAttachmentTransform(
+                mountInstanceId_, static_cast<uint32_t>(mountSeatAttachmentId_), mountSeatTransform);
+        } else if (mountSeatAttachmentId_ == -1) {
+            // Probe common rider seat attachment IDs once per mount.
+            static constexpr uint32_t kSeatAttachments[] = {0, 5, 6, 7, 8};
+            for (uint32_t attId : kSeatAttachments) {
+                if (characterRenderer->getAttachmentTransform(mountInstanceId_, attId, mountSeatTransform)) {
+                    mountSeatAttachmentId_ = static_cast<int>(attId);
+                    haveSeat = true;
+                    break;
+                }
+            }
+            if (!haveSeat) {
+                mountSeatAttachmentId_ = -2;
+            }
+        }
+
+        if (haveSeat) {
             // Extract position from mount seat transform (attachment point already includes proper seat height)
             glm::vec3 mountSeatPos = glm::vec3(mountSeatTransform[3]);
 
-            // Apply small vertical offset to reduce foot clipping (mount attachment point has correct X/Y)
-            glm::vec3 seatOffset = glm::vec3(0.0f, 0.0f, 0.2f);
+            // Keep seat offset minimal; large offsets amplify visible bobble.
+            glm::vec3 seatOffset = glm::vec3(0.0f, 0.0f, taxiFlight_ ? 0.04f : 0.08f);
+            glm::vec3 targetRiderPos = mountSeatPos + seatOffset;
+            if (!mountSeatSmoothingInit_) {
+                smoothedMountSeatPos_ = targetRiderPos;
+                mountSeatSmoothingInit_ = true;
+            } else {
+                float smoothHz = taxiFlight_ ? 10.0f : 14.0f;
+                float alpha = 1.0f - std::exp(-smoothHz * std::max(lastDeltaTime_, 0.001f));
+                smoothedMountSeatPos_ = glm::mix(smoothedMountSeatPos_, targetRiderPos, alpha);
+            }
 
             // Position rider at mount seat
-            characterRenderer->setInstancePosition(characterInstanceId, mountSeatPos + seatOffset);
+            characterRenderer->setInstancePosition(characterInstanceId, smoothedMountSeatPos_);
 
             // Rider uses character facing yaw, not mount bone rotation
             // (rider faces character direction, seat bone only provides position)
             float yawRad = glm::radians(characterYaw);
-            characterRenderer->setInstanceRotation(characterInstanceId, glm::vec3(0.0f, 0.0f, yawRad));
+            float riderPitch = taxiFlight_ ? mountPitch_ * 0.35f : 0.0f;
+            float riderRoll = taxiFlight_ ? mountRoll_ * 0.35f : 0.0f;
+            characterRenderer->setInstanceRotation(characterInstanceId, glm::vec3(riderPitch, riderRoll, yawRad));
         } else {
             // Fallback to old manual positioning if attachment not found
+            mountSeatSmoothingInit_ = false;
             float yawRad = glm::radians(characterYaw);
             glm::mat4 mountRotation = glm::mat4(1.0f);
             mountRotation = glm::rotate(mountRotation, yawRad, glm::vec3(0.0f, 0.0f, 1.0f));
@@ -2385,9 +2426,7 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
     }
 
     // Render weather particles (after terrain/water, before characters)
-    // Skip during taxi flights for performance and visual clarity
-    bool onTaxi = cameraController && cameraController->isOnTaxi();
-    if (weather && camera && !onTaxi) {
+    if (weather && camera) {
         weather->render(*camera);
     }
 
@@ -2430,11 +2469,8 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
         }
         auto m2Start = std::chrono::steady_clock::now();
         m2Renderer->render(*camera, view, projection);
-        // Skip particle fog during taxi (expensive and visually distracting)
-        if (!onTaxi) {
-            m2Renderer->renderSmokeParticles(*camera, view, projection);
-            m2Renderer->renderM2Particles(view, projection);
-        }
+        m2Renderer->renderSmokeParticles(*camera, view, projection);
+        m2Renderer->renderM2Particles(view, projection);
         auto m2End = std::chrono::steady_clock::now();
         lastM2RenderMs = std::chrono::duration<double, std::milli>(m2End - m2Start).count();
     }
@@ -2807,6 +2843,23 @@ bool Renderer::loadTestTerrain(pipeline::AssetManager* assetManager, const std::
         if (questMarkerRenderer) {
             questMarkerRenderer->initialize(assetManager);
         }
+
+        // Prewarm frequently used zone/tavern music so zone transitions don't stall on MPQ I/O.
+        if (zoneManager) {
+            for (const auto& musicPath : zoneManager->getAllMusicPaths()) {
+                musicManager->preloadMusic(musicPath);
+            }
+        }
+        static const std::vector<std::string> tavernTracks = {
+            "Sound\\Music\\ZoneMusic\\TavernAlliance\\TavernAlliance01.mp3",
+            "Sound\\Music\\ZoneMusic\\TavernAlliance\\TavernAlliance02.mp3",
+            "Sound\\Music\\ZoneMusic\\TavernHuman\\RA_HumanTavern1A.mp3",
+            "Sound\\Music\\ZoneMusic\\TavernHuman\\RA_HumanTavern2A.mp3",
+        };
+        for (const auto& musicPath : tavernTracks) {
+            musicManager->preloadMusic(musicPath);
+        }
+
         cachedAssetManager = assetManager;
     }
 

@@ -288,24 +288,6 @@ void GameHandler::update(float deltaTime) {
             }
         }
 
-        // Mounting delay for taxi (terrain + M2 model precache time)
-        if (taxiMountingDelay_) {
-            taxiMountingTimer_ += deltaTime;
-            // 5 second delay for terrain and M2 models to load and upload to VRAM
-            if (taxiMountingTimer_ >= 5.0f) {
-                taxiMountingDelay_ = false;
-                taxiMountingTimer_ = 0.0f;
-                // Upload all precached tiles to GPU before flight starts
-                if (taxiFlightStartCallback_) {
-                    taxiFlightStartCallback_();
-                }
-                if (!taxiPendingPath_.empty()) {
-                    startClientTaxiPath(taxiPendingPath_);
-                    taxiPendingPath_.clear();
-                }
-            }
-        }
-
         auto taxiEnd = std::chrono::high_resolution_clock::now();
         taxiTime += std::chrono::duration<float, std::milli>(taxiEnd - taxiStart).count();
 
@@ -1524,6 +1506,8 @@ void GameHandler::selectCharacter(uint64_t characterGuid) {
     playerXp_ = 0;
     playerNextLevelXp_ = 0;
     serverPlayerLevel_ = 1;
+    std::fill(playerExploredZones_.begin(), playerExploredZones_.end(), 0u);
+    hasPlayerExploredZones_ = false;
     playerSkills_.clear();
     questLog_.clear();
     npcQuestStatus_.clear();
@@ -2235,6 +2219,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     if (applyInventoryFields(block.fields)) slotsChanged = true;
                     if (slotsChanged) rebuildOnlineInventory();
                     extractSkillFields(lastPlayerFields_);
+                    extractExploredZoneFields(lastPlayerFields_);
                 }
                 break;
             }
@@ -2251,6 +2236,8 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     if (entity->getType() == ObjectType::UNIT || entity->getType() == ObjectType::PLAYER) {
                         auto unit = std::static_pointer_cast<Unit>(entity);
                         constexpr uint32_t UNIT_DYNFLAG_DEAD = 0x0008;
+                        uint32_t oldDisplayId = unit->getDisplayId();
+                        bool displayIdChanged = false;
                         for (const auto& [key, val] : block.fields) {
                             switch (key) {
                                 case 24: {
@@ -2316,7 +2303,12 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                     unit->setFactionTemplate(val);
                                     unit->setHostile(isHostileFaction(val));
                                     break;
-                                case 67: unit->setDisplayId(val); break;  // UNIT_FIELD_DISPLAYID
+                                case 67:
+                                    if (val != unit->getDisplayId()) {
+                                        unit->setDisplayId(val);
+                                        displayIdChanged = true;
+                                    }
+                                    break;  // UNIT_FIELD_DISPLAYID
                                 case 69: // UNIT_FIELD_MOUNTDISPLAYID
                                     if (block.guid == playerGuid) {
                                         uint32_t old = currentMountDisplayId_;
@@ -2331,6 +2323,22 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                     break;
                                 case 82: unit->setNpcFlags(val); break;   // UNIT_NPC_FLAGS
                                 default: break;
+                            }
+                        }
+
+                        // Some units are created without displayId and get it later via VALUES.
+                        if (entity->getType() == ObjectType::UNIT &&
+                            displayIdChanged &&
+                            unit->getDisplayId() != 0 &&
+                            unit->getDisplayId() != oldDisplayId) {
+                            if (creatureSpawnCallback_) {
+                                creatureSpawnCallback_(block.guid, unit->getDisplayId(),
+                                    unit->getX(), unit->getY(), unit->getZ(), unit->getOrientation());
+                            }
+                            if ((unit->getNpcFlags() & 0x02) && socket) {
+                                network::Packet qsPkt(static_cast<uint16_t>(Opcode::CMSG_QUESTGIVER_STATUS_QUERY));
+                                qsPkt.writeUInt64(block.guid);
+                                socket->send(qsPkt);
                             }
                         }
                     }
@@ -2387,6 +2395,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         if (applyInventoryFields(block.fields)) slotsChanged = true;
                         if (slotsChanged) rebuildOnlineInventory();
                         extractSkillFields(lastPlayerFields_);
+                        extractExploredZoneFields(lastPlayerFields_);
                     }
 
                     // Update item stack count for online items
@@ -6125,10 +6134,12 @@ void GameHandler::startClientTaxiPath(const std::vector<uint32_t>& pathNodes) {
         glm::vec3 start = taxiClientPath_[0];
         glm::vec3 end = taxiClientPath_[1];
         glm::vec3 dir = end - start;
+        float dirLen = glm::length(dir);
+        if (dirLen < 0.001f) return;
         float initialOrientation = std::atan2(dir.y, dir.x) - 1.57079632679f;
 
         // Calculate initial pitch from altitude change
-        glm::vec3 dirNorm = glm::normalize(dir);
+        glm::vec3 dirNorm = dir / dirLen;
         float initialPitch = std::asin(std::clamp(dirNorm.z, -1.0f, 1.0f));
         float initialRoll = 0.0f;  // No initial banking
 
@@ -6218,12 +6229,21 @@ void GameHandler::updateClientTaxi(float deltaTime) {
         2.0f * (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t +
         3.0f * (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t2
     );
+    float tangentLen = glm::length(tangent);
+    if (tangentLen < 0.0001f) {
+        tangent = dir;
+        tangentLen = glm::length(tangent);
+        if (tangentLen < 0.0001f) {
+            tangent = glm::vec3(std::cos(movementInfo.orientation), std::sin(movementInfo.orientation), 0.0f);
+            tangentLen = glm::length(tangent);
+        }
+    }
 
     // Calculate yaw from horizontal direction
     float targetOrientation = std::atan2(tangent.y, tangent.x) - 1.57079632679f;
 
     // Calculate pitch from vertical component (altitude change)
-    glm::vec3 tangentNorm = glm::normalize(tangent);
+    glm::vec3 tangentNorm = tangent / std::max(tangentLen, 0.0001f);
     float pitch = std::asin(std::clamp(tangentNorm.z, -1.0f, 1.0f));
 
     // Calculate roll (banking) from rate of yaw change
@@ -6419,12 +6439,7 @@ void GameHandler::activateTaxi(uint32_t destNodeId) {
         applyTaxiMountForCurrentNode();
     }
 
-    // Start mounting delay (gives terrain precache time to load)
-    taxiMountingDelay_ = true;
-    taxiMountingTimer_ = 0.0f;
-    taxiPendingPath_ = path;
-
-    // Trigger terrain precache immediately (uses mounting delay time to load)
+    // Trigger terrain precache immediately (non-blocking).
     if (taxiPrecacheCallback_) {
         std::vector<glm::vec3> previewPath;
         // Build full spline path using TaxiPathNode waypoints
@@ -6455,7 +6470,13 @@ void GameHandler::activateTaxi(uint32_t destNodeId) {
         }
     }
 
-    addSystemChatMessage("Mounting for flight...");
+    // Flight starts immediately; upload callback stays opportunistic/non-blocking.
+    if (taxiFlightStartCallback_) {
+        taxiFlightStartCallback_();
+    }
+    startClientTaxiPath(path);
+
+    addSystemChatMessage("Flight started.");
 
     // Save recovery target in case of disconnect during taxi.
     auto destIt = taxiNodes_.find(destNodeId);
@@ -6802,6 +6823,25 @@ void GameHandler::extractSkillFields(const std::map<uint16_t, uint32_t>& fields)
     }
 
     playerSkills_ = std::move(newSkills);
+}
+
+void GameHandler::extractExploredZoneFields(const std::map<uint16_t, uint32_t>& fields) {
+    if (playerExploredZones_.size() != PLAYER_EXPLORED_ZONES_COUNT) {
+        playerExploredZones_.assign(PLAYER_EXPLORED_ZONES_COUNT, 0u);
+    }
+
+    bool foundAny = false;
+    for (size_t i = 0; i < PLAYER_EXPLORED_ZONES_COUNT; i++) {
+        const uint16_t fieldIdx = static_cast<uint16_t>(PLAYER_EXPLORED_ZONES_START + i);
+        auto it = fields.find(fieldIdx);
+        if (it == fields.end()) continue;
+        playerExploredZones_[i] = it->second;
+        foundAny = true;
+    }
+
+    if (foundAny) {
+        hasPlayerExploredZones_ = true;
+    }
 }
 
 std::string GameHandler::getCharacterConfigDir() {

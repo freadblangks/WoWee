@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace wowee {
 
@@ -192,7 +193,12 @@ private:
         float x, y, z, orientation;
     };
     std::vector<PendingCreatureSpawn> pendingCreatureSpawns_;
-    static constexpr int MAX_SPAWNS_PER_FRAME = 2;
+    static constexpr int MAX_SPAWNS_PER_FRAME = 24;
+    static constexpr uint16_t MAX_CREATURE_SPAWN_RETRIES = 300;
+    std::unordered_set<uint64_t> pendingCreatureSpawnGuids_;
+    std::unordered_map<uint64_t, uint16_t> creatureSpawnRetryCounts_;
+    std::unordered_set<uint32_t> nonRenderableCreatureDisplayIds_;
+    std::unordered_set<uint64_t> creaturePermanentFailureGuids_;
     void processCreatureSpawnQueue();
 
     struct PendingGameObjectSpawn {

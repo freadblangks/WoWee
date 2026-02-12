@@ -323,7 +323,8 @@ GLuint CharacterRenderer::loadTexture(const std::string& path) {
     auto blpImage = assetManager->loadTexture(path);
     if (!blpImage.isValid()) {
         core::Logger::getInstance().warning("Failed to load texture: ", path);
-        textureCache[path] = whiteTexture;
+        // Do not cache failures as white. Some asset reads can fail transiently and
+        // we want later retries (e.g., mount skins loaded shortly after model spawn).
         return whiteTexture;
     }
 
@@ -1257,6 +1258,26 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
         glBindVertexArray(gpuModel.vao);
 
         if (!gpuModel.data.batches.empty()) {
+            bool applyGeosetFilter = !instance.activeGeosets.empty();
+            if (applyGeosetFilter) {
+                bool hasRenderableGeoset = false;
+                for (const auto& batch : gpuModel.data.batches) {
+                    if (instance.activeGeosets.find(batch.submeshId) != instance.activeGeosets.end()) {
+                        hasRenderableGeoset = true;
+                        break;
+                    }
+                }
+                if (!hasRenderableGeoset) {
+                    static std::unordered_set<uint32_t> loggedGeosetFallback;
+                    if (loggedGeosetFallback.insert(instance.id).second) {
+                        LOG_WARNING("Geoset filter matched no batches for instance ",
+                                    instance.id, " (model ", instance.modelId,
+                                    "); rendering all batches as fallback");
+                    }
+                    applyGeosetFilter = false;
+                }
+            }
+
             // One-time debug dump of rendered batches per model
             static std::unordered_set<uint32_t> dumpedModels;
             if (dumpedModels.find(instance.modelId) == dumpedModels.end()) {
@@ -1264,7 +1285,7 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
                 int bIdx = 0;
                 int rendered = 0, skipped = 0;
                 for (const auto& b : gpuModel.data.batches) {
-                    bool filtered = !instance.activeGeosets.empty() &&
+                    bool filtered = applyGeosetFilter &&
                         (b.submeshId / 100 != 0) &&
                         instance.activeGeosets.find(b.submeshId) == instance.activeGeosets.end();
 
@@ -1304,7 +1325,7 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
             // For character models, group 0 (body/scalp) is also filtered so that only
             // the correct scalp mesh renders (not all overlapping variants).
             for (const auto& batch : gpuModel.data.batches) {
-                if (!instance.activeGeosets.empty()) {
+                if (applyGeosetFilter) {
                     if (instance.activeGeosets.find(batch.submeshId) == instance.activeGeosets.end()) {
                         continue;
                     }

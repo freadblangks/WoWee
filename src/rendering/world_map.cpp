@@ -75,6 +75,17 @@ void WorldMap::setMapName(const std::string& name) {
     viewLevel = ViewLevel::WORLD;
 }
 
+void WorldMap::setServerExplorationMask(const std::vector<uint32_t>& masks, bool hasData) {
+    if (!hasData || masks.empty()) {
+        hasServerExplorationMask = false;
+        serverExplorationMask.clear();
+        return;
+    }
+
+    hasServerExplorationMask = true;
+    serverExplorationMask = masks;
+}
+
 // --------------------------------------------------------
 // GL resource creation
 // --------------------------------------------------------
@@ -195,7 +206,22 @@ void WorldMap::loadZonesFromDBC() {
         }
     }
 
-    // Step 2: Load ALL WorldMapArea records for this mapID
+    // Step 2: Load AreaTable explore flags by areaID.
+    std::unordered_map<uint32_t, uint32_t> exploreFlagByAreaId;
+    auto areaDbc = assetManager->loadDBC("AreaTable.dbc");
+    if (areaDbc && areaDbc->isLoaded() && areaDbc->getFieldCount() > 3) {
+        for (uint32_t i = 0; i < areaDbc->getRecordCount(); i++) {
+            const uint32_t areaId = areaDbc->getUInt32(i, 0);
+            const uint32_t exploreFlag = areaDbc->getUInt32(i, 3);
+            if (areaId != 0) {
+                exploreFlagByAreaId[areaId] = exploreFlag;
+            }
+        }
+    } else {
+        LOG_WARNING("WorldMap: AreaTable.dbc missing or unexpected format; server exploration may be incomplete");
+    }
+
+    // Step 3: Load ALL WorldMapArea records for this mapID
     auto wmaDbc = assetManager->loadDBC("WorldMapArea.dbc");
     if (!wmaDbc || !wmaDbc->isLoaded()) {
         LOG_WARNING("WorldMap: WorldMapArea.dbc not found");
@@ -224,6 +250,10 @@ void WorldMap::loadZonesFromDBC() {
         zone.locBottom = wmaDbc->getFloat(i, 7);
         zone.displayMapID = wmaDbc->getUInt32(i, 8);
         zone.parentWorldMapID = wmaDbc->getUInt32(i, 10);
+        auto exploreIt = exploreFlagByAreaId.find(zone.areaID);
+        if (exploreIt != exploreFlagByAreaId.end()) {
+            zone.exploreFlag = exploreIt->second;
+        }
 
         int idx = static_cast<int>(zones.size());
 
@@ -728,9 +758,66 @@ glm::vec2 WorldMap::renderPosToMapUV(const glm::vec3& renderPos, int zoneIdx) co
 // --------------------------------------------------------
 
 void WorldMap::updateExploration(const glm::vec3& playerRenderPos) {
-    int zoneIdx = findZoneForPlayer(playerRenderPos);
-    if (zoneIdx >= 0) {
-        exploredZones.insert(zoneIdx);
+    auto isExploreFlagSet = [this](uint32_t flag) -> bool {
+        if (!hasServerExplorationMask || serverExplorationMask.empty() || flag == 0) return false;
+
+        const auto isSet = [this](uint32_t bitIndex) -> bool {
+            const size_t word = bitIndex / 32;
+            if (word >= serverExplorationMask.size()) return false;
+            const uint32_t bit = bitIndex % 32;
+            return (serverExplorationMask[word] & (1u << bit)) != 0;
+        };
+
+        // Most cores use zero-based bit indices; some data behaves one-based.
+        if (isSet(flag)) return true;
+        if (flag > 0 && isSet(flag - 1)) return true;
+        return false;
+    };
+
+    bool markedAny = false;
+    if (hasServerExplorationMask) {
+        exploredZones.clear();
+        for (int i = 0; i < static_cast<int>(zones.size()); i++) {
+            const auto& z = zones[i];
+            if (z.areaID == 0 || z.exploreFlag == 0) continue;
+            if (isExploreFlagSet(z.exploreFlag)) {
+                exploredZones.insert(i);
+                markedAny = true;
+            }
+        }
+    }
+
+    // Fall back to local bounds-based reveal if server masks are missing/unusable.
+    if (markedAny) return;
+
+    float wowX = playerRenderPos.y;  // north/south
+    float wowY = playerRenderPos.x;  // west/east
+
+    for (int i = 0; i < static_cast<int>(zones.size()); i++) {
+        const auto& z = zones[i];
+        if (z.areaID == 0) continue;  // skip continent-level entries
+
+        float minX = std::min(z.locLeft, z.locRight);
+        float maxX = std::max(z.locLeft, z.locRight);
+        float minY = std::min(z.locTop, z.locBottom);
+        float maxY = std::max(z.locTop, z.locBottom);
+        float spanX = maxX - minX;
+        float spanY = maxY - minY;
+        if (spanX < 0.001f || spanY < 0.001f) continue;
+
+        bool contains = (wowX >= minX && wowX <= maxX && wowY >= minY && wowY <= maxY);
+        if (contains) {
+            exploredZones.insert(i);
+            markedAny = true;
+        }
+    }
+
+    // Fallback for imperfect DBC bounds: reveal nearest zone so exploration still progresses.
+    if (!markedAny) {
+        int zoneIdx = findZoneForPlayer(playerRenderPos);
+        if (zoneIdx >= 0) {
+            exploredZones.insert(zoneIdx);
+        }
     }
 }
 
@@ -791,11 +878,16 @@ void WorldMap::render(const glm::vec3& playerRenderPos, int screenWidth, int scr
             return;
         }
 
-        // Mouse wheel: scroll up = zoom in, scroll down = zoom out
+        // Mouse wheel: scroll up = zoom in, scroll down = zoom out.
+        // Use both ImGui and raw input wheel deltas for reliability across frame order/capture paths.
         auto& io = ImGui::GetIO();
-        if (io.MouseWheel > 0.0f) {
+        float wheelDelta = io.MouseWheel;
+        if (std::abs(wheelDelta) < 0.001f) {
+            wheelDelta = input.getMouseWheelDelta();
+        }
+        if (wheelDelta > 0.0f) {
             zoomIn(playerRenderPos);
-        } else if (io.MouseWheel < 0.0f) {
+        } else if (wheelDelta < 0.0f) {
             zoomOut();
         }
     } else {

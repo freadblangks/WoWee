@@ -1661,14 +1661,13 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
     shader->setUniform("uProjection", projection);
     shader->setUniform("uLightDir", lightDir);
     shader->setUniform("uLightColor", lightColor);
-    shader->setUniform("uSpecularIntensity", onTaxi_ ? 0.0f : 0.5f);  // Disable specular during taxi for performance
+    shader->setUniform("uSpecularIntensity", 0.5f);
     shader->setUniform("uAmbientColor", ambientColor);
     shader->setUniform("uViewPos", camera.getPosition());
     shader->setUniform("uFogColor", fogColor);
     shader->setUniform("uFogStart", fogStart);
     shader->setUniform("uFogEnd", fogEnd);
-    // Disable shadows during taxi for better performance
-    bool useShadows = shadowEnabled && !onTaxi_;
+    bool useShadows = shadowEnabled;
     shader->setUniform("uShadowEnabled", useShadows ? 1 : 0);
     shader->setUniform("uShadowStrength", 0.65f);
     if (useShadows) {
@@ -1681,7 +1680,7 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
     lastDrawCallCount = 0;
 
     // Adaptive render distance: balanced for performance without excessive pop-in
-    const float maxRenderDistance = onTaxi_ ? 700.0f : (instances.size() > 2000) ? 350.0f : 1000.0f;
+    const float maxRenderDistance = (instances.size() > 2000) ? 350.0f : 1000.0f;
     const float maxRenderDistanceSq = maxRenderDistance * maxRenderDistance;
     const float fadeStartFraction = 0.75f;
     const glm::vec3 camPos = camera.getPosition();
@@ -1786,22 +1785,6 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
         }
 
         const M2ModelGPU& model = *currentModel;
-
-        // Relaxed culling during taxi (VRAM caching eliminates loading hitches)
-        if (onTaxi_) {
-            // Skip tiny props (barrels, crates, small debris)
-            if (model.boundRadius < 2.0f) {
-                continue;
-            }
-            // Skip small ground foliage (bushes, flowers) but keep trees
-            if (model.collisionNoBlock && model.boundRadius < 5.0f) {
-                continue;
-            }
-            // Skip deep underwater objects (opaque water hides them anyway)
-            if (instance.position.z < -10.0f) {
-                continue;
-            }
-        }
 
         // Distance-based fade alpha for smooth pop-in (squared-distance, no sqrt)
         float fadeAlpha = 1.0f;

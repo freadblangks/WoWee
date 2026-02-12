@@ -323,6 +323,9 @@ private:
     float mountHeightOffset_ = 0.0f;
     float mountPitch_ = 0.0f;  // Up/down tilt (radians)
     float mountRoll_ = 0.0f;   // Left/right banking (radians)
+    int mountSeatAttachmentId_ = -1;  // -1 unknown, -2 unavailable
+    glm::vec3 smoothedMountSeatPos_ = glm::vec3(0.0f);
+    bool mountSeatSmoothingInit_ = false;
     float prevMountYaw_ = 0.0f; // Previous yaw for turn rate calculation (procedural lean)
     float lastDeltaTime_ = 0.0f; // Cached for use in updateCharacterAnimation()
     MountAction mountAction_ = MountAction::None;  // Current mount action (jump/rear-up)

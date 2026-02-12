@@ -2,6 +2,7 @@
 #include "core/logger.hpp"
 #include <cstdlib>
 #include <ctime>
+#include <unordered_set>
 
 namespace wowee {
 namespace game {
@@ -110,6 +111,21 @@ std::string ZoneManager::getRandomMusic(uint32_t zoneId) const {
 
     const auto& paths = it->second.musicPaths;
     return paths[std::rand() % paths.size()];
+}
+
+std::vector<std::string> ZoneManager::getAllMusicPaths() const {
+    std::vector<std::string> out;
+    std::unordered_set<std::string> seen;
+    for (const auto& [zoneId, zone] : zones) {
+        (void)zoneId;
+        for (const auto& path : zone.musicPaths) {
+            if (path.empty()) continue;
+            if (seen.insert(path).second) {
+                out.push_back(path);
+            }
+        }
+    }
+    return out;
 }
 
 } // namespace game

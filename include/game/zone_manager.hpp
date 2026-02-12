@@ -21,6 +21,7 @@ public:
     uint32_t getZoneId(int tileX, int tileY) const;
     const ZoneInfo* getZoneInfo(uint32_t zoneId) const;
     std::string getRandomMusic(uint32_t zoneId) const;
+    std::vector<std::string> getAllMusicPaths() const;
 
 private:
     // tile key = tileX * 100 + tileY

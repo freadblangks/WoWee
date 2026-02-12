@@ -467,23 +467,7 @@ void Application::update(float deltaTime) {
             }
             if (renderer && renderer->getTerrainManager()) {
                 renderer->getTerrainManager()->setStreamingEnabled(true);
-                // With 8GB tile cache and precaching, minimize streaming during taxi
-                if (onTaxi) {
-                    renderer->getTerrainManager()->setUpdateInterval(2.0f);  // Very infrequent updates - already precached
-                    renderer->getTerrainManager()->setLoadRadius(2);  // 5x5 grid for taxi (each tile ~533 yards)
-                } else {
-                    // Ramp streaming back in after taxi to avoid end-of-flight hitches.
-                    if (lastTaxiFlight_) {
-                        taxiStreamCooldown_ = 2.5f;
-                        renderer->getTerrainManager()->setLoadRadius(2);  // Back to 5x5
-                    }
-                    if (taxiStreamCooldown_ > 0.0f) {
-                        taxiStreamCooldown_ -= deltaTime;
-                        renderer->getTerrainManager()->setUpdateInterval(1.0f);
-                    } else {
-                        renderer->getTerrainManager()->setUpdateInterval(0.1f);
-                    }
-                }
+                renderer->getTerrainManager()->setUpdateInterval(0.1f);
             }
             lastTaxiFlight_ = onTaxi;
 
@@ -760,8 +744,12 @@ void Application::setupUICallbacks() {
 
     // Creature spawn callback (online mode) - spawn creature models
     gameHandler->setCreatureSpawnCallback([this](uint64_t guid, uint32_t displayId, float x, float y, float z, float orientation) {
-        // Queue spawns to avoid hanging when many creatures appear at once
+        // Queue spawns to avoid hanging when many creatures appear at once.
+        // Deduplicate so repeated updates don't flood pending queue.
+        if (creatureInstances_.count(guid)) return;
+        if (pendingCreatureSpawnGuids_.count(guid)) return;
         pendingCreatureSpawns_.push_back({guid, displayId, x, y, z, orientation});
+        pendingCreatureSpawnGuids_.insert(guid);
     });
 
     // Creature despawn callback (online mode) - remove creature models
@@ -2298,10 +2286,17 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
     // Skip if already spawned
     if (creatureInstances_.count(guid)) return;
 
+    if (nonRenderableCreatureDisplayIds_.count(displayId)) {
+        creaturePermanentFailureGuids_.insert(guid);
+        return;
+    }
+
     // Get model path from displayId
     std::string m2Path = getModelPathForDisplayId(displayId);
     if (m2Path.empty()) {
         LOG_WARNING("No model path for displayId ", displayId, " (guid 0x", std::hex, guid, std::dec, ")");
+        nonRenderableCreatureDisplayIds_.insert(displayId);
+        creaturePermanentFailureGuids_.insert(guid);
         return;
     }
 
@@ -2321,12 +2316,15 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
         auto m2Data = assetManager->readFile(m2Path);
         if (m2Data.empty()) {
             LOG_WARNING("Failed to read creature M2: ", m2Path);
+            creaturePermanentFailureGuids_.insert(guid);
             return;
         }
 
         pipeline::M2Model model = pipeline::M2Loader::load(m2Data);
         if (model.vertices.empty()) {
             LOG_WARNING("Failed to parse creature M2: ", m2Path);
+            nonRenderableCreatureDisplayIds_.insert(displayId);
+            creaturePermanentFailureGuids_.insert(guid);
             return;
         }
 
@@ -2353,6 +2351,7 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
 
         if (!charRenderer->loadModel(model, modelId)) {
             LOG_WARNING("Failed to load creature model: ", m2Path);
+            creaturePermanentFailureGuids_.insert(guid);
             return;
         }
 
@@ -2497,7 +2496,8 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
     // Smart filtering for bad spawn data:
     // - If over ocean AND at continental height (Z > 50): bad data, skip
     // - If over ocean AND near sea level (Z <= 50): water creature, allow
-    // - If over land: snap to terrain height
+    // - If over land: preserve server Z for elevated platforms/roofs and only
+    //   correct clearly underground spawns.
     if (renderer->getTerrainManager()) {
         auto terrainH = renderer->getTerrainManager()->getHeightAt(renderPos.x, renderPos.y);
         if (!terrainH) {
@@ -2508,8 +2508,11 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
             }
             // Low altitude = probably legitimate water creature, allow spawn at original Z
         } else {
-            // Valid terrain found - snap to terrain height
-            renderPos.z = *terrainH + 0.1f;
+            // Keep authentic server Z for NPCs on raised geometry (e.g. flight masters).
+            // Only lift up if spawn is clearly below terrain.
+            if (renderPos.z < (*terrainH - 2.0f)) {
+                renderPos.z = *terrainH + 0.1f;
+            }
         }
     }
 
@@ -2763,6 +2766,7 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
     // Track instance
     creatureInstances_[guid] = instanceId;
     creatureModelIds_[guid] = modelId;
+    creaturePermanentFailureGuids_.erase(guid);
 
     LOG_INFO("Spawned creature: guid=0x", std::hex, guid, std::dec,
              " displayId=", displayId, " at (", x, ", ", y, ", ", z, ")");
@@ -3051,13 +3055,43 @@ void Application::spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_t 
 
 void Application::processCreatureSpawnQueue() {
     if (pendingCreatureSpawns_.empty()) return;
+    if (!creatureLookupsBuilt_) {
+        buildCreatureDisplayLookups();
+        if (!creatureLookupsBuilt_) return;
+    }
 
-    int spawned = 0;
-    while (!pendingCreatureSpawns_.empty() && spawned < MAX_SPAWNS_PER_FRAME) {
-        auto& s = pendingCreatureSpawns_.front();
+    int processed = 0;
+    while (!pendingCreatureSpawns_.empty() && processed < MAX_SPAWNS_PER_FRAME) {
+        PendingCreatureSpawn s = pendingCreatureSpawns_.front();
         spawnOnlineCreature(s.guid, s.displayId, s.x, s.y, s.z, s.orientation);
         pendingCreatureSpawns_.erase(pendingCreatureSpawns_.begin());
-        spawned++;
+        pendingCreatureSpawnGuids_.erase(s.guid);
+
+        // If spawn still failed, retry for a limited number of frames.
+        if (!creatureInstances_.count(s.guid)) {
+            if (creaturePermanentFailureGuids_.erase(s.guid) > 0) {
+                creatureSpawnRetryCounts_.erase(s.guid);
+                processed++;
+                continue;
+            }
+            uint16_t retries = 0;
+            auto it = creatureSpawnRetryCounts_.find(s.guid);
+            if (it != creatureSpawnRetryCounts_.end()) {
+                retries = it->second;
+            }
+            if (retries < MAX_CREATURE_SPAWN_RETRIES) {
+                creatureSpawnRetryCounts_[s.guid] = static_cast<uint8_t>(retries + 1);
+                pendingCreatureSpawns_.push_back(s);
+                pendingCreatureSpawnGuids_.insert(s.guid);
+            } else {
+                creatureSpawnRetryCounts_.erase(s.guid);
+                LOG_WARNING("Dropping creature spawn after retries: guid=0x", std::hex, s.guid, std::dec,
+                            " displayId=", s.displayId);
+            }
+        } else {
+            creatureSpawnRetryCounts_.erase(s.guid);
+        }
+        processed++;
     }
 }
 
@@ -3090,11 +3124,9 @@ void Application::processPendingMount() {
 
     // Check model cache
     uint32_t modelId = 0;
-    bool modelCached = false;
     auto cacheIt = displayIdModelCache_.find(mountDisplayId);
     if (cacheIt != displayIdModelCache_.end()) {
         modelId = cacheIt->second;
-        modelCached = true;
     } else {
         modelId = nextCreatureModelId_++;
 
@@ -3142,71 +3174,70 @@ void Application::processPendingMount() {
         displayIdModelCache_[mountDisplayId] = modelId;
     }
 
-    // Apply creature skin textures from CreatureDisplayInfo.dbc
-    if (!modelCached) {
-        auto itDisplayData = displayDataMap_.find(mountDisplayId);
-        if (itDisplayData != displayDataMap_.end()) {
-            CreatureDisplayData dispData = itDisplayData->second;
-            // If this displayId has no skins, try to find another displayId for the same model with skins.
-            if (dispData.skin1.empty() && dispData.skin2.empty() && dispData.skin3.empty()) {
-                uint32_t modelId = dispData.modelId;
-                int bestScore = -1;
-                for (const auto& [dispId, data] : displayDataMap_) {
-                    if (data.modelId != modelId) continue;
-                    int score = 0;
-                    if (!data.skin1.empty()) score += 3;
-                    if (!data.skin2.empty()) score += 2;
-                    if (!data.skin3.empty()) score += 1;
-                    if (score > bestScore) {
-                        bestScore = score;
-                        dispData = data;
-                    }
+    // Apply creature skin textures from CreatureDisplayInfo.dbc.
+    // Re-apply even for cached models so transient failures can self-heal.
+    auto itDisplayData = displayDataMap_.find(mountDisplayId);
+    if (itDisplayData != displayDataMap_.end()) {
+        CreatureDisplayData dispData = itDisplayData->second;
+        // If this displayId has no skins, try to find another displayId for the same model with skins.
+        if (dispData.skin1.empty() && dispData.skin2.empty() && dispData.skin3.empty()) {
+            uint32_t modelId = dispData.modelId;
+            int bestScore = -1;
+            for (const auto& [dispId, data] : displayDataMap_) {
+                if (data.modelId != modelId) continue;
+                int score = 0;
+                if (!data.skin1.empty()) score += 3;
+                if (!data.skin2.empty()) score += 2;
+                if (!data.skin3.empty()) score += 1;
+                if (score > bestScore) {
+                    bestScore = score;
+                    dispData = data;
                 }
-                LOG_INFO("Mount skin fallback for displayId=", mountDisplayId,
-                         " modelId=", modelId, " skin1='", dispData.skin1,
-                         "' skin2='", dispData.skin2, "' skin3='", dispData.skin3, "'");
             }
-            const auto* md = charRenderer->getModelData(modelId);
-            if (md) {
-                std::string modelDir;
-                size_t lastSlash = m2Path.find_last_of("\\/");
-                if (lastSlash != std::string::npos) {
-                    modelDir = m2Path.substr(0, lastSlash + 1);
+            LOG_INFO("Mount skin fallback for displayId=", mountDisplayId,
+                     " modelId=", modelId, " skin1='", dispData.skin1,
+                     "' skin2='", dispData.skin2, "' skin3='", dispData.skin3, "'");
+        }
+        const auto* md = charRenderer->getModelData(modelId);
+        if (md) {
+            std::string modelDir;
+            size_t lastSlash = m2Path.find_last_of("\\/");
+            if (lastSlash != std::string::npos) {
+                modelDir = m2Path.substr(0, lastSlash + 1);
+            }
+            int replaced = 0;
+            for (size_t ti = 0; ti < md->textures.size(); ti++) {
+                const auto& tex = md->textures[ti];
+                std::string texPath;
+                if (tex.type == 11 && !dispData.skin1.empty()) {
+                    texPath = modelDir + dispData.skin1 + ".blp";
+                } else if (tex.type == 12 && !dispData.skin2.empty()) {
+                    texPath = modelDir + dispData.skin2 + ".blp";
+                } else if (tex.type == 13 && !dispData.skin3.empty()) {
+                    texPath = modelDir + dispData.skin3 + ".blp";
                 }
-                int replaced = 0;
-                for (size_t ti = 0; ti < md->textures.size(); ti++) {
-                    const auto& tex = md->textures[ti];
-                    std::string texPath;
-                    if (tex.type == 11 && !dispData.skin1.empty()) {
-                        texPath = modelDir + dispData.skin1 + ".blp";
-                    } else if (tex.type == 12 && !dispData.skin2.empty()) {
-                        texPath = modelDir + dispData.skin2 + ".blp";
-                    } else if (tex.type == 13 && !dispData.skin3.empty()) {
-                        texPath = modelDir + dispData.skin3 + ".blp";
-                    }
-                    if (!texPath.empty()) {
-                        GLuint skinTex = charRenderer->loadTexture(texPath);
-                        if (skinTex != 0) {
-                            charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), skinTex);
-                            replaced++;
-                        }
-                    }
-                }
-                // Some mounts (gryphon/wyvern) use empty model textures; force skin1 onto slot 0.
-                if (replaced == 0 && !dispData.skin1.empty() && !md->textures.empty()) {
-                    std::string texPath = modelDir + dispData.skin1 + ".blp";
+                if (!texPath.empty()) {
                     GLuint skinTex = charRenderer->loadTexture(texPath);
                     if (skinTex != 0) {
-                        charRenderer->setModelTexture(modelId, 0, skinTex);
-                        LOG_INFO("Forced mount skin1 texture on slot 0: ", texPath);
+                        charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), skinTex);
+                        replaced++;
                     }
-                } else if (replaced == 0 && !md->textures.empty() && !md->textures[0].filename.empty()) {
-                    // Last-resort: use the model's first texture filename if it exists.
-                    GLuint texId = charRenderer->loadTexture(md->textures[0].filename);
-                    if (texId != 0) {
-                        charRenderer->setModelTexture(modelId, 0, texId);
-                        LOG_INFO("Forced mount model texture on slot 0: ", md->textures[0].filename);
-                    }
+                }
+            }
+            // Some mounts (gryphon/wyvern) use empty model textures; force skin1 onto slot 0.
+            if (replaced == 0 && !dispData.skin1.empty() && !md->textures.empty()) {
+                std::string texPath = modelDir + dispData.skin1 + ".blp";
+                GLuint skinTex = charRenderer->loadTexture(texPath);
+                if (skinTex != 0) {
+                    charRenderer->setModelTexture(modelId, 0, skinTex);
+                    LOG_INFO("Forced mount skin1 texture on slot 0: ", texPath);
+                }
+            } else if (replaced == 0 && !md->textures.empty() && !md->textures[0].filename.empty()) {
+                // Last-resort: use the model's first texture filename if it exists.
+                GLuint texId = charRenderer->loadTexture(md->textures[0].filename);
+                if (texId != 0) {
+                    charRenderer->setModelTexture(modelId, 0, texId);
+                    LOG_INFO("Forced mount model texture on slot 0: ", md->textures[0].filename);
                 }
             }
         }
@@ -3255,6 +3286,10 @@ void Application::processPendingMount() {
 }
 
 void Application::despawnOnlineCreature(uint64_t guid) {
+    pendingCreatureSpawnGuids_.erase(guid);
+    creatureSpawnRetryCounts_.erase(guid);
+    creaturePermanentFailureGuids_.erase(guid);
+
     auto it = creatureInstances_.find(guid);
     if (it == creatureInstances_.end()) return;
 

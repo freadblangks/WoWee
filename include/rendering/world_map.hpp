@@ -20,6 +20,7 @@ struct WorldMapZone {
     float locLeft = 0, locRight = 0, locTop = 0, locBottom = 0;
     uint32_t displayMapID = 0;
     uint32_t parentWorldMapID = 0;
+    uint32_t exploreFlag = 0;
 
     // Per-zone cached textures
     GLuint tileTextures[12] = {};
@@ -34,6 +35,7 @@ public:
     void initialize(pipeline::AssetManager* assetManager);
     void render(const glm::vec3& playerRenderPos, int screenWidth, int screenHeight);
     void setMapName(const std::string& name);
+    void setServerExplorationMask(const std::vector<uint32_t>& masks, bool hasData);
     bool isOpen() const { return open; }
     void close() { open = false; }
 
@@ -87,6 +89,8 @@ private:
     GLuint tileQuadVBO = 0;
 
     // Exploration / fog of war
+    std::vector<uint32_t> serverExplorationMask;
+    bool hasServerExplorationMask = false;
     std::unordered_set<int> exploredZones;  // zone indices the player has visited
 };
 

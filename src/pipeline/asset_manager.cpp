@@ -68,12 +68,8 @@ BLPImage AssetManager::loadTexture(const std::string& path) {
 
     LOG_DEBUG("Loading texture: ", normalizedPath);
 
-    // Read BLP file from MPQ (must hold readMutex — StormLib is not thread-safe)
-    std::vector<uint8_t> blpData;
-    {
-        std::lock_guard<std::mutex> lock(readMutex);
-        blpData = mpqManager.readFile(normalizedPath);
-    }
+    // Route through readFile() so decompressed MPQ bytes participate in file cache.
+    std::vector<uint8_t> blpData = readFile(normalizedPath);
     if (blpData.empty()) {
         LOG_WARNING("Texture not found: ", normalizedPath);
         return BLPImage();

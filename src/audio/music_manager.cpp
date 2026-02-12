@@ -24,6 +24,17 @@ void MusicManager::shutdown() {
     AudioEngine::instance().stopMusic();
     playing = false;
     currentTrack.clear();
+    musicDataCache_.clear();
+}
+
+void MusicManager::preloadMusic(const std::string& mpqPath) {
+    if (!assetManager || mpqPath.empty()) return;
+    if (musicDataCache_.find(mpqPath) != musicDataCache_.end()) return;
+
+    auto data = assetManager->readFile(mpqPath);
+    if (!data.empty()) {
+        musicDataCache_[mpqPath] = std::move(data);
+    }
 }
 
 void MusicManager::playMusic(const std::string& mpqPath, bool loop) {
@@ -36,9 +47,13 @@ void MusicManager::playMusic(const std::string& mpqPath, bool loop) {
         return;
     }
 
-    // Read music file from MPQ
-    auto data = assetManager->readFile(mpqPath);
-    if (data.empty()) {
+    // Read music file from cache or MPQ
+    auto cacheIt = musicDataCache_.find(mpqPath);
+    if (cacheIt == musicDataCache_.end()) {
+        preloadMusic(mpqPath);
+        cacheIt = musicDataCache_.find(mpqPath);
+    }
+    if (cacheIt == musicDataCache_.end() || cacheIt->second.empty()) {
         LOG_WARNING("Music: Could not read: ", mpqPath);
         return;
     }
@@ -48,7 +63,7 @@ void MusicManager::playMusic(const std::string& mpqPath, bool loop) {
 
     // Play with AudioEngine (non-blocking, streams from memory)
     float volume = volumePercent / 100.0f;
-    if (AudioEngine::instance().playMusic(data, volume, loop)) {
+    if (AudioEngine::instance().playMusic(cacheIt->second, volume, loop)) {
         playing = true;
         currentTrack = mpqPath;
         currentTrackIsFile = false;

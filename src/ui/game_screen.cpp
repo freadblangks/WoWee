@@ -2271,7 +2271,7 @@ void GameScreen::updateCharacterTextures(game::Inventory& inventory) {
 // World Map
 // ============================================================
 
-void GameScreen::renderWorldMap(game::GameHandler& /* gameHandler */) {
+void GameScreen::renderWorldMap(game::GameHandler& gameHandler) {
     auto& app = core::Application::getInstance();
     auto* renderer = app.getRenderer();
     auto* assetMgr = app.getAssetManager();
@@ -2284,6 +2284,9 @@ void GameScreen::renderWorldMap(game::GameHandler& /* gameHandler */) {
     if (minimap) {
         worldMap.setMapName(minimap->getMapName());
     }
+    worldMap.setServerExplorationMask(
+        gameHandler.getPlayerExploredZoneMasks(),
+        gameHandler.hasPlayerExploredZoneMasks());
 
     glm::vec3 playerPos = renderer->getCharacterPosition();
     auto* window = app.getWindow();

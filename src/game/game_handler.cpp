@@ -1900,7 +1900,7 @@ void GameHandler::handleWardenData(network::Packet& packet) {
 
     // Build and send response
     for (uint8_t byte : responseData) {
-        response.write(&byte, 1);
+        response.writeUInt8(byte);
     }
 
     if (socket && socket->isConnected()) {

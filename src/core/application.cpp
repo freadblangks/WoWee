@@ -352,6 +352,7 @@ void Application::logoutToLogin() {
     npcsSpawned = false;
     playerCharacterSpawned = false;
     weaponsSheathed_ = false;
+    wasAutoAttacking_ = false;
     world.reset();
     if (renderer) {
         // Remove old player model so it doesn't persist into next session
@@ -408,6 +409,16 @@ void Application::update(float deltaTime) {
             }
             auto gh2 = std::chrono::high_resolution_clock::now();
             ghTime += std::chrono::duration<float, std::milli>(gh2 - gh1).count();
+
+            // Always unsheath on combat engage.
+            if (gameHandler) {
+                const bool autoAttacking = gameHandler->isAutoAttacking();
+                if (autoAttacking && !wasAutoAttacking_ && weaponsSheathed_) {
+                    weaponsSheathed_ = false;
+                    loadEquippedWeapons();
+                }
+                wasAutoAttacking_ = autoAttacking;
+            }
 
             // Toggle weapon sheathe state with Z (ignored while UI captures keyboard).
             {

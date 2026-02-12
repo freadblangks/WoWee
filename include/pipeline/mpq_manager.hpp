@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <map>
+#include <unordered_map>
 #include <unordered_set>
 #include <mutex>
 
@@ -107,6 +108,12 @@ private:
     bool loadLocaleArchives(const std::string& locale);
 
     void logMissingFileOnce(const std::string& filename) const;
+
+    // Cache for mapping "virtual filename" -> archive handle (or INVALID_HANDLE_VALUE for not found).
+    // This avoids scanning every archive for repeated lookups, which can otherwise appear as a hang
+    // on screens that trigger many asset probes (character select, character preview, etc.).
+    mutable std::mutex fileArchiveCacheMutex_;
+    mutable std::unordered_map<std::string, HANDLE> fileArchiveCache_;
 
     mutable std::mutex missingFileMutex_;
     mutable std::unordered_set<std::string> missingFileWarnings_;

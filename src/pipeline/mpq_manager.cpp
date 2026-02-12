@@ -1,6 +1,7 @@
 #include "pipeline/mpq_manager.hpp"
 #include "core/logger.hpp"
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -26,6 +27,16 @@ namespace {
 std::string toLowerCopy(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value;
+}
+
+std::string normalizeVirtualFilenameForLookup(std::string value) {
+    // StormLib uses backslash-separated virtual paths; treat lookups as case-insensitive.
+    std::replace(value.begin(), value.end(), '/', '\\');
+    value = toLowerCopy(std::move(value));
+    while (!value.empty() && (value.front() == '\\' || value.front() == '/')) {
+        value.erase(value.begin());
+    }
     return value;
 }
 }
@@ -105,6 +116,10 @@ void MPQManager::shutdown() {
     archives.clear();
     archiveNames.clear();
     {
+        std::lock_guard<std::mutex> lock(fileArchiveCacheMutex_);
+        fileArchiveCache_.clear();
+    }
+    {
         std::lock_guard<std::mutex> lock(missingFileMutex_);
         missingFileWarnings_.clear();
     }
@@ -144,6 +159,12 @@ bool MPQManager::loadArchive(const std::string& path, int priority) {
                   return a.priority > b.priority;
               });
 
+    // Archive set/priority changed, so cached filename -> archive mappings may be stale.
+    {
+        std::lock_guard<std::mutex> lock(fileArchiveCacheMutex_);
+        fileArchiveCache_.clear();
+    }
+
     LOG_INFO("Loaded MPQ archive: ", path, " (priority ", priority, ")");
     return true;
 #endif
@@ -175,9 +196,11 @@ std::vector<uint8_t> MPQManager::readFile(const std::string& filename) const {
     if (!archives.empty()) {
         HANDLE archive = findFileArchive(filename);
         if (archive != INVALID_HANDLE_VALUE) {
+            std::string stormFilename = filename;
+            std::replace(stormFilename.begin(), stormFilename.end(), '/', '\\');
             // Open the file
             HANDLE file = INVALID_HANDLE_VALUE;
-            if (SFileOpenFileEx(archive, filename.c_str(), 0, &file)) {
+            if (SFileOpenFileEx(archive, stormFilename.c_str(), 0, &file)) {
                 // Get file size
                 DWORD fileSize = SFileGetFileSize(file, nullptr);
                 if (fileSize > 0 && fileSize != SFILE_INVALID_SIZE) {
@@ -283,8 +306,10 @@ uint32_t MPQManager::getFileSize(const std::string& filename) const {
         return 0;
     }
 
+    std::string stormFilename = filename;
+    std::replace(stormFilename.begin(), stormFilename.end(), '/', '\\');
     HANDLE file = INVALID_HANDLE_VALUE;
-    if (!SFileOpenFileEx(archive, filename.c_str(), 0, &file)) {
+    if (!SFileOpenFileEx(archive, stormFilename.c_str(), 0, &file)) {
         return 0;
     }
 
@@ -303,12 +328,46 @@ HANDLE MPQManager::findFileArchive(const std::string& filename) const {
 #endif
 
 #ifdef HAVE_STORMLIB
-    // Search archives in priority order (already sorted)
-    for (const auto& entry : archives) {
-        if (SFileHasFile(entry.handle, filename.c_str())) {
-            return entry.handle;
+    std::string cacheKey = normalizeVirtualFilenameForLookup(filename);
+    {
+        std::lock_guard<std::mutex> lock(fileArchiveCacheMutex_);
+        auto it = fileArchiveCache_.find(cacheKey);
+        if (it != fileArchiveCache_.end()) {
+            return it->second;
         }
     }
+
+    std::string stormFilename = filename;
+    std::replace(stormFilename.begin(), stormFilename.end(), '/', '\\');
+
+    const auto start = std::chrono::steady_clock::now();
+    HANDLE found = INVALID_HANDLE_VALUE;
+    // Search archives in priority order (already sorted)
+    for (const auto& entry : archives) {
+        if (SFileHasFile(entry.handle, stormFilename.c_str())) {
+            found = entry.handle;
+            break;
+        }
+    }
+
+    const auto end = std::chrono::steady_clock::now();
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+
+    {
+        std::lock_guard<std::mutex> lock(fileArchiveCacheMutex_);
+        // Another thread may have raced to populate; if so, prefer the existing value.
+        auto [it, inserted] = fileArchiveCache_.emplace(std::move(cacheKey), found);
+        if (!inserted) {
+            found = it->second;
+        }
+    }
+
+    // With caching this should only happen once per unique filename; keep threshold conservative.
+    if (ms >= 100) {
+        LOG_WARNING("Slow MPQ lookup: '", filename, "' scanned ", archives.size(), " archives in ", ms, " ms");
+    }
+
+    return found;
 #endif
 
     return INVALID_HANDLE_VALUE;

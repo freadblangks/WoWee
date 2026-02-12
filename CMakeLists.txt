@@ -25,6 +25,18 @@ find_package(ZLIB REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(FFMPEG REQUIRED libavformat libavcodec libswscale libavutil)
 
+# Unicorn Engine (x86 emulator for cross-platform Warden module execution)
+find_library(UNICORN_LIBRARY NAMES unicorn)
+find_path(UNICORN_INCLUDE_DIR unicorn/unicorn.h)
+if(NOT UNICORN_LIBRARY OR NOT UNICORN_INCLUDE_DIR)
+    message(WARNING "Unicorn Engine not found. Install with: sudo apt-get install libunicorn-dev")
+    message(WARNING "Warden emulation will be disabled")
+    set(HAVE_UNICORN FALSE)
+else()
+    message(STATUS "Found Unicorn Engine: ${UNICORN_LIBRARY}")
+    set(HAVE_UNICORN TRUE)
+endif()
+
 # GLM (header-only math library)
 find_package(glm QUIET)
 if(NOT glm_FOUND)
@@ -91,6 +103,7 @@ set(WOWEE_SOURCES
     src/game/game_handler.cpp
     src/game/warden_crypto.cpp
     src/game/warden_module.cpp
+    src/game/warden_emulator.cpp
     src/game/transport_manager.cpp
     src/game/world.cpp
     src/game/player.cpp
@@ -322,6 +335,13 @@ endif()
 # Link ImGui if available
 if(TARGET imgui)
     target_link_libraries(wowee PRIVATE imgui)
+endif()
+
+# Link Unicorn if available
+if(HAVE_UNICORN)
+    target_link_libraries(wowee PRIVATE ${UNICORN_LIBRARY})
+    target_include_directories(wowee PRIVATE ${UNICORN_INCLUDE_DIR})
+    target_compile_definitions(wowee PRIVATE HAVE_UNICORN)
 endif()
 
 # Link GLM if found

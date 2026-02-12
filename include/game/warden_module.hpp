@@ -11,6 +11,9 @@
 namespace wowee {
 namespace game {
 
+// Forward declarations
+class WardenEmulator;
+
 /**
  * Represents Warden callback functions exported by loaded module
  *
@@ -126,10 +129,12 @@ private:
     std::vector<uint8_t> decryptedData_;   // RC4 decrypted data
     std::vector<uint8_t> decompressedData_; // zlib decompressed data
 
-    // Module execution context (for future native code execution)
+    // Module execution context
     void* moduleMemory_;                   // Allocated executable memory region
     size_t moduleSize_;                    // Size of loaded code
+    uint32_t moduleBase_;                  // Module base address (for emulator)
     WardenFuncList funcList_;              // Callback functions
+    std::unique_ptr<WardenEmulator> emulator_; // Cross-platform x86 emulator
 
     // Validation and loading steps
     bool verifyMD5(const std::vector<uint8_t>& data,

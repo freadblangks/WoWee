@@ -14,6 +14,10 @@
     #include <cerrno>
 #endif
 
+#ifdef HAVE_UNICORN
+    #include "game/warden_emulator.hpp"
+#endif
+
 namespace wowee {
 namespace game {
 
@@ -25,6 +29,7 @@ WardenModule::WardenModule()
     : loaded_(false)
     , moduleMemory_(nullptr)
     , moduleSize_(0)
+    , moduleBase_(0x400000) // Default module base address
 {
 }
 
@@ -116,13 +121,23 @@ bool WardenModule::processCheckRequest(const std::vector<uint8_t>& checkData,
         return false;
     }
 
-    // TODO: Call module's PacketHandler function
-    // This would execute native x86 code to:
-    // - Parse check opcodes (0xF3 MEM_CHECK, 0xB2 PAGE_CHECK, etc.)
-    // - Read actual memory from process
-    // - Compute real SHA1 hashes
-    // - Scan MPQ files
-    // - Generate authentic response data
+    #ifdef HAVE_UNICORN
+        if (emulator_ && emulator_->isInitialized()) {
+            std::cout << "[WardenModule] Processing check request via emulator..." << std::endl;
+
+            // TODO: Call module's PacketHandler function via emulator
+            // This would execute native x86 code to:
+            // - Parse check opcodes (0xF3 MEM_CHECK, 0xB2 PAGE_CHECK, etc.)
+            // - Read actual memory from process
+            // - Compute real SHA1 hashes
+            // - Scan MPQ files
+            // - Generate authentic response data
+
+            // For now, not implemented
+            std::cout << "[WardenModule] ⚠ Emulated PacketHandler call not yet implemented" << std::endl;
+            return false;
+        }
+    #endif
 
     std::cout << "[WardenModule] ⚠ processCheckRequest NOT IMPLEMENTED" << std::endl;
     std::cout << "[WardenModule]   Would call module->PacketHandler() here" << std::endl;
@@ -729,7 +744,32 @@ bool WardenModule::initializeModule() {
     // Module entry point is typically at offset 0 (first bytes of loaded code)
     // Function signature: WardenFuncList* (*entryPoint)(ClientCallbacks*)
 
-    #ifdef _WIN32
+    #ifdef HAVE_UNICORN
+        // Use Unicorn emulator for cross-platform execution
+        std::cout << "[WardenModule] Initializing Unicorn emulator..." << std::endl;
+
+        emulator_ = std::make_unique<WardenEmulator>();
+        if (!emulator_->initialize(moduleMemory_, moduleSize_, moduleBase_)) {
+            std::cerr << "[WardenModule] Failed to initialize emulator" << std::endl;
+            return false;
+        }
+
+        // Setup Windows API hooks
+        emulator_->setupCommonAPIHooks();
+
+        std::cout << "[WardenModule] ✓ Emulator initialized successfully" << std::endl;
+        std::cout << "[WardenModule]   Ready to execute module at 0x" << std::hex << moduleBase_ << std::dec << std::endl;
+
+        // TODO: Call module entry point via emulator
+        // uint32_t entryPoint = moduleBase_; // Typically at module base
+        // std::vector<uint32_t> args = { ... }; // Pass ClientCallbacks struct address
+        // uint32_t result = emulator_->callFunction(entryPoint, args);
+
+        std::cout << "[WardenModule] ⚠ Module entry call via emulator not yet implemented" << std::endl;
+        std::cout << "[WardenModule]   Infrastructure ready for execution" << std::endl;
+
+    #elif defined(_WIN32)
+        // Native Windows execution (dangerous without sandboxing)
         typedef void* (*ModuleEntryPoint)(ClientCallbacks*);
         ModuleEntryPoint entryPoint = reinterpret_cast<ModuleEntryPoint>(moduleMemory_);
 

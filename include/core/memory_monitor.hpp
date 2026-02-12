@@ -29,7 +29,7 @@ public:
     size_t getAvailableRAM() const;
 
     /**
-     * Get recommended cache budget (30% of available RAM)
+     * Get recommended cache budget (80% of available RAM, capped at 90% of total RAM)
      */
     size_t getRecommendedCacheBudget() const;
 

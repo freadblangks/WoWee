@@ -177,7 +177,7 @@ void Celestial::renderSun(const Camera& camera, float timeOfDay,
     // Create model matrix
     glm::mat4 model = glm::mat4(1.0f);
     model = glm::translate(model, sunPos);
-    model = glm::scale(model, glm::vec3(500.0f, 500.0f, 1.0f));  // Large and visible
+    model = glm::scale(model, glm::vec3(95.0f, 95.0f, 1.0f));  // Match WotLK-like apparent size
 
     // Set uniforms
     glm::mat4 view = camera.getViewMatrix();

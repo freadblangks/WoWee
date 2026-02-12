@@ -160,12 +160,18 @@ void GameHandler::update(float deltaTime) {
     // Send periodic heartbeat if in world
     if (state == WorldState::IN_WORLD) {
         timeSinceLastPing += deltaTime;
+        timeSinceLastMoveHeartbeat_ += deltaTime;
 
         if (timeSinceLastPing >= pingInterval) {
             if (socket) {
                 sendPing();
             }
             timeSinceLastPing = 0.0f;
+        }
+
+        if (timeSinceLastMoveHeartbeat_ >= moveHeartbeatInterval_) {
+            sendMovement(Opcode::CMSG_MOVE_HEARTBEAT);
+            timeSinceLastMoveHeartbeat_ = 0.0f;
         }
 
         // Update cast timer (Phase 3)
@@ -203,6 +209,9 @@ void GameHandler::update(float deltaTime) {
         if (taxiLandingCooldown_ > 0.0f) {
             taxiLandingCooldown_ -= deltaTime;
         }
+        if (taxiStartGrace_ > 0.0f) {
+            taxiStartGrace_ -= deltaTime;
+        }
 
         // Taxi logic timing
         auto taxiStart = std::chrono::high_resolution_clock::now();
@@ -215,7 +224,8 @@ void GameHandler::update(float deltaTime) {
             if (unit &&
                 (unit->getUnitFlags() & 0x00000100) == 0 &&
                 !taxiClientActive_ &&
-                !taxiActivatePending_) {
+                !taxiActivatePending_ &&
+                taxiStartGrace_ <= 0.0f) {
                 onTaxiFlight_ = false;
                 taxiLandingCooldown_ = 2.0f;  // 2 second cooldown to prevent re-entering
                 if (taxiMountActive_ && mountCallback_) {
@@ -247,7 +257,7 @@ void GameHandler::update(float deltaTime) {
                 serverStillTaxi = (playerUnit->getUnitFlags() & 0x00000100) != 0;
             }
 
-            if (serverStillTaxi || taxiClientActive_ || taxiActivatePending_) {
+            if (taxiStartGrace_ > 0.0f || serverStillTaxi || taxiClientActive_ || taxiActivatePending_) {
                 onTaxiFlight_ = true;
             } else {
                 if (mountCallback_) mountCallback_(0);
@@ -261,6 +271,25 @@ void GameHandler::update(float deltaTime) {
                     sendMovement(Opcode::CMSG_MOVE_HEARTBEAT);
                 }
                 LOG_INFO("Taxi dismount cleanup");
+            }
+        }
+
+        // Keep non-taxi mount state server-authoritative.
+        // Some server paths don't emit explicit mount field updates in lockstep
+        // with local visual state changes, so reconcile continuously.
+        if (!onTaxiFlight_ && !taxiMountActive_) {
+            auto playerEntity = entityManager.getEntity(playerGuid);
+            auto playerUnit = std::dynamic_pointer_cast<Unit>(playerEntity);
+            if (playerUnit) {
+                uint32_t serverMountDisplayId = playerUnit->getMountDisplayId();
+                if (serverMountDisplayId != currentMountDisplayId_) {
+                    LOG_INFO("Mount reconcile: server=", serverMountDisplayId,
+                             " local=", currentMountDisplayId_);
+                    currentMountDisplayId_ = serverMountDisplayId;
+                    if (mountCallback_) {
+                        mountCallback_(serverMountDisplayId);
+                    }
+                }
             }
         }
 
@@ -408,7 +437,7 @@ void GameHandler::update(float deltaTime) {
 
     // Log profiling every 60 frames
     if (++profileCounter >= 60) {
-        LOG_INFO("UPDATE PROFILE (60 frames): socket=", socketTime / 60.0f, "ms taxi=", taxiTime / 60.0f,
+        LOG_DEBUG("UPDATE PROFILE (60 frames): socket=", socketTime / 60.0f, "ms taxi=", taxiTime / 60.0f,
                  "ms distance=", distanceCheckTime / 60.0f, "ms entity=", entityUpdateTime / 60.0f,
                  "ms TOTAL=", totalTime / 60.0f, "ms");
         profileCounter = 0;
@@ -1603,6 +1632,20 @@ void GameHandler::handleLoginVerifyWorld(network::Packet& packet) {
     movementInfo.flags = 0;
     movementInfo.flags2 = 0;
     movementInfo.time = 0;
+    resurrectPending_ = false;
+    resurrectRequestPending_ = false;
+    onTaxiFlight_ = false;
+    taxiMountActive_ = false;
+    taxiActivatePending_ = false;
+    taxiClientActive_ = false;
+    taxiClientPath_.clear();
+    taxiRecoverPending_ = false;
+    taxiStartGrace_ = 0.0f;
+    currentMountDisplayId_ = 0;
+    taxiMountDisplayId_ = 0;
+    if (mountCallback_) {
+        mountCallback_(0);
+    }
 
     // Send CMSG_SET_ACTIVE_MOVER (required by some servers)
     if (playerGuid != 0 && socket) {
@@ -1705,9 +1748,17 @@ void GameHandler::sendMovement(Opcode opcode) {
         return;
     }
 
-    // Block manual movement while taxi is active/mounted, but still allow heartbeat packets.
-    if ((onTaxiFlight_ || taxiMountActive_) && opcode != Opcode::CMSG_MOVE_HEARTBEAT) return;
-    if (resurrectPending_) return;
+    // Block manual movement while taxi is active/mounted, but always allow
+    // stop/heartbeat opcodes so stuck states can be recovered.
+    bool taxiAllowed =
+        (opcode == Opcode::CMSG_MOVE_HEARTBEAT) ||
+        (opcode == Opcode::CMSG_MOVE_STOP) ||
+        (opcode == Opcode::CMSG_MOVE_STOP_STRAFE) ||
+        (opcode == Opcode::CMSG_MOVE_STOP_TURN) ||
+        (opcode == Opcode::CMSG_MOVE_STOP_SWIM) ||
+        (opcode == Opcode::CMSG_MOVE_FALL_LAND);
+    if ((onTaxiFlight_ || taxiMountActive_) && !taxiAllowed) return;
+    if (resurrectPending_ && !taxiAllowed) return;
 
     // Use real millisecond timestamp (server validates for anti-cheat)
     static auto startTime = std::chrono::steady_clock::now();
@@ -1815,6 +1866,45 @@ void GameHandler::sendMovement(Opcode opcode) {
     // Build and send movement packet
     auto packet = MovementPacket::build(opcode, wireInfo, playerGuid);
     socket->send(packet);
+}
+
+void GameHandler::forceClearTaxiAndMovementState() {
+    taxiActivatePending_ = false;
+    taxiActivateTimer_ = 0.0f;
+    taxiClientActive_ = false;
+    taxiClientPath_.clear();
+    taxiRecoverPending_ = false;
+    taxiStartGrace_ = 0.0f;
+    onTaxiFlight_ = false;
+
+    if (taxiMountActive_ && mountCallback_) {
+        mountCallback_(0);
+    }
+    taxiMountActive_ = false;
+    taxiMountDisplayId_ = 0;
+    currentMountDisplayId_ = 0;
+    resurrectPending_ = false;
+    resurrectRequestPending_ = false;
+    playerDead_ = false;
+    releasedSpirit_ = false;
+    repopPending_ = false;
+    pendingSpiritHealerGuid_ = 0;
+    resurrectCasterGuid_ = 0;
+
+    movementInfo.flags = 0;
+    movementInfo.flags2 = 0;
+    movementInfo.transportGuid = 0;
+    clearPlayerTransport();
+
+    if (socket && state == WorldState::IN_WORLD) {
+        sendMovement(Opcode::CMSG_MOVE_STOP);
+        sendMovement(Opcode::CMSG_MOVE_STOP_STRAFE);
+        sendMovement(Opcode::CMSG_MOVE_STOP_TURN);
+        sendMovement(Opcode::CMSG_MOVE_STOP_SWIM);
+        sendMovement(Opcode::CMSG_MOVE_HEARTBEAT);
+    }
+
+    LOG_INFO("Force-cleared taxi/movement state");
 }
 
 void GameHandler::setPosition(float x, float y, float z) {
@@ -2001,6 +2091,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         constexpr uint32_t UNIT_FLAG_TAXI_FLIGHT = 0x00000100;
                         if ((unit->getUnitFlags() & UNIT_FLAG_TAXI_FLIGHT) != 0 && !onTaxiFlight_ && taxiLandingCooldown_ <= 0.0f) {
                             onTaxiFlight_ = true;
+                            taxiStartGrace_ = std::max(taxiStartGrace_, 2.0f);
                             applyTaxiMountForCurrentNode();
                         }
                     }
@@ -2558,6 +2649,15 @@ void GameHandler::handleDestroyObject(network::Packet& packet) {
         if (transportGuids_.count(data.guid) > 0) {
             LOG_INFO("Ignoring destroy for transport entity: 0x", std::hex, data.guid, std::dec);
             return;
+        }
+        // Mirror out-of-range handling: invoke render-layer despawn callbacks before entity removal.
+        auto entity = entityManager.getEntity(data.guid);
+        if (entity) {
+            if (entity->getType() == ObjectType::UNIT && creatureDespawnCallback_) {
+                creatureDespawnCallback_(data.guid);
+            } else if (entity->getType() == ObjectType::GAMEOBJECT && gameObjectDespawnCallback_) {
+                gameObjectDespawnCallback_(data.guid);
+            }
         }
         entityManager.removeEntity(data.guid);
         LOG_INFO("Destroyed entity: 0x", std::hex, data.guid, std::dec,
@@ -4114,7 +4214,20 @@ void GameHandler::handleAttackStop(network::Packet& packet) {
 }
 
 void GameHandler::dismount() {
-    if (!isMounted() || !socket) return;
+    if (!socket) return;
+    if (!isMounted()) {
+        // Local/server desync guard: clear visual mount even when server says unmounted.
+        if (mountCallback_) {
+            mountCallback_(0);
+        }
+        currentMountDisplayId_ = 0;
+        taxiMountActive_ = false;
+        taxiMountDisplayId_ = 0;
+        onTaxiFlight_ = false;
+        taxiActivatePending_ = false;
+        taxiClientActive_ = false;
+        LOG_INFO("Dismount desync recovery: force-cleared local mount state");
+    }
     network::Packet pkt(static_cast<uint16_t>(Opcode::CMSG_CANCEL_MOUNT_AURA));
     socket->send(pkt);
     LOG_INFO("Sent CMSG_CANCEL_MOUNT_AURA");
@@ -4144,20 +4257,27 @@ void GameHandler::handleForceRunSpeedChange(network::Packet& packet) {
 
     if (guid != playerGuid) return;
 
-    // Always ACK the speed change to prevent server stall
+    // Always ACK the speed change to prevent server stall.
+    // Packet format mirrors movement packets: packed guid + counter + movement info + new speed.
     if (socket) {
         network::Packet ack(static_cast<uint16_t>(Opcode::CMSG_FORCE_RUN_SPEED_CHANGE_ACK));
-        ack.writeUInt64(playerGuid);
+        MovementPacket::writePackedGuid(ack, playerGuid);
         ack.writeUInt32(counter);
-        // MovementInfo (minimal — no flags set means no optional fields)
-        ack.writeUInt32(0);  // moveFlags
-        ack.writeUInt16(0);  // moveFlags2
-        ack.writeUInt32(movementTime);
-        ack.writeFloat(movementInfo.x);
-        ack.writeFloat(movementInfo.y);
-        ack.writeFloat(movementInfo.z);
-        ack.writeFloat(movementInfo.orientation);
-        ack.writeUInt32(0);  // fallTime
+
+        MovementInfo wire = movementInfo;
+        glm::vec3 serverPos = core::coords::canonicalToServer(glm::vec3(wire.x, wire.y, wire.z));
+        wire.x = serverPos.x;
+        wire.y = serverPos.y;
+        wire.z = serverPos.z;
+        if (wire.hasFlag(MovementFlags::ONTRANSPORT)) {
+            glm::vec3 serverTransport =
+                core::coords::canonicalToServer(glm::vec3(wire.transportX, wire.transportY, wire.transportZ));
+            wire.transportX = serverTransport.x;
+            wire.transportY = serverTransport.y;
+            wire.transportZ = serverTransport.z;
+        }
+        MovementPacket::writeMovementPayload(ack, wire);
+
         ack.writeFloat(newSpeed);
         socket->send(ack);
     }
@@ -5899,6 +6019,21 @@ void GameHandler::handleNewWorld(network::Packet& packet) {
     movementInfo.z = canonical.z;
     movementInfo.orientation = orientation;
     movementInfo.flags = 0;
+    movementInfo.flags2 = 0;
+    resurrectPending_ = false;
+    resurrectRequestPending_ = false;
+    onTaxiFlight_ = false;
+    taxiMountActive_ = false;
+    taxiActivatePending_ = false;
+    taxiClientActive_ = false;
+    taxiClientPath_.clear();
+    taxiRecoverPending_ = false;
+    taxiStartGrace_ = 0.0f;
+    currentMountDisplayId_ = 0;
+    taxiMountDisplayId_ = 0;
+    if (mountCallback_) {
+        mountCallback_(0);
+    }
 
     // Clear world state for the new map
     entityManager.clear();
@@ -6359,6 +6494,13 @@ void GameHandler::handleActivateTaxiReply(network::Packet& packet) {
         return;
     }
 
+    // Guard against stray/mis-mapped packets being treated as taxi replies.
+    // Only honor taxi replies when a taxi flow is actually active.
+    if (!taxiActivatePending_ && !taxiWindowOpen_ && !onTaxiFlight_) {
+        LOG_DEBUG("Ignoring stray taxi reply: result=", data.result);
+        return;
+    }
+
     if (data.result == 0) {
         // Some cores can emit duplicate success replies (e.g. basic + express activate).
         // Ignore repeats once taxi is already active and no activation is pending.
@@ -6366,6 +6508,7 @@ void GameHandler::handleActivateTaxiReply(network::Packet& packet) {
             return;
         }
         onTaxiFlight_ = true;
+        taxiStartGrace_ = std::max(taxiStartGrace_, 2.0f);
         taxiWindowOpen_ = false;
         taxiActivatePending_ = false;
         taxiActivateTimer_ = 0.0f;
@@ -6390,6 +6533,12 @@ void GameHandler::handleActivateTaxiReply(network::Packet& packet) {
 
 void GameHandler::closeTaxi() {
     taxiWindowOpen_ = false;
+
+    // Closing the taxi UI must not cancel an active/pending flight.
+    // The window can auto-close due distance checks while takeoff begins.
+    if (taxiActivatePending_ || onTaxiFlight_ || taxiClientActive_) {
+        return;
+    }
 
     // If we optimistically mounted during node selection, dismount now
     if (taxiMountActive_ && mountCallback_) {
@@ -6443,6 +6592,11 @@ uint32_t GameHandler::getTaxiCostTo(uint32_t destNodeId) const {
 
 void GameHandler::activateTaxi(uint32_t destNodeId) {
     if (!socket || state != WorldState::IN_WORLD) return;
+
+    // One-shot taxi activation until server replies or timeout.
+    if (taxiActivatePending_ || onTaxiFlight_) {
+        return;
+    }
 
     uint32_t startNode = currentTaxiData_.nearestNode;
     if (startNode == 0 || destNodeId == 0 || startNode == destNodeId) return;
@@ -6514,13 +6668,14 @@ void GameHandler::activateTaxi(uint32_t destNodeId) {
     auto basicPkt = ActivateTaxiPacket::build(taxiNpcGuid_, startNode, destNodeId);
     socket->send(basicPkt);
 
-    // Others accept express with a full node path + cost.
-    auto pkt = ActivateTaxiExpressPacket::build(taxiNpcGuid_, totalCost, path);
-    socket->send(pkt);
+    // AzerothCore in this setup rejects/misparses CMSG_ACTIVATETAXIEXPRESS (0x312),
+    // so keep taxi activation on the basic packet only.
 
     // Optimistically start taxi visuals; server will correct if it denies.
+    taxiWindowOpen_ = false;
     taxiActivatePending_ = true;
     taxiActivateTimer_ = 0.0f;
+    taxiStartGrace_ = 2.0f;
     if (!onTaxiFlight_) {
         onTaxiFlight_ = true;
         applyTaxiMountForCurrentNode();

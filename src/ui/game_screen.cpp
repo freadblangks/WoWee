@@ -30,9 +30,58 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <cctype>
 #include <unordered_set>
 
 namespace {
+    std::string trim(const std::string& s) {
+        size_t first = s.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos) return "";
+        size_t last = s.find_last_not_of(" \t\r\n");
+        return s.substr(first, last - first + 1);
+    }
+
+    std::string toLower(std::string s) {
+        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        return s;
+    }
+
+    bool isPortBotTarget(const std::string& target) {
+        std::string t = toLower(trim(target));
+        return t == "portbot" || t == "gmbot" || t == "telebot";
+    }
+
+    std::string buildPortBotCommand(const std::string& rawInput) {
+        std::string input = trim(rawInput);
+        if (input.empty()) return "";
+
+        std::string lower = toLower(input);
+        if (lower == "help" || lower == "?") {
+            return "__help__";
+        }
+
+        if (lower.rfind(".tele ", 0) == 0 || lower.rfind(".go ", 0) == 0) {
+            return input;
+        }
+
+        if (lower.rfind("xyz ", 0) == 0) {
+            return ".go " + input;
+        }
+
+        if (lower == "sw" || lower == "stormwind") return ".tele stormwind";
+        if (lower == "if" || lower == "ironforge") return ".tele ironforge";
+        if (lower == "darn" || lower == "darnassus") return ".tele darnassus";
+        if (lower == "org" || lower == "orgrimmar") return ".tele orgrimmar";
+        if (lower == "tb" || lower == "thunderbluff") return ".tele thunderbluff";
+        if (lower == "uc" || lower == "undercity") return ".tele undercity";
+        if (lower == "shatt" || lower == "shattrath") return ".tele shattrath";
+        if (lower == "dal" || lower == "dalaran") return ".tele dalaran";
+
+        return ".tele " + input;
+    }
+
     bool raySphereIntersect(const wowee::rendering::Ray& ray, const glm::vec3& center, float radius, float& tOut) {
         glm::vec3 oc = ray.origin - center;
         float b = glm::dot(oc, ray.direction);
@@ -1200,13 +1249,42 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                 return;
             }
 
-            // /who command
-            if (cmdLower == "who") {
-                std::string playerName;
+            // /who commands
+            if (cmdLower == "who" || cmdLower == "whois" || cmdLower == "online" || cmdLower == "players") {
+                std::string query;
                 if (spacePos != std::string::npos) {
-                    playerName = command.substr(spacePos + 1);
+                    query = command.substr(spacePos + 1);
+                    // Trim leading/trailing whitespace
+                    size_t first = query.find_first_not_of(" \t\r\n");
+                    if (first == std::string::npos) {
+                        query.clear();
+                    } else {
+                        size_t last = query.find_last_not_of(" \t\r\n");
+                        query = query.substr(first, last - first + 1);
+                    }
                 }
-                gameHandler.queryWho(playerName);
+
+                if ((cmdLower == "whois") && query.empty()) {
+                    game::MessageChatData msg;
+                    msg.type = game::ChatType::SYSTEM;
+                    msg.language = game::ChatLanguage::UNIVERSAL;
+                    msg.message = "Usage: /whois <playerName>";
+                    gameHandler.addLocalChatMessage(msg);
+                    chatInputBuffer[0] = '\0';
+                    return;
+                }
+
+                if (cmdLower == "who" && (query == "help" || query == "?")) {
+                    game::MessageChatData msg;
+                    msg.type = game::ChatType::SYSTEM;
+                    msg.language = game::ChatLanguage::UNIVERSAL;
+                    msg.message = "Who commands: /who [name/filter], /whois <name>, /online";
+                    gameHandler.addLocalChatMessage(msg);
+                    chatInputBuffer[0] = '\0';
+                    return;
+                }
+
+                gameHandler.queryWho(query);
                 chatInputBuffer[0] = '\0';
                 return;
             }
@@ -1951,6 +2029,26 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                 case 9: type = game::ChatType::PARTY; break; // INSTANCE uses PARTY
                 default: type = game::ChatType::SAY; break;
             }
+        }
+
+        // Whisper shortcuts to PortBot/GMBot: translate to GM teleport commands.
+        if (type == game::ChatType::WHISPER && isPortBotTarget(target)) {
+            std::string cmd = buildPortBotCommand(message);
+            game::MessageChatData msg;
+            msg.type = game::ChatType::SYSTEM;
+            msg.language = game::ChatLanguage::UNIVERSAL;
+            if (cmd.empty() || cmd == "__help__") {
+                msg.message = "PortBot: /w PortBot <dest>. Aliases: sw if darn org tb uc shatt dal. Also supports '.tele ...' or 'xyz x y z [map [o]]'.";
+                gameHandler.addLocalChatMessage(msg);
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            gameHandler.sendChatMessage(game::ChatType::SAY, cmd, "");
+            msg.message = "PortBot executed: " + cmd;
+            gameHandler.addLocalChatMessage(msg);
+            chatInputBuffer[0] = '\0';
+            return;
         }
 
         // Validate whisper has a target

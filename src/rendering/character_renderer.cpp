@@ -986,7 +986,7 @@ void CharacterRenderer::update(float deltaTime, const glm::vec3& cameraPos) {
 
     static int logCounter = 0;
     if (++logCounter >= 300) {  // Log every 10 seconds at 30fps
-        LOG_INFO("CharacterRenderer: ", updatedCount, "/", instances.size(), " instances updated (",
+        LOG_DEBUG("CharacterRenderer: ", updatedCount, "/", instances.size(), " instances updated (",
                  instances.size() - updatedCount, " culled)");
         logCounter = 0;
     }
@@ -1584,7 +1584,17 @@ void CharacterRenderer::setInstanceVisible(uint32_t instanceId, bool visible) {
 }
 
 void CharacterRenderer::removeInstance(uint32_t instanceId) {
-    instances.erase(instanceId);
+    auto it = instances.find(instanceId);
+    if (it == instances.end()) return;
+
+    // Remove child attachments first (helmets/weapons), otherwise they leak as
+    // orphan render instances when the parent creature despawns.
+    auto attachments = it->second.weaponAttachments;
+    for (const auto& wa : attachments) {
+        removeInstance(wa.weaponInstanceId);
+    }
+
+    instances.erase(it);
 }
 
 bool CharacterRenderer::getAnimationState(uint32_t instanceId, uint32_t& animationId,

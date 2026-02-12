@@ -735,9 +735,45 @@ void CameraController::update(float deltaTime) {
         }
 
         // ===== WoW-style orbit camera =====
-        // Pivot point at upper chest/neck
+        // Pivot point at upper chest/neck.
         float mountedOffset = mounted_ ? mountHeightOffset_ : 0.0f;
-        glm::vec3 pivot = targetPos + glm::vec3(0.0f, 0.0f, PIVOT_HEIGHT + mountedOffset);
+        float pivotLift = 0.0f;
+        if (terrainManager && !externalFollow_) {
+            float moved = glm::length(glm::vec2(targetPos.x - lastPivotLiftQueryPos_.x,
+                                                targetPos.y - lastPivotLiftQueryPos_.y));
+            float distDelta = std::abs(currentDistance - lastPivotLiftDistance_);
+            bool queryLift = (++pivotLiftQueryCounter_ >= PIVOT_LIFT_QUERY_INTERVAL) ||
+                             (moved >= PIVOT_LIFT_POS_THRESHOLD) ||
+                             (distDelta >= PIVOT_LIFT_DIST_THRESHOLD);
+            if (queryLift) {
+                pivotLiftQueryCounter_ = 0;
+                lastPivotLiftQueryPos_ = targetPos;
+                lastPivotLiftDistance_ = currentDistance;
+
+                // Estimate where camera sits horizontally and ensure enough terrain clearance.
+                glm::vec3 probeCam = targetPos + (-forward3D) * currentDistance;
+                auto terrainAtCam = terrainManager->getHeightAt(probeCam.x, probeCam.y);
+                auto terrainAtPivot = terrainManager->getHeightAt(targetPos.x, targetPos.y);
+
+                float desiredLift = 0.0f;
+                if (terrainAtCam) {
+                    // Keep pivot high enough so near-hill camera rays don't cut through terrain.
+                    constexpr float kMinRayClearance = 2.0f;
+                    float basePivotZ = targetPos.z + PIVOT_HEIGHT + mountedOffset;
+                    float rayClearance = basePivotZ - *terrainAtCam;
+                    if (rayClearance < kMinRayClearance) {
+                        desiredLift = std::clamp(kMinRayClearance - rayClearance, 0.0f, 1.4f);
+                    }
+                }
+                // If character is already below local terrain sample, avoid lifting aggressively.
+                if (terrainAtPivot && targetPos.z < *terrainAtPivot - 0.2f) {
+                    desiredLift = 0.0f;
+                }
+                cachedPivotLift_ = desiredLift;
+            }
+            pivotLift = cachedPivotLift_;
+        }
+        glm::vec3 pivot = targetPos + glm::vec3(0.0f, 0.0f, PIVOT_HEIGHT + mountedOffset + pivotLift);
 
         // Camera direction from yaw/pitch (already computed as forward3D)
         glm::vec3 camDir = -forward3D;  // Camera looks at pivot, so it's behind

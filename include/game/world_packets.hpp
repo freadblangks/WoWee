@@ -433,6 +433,9 @@ struct MovementInfo {
  */
 class MovementPacket {
 public:
+    static void writePackedGuid(network::Packet& packet, uint64_t guid);
+    static void writeMovementPayload(network::Packet& packet, const MovementInfo& info);
+
     /**
      * Build a movement packet
      *

@@ -163,14 +163,23 @@ std::vector<uint8_t> AssetManager::readFile(const std::string& path) const {
             fileCacheHits++;
             return it->second.data;
         }
-        fileCacheMisses++;
     }
 
-    // Cache miss - decompress from MPQ.
-    // Keep MPQ reads serialized, but do not block cache-hit readers on this mutex.
+    // Cache miss path: serialize MPQ reads. Before reading, re-check cache while holding
+    // readMutex so only one thread performs decompression per hot path at a time.
     std::vector<uint8_t> data;
     {
         std::lock_guard<std::mutex> readLock(readMutex);
+        {
+            std::lock_guard<std::mutex> cacheLock(cacheMutex);
+            auto it = fileCache.find(normalized);
+            if (it != fileCache.end()) {
+                it->second.lastAccessTime = ++fileCacheAccessCounter;
+                fileCacheHits++;
+                return it->second.data;
+            }
+            fileCacheMisses++;
+        }
         data = mpqManager.readFile(normalized);
     }
     if (data.empty()) {

@@ -420,6 +420,52 @@ void Application::update(float deltaTime) {
             auto cq2 = std::chrono::high_resolution_clock::now();
             creatureQTime += std::chrono::duration<float, std::milli>(cq2 - cq1).count();
 
+            // Self-heal missing creature visuals: if a nearby UNIT exists in
+            // entity state but has no render instance, queue a spawn retry.
+            if (gameHandler) {
+                static float creatureResyncTimer = 0.0f;
+                creatureResyncTimer += deltaTime;
+                if (creatureResyncTimer >= 1.0f) {
+                    creatureResyncTimer = 0.0f;
+
+                    glm::vec3 playerPos(0.0f);
+                    bool havePlayerPos = false;
+                    uint64_t playerGuid = gameHandler->getPlayerGuid();
+                    if (auto playerEntity = gameHandler->getEntityManager().getEntity(playerGuid)) {
+                        playerPos = glm::vec3(playerEntity->getX(), playerEntity->getY(), playerEntity->getZ());
+                        havePlayerPos = true;
+                    }
+
+                    const float kResyncRadiusSq = 260.0f * 260.0f;
+                    for (const auto& pair : gameHandler->getEntityManager().getEntities()) {
+                        uint64_t guid = pair.first;
+                        const auto& entity = pair.second;
+                        if (!entity || guid == playerGuid) continue;
+                        if (entity->getType() != game::ObjectType::UNIT) continue;
+                        auto unit = std::dynamic_pointer_cast<game::Unit>(entity);
+                        if (!unit || unit->getDisplayId() == 0) continue;
+                        if (creatureInstances_.count(guid) || pendingCreatureSpawnGuids_.count(guid)) continue;
+
+                        if (havePlayerPos) {
+                            glm::vec3 pos(unit->getX(), unit->getY(), unit->getZ());
+                            glm::vec3 delta = pos - playerPos;
+                            float distSq = glm::dot(delta, delta);
+                            if (distSq > kResyncRadiusSq) continue;
+                        }
+
+                        PendingCreatureSpawn retrySpawn{};
+                        retrySpawn.guid = guid;
+                        retrySpawn.displayId = unit->getDisplayId();
+                        retrySpawn.x = unit->getX();
+                        retrySpawn.y = unit->getY();
+                        retrySpawn.z = unit->getZ();
+                        retrySpawn.orientation = unit->getOrientation();
+                        pendingCreatureSpawns_.push_back(retrySpawn);
+                        pendingCreatureSpawnGuids_.insert(guid);
+                    }
+                }
+            }
+
             auto goq1 = std::chrono::high_resolution_clock::now();
             processGameObjectSpawnQueue();
             auto goq2 = std::chrono::high_resolution_clock::now();
@@ -447,16 +493,67 @@ void Application::update(float deltaTime) {
                 renderer->getCameraController()->setRunSpeedOverride(gameHandler->getServerRunSpeed());
             }
 
-            bool onTaxi = gameHandler && (gameHandler->isOnTaxiFlight() || gameHandler->isTaxiMountActive());
+            bool onTaxi = gameHandler &&
+                          (gameHandler->isOnTaxiFlight() ||
+                           gameHandler->isTaxiMountActive() ||
+                           gameHandler->isTaxiActivationPending());
+            if (worldEntryMovementGraceTimer_ > 0.0f) {
+                worldEntryMovementGraceTimer_ -= deltaTime;
+            }
             if (renderer && renderer->getCameraController()) {
                 renderer->getCameraController()->setExternalFollow(onTaxi);
                 renderer->getCameraController()->setExternalMoving(onTaxi);
                 if (onTaxi) {
                     // Drop any stale local movement toggles while server drives taxi motion.
                     renderer->getCameraController()->clearMovementInputs();
+                    taxiLandingClampTimer_ = 0.0f;
                 }
                 if (lastTaxiFlight_ && !onTaxi) {
                     renderer->getCameraController()->clearMovementInputs();
+                    // Keep clamping for a short grace window after taxi ends to avoid
+                    // falling through WMOs while floor/collision state settles.
+                    taxiLandingClampTimer_ = 1.5f;
+                }
+                if (!onTaxi &&
+                    worldEntryMovementGraceTimer_ <= 0.0f &&
+                    !gameHandler->isMounted() &&
+                    taxiLandingClampTimer_ > 0.0f) {
+                    taxiLandingClampTimer_ -= deltaTime;
+                    if (renderer && gameHandler) {
+                        glm::vec3 p = renderer->getCharacterPosition();
+                        std::optional<float> terrainFloor;
+                        std::optional<float> wmoFloor;
+                        std::optional<float> m2Floor;
+                        if (renderer->getTerrainManager()) {
+                            terrainFloor = renderer->getTerrainManager()->getHeightAt(p.x, p.y);
+                        }
+                        if (renderer->getWMORenderer()) {
+                            // Probe from above so we can recover when current Z is already below floor.
+                            wmoFloor = renderer->getWMORenderer()->getFloorHeight(p.x, p.y, p.z + 40.0f);
+                        }
+                        if (renderer->getM2Renderer()) {
+                            // Include M2 floors (bridges/platforms) in landing recovery.
+                            m2Floor = renderer->getM2Renderer()->getFloorHeight(p.x, p.y, p.z + 40.0f);
+                        }
+
+                        std::optional<float> targetFloor;
+                        if (terrainFloor) targetFloor = terrainFloor;
+                        if (wmoFloor && (!targetFloor || *wmoFloor > *targetFloor)) targetFloor = wmoFloor;
+                        if (m2Floor && (!targetFloor || *m2Floor > *targetFloor)) targetFloor = m2Floor;
+
+                        if (targetFloor) {
+                            float targetZ = *targetFloor + 0.10f;
+                            // Only lift upward to prevent sinking through floors/bridges.
+                            // Never force the player downward from a valid elevated surface.
+                            if (p.z < targetZ - 0.05f) {
+                                p.z = targetZ;
+                                renderer->getCharacterPosition() = p;
+                                glm::vec3 canonical = core::coords::renderToCanonical(p);
+                                gameHandler->setPosition(canonical.x, canonical.y, canonical.z);
+                                gameHandler->sendMovement(game::Opcode::CMSG_MOVE_HEARTBEAT);
+                            }
+                        }
+                    }
                 }
                 bool idleOrbit = renderer->getCameraController()->isIdleOrbit();
                 if (idleOrbit && !idleYawned_ && renderer) {
@@ -494,10 +591,27 @@ void Application::update(float deltaTime) {
 
                 if (onTaxi) {
                     auto playerEntity = gameHandler->getEntityManager().getEntity(gameHandler->getPlayerGuid());
+                    glm::vec3 canonical(0.0f);
+                    bool haveCanonical = false;
                     if (playerEntity) {
-                        glm::vec3 canonical(playerEntity->getX(), playerEntity->getY(), playerEntity->getZ());
+                        canonical = glm::vec3(playerEntity->getX(), playerEntity->getY(), playerEntity->getZ());
+                        haveCanonical = true;
+                    } else {
+                        // Fallback for brief entity gaps during taxi start/updates:
+                        // movementInfo is still updated by client taxi simulation.
+                        const auto& move = gameHandler->getMovementInfo();
+                        canonical = glm::vec3(move.x, move.y, move.z);
+                        haveCanonical = true;
+                    }
+                    if (haveCanonical) {
                         glm::vec3 renderPos = core::coords::canonicalToRender(canonical);
                         renderer->getCharacterPosition() = renderPos;
+                        if (renderer->getCameraController()) {
+                            glm::vec3* followTarget = renderer->getCameraController()->getFollowTargetMutable();
+                            if (followTarget) {
+                                *followTarget = renderPos;
+                            }
+                        }
                     }
                 } else if (onTransport) {
                     // Transport mode: compose world position from transport transform + local offset
@@ -523,16 +637,16 @@ void Application::update(float deltaTime) {
                 }
             }
 
-            // Send movement heartbeat every 500ms (keeps server position in sync)
-            // Skip periodic taxi heartbeats; taxi start sends explicit heartbeats already.
-            if (gameHandler && renderer && !onTaxi) {
+            // Send periodic movement heartbeats.
+            // Keep them active during taxi as well to avoid occasional server-side
+            // flight stalls waiting for movement sync updates.
+            if (gameHandler && renderer) {
                 movementHeartbeatTimer += deltaTime;
-                if (movementHeartbeatTimer >= 0.5f) {
+                float hbInterval = onTaxi ? 0.25f : 0.5f;
+                if (movementHeartbeatTimer >= hbInterval) {
                     movementHeartbeatTimer = 0.0f;
                     gameHandler->sendMovement(game::Opcode::CMSG_MOVE_HEARTBEAT);
                 }
-            } else {
-                movementHeartbeatTimer = 0.0f;
             }
 
             auto sync2 = std::chrono::high_resolution_clock::now();
@@ -540,7 +654,7 @@ void Application::update(float deltaTime) {
 
             // Log profiling every 60 frames
             if (++appProfileCounter >= 60) {
-                LOG_INFO("APP UPDATE PROFILE (60 frames): gameHandler=", ghTime / 60.0f,
+                LOG_DEBUG("APP UPDATE PROFILE (60 frames): gameHandler=", ghTime / 60.0f,
                          "ms world=", worldTime / 60.0f, "ms spawn=", spawnTime / 60.0f,
                          "ms creatureQ=", creatureQTime / 60.0f, "ms goQ=", goQTime / 60.0f,
                          "ms mount=", mountTime / 60.0f, "ms npcMgr=", npcMgrTime / 60.0f,
@@ -578,7 +692,7 @@ void Application::update(float deltaTime) {
     uiTime += std::chrono::duration<float, std::milli>(u2 - u1).count();
 
     if (state == AppState::IN_GAME && ++rendererProfileCounter >= 60) {
-        LOG_INFO("RENDERER/UI PROFILE (60 frames): renderer=", rendererTime / 60.0f,
+        LOG_DEBUG("RENDERER/UI PROFILE (60 frames): renderer=", rendererTime / 60.0f,
                  "ms ui=", uiTime / 60.0f, "ms");
         rendererProfileCounter = 0;
         rendererTime = uiTime = 0.0f;
@@ -690,23 +804,129 @@ void Application::setupUICallbacks() {
     // World entry callback (online mode) - load terrain when entering world
     gameHandler->setWorldEntryCallback([this](uint32_t mapId, float x, float y, float z) {
         LOG_INFO("Online world entry: mapId=", mapId, " pos=(", x, ", ", y, ", ", z, ")");
+        worldEntryMovementGraceTimer_ = 2.0f;
+        taxiLandingClampTimer_ = 0.0f;
+        lastTaxiFlight_ = false;
         loadOnlineWorldTerrain(mapId, x, y, z);
     });
 
-    // /unstuck — snap upward 10m to escape minor WMO cracks
-    gameHandler->setUnstuckCallback([this]() {
+    auto sampleBestFloorAt = [this](float x, float y, float probeZ) -> std::optional<float> {
+        std::optional<float> terrainFloor;
+        std::optional<float> wmoFloor;
+        std::optional<float> m2Floor;
+
+        if (renderer && renderer->getTerrainManager()) {
+            terrainFloor = renderer->getTerrainManager()->getHeightAt(x, y);
+        }
+        if (renderer && renderer->getWMORenderer()) {
+            wmoFloor = renderer->getWMORenderer()->getFloorHeight(x, y, probeZ);
+        }
+        if (renderer && renderer->getM2Renderer()) {
+            m2Floor = renderer->getM2Renderer()->getFloorHeight(x, y, probeZ);
+        }
+
+        std::optional<float> best;
+        if (terrainFloor) best = terrainFloor;
+        if (wmoFloor && (!best || *wmoFloor > *best)) best = wmoFloor;
+        if (m2Floor && (!best || *m2Floor > *best)) best = m2Floor;
+        return best;
+    };
+
+    auto clearStuckMovement = [this]() {
+        if (renderer && renderer->getCameraController()) {
+            renderer->getCameraController()->clearMovementInputs();
+        }
+        if (gameHandler) {
+            gameHandler->forceClearTaxiAndMovementState();
+            gameHandler->sendMovement(game::Opcode::CMSG_MOVE_STOP);
+            gameHandler->sendMovement(game::Opcode::CMSG_MOVE_STOP_STRAFE);
+            gameHandler->sendMovement(game::Opcode::CMSG_MOVE_STOP_TURN);
+            gameHandler->sendMovement(game::Opcode::CMSG_MOVE_STOP_SWIM);
+            gameHandler->sendMovement(game::Opcode::CMSG_MOVE_HEARTBEAT);
+        }
+    };
+
+    auto syncTeleportedPositionToServer = [this](const glm::vec3& renderPos) {
+        if (!gameHandler) return;
+        glm::vec3 canonical = core::coords::renderToCanonical(renderPos);
+        gameHandler->setPosition(canonical.x, canonical.y, canonical.z);
+        gameHandler->sendMovement(game::Opcode::CMSG_MOVE_STOP);
+        gameHandler->sendMovement(game::Opcode::CMSG_MOVE_STOP_STRAFE);
+        gameHandler->sendMovement(game::Opcode::CMSG_MOVE_STOP_TURN);
+        gameHandler->sendMovement(game::Opcode::CMSG_MOVE_HEARTBEAT);
+    };
+
+    auto forceServerTeleportCommand = [this](const glm::vec3& renderPos) {
+        if (!gameHandler) return;
+        // Server-authoritative reset first, then teleport.
+        gameHandler->sendChatMessage(game::ChatType::SAY, ".revive", "");
+        gameHandler->sendChatMessage(game::ChatType::SAY, ".dismount", "");
+
+        glm::vec3 canonical = core::coords::renderToCanonical(renderPos);
+        glm::vec3 serverPos = core::coords::canonicalToServer(canonical);
+        std::ostringstream cmd;
+        cmd.setf(std::ios::fixed);
+        cmd.precision(3);
+        cmd << ".go xyz "
+            << serverPos.x << " "
+            << serverPos.y << " "
+            << serverPos.z << " "
+            << gameHandler->getCurrentMapId() << " "
+            << gameHandler->getMovementInfo().orientation;
+        gameHandler->sendChatMessage(game::ChatType::SAY, cmd.str(), "");
+    };
+
+    // /unstuck — prefer safe position or nearest floor, avoid blind +Z snaps.
+    gameHandler->setUnstuckCallback([this, sampleBestFloorAt, clearStuckMovement, syncTeleportedPositionToServer, forceServerTeleportCommand]() {
         if (!renderer || !renderer->getCameraController()) return;
+        worldEntryMovementGraceTimer_ = std::max(worldEntryMovementGraceTimer_, 1.5f);
+        taxiLandingClampTimer_ = 0.0f;
+        lastTaxiFlight_ = false;
+        clearStuckMovement();
         auto* cc = renderer->getCameraController();
         auto* ft = cc->getFollowTargetMutable();
         if (!ft) return;
+
         glm::vec3 pos = *ft;
-        pos.z += 10.0f;
+        if (cc->hasLastSafePosition()) {
+            pos = cc->getLastSafePosition();
+            pos.z += 1.5f;
+            cc->teleportTo(pos);
+            syncTeleportedPositionToServer(pos);
+            forceServerTeleportCommand(pos);
+            clearStuckMovement();
+            LOG_INFO("Unstuck: teleported to last safe position");
+            return;
+        }
+
+        if (auto floor = sampleBestFloorAt(pos.x, pos.y, pos.z + 60.0f)) {
+            pos.z = *floor + 0.2f;
+        } else {
+            pos.z += 20.0f;
+        }
+
+        // Nudge forward slightly to break edge-cases where unstuck lands exactly
+        // on problematic collision seams.
+        if (gameHandler) {
+            float renderYaw = gameHandler->getMovementInfo().orientation + glm::radians(90.0f);
+            pos.x += std::cos(renderYaw) * 2.0f;
+            pos.y += std::sin(renderYaw) * 2.0f;
+        }
+
         cc->teleportTo(pos);
+        syncTeleportedPositionToServer(pos);
+        forceServerTeleportCommand(pos);
+        clearStuckMovement();
+        LOG_INFO("Unstuck: recovered to sampled floor");
     });
 
-    // /unstuckgy — snap upward 50m to clear all WMO geometry, gravity re-settles onto terrain
-    gameHandler->setUnstuckGyCallback([this]() {
+    // /unstuckgy — stronger recovery: safe/home position, then sampled floor fallback.
+    gameHandler->setUnstuckGyCallback([this, sampleBestFloorAt, clearStuckMovement, syncTeleportedPositionToServer, forceServerTeleportCommand]() {
         if (!renderer || !renderer->getCameraController()) return;
+        worldEntryMovementGraceTimer_ = std::max(worldEntryMovementGraceTimer_, 1.5f);
+        taxiLandingClampTimer_ = 0.0f;
+        lastTaxiFlight_ = false;
+        clearStuckMovement();
         auto* cc = renderer->getCameraController();
         auto* ft = cc->getFollowTargetMutable();
         if (!ft) return;
@@ -716,15 +936,45 @@ void Application::setupUICallbacks() {
             glm::vec3 safePos = cc->getLastSafePosition();
             safePos.z += 5.0f;
             cc->teleportTo(safePos);
+            syncTeleportedPositionToServer(safePos);
+            forceServerTeleportCommand(safePos);
+            clearStuckMovement();
             LOG_INFO("Unstuck: teleported to last safe position");
             return;
         }
 
-        // No safe position — snap 50m upward to clear all WMO geometry
+        uint32_t bindMap = 0;
+        glm::vec3 bindPos(0.0f);
+        if (gameHandler && gameHandler->getHomeBind(bindMap, bindPos) &&
+            bindMap == gameHandler->getCurrentMapId()) {
+            bindPos.z += 2.0f;
+            cc->teleportTo(bindPos);
+            syncTeleportedPositionToServer(bindPos);
+            forceServerTeleportCommand(bindPos);
+            clearStuckMovement();
+            LOG_INFO("Unstuck: teleported to home bind position");
+            return;
+        }
+
+        // No safe/bind position — try current XY with a high floor probe.
         glm::vec3 pos = *ft;
-        pos.z += 50.0f;
+        if (auto floor = sampleBestFloorAt(pos.x, pos.y, pos.z + 120.0f)) {
+            pos.z = *floor + 0.5f;
+            cc->teleportTo(pos);
+            syncTeleportedPositionToServer(pos);
+            forceServerTeleportCommand(pos);
+            clearStuckMovement();
+            LOG_INFO("Unstuck: teleported to sampled floor");
+            return;
+        }
+
+        // Last fallback: high snap to clear deeply bad geometry.
+        pos.z += 60.0f;
         cc->teleportTo(pos);
-        LOG_INFO("Unstuck: snapped 50m upward");
+        syncTeleportedPositionToServer(pos);
+        forceServerTeleportCommand(pos);
+        clearStuckMovement();
+        LOG_INFO("Unstuck: high fallback snap");
     });
 
     // Auto-unstuck: falling for > 5 seconds = void fall, teleport to map entry
@@ -2295,18 +2545,22 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
     // Skip if already spawned
     if (creatureInstances_.count(guid)) return;
 
-    if (nonRenderableCreatureDisplayIds_.count(displayId)) {
-        creaturePermanentFailureGuids_.insert(guid);
-        return;
-    }
-
     // Get model path from displayId
     std::string m2Path = getModelPathForDisplayId(displayId);
     if (m2Path.empty()) {
         LOG_WARNING("No model path for displayId ", displayId, " (guid 0x", std::hex, guid, std::dec, ")");
-        nonRenderableCreatureDisplayIds_.insert(displayId);
-        creaturePermanentFailureGuids_.insert(guid);
         return;
+    }
+    {
+        // Intentionally invisible helper creatures should not consume retry budget.
+        std::string lowerPath = m2Path;
+        std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (lowerPath.find("invisiblestalker") != std::string::npos ||
+            lowerPath.find("invisible_stalker") != std::string::npos) {
+            creaturePermanentFailureGuids_.insert(guid);
+            return;
+        }
     }
 
     auto* charRenderer = renderer->getCharacterRenderer();
@@ -2325,15 +2579,12 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
         auto m2Data = assetManager->readFile(m2Path);
         if (m2Data.empty()) {
             LOG_WARNING("Failed to read creature M2: ", m2Path);
-            creaturePermanentFailureGuids_.insert(guid);
             return;
         }
 
         pipeline::M2Model model = pipeline::M2Loader::load(m2Data);
         if (model.vertices.empty()) {
             LOG_WARNING("Failed to parse creature M2: ", m2Path);
-            nonRenderableCreatureDisplayIds_.insert(displayId);
-            creaturePermanentFailureGuids_.insert(guid);
             return;
         }
 
@@ -2360,7 +2611,6 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
 
         if (!charRenderer->loadModel(model, modelId)) {
             LOG_WARNING("Failed to load creature model: ", m2Path);
-            creaturePermanentFailureGuids_.insert(guid);
             return;
         }
 
@@ -2502,28 +2752,9 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
     // Convert canonical → render coordinates
     glm::vec3 renderPos = core::coords::canonicalToRender(glm::vec3(x, y, z));
 
-    // Smart filtering for bad spawn data:
-    // - If over ocean AND at continental height (Z > 50): bad data, skip
-    // - If over ocean AND near sea level (Z <= 50): water creature, allow
-    // - If over land: preserve server Z for elevated platforms/roofs and only
-    //   correct clearly underground spawns.
-    if (renderer->getTerrainManager()) {
-        auto terrainH = renderer->getTerrainManager()->getHeightAt(renderPos.x, renderPos.y);
-        if (!terrainH) {
-            // No terrain at this X,Y position (ocean/void)
-            if (z > 50.0f) {
-                // High altitude over ocean = bad spawn data (e.g., bears at Z=94 over water)
-                return;
-            }
-            // Low altitude = probably legitimate water creature, allow spawn at original Z
-        } else {
-            // Keep authentic server Z for NPCs on raised geometry (e.g. flight masters).
-            // Only lift up if spawn is clearly below terrain.
-            if (renderPos.z < (*terrainH - 2.0f)) {
-                renderPos.z = *terrainH + 0.1f;
-            }
-        }
-    }
+    // Keep authoritative server Z for online creature spawns.
+    // Terrain-based lifting can incorrectly move elevated NPCs (e.g. flight masters on
+    // Stormwind ramparts) to bad heights relative to WMO geometry.
 
     // Convert canonical WoW orientation (0=north) -> render yaw (0=west)
     float renderYaw = orientation + glm::radians(90.0f);
@@ -2537,8 +2768,16 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
         return;
     }
 
+    // NOTE: Custom humanoid NPC geoset/equipment overrides are currently too
+    // aggressive and can make NPCs invisible (targetable but not rendered).
+    // Keep default model geosets for online creatures until this path is made
+    // data-accurate per display model.
+    static constexpr bool kEnableNpcHumanoidOverrides = false;
+
     // Set geosets for humanoid NPCs based on CreatureDisplayInfoExtra
-    if (itDisplayData != displayDataMap_.end() && itDisplayData->second.extraDisplayId != 0) {
+    if (kEnableNpcHumanoidOverrides &&
+        itDisplayData != displayDataMap_.end() &&
+        itDisplayData->second.extraDisplayId != 0) {
         auto itExtra = humanoidExtraMap_.find(itDisplayData->second.extraDisplayId);
         if (itExtra != humanoidExtraMap_.end()) {
             const auto& extra = itExtra->second;
@@ -2768,6 +3007,83 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
         }
     }
 
+    // Optional NPC helmet attachments (kept disabled for stability: this path
+    // can increase spawn-time pressure and regress NPC visibility in crowded areas).
+    static constexpr bool kEnableNpcHelmetAttachments = false;
+    if (kEnableNpcHelmetAttachments &&
+        itDisplayData != displayDataMap_.end() &&
+        itDisplayData->second.extraDisplayId != 0) {
+        auto itExtra = humanoidExtraMap_.find(itDisplayData->second.extraDisplayId);
+        if (itExtra != humanoidExtraMap_.end()) {
+            const auto& extra = itExtra->second;
+            if (extra.equipDisplayId[0] != 0) { // Helm slot
+                auto itemDisplayDbc = assetManager->loadDBC("ItemDisplayInfo.dbc");
+                if (itemDisplayDbc) {
+                    int32_t helmIdx = itemDisplayDbc->findRecordById(extra.equipDisplayId[0]);
+                    if (helmIdx >= 0) {
+                        std::string helmModelName = itemDisplayDbc->getString(static_cast<uint32_t>(helmIdx), 1);
+                        if (!helmModelName.empty()) {
+                            size_t dotPos = helmModelName.rfind('.');
+                            if (dotPos != std::string::npos) {
+                                helmModelName = helmModelName.substr(0, dotPos);
+                            }
+
+                            static const std::unordered_map<uint8_t, std::string> racePrefix = {
+                                {1, "Hu"}, {2, "Or"}, {3, "Dw"}, {4, "Ni"}, {5, "Sc"},
+                                {6, "Ta"}, {7, "Gn"}, {8, "Tr"}, {10, "Be"}, {11, "Dr"}
+                            };
+                            std::string genderSuffix = (extra.sexId == 0) ? "M" : "F";
+                            std::string raceSuffix;
+                            auto itRace = racePrefix.find(extra.raceId);
+                            if (itRace != racePrefix.end()) {
+                                raceSuffix = "_" + itRace->second + genderSuffix;
+                            }
+
+                            std::string helmPath;
+                            std::vector<uint8_t> helmData;
+                            if (!raceSuffix.empty()) {
+                                helmPath = "Item\\ObjectComponents\\Head\\" + helmModelName + raceSuffix + ".m2";
+                                helmData = assetManager->readFile(helmPath);
+                            }
+                            if (helmData.empty()) {
+                                helmPath = "Item\\ObjectComponents\\Head\\" + helmModelName + ".m2";
+                                helmData = assetManager->readFile(helmPath);
+                            }
+
+                            if (!helmData.empty()) {
+                                auto helmModel = pipeline::M2Loader::load(helmData);
+                                std::string skinPath = helmPath.substr(0, helmPath.size() - 3) + "00.skin";
+                                auto skinData = assetManager->readFile(skinPath);
+                                if (!skinData.empty()) {
+                                    pipeline::M2Loader::loadSkin(skinData, helmModel);
+                                }
+
+                                if (helmModel.isValid()) {
+                                    uint32_t helmModelId = nextCreatureModelId_++;
+                                    std::string helmTexName = itemDisplayDbc->getString(static_cast<uint32_t>(helmIdx), 3);
+                                    std::string helmTexPath;
+                                    if (!helmTexName.empty()) {
+                                        if (!raceSuffix.empty()) {
+                                            std::string suffixedTex = "Item\\ObjectComponents\\Head\\" + helmTexName + raceSuffix + ".blp";
+                                            if (assetManager->fileExists(suffixedTex)) {
+                                                helmTexPath = suffixedTex;
+                                            }
+                                        }
+                                        if (helmTexPath.empty()) {
+                                            helmTexPath = "Item\\ObjectComponents\\Head\\" + helmTexName + ".blp";
+                                        }
+                                    }
+                                    // Attachment point 11 = Head
+                                    charRenderer->attachWeapon(instanceId, 11, helmModel, helmModelId, helmTexPath);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Play idle animation and fade in
     charRenderer->playAnimation(instanceId, 0, true);
     charRenderer->startFadeIn(instanceId, 0.5f);
@@ -2775,8 +3091,6 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
     // Track instance
     creatureInstances_[guid] = instanceId;
     creatureModelIds_[guid] = modelId;
-    creaturePermanentFailureGuids_.erase(guid);
-
     LOG_INFO("Spawned creature: guid=0x", std::hex, guid, std::dec,
              " displayId=", displayId, " at (", x, ", ", y, ", ", z, ")");
 }
@@ -3440,7 +3754,7 @@ void Application::updateQuestMarkers() {
 
     static int logCounter = 0;
     if (++logCounter % 300 == 0) {  // Log every ~10 seconds at 30fps
-        LOG_INFO("Quest markers: ", questStatuses.size(), " NPCs with quest status");
+        LOG_DEBUG("Quest markers: ", questStatuses.size(), " NPCs with quest status");
     }
 
     // Clear all markers (we'll re-add active ones)
@@ -3493,7 +3807,7 @@ void Application::updateQuestMarkers() {
     }
 
     if (firstRun && markersAdded > 0) {
-        LOG_INFO("Quest markers: Added ", markersAdded, " markers on first run");
+        LOG_DEBUG("Quest markers: Added ", markersAdded, " markers on first run");
         firstRun = false;
     }
 }

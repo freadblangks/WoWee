@@ -2053,7 +2053,7 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
     static int frameCounter = 0;
     if (++frameCounter >= 120) {
         frameCounter = 0;
-        LOG_INFO("M2 Render: ", totalMs, " ms (culling/sort: ", cullingSortMs,
+        LOG_DEBUG("M2 Render: ", totalMs, " ms (culling/sort: ", cullingSortMs,
                  " ms, draw: ", drawLoopMs, " ms) | ", sortedVisible_.size(), " visible | ",
                  totalBatchesDrawn, " batches | ", boneMatrixUploads, " bone uploads");
     }

@@ -172,6 +172,15 @@ private:
     std::optional<float> cachedCamWmoFloor;
     bool hasCachedCamFloor = false;
 
+    // Terrain-aware camera pivot lift cache (throttled for performance).
+    glm::vec3 lastPivotLiftQueryPos_ = glm::vec3(0.0f);
+    float lastPivotLiftDistance_ = 0.0f;
+    int pivotLiftQueryCounter_ = 0;
+    float cachedPivotLift_ = 0.0f;
+    static constexpr int PIVOT_LIFT_QUERY_INTERVAL = 3;
+    static constexpr float PIVOT_LIFT_POS_THRESHOLD = 0.5f;
+    static constexpr float PIVOT_LIFT_DIST_THRESHOLD = 0.5f;
+
     // Cached floor height queries (update every 5 frames or 2 unit movement)
     glm::vec3 lastFloorQueryPos = glm::vec3(0.0f);
     std::optional<float> cachedFloorHeight;

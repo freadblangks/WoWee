@@ -623,6 +623,8 @@ public:
     void activateTaxi(uint32_t destNodeId);
     bool isOnTaxiFlight() const { return onTaxiFlight_; }
     bool isTaxiMountActive() const { return taxiMountActive_; }
+    bool isTaxiActivationPending() const { return taxiActivatePending_; }
+    void forceClearTaxiAndMovementState();
     const ShowTaxiNodesData& getTaxiData() const { return currentTaxiData_; }
     uint32_t getTaxiCurrentNode() const { return currentTaxiData_.nearestNode; }
 
@@ -927,6 +929,8 @@ private:
     uint32_t pingSequence = 0;               // Ping sequence number (increments)
     float timeSinceLastPing = 0.0f;          // Time since last ping sent (seconds)
     float pingInterval = 30.0f;              // Ping interval (30 seconds)
+    float timeSinceLastMoveHeartbeat_ = 0.0f; // Periodic movement heartbeat to keep server position synced
+    float moveHeartbeatInterval_ = 0.5f;
     uint32_t lastLatency = 0;                // Last measured latency (milliseconds)
 
     // Player GUID and map
@@ -1086,6 +1090,7 @@ private:
     float taxiActivateTimer_ = 0.0f;
     bool taxiClientActive_ = false;
     float taxiLandingCooldown_ = 0.0f;  // Prevent re-entering taxi right after landing
+    float taxiStartGrace_ = 0.0f;       // Ignore transient landing/dismount checks right after takeoff
     size_t taxiClientIndex_ = 0;
     std::vector<glm::vec3> taxiClientPath_;
     float taxiClientSpeed_ = 32.0f;

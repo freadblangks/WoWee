@@ -523,23 +523,12 @@ bool PongParser::parse(network::Packet& packet, PongData& data) {
     return true;
 }
 
-network::Packet MovementPacket::build(Opcode opcode, const MovementInfo& info, uint64_t playerGuid) {
-    network::Packet packet(static_cast<uint16_t>(opcode));
-
-    // Movement packet format (WoW 3.3.5a):
-    // packed GUID
-    // uint32 flags
-    // uint16 flags2
-    // uint32 time
-    // float x, y, z
-    // float orientation
-
-    // Write packed GUID
+void MovementPacket::writePackedGuid(network::Packet& packet, uint64_t guid) {
     uint8_t mask = 0;
     uint8_t guidBytes[8];
     int guidByteCount = 0;
     for (int i = 0; i < 8; i++) {
-        uint8_t byte = static_cast<uint8_t>((playerGuid >> (i * 8)) & 0xFF);
+        uint8_t byte = static_cast<uint8_t>((guid >> (i * 8)) & 0xFF);
         if (byte != 0) {
             mask |= (1 << i);
             guidBytes[guidByteCount++] = byte;
@@ -549,6 +538,15 @@ network::Packet MovementPacket::build(Opcode opcode, const MovementInfo& info, u
     for (int i = 0; i < guidByteCount; i++) {
         packet.writeUInt8(guidBytes[i]);
     }
+}
+
+void MovementPacket::writeMovementPayload(network::Packet& packet, const MovementInfo& info) {
+    // Movement packet format (WoW 3.3.5a) payload:
+    // uint32 flags
+    // uint16 flags2
+    // uint32 time
+    // float x, y, z
+    // float orientation
 
     // Write movement flags
     packet.writeUInt32(info.flags);
@@ -617,6 +615,15 @@ network::Packet MovementPacket::build(Opcode opcode, const MovementInfo& info, u
         packet.writeBytes(reinterpret_cast<const uint8_t*>(&info.jumpCosAngle), sizeof(float));
         packet.writeBytes(reinterpret_cast<const uint8_t*>(&info.jumpXYSpeed), sizeof(float));
     }
+}
+
+network::Packet MovementPacket::build(Opcode opcode, const MovementInfo& info, uint64_t playerGuid) {
+    network::Packet packet(static_cast<uint16_t>(opcode));
+
+    // Movement packet format (WoW 3.3.5a):
+    // packed GUID + movement payload
+    writePackedGuid(packet, playerGuid);
+    writeMovementPayload(packet, info);
 
     // Detailed hex dump for debugging
     static int mvLog = 5;
@@ -828,16 +835,27 @@ bool UpdateObjectParser::parseMovementBlock(network::Packet& packet, UpdateBlock
         block.z = packet.readFloat();
         block.onTransport = (transportGuid != 0);
         block.transportGuid = transportGuid;
-        block.transportX = packet.readFloat();
-        block.transportY = packet.readFloat();
-        block.transportZ = packet.readFloat();
+        float tx = packet.readFloat();
+        float ty = packet.readFloat();
+        float tz = packet.readFloat();
+        if (block.onTransport) {
+            block.transportX = tx;
+            block.transportY = ty;
+            block.transportZ = tz;
+        } else {
+            block.transportX = 0.0f;
+            block.transportY = 0.0f;
+            block.transportZ = 0.0f;
+        }
         block.orientation = packet.readFloat();
         /*float corpseOrientation =*/ packet.readFloat();
         block.hasMovement = true;
 
-        LOG_INFO("  TRANSPORT POSITION UPDATE: guid=0x", std::hex, transportGuid, std::dec,
-                 " pos=(", block.x, ", ", block.y, ", ", block.z, "), o=", block.orientation,
-                 " offset=(", block.transportX, ", ", block.transportY, ", ", block.transportZ, ")");
+        if (block.onTransport) {
+            LOG_INFO("  TRANSPORT POSITION UPDATE: guid=0x", std::hex, transportGuid, std::dec,
+                     " pos=(", block.x, ", ", block.y, ", ", block.z, "), o=", block.orientation,
+                     " offset=(", block.transportX, ", ", block.transportY, ", ", block.transportZ, ")");
+        }
     }
     else if (updateFlags & UPDATEFLAG_STATIONARY_POSITION) {
         // Simple stationary position (4 floats)
@@ -895,9 +913,9 @@ bool UpdateObjectParser::parseUpdateFields(network::Packet& packet, UpdateBlock&
     }
 
     uint32_t fieldsCapacity = blockCount * 32;
-    LOG_INFO("  UPDATE MASK PARSE:");
-    LOG_INFO("    maskBlockCount = ", (int)blockCount);
-    LOG_INFO("    fieldsCapacity (blocks * 32) = ", fieldsCapacity);
+    LOG_DEBUG("  UPDATE MASK PARSE:");
+    LOG_DEBUG("    maskBlockCount = ", (int)blockCount);
+    LOG_DEBUG("    fieldsCapacity (blocks * 32) = ", fieldsCapacity);
 
     // Read update mask
     std::vector<uint32_t> updateMask(blockCount);
@@ -932,11 +950,11 @@ bool UpdateObjectParser::parseUpdateFields(network::Packet& packet, UpdateBlock&
     size_t bytesUsed = endPos - startPos;
     size_t bytesRemaining = packet.getSize() - endPos;
 
-    LOG_INFO("    highestSetBitIndex = ", highestSetBit);
-    LOG_INFO("    valuesReadCount = ", valuesReadCount);
-    LOG_INFO("    bytesUsedForFields = ", bytesUsed);
-    LOG_INFO("    bytesRemainingInPacket = ", bytesRemaining);
-    LOG_INFO("  Parsed ", block.fields.size(), " fields");
+    LOG_DEBUG("    highestSetBitIndex = ", highestSetBit);
+    LOG_DEBUG("    valuesReadCount = ", valuesReadCount);
+    LOG_DEBUG("    bytesUsedForFields = ", bytesUsed);
+    LOG_DEBUG("    bytesRemainingInPacket = ", bytesRemaining);
+    LOG_DEBUG("  Parsed ", block.fields.size(), " fields");
 
     return true;
 }
@@ -1009,9 +1027,9 @@ bool UpdateObjectParser::parse(network::Packet& packet, UpdateObjectData& data) 
     // Read block count
     data.blockCount = packet.readUInt32();
 
-    LOG_INFO("SMSG_UPDATE_OBJECT:");
-    LOG_INFO("  objectCount = ", data.blockCount);
-    LOG_INFO("  packetSize = ", packet.getSize());
+    LOG_DEBUG("SMSG_UPDATE_OBJECT:");
+    LOG_DEBUG("  objectCount = ", data.blockCount);
+    LOG_DEBUG("  packetSize = ", packet.getSize());
 
     // Check for out-of-range objects first
     if (packet.getReadPos() + 1 <= packet.getSize()) {

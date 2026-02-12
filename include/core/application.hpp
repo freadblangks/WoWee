@@ -162,6 +162,8 @@ private:
     uint32_t gryphonDisplayId_ = 0;
     uint32_t wyvernDisplayId_ = 0;
     bool lastTaxiFlight_ = false;
+    float taxiLandingClampTimer_ = 0.0f;
+    float worldEntryMovementGraceTimer_ = 0.0f;
     float taxiStreamCooldown_ = 0.0f;
     bool idleYawned_ = false;
 
@@ -193,7 +195,7 @@ private:
         float x, y, z, orientation;
     };
     std::vector<PendingCreatureSpawn> pendingCreatureSpawns_;
-    static constexpr int MAX_SPAWNS_PER_FRAME = 24;
+    static constexpr int MAX_SPAWNS_PER_FRAME = 96;
     static constexpr uint16_t MAX_CREATURE_SPAWN_RETRIES = 300;
     std::unordered_set<uint64_t> pendingCreatureSpawnGuids_;
     std::unordered_map<uint64_t, uint16_t> creatureSpawnRetryCounts_;

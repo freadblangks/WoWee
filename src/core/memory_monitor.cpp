@@ -2,10 +2,30 @@
 #include "core/logger.hpp"
 #include <fstream>
 #include <string>
+#include <sstream>
 #include <sys/sysinfo.h>
 
 namespace wowee {
 namespace core {
+
+namespace {
+size_t readMemAvailableBytesFromProc() {
+    std::ifstream meminfo("/proc/meminfo");
+    if (!meminfo.is_open()) return 0;
+
+    std::string line;
+    while (std::getline(meminfo, line)) {
+        // Format: "MemAvailable:  123456789 kB"
+        if (line.rfind("MemAvailable:", 0) != 0) continue;
+        std::istringstream iss(line.substr(13));
+        size_t kb = 0;
+        iss >> kb;
+        if (kb > 0) return kb * 1024ull;
+        break;
+    }
+    return 0;
+}
+} // namespace
 
 MemoryMonitor& MemoryMonitor::getInstance() {
     static MemoryMonitor instance;
@@ -25,10 +45,18 @@ void MemoryMonitor::initialize() {
 }
 
 size_t MemoryMonitor::getAvailableRAM() const {
+    // Best source on Linux for reclaimable memory headroom.
+    if (size_t memAvailable = readMemAvailableBytesFromProc(); memAvailable > 0) {
+        return memAvailable;
+    }
+
     struct sysinfo info;
     if (sysinfo(&info) == 0) {
-        // Available = free + buffers + cached
-        return static_cast<size_t>(info.freeram) * info.mem_unit;
+        // Fallback approximation if /proc/meminfo is unavailable.
+        size_t freeBytes = static_cast<size_t>(info.freeram) * info.mem_unit;
+        size_t bufferBytes = static_cast<size_t>(info.bufferram) * info.mem_unit;
+        size_t available = freeBytes + bufferBytes;
+        return (totalRAM_ > 0 && available > totalRAM_) ? totalRAM_ : available;
     }
     return totalRAM_ / 2;  // Fallback: assume 50% available
 }

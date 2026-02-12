@@ -371,7 +371,7 @@ void TransportManager::updateTransportMovement(ActiveTransport& transport, float
     if (debugFrameCount++ % 120 == 0) {
         // Log canonical position AND render position to check coordinate conversion
         glm::vec3 renderPos = core::coords::canonicalToRender(transport.position);
-        LOG_INFO("Transport 0x", std::hex, transport.guid, std::dec,
+        LOG_DEBUG("Transport 0x", std::hex, transport.guid, std::dec,
                  " pathTime=", pathTimeMs, "ms / ", path.durationMs, "ms",
                  " canonicalPos=(", transport.position.x, ", ", transport.position.y, ", ", transport.position.z, ")",
                  " renderPos=(", renderPos.x, ", ", renderPos.y, ", ", renderPos.z, ")",

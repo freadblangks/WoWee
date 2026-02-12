@@ -2143,7 +2143,7 @@ void Renderer::update(float deltaTime) {
 
     // Log renderer profiling every 60 frames
     if (++rendProfileCounter >= 60) {
-        LOG_INFO("RENDERER UPDATE PROFILE (60 frames): camera=", camTime / 60.0f,
+        LOG_DEBUG("RENDERER UPDATE PROFILE (60 frames): camera=", camTime / 60.0f,
                  "ms light=", lightTime / 60.0f, "ms charAnim=", charAnimTime / 60.0f,
                  "ms terrain=", terrainTime / 60.0f, "ms sky=", skyTime / 60.0f,
                  "ms charRend=", charRendTime / 60.0f, "ms audio=", audioTime / 60.0f,

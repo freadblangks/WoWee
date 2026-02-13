@@ -1,8 +1,9 @@
 #pragma once
 
-#include "pipeline/mpq_manager.hpp"
 #include "pipeline/blp_loader.hpp"
 #include "pipeline/dbc_loader.hpp"
+#include "pipeline/asset_manifest.hpp"
+#include "pipeline/loose_file_reader.hpp"
 #include <memory>
 #include <string>
 #include <map>
@@ -14,7 +15,9 @@ namespace pipeline {
 /**
  * AssetManager - Unified interface for loading WoW assets
  *
- * Coordinates MPQ archives, texture loading, and database files
+ * Reads pre-extracted loose files indexed by manifest.json.
+ * Use the asset_extract tool to extract MPQ archives first.
+ * All reads are fully parallel (no serialization mutex needed).
  */
 class AssetManager {
 public:
@@ -23,7 +26,7 @@ public:
 
     /**
      * Initialize asset manager
-     * @param dataPath Path to WoW Data directory
+     * @param dataPath Path to directory containing manifest.json and extracted assets
      * @return true if initialization succeeded
      */
     bool initialize(const std::string& dataPath);
@@ -60,32 +63,26 @@ public:
     std::shared_ptr<DBCFile> getDBC(const std::string& name) const;
 
     /**
-     * Check if a file exists in MPQ archives
+     * Check if a file exists
      * @param path Virtual file path
      * @return true if file exists
      */
     bool fileExists(const std::string& path) const;
 
     /**
-     * Read raw file data from MPQ archives
+     * Read raw file data
      * @param path Virtual file path
      * @return File contents (empty if not found)
      */
     std::vector<uint8_t> readFile(const std::string& path) const;
 
     /**
-     * Read optional file data from MPQ archives without warning spam.
+     * Read optional file data without warning spam.
      * Intended for probe-style lookups (e.g. external .anim variants).
      * @param path Virtual file path
      * @return File contents (empty if not found)
      */
     std::vector<uint8_t> readFileOptional(const std::string& path) const;
-
-    /**
-     * Get MPQ manager for direct access
-     */
-    MPQManager& getMPQManager() { return mpqManager; }
-    const MPQManager& getMPQManager() const { return mpqManager; }
 
     /**
      * Get loaded DBC count
@@ -108,12 +105,14 @@ private:
     bool initialized = false;
     std::string dataPath;
 
-    MPQManager mpqManager;
-    mutable std::mutex readMutex;
+    // Loose file backend
+    AssetManifest manifest_;
+    LooseFileReader looseReader_;
+
     mutable std::mutex cacheMutex;
     std::map<std::string, std::shared_ptr<DBCFile>> dbcCache;
 
-    // Decompressed file cache (LRU, dynamic budget based on system RAM)
+    // File cache (LRU, dynamic budget based on system RAM)
     struct CachedFile {
         std::vector<uint8_t> data;
         uint64_t lastAccessTime;
@@ -124,6 +123,14 @@ private:
     mutable size_t fileCacheHits = 0;
     mutable size_t fileCacheMisses = 0;
     mutable size_t fileCacheBudget = 1024 * 1024 * 1024;  // Dynamic, starts at 1GB
+
+    void setupFileCacheBudget();
+
+    /**
+     * Try to load a PNG override for a BLP path.
+     * Returns valid BLPImage if PNG found, invalid otherwise.
+     */
+    BLPImage tryLoadPngOverride(const std::string& normalizedPath) const;
 
     /**
      * Normalize path for case-insensitive lookup

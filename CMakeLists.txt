@@ -43,14 +43,9 @@ if(NOT glm_FOUND)
     message(STATUS "GLM not found, will use system includes or download")
 endif()
 
-# StormLib for MPQ archives
+# StormLib for MPQ extraction tool (not needed for main executable)
 find_library(STORMLIB_LIBRARY NAMES StormLib stormlib storm)
 find_path(STORMLIB_INCLUDE_DIR StormLib.h PATH_SUFFIXES StormLib)
-
-if(NOT STORMLIB_LIBRARY OR NOT STORMLIB_INCLUDE_DIR)
-    message(WARNING "StormLib not found. You may need to build it manually.")
-    message(WARNING "Get it from: https://github.com/ladislav-zezula/StormLib")
-endif()
 
 # Include ImGui as a static library (we'll add the sources)
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/extern/imgui)
@@ -128,10 +123,11 @@ set(WOWEE_SOURCES
     src/audio/movement_sound_manager.cpp
 
     # Pipeline (asset loaders)
-    src/pipeline/mpq_manager.cpp
     src/pipeline/blp_loader.cpp
     src/pipeline/dbc_loader.cpp
     src/pipeline/asset_manager.cpp
+    src/pipeline/asset_manifest.cpp
+    src/pipeline/loose_file_reader.cpp
     src/pipeline/m2_loader.cpp
     src/pipeline/wmo_loader.cpp
     src/pipeline/adt_loader.cpp
@@ -233,8 +229,9 @@ set(WOWEE_HEADERS
     include/audio/spell_sound_manager.hpp
     include/audio/movement_sound_manager.hpp
 
-    include/pipeline/mpq_manager.hpp
     include/pipeline/blp_loader.hpp
+    include/pipeline/asset_manifest.hpp
+    include/pipeline/loose_file_reader.hpp
     include/pipeline/m2_loader.hpp
     include/pipeline/wmo_loader.hpp
     include/pipeline/adt_loader.hpp
@@ -325,13 +322,6 @@ if(WIN32)
     endif()
 endif()
 
-# Link StormLib if found
-if(STORMLIB_LIBRARY AND STORMLIB_INCLUDE_DIR)
-    target_link_libraries(wowee PRIVATE ${STORMLIB_LIBRARY})
-    target_include_directories(wowee PRIVATE ${STORMLIB_INCLUDE_DIR})
-    target_compile_definitions(wowee PRIVATE HAVE_STORMLIB)
-endif()
-
 # Link ImGui if available
 if(TARGET imgui)
     target_link_libraries(wowee PRIVATE imgui)
@@ -385,6 +375,47 @@ if(UNIX AND NOT APPLE)
         RENAME wowee.png)
 endif()
 
+# ---- Tool: asset_extract (MPQ → loose files) ----
+if(STORMLIB_LIBRARY AND STORMLIB_INCLUDE_DIR)
+    add_executable(asset_extract
+        tools/asset_extract/main.cpp
+        tools/asset_extract/extractor.cpp
+        tools/asset_extract/path_mapper.cpp
+        tools/asset_extract/manifest_writer.cpp
+    )
+    target_include_directories(asset_extract PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset_extract
+        ${STORMLIB_INCLUDE_DIR}
+    )
+    target_link_libraries(asset_extract PRIVATE
+        ${STORMLIB_LIBRARY}
+        ZLIB::ZLIB
+        Threads::Threads
+    )
+    set_target_properties(asset_extract PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+    )
+    message(STATUS "  asset_extract tool: ENABLED")
+else()
+    message(STATUS "  asset_extract tool: DISABLED (requires StormLib)")
+endif()
+
+# ---- Tool: blp_convert (BLP ↔ PNG) ----
+add_executable(blp_convert
+    tools/blp_convert/main.cpp
+    src/pipeline/blp_loader.cpp
+    src/core/logger.cpp
+)
+target_include_directories(blp_convert PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/extern
+)
+target_link_libraries(blp_convert PRIVATE Threads::Threads)
+set_target_properties(blp_convert PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+)
+
 # Print configuration summary
 message(STATUS "")
 message(STATUS "Wowee Configuration:")
@@ -392,6 +423,5 @@ message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "  SDL2: ${SDL2_VERSION}")
 message(STATUS "  OpenSSL: ${OPENSSL_VERSION}")
-message(STATUS "  StormLib: ${STORMLIB_LIBRARY}")
 message(STATUS "  ImGui: ${IMGUI_DIR}")
 message(STATUS "")

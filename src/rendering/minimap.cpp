@@ -267,7 +267,7 @@ void Minimap::parseTRS() {
     if (trsParsed || !assetManager) return;
     trsParsed = true;
 
-    auto data = assetManager->getMPQManager().readFile("Textures\\Minimap\\md5translate.trs");
+    auto data = assetManager->readFile("Textures\\Minimap\\md5translate.trs");
     if (data.empty()) {
         LOG_WARNING("Failed to load md5translate.trs");
         return;

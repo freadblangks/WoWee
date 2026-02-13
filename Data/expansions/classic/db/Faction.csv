@@ -1,0 +1,191 @@
+# fields=37 strings=0,2,3,4,5,6,7,12,13,14,15,16,17,18,19,28
+"PLAYER, Human",4294967295,"","","","","","",0,0,0,0,"","","","","","","","PLAYER, Human",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"LAYER, Human",4294967295,"","","","","","",0,0,0,0,"","","","","","","","PLAYER, Orc",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"AYER, Human",4294967295,"","","","","","",0,0,0,0,"","","","","","","","PLAYER, Dwarf",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"YER, Human",4294967295,"","","","","","",0,0,0,0,"","","","","","","","PLAYER, Night Elf",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"ER, Human",4294967295,"","","","","","",0,0,0,0,"","","","","","","","PLAYER, Undead",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128878
+"R, Human",4294967295,"","","","","","",0,0,0,0,"","","","","","","","PLAYER, Tauren ",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+", Human",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Creature",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+" Human",4294967295,"","","","","","",0,0,0,0,"","","","","","","","PLAYER, Gnome",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"Human",4294967295,"","","","","","",0,0,0,0,"","","","","","","","PLAYER, Troll",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Monster",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"PLAYER, Orc",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Defias Brotherhood",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"LAYER, Orc",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Gnoll - Riverpaw",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"AYER, Orc",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Gnoll - Redridge",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"YER, Orc",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Gnoll - Shadowhide",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"ER, Orc",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Murloc",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"R, Orc",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Undead, Scourge",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+", Orc",1,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,500,0,"","","","","","","w","Booty Bay",0,0,0,0,0,0,0,4128894,"This booming coastal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.",0,0,0,0,0,0,0,4128894
+" Orc",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Beast - Spider",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"Orc",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Beast - Boar",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"rc",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Worgen",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"c",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Kobold",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Troll, Bloodscalp",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"PLAYER, Dwarf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Troll, Skullsplitter",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"LAYER, Dwarf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Prey",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"AYER, Dwarf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Beast - Wolf",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"YER, Dwarf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Defias Brotherhood Traitor",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"ER, Dwarf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Friendly",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"R, Dwarf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Trogg",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+", Dwarf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Troll, Frostmane",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+" Dwarf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Orc, Blackrock",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"Dwarf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Villian",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"warf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Victim",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"arf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Beast - Bear",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"rf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Ogre",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"f",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Kurzen's Mercenaries",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Escortee",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"PLAYER, Night Elf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Venture Company",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"LAYER, Night Elf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Beast - Raptor",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"AYER, Night Elf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Basilisk",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"YER, Night Elf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Dragonflight, Green",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"ER, Night Elf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Lost Ones",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"R, Night Elf",29,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,0,0,"","","YER, Human","","","",""," Blacksmithing - Armorsmithing",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+", Night Elf",20,""," Redridge","YER, Human","","","",0,0,3100,4294925296,"ilers","","AYER, Orc","R, Human","AYER, Orc","","llsplitter","Ironforge",0,0,0,0,0,0,0,4128894,"This Alliance capital is the pride of the Dun Morogh dwarves.  Home to King Magni.",0,0,0,0,0,0,0,4128894
+" Night Elf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Dark Iron Dwarves",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"Night Elf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Human, Night Watch",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"ight Elf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Dragonflight, Red",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"ght Elf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Gnoll - Mosshide",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"ht Elf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Orc, Dragonmaw",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"t Elf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Gnome - Leper",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+" Elf",18,"n"," Redridge","R, Undead","","","",0,0,3100,4294925296,"ilers","","AYER, Orc","R, Human","AYER, Orc","","llsplitter","Gnomeregan Exiles",0,0,0,0,0,0,0,4128894,"The former denizens of Gnomeregan, now living in exile in Ironforge and in league with the Alliance.",0,0,0,0,0,0,0,4128894
+"Elf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Leopard",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"lf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Scarlet Crusade",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"f",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Gnoll - Rothide",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Beast - Gorilla",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"PLAYER, Undead",4,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,0,0,"","","LAYER, Orc","","","","","Thorium Brotherhood",0,0,0,0,0,0,0,4128894,"The dwarves of the Thorium Brotherhood epitomize excellence in craftsmanship and are bent on unlocking the secrets of Blackrock Mountain.",0,0,0,0,0,0,0,4128894
+"LAYER, Undead",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Naga",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"AYER, Undead",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Dalaran",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"YER, Undead",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Forlorn Spirit",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"ER, Undead",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Darkhowl",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"R, Undead",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Grell",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+", Undead",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Furbolg",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+" Undead",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Horde Generic",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"Undead",12," Redridge","YER, Tauren ","","","","",0,0,3500,4294925296,"","","Human","","","","","Horde",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"ndead",17,"Riverpaw","YER, Tauren ","LAYER, Orc","","","",0,0,500,4294925296,"ilers","","AYER, Orc","R, Human","AYER, Orc","","Undead","Undercity",0,0,0,0,0,0,0,4128894,"Led by Sylvanas Windrunner, the Forsaken have joined a tenuous alliance with the Horde and established this capital in the vast depths under the Ruins of Lordaeron.",0,0,0,0,0,0,0,4128894
+"dead",21,"dead"," Redridge"," Human","","","",0,0,3100,4294925296,"ilers","","AYER, Orc","R, Human","AYER, Orc","","llsplitter","Darnassus",0,0,0,0,0,0,0,4128894,"The Alliance capital is populated by Night Elves and is located in the island of Teldrassil.  Ruled by the Priestess of the Moon, Tyrande Whisperwind.",0,0,0,0,0,0,0,4128894
+"ead",6,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,4294957296,0,"","","LAYER, Human","","","","","Syndicate",0,0,0,0,0,0,0,8323198,"A primarily human criminal organization that operates mostly out of the Alterac Mountains and Hillsbrad Foothills.",0,0,0,0,0,0,0,4128894
+"ad",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Hillsbrad Militia",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"d",19,"AYER, Tauren "," Redridge","PLAYER, Human","","","",0,0,3100,4294925296,"ilers","","AYER, Orc","R, Human","AYER, Orc","","llsplitter","Stormwind",0,0,0,0,0,0,0,4128894,"One of the last bastions of human power, this Alliance capital is ruled by the child king, Anduin Wrynn.",0,0,0,0,0,0,0,4128894
+"",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Demon",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"PLAYER, Tauren ",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Elemental",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"LAYER, Tauren ",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Spirit",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"AYER, Tauren ",14,"- Riverpaw","YER, Tauren ","LAYER, Human","LAYER, Orc","","",0,0,3100,4294925296,"ilers","fias Brotherhood Traitor","AYER, Orc","R, Human","AYER, Orc","AYER, Orc","Undead","Orgrimmar",0,0,0,0,0,0,0,4128894,"Founded by Thrall, this Horde capital city is home to many of the proud orc clans of Durotar.",0,0,0,0,0,0,0,4128894
+"YER, Tauren ",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Treasure",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"ER, Tauren ",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Gnoll - Mudsnout",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"R, Tauren ",4294967295,"","","","","","",0,0,0,0,"","","","","","","","HIllsbrad, Southshore Mayor",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+", Tauren ",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Dragonflight, Black",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+" Tauren ",16,"ster","YER, Tauren ","LAYER, Orc","R, Dwarf","","",0,0,3100,4294925296,"fias Brotherhood Traitor","ilers","AYER, Orc","R, Human","AYER, Orc","AYER, Orc","Undead","Thunder Bluff",0,0,0,0,0,0,0,4128894,"Cairne Bloodhoof leads his people, the Proud Tauren, from this mighty Horde capital.",0,0,0,0,0,0,0,4128894
+"Tauren ",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Troll, Witherbark",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"auren ",23,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,2999,0,"","","YER, Human","","","",""," Leatherworking - Elemental",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"uren ",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Quilboar, Razormane",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"ren ",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Quilboar, Bristleback",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"en ",22,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,2999,0,"","","YER, Human","","","",""," Leatherworking - Dragonscale",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"n ",0,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,4294960796,0,"","","LAYER, Human","","","","","Bloodsail Buccaneers",0,0,0,0,0,0,0,8323198,"These bloodthirsty corsairs are the bane of many a merchant in the high seas.  Sworn enemies of Booty Bay.",0,0,0,0,0,0,0,4128894
+" ",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Blackfathom",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Makrura",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"Creature",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Centaur, Kolkar",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"reature",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Centaur, Galak",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"eature",2,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,2000,0,"","","LAYER, Human","","","","","Gelkis Clan Centaur",0,0,0,0,0,0,0,4128894,"These centaur have made their home in the southern region of Desolace.  Mortal enemies of the Magram Centaur.",0,0,0,0,0,0,0,4128894
+"ature",3,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,2000,0,"","","LAYER, Human","","","","","Magram Clan Centaur",0,0,0,0,0,0,0,4128894,"These centaur have made their home in the eastern region of Desolace.  Mortal enemies of the Gelkis Centaur.",0,0,0,0,0,0,0,4128894
+"ture",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Maraudine",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"nome",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Theramore",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"ome",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Quilboar, Razorfen",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"me",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Quilboar, Razormane 2",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"e",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Quilboar, Deathshead",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"onster",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Enemy",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"rhood",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Ambient",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"aw",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Nethergarde Caravan",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"w",10,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,500,0,"",""," Human","","","","","Steamwheedle Cartel",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"noll - Shadowhide",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Alliance Generic",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"rloc",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Nethergarde",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Wailing Caverns",0,0,0,0,0,0,0,8323198,"",0,0,0,0,0,0,0,4128876
+"ing coastal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Silithid",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Silvermoon Remnant",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"un by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.",51,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,0,0,"","","LAYER, Orc","","","","","Zandalar Tribe",0,0,0,0,0,0,0,4128894,"These trolls have come to Yojamba Isle in an effort to recruit help against the resurrected Blood God and his Atal'ai Priests in Zul'Gurub.",0,0,0,0,0,0,0,4128894
+"z of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.",30,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,0,0,"","","YER, Human","","","",""," Blacksmithing - Weaponsmithing",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Scorpid",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"aiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Beast - Bat",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"iders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Titan",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"mies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Taskmaster Fizzule",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"l Buccaneers and part of the Steamwheedle Cartel.",5,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,0,0,"","","","","","","","Ravenholdt",0,0,0,0,0,0,0,4128894,"This guild of thieves and assassins welcomes only those of extraordinary prowess into its fold.  Sworn rivals of the Syndicate.",0,0,0,0,0,0,0,4128894
+"t of the Steamwheedle Cartel.",7,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,500,0,"","","","","","","w","Gadgetzan",0,0,0,0,0,0,0,4128894,"Capital of the Steamwheedle Cartel and home to goblinhood's finest engineers, alchemists and merchants.",0,0,0,0,0,0,0,4128894
+"e Cartel.",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Gnomeregan Bug",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"ider",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Harpy",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"rgen",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Burning Blade",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"loodscalp",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Shadowsilk Poacher",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"oodscalp",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Searing Spider",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"llsplitter",11,"YER, Tauren "," Redridge","","","","",0,0,3300,4294925296,"","","Human","","","","","Alliance",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"lsplitter",9,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,500,0,"","","","","","","w","Ratchet",0,0,0,0,0,0,0,4128894,"Part of the Steamwheedle Cartel, this goblin city provides a neutral haven for those that wish to trade goods and services in the Barrens.",0,0,0,0,0,0,0,4128894
+"splitter",8,""," Redridge","YER, Human","","","",0,0,150,4294925296,"fias Brotherhood Traitor","","LAYER, Orc"," Orc","","","","Wildhammer Clan",0,0,0,0,0,0,0,4128894,"Though not a part of the Alliance, the dwarves of Aerie Peak have opened their doors to it and hold the Horde as enemies.",0,0,0,0,0,0,0,4128894
+"t - Wolf",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Goblin, Dark Iron Bar Patron",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"herhood Traitor",53,"YER, Tauren "," Redridge","","","","",0,0,0,4294925296,"","","LAYER, Orc","LAYER, Human","",""," Mosshide","The League of Arathor",0,0,0,0,0,0,0,4128894,"The League of Arathor seeks to reclaim lost land of Arathi Basin for their benefactors in Stormwind.",0,0,0,0,0,0,0,4128894
+"erhood Traitor",52," Redridge","YER, Tauren ","","","","",0,0,0,4294925296,"","","LAYER, Orc","LAYER, Human","","","Mosshide","The Defilers",0,0,0,0,0,0,0,4128894,"The Defilers seek to claim Arathi Basin's valuable resources for the Horde.",0,0,0,0,0,0,0,4128894
+"rhood Traitor",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Giant",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"ndly",13,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,200,0,"","","","","","","","Argent Dawn",0,0,0,0,0,0,0,4128894,"An organization focused on protecting Azeroth from the threat of the Scourge.  Strongholds of the Argent Dawn can be found in the Eastern and Western Plaguelands.",0,0,0,0,0,0,0,4128894
+"dly",15," Dwarf","YER, Tauren ","LAYER, Orc","onster","","",0,0,3100,4294925296,"fias Brotherhood Traitor","ilers","AYER, Orc","R, Human","AYER, Orc","AYER, Orc","Undead","Darkspear Trolls",0,0,0,0,0,0,0,4128894,"This tribe of exiled trolls has joined forces with Thrall and the Horde.  They now call Durotar their home, which they share with their orc allies.",0,0,0,0,0,0,0,4128894
+"ly",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Dragonflight, Bronze",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"y",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Dragonflight, Blue",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"ostmane",24,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,2999,0,"","","YER, Human","","","",""," Leatherworking - Tribal",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"stmane",26,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,2999,0,"","","YER, Human","","","",""," Engineering - Goblin",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"tmane",25,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,2999,0,"","","YER, Human","","","",""," Engineering - Gnome",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"ck",33,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,0,0,"","","YER, Human","","","",""," Blacksmithing - Hammersmithing",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"k",31,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,0,0,"","","YER, Human","","","",""," Blacksmithing - Axesmithing",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"",32,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,0,0,"","","YER, Human","","","",""," Blacksmithing - Swordsmithing",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"Villian",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Troll, Vilebranch",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"illian",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Southsea Freebooters",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"llian",34,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,0,0,"","","YER, Human","","","","","Caer Darrow",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"lian",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Furbolg, Uncorrupted",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"ian",35,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,4294963796,0,"","","LAYER, Human","","","","","Timbermaw Hold",0,0,0,0,0,0,0,4128894,"As the last uncorrupted furbolg tribe, the Timbermaw seek to preserve their spiritual ways and end the suffering of their brethren.",0,0,0,0,0,0,0,4128894
+"an",28,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,500,0,"","","","","","","w","Everlook",0,0,0,0,0,0,0,4128894,"This trading post is run by the goblins of the Steamwheedle Cartel and it sits in the crossroads of Winterspring's main trade routes.",0,0,0,0,0,0,0,4128894
+"ast - Bear",27," Redridge","YER, Tauren ","","","","",0,0,4294925296,0,"","","R, Human","","","","","Wintersaber Trainers",0,0,0,0,0,0,0,4128894,"This small group of reclusive night elves raises and trains wintersabers in the Winterspring area.",0,0,0,0,0,0,0,4128894
+"en's Mercenaries",36,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","eague with the Alliance.",0,0,0,2000,"","","","","","","","Cenarion Circle",0,0,0,0,0,0,0,4128894,"The druids of Cenarion Circle are guardians of nature and make their home in tranquil Moonglade.",0,0,0,0,0,0,0,4128894
+"ortee",37,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,500,0,"","","","","","","","Shatterspear Trolls",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"rtee",38," Redridge","YER, Tauren ","","","","",0,0,0,4294925296,"","","","","","","","Ravasaur Trainers",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"y",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Majordomo Executus",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"ilisk",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Beast - Carrion Bird",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"lisk",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Beast - Cat",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"isk",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Beast - Crab",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"sk",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Beast - Crocilisk",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"k",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Beast - Hyena",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Beast - Owl",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"Dragonflight, Green",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Beast - Scorpid",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"ragonflight, Green",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Beast - Tallstrider",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"agonflight, Green",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Beast - Turtle",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"gonflight, Green",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Beast - Wind Serpent",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"onflight, Green",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Training Dummy",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"Green",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Dragonflight, Black - Bait",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"cksmithing - Armorsmithing",39,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,0,0,"","","R, Orc","","","","","Battleground Neutral",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"ithing",41," Redridge","YER, Tauren ","","","","",0,0,0,4294925296,"","","LAYER, Orc","LAYER, Human","","","Mosshide","Frostwolf Clan",0,0,0,0,0,0,0,4128894,"The Frostwolf Clan seeks to drive out the dwarves of the Stormpike Expedition from Alterac Valley.",0,0,0,0,0,0,0,4128894
+"thing",40,"YER, Tauren "," Redridge","","","","",0,0,0,4294925296,"","","LAYER, Orc","LAYER, Human","",""," Mosshide","Stormpike Guard",0,0,0,0,0,0,0,4128894,"The Stormpike Dwarves have set up residence in Alterac Valley, where they're locked in battle with the Frostwolf Orcs.",0,0,0,0,0,0,0,4128894
+"s Alliance capital is the pride of the Dun Morogh dwarves.  Home to King Magni.",42,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,0,0,"","","","","","","","Hydraxian Waterlords",0,0,0,0,0,0,0,4128894,"These elementals have made their home on the islands east of Azshara.  Sworn enemies of the armies of Ragnaros.",0,0,0,0,0,0,0,4128894
+" Alliance capital is the pride of the Dun Morogh dwarves.  Home to King Magni.",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Sulfuron Firelords",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"s the pride of the Dun Morogh dwarves.  Home to King Magni.",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Gizlock's Dummy",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+" the pride of the Dun Morogh dwarves.  Home to King Magni.",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Gizlock's Charm",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"the pride of the Dun Morogh dwarves.  Home to King Magni.",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Gizlock",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"un Morogh dwarves.  Home to King Magni.",43,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,0,0,"","","LAYER, Orc","","","","","Moro'gai",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"n Morogh dwarves.  Home to King Magni.",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Spirit Guide - Alliance",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"Home to King Magni.",44,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,0,0,"","","LAYER, Orc","","","","","Shen'dralar",0,0,0,0,0,0,0,4128894,"A remnant of the once powerful elves living in Dire Maul, yet still wise and knowledgeable about great secrets. ",0,0,0,0,0,0,0,4128894
+"Dark Iron Dwarves",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Ogre (Captain Kromcrush)",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"man, Night Watch",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Spirit Guide - Horde",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"gonflight, Red",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Jaedenar",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+" - Mosshide",46," Redridge","YER, Tauren ","","","","",0,0,0,4294925296,"","","LAYER, Orc","R, Human","","","Mosshide","Warsong Outriders",0,0,0,0,0,0,0,4128894,"Fierce orcs of the Warsong Clan, locked in battle against the Silverwing Sentinels in Warsong Gulch.",0,0,0,0,0,0,0,4128894
+"- Mosshide",45,"YER, Tauren "," Redridge","","","","",0,0,0,4294925296,"","","LAYER, Orc","R, Human","",""," Mosshide","Silverwing Sentinels",0,0,0,0,0,0,0,4128894,"Staunch defenders of Ashenvale, locked in battle against the Warsong Outriders in Warsong Gulch.",0,0,0,0,0,0,0,4128894
+" Mosshide",47,"YER, Tauren "," Redridge","","","","",0,0,0,4294925296,"","","rc","","","","","Alliance Forces",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"Mosshide",48," Redridge","YER, Tauren ","","","","",0,0,0,4294925296,"","","rc","","","","","Horde Forces",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"osshide",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Revantusk Trolls",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"gonmaw",50,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,0,0,"","","LAYER, Orc","","","","","Darkmoon Faire",0,0,0,0,0,0,0,4128894,"A traveling fair that showcases the weird and the extraordinary.  Often spotted in Elwynn Forest and Mulgore.",0,0,0,0,0,0,0,4128894
+"onmaw",54,"astal city is run by Baron Revilgaz of the Blackwater Raiders.  Mortal enemies of the Bloodsail Buccaneers and part of the Steamwheedle Cartel.","","","","","",0,0,4294925296,0,"","","","","","","","Brood of Nozdormu",0,0,0,0,0,0,0,4128894,"The descendants of the Bronze Dragonflight are the guardians of time and care little for the mortal races.",0,0,0,0,0,0,0,4128894
+"maw",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Might of Kalimdor",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128892
+"",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Armies of C'Thun",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"Gnome - Leper",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Silithid Attackers",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"nome - Leper",4294967295,"","","","","","",0,0,0,0,"","","","","","","","The Ironforge Brigade",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128876
+"ome - Leper",4294967295,"","","","","","",0,0,0,0,"","","","","","","","RC Enemies",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128844
+"me - Leper",4294967295,"","","","","","",0,0,0,0,"","","","","","","","RC Objects",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128844
+"e - Leper",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Red",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128844
+" - Leper",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Blue",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128844
+"r",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Scourge Invaders",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128844
+"nomeregan Exiles",4294967295,"","","","","","",0,0,0,0,"","","","","","","","Test Faction (not a real faction)",0,0,0,0,0,0,0,4128894,"This faction only exists to test the editing of faction names and descriptions...",0,0,0,0,0,0,0,4128894
+"e former denizens of Gnomeregan, now living in exile in Ironforge and in league with the Alliance.",4294967295,"","","","","","",0,0,0,0,"","","","","","","","ToWoW - Flag",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128844
+" former denizens of Gnomeregan, now living in exile in Ironforge and in league with the Alliance.",4294967295,"","","","","","",0,0,0,0,"","","","","","","","ToWoW - Flag Trigger Alliance (DND)",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128844
+"rmer denizens of Gnomeregan, now living in exile in Ironforge and in league with the Alliance.",4294967295,"","","","","","",0,0,0,0,"","","","","","","","ToWoW - Flag Trigger Horde (DND)",0,0,0,0,0,0,0,4128894,"",0,0,0,0,0,0,0,4128844

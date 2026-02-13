@@ -389,6 +389,8 @@ if(STORMLIB_LIBRARY AND STORMLIB_INCLUDE_DIR)
         tools/asset_extract/extractor.cpp
         tools/asset_extract/path_mapper.cpp
         tools/asset_extract/manifest_writer.cpp
+        src/pipeline/dbc_loader.cpp
+        src/core/logger.cpp
     )
     target_include_directories(asset_extract PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -407,6 +409,20 @@ if(STORMLIB_LIBRARY AND STORMLIB_INCLUDE_DIR)
 else()
     message(STATUS "  asset_extract tool: DISABLED (requires StormLib)")
 endif()
+
+# ---- Tool: dbc_to_csv (DBC → CSV text) ----
+add_executable(dbc_to_csv
+    tools/dbc_to_csv/main.cpp
+    src/pipeline/dbc_loader.cpp
+    src/core/logger.cpp
+)
+target_include_directories(dbc_to_csv PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(dbc_to_csv PRIVATE Threads::Threads)
+set_target_properties(dbc_to_csv PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+)
 
 # ---- Tool: blp_convert (BLP ↔ PNG) ----
 add_executable(blp_convert

@@ -72,6 +72,13 @@ public:
     BLPImage loadTexture(const std::string& path);
 
     /**
+     * Set expansion-specific data path for CSV DBC lookup.
+     * When set, loadDBC() checks expansionDataPath/db/Name.csv before
+     * falling back to the manifest (binary DBC from extracted MPQs).
+     */
+    void setExpansionDataPath(const std::string& path);
+
+    /**
      * Load a DBC file
      * @param name DBC file name (e.g., "Map.dbc")
      * @return Loaded DBC file (check isLoaded())
@@ -127,6 +134,7 @@ public:
 private:
     bool initialized = false;
     std::string dataPath;
+    std::string expansionDataPath_;  // e.g. "Data/expansions/wotlk"
 
     // Base manifest (loaded from dataPath/manifest.json)
     AssetManifest manifest_;

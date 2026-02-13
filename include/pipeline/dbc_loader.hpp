@@ -130,6 +130,12 @@ private:
     mutable bool idCacheBuilt = false;
 
     void buildIdCache() const;
+
+    /**
+     * Load from CSV text format (produced by dbc_to_csv tool).
+     * Rebuilds the same in-memory layout as binary load.
+     */
+    bool loadCSV(const std::vector<uint8_t>& csvData);
 };
 
 } // namespace pipeline

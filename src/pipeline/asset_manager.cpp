@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <limits>
 
 #include "stb_image.h"
@@ -241,6 +242,11 @@ BLPImage AssetManager::tryLoadPngOverride(const std::string& normalizedPath) con
     return image;
 }
 
+void AssetManager::setExpansionDataPath(const std::string& path) {
+    expansionDataPath_ = path;
+    LOG_INFO("Expansion data path for CSV DBCs: ", expansionDataPath_);
+}
+
 std::shared_ptr<DBCFile> AssetManager::loadDBC(const std::string& name) {
     if (!initialized) {
         LOG_ERROR("AssetManager not initialized");
@@ -255,17 +261,44 @@ std::shared_ptr<DBCFile> AssetManager::loadDBC(const std::string& name) {
 
     LOG_DEBUG("Loading DBC: ", name);
 
-    std::string dbcPath = "DBFilesClient\\" + name;
+    std::vector<uint8_t> dbcData;
 
-    std::vector<uint8_t> dbcData = readFile(dbcPath);
+    // Try expansion-specific CSV first (e.g. Data/expansions/wotlk/db/Spell.csv)
+    if (!expansionDataPath_.empty()) {
+        // Derive CSV name from DBC name: "Spell.dbc" -> "Spell.csv"
+        std::string baseName = name;
+        auto dot = baseName.rfind('.');
+        if (dot != std::string::npos) {
+            baseName = baseName.substr(0, dot);
+        }
+        std::string csvPath = expansionDataPath_ + "/db/" + baseName + ".csv";
+        if (std::filesystem::exists(csvPath)) {
+            std::ifstream f(csvPath, std::ios::binary | std::ios::ate);
+            if (f) {
+                auto size = f.tellg();
+                if (size > 0) {
+                    f.seekg(0);
+                    dbcData.resize(static_cast<size_t>(size));
+                    f.read(reinterpret_cast<char*>(dbcData.data()), size);
+                    LOG_DEBUG("Found CSV DBC: ", csvPath);
+                }
+            }
+        }
+    }
+
+    // Fall back to manifest (binary DBC from extracted MPQs)
     if (dbcData.empty()) {
-        LOG_WARNING("DBC not found: ", dbcPath);
-        return nullptr;
+        std::string dbcPath = "DBFilesClient\\" + name;
+        dbcData = readFile(dbcPath);
+        if (dbcData.empty()) {
+            LOG_WARNING("DBC not found: ", name);
+            return nullptr;
+        }
     }
 
     auto dbc = std::make_shared<DBCFile>();
     if (!dbc->load(dbcData)) {
-        LOG_ERROR("Failed to load DBC: ", dbcPath);
+        LOG_ERROR("Failed to load DBC: ", name);
         return nullptr;
     }
 

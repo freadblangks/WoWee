@@ -8,13 +8,18 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <mutex>
 #include <set>
+#include <sstream>
 #include <thread>
+#include <unordered_set>
 #include <vector>
+
+#include "pipeline/dbc_loader.hpp"
 
 #ifndef INVALID_HANDLE_VALUE
 #define INVALID_HANDLE_VALUE ((HANDLE)(long long)-1)
@@ -24,6 +29,7 @@ namespace wowee {
 namespace tools {
 
 namespace fs = std::filesystem;
+using wowee::pipeline::DBCFile;
 
 // Archive descriptor for priority-based loading
 struct ArchiveDesc {
@@ -45,8 +51,237 @@ static std::string normalizeWowPath(const std::string& path) {
     return n;
 }
 
-// Discover archive files in the same priority order as MPQManager
-static std::vector<ArchiveDesc> discoverArchives(const std::string& mpqDir) {
+static bool shouldSkipFile(const Extractor::Options& opts, const std::string& wowPath) {
+    if (!opts.skipDbcExtraction) {
+        return false;
+    }
+    std::string n = normalizeWowPath(wowPath);
+    if (n.rfind("dbfilesclient\\", 0) == 0) {
+        if (n.size() >= 4 && n.substr(n.size() - 4) == ".dbc") {
+            return true;
+        }
+    }
+    return false;
+}
+
+static std::vector<uint8_t> readFileBytes(const std::string& path) {
+    std::ifstream f(path, std::ios::binary | std::ios::ate);
+    if (!f) return {};
+    auto size = f.tellg();
+    if (size <= 0) return {};
+    f.seekg(0);
+    std::vector<uint8_t> buf(static_cast<size_t>(size));
+    f.read(reinterpret_cast<char*>(buf.data()), size);
+    return buf;
+}
+
+static bool isValidStringOffset(const std::vector<uint8_t>& stringBlock, uint32_t offset) {
+    if (offset >= stringBlock.size()) return false;
+    for (size_t i = offset; i < stringBlock.size(); ++i) {
+        uint8_t c = stringBlock[i];
+        if (c == 0) return true;
+        if (c < 0x20 && c != '\t' && c != '\n' && c != '\r') return false;
+    }
+    return false;
+}
+
+static std::set<uint32_t> detectStringColumns(const DBCFile& dbc,
+                                              const std::vector<uint8_t>& rawData) {
+    const uint32_t recordCount = dbc.getRecordCount();
+    const uint32_t fieldCount = dbc.getFieldCount();
+    const uint32_t recordSize = dbc.getRecordSize();
+    const uint32_t strBlockSize = dbc.getStringBlockSize();
+
+    constexpr size_t kHeaderSize = 20;
+    const size_t strBlockOffset = kHeaderSize + static_cast<size_t>(recordCount) * recordSize;
+
+    std::vector<uint8_t> stringBlock;
+    if (strBlockSize > 0 && strBlockOffset + strBlockSize <= rawData.size()) {
+        stringBlock.assign(rawData.begin() + strBlockOffset,
+                           rawData.begin() + strBlockOffset + strBlockSize);
+    }
+
+    std::set<uint32_t> cols;
+    if (stringBlock.size() <= 1) return cols;
+
+    for (uint32_t col = 0; col < fieldCount; ++col) {
+        bool allZeroOrValid = true;
+        bool hasNonZero = false;
+
+        for (uint32_t row = 0; row < recordCount; ++row) {
+            uint32_t val = dbc.getUInt32(row, col);
+            if (val == 0) continue;
+            hasNonZero = true;
+            if (!isValidStringOffset(stringBlock, val)) {
+                allZeroOrValid = false;
+                break;
+            }
+        }
+
+        if (allZeroOrValid && hasNonZero) {
+            cols.insert(col);
+        }
+    }
+
+    return cols;
+}
+
+static std::string csvEscape(const std::string& s) {
+    std::string out;
+    out.reserve(s.size() + 2);
+    out.push_back('"');
+    for (char c : s) {
+        if (c == '"') out.push_back('"');
+        out.push_back(c);
+    }
+    out.push_back('"');
+    return out;
+}
+
+static bool convertDbcToCsv(const std::string& dbcPath, const std::string& csvPath) {
+    auto rawData = readFileBytes(dbcPath);
+    if (rawData.size() < 4 || std::memcmp(rawData.data(), "WDBC", 4) != 0) {
+        std::cerr << "  DBC missing or not WDBC: " << dbcPath << "\n";
+        return false;
+    }
+
+    DBCFile dbc;
+    if (!dbc.load(rawData) || !dbc.isLoaded()) {
+        std::cerr << "  Failed to parse DBC: " << dbcPath << "\n";
+        return false;
+    }
+
+    const auto stringCols = detectStringColumns(dbc, rawData);
+
+    fs::path outPath(csvPath);
+    std::error_code ec;
+    fs::create_directories(outPath.parent_path(), ec);
+    if (ec) {
+        std::cerr << "  Failed to create dir: " << outPath.parent_path().string()
+                  << " (" << ec.message() << ")\n";
+        return false;
+    }
+
+    std::ofstream out(csvPath, std::ios::binary);
+    if (!out) {
+        std::cerr << "  Failed to write: " << csvPath << "\n";
+        return false;
+    }
+
+    out << "# fields=" << dbc.getFieldCount();
+    if (!stringCols.empty()) {
+        out << " strings=";
+        bool first = true;
+        for (uint32_t col : stringCols) {
+            if (!first) out << ",";
+            out << col;
+            first = false;
+        }
+    }
+    out << "\n";
+
+    for (uint32_t row = 0; row < dbc.getRecordCount(); ++row) {
+        for (uint32_t col = 0; col < dbc.getFieldCount(); ++col) {
+            if (col > 0) out << ",";
+            if (stringCols.count(col)) {
+                out << csvEscape(dbc.getString(row, col));
+            } else {
+                out << dbc.getUInt32(row, col);
+            }
+        }
+        out << "\n";
+    }
+
+    return true;
+}
+
+static std::vector<std::string> getUsedDbcNamesForExpansion(const std::string& expansion) {
+    // Keep this list small: these are the ~30 tables wowee actually uses.
+    // Other DBCs can remain extracted (ignored) as binary.
+    (void)expansion;
+    return {
+        "AreaTable",
+        "CharSections",
+        "CharHairGeosets",
+        "CharacterFacialHairStyles",
+        "CreatureDisplayInfo",
+        "CreatureDisplayInfoExtra",
+        "CreatureModelData",
+        "Emotes",
+        "EmotesText",
+        "EmotesTextData",
+        "Faction",
+        "FactionTemplate",
+        "GameObjectDisplayInfo",
+        "ItemDisplayInfo",
+        "Light",
+        "LightParams",
+        "LightIntBand",
+        "LightFloatBand",
+        "Map",
+        "SkillLine",
+        "SkillLineAbility",
+        "Spell",
+        "SpellIcon",
+        "Talent",
+        "TalentTab",
+        "TaxiNodes",
+        "TaxiPath",
+        "TaxiPathNode",
+        "TransportAnimation",
+        "WorldMapArea",
+    };
+}
+
+static std::unordered_set<std::string> buildWantedDbcSet(const Extractor::Options& opts) {
+    std::unordered_set<std::string> wanted;
+    if (!opts.onlyUsedDbcs) {
+        return wanted;
+    }
+
+    for (const auto& base : getUsedDbcNamesForExpansion(opts.expansion)) {
+        // normalizeWowPath lowercases and uses backslashes.
+        wanted.insert(normalizeWowPath("DBFilesClient\\" + base + ".dbc"));
+    }
+    return wanted;
+}
+
+// Known WoW client locales
+static const std::vector<std::string> kKnownLocales = {
+    "enUS", "enGB", "deDE", "frFR", "esES", "esMX",
+    "ruRU", "koKR", "zhCN", "zhTW", "ptBR"
+};
+
+std::string Extractor::detectExpansion(const std::string& mpqDir) {
+    if (fs::exists(mpqDir + "/lichking.MPQ"))
+        return "wotlk";
+    if (fs::exists(mpqDir + "/expansion.MPQ"))
+        return "tbc";
+    // Turtle WoW typically uses vanilla-era base MPQs plus letter patch MPQs (patch-a.mpq ... patch-z.mpq).
+    if (fs::exists(mpqDir + "/dbc.MPQ") || fs::exists(mpqDir + "/terrain.MPQ")) {
+        for (char c = 'a'; c <= 'z'; ++c) {
+            if (fs::exists(mpqDir + std::string("/patch-") + c + ".mpq") ||
+                fs::exists(mpqDir + std::string("/Patch-") + static_cast<char>(std::toupper(c)) + ".mpq")) {
+                return "turtle";
+            }
+        }
+        return "classic";
+    }
+    return "";
+}
+
+std::string Extractor::detectLocale(const std::string& mpqDir) {
+    for (const auto& loc : kKnownLocales) {
+        if (fs::is_directory(mpqDir + "/" + loc))
+            return loc;
+    }
+    return "";
+}
+
+// Discover archive files with expansion-specific and locale-aware loading
+static std::vector<ArchiveDesc> discoverArchives(const std::string& mpqDir,
+                                                  const std::string& expansion,
+                                                  const std::string& locale) {
     std::vector<ArchiveDesc> result;
 
     auto tryAdd = [&](const std::string& name, int prio) {
@@ -56,41 +291,119 @@ static std::vector<ArchiveDesc> discoverArchives(const std::string& mpqDir) {
         }
     };
 
-    // Base archives (priority 100)
-    tryAdd("common.MPQ", 100);
-    tryAdd("common-2.MPQ", 100);
-    tryAdd("expansion.MPQ", 100);
-    tryAdd("lichking.MPQ", 100);
+    if (expansion == "classic" || expansion == "turtle") {
+        // Vanilla-era base archives (also used by Turtle WoW clients)
+        tryAdd("base.MPQ", 90);
+        tryAdd("base.mpq", 90);
+        tryAdd("backup.MPQ", 95);
+        tryAdd("backup.mpq", 95);
+        tryAdd("dbc.MPQ", 100);
+        tryAdd("dbc.mpq", 100);
+        tryAdd("fonts.MPQ", 100);
+        tryAdd("fonts.mpq", 100);
+        tryAdd("interface.MPQ", 100);
+        tryAdd("interface.mpq", 100);
+        tryAdd("misc.MPQ", 100);
+        tryAdd("misc.mpq", 100);
+        tryAdd("model.MPQ", 100);
+        tryAdd("model.mpq", 100);
+        tryAdd("sound.MPQ", 100);
+        tryAdd("sound.mpq", 100);
+        tryAdd("speech.MPQ", 100);
+        tryAdd("speech.mpq", 100);
+        tryAdd("terrain.MPQ", 100);
+        tryAdd("terrain.mpq", 100);
+        tryAdd("texture.MPQ", 100);
+        tryAdd("texture.mpq", 100);
+        tryAdd("wmo.MPQ", 100);
+        tryAdd("wmo.mpq", 100);
 
-    // Patch archives (priority 150-500)
-    tryAdd("patch.MPQ", 150);
-    tryAdd("patch-2.MPQ", 200);
-    tryAdd("patch-3.MPQ", 300);
-    tryAdd("patch-4.MPQ", 400);
-    tryAdd("patch-5.MPQ", 500);
+        // Patches
+        tryAdd("patch.MPQ", 150);
+        tryAdd("patch.mpq", 150);
+        for (int i = 1; i <= 9; ++i) {
+            tryAdd("patch-" + std::to_string(i) + ".MPQ", 160 + (i * 10));
+            tryAdd("patch-" + std::to_string(i) + ".mpq", 160 + (i * 10));
+        }
+        // Turtle WoW uses letter patch MPQs (patch-a.mpq ... patch-z.mpq).
+        for (char c = 'a'; c <= 'z'; ++c) {
+            tryAdd(std::string("patch-") + c + ".mpq", 800 + (c - 'a'));
+            tryAdd(std::string("Patch-") + static_cast<char>(std::toupper(c)) + ".mpq", 900 + (c - 'a'));
+        }
 
-    // Letter patches (priority 800-925)
-    for (char c = 'a'; c <= 'z'; ++c) {
-        std::string lower = std::string("patch-") + c + ".mpq";
-        std::string upper = std::string("Patch-") + static_cast<char>(std::toupper(c)) + ".mpq";
-        int prioLower = 800 + (c - 'a');
-        int prioUpper = 900 + (c - 'a');
-        tryAdd(lower, prioLower);
-        tryAdd(upper, prioUpper);
+        // Locale
+        if (!locale.empty()) {
+            tryAdd(locale + "/base-" + locale + ".MPQ", 230);
+            tryAdd(locale + "/speech-" + locale + ".MPQ", 240);
+            tryAdd(locale + "/locale-" + locale + ".MPQ", 250);
+            tryAdd(locale + "/patch-" + locale + ".MPQ", 450);
+        }
+    } else if (expansion == "tbc") {
+        // TBC 2.4.x base archives
+        tryAdd("common.MPQ", 100);
+        tryAdd("common-2.MPQ", 100);
+        tryAdd("expansion.MPQ", 100);
+
+        // Patches
+        tryAdd("patch.MPQ", 150);
+        tryAdd("patch-2.MPQ", 200);
+        tryAdd("patch-3.MPQ", 300);
+        tryAdd("patch-4.MPQ", 400);
+        tryAdd("patch-5.MPQ", 500);
+
+        // Letter patches
+        for (char c = 'a'; c <= 'z'; ++c) {
+            tryAdd(std::string("patch-") + c + ".mpq", 800 + (c - 'a'));
+            tryAdd(std::string("Patch-") + static_cast<char>(std::toupper(c)) + ".mpq", 900 + (c - 'a'));
+        }
+
+        // Locale
+        if (!locale.empty()) {
+            tryAdd(locale + "/backup-" + locale + ".MPQ", 225);
+            tryAdd(locale + "/base-" + locale + ".MPQ", 230);
+            tryAdd(locale + "/speech-" + locale + ".MPQ", 240);
+            tryAdd(locale + "/expansion-speech-" + locale + ".MPQ", 245);
+            tryAdd(locale + "/expansion-locale-" + locale + ".MPQ", 246);
+            tryAdd(locale + "/locale-" + locale + ".MPQ", 250);
+            tryAdd(locale + "/patch-" + locale + ".MPQ", 450);
+            tryAdd(locale + "/patch-" + locale + "-2.MPQ", 460);
+            tryAdd(locale + "/patch-" + locale + "-3.MPQ", 470);
+        }
+    } else {
+        // WotLK 3.3.5a (default)
+        tryAdd("common.MPQ", 100);
+        tryAdd("common-2.MPQ", 100);
+        tryAdd("expansion.MPQ", 100);
+        tryAdd("lichking.MPQ", 100);
+
+        // Patches
+        tryAdd("patch.MPQ", 150);
+        tryAdd("patch-2.MPQ", 200);
+        tryAdd("patch-3.MPQ", 300);
+        tryAdd("patch-4.MPQ", 400);
+        tryAdd("patch-5.MPQ", 500);
+
+        // Letter patches
+        for (char c = 'a'; c <= 'z'; ++c) {
+            tryAdd(std::string("patch-") + c + ".mpq", 800 + (c - 'a'));
+            tryAdd(std::string("Patch-") + static_cast<char>(std::toupper(c)) + ".mpq", 900 + (c - 'a'));
+        }
+
+        // Locale
+        if (!locale.empty()) {
+            tryAdd(locale + "/backup-" + locale + ".MPQ", 225);
+            tryAdd(locale + "/base-" + locale + ".MPQ", 230);
+            tryAdd(locale + "/speech-" + locale + ".MPQ", 240);
+            tryAdd(locale + "/expansion-speech-" + locale + ".MPQ", 245);
+            tryAdd(locale + "/expansion-locale-" + locale + ".MPQ", 246);
+            tryAdd(locale + "/lichking-speech-" + locale + ".MPQ", 248);
+            tryAdd(locale + "/lichking-locale-" + locale + ".MPQ", 249);
+            tryAdd(locale + "/locale-" + locale + ".MPQ", 250);
+            tryAdd(locale + "/patch-" + locale + ".MPQ", 450);
+            tryAdd(locale + "/patch-" + locale + "-2.MPQ", 460);
+            tryAdd(locale + "/patch-" + locale + "-3.MPQ", 470);
+        }
     }
-
-    // Locale archives
-    tryAdd("enUS/backup-enUS.MPQ", 230);
-    tryAdd("enUS/base-enUS.MPQ", 235);
-    tryAdd("enUS/speech-enUS.MPQ", 240);
-    tryAdd("enUS/expansion-speech-enUS.MPQ", 245);
-    tryAdd("enUS/expansion-locale-enUS.MPQ", 246);
-    tryAdd("enUS/lichking-speech-enUS.MPQ", 248);
-    tryAdd("enUS/lichking-locale-enUS.MPQ", 249);
-    tryAdd("enUS/locale-enUS.MPQ", 250);
-    tryAdd("enUS/patch-enUS.MPQ", 450);
-    tryAdd("enUS/patch-enUS-2.MPQ", 460);
-    tryAdd("enUS/patch-enUS-3.MPQ", 470);
 
     // Sort by priority so highest-priority archives are last
     // (we'll iterate highest-prio first when extracting)
@@ -104,13 +417,15 @@ bool Extractor::enumerateFiles(const Options& opts,
                                std::vector<std::string>& outFiles) {
     // Open all archives, enumerate files from highest priority to lowest.
     // Use a set to deduplicate (highest-priority version wins).
-    auto archives = discoverArchives(opts.mpqDir);
+    auto archives = discoverArchives(opts.mpqDir, opts.expansion, opts.locale);
     if (archives.empty()) {
         std::cerr << "No MPQ archives found in: " << opts.mpqDir << "\n";
         return false;
     }
 
     std::cout << "Found " << archives.size() << " MPQ archives\n";
+
+    const auto wantedDbcs = buildWantedDbcSet(opts);
 
     // Enumerate from highest priority first so first-seen files win
     std::set<std::string> seenNormalized;
@@ -138,7 +453,14 @@ bool Extractor::enumerateFiles(const Options& opts,
                     continue;
                 }
 
+                if (shouldSkipFile(opts, fileName)) {
+                    continue;
+                }
+
                 std::string norm = normalizeWowPath(fileName);
+                if (opts.onlyUsedDbcs && !wantedDbcs.empty() && !wantedDbcs.contains(norm)) {
+                    continue;
+                }
                 if (seenNormalized.insert(norm).second) {
                     // First time seeing this file — this is the highest-priority version
                     outFiles.push_back(fileName);
@@ -176,7 +498,7 @@ bool Extractor::run(const Options& opts) {
         return false;
     }
 
-    auto archives = discoverArchives(opts.mpqDir);
+    auto archives = discoverArchives(opts.mpqDir, opts.expansion, opts.locale);
 
     // Determine thread count
     int numThreads = opts.threads;
@@ -371,6 +693,41 @@ bool Extractor::run(const Options& opts) {
 
     auto elapsed = std::chrono::steady_clock::now() - startTime;
     auto secs = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
+
+    if (opts.generateDbcCsv) {
+        std::cout << "Converting selected DBCs to CSV for committing...\n";
+        const std::string dbcDir = opts.outputDir + "/db";
+        const std::string csvDir = !opts.dbcCsvOutputDir.empty()
+            ? opts.dbcCsvOutputDir
+            : (opts.outputDir + "/expansions/" + opts.expansion + "/db");
+
+        uint32_t ok = 0, fail = 0, missing = 0;
+        for (const auto& base : getUsedDbcNamesForExpansion(opts.expansion)) {
+            const std::string in = dbcDir + "/" + base + ".dbc";
+            const std::string out = csvDir + "/" + base + ".csv";
+            if (!fs::exists(in)) {
+                std::cerr << "  Missing extracted DBC: " << in << "\n";
+                missing++;
+                continue;
+            }
+            if (!convertDbcToCsv(in, out)) {
+                fail++;
+            } else {
+                ok++;
+            }
+        }
+
+        std::cout << "DBC CSV conversion: " << ok << " ok";
+        if (missing) std::cout << ", " << missing << " missing";
+        if (fail) std::cout << ", " << fail << " failed";
+        std::cout << "\n";
+
+        if (fail > 0) {
+            std::cerr << "DBC CSV conversion failed for some files\n";
+            return false;
+        }
+    }
+
     std::cout << "Done in " << secs / 60 << "m " << secs % 60 << "s\n";
 
     return true;

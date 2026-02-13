@@ -12,13 +12,24 @@
 #include <fstream>
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
 #include <filesystem>
 #include <algorithm>
 #include <iomanip>
 #include <array>
 #include <random>
+#include <unordered_map>
 
 namespace wowee { namespace ui {
+
+static std::string trimAscii(std::string s) {
+    auto isSpace = [](unsigned char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; };
+    size_t b = 0;
+    while (b < s.size() && isSpace(static_cast<unsigned char>(s[b]))) ++b;
+    size_t e = s.size();
+    while (e > b && isSpace(static_cast<unsigned char>(s[e - 1]))) --e;
+    return s.substr(b, e - b);
+}
 
 static std::string hexEncode(const std::vector<uint8_t>& data) {
     std::ostringstream ss;
@@ -37,6 +48,107 @@ static std::vector<uint8_t> hexDecode(const std::string& hex) {
 }
 
 AuthScreen::AuthScreen() {
+}
+
+std::string AuthScreen::makeServerKey(const std::string& host, int port) {
+    std::ostringstream ss;
+    ss << host << ":" << port;
+    return ss.str();
+}
+
+std::string AuthScreen::currentExpansionId() const {
+    auto* reg = core::Application::getInstance().getExpansionRegistry();
+    if (reg && reg->getActive()) {
+        return reg->getActive()->id;
+    }
+    return "wotlk";
+}
+
+void AuthScreen::selectServerProfile(int index) {
+    if (index < 0 || index >= static_cast<int>(servers_.size())) {
+        selectedServerIndex_ = -1;
+        return;
+    }
+
+    selectedServerIndex_ = index;
+    const auto& s = servers_[index];
+
+    std::snprintf(hostname, sizeof(hostname), "%s", s.hostname.c_str());
+    hostname[sizeof(hostname) - 1] = '\0';
+    port = s.port;
+
+    std::snprintf(username, sizeof(username), "%s", s.username.c_str());
+    username[sizeof(username) - 1] = '\0';
+
+    savedPasswordHash = s.passwordHash;
+    usingStoredHash = !savedPasswordHash.empty();
+    if (usingStoredHash) {
+        std::snprintf(password, sizeof(password), "%s", PASSWORD_PLACEHOLDER);
+        password[sizeof(password) - 1] = '\0';
+    } else {
+        password[0] = '\0';
+    }
+
+    if (!s.expansionId.empty()) {
+        auto* expReg = core::Application::getInstance().getExpansionRegistry();
+        if (expReg && expReg->setActive(s.expansionId)) {
+            auto& profiles = expReg->getAllProfiles();
+            for (int i = 0; i < static_cast<int>(profiles.size()); ++i) {
+                if (profiles[i].id == s.expansionId) { expansionIndex = i; break; }
+            }
+        }
+    }
+}
+
+void AuthScreen::upsertCurrentServerProfile(bool includePasswordHash) {
+    const std::string hostStr = hostname;
+    if (hostStr.empty() || port <= 0) {
+        return;
+    }
+
+    const std::string key = makeServerKey(hostStr, port);
+    int foundIndex = -1;
+    for (int i = 0; i < static_cast<int>(servers_.size()); ++i) {
+        if (makeServerKey(servers_[i].hostname, servers_[i].port) == key) {
+            foundIndex = i;
+            break;
+        }
+    }
+
+    ServerProfile s;
+    s.hostname = hostStr;
+    s.port = port;
+    s.username = username;
+    s.expansionId = currentExpansionId();
+    if (includePasswordHash && !savedPasswordHash.empty()) {
+        s.passwordHash = savedPasswordHash;
+    } else if (foundIndex >= 0) {
+        // Preserve existing stored hash if we aren't updating it.
+        s.passwordHash = servers_[foundIndex].passwordHash;
+    }
+
+    if (foundIndex >= 0) {
+        servers_[foundIndex] = std::move(s);
+        selectedServerIndex_ = foundIndex;
+    } else {
+        servers_.push_back(std::move(s));
+        selectedServerIndex_ = static_cast<int>(servers_.size()) - 1;
+    }
+
+    // Keep deterministic ordering (and stable combo ordering) across runs.
+    std::sort(servers_.begin(), servers_.end(),
+              [](const ServerProfile& a, const ServerProfile& b) {
+                  if (a.hostname != b.hostname) return a.hostname < b.hostname;
+                  return a.port < b.port;
+              });
+
+    // Fix up index after sort.
+    for (int i = 0; i < static_cast<int>(servers_.size()); ++i) {
+        if (makeServerKey(servers_[i].hostname, servers_[i].port) == key) {
+            selectedServerIndex_ = i;
+            break;
+        }
+    }
 }
 
 void AuthScreen::render(auth::AuthHandler& authHandler) {
@@ -144,8 +256,42 @@ void AuthScreen::render(auth::AuthHandler& authHandler) {
 
     // Server settings
     ImGui::Text("Server Settings");
-    ImGui::InputText("Hostname", hostname, sizeof(hostname));
-    ImGui::InputInt("Port", &port);
+    {
+        std::string preview;
+        if (selectedServerIndex_ >= 0 && selectedServerIndex_ < static_cast<int>(servers_.size())) {
+            preview = makeServerKey(servers_[selectedServerIndex_].hostname, servers_[selectedServerIndex_].port);
+        } else {
+            preview = makeServerKey(hostname, port) + " (custom)";
+        }
+
+        if (ImGui::BeginCombo("Server", preview.c_str())) {
+            bool customSelected = (selectedServerIndex_ < 0);
+            if (ImGui::Selectable("Custom...", customSelected)) {
+                selectedServerIndex_ = -1;
+            }
+            if (customSelected) ImGui::SetItemDefaultFocus();
+
+            ImGui::Separator();
+            for (int i = 0; i < static_cast<int>(servers_.size()); ++i) {
+                std::string label = makeServerKey(servers_[i].hostname, servers_[i].port);
+                if (!servers_[i].username.empty()) {
+                    label += "  (" + servers_[i].username + ")";
+                }
+                bool selected = (selectedServerIndex_ == i);
+                if (ImGui::Selectable(label.c_str(), selected)) {
+                    selectServerProfile(i);
+                }
+                if (selected) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+    }
+
+    bool hostChanged = ImGui::InputText("Hostname", hostname, sizeof(hostname));
+    bool portChanged = ImGui::InputInt("Port", &port);
+    if (hostChanged || portChanged) {
+        selectedServerIndex_ = -1;
+    }
     if (port < 1) port = 1;
     if (port > 65535) port = 65535;
 
@@ -231,7 +377,7 @@ void AuthScreen::render(auth::AuthHandler& authHandler) {
                 auto hash = auth::Crypto::sha1(combined);
                 savedPasswordHash = hexEncode(hash);
             }
-            saveLoginInfo();
+            saveLoginInfo(true);
 
             // Call success callback
             if (onSuccess) {
@@ -334,7 +480,7 @@ void AuthScreen::attemptAuth(auth::AuthHandler& authHandler) {
         setStatus("Connected, authenticating...", false);
 
         // Save login info for next session
-        saveLoginInfo();
+        saveLoginInfo(false);
 
         // Send authentication credentials
         if (useHash) {
@@ -369,7 +515,9 @@ std::string AuthScreen::getConfigPath() {
     return dir + "/login.cfg";
 }
 
-void AuthScreen::saveLoginInfo() {
+void AuthScreen::saveLoginInfo(bool includePasswordHash) {
+    upsertCurrentServerProfile(includePasswordHash);
+
     std::string path = getConfigPath();
     std::filesystem::path dir = std::filesystem::path(path).parent_path();
     std::error_code ec;
@@ -381,16 +529,18 @@ void AuthScreen::saveLoginInfo() {
         return;
     }
 
-    out << "hostname=" << hostname << "\n";
-    out << "port=" << port << "\n";
-    out << "username=" << username << "\n";
-    if (!savedPasswordHash.empty()) {
-        out << "password_hash=" << savedPasswordHash << "\n";
-    }
-    // Save active expansion id
-    auto* expReg = core::Application::getInstance().getExpansionRegistry();
-    if (expReg && !expReg->getActiveId().empty()) {
-        out << "expansion=" << expReg->getActiveId() << "\n";
+    out << "version=2\n";
+    out << "active=" << makeServerKey(hostname, port) << "\n";
+
+    for (const auto& s : servers_) {
+        out << "\n[server " << makeServerKey(s.hostname, s.port) << "]\n";
+        out << "username=" << s.username << "\n";
+        if (!s.passwordHash.empty()) {
+            out << "password_hash=" << s.passwordHash << "\n";
+        }
+        if (!s.expansionId.empty()) {
+            out << "expansion=" << s.expansionId << "\n";
+        }
     }
 
     LOG_INFO("Login info saved to ", path);
@@ -401,40 +551,130 @@ void AuthScreen::loadLoginInfo() {
     std::ifstream in(path);
     if (!in.is_open()) return;
 
+    std::string file((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+
+    // If this looks like the old flat format, migrate it into a single server entry.
+    if (file.find("[server ") == std::string::npos) {
+        std::unordered_map<std::string, std::string> kv;
+        std::istringstream ss(file);
+        std::string line;
+        while (std::getline(ss, line)) {
+            line = trimAscii(line);
+            if (line.empty() || line[0] == '#') continue;
+            size_t eq = line.find('=');
+            if (eq == std::string::npos) continue;
+            kv[trimAscii(line.substr(0, eq))] = trimAscii(line.substr(eq + 1));
+        }
+
+        std::string host = kv["hostname"];
+        int p = 3724;
+        try { if (!kv["port"].empty()) p = std::stoi(kv["port"]); } catch (...) {}
+        if (!host.empty()) {
+            ServerProfile s;
+            s.hostname = host;
+            s.port = p;
+            s.username = kv["username"];
+            s.passwordHash = kv["password_hash"];
+            s.expansionId = kv["expansion"];
+            servers_.push_back(std::move(s));
+            selectServerProfile(0);
+        }
+
+        LOG_INFO("Login info loaded from ", path, " (migrated v1 -> v2)");
+        return;
+    }
+
+    servers_.clear();
+    selectedServerIndex_ = -1;
+
+    std::string activeKey;
+    ServerProfile current;
+    bool inServer = false;
+
+    auto flushServer = [&]() {
+        if (!inServer) return;
+        if (!current.hostname.empty() && current.port > 0) {
+            servers_.push_back(current);
+        }
+        current = ServerProfile{};
+        inServer = false;
+    };
+
+    std::istringstream ss(file);
     std::string line;
-    while (std::getline(in, line)) {
+    while (std::getline(ss, line)) {
+        line = trimAscii(line);
+        if (line.empty() || line[0] == '#') continue;
+
+        if (line.front() == '[' && line.back() == ']') {
+            flushServer();
+            std::string inside = line.substr(1, line.size() - 2);
+            inside = trimAscii(inside);
+            const std::string prefix = "server ";
+            if (inside.rfind(prefix, 0) == 0) {
+                std::string key = trimAscii(inside.substr(prefix.size()));
+                // Parse host:port (split on last ':', allow [ipv6]:port).
+                std::string hostPart = key;
+                int portPart = 3724;
+                if (!key.empty() && key.front() == '[') {
+                    auto rb = key.find(']');
+                    if (rb != std::string::npos) {
+                        hostPart = key.substr(1, rb - 1);
+                        auto colon = key.find(':', rb);
+                        if (colon != std::string::npos) {
+                            try { portPart = std::stoi(key.substr(colon + 1)); } catch (...) {}
+                        }
+                    }
+                } else {
+                    auto colon = key.rfind(':');
+                    if (colon != std::string::npos) {
+                        hostPart = key.substr(0, colon);
+                        try { portPart = std::stoi(key.substr(colon + 1)); } catch (...) {}
+                    }
+                }
+
+                current.hostname = hostPart;
+                current.port = portPart;
+                inServer = true;
+            }
+            continue;
+        }
+
         size_t eq = line.find('=');
         if (eq == std::string::npos) continue;
-        std::string key = line.substr(0, eq);
-        std::string val = line.substr(eq + 1);
+        std::string key = trimAscii(line.substr(0, eq));
+        std::string val = trimAscii(line.substr(eq + 1));
 
-        if (key == "hostname" && !val.empty()) {
-            strncpy(hostname, val.c_str(), sizeof(hostname) - 1);
-            hostname[sizeof(hostname) - 1] = '\0';
-        } else if (key == "port") {
-            try { port = std::stoi(val); } catch (...) {}
-        } else if (key == "username" && !val.empty()) {
-            strncpy(username, val.c_str(), sizeof(username) - 1);
-            username[sizeof(username) - 1] = '\0';
-        } else if (key == "password_hash" && !val.empty()) {
-            savedPasswordHash = val;
-        } else if (key == "expansion" && !val.empty()) {
-            auto* expReg = core::Application::getInstance().getExpansionRegistry();
-            if (expReg && expReg->setActive(val)) {
-                // Find matching index
-                auto& profiles = expReg->getAllProfiles();
-                for (int i = 0; i < static_cast<int>(profiles.size()); ++i) {
-                    if (profiles[i].id == val) { expansionIndex = i; break; }
+        if (!inServer) {
+            if (key == "active") activeKey = val;
+            continue;
+        }
+
+        if (key == "username") current.username = val;
+        else if (key == "password_hash") current.passwordHash = val;
+        else if (key == "expansion") current.expansionId = val;
+    }
+    flushServer();
+
+    if (!servers_.empty()) {
+        std::sort(servers_.begin(), servers_.end(),
+                  [](const ServerProfile& a, const ServerProfile& b) {
+                      if (a.hostname != b.hostname) return a.hostname < b.hostname;
+                      return a.port < b.port;
+                  });
+
+        if (!activeKey.empty()) {
+            for (int i = 0; i < static_cast<int>(servers_.size()); ++i) {
+                if (makeServerKey(servers_[i].hostname, servers_[i].port) == activeKey) {
+                    selectServerProfile(i);
+                    break;
                 }
             }
         }
-    }
 
-    // If we have a saved hash, fill password with placeholder
-    if (!savedPasswordHash.empty()) {
-        strncpy(password, PASSWORD_PLACEHOLDER, sizeof(password) - 1);
-        password[sizeof(password) - 1] = '\0';
-        usingStoredHash = true;
+        if (selectedServerIndex_ < 0) {
+            selectServerProfile(0);
+        }
     }
 
     LOG_INFO("Login info loaded from ", path);

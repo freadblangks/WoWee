@@ -169,7 +169,7 @@ public:
  * Factory function to create the right parser set for an expansion.
  */
 inline std::unique_ptr<PacketParsers> createPacketParsers(const std::string& expansionId) {
-    if (expansionId == "classic") return std::make_unique<ClassicPacketParsers>();
+    if (expansionId == "classic" || expansionId == "turtle") return std::make_unique<ClassicPacketParsers>();
     if (expansionId == "tbc") return std::make_unique<TbcPacketParsers>();
     return std::make_unique<WotlkPacketParsers>();
 }

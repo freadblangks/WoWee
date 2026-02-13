@@ -179,6 +179,9 @@ bool Application::initialize() {
     if (expansionRegistry_) {
         auto* profile = expansionRegistry_->getActive();
         if (profile && !profile->dataPath.empty()) {
+            // Enable expansion-specific CSV DBC lookup (Data/expansions/<id>/db/*.csv).
+            assetManager->setExpansionDataPath(profile->dataPath);
+
             std::string expansionManifest = profile->dataPath + "/manifest.json";
             if (std::filesystem::exists(expansionManifest)) {
                 assetPath = profile->dataPath;

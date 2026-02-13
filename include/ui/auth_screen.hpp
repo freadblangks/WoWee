@@ -42,6 +42,14 @@ public:
     const std::string& getStatusMessage() const { return statusMessage; }
 
 private:
+    struct ServerProfile {
+        std::string hostname;
+        int port = 3724;
+        std::string username;
+        std::string passwordHash;  // SHA1 hex (UPPER(user):UPPER(pass))
+        std::string expansionId;   // "wotlk", "tbc", "classic", "turtle", ...
+    };
+
     // UI state
     char hostname[256] = "127.0.0.1";
     char username[256] = "";
@@ -63,6 +71,10 @@ private:
     bool usingStoredHash = false;
     static constexpr const char* PASSWORD_PLACEHOLDER = "\x01\x01\x01\x01\x01\x01\x01\x01";
 
+    // Saved server-specific profiles
+    std::vector<ServerProfile> servers_;
+    int selectedServerIndex_ = -1;  // -1 = custom/unlisted
+
     // Callbacks
     std::function<void()> onSuccess;
 
@@ -79,10 +91,15 @@ private:
     /**
      * Persist/restore login fields
      */
-    void saveLoginInfo();
+    void saveLoginInfo(bool includePasswordHash);
     void loadLoginInfo();
     static std::string getConfigPath();
     bool loginInfoLoaded = false;
+
+    static std::string makeServerKey(const std::string& host, int port);
+    void selectServerProfile(int index);
+    void upsertCurrentServerProfile(bool includePasswordHash);
+    std::string currentExpansionId() const;
 
     // Background video
     bool videoInitAttempted = false;

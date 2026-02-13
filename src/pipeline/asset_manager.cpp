@@ -2,9 +2,29 @@
 #include "core/logger.hpp"
 #include "core/memory_monitor.hpp"
 #include <algorithm>
+#include <cstdlib>
+#include <limits>
 
 namespace wowee {
 namespace pipeline {
+
+namespace {
+size_t parseEnvSizeMB(const char* name) {
+    const char* v = std::getenv(name);
+    if (!v || !*v) {
+        return 0;
+    }
+    char* end = nullptr;
+    unsigned long long mb = std::strtoull(v, &end, 10);
+    if (end == v || mb == 0) {
+        return 0;
+    }
+    if (mb > (std::numeric_limits<size_t>::max() / (1024ull * 1024ull))) {
+        return 0;
+    }
+    return static_cast<size_t>(mb);
+}
+} // namespace
 
 AssetManager::AssetManager() = default;
 AssetManager::~AssetManager() {
@@ -30,11 +50,36 @@ bool AssetManager::initialize(const std::string& dataPath_) {
     // Bias toward MPQ decompressed-file caching to minimize runtime read/decompress stalls.
     auto& memMonitor = core::MemoryMonitor::getInstance();
     size_t recommendedBudget = memMonitor.getRecommendedCacheBudget();
-    fileCacheBudget = (recommendedBudget * 3) / 4;  // 75% of global cache budget
+    size_t dynamicBudget = (recommendedBudget * 3) / 4;  // 75% of global cache budget
+
+    // The MemoryMonitor recommendation is intentionally aggressive; without a cap, large patch MPQs
+    // can cause the decompressed-file cache to balloon into tens/hundreds of GB and push the OS into swap.
+    // Provide env overrides and clamp to a safe default.
+    const size_t envFixedMB = parseEnvSizeMB("WOWEE_FILE_CACHE_MB");
+    const size_t envMaxMB = parseEnvSizeMB("WOWEE_FILE_CACHE_MAX_MB");
+
+    const size_t minBudgetBytes = 256ull * 1024ull * 1024ull;          // 256 MB
+    const size_t defaultMaxBudgetBytes = 2048ull * 1024ull * 1024ull;  // 2 GB
+    const size_t maxBudgetBytes = (envMaxMB > 0)
+        ? (envMaxMB * 1024ull * 1024ull)
+        : defaultMaxBudgetBytes;
+
+    if (envFixedMB > 0) {
+        fileCacheBudget = envFixedMB * 1024ull * 1024ull;
+        if (fileCacheBudget < minBudgetBytes) {
+            fileCacheBudget = minBudgetBytes;
+        }
+        LOG_WARNING("Asset file cache fixed via WOWEE_FILE_CACHE_MB=", envFixedMB,
+                    " (effective ", fileCacheBudget / (1024 * 1024), " MB)");
+    } else {
+        fileCacheBudget = std::clamp(dynamicBudget, minBudgetBytes, maxBudgetBytes);
+    }
 
     initialized = true;
-    LOG_INFO("Asset manager initialized (dynamic file cache: ",
-             fileCacheBudget / (1024 * 1024), " MB, adjusts based on RAM)");
+    LOG_INFO("Asset manager initialized (file cache: ",
+             fileCacheBudget / (1024 * 1024), " MB, recommended=",
+             recommendedBudget / (1024 * 1024), " MB, max=",
+             maxBudgetBytes / (1024 * 1024), " MB)");
     return true;
 }
 

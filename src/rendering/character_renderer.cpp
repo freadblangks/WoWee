@@ -32,9 +32,29 @@
 #include <functional>
 #include <unordered_map>
 #include <unordered_set>
+#include <cstdlib>
+#include <limits>
 
 namespace wowee {
 namespace rendering {
+
+namespace {
+size_t envSizeMBOrDefault(const char* name, size_t defMb) {
+    const char* v = std::getenv(name);
+    if (!v || !*v) return defMb;
+    char* end = nullptr;
+    unsigned long long mb = std::strtoull(v, &end, 10);
+    if (end == v || mb == 0) return defMb;
+    if (mb > (std::numeric_limits<size_t>::max() / (1024ull * 1024ull))) return defMb;
+    return static_cast<size_t>(mb);
+}
+
+size_t approxTextureBytesWithMips(int w, int h) {
+    if (w <= 0 || h <= 0) return 0;
+    size_t base = static_cast<size_t>(w) * static_cast<size_t>(h) * 4ull;
+    return base + (base / 3);  // ~4/3 for mip chain
+}
+} // namespace
 
 CharacterRenderer::CharacterRenderer() {
 }
@@ -261,6 +281,9 @@ bool CharacterRenderer::initialize() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glBindTexture(GL_TEXTURE_2D, 0);
 
+    // Diagnostics-only: cache lifetime is currently tied to renderer lifetime.
+    textureCacheBudgetBytes_ = envSizeMBOrDefault("WOWEE_CHARACTER_TEX_CACHE_MB", 2048) * 1024ull * 1024ull;
+
     core::Logger::getInstance().info("Character renderer initialized");
     return true;
 }
@@ -283,11 +306,14 @@ void CharacterRenderer::shutdown() {
 
     // Clean up texture cache
     for (auto& pair : textureCache) {
-        if (pair.second && pair.second != whiteTexture) {
-            glDeleteTextures(1, &pair.second);
+        GLuint texId = pair.second.id;
+        if (texId && texId != whiteTexture) {
+            glDeleteTextures(1, &texId);
         }
     }
     textureCache.clear();
+    textureCacheBytes_ = 0;
+    textureCacheCounter_ = 0;
 
     if (whiteTexture) {
         glDeleteTextures(1, &whiteTexture);
@@ -322,7 +348,10 @@ GLuint CharacterRenderer::loadTexture(const std::string& path) {
 
     // Check cache
     auto it = textureCache.find(key);
-    if (it != textureCache.end()) return it->second;
+    if (it != textureCache.end()) {
+        it->second.lastUse = ++textureCacheCounter_;
+        return it->second.id;
+    }
 
     if (!assetManager || !assetManager->isInitialized()) {
         return whiteTexture;
@@ -349,7 +378,18 @@ GLuint CharacterRenderer::loadTexture(const std::string& path) {
     applyAnisotropicFiltering();
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    textureCache[key] = texId;
+    TextureCacheEntry e;
+    e.id = texId;
+    e.approxBytes = approxTextureBytesWithMips(blpImage.width, blpImage.height);
+    e.lastUse = ++textureCacheCounter_;
+    textureCacheBytes_ += e.approxBytes;
+    textureCache[key] = e;
+    if (textureCacheBytes_ > textureCacheBudgetBytes_) {
+        core::Logger::getInstance().warning(
+            "Character texture cache over budget: ",
+            textureCacheBytes_ / (1024 * 1024), " MB > ",
+            textureCacheBudgetBytes_ / (1024 * 1024), " MB (textures=", textureCache.size(), ")");
+    }
     core::Logger::getInstance().info("Loaded character texture: ", path, " (", blpImage.width, "x", blpImage.height, ")");
     return texId;
 }
@@ -456,29 +496,6 @@ GLuint CharacterRenderer::compositeTextures(const std::vector<std::string>& laye
         core::Logger::getInstance().info("Composite: overlay ", layerPaths[layer],
             " (", overlay.width, "x", overlay.height, ")");
 
-        // Debug: save overlay to disk
-        {
-            std::string fname = (std::filesystem::temp_directory_path() / ("overlay_debug_" + std::to_string(layer) + ".rgba")).string();
-            FILE* f = fopen(fname.c_str(), "wb");
-            if (f) {
-                fwrite(&overlay.width, 4, 1, f);
-                fwrite(&overlay.height, 4, 1, f);
-                fwrite(overlay.data.data(), 1, overlay.data.size(), f);
-                fclose(f);
-            }
-            // Check alpha values
-            int opaquePixels = 0, transPixels = 0, semiPixels = 0;
-            size_t pxCount = static_cast<size_t>(overlay.width) * overlay.height;
-            for (size_t p = 0; p < pxCount; p++) {
-                uint8_t a = overlay.data[p * 4 + 3];
-                if (a == 255) opaquePixels++;
-                else if (a == 0) transPixels++;
-                else semiPixels++;
-            }
-            core::Logger::getInstance().info("  Overlay alpha stats: opaque=", opaquePixels,
-                " transparent=", transPixels, " semi=", semiPixels);
-        }
-
         if (overlay.width == width && overlay.height == height) {
             // Same size: full alpha-blend
             blitOverlay(composite, width, height, overlay, 0, 0);
@@ -533,19 +550,7 @@ GLuint CharacterRenderer::compositeTextures(const std::vector<std::string>& laye
         }
     }
 
-    // Debug: save composite as raw RGBA file
-    {
-        std::string dbgPath = (std::filesystem::temp_directory_path() / "composite_debug.rgba").string();
-        FILE* f = fopen(dbgPath.c_str(), "wb");
-        if (f) {
-            // Write width, height as 4 bytes each, then pixel data
-            fwrite(&width, 4, 1, f);
-            fwrite(&height, 4, 1, f);
-            fwrite(composite.data(), 1, composite.size(), f);
-            fclose(f);
-            core::Logger::getInstance().info("DEBUG: saved composite to ", dbgPath);
-        }
-    }
+    // Debug dump removed: it was always-on and could stall badly under load.
 
     // Upload composite to GPU
     GLuint texId;
@@ -733,7 +738,7 @@ void CharacterRenderer::setModelTexture(uint32_t modelId, uint32_t textureSlot, 
     if (oldTex && oldTex != whiteTexture) {
         bool cached = false;
         for (const auto& [k, v] : textureCache) {
-            if (v == oldTex) { cached = true; break; }
+            if (v.id == oldTex) { cached = true; break; }
         }
         if (!cached) {
             glDeleteTextures(1, &oldTex);

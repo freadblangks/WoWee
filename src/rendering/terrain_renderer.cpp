@@ -8,6 +8,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <algorithm>
+#include <cstdlib>
 #include <limits>
 
 namespace wowee {
@@ -77,10 +78,15 @@ void TerrainRenderer::shutdown() {
     }
 
     // Delete cached textures
-    for (auto& pair : textureCache) {
-        glDeleteTextures(1, &pair.second);
+    for (auto& [path, entry] : textureCache) {
+        GLuint texId = entry.id;
+        if (texId != 0 && texId != whiteTexture) {
+            glDeleteTextures(1, &texId);
+        }
     }
     textureCache.clear();
+    textureCacheBytes_ = 0;
+    textureCacheCounter_ = 0;
 
     shader.reset();
 }
@@ -234,7 +240,8 @@ GLuint TerrainRenderer::loadTexture(const std::string& path) {
     // Check cache first
     auto it = textureCache.find(key);
     if (it != textureCache.end()) {
-        return it->second;
+        it->second.lastUse = ++textureCacheCounter_;
+        return it->second.id;
     }
 
     // Load BLP texture
@@ -269,7 +276,13 @@ GLuint TerrainRenderer::loadTexture(const std::string& path) {
     glBindTexture(GL_TEXTURE_2D, 0);
 
     // Cache texture
-    textureCache[key] = textureID;
+    TextureCacheEntry e;
+    e.id = textureID;
+    size_t base = static_cast<size_t>(blp.width) * static_cast<size_t>(blp.height) * 4ull;
+    e.approxBytes = base + (base / 3);
+    e.lastUse = ++textureCacheCounter_;
+    textureCacheBytes_ += e.approxBytes;
+    textureCache[key] = e;
 
     LOG_DEBUG("Loaded texture: ", path, " (", blp.width, "x", blp.height, ")");
 
@@ -307,7 +320,13 @@ void TerrainRenderer::uploadPreloadedTextures(const std::unordered_map<std::stri
         applyAnisotropicFiltering();
         glBindTexture(GL_TEXTURE_2D, 0);
 
-        textureCache[key] = textureID;
+        TextureCacheEntry e;
+        e.id = textureID;
+        size_t base = static_cast<size_t>(blp.width) * static_cast<size_t>(blp.height) * 4ull;
+        e.approxBytes = base + (base / 3);
+        e.lastUse = ++textureCacheCounter_;
+        textureCacheBytes_ += e.approxBytes;
+        textureCache[key] = e;
     }
 }
 

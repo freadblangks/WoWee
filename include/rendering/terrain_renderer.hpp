@@ -186,7 +186,15 @@ private:
     std::vector<TerrainChunkGPU> chunks;
 
     // Texture cache (path -> GL texture ID)
-    std::unordered_map<std::string, GLuint> textureCache;
+    struct TextureCacheEntry {
+        GLuint id = 0;
+        size_t approxBytes = 0;
+        uint64_t lastUse = 0;
+    };
+    std::unordered_map<std::string, TextureCacheEntry> textureCache;
+    size_t textureCacheBytes_ = 0;
+    uint64_t textureCacheCounter_ = 0;
+    size_t textureCacheBudgetBytes_ = 4096ull * 1024 * 1024;  // Default, overridden at init
 
     // Lighting parameters
     float lightDir[3] = {-0.5f, -1.0f, -0.5f};

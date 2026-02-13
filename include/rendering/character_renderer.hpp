@@ -236,7 +236,15 @@ private:
     bool shadowEnabled = false;
 
     // Texture cache
-    std::unordered_map<std::string, GLuint> textureCache;
+    struct TextureCacheEntry {
+        GLuint id = 0;
+        size_t approxBytes = 0;
+        uint64_t lastUse = 0;
+    };
+    std::unordered_map<std::string, TextureCacheEntry> textureCache;
+    size_t textureCacheBytes_ = 0;
+    uint64_t textureCacheCounter_ = 0;
+    size_t textureCacheBudgetBytes_ = 1024ull * 1024 * 1024;  // Default, overridden at init
     GLuint whiteTexture = 0;
 
     std::unordered_map<uint32_t, M2ModelGPU> models;

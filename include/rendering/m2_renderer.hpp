@@ -356,7 +356,15 @@ private:
     uint32_t lastDrawCallCount = 0;
 
     GLuint loadTexture(const std::string& path);
-    std::unordered_map<std::string, GLuint> textureCache;
+    struct TextureCacheEntry {
+        GLuint id = 0;
+        size_t approxBytes = 0;
+        uint64_t lastUse = 0;
+    };
+    std::unordered_map<std::string, TextureCacheEntry> textureCache;
+    size_t textureCacheBytes_ = 0;
+    uint64_t textureCacheCounter_ = 0;
+    size_t textureCacheBudgetBytes_ = 2048ull * 1024 * 1024;  // Default, overridden at init
     GLuint whiteTexture = 0;
     GLuint glowTexture = 0;  // Soft radial gradient for glow sprites
 

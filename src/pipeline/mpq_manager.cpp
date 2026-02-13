@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
+#include <limits>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -49,6 +50,16 @@ bool envFlagEnabled(const char* name) {
     std::string s = toLowerCopy(v);
     return s == "1" || s == "true" || s == "yes" || s == "on";
 }
+
+size_t envSizeTOrDefault(const char* name, size_t defValue) {
+    const char* v = std::getenv(name);
+    if (!v || !*v) return defValue;
+    char* end = nullptr;
+    unsigned long long value = std::strtoull(v, &end, 10);
+    if (end == v || value == 0) return defValue;
+    if (value > static_cast<unsigned long long>(std::numeric_limits<size_t>::max())) return defValue;
+    return static_cast<size_t>(value);
+}
 }
 
 MPQManager::MPQManager() = default;
@@ -65,6 +76,12 @@ bool MPQManager::initialize(const std::string& dataPath_) {
 
     dataPath = dataPath_;
     LOG_INFO("Initializing MPQ manager with data path: ", dataPath);
+
+    // Guard against cache blowups from huge numbers of unique probes.
+    fileArchiveCacheMaxEntries_ = envSizeTOrDefault("WOWEE_MPQ_ARCHIVE_CACHE_MAX", fileArchiveCacheMaxEntries_);
+    fileArchiveCacheMisses_ = envFlagEnabled("WOWEE_MPQ_CACHE_MISSES");
+    LOG_INFO("MPQ archive lookup cache: maxEntries=", fileArchiveCacheMaxEntries_,
+             " cacheMisses=", (fileArchiveCacheMisses_ ? "yes" : "no"));
 
     // Check if data directory exists
     if (!std::filesystem::exists(dataPath)) {
@@ -363,8 +380,23 @@ HANDLE MPQManager::findFileArchive(const std::string& filename) const {
     const auto end = std::chrono::steady_clock::now();
     const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
+    // Avoid caching misses unless explicitly enabled; miss caching can explode memory when
+    // code probes many unique non-existent paths (common with HD patch sets).
+    if (found == INVALID_HANDLE_VALUE && !fileArchiveCacheMisses_) {
+        if (ms >= 100) {
+            LOG_WARNING("Slow MPQ lookup: '", filename, "' scanned ", archives.size(), " archives in ", ms, " ms");
+        }
+        return found;
+    }
+
     {
         std::lock_guard<std::mutex> lock(fileArchiveCacheMutex_);
+        if (fileArchiveCache_.size() >= fileArchiveCacheMaxEntries_) {
+            // Simple safety valve: clear the cache rather than allowing an unbounded growth.
+            LOG_WARNING("MPQ archive lookup cache cleared (size=", fileArchiveCache_.size(),
+                        " reached maxEntries=", fileArchiveCacheMaxEntries_, ")");
+            fileArchiveCache_.clear();
+        }
         // Another thread may have raced to populate; if so, prefer the existing value.
         auto [it, inserted] = fileArchiveCache_.emplace(std::move(cacheKey), found);
         if (!inserted) {

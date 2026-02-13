@@ -226,12 +226,15 @@ void WMORenderer::shutdown() {
     }
 
     // Free cached textures
-    for (auto& [path, texId] : textureCache) {
+    for (auto& [path, entry] : textureCache) {
+        GLuint texId = entry.id;
         if (texId != 0 && texId != whiteTexture) {
             glDeleteTextures(1, &texId);
         }
     }
     textureCache.clear();
+    textureCacheBytes_ = 0;
+    textureCacheCounter_ = 0;
 
     // Free white texture
     if (whiteTexture != 0) {
@@ -1626,7 +1629,8 @@ GLuint WMORenderer::loadTexture(const std::string& path) {
     // Check cache first
     auto it = textureCache.find(key);
     if (it != textureCache.end()) {
-        return it->second;
+        it->second.lastUse = ++textureCacheCounter_;
+        return it->second.id;
     }
 
     // Load BLP texture
@@ -1662,7 +1666,13 @@ GLuint WMORenderer::loadTexture(const std::string& path) {
     glBindTexture(GL_TEXTURE_2D, 0);
 
     // Cache it
-    textureCache[key] = textureID;
+    TextureCacheEntry e;
+    e.id = textureID;
+    size_t base = static_cast<size_t>(blp.width) * static_cast<size_t>(blp.height) * 4ull;
+    e.approxBytes = base + (base / 3);
+    e.lastUse = ++textureCacheCounter_;
+    textureCacheBytes_ += e.approxBytes;
+    textureCache[key] = e;
     core::Logger::getInstance().debug("WMO: Loaded texture: ", path, " (", blp.width, "x", blp.height, ")");
 
     return textureID;

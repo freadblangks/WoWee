@@ -112,8 +112,13 @@ private:
     // Cache for mapping "virtual filename" -> archive handle (or INVALID_HANDLE_VALUE for not found).
     // This avoids scanning every archive for repeated lookups, which can otherwise appear as a hang
     // on screens that trigger many asset probes (character select, character preview, etc.).
+    //
+    // Important: caching misses can blow up memory if the game probes many unique non-existent filenames.
+    // Miss caching is disabled by default and must be explicitly enabled.
     mutable std::mutex fileArchiveCacheMutex_;
     mutable std::unordered_map<std::string, HANDLE> fileArchiveCache_;
+    size_t fileArchiveCacheMaxEntries_ = 500000;
+    bool fileArchiveCacheMisses_ = false;
 
     mutable std::mutex missingFileMutex_;
     mutable std::unordered_set<std::string> missingFileWarnings_;

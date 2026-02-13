@@ -892,12 +892,25 @@ void Application::setupUICallbacks() {
             accountName = "TESTACCOUNT";
         }
 
+        uint32_t realmId = 0;
+        {
+            // WotLK AUTH_SESSION includes a RealmID field; some servers reject if it's wrong/zero.
+            const auto& realms = authHandler->getRealms();
+            for (const auto& r : realms) {
+                if (r.name == realmName && r.address == realmAddress) {
+                    realmId = r.id;
+                    break;
+                }
+            }
+            LOG_INFO("Selected realmId=", realmId);
+        }
+
         uint32_t clientBuild = 12340; // default WotLK
         if (expansionRegistry_) {
             auto* profile = expansionRegistry_->getActive();
             if (profile) clientBuild = profile->build;
         }
-        if (gameHandler->connect(host, port, sessionKey, accountName, clientBuild)) {
+        if (gameHandler->connect(host, port, sessionKey, accountName, clientBuild, realmId)) {
             LOG_INFO("Connected to world server, transitioning to character selection");
             setState(AppState::CHARACTER_SELECTION);
         } else {

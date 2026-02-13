@@ -114,7 +114,8 @@ bool GameHandler::connect(const std::string& host,
                           uint16_t port,
                           const std::vector<uint8_t>& sessionKey,
                           const std::string& accountName,
-                          uint32_t build) {
+                          uint32_t build,
+                          uint32_t realmId) {
 
     if (sessionKey.size() != 40) {
         LOG_ERROR("Invalid session key size: ", sessionKey.size(), " (expected 40)");
@@ -134,6 +135,7 @@ bool GameHandler::connect(const std::string& host,
     this->sessionKey = sessionKey;
     this->accountName = accountName;
     this->build = build;
+    this->realmId_ = realmId;
     requiresWarden_ = false;
     wardenGateSeen_ = false;
     wardenGateElapsed_ = 0.0f;
@@ -1433,7 +1435,8 @@ void GameHandler::sendAuthSession() {
         accountName,
         clientSeed,
         sessionKey,
-        serverSeed
+        serverSeed,
+        realmId_
     );
 
     LOG_DEBUG("CMSG_AUTH_SESSION packet size: ", packet.getSize(), " bytes");

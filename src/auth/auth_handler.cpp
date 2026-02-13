@@ -73,7 +73,12 @@ void AuthHandler::requestRealmList() {
         return;
     }
 
-    if (state != AuthState::AUTHENTICATED) {
+    // Allow callers (UI) to be dumb and call this repeatedly; we gate on state.
+    // After auth success we may already be in REALM_LIST_REQUESTED / REALM_LIST_RECEIVED.
+    if (state == AuthState::REALM_LIST_REQUESTED) {
+        return;
+    }
+    if (state != AuthState::AUTHENTICATED && state != AuthState::REALM_LIST_RECEIVED) {
         LOG_ERROR("Cannot request realm list: not authenticated (state: ", (int)state, ")");
         return;
     }

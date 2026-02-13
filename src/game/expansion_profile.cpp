@@ -166,6 +166,15 @@ bool ExpansionRegistry::loadProfile(const std::string& jsonPath, const std::stri
 
     p.build = static_cast<uint16_t>(jsonInt(json, "build"));
     p.protocolVersion = static_cast<uint8_t>(jsonInt(json, "protocolVersion"));
+    // Optional client header fields (LOGON_CHALLENGE)
+    {
+        std::string v;
+        v = jsonValue(json, "game"); if (!v.empty()) p.game = v;
+        v = jsonValue(json, "platform"); if (!v.empty()) p.platform = v;
+        v = jsonValue(json, "os"); if (!v.empty()) p.os = v;
+        v = jsonValue(json, "locale"); if (!v.empty()) p.locale = v;
+        p.timezone = static_cast<uint32_t>(jsonInt(json, "timezone", static_cast<int>(p.timezone)));
+    }
     p.maxLevel = static_cast<uint32_t>(jsonInt(json, "maxLevel", 60));
     p.races = jsonUintArray(json, "races");
     p.classes = jsonUintArray(json, "classes");

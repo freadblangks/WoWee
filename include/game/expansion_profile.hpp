@@ -21,6 +21,13 @@ struct ExpansionProfile {
     uint8_t patchVersion = 0;
     uint16_t build = 0;
     uint8_t protocolVersion = 0; // SRP auth protocol version byte
+    // Client header fields used in LOGON_CHALLENGE.
+    // Defaults match a typical Windows x86 client.
+    std::string game = "WoW";
+    std::string platform = "x86";
+    std::string os = "Win";
+    std::string locale = "enUS";
+    uint32_t timezone = 0;
     std::string dataPath;      // Absolute path to expansion data dir
     uint32_t maxLevel = 60;
     std::vector<uint32_t> races;

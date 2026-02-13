@@ -509,6 +509,11 @@ void AuthScreen::attemptAuth(auth::AuthHandler& authHandler) {
             info.patchVersion = profile->patchVersion;
             info.build = profile->build;
             info.protocolVersion = profile->protocolVersion;
+            info.game = profile->game;
+            info.platform = profile->platform;
+            info.os = profile->os;
+            info.locale = profile->locale;
+            info.timezone = profile->timezone;
             authHandler.setClientInfo(info);
         }
     }

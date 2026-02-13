@@ -59,7 +59,7 @@ bool AssetManager::initialize(const std::string& dataPath_) {
     const size_t envMaxMB = parseEnvSizeMB("WOWEE_FILE_CACHE_MAX_MB");
 
     const size_t minBudgetBytes = 256ull * 1024ull * 1024ull;          // 256 MB
-    const size_t defaultMaxBudgetBytes = 2048ull * 1024ull * 1024ull;  // 2 GB
+    const size_t defaultMaxBudgetBytes = 32768ull * 1024ull * 1024ull;  // 32 GB
     const size_t maxBudgetBytes = (envMaxMB > 0)
         ? (envMaxMB * 1024ull * 1024ull)
         : defaultMaxBudgetBytes;

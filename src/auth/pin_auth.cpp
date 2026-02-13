@@ -23,7 +23,8 @@ static std::array<uint8_t, 10> remapPinGrid(uint32_t seed) {
     // https://gtker.com/wow_messages/docs/auth/pin.html
     uint32_t v = seed;
     std::array<uint8_t, 10> remapped{};
-    uint8_t used = 0;
+    // 10 digits => need at least 10 bits of state.
+    uint16_t used = 0;
     for (int i = 0; i < 10; ++i) {
         uint32_t divisor = 10 - i;
         uint32_t remainder = v % divisor;
@@ -35,7 +36,7 @@ static std::array<uint8_t, 10> remapPinGrid(uint32_t seed) {
                 continue;
             }
             if (index == remainder) {
-                used = static_cast<uint8_t>(used | (1u << j));
+                used = static_cast<uint16_t>(used | (1u << j));
                 remapped[i] = static_cast<uint8_t>(j);
                 break;
             }
@@ -105,4 +106,3 @@ PinProof computePinProof(const std::string& pinDigits,
 
 } // namespace auth
 } // namespace wowee
-

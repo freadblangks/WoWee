@@ -25,14 +25,13 @@ network::Packet LogonChallengePacket::build(const std::string& account, const Cl
     // Payload size
     packet.writeUInt16(payloadSize);
 
-    // Write a FourCC string in little-endian wire format:
-    // Reverse the characters, then null-pad to 4 bytes at the end.
-    // e.g. "x86" → "68x\0", "Win" → "niW\0", "enUS" → "SUne"
-    auto writeFourCCLE = [&packet](const std::string& str) {
+    // Write a 4-byte ASCII field (FourCC-ish): bytes are sent in-order and null-padded.
+    // Auth servers expect literal "x86\0", "Win\0", "enUS", etc (not reversed).
+    auto writeFourCC = [&packet](const std::string& str) {
         uint8_t buf[4] = {0, 0, 0, 0};
         size_t len = std::min<size_t>(4, str.length());
         for (size_t i = 0; i < len; ++i) {
-            buf[i] = static_cast<uint8_t>(str[len - 1 - i]);
+            buf[i] = static_cast<uint8_t>(str[i]);
         }
         for (int i = 0; i < 4; ++i) {
             packet.writeUInt8(buf[i]);
@@ -59,14 +58,14 @@ network::Packet LogonChallengePacket::build(const std::string& account, const Cl
     // Build (2 bytes)
     packet.writeUInt16(info.build);
 
-    // Platform (4 bytes, little-endian FourCC)
-    writeFourCCLE(info.platform);
+    // Platform (4 bytes)
+    writeFourCC(info.platform);
 
-    // OS (4 bytes, little-endian FourCC)
-    writeFourCCLE(info.os);
+    // OS (4 bytes)
+    writeFourCC(info.os);
 
-    // Locale (4 bytes, little-endian FourCC)
-    writeFourCCLE(info.locale);
+    // Locale (4 bytes)
+    writeFourCC(info.locale);
 
     // Timezone
     packet.writeUInt32(info.timezone);

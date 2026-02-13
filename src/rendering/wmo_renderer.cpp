@@ -1615,14 +1615,22 @@ GLuint WMORenderer::loadTexture(const std::string& path) {
         return whiteTexture;
     }
 
+    auto normalizeKey = [](std::string key) {
+        std::replace(key.begin(), key.end(), '/', '\\');
+        std::transform(key.begin(), key.end(), key.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return key;
+    };
+    std::string key = normalizeKey(path);
+
     // Check cache first
-    auto it = textureCache.find(path);
+    auto it = textureCache.find(key);
     if (it != textureCache.end()) {
         return it->second;
     }
 
     // Load BLP texture
-    pipeline::BLPImage blp = assetManager->loadTexture(path);
+    pipeline::BLPImage blp = assetManager->loadTexture(key);
     if (!blp.isValid()) {
         core::Logger::getInstance().warning("WMO: Failed to load texture: ", path);
         // Do not cache failures as white. MPQ reads can fail transiently
@@ -1654,7 +1662,7 @@ GLuint WMORenderer::loadTexture(const std::string& path) {
     glBindTexture(GL_TEXTURE_2D, 0);
 
     // Cache it
-    textureCache[path] = textureID;
+    textureCache[key] = textureID;
     core::Logger::getInstance().debug("WMO: Loaded texture: ", path, " (", blp.width, "x", blp.height, ")");
 
     return textureID;

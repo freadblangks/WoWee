@@ -223,14 +223,22 @@ TerrainChunkGPU TerrainRenderer::uploadChunk(const pipeline::ChunkMesh& chunk) {
 }
 
 GLuint TerrainRenderer::loadTexture(const std::string& path) {
+    auto normalizeKey = [](std::string key) {
+        std::replace(key.begin(), key.end(), '/', '\\');
+        std::transform(key.begin(), key.end(), key.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return key;
+    };
+    std::string key = normalizeKey(path);
+
     // Check cache first
-    auto it = textureCache.find(path);
+    auto it = textureCache.find(key);
     if (it != textureCache.end()) {
         return it->second;
     }
 
     // Load BLP texture
-    pipeline::BLPImage blp = assetManager->loadTexture(path);
+    pipeline::BLPImage blp = assetManager->loadTexture(key);
     if (!blp.isValid()) {
         LOG_WARNING("Failed to load texture: ", path);
         // Do not cache failure as white: MPQ/file reads can fail transiently
@@ -261,7 +269,7 @@ GLuint TerrainRenderer::loadTexture(const std::string& path) {
     glBindTexture(GL_TEXTURE_2D, 0);
 
     // Cache texture
-    textureCache[path] = textureID;
+    textureCache[key] = textureID;
 
     LOG_DEBUG("Loaded texture: ", path, " (", blp.width, "x", blp.height, ")");
 
@@ -269,9 +277,16 @@ GLuint TerrainRenderer::loadTexture(const std::string& path) {
 }
 
 void TerrainRenderer::uploadPreloadedTextures(const std::unordered_map<std::string, pipeline::BLPImage>& textures) {
+    auto normalizeKey = [](std::string key) {
+        std::replace(key.begin(), key.end(), '/', '\\');
+        std::transform(key.begin(), key.end(), key.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return key;
+    };
     for (const auto& [path, blp] : textures) {
+        std::string key = normalizeKey(path);
         // Skip if already cached
-        if (textureCache.find(path) != textureCache.end()) continue;
+        if (textureCache.find(key) != textureCache.end()) continue;
         if (!blp.isValid()) {
             // Don't poison cache with white on invalid preload; allow fallback
             // path to retry loading this texture later.
@@ -292,7 +307,7 @@ void TerrainRenderer::uploadPreloadedTextures(const std::unordered_map<std::stri
         applyAnisotropicFiltering();
         glBindTexture(GL_TEXTURE_2D, 0);
 
-        textureCache[path] = textureID;
+        textureCache[key] = textureID;
     }
 }
 

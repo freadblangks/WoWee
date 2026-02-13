@@ -2674,14 +2674,22 @@ void M2Renderer::cleanupUnusedModels() {
 }
 
 GLuint M2Renderer::loadTexture(const std::string& path) {
+    auto normalizeKey = [](std::string key) {
+        std::replace(key.begin(), key.end(), '/', '\\');
+        std::transform(key.begin(), key.end(), key.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return key;
+    };
+    std::string key = normalizeKey(path);
+
     // Check cache
-    auto it = textureCache.find(path);
+    auto it = textureCache.find(key);
     if (it != textureCache.end()) {
         return it->second;
     }
 
     // Load BLP texture
-    pipeline::BLPImage blp = assetManager->loadTexture(path);
+    pipeline::BLPImage blp = assetManager->loadTexture(key);
     if (!blp.isValid()) {
         LOG_WARNING("M2: Failed to load texture: ", path);
         // Don't cache failures — transient StormLib thread contention can
@@ -2706,7 +2714,7 @@ GLuint M2Renderer::loadTexture(const std::string& path) {
 
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    textureCache[path] = textureID;
+    textureCache[key] = textureID;
     LOG_DEBUG("M2: Loaded texture: ", path, " (", blp.width, "x", blp.height, ")");
 
     return textureID;

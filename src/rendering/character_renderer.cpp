@@ -312,15 +312,23 @@ GLuint CharacterRenderer::loadTexture(const std::string& path) {
     }
     if (allWhitespace) return whiteTexture;
 
+    auto normalizeKey = [](std::string key) {
+        std::replace(key.begin(), key.end(), '/', '\\');
+        std::transform(key.begin(), key.end(), key.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return key;
+    };
+    std::string key = normalizeKey(path);
+
     // Check cache
-    auto it = textureCache.find(path);
+    auto it = textureCache.find(key);
     if (it != textureCache.end()) return it->second;
 
     if (!assetManager || !assetManager->isInitialized()) {
         return whiteTexture;
     }
 
-    auto blpImage = assetManager->loadTexture(path);
+    auto blpImage = assetManager->loadTexture(key);
     if (!blpImage.isValid()) {
         core::Logger::getInstance().warning("Failed to load texture: ", path);
         // Do not cache failures as white. Some asset reads can fail transiently and
@@ -341,7 +349,7 @@ GLuint CharacterRenderer::loadTexture(const std::string& path) {
     applyAnisotropicFiltering();
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    textureCache[path] = texId;
+    textureCache[key] = texId;
     core::Logger::getInstance().info("Loaded character texture: ", path, " (", blpImage.width, "x", blpImage.height, ")");
     return texId;
 }

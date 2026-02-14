@@ -5273,19 +5273,30 @@ void GameHandler::handleItemQueryResponse(network::Packet& packet) {
 }
 
 void GameHandler::handleInspectResults(network::Packet& packet) {
-    // SMSG_INSPECT_TALENT (WotLK 3.3.5a) format:
-    // PackedGUID, uint32 unspentTalents, uint8 talentGroupCount, uint8 activeTalentGroup
+    // SMSG_TALENTS_INFO (0x3F4) format:
+    // uint8 talentType: 0 = own talents (sent on login/respec), 1 = inspect result
+    // If type==1: PackedGUID of inspected player
+    // Then: uint32 unspentTalents, uint8 talentGroupCount, uint8 activeTalentGroup
     // Per talent group: uint8 talentCount, [talentId(u32) + rank(u8)]..., uint8 glyphCount, [glyphId(u16)]...
-    // Then enchantment bitmask + enchant IDs
-    if (packet.getSize() - packet.getReadPos() < 4) return;
+    if (packet.getSize() - packet.getReadPos() < 1) return;
+
+    uint8_t talentType = packet.readUInt8();
+
+    if (talentType == 0) {
+        // Own talent info — silently consume (sent on login, talent changes, respecs)
+        LOG_DEBUG("SMSG_TALENTS_INFO: received own talent data, ignoring");
+        return;
+    }
+
+    // talentType == 1: inspect result
+    if (packet.getSize() - packet.getReadPos() < 2) return;
 
     uint64_t guid = UpdateObjectParser::readPackedGuid(packet);
     if (guid == 0) return;
 
     size_t bytesLeft = packet.getSize() - packet.getReadPos();
     if (bytesLeft < 6) {
-        LOG_WARNING("SMSG_INSPECT_TALENT: too short after guid, ", bytesLeft, " bytes");
-        // Show basic inspect message even without talent data
+        LOG_WARNING("SMSG_TALENTS_INFO: too short after guid, ", bytesLeft, " bytes");
         auto entity = entityManager.getEntity(guid);
         std::string name = "Target";
         if (entity) {

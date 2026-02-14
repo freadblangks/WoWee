@@ -16,6 +16,7 @@
 #include <set>
 #include <sstream>
 #include <thread>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -246,55 +247,93 @@ static std::unordered_set<std::string> buildWantedDbcSet(const Extractor::Option
     return wanted;
 }
 
-// Load all entry keys from a manifest.json into a set of normalized WoW paths.
-// This is a minimal parser — just extracts the keys from the "entries" object
-// without pulling in a full JSON library.
-static std::unordered_set<std::string> loadManifestKeys(const std::string& manifestPath) {
-    std::unordered_set<std::string> keys;
-    std::ifstream f(manifestPath);
-    if (!f.is_open()) {
-        std::cerr << "Failed to open reference manifest: " << manifestPath << "\n";
-        return keys;
+// Parse a quoted JSON string starting after the opening quote at pos.
+// Returns the unescaped string and advances pos past the closing quote.
+static std::string parseJsonString(const std::string& line, size_t& pos) {
+    std::string result;
+    while (pos < line.size() && line[pos] != '"') {
+        if (line[pos] == '\\' && pos + 1 < line.size()) {
+            result += line[pos + 1];
+            pos += 2;
+        } else {
+            result += line[pos];
+            pos++;
+        }
     }
+    if (pos < line.size()) pos++; // skip closing quote
+    return result;
+}
 
-    // Find the "entries" section, then extract keys from each line
+// Load all entries from a manifest.json into a map keyed by normalized WoW path.
+// Minimal parser that extracts keys and values without a full JSON library.
+static std::unordered_map<std::string, ManifestWriter::FileEntry> loadManifestEntries(
+    const std::string& manifestPath) {
+    std::unordered_map<std::string, ManifestWriter::FileEntry> entries;
+    std::ifstream f(manifestPath);
+    if (!f.is_open()) return entries;
+
     bool inEntries = false;
     std::string line;
     while (std::getline(f, line)) {
         if (!inEntries) {
-            if (line.find("\"entries\"") != std::string::npos) {
-                inEntries = true;
-            }
+            if (line.find("\"entries\"") != std::string::npos) inEntries = true;
             continue;
         }
 
-        // End of entries block
         size_t closeBrace = line.find_first_not_of(" \t");
-        if (closeBrace != std::string::npos && line[closeBrace] == '}') {
-            break;
-        }
+        if (closeBrace != std::string::npos && line[closeBrace] == '}') break;
 
-        // Extract key: find first quoted string on the line
+        // Extract key
         size_t q1 = line.find('"');
         if (q1 == std::string::npos) continue;
-        size_t q2 = q1 + 1;
-        // Find closing quote (handle escaped backslashes)
-        std::string key;
-        while (q2 < line.size() && line[q2] != '"') {
-            if (line[q2] == '\\' && q2 + 1 < line.size()) {
-                key += line[q2 + 1];  // unescape \\, \", etc.
-                q2 += 2;
-            } else {
-                key += line[q2];
-                q2++;
+        size_t pos = q1 + 1;
+        std::string key = parseJsonString(line, pos);
+        if (key.empty()) continue;
+
+        // Extract value object fields: "p", "s", "h"
+        ManifestWriter::FileEntry entry;
+        entry.wowPath = key;
+
+        size_t pPos = line.find("\"p\":", pos);
+        if (pPos != std::string::npos) {
+            size_t pq = line.find('"', pPos + 4);
+            if (pq != std::string::npos) {
+                size_t pp = pq + 1;
+                entry.filesystemPath = parseJsonString(line, pp);
             }
         }
 
-        if (!key.empty()) {
-            keys.insert(key);  // Already normalized (lowercase, backslashes)
+        size_t sPos = line.find("\"s\":", pos);
+        if (sPos != std::string::npos) {
+            size_t numStart = sPos + 4;
+            while (numStart < line.size() && (line[numStart] == ' ')) numStart++;
+            entry.size = std::strtoull(line.c_str() + numStart, nullptr, 10);
         }
+
+        size_t hPos = line.find("\"h\":", pos);
+        if (hPos != std::string::npos) {
+            size_t hq = line.find('"', hPos + 4);
+            if (hq != std::string::npos) {
+                size_t hp = hq + 1;
+                std::string hexStr = parseJsonString(line, hp);
+                entry.crc32 = static_cast<uint32_t>(std::strtoul(hexStr.c_str(), nullptr, 16));
+            }
+        }
+
+        entries[key] = std::move(entry);
     }
 
+    return entries;
+}
+
+// Load all entry keys from a manifest.json into a set of normalized WoW paths.
+static std::unordered_set<std::string> loadManifestKeys(const std::string& manifestPath) {
+    auto entries = loadManifestEntries(manifestPath);
+    std::unordered_set<std::string> keys;
+    keys.reserve(entries.size());
+    for (auto& [k, v] : entries) {
+        keys.insert(k);
+    }
     return keys;
 }
 
@@ -531,6 +570,29 @@ bool Extractor::enumerateFiles(const Options& opts,
 bool Extractor::run(const Options& opts) {
     auto startTime = std::chrono::steady_clock::now();
 
+    const bool overlayMode = !opts.asOverlay.empty();
+
+    // Overlay mode writes files to expansions/<id>/overlay/ under the output dir
+    const std::string effectiveOutputDir = overlayMode
+        ? opts.outputDir + "/expansions/" + opts.asOverlay + "/overlay"
+        : opts.outputDir;
+
+    // Load base manifest CRCs for overlay deduplication
+    std::unordered_map<std::string, uint32_t> baseCRCs;
+    if (overlayMode) {
+        std::string baseManifestPath = opts.outputDir + "/manifest.json";
+        auto baseEntries = loadManifestEntries(baseManifestPath);
+        if (baseEntries.empty()) {
+            std::cerr << "Warning: base manifest empty or missing at " << baseManifestPath << "\n"
+                      << "  Extract the base expansion first, then use --as-overlay for others.\n";
+        } else {
+            for (auto& [k, v] : baseEntries) {
+                baseCRCs[k] = v.crc32;
+            }
+            std::cout << "Loaded " << baseCRCs.size() << " base manifest entries for CRC comparison\n";
+        }
+    }
+
     // Enumerate all unique files across all archives
     std::vector<std::string> files;
     if (!enumerateFiles(opts, files)) {
@@ -560,7 +622,7 @@ bool Extractor::run(const Options& opts) {
 
     // Create output directory
     std::error_code ec;
-    fs::create_directories(opts.outputDir, ec);
+    fs::create_directories(effectiveOutputDir, ec);
     if (ec) {
         std::cerr << "Failed to create output directory: " << ec.message() << "\n";
         return false;
@@ -611,7 +673,7 @@ bool Extractor::run(const Options& opts) {
 
             // Map to new filesystem path
             std::string mappedPath = PathMapper::mapPath(wowPath);
-            std::string fullOutputPath = opts.outputDir + "/" + mappedPath;
+            std::string fullOutputPath = effectiveOutputDir + "/" + mappedPath;
 
             // Search archives in reverse priority order (highest priority first)
             HANDLE hFile = nullptr;
@@ -643,11 +705,22 @@ bool Extractor::run(const Options& opts) {
             SFileCloseFile(hFile);
             data.resize(bytesRead);
 
-            // Create output directory
+            // Compute CRC32
+            uint32_t crc = ManifestWriter::computeCRC32(data.data(), data.size());
+
+            // In overlay mode, skip files identical to base
+            if (!baseCRCs.empty()) {
+                auto it = baseCRCs.find(normalized);
+                if (it != baseCRCs.end() && it->second == crc) {
+                    stats.filesSkipped++;
+                    continue;
+                }
+            }
+
+            // Create output directory and write file
             fs::path outPath(fullOutputPath);
             fs::create_directories(outPath.parent_path(), ec);
 
-            // Write file
             std::ofstream out(fullOutputPath, std::ios::binary);
             if (!out.is_open()) {
                 stats.filesFailed++;
@@ -655,9 +728,6 @@ bool Extractor::run(const Options& opts) {
             }
             out.write(reinterpret_cast<const char*>(data.data()), data.size());
             out.close();
-
-            // Compute CRC32
-            uint32_t crc = ManifestWriter::computeCRC32(data.data(), data.size());
 
             // Add manifest entry
             ManifestWriter::FileEntry entry;
@@ -702,14 +772,32 @@ bool Extractor::run(const Options& opts) {
               << stats.filesSkipped.load() << " skipped, "
               << stats.filesFailed.load() << " failed\n";
 
+    // Merge with existing manifest so partial extractions don't nuke prior entries
+    // (skip merge for overlay manifests — they're standalone)
+    std::string manifestPath = effectiveOutputDir + "/manifest.json";
+    if (!overlayMode && fs::exists(manifestPath)) {
+        auto existing = loadManifestEntries(manifestPath);
+        if (!existing.empty()) {
+            // New entries override existing ones with same key
+            for (auto& entry : manifestEntries) {
+                existing[entry.wowPath] = entry;
+            }
+            // Rebuild manifestEntries from merged map
+            manifestEntries.clear();
+            manifestEntries.reserve(existing.size());
+            for (auto& [k, v] : existing) {
+                manifestEntries.push_back(std::move(v));
+            }
+            std::cout << "Merged with existing manifest (" << existing.size() << " total entries)\n";
+        }
+    }
+
     // Sort manifest entries for deterministic output
     std::sort(manifestEntries.begin(), manifestEntries.end(),
               [](const ManifestWriter::FileEntry& a, const ManifestWriter::FileEntry& b) {
                   return a.wowPath < b.wowPath;
               });
 
-    // Write manifest
-    std::string manifestPath = opts.outputDir + "/manifest.json";
     // basePath is "." since manifest sits inside the output directory
     if (!ManifestWriter::write(manifestPath, ".", manifestEntries)) {
         std::cerr << "Failed to write manifest: " << manifestPath << "\n";
@@ -723,7 +811,7 @@ bool Extractor::run(const Options& opts) {
         std::cout << "Verifying extracted files...\n";
         uint64_t verified = 0, verifyFailed = 0;
         for (const auto& entry : manifestEntries) {
-            std::string fsPath = opts.outputDir + "/" + entry.filesystemPath;
+            std::string fsPath = effectiveOutputDir + "/" + entry.filesystemPath;
             std::ifstream f(fsPath, std::ios::binary | std::ios::ate);
             if (!f.is_open()) {
                 std::cerr << "  MISSING: " << fsPath << "\n";
@@ -764,10 +852,11 @@ bool Extractor::run(const Options& opts) {
 
     if (opts.generateDbcCsv) {
         std::cout << "Converting selected DBCs to CSV for committing...\n";
-        const std::string dbcDir = opts.outputDir + "/db";
+        const std::string dbcDir = effectiveOutputDir + "/db";
+        const std::string csvExpansion = overlayMode ? opts.asOverlay : opts.expansion;
         const std::string csvDir = !opts.dbcCsvOutputDir.empty()
             ? opts.dbcCsvOutputDir
-            : (opts.outputDir + "/expansions/" + opts.expansion + "/db");
+            : (opts.outputDir + "/expansions/" + csvExpansion + "/db");
 
         uint32_t ok = 0, fail = 0, missing = 0;
         for (const auto& base : getUsedDbcNamesForExpansion(opts.expansion)) {
@@ -796,8 +885,8 @@ bool Extractor::run(const Options& opts) {
         }
     }
 
-    // Cache WoW.exe for Warden MEM_CHECK responses
-    {
+    // Cache WoW.exe for Warden MEM_CHECK responses (base extraction only)
+    if (!overlayMode) {
         const char* exeNames[] = { "WoW.exe", "TurtleWoW.exe", "Wow.exe" };
         std::vector<std::string> searchDirs = {
             fs::path(opts.mpqDir).parent_path().string(),  // WoW.exe is typically next to Data/
@@ -818,6 +907,41 @@ bool Extractor::run(const Options& opts) {
                 }
             }
             if (found) break;
+        }
+    }
+
+    // Auto-update expansion.json with assetManifest field
+    if (overlayMode) {
+        std::string expJsonPath = opts.outputDir + "/expansions/" + opts.asOverlay + "/expansion.json";
+        if (fs::exists(expJsonPath)) {
+            std::ifstream fin(expJsonPath);
+            std::string content((std::istreambuf_iterator<char>(fin)),
+                                 std::istreambuf_iterator<char>());
+            fin.close();
+
+            if (content.find("\"assetManifest\"") == std::string::npos) {
+                // Insert assetManifest before the closing brace
+                size_t lastBrace = content.rfind('}');
+                if (lastBrace != std::string::npos) {
+                    // Find the last non-whitespace before the closing brace to add comma
+                    size_t pos = lastBrace;
+                    while (pos > 0 && (content[pos - 1] == ' ' || content[pos - 1] == '\n' ||
+                                       content[pos - 1] == '\r' || content[pos - 1] == '\t')) {
+                        pos--;
+                    }
+                    std::string insert = ",\n  \"assetManifest\": \"overlay/manifest.json\"\n";
+                    content.insert(pos, insert);
+
+                    std::ofstream fout(expJsonPath);
+                    fout << content;
+                    fout.close();
+                    std::cout << "Updated " << expJsonPath << " with assetManifest\n";
+                }
+            } else {
+                std::cout << "expansion.json already has assetManifest field\n";
+            }
+        } else {
+            std::cerr << "Warning: " << expJsonPath << " not found — create it manually\n";
         }
     }
 

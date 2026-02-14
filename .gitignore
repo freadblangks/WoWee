@@ -81,6 +81,7 @@ Data/World/
 Data/manifest.json
 Data/expansions/*/manifest.json
 Data/expansions/*/assets/
+Data/expansions/*/overlay/
 Data/hd/
 ingest/
 

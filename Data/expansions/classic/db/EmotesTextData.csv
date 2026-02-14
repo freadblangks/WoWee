@@ -1,880 +1,885 @@
-# fields=10 strings=0,1
-"%s agrees with %s.","%s agrees with %s.",0,0,0,0,0,0,0,8323198
-"s agrees with %s.","%s agrees with you.",0,0,0,0,0,0,0,8323198
-" agrees with %s.","You agree with %s.",0,0,0,0,0,0,0,8323198
-"agrees with %s.","%s agrees.",0,0,0,0,0,0,0,8323198
-"grees with %s.","You agree.",0,0,0,0,0,0,0,8323198
-"rees with %s.","%s is amazed by %s!",0,0,0,0,0,0,0,8323198
-"ees with %s.","%s is amazed by you!",0,0,0,0,0,0,0,8323198
-"es with %s.","You are amazed by %s!",0,0,0,0,0,0,0,8323198
-"s with %s.","%s is amazed!",0,0,0,0,0,0,0,8323198
-" with %s.","You are amazed!",0,0,0,0,0,0,0,8323198
-"with %s.","%s raises his fist in anger at %s.",0,0,0,0,0,0,0,8323198
-"ith %s.","%s raises his fist in anger at you.",0,0,0,0,0,0,0,8323198
-"th %s.","You raise your fist in anger at %s.",0,0,0,0,0,0,0,8323198
-"h %s.","%s raises his fist in anger.",0,0,0,0,0,0,0,8323198
-" %s.","You raise your fist in anger.",0,0,0,0,0,0,0,8323198
-"%s.","%s raises her fist in anger at %s.",0,0,0,0,0,0,0,8323198
-"s.","%s raises her fist in anger at you.",0,0,0,0,0,0,0,8323198
-".","%s raises her fist in anger.",0,0,0,0,0,0,0,8323198
-"","%s apologizes to %s.  Sorry!",0,0,0,0,0,0,0,8323198
-"%s agrees with you.","%s apologizes to you.  Sorry!",0,0,0,0,0,0,0,8323198
-"s agrees with you.","You apologize to %s.  Sorry!",0,0,0,0,0,0,0,8323198
-" agrees with you.","%s apologizes to everyone.  Sorry!",0,0,0,0,0,0,0,8323198
-"agrees with you.","You apologize to everyone.  Sorry!",0,0,0,0,0,0,0,8323198
-"grees with you.","%s applauds at %s.  Bravo!",0,0,0,0,0,0,0,8323198
-"rees with you.","%s applauds at you.  Bravo!",0,0,0,0,0,0,0,8323198
-"ees with you.","You applaud at %s.  Bravo!",0,0,0,0,0,0,0,8323198
-"es with you.","%s applauds.  Bravo!",0,0,0,0,0,0,0,8323198
-"s with you.","You applaud.  Bravo!",0,0,0,0,0,0,0,8323198
-" with you.","%s is so bashful...too bashful to get %s's attention.",0,0,0,0,0,0,0,8323198
-"with you.","%s is so bashful...too bashful to get your attention.",0,0,0,0,0,0,0,8323198
-"ith you.","You are so bashful...too bashful to get %s's attention.",0,0,0,0,0,0,0,8323198
-"th you.","%s is bashful.",0,0,0,0,0,0,0,8323198
-"h you.","You are bashful.",0,0,0,0,0,0,0,8323198
-" you.","%s beckons %s over.",0,0,0,0,0,0,0,8323198
-"you.","%s beckons you over.",0,0,0,0,0,0,0,8323198
-"ou.","You beckon %s over.",0,0,0,0,0,0,0,8323198
-"u.","%s beckons everyone over.",0,0,0,0,0,0,0,8323198
-".","You beckon everyone over to you.",0,0,0,0,0,0,0,8323198
-"","%s begs %s.  How pathetic.",0,0,0,0,0,0,0,8323198
-"You agree with %s.","%s begs you.  How pathetic.",0,0,0,0,0,0,0,8323198
-"ou agree with %s.","You beg %s.  How pathetic.",0,0,0,0,0,0,0,8323198
-"u agree with %s.","%s begs everyone around him.  How pathetic.",0,0,0,0,0,0,0,8323198
-" agree with %s.","You beg everyone around you. How pathetic.",0,0,0,0,0,0,0,8323198
-"agree with %s.","%s begs everyone around her.  How pathetic.",0,0,0,0,0,0,0,8323198
-"gree with %s.","%s bites %s.  Ouch!",0,0,0,0,0,0,0,8323198
-"ree with %s.","%s bites you.  Ouch!",0,0,0,0,0,0,0,8323198
-"ee with %s.","You bite %s.  Ouch!",0,0,0,0,0,0,0,8323198
-"e with %s.","%s looks around for someone to bite.",0,0,0,0,0,0,0,8323198
-" with %s.","You look around for someone to bite.",0,0,0,0,0,0,0,8323198
-"with %s.","Blood oozes from %s's wounds.",0,0,0,0,0,0,0,8323198
-"ith %s.","Blood oozes from your wounds.",0,0,0,0,0,0,0,8323198
-"th %s.","%s blinks at %s.",0,0,0,0,0,0,0,8323198
-"h %s.","%s blinks at you.",0,0,0,0,0,0,0,8323198
-" %s.","You blink at %s.",0,0,0,0,0,0,0,8323198
-"%s.","%s blinks.",0,0,0,0,0,0,0,8323198
-"s.","You blink your eyes.",0,0,0,0,0,0,0,8323198
-".","%s blushes at %s.",0,0,0,0,0,0,0,8323198
-"","%s blushes at you.",0,0,0,0,0,0,0,8323198
-"%s agrees.","You blush at %s.",0,0,0,0,0,0,0,8323198
-"s agrees.","%s blushes.",0,0,0,0,0,0,0,8323198
-" agrees.","You blush.",0,0,0,0,0,0,0,8323198
-"agrees.","%s bonks %s on the noggin.  Doh!",0,0,0,0,0,0,0,8323198
-"grees.","%s bonks you on the noggin.  Doh!",0,0,0,0,0,0,0,8323198
-"rees.","You bonk %s on the noggin.  Doh!",0,0,0,0,0,0,0,8323198
-"ees.","%s bonks his own noggin.  Doh!",0,0,0,0,0,0,0,8323198
-"es.","You bonk yourself on the noggin.  Doh!",0,0,0,0,0,0,0,8323198
-"s.","%s bonks her own noggin.  Doh!",0,0,0,0,0,0,0,8323198
-".","%s is terribly bored with %s.",0,0,0,0,0,0,0,8323198
-"","%s is terribly bored with you.",0,0,0,0,0,0,0,8323198
-"You agree.","You are terribly bored with %s.",0,0,0,0,0,0,0,8323198
-"ou agree.","%s is overcome with boredom.  Oh the drudgery!",0,0,0,0,0,0,0,8323198
-"u agree.","You are overcome with boredom.  Oh the drudgery!",0,0,0,0,0,0,0,8323198
-" agree.","%s bounces up and down in front of %s.",0,0,0,0,0,0,0,8323198
-"agree.","%s bounces up and down in front of you.",0,0,0,0,0,0,0,8323198
-"gree.","You bounce up and down in front of %s.",0,0,0,0,0,0,0,8323198
-"ree.","%s bounces up and down.",0,0,0,0,0,0,0,8323198
-"ee.","You bounce up and down.",0,0,0,0,0,0,0,8323198
-"e.","%s will be right back.  Sit tight, %s.",0,0,0,0,0,0,0,8323198
-".","%s will be right back.  Sit tight.",0,0,0,0,0,0,0,8323198
-"","You let %s know you'll be right back.",0,0,0,0,0,0,0,8323198
-"%s is amazed by %s!","%s will be right back.",0,0,0,0,0,0,0,8323198
-"s is amazed by %s!","You let everyone know you'll be right back.",0,0,0,0,0,0,0,8323198
-" is amazed by %s!","%s bows before %s.",0,0,0,0,0,0,0,8323198
-"is amazed by %s!","%s bows before you.",0,0,0,0,0,0,0,8323198
-"s amazed by %s!","You bow before %s.",0,0,0,0,0,0,0,8323198
-" amazed by %s!","%s bows down graciously.",0,0,0,0,0,0,0,8323198
-"amazed by %s!","You bow down graciously.",0,0,0,0,0,0,0,8323198
-"mazed by %s!","%s burps rudely in %s's face.",0,0,0,0,0,0,0,8323198
-"azed by %s!","%s burps rudely in your face.",0,0,0,0,0,0,0,8323198
-"zed by %s!","You burp rudely in %s's face.",0,0,0,0,0,0,0,8323198
-"ed by %s!","%s lets out a loud belch.",0,0,0,0,0,0,0,8323198
-"d by %s!","You let out a loud belch.",0,0,0,0,0,0,0,8323198
-" by %s!","%s waves goodbye to %s.  Farewell!",0,0,0,0,0,0,0,8323198
-"by %s!","%s waves goodbye to you.  Farewell!",0,0,0,0,0,0,0,8323198
-"y %s!","You wave goodbye to %s.  Farewell!",0,0,0,0,0,0,0,8323198
-" %s!","%s waves goodbye to everyone.  Farewell!",0,0,0,0,0,0,0,8323198
-"%s!","You wave goodbye to everyone.  Farewell!",0,0,0,0,0,0,0,8323198
-"s!","%s cackles maniacally at %s.",0,0,0,0,0,0,0,8323198
-"!","%s cackles maniacally at you.",0,0,0,0,0,0,0,8323198
-"","You cackle maniacally at %s.",0,0,0,0,0,0,0,8323198
-"%s is amazed by you!","%s cackles maniacally at the situation.",0,0,0,0,0,0,0,8323198
-"s is amazed by you!","You cackle maniacally at the situation.",0,0,0,0,0,0,0,8323198
-" is amazed by you!","%s cheers at %s!",0,0,0,0,0,0,0,8323198
-"is amazed by you!","%s cheers at you.",0,0,0,0,0,0,0,8323198
-"s amazed by you!","You cheer at %s.",0,0,0,0,0,0,0,8323198
-" amazed by you!","%s cheers!",0,0,0,0,0,0,0,8323198
-"amazed by you!","You cheer!",0,0,0,0,0,0,0,8323198
-"mazed by you!","With arms flapping, %s struts around %s.  Cluck, Cluck, Chicken!",0,0,0,0,0,0,0,8323198
-"azed by you!","With arms flapping, %s struts around you.  Cluck, Cluck, Chicken!",0,0,0,0,0,0,0,8323198
-"zed by you!","With arms flapping, you strut around %s.  Cluck, Cluck, Chicken!",0,0,0,0,0,0,0,8323198
-"ed by you!","With arms flapping, %s struts around.  Cluck, Cluck, Chicken!",0,0,0,0,0,0,0,8323198
-"d by you!","With arms flapping, you strut around.  Cluck, Cluck, Chicken!",0,0,0,0,0,0,0,8323198
-" by you!","%s chuckles at %s.",0,0,0,0,0,0,0,8323198
-"by you!","%s chuckles at you.",0,0,0,0,0,0,0,8323198
-"y you!","You chuckle at %s.",0,0,0,0,0,0,0,8323198
-" you!","%s lets out a hearty chuckle.",0,0,0,0,0,0,0,8323198
-"you!","You let out a hearty chuckle.",0,0,0,0,0,0,0,8323198
-"ou!","%s claps excitedly for %s.",0,0,0,0,0,0,0,8323198
-"u!","%s claps excitedly for you.",0,0,0,0,0,0,0,8323198
-"!","You clap excitedly for %s.",0,0,0,0,0,0,0,8323198
-"","%s claps excitedly.",0,0,0,0,0,0,0,8323198
-"You are amazed by %s!","You clap excitedly.",0,0,0,0,0,0,0,8323198
-"ou are amazed by %s!","%s looks at %s with a confused look.",0,0,0,0,0,0,0,8323198
-"u are amazed by %s!","%s looks at you with a confused look.",0,0,0,0,0,0,0,8323198
-" are amazed by %s!","You look at %s with a confused look.",0,0,0,0,0,0,0,8323198
-"are amazed by %s!","%s is hopelessly confused.",0,0,0,0,0,0,0,8323198
-"re amazed by %s!","You are hopelessly confused.",0,0,0,0,0,0,0,8323198
-"e amazed by %s!","%s congratulates %s.",0,0,0,0,0,0,0,8323198
-" amazed by %s!","%s congratulates you.",0,0,0,0,0,0,0,8323198
-"amazed by %s!","You congratulate %s.",0,0,0,0,0,0,0,8323198
-"mazed by %s!","%s congratulates everyone.",0,0,0,0,0,0,0,8323198
-"azed by %s!","You congratulate everyone around you.",0,0,0,0,0,0,0,8323198
-"zed by %s!","%s coughs at %s.",0,0,0,0,0,0,0,8323198
-"ed by %s!","%s coughs at you.",0,0,0,0,0,0,0,8323198
-"d by %s!","You cough at %s.",0,0,0,0,0,0,0,8323198
-" by %s!","%s lets out a hacking cough.",0,0,0,0,0,0,0,8323198
-"by %s!","You let out a hacking cough.",0,0,0,0,0,0,0,8323198
-"y %s!","%s cowers in fear at the sight of %s.",0,0,0,0,0,0,0,8323198
-" %s!","%s cowers in fear at the sight of you.",0,0,0,0,0,0,0,8323198
-"%s!","You cower in fear at the sight of %s.",0,0,0,0,0,0,0,8323198
-"s!","%s cowers in fear.",0,0,0,0,0,0,0,8323198
-"!","You cower in fear.",0,0,0,0,0,0,0,8323198
-"","%s cracks his knuckles while staring at %s.",0,0,0,0,0,0,0,8323198
-"%s is amazed!","%s cracks his knuckles while staring at you.",0,0,0,0,0,0,0,8323198
-"s is amazed!","You crack your knuckles while staring at %s.",0,0,0,0,0,0,0,8323198
-" is amazed!","%s cracks his knuckles.",0,0,0,0,0,0,0,8323198
-"is amazed!","You crack your knuckles.",0,0,0,0,0,0,0,8323198
-"s amazed!","%s cracks her knuckles while staring at %s.",0,0,0,0,0,0,0,8323198
-" amazed!","%s cracks her knuckles while staring at you.",0,0,0,0,0,0,0,8323198
-"amazed!","%s cracks her knuckles.",0,0,0,0,0,0,0,8323198
-"mazed!","%s cringes away from %s.",0,0,0,0,0,0,0,8323198
-"azed!","%s cringes away from you.",0,0,0,0,0,0,0,8323198
-"zed!","You cringe away from %s.",0,0,0,0,0,0,0,8323198
-"ed!","%s cringes in fear.",0,0,0,0,0,0,0,8323198
-"d!","You cringe in fear.",0,0,0,0,0,0,0,8323198
-"!","%s cries on %s's shoulder.",0,0,0,0,0,0,0,8323198
-"","%s cries on your shoulder.",0,0,0,0,0,0,0,8323198
-"You are amazed!","You cry on %s's shoulder.",0,0,0,0,0,0,0,8323198
-"ou are amazed!","%s cries.",0,0,0,0,0,0,0,8323198
-"u are amazed!","You cry.",0,0,0,0,0,0,0,8323198
-" are amazed!","%s is curious what %s is up to.",0,0,0,0,0,0,0,8323198
-"are amazed!","%s is curious what you are up to.",0,0,0,0,0,0,0,8323198
-"re amazed!","You are curious what %s is up to.",0,0,0,0,0,0,0,8323198
-"e amazed!","%s expresses his curiosity to everyone.",0,0,0,0,0,0,0,8323198
-" amazed!","You express your curiosity to those around you.",0,0,0,0,0,0,0,8323198
-"amazed!","%s expresses her curiosity to everyone.",0,0,0,0,0,0,0,8323198
-"mazed!","%s curtsies before %s.",0,0,0,0,0,0,0,8323198
-"azed!","%s curtsies before you.",0,0,0,0,0,0,0,8323198
-"zed!","You curtsey before %s.",0,0,0,0,0,0,0,8323198
-"ed!","%s curtsies.",0,0,0,0,0,0,0,8323198
-"d!","You curtsey.",0,0,0,0,0,0,0,8323198
-"!","%s dances with %s.",0,0,0,0,0,0,0,8323198
-"","%s dances with you.",0,0,0,0,0,0,0,8323198
-"%s raises his fist in anger at %s.","You dance with %s.",0,0,0,0,0,0,0,8323198
-"s raises his fist in anger at %s.","%s bursts into dance.",0,0,0,0,0,0,0,8323198
-" raises his fist in anger at %s.","You burst into dance.",0,0,0,0,0,0,0,8323198
-"raises his fist in anger at %s.","%s raises a drink to %s.  Cheers!",0,0,0,0,0,0,0,8323198
-"aises his fist in anger at %s.","%s raises a drink to you.  Cheers!",0,0,0,0,0,0,0,8323198
-"ises his fist in anger at %s.","You raise a drink to %s.  Cheers!",0,0,0,0,0,0,0,8323198
-"ses his fist in anger at %s.","%s raises a drink in the air before chugging it down.  Cheers!",0,0,0,0,0,0,0,8323198
-"es his fist in anger at %s.","You raise a drink in the air before chugging it down.  Cheers!",0,0,0,0,0,0,0,8323198
-"s his fist in anger at %s.","%s looks at %s and begins to drool.",0,0,0,0,0,0,0,8323198
-" his fist in anger at %s.","%s looks at you and begins to drool.",0,0,0,0,0,0,0,8323198
-"his fist in anger at %s.","You look at %s and begin to drool.",0,0,0,0,0,0,0,8323198
-"is fist in anger at %s.","A tendril of drool runs down %s's lip.",0,0,0,0,0,0,0,8323198
-"s fist in anger at %s.","A tendril of drool runs down your lip.",0,0,0,0,0,0,0,8323198
-" fist in anger at %s.","%s begins to eat in front of %s.",0,0,0,0,0,0,0,8323198
-"fist in anger at %s.","%s begins to eat rations in front of you.",0,0,0,0,0,0,0,8323198
-"ist in anger at %s.","You begin to eat in front of %s.",0,0,0,0,0,0,0,8323198
-"st in anger at %s.","%s begins to eat.",0,0,0,0,0,0,0,8323198
-"t in anger at %s.","You begin to eat.",0,0,0,0,0,0,0,8323198
-" in anger at %s.","%s eyes %s up and down.",0,0,0,0,0,0,0,8323198
-"in anger at %s.","%s eyes you up and down.",0,0,0,0,0,0,0,8323198
-"n anger at %s.","You eye %s up and down.",0,0,0,0,0,0,0,8323198
-" anger at %s.","%s looks at you with crossed eyes.",0,0,0,0,0,0,0,8323198
-"anger at %s.","You cross your eyes.",0,0,0,0,0,0,0,8323198
-"nger at %s.","%s brushes up against %s and farts loudly.",0,0,0,0,0,0,0,8323198
-"ger at %s.","%s brushes up against you and farts loudly.",0,0,0,0,0,0,0,8323198
-"er at %s.","You brush up against %s and fart loudly.",0,0,0,0,0,0,0,8323198
-"r at %s.","%s farts loudly.  Whew...what stinks?",0,0,0,0,0,0,0,8323198
-" at %s.","You fart loudly.  Whew...what stinks?",0,0,0,0,0,0,0,8323198
-"at %s.","%s fidgets impatiently while waiting for %s.",0,0,0,0,0,0,0,8323198
-"t %s.","%s fidgets impatiently while waiting for you.",0,0,0,0,0,0,0,8323198
-" %s.","You fidget impatiently while waiting for %s.",0,0,0,0,0,0,0,8323198
-"%s.","%s fidgets.",0,0,0,0,0,0,0,8323198
-"s.","You fidget.",0,0,0,0,0,0,0,8323198
-".","%s flexes at %s.  Oooooh so strong!",0,0,0,0,0,0,0,8323198
-"","%s flexes at you.  Oooooh so strong!",0,0,0,0,0,0,0,8323198
-"%s raises his fist in anger at you.","You flex at %s.  Oooooh so strong!",0,0,0,0,0,0,0,8323198
-"s raises his fist in anger at you.","%s flexes his muscles.  Oooooh so strong!",0,0,0,0,0,0,0,8323198
-" raises his fist in anger at you.","You flex your muscles.  Oooooh so strong!",0,0,0,0,0,0,0,8323198
-"raises his fist in anger at you.","%s flexes her muscles.  Oooooh so strong!",0,0,0,0,0,0,0,8323198
-"aises his fist in anger at you.","%s frowns with disappointment at %s.",0,0,0,0,0,0,0,8323198
-"ises his fist in anger at you.","%s frowns with disappointment at you.",0,0,0,0,0,0,0,8323198
-"ses his fist in anger at you.","You frown with disappointment at %s.",0,0,0,0,0,0,0,8323198
-"es his fist in anger at you.","%s frowns.",0,0,0,0,0,0,0,8323198
-"s his fist in anger at you.","You frown.",0,0,0,0,0,0,0,8323198
-" his fist in anger at you.","%s gasps at %s.",0,0,0,0,0,0,0,8323198
-"his fist in anger at you.","%s gasps at you.",0,0,0,0,0,0,0,8323198
-"is fist in anger at you.","You gasp at %s.",0,0,0,0,0,0,0,8323198
-"s fist in anger at you.","%s gasps.",0,0,0,0,0,0,0,8323198
-" fist in anger at you.","You gasp.",0,0,0,0,0,0,0,8323198
-"fist in anger at you.","%s gazes eagerly at %s.",0,0,0,0,0,0,0,8323198
-"ist in anger at you.","%s gazes eagerly at you.",0,0,0,0,0,0,0,8323198
-"st in anger at you.","You gaze eagerly at %s.",0,0,0,0,0,0,0,8323198
-"t in anger at you.","%s gazes off into the distance.",0,0,0,0,0,0,0,8323198
-" in anger at you.","You gaze off into the distance.",0,0,0,0,0,0,0,8323198
-"in anger at you.","%s giggles at %s.",0,0,0,0,0,0,0,8323198
-"n anger at you.","%s giggles at you.",0,0,0,0,0,0,0,8323198
-" anger at you.","You giggle at %s.",0,0,0,0,0,0,0,8323198
-"anger at you.","%s giggles.",0,0,0,0,0,0,0,8323198
-"nger at you.","You giggle.",0,0,0,0,0,0,0,8323198
-"ger at you.","%s glares angrily at %s.",0,0,0,0,0,0,0,8323198
-"er at you.","%s glares angrily at you.",0,0,0,0,0,0,0,8323198
-"r at you.","You glare angrily at %s.",0,0,0,0,0,0,0,8323198
-" at you.","%s glares angrily.",0,0,0,0,0,0,0,8323198
-"at you.","You glare angrily.",0,0,0,0,0,0,0,8323198
-"t you.","%s gloats over %s's misfortune.",0,0,0,0,0,0,0,8323198
-" you.","%s gloats over your misfortune.",0,0,0,0,0,0,0,8323198
-"you.","You gloat over %s's misfortune.",0,0,0,0,0,0,0,8323198
-"ou.","%s gloats over everyone's misfortune.",0,0,0,0,0,0,0,8323198
-"u.","You gloat over everyone's misfortune.",0,0,0,0,0,0,0,8323198
-".","%s greets %s warmly.",0,0,0,0,0,0,0,8323198
-"","%s greets you warmly.",0,0,0,0,0,0,0,8323198
-"You raise your fist in anger at %s.","You greet %s warmly.",0,0,0,0,0,0,0,8323198
-"ou raise your fist in anger at %s.","%s greets everyone warmly.",0,0,0,0,0,0,0,8323198
-"u raise your fist in anger at %s.","You greet everyone warmly.",0,0,0,0,0,0,0,8323198
-" raise your fist in anger at %s.","%s grins wickedly at %s.",0,0,0,0,0,0,0,8323198
-"raise your fist in anger at %s.","%s grins at you wickedly.",0,0,0,0,0,0,0,8323198
-"aise your fist in anger at %s.","You grin wickedly at %s.",0,0,0,0,0,0,0,8323198
-"ise your fist in anger at %s.","%s grins wickedly.",0,0,0,0,0,0,0,8323198
-"se your fist in anger at %s.","You grin wickedly.",0,0,0,0,0,0,0,8323198
-"e your fist in anger at %s.","%s looks at %s and groans.",0,0,0,0,0,0,0,8323198
-" your fist in anger at %s.","%s looks at you and groans.",0,0,0,0,0,0,0,8323198
-"your fist in anger at %s.","You look at %s and groan.",0,0,0,0,0,0,0,8323198
-"our fist in anger at %s.","%s begins to groan.",0,0,0,0,0,0,0,8323198
-"ur fist in anger at %s.","You begin to groan.",0,0,0,0,0,0,0,8323198
-"r fist in anger at %s.","%s grovels before %s like a subservient peon.",0,0,0,0,0,0,0,8323198
-" fist in anger at %s.","%s grovels before you like a subservient peon.",0,0,0,0,0,0,0,8323198
-"fist in anger at %s.","You grovel before %s like a subservient peon.",0,0,0,0,0,0,0,8323198
-"ist in anger at %s.","%s grovels on the ground, wallowing in subservience.",0,0,0,0,0,0,0,8323198
-"st in anger at %s.","You grovel on the ground, wallowing in subservience.",0,0,0,0,0,0,0,8323198
-"t in anger at %s.","%s takes one look at %s and lets out a guffaw!",0,0,0,0,0,0,0,8323198
-" in anger at %s.","%s takes one look at you and lets out a guffaw!",0,0,0,0,0,0,0,8323198
-"in anger at %s.","You take one look at %s and let out a guffaw!",0,0,0,0,0,0,0,8323198
-"n anger at %s.","%s lets out a boisterous guffaw!",0,0,0,0,0,0,0,8323198
-" anger at %s.","You let out a boisterous guffaw!",0,0,0,0,0,0,0,8323198
-"anger at %s.","%s hails %s.",0,0,0,0,0,0,0,8323198
-"nger at %s.","%s hails you.",0,0,0,0,0,0,0,8323198
-"ger at %s.","You hail %s.",0,0,0,0,0,0,0,8323198
-"er at %s.","%s hails everyone around him.",0,0,0,0,0,0,0,8323198
-"r at %s.","You hail those around you.",0,0,0,0,0,0,0,8323198
-" at %s.","%s hails everyone around her.",0,0,0,0,0,0,0,8323198
-"at %s.","%s is very happy with %s!",0,0,0,0,0,0,0,8323198
-"t %s.","%s is very happy with you!",0,0,0,0,0,0,0,8323198
-" %s.","You are very happy with %s!",0,0,0,0,0,0,0,8323198
-"%s.","%s is filled with happiness!",0,0,0,0,0,0,0,8323198
-"s.","You are filled with happiness!",0,0,0,0,0,0,0,8323198
-".","%s greets %s with a hearty hello!",0,0,0,0,0,0,0,8323198
-"","%s greets you with a hearty hello!",0,0,0,0,0,0,0,8323198
-"%s raises his fist in anger.","You greet %s with a hearty hello!",0,0,0,0,0,0,0,8323198
-"s raises his fist in anger.","%s greets everyone with a hearty hello!",0,0,0,0,0,0,0,8323198
-" raises his fist in anger.","You greet everyone with a hearty hello!",0,0,0,0,0,0,0,8323198
-"raises his fist in anger.","%s hugs %s.",0,0,0,0,0,0,0,8323198
-"aises his fist in anger.","%s hugs you.",0,0,0,0,0,0,0,8323198
-"ises his fist in anger.","You hug %s.",0,0,0,0,0,0,0,8323198
-"ses his fist in anger.","%s needs a hug!",0,0,0,0,0,0,0,8323198
-"es his fist in anger.","You need a hug!",0,0,0,0,0,0,0,8323198
-"s his fist in anger.","%s is hungry.  Maybe %s has some food...",0,0,0,0,0,0,0,8323198
-" his fist in anger.","%s is hungry.  Maybe you have some food...",0,0,0,0,0,0,0,8323198
-"his fist in anger.","You are hungry.  Maybe %s has some food...",0,0,0,0,0,0,0,8323198
-"is fist in anger.","%s is hungry!",0,0,0,0,0,0,0,8323198
-"s fist in anger.","You are hungry!",0,0,0,0,0,0,0,8323198
-" fist in anger.","%s blows %s a kiss.",0,0,0,0,0,0,0,8323198
-"fist in anger.","%s blows you a kiss.",0,0,0,0,0,0,0,8323198
-"ist in anger.","You blow a kiss to %s.",0,0,0,0,0,0,0,8323198
-"st in anger.","%s blows a kiss into the wind.",0,0,0,0,0,0,0,8323198
-"t in anger.","You blow a kiss into the wind.",0,0,0,0,0,0,0,8323198
-" in anger.","%s kneels before %s.",0,0,0,0,0,0,0,8323198
-"in anger.","%s kneels before you.",0,0,0,0,0,0,0,8323198
-"n anger.","You kneel before %s.",0,0,0,0,0,0,0,8323198
-" anger.","%s kneels down.",0,0,0,0,0,0,0,8323198
-"anger.","You kneel down.",0,0,0,0,0,0,0,8323198
-"nger.","%s laughs at %s.",0,0,0,0,0,0,0,8323198
-"ger.","%s laughs at you.",0,0,0,0,0,0,0,8323198
-"er.","You laugh at %s.",0,0,0,0,0,0,0,8323198
-"r.","%s laughs.",0,0,0,0,0,0,0,8323198
-".","You laugh.",0,0,0,0,0,0,0,8323198
-"","%s lies down before %s.",0,0,0,0,0,0,0,8323198
-"You raise your fist in anger.","%s lies down before you.",0,0,0,0,0,0,0,8323198
-"ou raise your fist in anger.","You lie down before %s.",0,0,0,0,0,0,0,8323198
-"u raise your fist in anger.","%s lies down.",0,0,0,0,0,0,0,8323198
-" raise your fist in anger.","You lie down.",0,0,0,0,0,0,0,8323198
-"raise your fist in anger.","%s massages %s's shoulders.",0,0,0,0,0,0,0,8323198
-"aise your fist in anger.","%s massages your shoulders.",0,0,0,0,0,0,0,8323198
-"ise your fist in anger.","You massage %s's shoulders.",0,0,0,0,0,0,0,8323198
-"se your fist in anger.","%s needs a massage!",0,0,0,0,0,0,0,8323198
-"e your fist in anger.","You need a massage!",0,0,0,0,0,0,0,8323198
-" your fist in anger.","%s moans suggestively at %s.",0,0,0,0,0,0,0,8323198
-"your fist in anger.","%s moans suggestively at you.",0,0,0,0,0,0,0,8323198
-"our fist in anger.","You moan suggestively at %s.",0,0,0,0,0,0,0,8323198
-"ur fist in anger.","%s moans suggestively.",0,0,0,0,0,0,0,8323198
-"r fist in anger.","You moan suggestively.",0,0,0,0,0,0,0,8323198
-" fist in anger.","%s drops his trousers and moons %s.",0,0,0,0,0,0,0,8323198
-"fist in anger.","%s drops his trousers and moons you.",0,0,0,0,0,0,0,8323198
-"ist in anger.","You drop your trousers and moon %s.",0,0,0,0,0,0,0,8323198
-"st in anger.","%s drops his trousers and moons everyone.",0,0,0,0,0,0,0,8323198
-"t in anger.","You drop your trousers and moon everyone.",0,0,0,0,0,0,0,8323198
-" in anger.","%s drops her trousers and moons %s.",0,0,0,0,0,0,0,8323198
-"in anger.","%s drops her trousers and moons you.",0,0,0,0,0,0,0,8323198
-"n anger.","%s drops her trousers and moons everyone.",0,0,0,0,0,0,0,8323198
-" anger.","In quiet contemplation, %s mourns the death of %s.",0,0,0,0,0,0,0,8323198
-"anger.","In quiet contemplation, %s mourns your death.",0,0,0,0,0,0,0,8323198
-"nger.","In quiet contemplation, you mourn the death of %s.",0,0,0,0,0,0,0,8323198
-"ger.","In quiet contemplation, %s mourns the loss of the dead.",0,0,0,0,0,0,0,8323198
-"er.","In quiet contemplation, you mourn the loss of the dead.",0,0,0,0,0,0,0,8323198
-"r.","%s tells %s NO.  Not going to happen.",0,0,0,0,0,0,0,8323198
-".","%s tells you NO.  Not going to happen.",0,0,0,0,0,0,0,8323198
-"","You tell %s NO.  Not going to happen.",0,0,0,0,0,0,0,8323198
-"%s raises her fist in anger at %s.","%s clearly states, NO.",0,0,0,0,0,0,0,8323198
-"s raises her fist in anger at %s.","You clearly state, NO.",0,0,0,0,0,0,0,8323198
-" raises her fist in anger at %s.","%s nods at %s.",0,0,0,0,0,0,0,8323198
-"raises her fist in anger at %s.","%s nods at you.",0,0,0,0,0,0,0,8323198
-"aises her fist in anger at %s.","You nod at %s.",0,0,0,0,0,0,0,8323198
-"ises her fist in anger at %s.","%s nods.",0,0,0,0,0,0,0,8323198
-"ses her fist in anger at %s.","You nod.",0,0,0,0,0,0,0,8323198
-"es her fist in anger at %s.","%s picks his nose and shows it to %s.",0,0,0,0,0,0,0,8323198
-"s her fist in anger at %s.","%s picks his nose and shows it to you.",0,0,0,0,0,0,0,8323198
-" her fist in anger at %s.","You pick your nose and show it to %s.",0,0,0,0,0,0,0,8323198
-"her fist in anger at %s.","%s passes the time with a finger deep in one nostril.",0,0,0,0,0,0,0,8323198
-"er fist in anger at %s.","With a finger deep in one nostril, you pass the time.",0,0,0,0,0,0,0,8323198
-"r fist in anger at %s.","%s picks her nose and shows it to %s.",0,0,0,0,0,0,0,8323198
-" fist in anger at %s.","%s picks her nose and shows it to you.",0,0,0,0,0,0,0,8323198
-"fist in anger at %s.","%s takes one look at %s and panics.",0,0,0,0,0,0,0,8323198
-"ist in anger at %s.","%s takes one look at you and panics.",0,0,0,0,0,0,0,8323198
-"st in anger at %s.","You take one look at %s and panic.",0,0,0,0,0,0,0,8323198
-"t in anger at %s.","%s runs around in a frenzied state of panic.",0,0,0,0,0,0,0,8323198
-" in anger at %s.","You run around in a frenzied state of panic.",0,0,0,0,0,0,0,8323198
-"in anger at %s.","%s peers at %s searchingly.",0,0,0,0,0,0,0,8323198
-"n anger at %s.","%s peers at you searchingly.",0,0,0,0,0,0,0,8323198
-" anger at %s.","You peer at %s searchingly.",0,0,0,0,0,0,0,8323198
-"anger at %s.","%s peers around, searchingly.",0,0,0,0,0,0,0,8323198
-"nger at %s.","You peer around, searchingly.",0,0,0,0,0,0,0,8323198
-"ger at %s.","%s pleads with %s.",0,0,0,0,0,0,0,8323198
-"er at %s.","%s pleads with you.",0,0,0,0,0,0,0,8323198
-"r at %s.","You plead with %s.",0,0,0,0,0,0,0,8323198
-" at %s.","%s drops to his knees and pleads in desperation.",0,0,0,0,0,0,0,4128894
-"at %s.","You drop to your knees and plead in desperation.",0,0,0,0,0,0,0,8323198
-"t %s.","%s drops to her knees and plead in desperation.",0,0,0,0,0,0,0,8323198
-" %s.","%s points at %s.",0,0,0,0,0,0,0,8323198
-"%s.","%s points at you.",0,0,0,0,0,0,0,8323198
-"s.","You point at %s.",0,0,0,0,0,0,0,8323198
-".","%s points over yonder.",0,0,0,0,0,0,0,8323198
-"","You point over yonder.",0,0,0,0,0,0,0,8323198
-"%s raises her fist in anger at you.","%s pokes %s.  Hey!",0,0,0,0,0,0,0,8323198
-"s raises her fist in anger at you.","%s pokes you.  Hey!",0,0,0,0,0,0,0,8323198
-" raises her fist in anger at you.","You poke %s.  Hey!",0,0,0,0,0,0,0,8323198
-"raises her fist in anger at you.","%s pokes his belly and giggles.",0,0,0,0,0,0,0,8323198
-"aises her fist in anger at you.","You poke your belly and giggle.",0,0,0,0,0,0,0,8323198
-"ises her fist in anger at you.","%s pokes her belly and giggles.",0,0,0,0,0,0,0,8323198
-"ses her fist in anger at you.","%s says a prayer for %s.",0,0,0,0,0,0,0,8323198
-"es her fist in anger at you.","%s says a prayer for you.",0,0,0,0,0,0,0,8323198
-"s her fist in anger at you.","You say a prayer for %s.",0,0,0,0,0,0,0,8323198
-" her fist in anger at you.","%s prays to the Gods.",0,0,0,0,0,0,0,8323198
-"her fist in anger at you.","You pray to the Gods.",0,0,0,0,0,0,0,8323198
-"er fist in anger at you.","%s roars with bestial vigor at %s.  So fierce!",0,0,0,0,0,0,0,8323198
-"r fist in anger at you.","%s roars with bestial vigor at you.  So fierce!",0,0,0,0,0,0,0,8323198
-" fist in anger at you.","You roar with bestial vigor at %s.  So fierce!",0,0,0,0,0,0,0,8323198
-"fist in anger at you.","%s roars with bestial vigor.  So fierce!",0,0,0,0,0,0,0,8323198
-"ist in anger at you.","You roar with bestial vigor.  So fierce!",0,0,0,0,0,0,0,8323198
-"st in anger at you.","%s rolls on the floor laughing at %s.",0,0,0,0,0,0,0,8323198
-"t in anger at you.","%s rolls on the floor laughing at you.",0,0,0,0,0,0,0,8323198
-" in anger at you.","You roll on the floor laughing at %s.",0,0,0,0,0,0,0,8323198
-"in anger at you.","%s rolls on the floor laughing.",0,0,0,0,0,0,0,8323198
-"n anger at you.","You roll on the floor laughing.",0,0,0,0,0,0,0,8323198
-" anger at you.","%s makes a rude gesture at %s.",0,0,0,0,0,0,0,8323198
-"anger at you.","%s makes a rude gesture at you.",0,0,0,0,0,0,0,8323198
-"nger at you.","You make a rude gesture at %s.",0,0,0,0,0,0,0,8323198
-"ger at you.","%s makes a rude gesture.",0,0,0,0,0,0,0,8323198
-"er at you.","You make a rude gesture.",0,0,0,0,0,0,0,8323198
-"r at you.","%s salutes %s with respect.",0,0,0,0,0,0,0,8323198
-" at you.","%s salutes you with respect.",0,0,0,0,0,0,0,8323198
-"at you.","You salute %s with respect.",0,0,0,0,0,0,0,8323198
-"t you.","%s stands at attention and salutes.",0,0,0,0,0,0,0,4128894
-" you.","You stand at attention and salute.",0,0,0,0,0,0,0,8323198
-"you.","%s scratches %s.  How catty!",0,0,0,0,0,0,0,8323198
-"ou.","%s scratches you.  How catty!",0,0,0,0,0,0,0,8323198
-"u.","You scratch %s.  How catty!",0,0,0,0,0,0,0,8323198
-".","%s scratches himself.  Ah, much better!",0,0,0,0,0,0,0,8323198
-"","You scratch yourself.  Ah, much better!",0,0,0,0,0,0,0,8323198
-"%s raises her fist in anger.","%s scratches herself.  Ah, much better!",0,0,0,0,0,0,0,8323198
-"s raises her fist in anger.","%s thinks %s is a sexy devil.",0,0,0,0,0,0,0,8323198
-" raises her fist in anger.","%s thinks you are a sexy devil.",0,0,0,0,0,0,0,8323198
-"raises her fist in anger.","You think %s is a sexy devil.",0,0,0,0,0,0,0,8323198
-"aises her fist in anger.","%s is too sexy for his tunic...so sexy it hurts.",0,0,0,0,0,0,0,8323198
-"ises her fist in anger.","You're too sexy for your tunic...so sexy it hurts.",0,0,0,0,0,0,0,8323198
-"ses her fist in anger.","%s is too sexy for her tunic...so sexy it hurts.",0,0,0,0,0,0,0,8323198
-"es her fist in anger.","%s shakes his rear at %s.",0,0,0,0,0,0,0,8323198
-"s her fist in anger.","%s shakes his rear at you.",0,0,0,0,0,0,0,8323198
-" her fist in anger.","You shake your rear at %s.",0,0,0,0,0,0,0,8323198
-"her fist in anger.","%s shakes his rear.",0,0,0,0,0,0,0,8323198
-"er fist in anger.","You shake your rear.",0,0,0,0,0,0,0,8323198
-"r fist in anger.","%s shakes her rear at %s.",0,0,0,0,0,0,0,8323198
-" fist in anger.","%s shakes her rear at you.",0,0,0,0,0,0,0,8323198
-"fist in anger.","%s shakes her rear.",0,0,0,0,0,0,0,8323198
-"ist in anger.","%s shouts at %s.",0,0,0,0,0,0,0,8323198
-"st in anger.","%s shouts at you.",0,0,0,0,0,0,0,8323198
-"t in anger.","You shout at %s.",0,0,0,0,0,0,0,8323198
-" in anger.","%s shouts.",0,0,0,0,0,0,0,8323198
-"in anger.","You shout.",0,0,0,0,0,0,0,8323198
-"n anger.","%s shrugs at %s.  Who knows?",0,0,0,0,0,0,0,8323198
-" anger.","%s shrugs at you.  Who knows?",0,0,0,0,0,0,0,8323198
-"anger.","You shrug at %s.  Who knows?",0,0,0,0,0,0,0,8323198
-"nger.","%s shrugs.  Who knows?",0,0,0,0,0,0,0,4128894
-"ger.","You shrug.  Who knows?",0,0,0,0,0,0,0,8323198
-"er.","%s smiles shyly at %s.",0,0,0,0,0,0,0,4128894
-"r.","%s smiles shyly at you.",0,0,0,0,0,0,0,4128894
-".","You smile shyly at %s.",0,0,0,0,0,0,0,4128894
-"","%s smiles shyly.",0,0,0,0,0,0,0,4128894
-"%s apologizes to %s.  Sorry!","You smile shyly.",0,0,0,0,0,0,0,4128894
-"s apologizes to %s.  Sorry!","%s sighs at %s.",0,0,0,0,0,0,0,8323198
-" apologizes to %s.  Sorry!","%s sighs at you.",0,0,0,0,0,0,0,8323198
-"apologizes to %s.  Sorry!","You sigh at %s.",0,0,0,0,0,0,0,8323198
-"pologizes to %s.  Sorry!","%s lets out a long, drawn-out sigh.",0,0,0,0,0,0,0,8323198
-"ologizes to %s.  Sorry!","You let out a long, drawn-out sigh.",0,0,0,0,0,0,0,8323198
-"logizes to %s.  Sorry!","",0,0,0,0,0,0,0,8323196
-"ogizes to %s.  Sorry!","",0,0,0,0,0,0,0,8323196
-"gizes to %s.  Sorry!","%s falls asleep. Zzzzzzz.",0,0,0,0,0,0,0,8323198
-"izes to %s.  Sorry!","You fall asleep.  Zzzzzzz.",0,0,0,0,0,0,0,8323198
-"zes to %s.  Sorry!","%s bares his teeth and snarls at %s.",0,0,0,0,0,0,0,8323198
-"es to %s.  Sorry!","%s bares his teeth and snarls at you.",0,0,0,0,0,0,0,8323198
-"s to %s.  Sorry!","You bare your teeth and snarl at %s.",0,0,0,0,0,0,0,8323198
-" to %s.  Sorry!","%s bares his teeth and snarls.",0,0,0,0,0,0,0,8323198
-"to %s.  Sorry!","You bare your teeth and snarl.",0,0,0,0,0,0,0,8323198
-"o %s.  Sorry!","%s bares her teeth and snarls at %s.",0,0,0,0,0,0,0,8323198
-" %s.  Sorry!","%s bares her teeth and snarls at you.",0,0,0,0,0,0,0,8323198
-"%s.  Sorry!","%s bares her teeth and snarls.",0,0,0,0,0,0,0,8323198
-"s.  Sorry!","%s spits on %s.",0,0,0,0,0,0,0,8323198
-".  Sorry!","%s spits on you.",0,0,0,0,0,0,0,8323198
-"  Sorry!","You spit on %s.",0,0,0,0,0,0,0,8323198
-" Sorry!","%s spits on the ground.",0,0,0,0,0,0,0,8323198
-"Sorry!","You spit on the ground.",0,0,0,0,0,0,0,8323198
-"orry!","%s stares %s down.",0,0,0,0,0,0,0,8323198
-"rry!","%s stares you down.",0,0,0,0,0,0,0,8323198
-"ry!","You stare %s down.",0,0,0,0,0,0,0,8323198
-"y!","%s stares off into the distance.",0,0,0,0,0,0,0,8323198
-"!","You stare off into the distance.",0,0,0,0,0,0,0,8323198
-"","%s is surprised by %s's actions.",0,0,0,0,0,0,0,4128894
-"%s apologizes to you.  Sorry!","%s is surprised by your actions.",0,0,0,0,0,0,0,4128894
-"s apologizes to you.  Sorry!","You are surprised by %s's actions.",0,0,0,0,0,0,0,4128894
-" apologizes to you.  Sorry!","%s is so surprised!",0,0,0,0,0,0,0,8323198
-"apologizes to you.  Sorry!","You are so surprised!",0,0,0,0,0,0,0,8323198
-"pologizes to you.  Sorry!","%s surrenders before %s.  Such is the agony of defeat...",0,0,0,0,0,0,0,8323198
-"ologizes to you.  Sorry!","%s surrenders before you.  Such is the agony of defeat...",0,0,0,0,0,0,0,8323198
-"logizes to you.  Sorry!","You surrender before %s.  Such is the agony of defeat...",0,0,0,0,0,0,0,8323198
-"ogizes to you.  Sorry!","%s surrenders to his opponents.",0,0,0,0,0,0,0,8323198
-"gizes to you.  Sorry!","You surrender to your opponents.",0,0,0,0,0,0,0,8323198
-"izes to you.  Sorry!","%s surrenders to her opponents.",0,0,0,0,0,0,0,8323198
-"zes to you.  Sorry!","%s wants to talk things over with %s.",0,0,0,0,0,0,0,8323198
-"es to you.  Sorry!","%s wants to talk things over with you.",0,0,0,0,0,0,0,8323198
-"s to you.  Sorry!","You want to talk things over with %s.",0,0,0,0,0,0,0,8323198
-" to you.  Sorry!","%s talks to himself since no one else seems interested.",0,0,0,0,0,0,0,8323198
-"to you.  Sorry!","You talk to yourself since no one else seems interested.",0,0,0,0,0,0,0,8323198
-"o you.  Sorry!","%s talks to herself since no one else seems interested.",0,0,0,0,0,0,0,8323198
-" you.  Sorry!","%s talks excitedly with %s.",0,0,0,0,0,0,0,8323198
-"you.  Sorry!","%s talks excitedly with you.",0,0,0,0,0,0,0,8323198
-"ou.  Sorry!","You talk excitedly with %s.",0,0,0,0,0,0,0,8323198
-"u.  Sorry!","%s talks excitedly with everyone.",0,0,0,0,0,0,0,8323198
-".  Sorry!","You talk excitedly with everyone.",0,0,0,0,0,0,0,8323198
-"  Sorry!","%s questions %s.",0,0,0,0,0,0,0,8323198
-" Sorry!","%s questions you.",0,0,0,0,0,0,0,8323198
-"Sorry!","You question %s.",0,0,0,0,0,0,0,8323198
-"orry!","%s wants to know the meaning of life.",0,0,0,0,0,0,0,8323198
-"rry!","You want to know the meaning of life.",0,0,0,0,0,0,0,8323198
-"ry!","%s taps his foot as he waits for %s.",0,0,0,0,0,0,0,8323198
-"y!","%s taps his foot as he waits for you.",0,0,0,0,0,0,0,8323198
-"!","You tap your foot as you wait for %s.",0,0,0,0,0,0,0,8323198
-"","%s taps his foot.  Hurry up already!",0,0,0,0,0,0,0,8323198
-"You apologize to %s.  Sorry!","You tap your foot.  Hurry up already!",0,0,0,0,0,0,0,8323198
-"ou apologize to %s.  Sorry!","%s taps her foot as she waits for %s.",0,0,0,0,0,0,0,8323198
-"u apologize to %s.  Sorry!","%s taps her foot as she waits for you.",0,0,0,0,0,0,0,8323198
-" apologize to %s.  Sorry!","%s taps her foot.  Hurry up already!",0,0,0,0,0,0,0,8323198
-"apologize to %s.  Sorry!","%s thanks %s.",0,0,0,0,0,0,0,8323198
-"pologize to %s.  Sorry!","%s thanks you.",0,0,0,0,0,0,0,8323198
-"ologize to %s.  Sorry!","You thank %s.",0,0,0,0,0,0,0,8323198
-"logize to %s.  Sorry!","%s thanks everyone.",0,0,0,0,0,0,0,8323198
-"ogize to %s.  Sorry!","You thank everyone around you.",0,0,0,0,0,0,0,8323198
-"gize to %s.  Sorry!","%s threatens %s with the wrath of doom.",0,0,0,0,0,0,0,8323198
-"ize to %s.  Sorry!","%s threatens you with the wrath of doom.",0,0,0,0,0,0,0,8323198
-"ze to %s.  Sorry!","You threaten %s with the wrath of doom.",0,0,0,0,0,0,0,8323198
-"e to %s.  Sorry!","%s threatens everyone with the wrath of doom.",0,0,0,0,0,0,0,8323198
-" to %s.  Sorry!","You threaten everyone with the wrath of doom.",0,0,0,0,0,0,0,8323198
-"to %s.  Sorry!","%s lets %s know that he is tired.",0,0,0,0,0,0,0,8323198
-"o %s.  Sorry!","%s lets you know that he is tired.",0,0,0,0,0,0,0,8323198
-" %s.  Sorry!","You let %s know that you are tired.",0,0,0,0,0,0,0,8323198
-"%s.  Sorry!","%s lets everyone know that he is tired.",0,0,0,0,0,0,0,8323198
-"s.  Sorry!","You let everyone know that you are tired.",0,0,0,0,0,0,0,8323198
-".  Sorry!","%s lets %s know that she is tired.",0,0,0,0,0,0,0,8323198
-"  Sorry!","%s lets you know that she is tired.",0,0,0,0,0,0,0,8323198
-" Sorry!","%s lets everyone know that she is tired.",0,0,0,0,0,0,0,8323198
-"Sorry!","%s basks in the glory of victory with %s.",0,0,0,0,0,0,0,8323198
-"orry!","%s basks in the glory of victory with you.",0,0,0,0,0,0,0,8323198
-"rry!","You bask in the glory of victory with %s.",0,0,0,0,0,0,0,8323198
-"ry!","%s basks in the glory of victory.",0,0,0,0,0,0,0,8323198
-"y!","You bask in the glory of victory.",0,0,0,0,0,0,0,8323198
-"!","%s waves at %s.",0,0,0,0,0,0,0,8323198
-"","%s waves at you.",0,0,0,0,0,0,0,8323198
-"%s apologizes to everyone.  Sorry!","You wave at %s.",0,0,0,0,0,0,0,8323198
-"s apologizes to everyone.  Sorry!","%s waves.",0,0,0,0,0,0,0,8323198
-" apologizes to everyone.  Sorry!","You wave.",0,0,0,0,0,0,0,8323198
-"apologizes to everyone.  Sorry!","%s welcomes %s.",0,0,0,0,0,0,0,8323198
-"pologizes to everyone.  Sorry!","%s welcomes you.",0,0,0,0,0,0,0,8323198
-"ologizes to everyone.  Sorry!","You welcome %s.",0,0,0,0,0,0,0,8323198
-"logizes to everyone.  Sorry!","%s welcomes everyone.",0,0,0,0,0,0,0,8323198
-"ogizes to everyone.  Sorry!","You welcome everyone.",0,0,0,0,0,0,0,8323198
-"gizes to everyone.  Sorry!","%s whines pathetically at %s.",0,0,0,0,0,0,0,8323198
-"izes to everyone.  Sorry!","%s whines pathetically at you.",0,0,0,0,0,0,0,8323198
-"zes to everyone.  Sorry!","You whine pathetically at %s.",0,0,0,0,0,0,0,8323198
-"es to everyone.  Sorry!","%s whines pathetically.",0,0,0,0,0,0,0,8323198
-"s to everyone.  Sorry!","You whine pathetically.",0,0,0,0,0,0,0,8323198
-" to everyone.  Sorry!","%s whistles at %s.",0,0,0,0,0,0,0,8323198
-"to everyone.  Sorry!","%s whistles at you.",0,0,0,0,0,0,0,8323198
-"o everyone.  Sorry!","You whistle at %s.",0,0,0,0,0,0,0,8323198
-" everyone.  Sorry!","%s lets forth a sharp whistle.",0,0,0,0,0,0,0,8323198
-"everyone.  Sorry!","You let forth a sharp whistle.",0,0,0,0,0,0,0,8323198
-"veryone.  Sorry!","%s works with %s.",0,0,0,0,0,0,0,8323198
-"eryone.  Sorry!","%s works with you.",0,0,0,0,0,0,0,8323198
-"ryone.  Sorry!","You work with %s.",0,0,0,0,0,0,0,8323198
-"yone.  Sorry!","%s begins to work.",0,0,0,0,0,0,0,8323198
-"one.  Sorry!","You begin to work.",0,0,0,0,0,0,0,8323198
-"ne.  Sorry!","%s yawns sleepily at %s.",0,0,0,0,0,0,0,8323198
-"e.  Sorry!","%s yawns sleepily at you.",0,0,0,0,0,0,0,8323198
-".  Sorry!","You yawn sleepily at %s.",0,0,0,0,0,0,0,8323198
-"  Sorry!","%s yawns sleepily.",0,0,0,0,0,0,0,8323198
-" Sorry!","You yawn sleepily.",0,0,0,0,0,0,0,8323198
-"Sorry!","%s boggles at %s.",0,0,0,0,0,0,0,8323198
-"orry!","%s boggles at you.",0,0,0,0,0,0,0,8323198
-"rry!","You boggle at %s.",0,0,0,0,0,0,0,8323198
-"ry!","%s boggles at the situation.",0,0,0,0,0,0,0,8323198
-"y!","You boggle at the situation.",0,0,0,0,0,0,0,8323198
-"!","%s tries to calm %s down.",0,0,0,0,0,0,0,8323198
-"","%s tries to calm you down.",0,0,0,0,0,0,0,8323198
-"You apologize to everyone.  Sorry!","You try to calm %s down.",0,0,0,0,0,0,0,8323198
-"ou apologize to everyone.  Sorry!","%s remains calm.",0,0,0,0,0,0,0,8323198
-"u apologize to everyone.  Sorry!","You remain calm.",0,0,0,0,0,0,0,8323198
-" apologize to everyone.  Sorry!","%s lets %s know that he is cold.",0,0,0,0,0,0,0,8323198
-"apologize to everyone.  Sorry!","%s lets you know that he is cold.",0,0,0,0,0,0,0,8323198
-"pologize to everyone.  Sorry!","You let %s know that you are cold.",0,0,0,0,0,0,0,8323198
-"ologize to everyone.  Sorry!","%s lets everyone know that he is cold.",0,0,0,0,0,0,0,8323198
-"logize to everyone.  Sorry!","You let everyone know that you are cold.",0,0,0,0,0,0,0,8323198
-"ogize to everyone.  Sorry!","%s lets %s know that she is cold.",0,0,0,0,0,0,0,8323198
-"gize to everyone.  Sorry!","%s lets you know that she is cold.",0,0,0,0,0,0,0,8323198
-"ize to everyone.  Sorry!","%s lets everyone know that she is cold.",0,0,0,0,0,0,0,8323198
-"ze to everyone.  Sorry!","%s comforts %s.",0,0,0,0,0,0,0,8323198
-"e to everyone.  Sorry!","%s comforts you.",0,0,0,0,0,0,0,8323198
-" to everyone.  Sorry!","You comfort %s.",0,0,0,0,0,0,0,8323198
-"to everyone.  Sorry!","%s needs comforting.",0,0,0,0,0,0,0,8323198
-"o everyone.  Sorry!","You need to be comforted.",0,0,0,0,0,0,0,8323198
-" everyone.  Sorry!","%s cuddles up against %s.",0,0,0,0,0,0,0,8323198
-"everyone.  Sorry!","%s cuddles up against you.",0,0,0,0,0,0,0,8323198
-"veryone.  Sorry!","You cuddle up against %s.",0,0,0,0,0,0,0,8323198
-"eryone.  Sorry!","%s needs cuddling.",0,0,0,0,0,0,0,8323198
-"ryone.  Sorry!","You need to be cuddled.",0,0,0,0,0,0,0,8323198
-"yone.  Sorry!","%s ducks behind %s.",0,0,0,0,0,0,0,8323198
-"one.  Sorry!","%s ducks behind you.",0,0,0,0,0,0,0,8323198
-"ne.  Sorry!","You duck behind %s.",0,0,0,0,0,0,0,8323198
-"e.  Sorry!","%s ducks for cover.",0,0,0,0,0,0,0,8323198
-".  Sorry!","You duck for cover.",0,0,0,0,0,0,0,8323198
-"  Sorry!","%s thinks %s is the son of a motherless ogre.",0,0,0,0,0,0,0,8323198
-" Sorry!","%s thinks you are the son of a motherless ogre.",0,0,0,0,0,0,0,8323198
-"Sorry!","You think %s is the son of a motherless ogre.",0,0,0,0,0,0,0,8323198
-"orry!","%s thinks everyone around him is a son of a motherless ogre.",0,0,0,0,0,0,0,8323198
-"rry!","You think everyone around you is a son of a motherless ogre.",0,0,0,0,0,0,0,8323198
-"ry!","%s thinks everyone around her is a son of a motherless ogre.",0,0,0,0,0,0,0,8323198
-"y!","%s introduces himself to %s.",0,0,0,0,0,0,0,8323198
-"!","%s introduces himself to you.",0,0,0,0,0,0,0,8323198
-"","You introduce yourself to %s.",0,0,0,0,0,0,0,8323198
-"%s applauds at %s.  Bravo!","%s introduces himself to everyone.",0,0,0,0,0,0,0,8323198
-"s applauds at %s.  Bravo!","You introduce yourself to everyone.",0,0,0,0,0,0,0,8323198
-" applauds at %s.  Bravo!","%s introduces herself to %s.",0,0,0,0,0,0,0,8323198
-"applauds at %s.  Bravo!","%s introduces herself to you.",0,0,0,0,0,0,0,8323198
-"pplauds at %s.  Bravo!","%s introduces herself to everyone.",0,0,0,0,0,0,0,8323198
-"plauds at %s.  Bravo!","%s lets %s know that he was just kidding!",0,0,0,0,0,0,0,8323198
-"lauds at %s.  Bravo!","%s lets you know that he was just kidding!",0,0,0,0,0,0,0,8323198
-"auds at %s.  Bravo!","You let %s know that you were just kidding!",0,0,0,0,0,0,0,8323198
-"uds at %s.  Bravo!","%s was just kidding!",0,0,0,0,0,0,0,8323198
-"ds at %s.  Bravo!","You were just kidding!",0,0,0,0,0,0,0,8323198
-"s at %s.  Bravo!","%s lets %s know that she was just kidding!",0,0,0,0,0,0,0,8323198
-" at %s.  Bravo!","%s lets you know that she was just kidding!",0,0,0,0,0,0,0,8323198
-"at %s.  Bravo!","%s licks %s.",0,0,0,0,0,0,0,8323198
-"t %s.  Bravo!","%s licks you.",0,0,0,0,0,0,0,8323198
-" %s.  Bravo!","You lick %s.",0,0,0,0,0,0,0,8323198
-"%s.  Bravo!","%s licks his lips.",0,0,0,0,0,0,0,8323198
-"s.  Bravo!","You lick your lips.",0,0,0,0,0,0,0,8323198
-".  Bravo!","%s licks her lips.",0,0,0,0,0,0,0,8323198
-"  Bravo!","%s listens intently to %s.",0,0,0,0,0,0,0,8323198
-" Bravo!","%s listens intently to you.",0,0,0,0,0,0,0,8323198
-"Bravo!","You listen intently to %s.",0,0,0,0,0,0,0,8323198
-"ravo!","%s is listening!",0,0,0,0,0,0,0,8323198
-"avo!","You are listening!",0,0,0,0,0,0,0,8323198
-"vo!","%s wants %s to know that he is hopelessly lost.",0,0,0,0,0,0,0,8323198
-"o!","%s wants you to know that he is hopelessly lost.",0,0,0,0,0,0,0,8323198
-"!","You want %s to know that you are hopelessly lost.",0,0,0,0,0,0,0,8323198
-"","%s is hopelessly lost.",0,0,0,0,0,0,0,8323198
-"%s applauds at you.  Bravo!","You are hopelessly lost.",0,0,0,0,0,0,0,8323198
-"s applauds at you.  Bravo!","%s wants %s to know that she is hopelessly lost.",0,0,0,0,0,0,0,8323198
-" applauds at you.  Bravo!","%s wants you to know that she is hopelessly lost.",0,0,0,0,0,0,0,8323198
-"applauds at you.  Bravo!","%s mocks the foolishness of %s.",0,0,0,0,0,0,0,8323198
-"pplauds at you.  Bravo!","%s mocks your foolishness.",0,0,0,0,0,0,0,8323198
-"plauds at you.  Bravo!","You mock the foolishness of %s.",0,0,0,0,0,0,0,8323198
-"lauds at you.  Bravo!","%s mocks life and all it stands for.",0,0,0,0,0,0,0,8323198
-"auds at you.  Bravo!","You mock life and all it stands for.",0,0,0,0,0,0,0,8323198
-"uds at you.  Bravo!","%s ponders %s's actions.",0,0,0,0,0,0,0,8323198
-"ds at you.  Bravo!","%s ponders your actions.",0,0,0,0,0,0,0,8323198
-"s at you.  Bravo!","You ponder %s's actions.",0,0,0,0,0,0,0,8323198
-" at you.  Bravo!","%s ponders the situation.",0,0,0,0,0,0,0,8323198
-"at you.  Bravo!","You ponder the situation.",0,0,0,0,0,0,0,8323198
-"t you.  Bravo!","%s pounces on top of %s.",0,0,0,0,0,0,0,8323198
-" you.  Bravo!","%s pounces on top of you.",0,0,0,0,0,0,0,8323198
-"you.  Bravo!","You pounce on top of %s.",0,0,0,0,0,0,0,8323198
-"ou.  Bravo!","%s pounces out from the shadows.",0,0,0,0,0,0,0,8323198
-"u.  Bravo!","You pounce out from the shadows.",0,0,0,0,0,0,0,8323198
-".  Bravo!","%s lavishes praise upon %s.",0,0,0,0,0,0,0,8323198
-"  Bravo!","%s lavishes praise upon you.",0,0,0,0,0,0,0,8323198
-" Bravo!","You lavish praise upon %s.",0,0,0,0,0,0,0,8323198
-"Bravo!","%s praises the Light.",0,0,0,0,0,0,0,8323198
-"ravo!","You praise the Light.",0,0,0,0,0,0,0,8323198
-"avo!","%s purrs at %s.",0,0,0,0,0,0,0,8323198
-"vo!","%s purrs at you.",0,0,0,0,0,0,0,8323198
-"o!","You purr at %s.",0,0,0,0,0,0,0,8323198
-"!","%s purrs like a kitten.",0,0,0,0,0,0,0,8323198
-"","You purr like a kitten.",0,0,0,0,0,0,0,8323198
-"You applaud at %s.  Bravo!","%s is puzzled by %s.",0,0,0,0,0,0,0,8323198
-"ou applaud at %s.  Bravo!","%s puzzled by you. What are you doing?",0,0,0,0,0,0,0,8323198
-"u applaud at %s.  Bravo!","You are puzzled by %s.",0,0,0,0,0,0,0,8323198
-" applaud at %s.  Bravo!","%s is puzzled. What's going on here?",0,0,0,0,0,0,0,8323198
-"applaud at %s.  Bravo!","You are puzzled. What's going on here?",0,0,0,0,0,0,0,8323198
-"pplaud at %s.  Bravo!","%s looks at %s and raises his hand in the air.",0,0,0,0,0,0,0,8323198
-"plaud at %s.  Bravo!","%s looks at you and raises his hand.",0,0,0,0,0,0,0,8323198
-"laud at %s.  Bravo!","You look at %s and raise your hand.",0,0,0,0,0,0,0,8323198
-"aud at %s.  Bravo!","%s raises his hand in the air.",0,0,0,0,0,0,0,8323198
-"ud at %s.  Bravo!","You raise your hand in the air.",0,0,0,0,0,0,0,8323198
-"d at %s.  Bravo!","%s looks at %s and raises her hand in the air.",0,0,0,0,0,0,0,8323198
-" at %s.  Bravo!","%s looks at you and raises her hand.",0,0,0,0,0,0,0,8323198
-"at %s.  Bravo!","%s raises her hand in the air.",0,0,0,0,0,0,0,8323198
-"t %s.  Bravo!","%s lets %s know that he is ready!",0,0,0,0,0,0,0,8323198
-" %s.  Bravo!","%s lets you know that he is ready!",0,0,0,0,0,0,0,8323198
-"%s.  Bravo!","You let %s know that you are ready!",0,0,0,0,0,0,0,8323198
-"s.  Bravo!","%s lets everyone know that he is ready!",0,0,0,0,0,0,0,8323198
-".  Bravo!","You let everyone know that you are ready!",0,0,0,0,0,0,0,8323198
-"  Bravo!","%s lets you know that she is ready!",0,0,0,0,0,0,0,8323198
-" Bravo!","%s lets everyone know that she is ready!",0,0,0,0,0,0,0,8323198
-"Bravo!","%s shimmies before %s.",0,0,0,0,0,0,0,8323198
-"ravo!","%s shimmies before you.",0,0,0,0,0,0,0,8323198
-"avo!","You shimmy before %s.",0,0,0,0,0,0,0,8323198
-"vo!","%s shimmies before the masses.",0,0,0,0,0,0,0,8323198
-"o!","You shimmy before the masses.",0,0,0,0,0,0,0,8323198
-"!","%s shivers beside %s. Chilling!",0,0,0,0,0,0,0,8323198
-"","%s shivers beside you. Chilling!",0,0,0,0,0,0,0,8323198
-"%s applauds.  Bravo!","You shiver beside %s. Chilling!",0,0,0,0,0,0,0,8323198
-"s applauds.  Bravo!","%s shivers in his boots. Chilling!",0,0,0,0,0,0,0,8323198
-" applauds.  Bravo!","You shiver in your boots. Chilling!",0,0,0,0,0,0,0,8323198
-"applauds.  Bravo!","%s shivers in her boots. Chilling!",0,0,0,0,0,0,0,8323198
-"pplauds.  Bravo!","%s shoos %s away. Be gone pest!",0,0,0,0,0,0,0,8323198
-"plauds.  Bravo!","%s shoos you away. Be gone pest!",0,0,0,0,0,0,0,8323198
-"lauds.  Bravo!","You shoo %s away. Be gone pest!",0,0,0,0,0,0,0,8323198
-"auds.  Bravo!","%s shoos the measly pests away.",0,0,0,0,0,0,0,8323198
-"uds.  Bravo!","You shoo the measly pests away.",0,0,0,0,0,0,0,8323198
-"ds.  Bravo!","%s slaps %s across the face. Ouch!",0,0,0,0,0,0,0,8323198
-"s.  Bravo!","%s slaps you across the face. Ouch!",0,0,0,0,0,0,0,8323198
-".  Bravo!","You slap %s across the face. Ouch!",0,0,0,0,0,0,0,8323198
-"  Bravo!","%s slaps himself across the face. Ouch!",0,0,0,0,0,0,0,8323198
-" Bravo!","You slap yourself across the face. Ouch!",0,0,0,0,0,0,0,8323198
-"Bravo!","%s slaps herself across the face. Ouch!",0,0,0,0,0,0,0,8323198
-"ravo!","%s smirks slyly at %s.",0,0,0,0,0,0,0,8323198
-"avo!","%s smirks slyly at you.",0,0,0,0,0,0,0,8323198
-"vo!","You smirk slyly at %s.",0,0,0,0,0,0,0,8323198
-"o!","A sly smirk spreads across %s's face.",0,0,0,0,0,0,0,8323198
-"!","A sly smirk spreads across your face.",0,0,0,0,0,0,0,8323198
-"","%s sniffs %s.",0,0,0,0,0,0,0,8323198
-"You applaud.  Bravo!","%s sniffs you.",0,0,0,0,0,0,0,8323198
-"ou applaud.  Bravo!","You sniff %s.",0,0,0,0,0,0,0,8323198
-"u applaud.  Bravo!","%s sniffs the air around him.",0,0,0,0,0,0,0,8323198
-" applaud.  Bravo!","You sniff the air around you.",0,0,0,0,0,0,0,8323198
-"applaud.  Bravo!","%s sniffs the air around her.",0,0,0,0,0,0,0,8323198
-"pplaud.  Bravo!","%s snubs %s.",0,0,0,0,0,0,0,8323198
-"plaud.  Bravo!","%s snubs you.",0,0,0,0,0,0,0,8323198
-"laud.  Bravo!","You snub %s.",0,0,0,0,0,0,0,8323198
-"aud.  Bravo!","%s snubs all of the lowly peons around him.",0,0,0,0,0,0,0,8323198
-"ud.  Bravo!","You snub all of the lowly peons around you.",0,0,0,0,0,0,0,8323198
-"d.  Bravo!","%s snubs all of the lowly peons around her.",0,0,0,0,0,0,0,8323198
-".  Bravo!","%s soothes %s. There, there...things will be ok.",0,0,0,0,0,0,0,4128894
-"  Bravo!","%s soothes you. There, there...things will be ok.",0,0,0,0,0,0,0,4128894
-" Bravo!","You soothe %s. There, there...things will be ok.",0,0,0,0,0,0,0,4128894
-"Bravo!","%s needs to be soothed.",0,0,0,0,0,0,0,8323198
-"ravo!","You need to be soothed.",0,0,0,0,0,0,0,8323198
-"avo!","%s smells %s. Wow, someone stinks!",0,0,0,0,0,0,0,8323198
-"vo!","%s smells you. Wow, someone stinks!",0,0,0,0,0,0,0,8323198
-"o!","You smell %s. Wow, someone stinks!",0,0,0,0,0,0,0,8323198
-"!","%s smells the air around him. Wow, someone stinks!",0,0,0,0,0,0,0,8323198
-"","You smell the air around you. Wow, someone stinks!",0,0,0,0,0,0,0,8323198
-"%s is so bashful...too bashful to get %s's attention.","%s smells the air around her. Wow, someone stinks!",0,0,0,0,0,0,0,8323198
-"s is so bashful...too bashful to get %s's attention.","%s makes a taunting gesture at %s. Bring it!",0,0,0,0,0,0,0,8323198
-" is so bashful...too bashful to get %s's attention.","%s makes a taunting gesture at you. Bring it!",0,0,0,0,0,0,0,8323198
-"is so bashful...too bashful to get %s's attention.","You make a taunting gesture at %s. Bring it!",0,0,0,0,0,0,0,8323198
-"s so bashful...too bashful to get %s's attention.","%s taunts everyone around him. Bring it fools!",0,0,0,0,0,0,0,8323198
-" so bashful...too bashful to get %s's attention.","You taunt everyone around you. Bring it fools!",0,0,0,0,0,0,0,8323198
-"so bashful...too bashful to get %s's attention.","%s taunts everyone around her. Bring it fools!",0,0,0,0,0,0,0,8323198
-"o bashful...too bashful to get %s's attention.","%s teases %s.",0,0,0,0,0,0,0,8323198
-" bashful...too bashful to get %s's attention.","%s teases you.",0,0,0,0,0,0,0,8323198
-"bashful...too bashful to get %s's attention.","You tease %s.",0,0,0,0,0,0,0,8323198
-"ashful...too bashful to get %s's attention.","%s is such a tease.",0,0,0,0,0,0,0,8323198
-"shful...too bashful to get %s's attention.","You are such a tease.",0,0,0,0,0,0,0,8323198
-"hful...too bashful to get %s's attention.","%s lets %s know he is thirsty. Spare a drink?",0,0,0,0,0,0,0,8323198
-"ful...too bashful to get %s's attention.","%s lets you know he is thirsty. Spare a drink?",0,0,0,0,0,0,0,8323198
-"ul...too bashful to get %s's attention.","You let %s know you are thirsty. Spare a drink?",0,0,0,0,0,0,0,8323198
-"l...too bashful to get %s's attention.","%s is so thirsty. Can anyone spare a drink?",0,0,0,0,0,0,0,8323198
-"...too bashful to get %s's attention.","You are so thirsty. Can anyone spare a drink?",0,0,0,0,0,0,0,8323198
-"..too bashful to get %s's attention.","%s lets %s know she is thirsty. Spare a drink?",0,0,0,0,0,0,0,8323198
-".too bashful to get %s's attention.","%s lets you know she is thirsty. Spare a drink?",0,0,0,0,0,0,0,8323198
-"too bashful to get %s's attention.","%s vetoes %s's motion.",0,0,0,0,0,0,0,8323198
-"oo bashful to get %s's attention.","%s vetoes your motion.",0,0,0,0,0,0,0,8323198
-"o bashful to get %s's attention.","You veto %s's motion.",0,0,0,0,0,0,0,8323198
-" bashful to get %s's attention.","%s vetoes the motion on the floor.",0,0,0,0,0,0,0,8323198
-"bashful to get %s's attention.","You veto the motion on the floor.",0,0,0,0,0,0,0,8323198
-"ashful to get %s's attention.","%s snickers at %s.",0,0,0,0,0,0,0,8323198
-"shful to get %s's attention.","%s snickers at you.",0,0,0,0,0,0,0,8323198
-"hful to get %s's attention.","You snicker at %s.",0,0,0,0,0,0,0,8323198
-"ful to get %s's attention.","%s quietly snickers to himself.",0,0,0,0,0,0,0,8323198
-"ul to get %s's attention.","You quietly snicker to yourself.",0,0,0,0,0,0,0,8323198
-"l to get %s's attention.","%s quietly snickers to herself.",0,0,0,0,0,0,0,8323198
-" to get %s's attention.","%s tickles %s.  Hee hee!",0,0,0,0,0,0,0,8323198
-"to get %s's attention.","%s tickles you.  Hee hee!",0,0,0,0,0,0,0,8323198
-"o get %s's attention.","You tickle %s.  Hee hee!",0,0,0,0,0,0,0,8323198
-" get %s's attention.","%s wants to be tickled.  Hee hee!",0,0,0,0,0,0,0,8323198
-"get %s's attention.","You want to be tickled.  Hee hee!",0,0,0,0,0,0,0,8323198
-"et %s's attention.","%s plays the world's smallest violin for %s.",0,0,0,0,0,0,0,8323198
-"t %s's attention.","%s plays the world's smallest violin for you.",0,0,0,0,0,0,0,8323198
-" %s's attention.","You play the world's smallest violin for %s.",0,0,0,0,0,0,0,8323198
-"%s's attention.","%s begins to play the world's smallest violin.",0,0,0,0,0,0,0,8323198
-"s's attention.","You begin to play the world's smallest violin.",0,0,0,0,0,0,0,8323198
-"'s attention.","%s smiles at %s.",0,0,0,0,0,0,0,8323198
-"s attention.","%s smiles at you.",0,0,0,0,0,0,0,8323198
-" attention.","You smile at %s.",0,0,0,0,0,0,0,8323198
-"attention.","%s smiles.",0,0,0,0,0,0,0,8323198
-"ttention.","You smile.",0,0,0,0,0,0,0,8323198
-"s is so bashful...too bashful to get your attention.","%s lets %s know that she is ready!",0,0,0,0,0,0,0,8323198
-" is so bashful...too bashful to get your attention.","%s makes a rude gesture at %s.",0,0,0,0,0,0,0,8323198
-"is so bashful...too bashful to get your attention.","%s makes a rude gesture at you.",0,0,0,0,0,0,0,8323198
-"s so bashful...too bashful to get your attention.","You make a rude gesture at %s.",0,0,0,0,0,0,0,8323198
-" so bashful...too bashful to get your attention.","%s makes a rude gesture.",0,0,0,0,0,0,0,8323198
-"so bashful...too bashful to get your attention.","You make a rude gesture.",0,0,0,0,0,0,0,8323198
-"o bashful to get your attention.","%s looks down upon %s with pity.",0,0,0,0,0,0,0,4128894
-" bashful to get your attention.","%s looks down upon you with pity.",0,0,0,0,0,0,0,4128894
-"bashful to get your attention.","You look down upon %s with pity.",0,0,0,0,0,0,0,4128894
-"ashful to get your attention.","%s pities those around him.",0,0,0,0,0,0,0,4128894
-"shful to get your attention.","%s pities those around her.",0,0,0,0,0,0,0,4128894
-"hful to get your attention.","You pity those around you.",0,0,0,0,0,0,0,4128894
-"ful to get your attention.","%s growls menacingly at %s.",0,0,0,0,0,0,0,4128894
-"ul to get your attention.","%s growls menacingly at you.",0,0,0,0,0,0,0,4128894
-"l to get your attention.","You growl menacingly at %s.",0,0,0,0,0,0,0,4128894
-" to get your attention.","%s growls menacingly.",0,0,0,0,0,0,0,4128894
-"to get your attention.","You growl menacingly.",0,0,0,0,0,0,0,4128894
-"o get your attention.","%s barks at %s.",0,0,0,0,0,0,0,4128894
-" get your attention.","%s barks at you.",0,0,0,0,0,0,0,4128894
-"get your attention.","You bark at %s",0,0,0,0,0,0,0,4128894
-"et your attention.","%s barks. Woof woof!",0,0,0,0,0,0,0,4128894
-"t your attention.","You bark. Woof woof!",0,0,0,0,0,0,0,4128894
-"r attention.","%s is scared of %s.",0,0,0,0,0,0,0,4128894
-" attention.","%s is scared of you.",0,0,0,0,0,0,0,4128894
-"attention.","You are scared of %s.",0,0,0,0,0,0,0,4128894
-"ttention.","%s is scared!",0,0,0,0,0,0,0,4128894
-"tention.","You are scared!",0,0,0,0,0,0,0,4128894
-"ention.","%s flops about helplessly around %s.",0,0,0,0,0,0,0,4128894
-"ntion.","%s flops about helplessly around you.",0,0,0,0,0,0,0,4128894
-"tion.","You flop about helplessly around %s.",0,0,0,0,0,0,0,4128894
-"ion.","%s flops about helplessly.",0,0,0,0,0,0,0,4128894
-"on.","You flop about helplessly.",0,0,0,0,0,0,0,4128894
-"n.","%s loves %s.",0,0,0,0,0,0,0,4128894
-".","%s loves you.",0,0,0,0,0,0,0,4128894
-"","You love %s.",0,0,0,0,0,0,0,4128894
-"You are so bashful...too bashful to get %s's attention.","%s feels the love.",0,0,0,0,0,0,0,4128894
-"ou are so bashful...too bashful to get %s's attention.","You feel the love.",0,0,0,0,0,0,0,4128894
-"u are so bashful...too bashful to get %s's attention.","%s moos at %s. Mooooooooooo.",0,0,0,0,0,0,0,4128894
-" are so bashful...too bashful to get %s's attention.","%s moos at you. Mooooooooooo.",0,0,0,0,0,0,0,4128894
-"are so bashful...too bashful to get %s's attention.","You moo at %s. Mooooooooooo.",0,0,0,0,0,0,0,4128894
-"re so bashful...too bashful to get %s's attention.","%s moos. Mooooooooooo.",0,0,0,0,0,0,0,4128894
-"e so bashful...too bashful to get %s's attention.","Mooooooooooo.",0,0,0,0,0,0,0,4128894
-" so bashful...too bashful to get %s's attention.","%s commends %s on a job well done.",0,0,0,0,0,0,0,4128894
-"so bashful...too bashful to get %s's attention.","%s commends you on a job well done.",0,0,0,0,0,0,0,4128894
-"o bashful...too bashful to get %s's attention.","You commend %s on a job well done.",0,0,0,0,0,0,0,4128894
-" bashful...too bashful to get %s's attention.","%s commends everyone on a job well done.",0,0,0,0,0,0,0,4128894
-"bashful...too bashful to get %s's attention.","You commend everyone on a job well done.",0,0,0,0,0,0,0,4128894
-" to get %s's attention.","",0,0,0,0,0,0,0,4128892
-"to get %s's attention.","",0,0,0,0,0,0,0,4128892
-"o get %s's attention.","",0,0,0,0,0,0,0,4128892
-" get %s's attention.","%s cries out for help!",0,0,0,0,0,0,0,4128894
-"get %s's attention.","You cry out for help!",0,0,0,0,0,0,0,4128894
-"et %s's attention.","",0,0,0,0,0,0,0,4128892
-"t %s's attention.","",0,0,0,0,0,0,0,4128892
-" %s's attention.","",0,0,0,0,0,0,0,4128892
-"%s's attention.","%s yells incoming enemies!",0,0,0,0,0,0,0,4128894
-"s's attention.","You yell incoming enemies!",0,0,0,0,0,0,0,4128894
-"'s attention.","",0,0,0,0,0,0,0,4128892
-"s attention.","",0,0,0,0,0,0,0,4128892
-" attention.","",0,0,0,0,0,0,0,4128892
-"attention.","%s starts to charge.",0,0,0,0,0,0,0,4128894
-"ttention.","You start to charge.",0,0,0,0,0,0,0,4128894
-"tention.","%s yells for %s to flee!",0,0,0,0,0,0,0,4128894
-"ention.","%s yells for you to flee!",0,0,0,0,0,0,0,4128894
-"ntion.","You yell for %s to flee!",0,0,0,0,0,0,0,4128894
-"tion.","%s yells for everyone to flee!",0,0,0,0,0,0,0,4128894
-"ion.","You yell for everyone to flee!",0,0,0,0,0,0,0,4128894
-"on.","%s tells you to attack %s.",0,0,0,0,0,0,0,4128894
-"n.","%s tells everyone to attack you.",0,0,0,0,0,0,0,4128894
-".","You tell everyone to attack %s.",0,0,0,0,0,0,0,4128894
-"","%s tells you to attack something.",0,0,0,0,0,0,0,4128894
-"%s is bashful.","You tell everyone to attack something.",0,0,0,0,0,0,0,4128894
-"s is bashful.","%s is low on mana.",0,0,0,0,0,0,0,4128894
-" is bashful.","You announce that you have low mana!",0,0,0,0,0,0,0,4128894
-"is bashful.","%s motions for %s to follow.",0,0,0,0,0,0,0,4128894
-"s bashful.","%s motions for you to follow.",0,0,0,0,0,0,0,4128894
-" bashful.","You motion for %s to follow.",0,0,0,0,0,0,0,4128894
-"bashful.","%s motions for you to follow.",0,0,0,0,0,0,0,4128894
-"ashful.","You motion for everyone to follow.",0,0,0,0,0,0,0,4128894
-"shful.","%s asks %s to wait.",0,0,0,0,0,0,0,4128894
-"hful.","%s asks you to wait.",0,0,0,0,0,0,0,4128894
-"ful.","You ask %s to wait.",0,0,0,0,0,0,0,4128894
-"ul.","%s asks you to wait.",0,0,0,0,0,0,0,4128894
-"l.","You ask everyone to wait.",0,0,0,0,0,0,0,4128894
-".","%s calls out for healing!",0,0,0,0,0,0,0,4128894
-"","You call out for healing!",0,0,0,0,0,0,0,4128894
-"You are bashful.","%s orders you to open fire.",0,0,0,0,0,0,0,4128894
-"ou are bashful.","You give the order to open fire.",0,0,0,0,0,0,0,4128894
-"u are bashful.","%s flirts with %s.",0,0,0,0,0,0,0,4128894
-" are bashful.","%s flirts with you.",0,0,0,0,0,0,0,4128894
-"are bashful.","You flirt with %s.",0,0,0,0,0,0,0,4128894
-"re bashful.","%s flirts.",0,0,0,0,0,0,0,4128894
-"e bashful.","You flirt.",0,0,0,0,0,0,0,4128894
-" bashful.","%s tells a joke to %s.",0,0,0,0,0,0,0,4128894
-"bashful.","%s tells you a joke.",0,0,0,0,0,0,0,4128894
-"ashful.","You tell %s a joke.",0,0,0,0,0,0,0,4128894
-"shful.","%s tells a joke.",0,0,0,0,0,0,0,4128894
-"hful.","You tell a joke.",0,0,0,0,0,0,0,4128894
-"ful.","%s claps for %s, clearly unimpressed.",0,0,0,0,0,0,0,4128894
-"ul.","%s claps for you, clearly unimpressed.",0,0,0,0,0,0,0,4128894
-"l.","You clap for %s, clearly unimpressed.",0,0,0,0,0,0,0,4128894
-".","%s claps half heartedly, clearly unimpressed.",0,0,0,0,0,0,0,4128894
-"","You clap half heartedly, clearly unimpressed.",0,0,0,0,0,0,0,4128894
-"%s beckons %s over.","%s winks slyly at %s.",0,0,0,0,0,0,0,4128894
-"s beckons %s over.","%s winks slyly at you.",0,0,0,0,0,0,0,4128894
-" beckons %s over.","You wink slyly at %s.",0,0,0,0,0,0,0,4128894
-"beckons %s over.","%s winks slyly.",0,0,0,0,0,0,0,4128894
-"eckons %s over.","You wink slyly.",0,0,0,0,0,0,0,4128894
-"ckons %s over.","%s gently pats %s.",0,0,0,0,0,0,0,4128894
-"kons %s over.","%s gently pats you.",0,0,0,0,0,0,0,4128894
-"ons %s over.","You gently pat %s.",0,0,0,0,0,0,0,4128894
-"ns %s over.","%s needs a pat.",0,0,0,0,0,0,0,4128894
-"s %s over.","You need a pat.",0,0,0,0,0,0,0,4128894
+# fields=10 strings=0,1,5,6,7,8
+"%s agrees with %s.","%s agrees with %s.",0,0,0,"%s赞同%s的观点。","%s согласен с %s.","%s está de acuerdo con %s.","%s concorda com %s.",8323198
+"s agrees with %s.","%s agrees with you.",0,0,0,"%s赞同你的观点。","%s согласен с вами.","%s está de acuerdo contigo.","%s concorda com você.",8323198
+" agrees with %s.","You agree with %s.",0,0,0,"你赞同%s的观点。","Вы согласны с %s.","Estás de acuerdo con %s.","Você concorda com %s.",8323198
+"agrees with %s.","%s agrees.",0,0,0,"%s表示赞同。","%s согласен.","%s está de acuerdo.","%s concorda.",8323198
+"grees with %s.","You agree.",0,0,0,"你表示赞同。","Вы согласны.","Estás de acuerdo.","Você concorda.",8323198
+"rees with %s.","%s is amazed by %s!",0,0,0,"%s让%s感到很惊奇！","%s восхищен %s!","%s está asombrado por %s.","%s está maravilhado com %s.",8323198
+"ees with %s.","%s is amazed by you!",0,0,0,"你让%s感到很惊奇！","%s восхищен вами!","%s está asombrado por ti.","%s está maravilhado com você.",8323198
+"es with %s.","You are amazed by %s!",0,0,0,"%s让你感到很惊奇！","Вы восхитились %s!","¡Estás asombrado por %s!","Você está maravilhado com %s.",8323198
+"s with %s.","%s is amazed!",0,0,0,"%s感到很惊奇！","%s в восторге!","%s está asombrado.","%s está maravilhado.",8323198
+" with %s.","You are amazed!",0,0,0,"你感到很惊奇！","Вы поражены!","¡Estás asombrado!","Você está maravilhado!",8323198
+"with %s.","%s raises his fist in anger at %s.",0,0,0,"%s向%s愤怒地挥起拳头。","%s в гневе поднимает кулак на %s.","%s levanta el puño con ira a %s.","%s levanta o punho com raiva para %s.",8323198
+"ith %s.","%s raises his fist in anger at you.",0,0,0,"%s向你愤怒地挥起拳头。","%s в гневе поднимает на вас кулак.","%s levanta el puño con ira a ti.","%s levanta o punho com raiva para você.",8323198
+"th %s.","You raise your fist in anger at %s.",0,0,0,"你向%s愤怒地挥起拳头。","Вы в гневе поднимаете кулак на %s.","Levantas el puño con ira a %s.","Você levanta o punho com raiva para %s.",8323198
+"h %s.","%s raises his fist in anger.",0,0,0,"%s愤怒地挥起拳头。","%s в гневе поднимает кулак.","%s levanta el puño con ira.","%s levanta o punho com raiva.",8323198
+" %s.","You raise your fist in anger.",0,0,0,"你愤怒地挥起拳头。","Вы в гневе поднимаете кулак.","Levantas el puño con ira.","Você levanta o punho com raiva.",8323198
+"%s.","%s raises her fist in anger at %s.",0,0,0,"%s对%s愤怒地挥起拳头。","%s в гневе поднимает кулак на %s.","%s levanta el puño con ira a %s.","%s levanta o punho com raiva para %s.",8323198
+"s.","%s raises her fist in anger at you.",0,0,0,"%s对你愤怒地挥起拳头。","%s в гневе подняла кулак на %s.","%s levanta el puño con ira a ti.","%s levanta o punho com raiva para você.",8323198
+".","%s raises her fist in anger.",0,0,0,"%s愤怒地挥起拳头。","%s в гневе поднял кулак.","%s levanta el puño con ira.","%s levanta o punho com raiva.",8323198
+"","%s apologizes to %s.  Sorry!",0,0,0,"%s向%s表示道歉。对不起！","%s извиняется перед %s. Извините!","%s se disculpa con %s. ¡Perdón!","%s pede desculpas a %s. Perdão!",8323198
+"%s赞同%s的观点。","%s apologizes to you.  Sorry!",0,0,0,"%s向你表示道歉。对不起！","%s извиняется перед вами. Извините!","%s pide disculpas a ti. ¡Lo siento!","%s pede desculpas a você. Perdão!",8323198
+"s赞同%s的观点。","You apologize to %s.  Sorry!",0,0,0,"你向%s表示道歉。对不起！","Вы извиняетесь перед %s. Извините!","Te disculpas con %s. ¡Lo siento!","Você pede desculpas a %s. Sinto muito!",8323198
+"赞同%s的观点。","%s apologizes to everyone.  Sorry!",0,0,0,"%s向大家表示道歉。对不起！","%s извиняется перед всеми. Извините!","%s se disculpa con todos. ¡Perdón!","%s pede desculpas a todos. Perdão!",8323198
+"��同%s的观点。","You apologize to everyone.  Sorry!",0,0,0,"你向大家表示道歉。对不起！","Вы извиняетесь перед всеми. Извините!","Te disculpas con todos. ¡Lo siento!","Você pede desculpas a todos. Sinto muito!",8323198
+"�同%s的观点。","%s applauds at %s.  Bravo!",0,0,0,"%s向%s大声喝彩。真棒！","%s аплодирует %s. Браво!","%s aplaude a %s. ¡Bravo!","%s aplaude %s. Bravo!",8323198
+"同%s的观点。","%s applauds at you.  Bravo!",0,0,0,"%s向你大声喝彩。真棒！","%s аплодирует вам. Браво!","%s te aplaude. ¡Bravo!","%s aplaude você. Bravo!",8323198
+"��%s的观点。","You applaud at %s.  Bravo!",0,0,0,"你向%s大声喝彩。真棒！","Вы аплодируете %s. Браво!","Aplaudes a %s. ¡Bravo!","Você aplaude %s. Bravo!",8323198
+"�%s的观点。","%s applauds.  Bravo!",0,0,0,"%s大声喝彩。真棒！","%s аплодирует. Браво!","%s aplaude. ¡Bravo!","%s aplaude. Bravo!",8323198
+"%s的观点。","You applaud.  Bravo!",0,0,0,"你大声喝彩。好！","Вы аплодируете. Браво!","Aplaudes. ¡Bravo!","Você aplaude. Bravo!",8323198
+"s的观点。","%s is so bashful...too bashful to get %s's attention.",0,0,0,"%s太害羞了……根本没有引起%s的注意。","%s такой застенчивый...слишком застенчивый, чтобы привлечь внимание %s.","%s es tan tímido... demasiado tímido para llamar la atención de %s.","%s é tão tímido... muito tímido para chamar a atenção de %s.",8323198
+"的观点。","%s is so bashful...too bashful to get your attention.",0,0,0,"%s太害羞了……无法引起你的注意。","%s такой застенчивый...слишком застенчивый, чтобы привлечь ваше внимание.","%s es tan tímido... demasiado tímido para llamar tu atención.","%s é tão tímido... muito tímido para chamar sua atenção.",8323198
+"��观点。","You are so bashful...too bashful to get %s's attention.",0,0,0,"你太害羞了……从而无法引起%s的注意。","Вы такой застенчивый...слишком застенчивый, что бы пришлечь внимание %s.","Eres tan tímido... demasiado tímido para llamar la atención de %s.","Você é tão tímido... muito tímido para chamar a atenção de %s.",8323198
+"�观点。","%s is bashful.",0,0,0,"%s非常害羞。","%s застенчивый.","%s es tímido.","%s é tímido.",8323198
+"观点。","You are bashful.",0,0,0,"你非常害羞。","Вы застенчивый.","Eres tímido.","Você é tímido.",8323198
+"��点。","%s beckons %s over.",0,0,0,"%s招手示意%s过来。","%s манит %s.","%s hace señas a %s para que se acerque.","%s acena para %s se aproximar.",8323198
+"�点。","%s beckons you over.",0,0,0,"%s招手示意你过去。","%s манит вас.","%s te hace señas para que te acerques.","%s acena para você se aproximar.",8323198
+"点。","You beckon %s over.",0,0,0,"你招手示意%s过来。","Вы маните %s.","Le haces señas a %s para que se acerque.","Você acena para %s se aproximar.",8323198
+"��。","%s beckons everyone over.",0,0,0,"%s招手示意大家都过去。","%s манит всех к себе.","%s hace señas a todos para que se acerquen.","%s acena para todos se aproximarem.",8323198
+"�。","You beckon everyone over to you.",0,0,0,"你招手示意大家都过去。","Вы маните всех  к себе.","Les haces señas a todos para que se acerquen a ti.","Você acena para todos se aproximarem de você.",8323198
+"。","%s begs %s.  How pathetic.",0,0,0,"%s正在祈求%s。真可怜。","%s умоляет %s. Как жалко.","%s ruega a %s. Qué patético.","%s implora a %s. Que patético.",8323198
+"��","%s begs you.  How pathetic.",0,0,0,"%s在祈求你。好可怜啊。","%s умоляет вас. Как жалко.","%s ruega a ti. Qué patético.","%s implora a você. Que patético.",8323198
+"�","You beg %s.  How pathetic.",0,0,0,"你在祈求%s。好可怜啊。","Вы умоляете %s. Как жалко.","Le suplicas a %s. Qué patético.","Você implora a %s. Que patético.",8323198
+"","%s begs everyone around him.  How pathetic.",0,0,0,"%s向周围大家祈求。好可怜啊。","%s умоляет всех вокруг него. Как жалко.","%s ruega a todos los que lo rodean. Qué patético.","%s implora a todos ao seu redor. Que patético.",8323198
+"%s согласен с %s.","You beg everyone around you. How pathetic.",0,0,0,"你向你周围的人祈求。真可怜。","Вы умоляете всех вокруг вас. Как жалко.","Les suplicas a todos a tu alrededor. Qué patético.","Você implora a todos ao seu redor. Que patético.",8323198
+"s согласен с %s.","%s begs everyone around her.  How pathetic.",0,0,0,"%s向她周围的人祈求。真可怜。","%s умоляет всех вокруг неё. Как жалко.","%s ruega a todos los que la rodean. Qué patético.","%s implora a todos ao seu redor. Que patético.",8323198
+" согласен с %s.","%s bites %s.  Ouch!",0,0,0,"%s咬了%s一口。啊！","%s кусается %s. Ой!","%s muerde a %s. ¡Ay!","%s morde %s. Ai!",8323198
+"согласен с %s.","%s bites you.  Ouch!",0,0,0,"%s咬了你一口。啊！","%s кусает вас. Ой!","%s muerde a ti. ¡Ay!","%s morde você. Ai!",8323198
+"�огласен с %s.","You bite %s.  Ouch!",0,0,0,"你咬了%s一口。啊！","Вы кусаете %s. Ой!","Muerdes a %s. ¡Ay!","Você morde %s. Ai!",8323198
+"огласен с %s.","%s looks around for someone to bite.",0,0,0,"%s四下张望，想找个人咬一口。","%s оглядывается по сторонам в поисках кого-нибудь, кого можно укусить.","%s busca a alguien a quien morder.","%s procura alguém para morder.",8323198
+"�гласен с %s.","You look around for someone to bite.",0,0,0,"你四下张望，想找个人咬一口。","Вы оглядываетесь по сторонам в поисках кого-нибудь, кого можно укусить.","Buscas a alguien a quien morder.","Você procura alguém para morder.",8323198
+"гласен с %s.","Blood oozes from %s's wounds.",0,0,0,"%s的伤口渗出了鲜血。","Кровь сочится из ран %s.","La sangre mana de las heridas de %s.","Sangue jorra das feridas de %s.",8323198
+"�ласен с %s.","Blood oozes from your wounds.",0,0,0,"你的伤口渗出了鲜血。","Кровь сочится из ваших ран.","La sangre mana de tus heridas.","Sangue jorra das suas feridas.",8323198
+"ласен с %s.","%s blinks at %s.",0,0,0,"%s对%s眨了眨眼。","%s прищюрившись смотрит на %s.","%s parpadea ante %s.","%s pisca para %s.",8323198
+"�асен с %s.","%s blinks at you.",0,0,0,"%s对你眨了眨眼。","%s прищюрившись смотрит на тебя.","%s parpadea ante ti.","%s pisca para você.",8323198
+"асен с %s.","You blink at %s.",0,0,0,"你对%s眨了眨眼。","Вы прищурившись смотрите на %s.","Parpadeas a %s.","Você pisca para %s.",8323198
+"�сен с %s.","%s blinks.",0,0,0,"%s眨了眨眼。","%s прищюрившись смотрит.","%s parpadea.","%s pisca.",8323198
+"сен с %s.","You blink your eyes.",0,0,0,"你眨了眨眼。","Вы моргаете глазами.","Parpadeas.","Você pisca.",8323198
+"�ен с %s.","%s blushes at %s.",0,0,0,"%s看着%s，满脸通红。","%s краснеет от %s.","%s se sonroja ante %s.","%s cora para %s.",8323198
+"ен с %s.","%s blushes at you.",0,0,0,"%s对着你脸红了。","%s краснеет от тебя.","%s se sonroja ante ti.","%s cora para você.",8323198
+"�н с %s.","You blush at %s.",0,0,0,"你对着%s脸红了。","Вы краснеете от %s. ","Te sonrojas ante %s.","Você cora para %s.",8323198
+"н с %s.","%s blushes.",0,0,0,"%s脸红了。","%s краснеет.","%s se sonroja.","%s cora.",8323198
+"� с %s.","You blush.",0,0,0,"你脸红了。","Вы краснеете.","Te sonrojas.","Você cora.",8323198
+" с %s.","%s bonks %s on the noggin.  Doh!",0,0,0,"%s重重的敲了一下%s的脑袋，发出“咚”的一声。","%s бьет %s по голове. Ох!","%s le da un golpe en la cabeza a %s. ¡Doh!","%s bate na cabeça de %s. Doh!",8323198
+"с %s.","%s bonks you on the noggin.  Doh!",0,0,0,"%s重重的敲了一下你的脑袋，发出“咚”的一声。","%s бьет вас по голове. Ох!","%s te da un golpe en la cabeza. ¡Doh!","%s bate na sua cabeça. Doh!",8323198
+"� %s.","You bonk %s on the noggin.  Doh!",0,0,0,"你重重的敲了一下%s的脑袋，发出“咚”的一声。","Вы бьете %s по голове. Ох!","Le das un golpe a %s en la cabeza. ¡Doh!","Você dá um golpe na cabeça de %s. Doh!",8323198
+" %s.","%s bonks his own noggin.  Doh!",0,0,0,"%s重重的敲了一下他自己的脑袋，发出“咚”的一声。","%s бьет себя по голове. Ох!","%s se da un golpe en la cabeza a sí mismo. ¡Doh!","%s bate na própria cabeça. Doh!",8323198
+"%s.","You bonk yourself on the noggin.  Doh!",0,0,0,"你重重的敲了一下你的脑袋，发出“咚”的一声。","Вы бьете себя по голове. Ох!","Te das un golpe en la cabeza. ¡Doh!","Você dá um golpe na cabeça. Doh!",8323198
+"s.","%s bonks her own noggin.  Doh!",0,0,0,"%s重重的敲了一下她自己的脑袋，发出“咚”的一声。","%s бьет себя по голове. Ох!","%s se da un golpe en la cabeza a sí misma. ¡Doh!","%s bate na própria cabeça. Doh!",8323198
+".","%s is terribly bored with %s.",0,0,0,"%s对%s感到十分厌烦。","%s ужасно скучает с %s.","%s está terriblemente aburrido con %s.","%s está terrivelmente entediado com %s.",8323198
+"","%s is terribly bored with you.",0,0,0,"%s对你感到十分厌烦。","%s ужасно скучает с вами.","%s está terriblemente aburrido contigo.","%s está terrivelmente entediado com você.",8323198
+"%s está de acuerdo con %s.","You are terribly bored with %s.",0,0,0,"你对%s感到十分厌烦。","Вы ужасно скучаете с %s.","Estás terriblemente aburrido con %s.","Você está terrivelmente entediado com %s.",8323198
+"s está de acuerdo con %s.","%s is overcome with boredom.  Oh the drudgery!",0,0,0,"%s已经不胜其烦,这种苦差事！","%s одолевает скука. Ох, какая мука!","%s está abrumado por el aburrimiento. ¡Qué fastidio!","%s está sobrecarregado de tédio. Que chato!",8323198
+" está de acuerdo con %s.","You are overcome with boredom.  Oh the drudgery!",0,0,0,"你已经对这种苦差事不胜其烦了！","Вас одолевает скука. Ох, какая мука!","Estás abrumado por el aburrimiento. ¡Qué fastidio!","Você está sobrecarregado de tédio. Que chato!",8323198
+"está de acuerdo con %s.","%s bounces up and down in front of %s.",0,0,0,"%s在%s面前上窜下跳。","%s подпрыгивает вверх и вниз перед %s.","%s salta arriba y abajo frente a %s.","%s pula para cima e para baixo na frente de %s.",8323198
+"stá de acuerdo con %s.","%s bounces up and down in front of you.",0,0,0,"%s在你面前上窜下跳。","%s подпрыгивает вверх и вниз перед вами.","%s salta arriba y abajo frente a ti.","%s pula para cima e para baixo na sua frente.",8323198
+"tá de acuerdo con %s.","You bounce up and down in front of %s.",0,0,0,"你在%s面前上窜下跳。","Вы прыгаете вверх и вниз перед %s.","Saltas arriba y abajo frente a %s.","Você pula para cima e para baixo na frente de %s.",8323198
+"á de acuerdo con %s.","%s bounces up and down.",0,0,0,"%s正在上窜下跳。","%s прыгает вверх вниз.","%s salta arriba y abajo.","%s pula para cima e para baixo.",8323198
+"� de acuerdo con %s.","You bounce up and down.",0,0,0,"你正在上窜下跳。","Вы прыгаете вверх вниз.","Saltas arriba y abajo.","Você pula para cima e para baixo.",8323198
+" de acuerdo con %s.","%s will be right back.  Sit tight, %s.",0,0,0,"%s马上就回来，%s，你先别擅自行动。","%s скоро вернётся. Оставайся на месте, %s.","%s vuelve enseguida. Espera, %s.","%s volta já. Espere, %s.",8323198
+"de acuerdo con %s.","%s will be right back.  Sit tight.",0,0,0,"%s马上就回来。请先不要采取什么行动。","%s скоро вернётся. Оставайся на месте.","%s vuelve enseguida. Espera.","%s volta já. Espere.",8323198
+"e acuerdo con %s.","You let %s know you'll be right back.",0,0,0,"你告诉%s你会马上回来。","Дай знать %s  как только вернешься.","Le haces saber a %s que vuelves enseguida.","Você informa a %s que volta já.",8323198
+" acuerdo con %s.","%s will be right back.",0,0,0,"%s马上就回来。","%s скоро вернеться.","%s vuelve enseguida.","%s volta já.",8323198
+"acuerdo con %s.","You let everyone know you'll be right back.",0,0,0,"你告诉大家你马上就回来。","Дайте всем знать, что вы скоро вернетесь.","Les haces saber a todos que vuelves enseguida.","Você informa a todos que volta já.",8323198
+"cuerdo con %s.","%s bows before %s.",0,0,0,"%s向%s鞠躬。","%s преклоняется перед %s.","%s se inclina ante %s.","%s se curva perante %s.",8323198
+"uerdo con %s.","%s bows before you.",0,0,0,"%s向你鞠躬。","%s преклоняется перед вами.","%s se inclina ante ti.","%s se curva perante você.",8323198
+"erdo con %s.","You bow before %s.",0,0,0,"你向%s鞠躬。","Вы преклоняетесь перед %s.","Te inclinas ante %s.","Você se curva perante %s.",8323198
+"rdo con %s.","%s bows down graciously.",0,0,0,"%s优雅的鞠了一躬。","%s любезно кланяется.","%s se inclina graciosamente.","%s se curva graciosamente.",8323198
+"do con %s.","You bow down graciously.",0,0,0,"你优雅的鞠了一躬。","Вы любезно кланяетесь.","Te inclinas graciosamente.","Você se curva graciosamente.",8323198
+"o con %s.","%s burps rudely in %s's face.",0,0,0,"%s很没有礼貌地对着%s打了个嗝。","%s грубо рыгает в лицо %s.","%s eructa groseramente en la cara de %s.","%s arrota grosseiramente na cara de %s.",8323198
+" con %s.","%s burps rudely in your face.",0,0,0,"%s很没有礼貌得对着你打了个嗝。","%s грубо рыгает вам в лицо.","%s eructa groseramente en tu cara.","%s arrota grosseiramente na sua cara.",8323198
+"con %s.","You burp rudely in %s's face.",0,0,0,"你很没有礼貌得对着%s打了个嗝。","Вы грубо рыгаете в лицо %s.","Eructas groseramente en la cara de %s.","Você arrota grosseiramente na cara de %s.",8323198
+"on %s.","%s lets out a loud belch.",0,0,0,"%s打了个响亮的嗝。","%s громко отрыгивает.","%s suelta un eructo fuerte.","%s solta um arroto forte.",8323198
+"n %s.","You let out a loud belch.",0,0,0,"你打了个响亮的嗝。","Вы громко отрыгиваете.","Sueltas un eructo fuerte.","Você solta um arroto forte.",8323198
+" %s.","%s waves goodbye to %s.  Farewell!",0,0,0,"%s向%s挥手告别。再见！","%s машет на прощание %s. Прощай!","%s se despide con la mano de %s. ¡Adiós!","%s se despede de %s com um aceno. Adeus!",8323198
+"%s.","%s waves goodbye to you.  Farewell!",0,0,0,"%s向你挥手告别。再见！","%s машет вам на прощание. Прощай!","%s se despide con la mano de ti. ¡Adiós!","%s se despede de você com um aceno. Adeus!",8323198
+"s.","You wave goodbye to %s.  Farewell!",0,0,0,"你向%s挥手告别。再见！","Вы машете на прощание %s. Прощай!","Te despides con la mano de %s. ¡Adiós!","Você se despede de %s com um aceno. Adeus!",8323198
+".","%s waves goodbye to everyone.  Farewell!",0,0,0,"%s向大家挥手告别。再见！","%s машет всем на прощание. Прощайте!","%s se despide con la mano de todos. ¡Adiós!","%s se despede de todos com um aceno. Adeus!",8323198
+"","You wave goodbye to everyone.  Farewell!",0,0,0,"你向大家挥手告别。再见！","Вы машете всем на прощание. Прощайте!","Te despides con la mano de todos. ¡Adiós!","Você se despede de todos com um aceno. Adeus!",8323198
+"%s concorda com %s.","%s cackles maniacally at %s.",0,0,0,"%s对着%s咯咯的笑个不停。","%s маниакально хихикает над %s.","%s se ríe maniáticamente de %s.","%s ri maniacamente de %s.",8323198
+"s concorda com %s.","%s cackles maniacally at you.",0,0,0,"%s对着你咯咯的笑个不停。","%s маниакально хихикает над вами.","%s se ríe maniáticamente de ti.","%s ri maniacamente de você.",8323198
+" concorda com %s.","You cackle maniacally at %s.",0,0,0,"你对着%s咯咯的笑个不停。","Вы маниакально хихикаете.","Te ríes maniáticamente de %s.","Você ri maniacamente de %s.",8323198
+"concorda com %s.","%s cackles maniacally at the situation.",0,0,0,"%s见此情景咯咯地笑个不停。","%s безумно хихикает, глядя на эту ситуацию.","%s se ríe maniáticamente de la situación.","%s ri maniacamente da situação.",8323198
+"oncorda com %s.","You cackle maniacally at the situation.",0,0,0,"你见此情景咯咯的笑个不停。","Вы безумно хихикаете, глядя на эту ситуацию.","Te ríes maniáticamente de la situación.","Você ri maniacamente da situação.",8323198
+"ncorda com %s.","%s cheers at %s!",0,0,0,"%s为%s而欢呼。","%s ликует с %s!","%s vitorea a %s.","%s vibra por %s.",8323198
+"corda com %s.","%s cheers at you.",0,0,0,"%s为你而欢呼。","%s ликует с тобой.","%s te vitorea.","%s vibra por você.",8323198
+"orda com %s.","You cheer at %s.",0,0,0,"你为%s欢呼。","Ликует с %s.","Vitoreas a %s.","Você vibra por %s.",8323198
+"rda com %s.","%s cheers!",0,0,0,"%s大声欢呼。","%s ликует!","%s vitorea.","%s vibra.",8323198
+"da com %s.","You cheer!",0,0,0,"你大声欢呼。","Вы ликуете!","Vitoreas.","Você vibra.",8323198
+"a com %s.","With arms flapping, %s struts around %s.  Cluck, Cluck, Chicken!",0,0,0,"%s像母鸡一样扇动着双臂绕着%s咯咯咯的叫！","Размахивая руками, %s важно расхаживает вокруг %s. Кудах, кудах, цыплёнок!","Con los brazos aleteando, %s pavonea alrededor de %s. ¡Clo, clo, gallina!","Com os braços agitados, %s se pavoneia ao redor de %s. Có, có, galinha!",8323198
+" com %s.","With arms flapping, %s struts around you.  Cluck, Cluck, Chicken!",0,0,0,"%s扇动着双臂绕着你咯咯咯地叫！","Размахивая руками, %s важно расхаживает вокруг тебя. Кудах, кудах, цыплёнок!","Con los brazos aleteando, %s pavonea alrededor de ti. ¡Clo, clo, gallina!","Com os braços agitados, %s se pavoneia ao seu redor. Có, có, galinha!",8323198
+"com %s.","With arms flapping, you strut around %s.  Cluck, Cluck, Chicken!",0,0,0,"你扇动着双臂绕着%s咯咯咯地叫！","Размахивая руками, вы важно расхаживает вокруг %s. Кудах, кудах, цыплёнок!","Con los brazos aleteando, te pavoneas alrededor de %s. ¡Clo, clo, gallina!","Com os braços agitados, você se pavoneia ao redor de %s. Có, có, galinha!",8323198
+"om %s.","With arms flapping, %s struts around.  Cluck, Cluck, Chicken!",0,0,0,"%s像母鸡一样扇动着双臂绕着圈子咯咯咯的叫！","Размахивая руками, %s важно расхаживает вокруг. Кудах, кудах, цыплёнок!","Con los brazos aleteando, %s pavonea alrededor. ¡Clo, clo, gallina!","Com os braços agitados, %s se pavoneia ao redor. Có, có, galinha!",8323198
+"m %s.","With arms flapping, you strut around.  Cluck, Cluck, Chicken!",0,0,0,"你像母鸡一样扇动着双臂绕着圈子咯咯咯的叫！","Размахивая руками, вы ходите вокруг. Кудахтанье, кудахтанье, цыплёнок!","Con los brazos aleteando, te pavoneas alrededor. ¡Clo, clo, gallina!","Com os braços agitados, você se pavoneia ao redor. Có, có, galinha!",8323198
+" %s.","%s chuckles at %s.",0,0,0,"%s对着%s吃吃地笑。","%s посмеивается над %s.","%s se ríe entre dientes de %s.","%s ri baixinho de %s.",8323198
+"%s.","%s chuckles at you.",0,0,0,"%s对着你吃吃地笑。","%s посмеивается над вами.","%s se ríe entre dientes de ti.","%s ri baixinho de você.",8323198
+"s.","You chuckle at %s.",0,0,0,"你对着%s吃吃地笑。","Вы смеетесь над %s.","Te ríes entre dientes de %s.","Você ri baixinho de %s.",8323198
+".","%s lets out a hearty chuckle.",0,0,0,"%s吃吃地笑着。","%s издает громкий смешок.","%s suelta una risa cordial.","%s solta uma risada cordial.",8323198
+"","You let out a hearty chuckle.",0,0,0,"你吃吃地笑着。","Вы издаете громкий смешок.","Sueltas una risa cordial.","Você solta uma risada cordial.",8323198
+"%s agrees with you.","%s claps excitedly for %s.",0,0,0,"%s激动地为%s鼓掌。","%s восторженно хлопает в ладоши %s.","%s aplaude emocionado a %s.","%s aplaude animadamente %s.",8323198
+"s agrees with you.","%s claps excitedly for you.",0,0,0,"%s激动地为你鼓掌。","%s восторженно хлопает вам.","%s te aplaude emocionado.","%s aplaude animadamente você.",8323198
+" agrees with you.","You clap excitedly for %s.",0,0,0,"你激动地为%s鼓掌。","Вы восторженно хлопаете %s.","Aplaudes emocionado a %s.","Você aplaude animadamente %s.",8323198
+"agrees with you.","%s claps excitedly.",0,0,0,"%s激动地鼓掌。","%s восторженно хлопает.","%s aplaude emocionado.","%s aplaude animadamente.",8323198
+"grees with you.","You clap excitedly.",0,0,0,"你激动地鼓掌。","Вы восторженно хлопаете.","Aplaudes emocionado.","Você aplaude animadamente.",8323198
+"rees with you.","%s looks at %s with a confused look.",0,0,0,"%s疑惑地看着%s。","%s смотрит на %s с недоумением.","%s mira a %s con una mirada confusa.","%s olha para %s com um olhar confuso.",8323198
+"ees with you.","%s looks at you with a confused look.",0,0,0,"%s疑惑地看着你。","%s смотрит на вас с недоумением.","%s te mira con una mirada confusa.","%s te olha com um olhar confuso.",8323198
+"es with you.","You look at %s with a confused look.",0,0,0,"你疑惑地看着%s。","Вы смотритена %s с недоумением.","Miras a %s con una mirada confusa.","Você olha para %s com um olhar confuso.",8323198
+"s with you.","%s is hopelessly confused.",0,0,0,"%s被完全搞糊涂了。","%s безнадежно запутался.","%s está irremediablemente confundido.","%s está irremediavelmente confuso.",8323198
+" with you.","You are hopelessly confused.",0,0,0,"你被完全搞糊涂了。","Вы безнадежно запутались.","Estás irremediablemente confundido.","Você está irremediavelmente confuso.",8323198
+"with you.","%s congratulates %s.",0,0,0,"%s向%s表示祝贺。","%s поздравляет %s.","%s felicita a %s.","%s felicita %s.",8323198
+"ith you.","%s congratulates you.",0,0,0,"%s向你表示祝贺。","%s поздравляет вас.","%s te felicita.","%s felicita você.",8323198
+"th you.","You congratulate %s.",0,0,0,"你向%s表示祝贺。","Вы поздравляете %s.","Felicitas a %s.","Você felicita %s.",8323198
+"h you.","%s congratulates everyone.",0,0,0,"%s向大家表示祝贺。","%s поздравляет всех.","%s felicita a todos.","%s felicita todos.",8323198
+" you.","You congratulate everyone around you.",0,0,0,"你向你周围大家表示祝贺。","Вы поздравляете всех вокруг.","Felicitas a todos a tu alrededor.","Você felicita todos ao seu redor.",8323198
+"you.","%s coughs at %s.",0,0,0,"%s对着%s咳嗽了几下。","%s кашляет на %s.","%s tose a %s.","%s tosse para %s.",8323198
+"ou.","%s coughs at you.",0,0,0,"%s对着你咳嗽了几下。","%s кашляет на вас.","%s te tose.","%s tosse para você.",8323198
+"u.","You cough at %s.",0,0,0,"你对着%s咳嗽了几下。","Вы кашляешь на %s.","Toses a %s.","Você tosse para %s.",8323198
+".","%s lets out a hacking cough.",0,0,0,"%s干咳了几下。","%s издает хриплый кашель.","%s suelta una tos seca.","%s solta uma tosse seca.",8323198
+"","You let out a hacking cough.",0,0,0,"你干咳了几下。","Вы издаешь хриплый кашель.","Sueltas una tos seca.","Você solta uma tosse seca.",8323198
+"%s赞同你的观点。","%s cowers in fear at the sight of %s.",0,0,0,"%s一看到%s就害怕地退缩了。","%s съеживается от страха при виде %s.","%s se acobarda de miedo al ver a %s.","%s se encolhe de medo ao ver %s.",8323198
+"s赞同你的观点。","%s cowers in fear at the sight of you.",0,0,0,"%s一看到你就害怕地退缩了。","%s съеживается от страха при виде вас.","%s se acobarda de miedo al verte.","%s se encolhe de medo ao ver você.",8323198
+"赞同你的观点。","You cower in fear at the sight of %s.",0,0,0,"你一看到%s就害怕地退缩了。","Вы съеживаетесь от страха при виде %s.","Te acobardas de miedo al ver a %s.","Você se encolhe de medo ao ver %s.",8323198
+"��同你的观点。","%s cowers in fear.",0,0,0,"%s害怕地退缩了。","%s съеживается от страха.","%s se acobarda de miedo.","%s se encolhe de medo.",8323198
+"�同你的观点。","You cower in fear.",0,0,0,"你害怕地退缩了。","Вы съеживаетесь от страха.","Te acobardas de miedo.","Você se encolhe de medo.",8323198
+"同你的观点。","%s cracks his knuckles while staring at %s.",0,0,0,"%s把手上的关节捏得咯咯作声，直直地望着%s。","%s хрустит костяшками пальцев, глядя на %s.","%s se cruje los nudillos mientras mira fijamente a %s.","%s estala os nós dos dedos enquanto encara %s.",8323198
+"��你的观点。","%s cracks his knuckles while staring at you.",0,0,0,"%s把手上的关节捏得咯咯作声，直直地望着你。","%s хрустит костяшками пальцев, глядя на вас.","%s se cruje los nudillos mientras te mira fijamente.","%s estala os nós dos dedos enquanto encara você.",8323198
+"�你的观点。","You crack your knuckles while staring at %s.",0,0,0,"你把手上的关节捏得咯咯作声，直直地望着%s。","Вы хрустите костяшками пальцев, глядя на %s.","Te crujes los nudillos mientras miras fijamente a %s.","Você estala os nós dos dedos enquanto encara %s.",8323198
+"你的观点。","%s cracks his knuckles.",0,0,0,"%s把手上的关节捏得咯咯作声。","%s хрустит костяшками пальцев.","%s se cruje los nudillos.","%s estala os nós dos dedos.",8323198
+"��的观点。","You crack your knuckles.",0,0,0,"你把手上的关节捏得咯咯作声。","Вы хрустите костяшками пальцев.","Te crujes los nudillos.","Você estala os nós dos dedos.",8323198
+"�的观点。","%s cracks her knuckles while staring at %s.",0,0,0,"%s把手上的关节捏得咯咯作声，直直地望着%s。","%s хрустит костяшками пальцев, глядя на %s.","%s se cruje los nudillos mientras mira fijamente a %s.","%s estala os nós dos dedos enquanto encara %s.",8323198
+"的观点。","%s cracks her knuckles while staring at you.",0,0,0,"%s把手上的关节捏得咯咯作声，直直地望着你。","%s хрустит костяшками пальцев, глядя на вас.","%s se cruje los nudillos mientras te mira fijamente.","%s estala os nós dos dedos enquanto encara você.",8323198
+"��观点。","%s cracks her knuckles.",0,0,0,"%s把手上的关节捏得咯咯作声。","%s хрустит костяшками пальцев.","%s se cruje los nudillos.","%s estala os nós dos dedos.",8323198
+"�观点。","%s cringes away from %s.",0,0,0,"%s在%s的面前退缩了。","%s отшатывается от %s.","%s se aparta con miedo de %s.","%s se afasta com medo de %s.",8323198
+"观点。","%s cringes away from you.",0,0,0,"%s在你的面前退缩了。","%s отшатывается от вас.","%s te aparta con miedo.","%s afasta você com medo.",8323198
+"��点。","You cringe away from %s.",0,0,0,"你在%s的面前退缩了。","Вы отшатываетесь от %s.","Te apartas con miedo de %s.","Você se afasta com medo de %s.",8323198
+"�点。","%s cringes in fear.",0,0,0,"%s因为恐惧而退缩了。","%s отшатывается в ужасе.","%s se encoge de miedo.","%s se encolhe de medo.",8323198
+"点。","You cringe in fear.",0,0,0,"你因为恐惧而退缩了。","Вы отшатываетесь от в ужасе.","Te encoges de miedo.","Você se encolhe de medo.",8323198
+"��。","%s cries on %s's shoulder.",0,0,0,"%s靠在%s的肩膀上泣不成声。","%s плачет на плече %s.","%s llora en el hombro de %s.","%s chora no ombro de %s.",8323198
+"�。","%s cries on your shoulder.",0,0,0,"%s靠在你的肩膀上泣不成声。","%s плачет на вашем плече %s.","%s llora en tu hombro.","%s chora no seu ombro.",8323198
+"。","You cry on %s's shoulder.",0,0,0,"你扑在%s的肩膀上泣不成声。","Вы плачете на плече %s.","Lloras en el hombro de %s.","Você chora no ombro de %s.",8323198
+"��","%s cries.",0,0,0,"%s哭了。","%s рыдает.","%s llora.","%s chora.",8323198
+"�","You cry.",0,0,0,"你哭了。","Вы рыдаете.","Lloras.","Você chora.",8323198
+"","%s is curious what %s is up to.",0,0,0,"%s对于%s能胜任什么工作很感兴趣。","%s любопытно, что задумал %s.","%s tiene curiosidad por saber qué está haciendo %s.","%s está curioso para saber o que %s está fazendo.",8323198
+"%s согласен с вами.","%s is curious what you are up to.",0,0,0,"%s对于你能胜任什么工作很感兴趣。","%s любопытно, что задумали вы.","%s tiene curiosidad por saber qué estás haciendo.","%s está curioso para saber o que você está fazendo.",8323198
+"s согласен с вами.","You are curious what %s is up to.",0,0,0,"你对于%s能胜任什么工作很感兴趣。","Вам любопытно, что задумал %s.","Tienes curiosidad por saber qué está haciendo %s.","Você está curioso para saber o que %s está fazendo.",8323198
+" согласен с вами.","%s expresses his curiosity to everyone.",0,0,0,"%s向大家表示了他的好奇心。","%s выражает всем свое любопытство.","%s expresa su curiosidad a todos.","%s expressa sua curiosidade a todos.",8323198
+"согласен с вами.","You express your curiosity to those around you.",0,0,0,"你对周围的人流露出好奇心。","Вы выражете всем вокруг своё любопытство.","Expresas tu curiosidad a quienes te rodean.","Você expressa sua curiosidade a quem está ao seu redor.",8323198
+"�огласен с вами.","%s expresses her curiosity to everyone.",0,0,0,"%s对周围的人流露出好奇心。","%s выражает всем свое любопытство.","%s expresa su curiosidad a todos.","%s expressa sua curiosidade a todos.",8323198
+"огласен с вами.","%s curtsies before %s.",0,0,0,"%s向%s行屈膝礼。","%s делает реверанс перед %s.","%s hace una reverencia ante %s.","%s faz uma reverência para %s.",8323198
+"�гласен с вами.","%s curtsies before you.",0,0,0,"%s向你行屈膝礼。","%s делает реверанс перед вами.","%s hace una reverencia ante ti.","%s faz uma reverência para você.",8323198
+"гласен с вами.","You curtsey before %s.",0,0,0,"你向%s行屈膝礼。","Вы делаете реверанс перед %s.","Haces una reverencia ante %s.","Você faz uma reverência para %s.",8323198
+"�ласен с вами.","%s curtsies.",0,0,0,"%s行了个屈膝礼。","%s делает реверанс.","%s hace una reverencia.","%s faz uma reverência.",8323198
+"ласен с вами.","You curtsey.",0,0,0,"你行了个屈膝礼。","Вы делаете реверанс.","Haces una reverencia.","Você faz uma reverência.",8323198
+"�асен с вами.","%s dances with %s.",0,0,0,"%s在和%s跳舞。","%s танцует с %s.","%s baila con %s.","%s dança com %s.",8323198
+"асен с вами.","%s dances with you.",0,0,0,"%s在和你跳舞。","%s танцует с вами,","%s baila contigo.","%s dança com você.",8323198
+"�сен с вами.","You dance with %s.",0,0,0,"你在和%s跳舞。","Вы танцуете с %s.","Bailas con %s.","Você dança com %s.",8323198
+"сен с вами.","%s bursts into dance.",0,0,0,"%s开始跳舞。","%s начинает танцевать.","%s estalla en un baile.","%s explode numa dança.",8323198
+"�ен с вами.","You burst into dance.",0,0,0,"你开始跳舞。","Вы начинаете танцевать.","Estallas en un baile.","Você explode numa dança.",8323198
+"ен с вами.","%s raises a drink to %s.  Cheers!",0,0,0,"%s向%s举杯。干杯！","%s поднимает бокал за %s. Ура!","%s levanta una bebida a %s. ¡Salud!","%s levanta uma bebida para %s. Saúde!",8323198
+"�н с вами.","%s raises a drink to you.  Cheers!",0,0,0,"%s向你举杯。干杯！","%s поднимает бокал за вас. Ура!","%s levanta una bebida a ti. ¡Salud!","%s levanta uma bebida para você. Saúde!",8323198
+"н с вами.","You raise a drink to %s.  Cheers!",0,0,0,"你向%s举杯。干杯！","Вы поднимаете бокал за %s. Ура!","Levantas una bebida a %s. ¡Salud!","Você levanta uma bebida para %s. Saúde!",8323198
+"� с вами.","%s raises a drink in the air before chugging it down.  Cheers!",0,0,0,"%s举起酒杯，然后一饮而尽。干杯！","%s поднимает напиток в воздух и выпивает его залпом. За здоровье!","%s levanta una bebida en el aire antes de beberla de un trago. ¡Salud!","%s levanta uma bebida no ar antes de beber de um gole. Saúde!",8323198
+" с вами.","You raise a drink in the air before chugging it down.  Cheers!",0,0,0,"你举起酒杯，然后一饮而尽。干杯！","Вы поднимаете напиток в воздух и выпиваете его залпом. За здоровье!","Levantas una bebida en el aire antes de beberla de un trago. ¡Salud!","Você levanta uma bebida no ar antes de beber de um gole. Saúde!",8323198
+"с вами.","%s looks at %s and begins to drool.",0,0,0,"%s看着%s流出了口水。","%s смотрит на %s и начинает пускать слюни.","%s mira a %s y empieza a babear.","%s olha para %s e começa a babar.",8323198
+"� вами.","%s looks at you and begins to drool.",0,0,0,"%s看着你流出了口水。","%s смотрит на вас и начинает пускать слюни.","%s te mira y empieza a babear.","%s te olha e começa a babar.",8323198
+" вами.","You look at %s and begin to drool.",0,0,0,"你看着%s流出了口水。","Вы смотрите на %s и начинаете пускать слюни.","Miras a %s y empiezas a babear.","Você olha para %s e começa a babar.",8323198
+"вами.","A tendril of drool runs down %s's lip.",0,0,0,"一条长长的口水挂在%s的嘴边。","По губам %s стекают слюни.","Un hilo de baba corre por el labio de %s.","Um fio de baba escorre pelo lábio de %s.",8323198
+"�ами.","A tendril of drool runs down your lip.",0,0,0,"一条长长的口水挂在你的嘴边。","По вашим губам стекают слюни.","Un hilo de baba corre por tu labio.","Um fio de baba escorre pelo seu lábio.",8323198
+"ами.","%s begins to eat in front of %s.",0,0,0,"%s开始在%s面前吃东西。","%s начинает есть перед %s.","%s empieza a comer frente a %s.","%s começa a comer na frente de %s.",8323198
+"�ми.","%s begins to eat rations in front of you.",0,0,0,"%s开始在你面前吃东西。","%s начинает есть перед вами.","%s empieza a comer raciones frente a ti.","%s começa a comer rações na sua frente.",8323198
+"ми.","You begin to eat in front of %s.",0,0,0,"你在%s面前开始吃东西。","Вы начинаете есть перед %s.","Empiezas a comer frente a %s.","Você começa a comer na frente de %s.",8323198
+"�и.","%s begins to eat.",0,0,0,"%s开始吃东西。","%s начинает есть.","%s empieza a comer.","%s começa a comer.",8323198
+"и.","You begin to eat.",0,0,0,"你开始吃东西。","Вы начинаете есть.","Empiezas a comer.","Você começa a comer.",8323198
+"�.","%s eyes %s up and down.",0,0,0,"%s上下打量了一下%s。","%s окидывает %s взглядом с ног до головы.","%s examina a %s detenidamente.","%s olha você de cima a baixo.",8323198
+".","%s eyes you up and down.",0,0,0,"%s上下打量了一下你。","%s окидывает тебя взглядом с ног до головы.","%s te examina detenidamente.","%s olha para você.",8323198
+"","You eye %s up and down.",0,0,0,"你上下打量了一下%s。","Вы окидываете взглядом %s с ног до головы.","Miras a %s de arriba a abajo.","%s te olha.",8323198
+"%s está de acuerdo contigo.","%s looks at you with crossed eyes.",0,0,0,"%s眯着眼睛看着你。","%s смотрит на тебя с косоглазием.","%s te mira con los ojos cruzados.","%s te olha com os olhos cruzados.",8323198
+"s está de acuerdo contigo.","You cross your eyes.",0,0,0,"你眯起了眼睛。","Вы косите глаза.","Cruzas los ojos.","Você cruza os olhos.",8323198
+" está de acuerdo contigo.","%s brushes up against %s and farts loudly.",0,0,0,"%s靠近%s然后放了一个很响的屁。","%s трется об %s и громко пукает.","%s se roza con %s y se tira un pedo ruidosamente.","%s se esfrega em %s e solta um pum alto.",8323198
+"está de acuerdo contigo.","%s brushes up against you and farts loudly.",0,0,0,"%s靠近你然后放了一个很响的屁。","%s трется о вас и громко пукает.","%s se roza contigo y se tira un pedo ruidosamente.","%s se esfrega em você e solta um pum alto.",8323198
+"stá de acuerdo contigo.","You brush up against %s and fart loudly.",0,0,0,"你靠近%s然后放了一个很响的屁。","Вы трешься о %s и громко пукаешь.","Te rozas con %s y te tiras un pedo ruidosamente.","Você se esfrega em %s e solta um pum alto.",8323198
+"tá de acuerdo contigo.","%s farts loudly.  Whew...what stinks?",0,0,0,"%s放了一个很响的屁。嗯…什么东西这么臭？","%s громко пукнул. Фуу... что за запах?","%s se tira un pedo ruidosamente. Uf... ¿qué apesta?","%s solta um pum alto. Ufa... que cheiro ruim!",8323198
+"á de acuerdo contigo.","You fart loudly.  Whew...what stinks?",0,0,0,"你放了一个很响的屁。嗯…什么东西这么臭？","Вы громко пукнул. Фуу... что за запах?","Te tiras un pedo ruidosamente. Uf... ¿qué apesta?","Você solta um pum alto. Ufa... que cheiro ruim!",8323198
+"� de acuerdo contigo.","%s fidgets impatiently while waiting for %s.",0,0,0,"%s等%s等得坐立不安。","%s нервно ерзает, ожидая %s.","%s se inquieta impacientemente mientras espera a %s.","%s fica impaciente enquanto espera por %s.",8323198
+" de acuerdo contigo.","%s fidgets impatiently while waiting for you.",0,0,0,"%s等你等得坐立不安。","%s нервно ерзает, ожидая вас.","%s se inquieta impacientemente mientras te espera.","%s fica impaciente enquanto espera por você.",8323198
+"de acuerdo contigo.","You fidget impatiently while waiting for %s.",0,0,0,"你等%s等得坐立不安。","Вы нервно ерзаете, ожидая %s.","Te inquietas impacientemente mientras esperas a %s.","Você fica impaciente enquanto espera por %s.",8323198
+"e acuerdo contigo.","%s fidgets.",0,0,0,"%s显得坐立不安。","%s беспокоиться.","%s se inquieta.","%s fica impaciente.",8323198
+" acuerdo contigo.","You fidget.",0,0,0,"你显得坐立不安。","Вы беспокоитесь.","Te inquietas.","Você fica impaciente.",8323198
+"acuerdo contigo.","%s flexes at %s.  Oooooh so strong!",0,0,0,"%s向%s展示肌肉。哇，好壮啊！","%s играет мускулами перед %s.  Какая мощь!","%s flexiona sus músculos ante %s. ¡Oooooh, qué fuerte!","%s flexiona seus músculos para %s. Oooooh, que forte!",8323198
+"cuerdo contigo.","%s flexes at you.  Oooooh so strong!",0,0,0,"%s向你展示他的肌肉。哇，好强啊！","%s играет мускулами перед вами.  Какая мощь!","%s flexiona sus músculos ante ti. ¡Oooooh, qué fuerte!","%s flexiona seus músculos para você. Oooooh, que forte!",8323198
+"uerdo contigo.","You flex at %s.  Oooooh so strong!",0,0,0,"你向%s展示你的肌肉。哇，好强啊！","Ты демонстрируешь свои мускулы перед %s.  Какая мощь!","Flexionas tus músculos ante %s. ¡Oooooh, qué fuerte!","Você flexiona seus músculos para %s. Oooooh, que forte!",8323198
+"erdo contigo.","%s flexes his muscles.  Oooooh so strong!",0,0,0,"%s正在展示他的肌肉。哇，好壮啊！","%s демонстрирует свои мускулы.  Какая мощь!","%s flexiona sus músculos. ¡Oooooh, qué fuerte!","%s flexiona seus músculos. Oooooh, que forte!",8323198
+"rdo contigo.","You flex your muscles.  Oooooh so strong!",0,0,0,"你正在展示你的肌肉。哇，好壮啊！","Ты демонстрируешь свои мускулы.  Какая мощь!","Flexionas tus músculos. ¡Oooooh, qué fuerte!","Você flexiona seus músculos. Oooooh, que forte!",8323198
+"do contigo.","%s flexes her muscles.  Oooooh so strong!",0,0,0,"%s正在展示她的肌肉。哇，好强啊！","%s демонстрирует свои мускулы.  Какая мощь!","%s flexiona sus músculos. ¡Oooooh, qué fuerte!","%s flexiona seus músculos. Oooooh, que forte!",8323198
+"o contigo.","%s frowns with disappointment at %s.",0,0,0,"%s失望地对%s皱起了眉头。","%s разочарованно хмурится, глядя на %s.","%s frunce el ceño con decepción a %s.","%s franze a testa com decepção para %s.",8323198
+" contigo.","%s frowns with disappointment at you.",0,0,0,"%s失望地对你皱起了眉头。","%s разочарованно хмурится, глядя на тебя.","%s frunce el ceño con decepción a ti.","%s franze a testa com decepção para você.",8323198
+"contigo.","You frown with disappointment at %s.",0,0,0,"你失望地对%s皱起了眉头。","Ты  разочарованно хмуришься, глядя на %s.","Frunces el ceño con decepción a %s.","Você franze a testa com decepção para %s.",8323198
+"ontigo.","%s frowns.",0,0,0,"%s皱着眉头。","%s хмурится.","%s frunce el ceño.","%s franze a testa.",8323198
+"ntigo.","You frown.",0,0,0,"你皱着眉头。","Вы хмуритесь.","Frunces el ceño.","Você franze a testa.",8323198
+"tigo.","%s gasps at %s.",0,0,0,"%s气喘吁吁地和%s说话。","%s дышит на %s.","%s se queda sin aliento ante %s.","%s fica sem fôlego com %s.",8323198
+"igo.","%s gasps at you.",0,0,0,"%s气喘吁吁地和你说话。","%s дышит на вас.","%s se queda sin aliento ante ti.","%s fica sem fôlego com você.",8323198
+"go.","You gasp at %s.",0,0,0,"你气喘吁吁地和%s说话。","Вы дышите на %s.","Te quedas sin aliento ante %s.","Você fica sem fôlego com %s.",8323198
+"o.","%s gasps.",0,0,0,"%s显得气喘吁吁。","%s вздыхает.","%s se queda sin aliento.","%s fica sem fôlego.",8323198
+".","You gasp.",0,0,0,"你显得气喘吁吁。","Вы вздыхаете.","Te quedas sin aliento.","Você fica sem fôlego.",8323198
+"","%s gazes eagerly at %s.",0,0,0,"%s紧紧地盯着%s。","%s жадно смотрит на %s.","%s mira ansiosamente a %s.","%s olha ansiosamente para %s.",8323198
+"%s concorda com você.","%s gazes eagerly at you.",0,0,0,"%s紧紧地盯着你。","%s жадно смотрит на вас.","%s mira ansiosamente a ti.","%s olha ansiosamente para você.",8323198
+"s concorda com você.","You gaze eagerly at %s.",0,0,0,"你殷切地注视着%s。","Вы жадно смотрите на %s.","Miras ansiosamente a %s.","Você olha ansiosamente para %s.",8323198
+" concorda com você.","%s gazes off into the distance.",0,0,0,"%s凝视着远方。","%s смотрит вдаль.","%s mira fijamente a la distancia.","%s olha fixamente para a distância.",8323198
+"concorda com você.","You gaze off into the distance.",0,0,0,"你凝视着远方。","Вы смотрите вдаль.","Miras fijamente a la distancia.","Você olha fixamente para a distância.",8323198
+"oncorda com você.","%s giggles at %s.",0,0,0,"%s对着%s咯咯地傻笑。","%s хихикает над %s.","%s se ríe entre dientes de %s.","%s ri baixinho de %s.",8323198
+"ncorda com você.","%s giggles at you.",0,0,0,"%s对着你咯咯地傻笑。","%s хихикает над вами.","%s se ríe entre dientes de ti.","%s ri baixinho de você.",8323198
+"corda com você.","You giggle at %s.",0,0,0,"你对着%s咯咯地傻笑。","Вы хихикаете над %s.","Te ríes entre dientes de %s.","Você ri baixinho de %s.",8323198
+"orda com você.","%s giggles.",0,0,0,"%s在咯咯地傻笑。","%s хихикает.","%s se ríe entre dientes.","%s ri baixinho.",8323198
+"rda com você.","You giggle.",0,0,0,"你在咯咯地傻笑。","Вы хихикаете.","Te ríes entre dientes.","Você ri baixinho.",8323198
+"da com você.","%s glares angrily at %s.",0,0,0,"%s生气地对着%s瞪大了眼睛。","%s сердито смотрит на %s.","%s mira con ira a %s.","%s olha com raiva para %s.",8323198
+"a com você.","%s glares angrily at you.",0,0,0,"%s生气地对着你瞪大了眼睛。","%s сердито смотрит на вас.","%s mira con ira a ti.","%s olha com raiva para você.",8323198
+" com você.","You glare angrily at %s.",0,0,0,"你生气地对着%s瞪大了眼睛。","Вы сердито смотрите на %s.","Miras con ira a %s.","Você olha com raiva para %s.",8323198
+"com você.","%s glares angrily.",0,0,0,"%s生气地瞪大了眼睛。","%s смотрит сердито.","%s mira con ira.","%s olha com raiva.",8323198
+"om você.","You glare angrily.",0,0,0,"你生气地瞪大了眼睛。","Вы сердито смотрите.","Miras con ira.","Você olha com raiva.",8323198
+"m você.","%s gloats over %s's misfortune.",0,0,0,"%s幸灾乐祸于%s的不幸。","%s злорадствует по поводу несчастья %s.","%s se regodea por la desgracia de %s.","%s se alegra com a desgraça de %s.",8323198
+" você.","%s gloats over your misfortune.",0,0,0,"%s幸灾乐祸于你的不幸。","%s злорадствует по поводу вашего несчастья.","%s se regodea por tu desgracia.","%s se alegra com sua desgraça.",8323198
+"você.","You gloat over %s's misfortune.",0,0,0,"你幸灾乐祸于%s的不幸。","Вы злорадствуете по поводу несчастья %s.","Te regodeas por la desgracia de %s.","Você se alegra com a desgraça de %s.",8323198
+"ocê.","%s gloats over everyone's misfortune.",0,0,0,"%s幸灾乐祸于大家的不幸。","%s злорадствует по поводу несчастья всех вокруг.","%s se regodea por la desgracia de todos.","%s se alegra com a desgraça de todos.",8323198
+"cê.","You gloat over everyone's misfortune.",0,0,0,"你幸灾乐祸于大家的不幸。","Вы злорадствуете по поводу несчастья всех вокруг.","Te regodeas por la desgracia de todos.","Você se alegra com a desgraça de todos.",8323198
+"ê.","%s greets %s warmly.",0,0,0,"%s热情问候%s。","%s тепло приветствует %s.","%s saluda calurosamente a %s.","%s cumprimenta calorosamente %s.",8323198
+"�.","%s greets you warmly.",0,0,0,"%s热情问候你。","%s тепло приветствует вас.","%s te saluda calurosamente.","%s cumprimenta você calorosamente.",8323198
+".","You greet %s warmly.",0,0,0,"你热情问候%s。","Вы тепло приветствуете %s.","Saludas calurosamente a %s.","Você cumprimenta %s calorosamente.",8323198
+"","%s greets everyone warmly.",0,0,0,"%s热情地问候大家。","%s тепло приветствует всех.","%s saluda calurosamente a todos.","%s cumprimenta calorosamente a todos.",8323198
+"You agree with %s.","You greet everyone warmly.",0,0,0,"你热情地问候和大家。","Вы тепло приветствуете всех.","Saludas calurosamente a todos.","Você cumprimenta calorosamente a todos.",8323198
+"ou agree with %s.","%s grins wickedly at %s.",0,0,0,"%s顽皮地对%s一笑。","%s злобно ухмыляется %s.","%s le sonríe maliciosamente a %s.","%s sorri maliciosamente para %s.",8323198
+"u agree with %s.","%s grins at you wickedly.",0,0,0,"%s顽皮地对你一笑。","%s злобно ухмыляется вам.","%s te sonríe maliciosamente.","%s sorri maliciosamente para você.",8323198
+" agree with %s.","You grin wickedly at %s.",0,0,0,"你顽皮地对%s一笑。","Вы злобно ухмыляетесь %s.","Le sonríes maliciosamente a %s.","Você sorri maliciosamente para %s.",8323198
+"agree with %s.","%s grins wickedly.",0,0,0,"%s顽皮地笑了笑。","%s злобно ухмыляется.","%s sonríe maliciosamente.","%s sorri maliciosamente.",8323198
+"gree with %s.","You grin wickedly.",0,0,0,"你顽皮地笑了笑。","Вы злобно ухмыляетесь.","Le sonríes maliciosamente.","Você sorri maliciosamente.",8323198
+"ree with %s.","%s looks at %s and groans.",0,0,0,"%s对着%s呻吟。","%s смотрит на %s и стонет.","%s mira a %s y gime.","%s olha para %s e geme.",8323198
+"ee with %s.","%s looks at you and groans.",0,0,0,"%s对着你呻吟。","%s смотрит на тебя и стонет.","%s te mira y gime.","%s te olha e geme.",8323198
+"e with %s.","You look at %s and groan.",0,0,0,"你对着%s呻吟。","Вы смотрите на %s и стонете.","Miras a %s y gimes.","Você olha para %s e geme.",8323198
+" with %s.","%s begins to groan.",0,0,0,"%s开始呻吟。","%s начинает стонать.","%s empieza a lloriquear.","%s começa a choramingar.",8323198
+"with %s.","You begin to groan.",0,0,0,"你开始呻吟。","Вы начинаете стонать.","Empiezas a gemir.","Você começa a gemer.",8323198
+"ith %s.","%s grovels before %s like a subservient peon.",0,0,0,"%s在%s面前卑躬屈膝，好像一个屈从的苦工一样。","%s пресмыкается перед %s, словно батрак.","%s se arrastra ante %s como un peón servil.","%s se arrasta perante %s como um peão servil.",8323198
+"th %s.","%s grovels before you like a subservient peon.",0,0,0,"%s在你面前卑躬屈膝，好像一个屈从的苦工一样。","%s пресмыкается перед вами, словно батрак.","%s se arrastra ante ti como un peón servil.","%s se arrasta perante você como um peão servil.",8323198
+"h %s.","You grovel before %s like a subservient peon.",0,0,0,"你在%s面前卑躬屈膝，好像一个屈从的苦工一样。","Вы пресмыкается перед %s, словно батрак.","Te arrastras ante %s como un peón servil.","Você se arrasta perante %s como um peão servil.",8323198
+" %s.","%s grovels on the ground, wallowing in subservience.",0,0,0,"%s卑微地跪在地上。","%s пресмыкается на земле, утопая в раболепии.","%s se arrastra por el suelo, revolcándose en la servidumbre.","%s se arrasta pelo chão, chafurdando na servidão.",8323198
+"%s.","You grovel on the ground, wallowing in subservience.",0,0,0,"你卑微地跪在地上。","Вы пресмыкаетесь на земле, утопая в раболепии.","Te arrastras por el suelo, revolcándote en la servidumbre.","Você se arrasta pelo chão, chafurdando na servidão.",8323198
+"s.","%s takes one look at %s and lets out a guffaw!",0,0,0,"%s看了%s一眼然后哈哈大笑。","%s смотрит на %s и начинает хохотать!","%s le echa un vistazo a %s y suelta una carcajada.","%s dá uma olhada em %s e solta uma gargalhada.",8323198
+".","%s takes one look at you and lets out a guffaw!",0,0,0,"%s看了你一眼然后哈哈大笑。","%s смотрит на вас и начинает хохотать!","%s te echa un vistazo y suelta una carcajada.","%s dá uma olhada em você e solta uma gargalhada.",8323198
+"","You take one look at %s and let out a guffaw!",0,0,0,"你看了%s一眼然后哈哈大笑。","Вы смотрите на %s и начинаете хохотать!","Le echas un vistazo a %s y sueltas una carcajada.","Você dá uma olhada em %s e solta uma gargalhada.",8323198
+"你赞同%s的观点。","%s lets out a boisterous guffaw!",0,0,0,"%s放声大笑。","%s издает громкий хохот!","%s suelta una carcajada estruendosa.","%s solta uma gargalhada estrondosa.",8323198
+"��赞同%s的观点。","You let out a boisterous guffaw!",0,0,0,"你放声大笑。","Вы издаете громкий хохот!","Sueltas una carcajada estruendosa.","Você solta uma gargalhada estrondosa.",8323198
+"�赞同%s的观点。","%s hails %s.",0,0,0,"%s和%s打招呼。","%s приветствует %s.","%s aclama a %s.","%s aclama %s.",8323198
+"赞同%s的观点。","%s hails you.",0,0,0,"%s和你打招呼。","%s приветствует вас.","%s te aclama.","%s aclama você.",8323198
+"��同%s的观点。","You hail %s.",0,0,0,"你和%s打招呼。","Вы приветствуете %s.","Aclamas a %s.","Você aclama %s.",8323198
+"�同%s的观点。","%s hails everyone around him.",0,0,0,"%s和周围所有的人打招呼。","%s приветствует всех вокруг.","%s aclama a todos a su alrededor.","%s aclama a todos ao seu redor.",8323198
+"同%s的观点。","You hail those around you.",0,0,0,"你和周围所有的人打招呼。","Вы приветствуете тех, кто вокруг вас.","Aclamas a quienes te rodean.","Você aclama quem está ao seu redor.",8323198
+"��%s的观点。","%s hails everyone around her.",0,0,0,"%s和周围所有的人打招呼。","%s приветствует всех вокруг неё.","%s aclama a todos a su alrededor.","%s aclama a todos ao seu redor.",8323198
+"�%s的观点。","%s is very happy with %s!",0,0,0,"%s感到和%s在一起很开心！","%s очень доволен %s!","%s está muy contento con %s.","%s está muito contente com %s.",8323198
+"%s的观点。","%s is very happy with you!",0,0,0,"%s感到和你在一起很开心！","%s очень доволен вами!","%s está muy contento contigo.","%s está muito contente com você.",8323198
+"s的观点。","You are very happy with %s!",0,0,0,"你感到和%s在一起很开心！","Вы очень довольны %s!","¡Estás muy contento con %s!","Você está muito contente com %s!",8323198
+"的观点。","%s is filled with happiness!",0,0,0,"%s显得非常高兴！","%s полон счастья!","%s está lleno de felicidad.","%s está cheio de felicidade.",8323198
+"��观点。","You are filled with happiness!",0,0,0,"你显得非常高兴！","Вы полны счастья!","Estás lleno de felicidad.","Você está cheio de felicidade.",8323198
+"�观点。","%s greets %s with a hearty hello!",0,0,0,"%s真心地向%s表示问候。","%s сердечно приветствует %s!","%s saluda a %s con un cordial ¡hola!","%s cumprimenta %s com um caloroso olá!",8323198
+"观点。","%s greets you with a hearty hello!",0,0,0,"%s真心地向你表示问候。","%s сердечно приветствует вас!","%s te saluda con un cordial ¡hola!","%s cumprimenta você com um caloroso olá!",8323198
+"��点。","You greet %s with a hearty hello!",0,0,0,"你真心地向%s表示问候。","Вы сердечно приветствуете %s.","Saludas a %s con un cordial ¡hola!","Você cumprimenta %s com um caloroso olá!",8323198
+"�点。","%s greets everyone with a hearty hello!",0,0,0,"%s真心地向大家表示问候。","%s сердечно приветствует всех!","%s saluda a todos con un cordial ¡hola!","%s cumprimenta a todos com um caloroso olá!",8323198
+"点。","You greet everyone with a hearty hello!",0,0,0,"你真心地向大家表示问候。","Вы сердечно приветствуете всех!","Saludas a todos con un cordial ¡hola!","Você cumprimenta a todos com um caloroso olá!",8323198
+"��。","%s hugs %s.",0,0,0,"%s拥抱了%s。","%s обнимает %s.","%s abraza a %s.","%s abraça %s.",8323198
+"�。","%s hugs you.",0,0,0,"%s拥抱了你。","%s обнимает вас.","%s te abraza.","%s abraça você.",8323198
+"。","You hug %s.",0,0,0,"你拥抱了%s。","Вы обнимаете %s.","Abrazas a %s.","Você abraça %s.",8323198
+"��","%s needs a hug!",0,0,0,"%s需要一个拥抱！","%s нужны обьятия!","%s necesita un abrazo.","%s precisa de um abraço.",8323198
+"�","You need a hug!",0,0,0,"你需要一个拥抱！","Вам нужны обьятия!","¡Necesitas un abrazo!","Você precisa de um abraço!",8323198
+"","%s is hungry.  Maybe %s has some food...",0,0,0,"%s感到很饿。也许在%s那里可以找到一些食物。","%s голоден. Может быть, у %s есть еда...","%s tiene hambre. Quizás %s tenga algo de comida...","%s está com fome. Talvez %s tenha alguma comida...",8323198
+"Вы согласны с %s.","%s is hungry.  Maybe you have some food...",0,0,0,"%s感到很饿。也许在你那里可以找到一些食物。","%s голоден. Может быть, у вас есть еда...","%s tiene hambre. Quizás tengas algo de comida...","%s está com fome. Talvez você tenha alguma comida...",8323198
+"�ы согласны с %s.","You are hungry.  Maybe %s has some food...",0,0,0,"你感到很饿。也许在%s那里可以找到一些食物。","Вы голодны. Может быть, у %s есть еда...","Tienes hambre. Quizás %s tenga algo de comida...","Você está com fome. Talvez %s tenha alguma comida...",8323198
+"ы согласны с %s.","%s is hungry!",0,0,0,"%s感到很饿！","%s голоден!","%s tiene hambre.","%s está com fome.",8323198
+"� согласны с %s.","You are hungry!",0,0,0,"你感到很饿！","Вы голодны!","¡Tienes hambre!","Você está com fome!",8323198
+" согласны с %s.","%s blows %s a kiss.",0,0,0,"%s给了%s一个飞吻。","%s посылает %s воздушный поцелуй.","%s le lanza un beso a %s.","%s manda um beijo para %s.",8323198
+"согласны с %s.","%s blows you a kiss.",0,0,0,"%s给了你一个飞吻。","%s посылает вам воздушный поцелуй.","%s te lanza un beso.","%s manda um beijo para você.",8323198
+"�огласны с %s.","You blow a kiss to %s.",0,0,0,"你给了%s一个飞吻。","Вы посылаете %s воздушный поцелуй.","Lanzas un beso a %s.","Você manda um beijo para %s.",8323198
+"огласны с %s.","%s blows a kiss into the wind.",0,0,0,"%s抛出一个飞吻。","%s посылает поцелуй по ветру.","%s lanza un beso al viento.","%s manda um beijo ao vento.",8323198
+"�гласны с %s.","You blow a kiss into the wind.",0,0,0,"你抛出一个飞吻。","Вы посылаете поцелуй по ветру.","Lanzas un beso al viento.","Você manda um beijo ao vento.",8323198
+"гласны с %s.","%s kneels before %s.",0,0,0,"%s在%s面前跪下。","%s становится на колени перед %s.","%s se arrodilla ante %s.","%s se ajoelha perante %s.",8323198
+"�ласны с %s.","%s kneels before you.",0,0,0,"%s在你面前跪下。","%s становится на колени перед вами.","%s se arrodilla ante ti.","%s se ajoelha perante você.",8323198
+"ласны с %s.","You kneel before %s.",0,0,0,"你在%s面前跪下。","Вы становитесь на колени перед %s.","Te arrodillas ante %s.","Você se ajoelha perante %s.",8323198
+"�асны с %s.","%s kneels down.",0,0,0,"%s跪了下来。","%s становится на колени.","%s se arrodilla.","%s se ajoelha.",8323198
+"асны с %s.","You kneel down.",0,0,0,"你跪了下来。","Вы становитесь на колени.","Te arrodillas.","Você se ajoelha.",8323198
+"�сны с %s.","%s laughs at %s.",0,0,0,"%s在嘲笑%s。","%s смеётся над %s.","%s se ríe de %s.","%s ri de %s.",8323198
+"сны с %s.","%s laughs at you.",0,0,0,"%s在嘲笑你。","%s смеётся над вами.","%s se ríe de ti.","%s ri de você.",8323198
+"�ны с %s.","You laugh at %s.",0,0,0,"你在嘲笑%s。","Вы смеетесь над %s.","Te ríes de %s.","Você ri de %s.",8323198
+"ны с %s.","%s laughs.",0,0,0,"%s大笑。","%s смеется.","%s se ríe.","%s ri.",8323198
+"�ы с %s.","You laugh.",0,0,0,"你大笑。","Вы смеетесь.","Te ríes.","Você ri.",8323198
+"ы с %s.","%s lies down before %s.",0,0,0,"%s在%s面前躺下。","%s ложится перед %s.","%s se tumba ante %s.","%s se deita diante de %s.",8323198
+"� с %s.","%s lies down before you.",0,0,0,"%s在你面前躺下。","%s ложится перед вами.","%s se tumba ante ti.","%s se deita diante de você.",8323198
+" с %s.","You lie down before %s.",0,0,0,"你在%s面前躺下。","Вы ложитесь перед %s.","Te tumbas ante %s.","Você se deita diante de %s.",8323198
+"с %s.","%s lies down.",0,0,0,"%s躺了下来。","%s ложится.","%s se tumba.","%s se deita.",8323198
+"� %s.","You lie down.",0,0,0,"你躺了下来。","Вы ложитесь.","Te tumbas.","Você se deita.",8323198
+" %s.","%s massages %s's shoulders.",0,0,0,"%s帮%s按摩肩膀。","%s массирует плечи %s.","%s masajea los hombros de %s.","%s massageia os ombros de %s.",8323198
+"%s.","%s massages your shoulders.",0,0,0,"%s帮你按摩肩膀。","%s массирует ваши плечи.","%s masajea tus hombros.","%s massageia seus ombros.",8323198
+"s.","You massage %s's shoulders.",0,0,0,"你帮%s按摩肩膀。","Вы массируете плечи %s.","Masajeas los hombros de %s.","Você massageia os ombros de %s.",8323198
+".","%s needs a massage!",0,0,0,"%s需要按摩一下！","%s нужен массаж!","%s necesita un masaje.","%s precisa de uma massagem.",8323198
+"","You need a massage!",0,0,0,"你需要按摩一下！","Вам нужен массаж!","¡Necesitas un masaje!","Você precisa de uma massagem!",8323198
+"Estás de acuerdo con %s.","%s moans suggestively at %s.",0,0,0,"%s对着%s轻轻地呻吟。","%s многозначительно стонет, глядя на %s.","%s gime sugestivamente a %s.","%s geme sugestivamente para %s.",8323198
+"stás de acuerdo con %s.","%s moans suggestively at you.",0,0,0,"%s对着你轻轻地呻吟。","%s многозначительно стонет, глядя на вас.","%s gime sugestivamente a ti.","%s geme sugestivamente para você.",8323198
+"tás de acuerdo con %s.","You moan suggestively at %s.",0,0,0,"你对着%s轻轻地呻吟。","Вы многозначительно стонете, глядя на %s.","Gimes sugestivamente a %s.","Você geme sugestivamente para %s.",8323198
+"ás de acuerdo con %s.","%s moans suggestively.",0,0,0,"%s轻轻地呻吟。","%s многозначительно стонет.","%s gime sugestivamente.","%s geme sugestivamente.",8323198
+"�s de acuerdo con %s.","You moan suggestively.",0,0,0,"你轻轻地呻吟。","Вы многозначительно стонете.","Gimes sugestivamente.","Você geme sugestivamente.",8323198
+"s de acuerdo con %s.","%s drops his trousers and moons %s.",0,0,0,"%s把屁股对着%s。","%s снимает штаны и демонстрирует зад %s.","%s se baja los pantalones y le muestra el trasero a %s.","%s abaixa as calças e mostra a bunda para %s.",8323198
+" de acuerdo con %s.","%s drops his trousers and moons you.",0,0,0,"%s把屁股对着你。","%s снимает штаны и демонстрирует зад вам.","%s se baja los pantalones y te muestra el trasero.","%s abaixa as calças e mostra a bunda para você.",8323198
+"de acuerdo con %s.","You drop your trousers and moon %s.",0,0,0,"你把屁股对着%s。","Вы снимаете штаны и демонстрируете зад %s.","Te bajas los pantalones y le muestras el trasero a %s.","Você abaixa as calças e mostra a bunda para %s.",8323198
+"e acuerdo con %s.","%s drops his trousers and moons everyone.",0,0,0,"%s把屁股对着大家。","%s снимает штаны и демонстрирует зад всем.","%s se baja los pantalones y le muestra el trasero a todos.","%s abaixa as calças e mostra a bunda para todos.",8323198
+" acuerdo con %s.","You drop your trousers and moon everyone.",0,0,0,"你把屁股对着大家。","Вы снимаете штаны и демонстрируете зад всем.","Te bajas los pantalones y le muestras el trasero a todos.","Você abaixa as calças e mostra a bunda para todos.",8323198
+"acuerdo con %s.","%s drops her trousers and moons %s.",0,0,0,"%s把屁股对着%s。","%s снимает штаны и демонстрирует зад %s.","%s se baja los pantalones y le muestra el trasero a %s.","%s abaixa as calças e mostra a bunda para %s.",8323198
+"cuerdo con %s.","%s drops her trousers and moons you.",0,0,0,"%s把屁股对着你。","%s снимает штаны и демонстрирует зад вам.","%s se baja los pantalones y te muestra el trasero.","%s abaixa as calças e mostra a bunda para você.",8323198
+"uerdo con %s.","%s drops her trousers and moons everyone.",0,0,0,"%s把屁股对着大家。","%s снимает штаны и демонстрирует зад всем.","%s se baja los pantalones y le muestra el trasero a todos.","%s abaixa as calças e mostra a bunda para todos.",8323198
+"erdo con %s.","In quiet contemplation, %s mourns the death of %s.",0,0,0,"%s深深的陷入对于%s之死的哀思中。","В тихом раздумье, %s оплакивает смерть %s.","En contemplación silenciosa, %s llora la muerte de %s.","Em contemplação silenciosa, %s chora a morte de %s.",8323198
+"rdo con %s.","In quiet contemplation, %s mourns your death.",0,0,0,"%s深深的陷入对于你的死亡的哀思中。","В тихом раздумье, %s оплакивает вашу смерть.","En contemplación silenciosa, %s llora tu muerte.","Em contemplação silenciosa, %s chora sua morte.",8323198
+"do con %s.","In quiet contemplation, you mourn the death of %s.",0,0,0,"你深深的陷入对于%s之死的哀思中。","В тихом раздумье, вы оплакиваете смерть %s.","En contemplación silenciosa, lloras la muerte de %s.","Em contemplação silenciosa, você chora a morte de %s.",8323198
+"o con %s.","In quiet contemplation, %s mourns the loss of the dead.",0,0,0,"%s深深的陷入对于死者的哀思中。","В тихом раздумье, %s оплакивает потерю погибших.","En contemplación silenciosa, %s llora la pérdida de los muertos.","Em contemplação silenciosa, %s chora a perda dos mortos.",8323198
+" con %s.","In quiet contemplation, you mourn the loss of the dead.",0,0,0,"你深深的陷入对于死者的哀思中。","В тихом раздумье вы оплакиваете потерю погибших.","En contemplación silenciosa, lloras la pérdida de los muertos.","Em contemplação silenciosa, você chora a perda dos mortos.",8323198
+"con %s.","%s tells %s NO.  Not going to happen.",0,0,0,"%s坚决地对%s说不。","%s говорит %s НЕТ. Этого не произойдет.","%s le dice a %s NO. No va a suceder.","%s diz a %s NÃO. Não vai acontecer.",8323198
+"on %s.","%s tells you NO.  Not going to happen.",0,0,0,"%s坚决地对你说不。","%s говорит вам НЕТ. Этого не произойдет.","%s te dice NO. No va a suceder.","%s diz a você NÃO. Não vai acontecer.",8323198
+"n %s.","You tell %s NO.  Not going to happen.",0,0,0,"你坚决地对%s说不。","Вы говорите %s НЕТ. Этого не произойдет.","Le dices a %s NO. No va a suceder.","Você diz a %s NÃO. Não vai acontecer.",8323198
+" %s.","%s clearly states, NO.",0,0,0,"%s坚决地声明，不。","%s ясно заявляет, НЕТ.","%s declara claramente, NO.","%s declara claramente, NÃO.",8323198
+"%s.","You clearly state, NO.",0,0,0,"你斩钉截铁地说了个不字。","Вы ясно заявляете, НЕТ.","Declaras claramente, NO.","Você declara claramente, NÃO.",8323198
+"s.","%s nods at %s.",0,0,0,"%s对%s点了点头。","%s кивает %s.","%s asiente a %s.","%s acena para %s.",8323198
+".","%s nods at you.",0,0,0,"%s对你点了点头。","%s кивает вам.","%s te asiente.","%s acena para você.",8323198
+"","You nod at %s.",0,0,0,"你对%s点了点头。","Вы киваете %s.","Asientes a %s.","Você acena para %s.",8323198
+"Você concorda com %s.","%s nods.",0,0,0,"%s点了点头。","%s кивает.","%s asiente.","%s acena.",8323198
+"ocê concorda com %s.","You nod.",0,0,0,"你点了点头。","Вы киваете.","Asientes.","Você acena.",8323198
+"cê concorda com %s.","%s picks his nose and shows it to %s.",0,0,0,"%s挖了挖鼻孔，把手指伸到%s面前。","%s ковыряется в носу и показывает это %s.","%s se hurga la nariz y se lo muestra a %s.","%s cutuca o nariz e mostra para %s.",8323198
+"ê concorda com %s.","%s picks his nose and shows it to you.",0,0,0,"%s挖了挖鼻孔，把手指伸到你面前。","%s ковыряется в носу и показывает это вам.","%s se hurga la nariz y te lo muestra.","%s cutuca o nariz e mostra para você.",8323198
+"� concorda com %s.","You pick your nose and show it to %s.",0,0,0,"你挖了挖鼻孔，把手指伸到%s面前。","Вы ковыряетесь в носу и показываете это %s.","Te hurga la nariz y se lo muestras a %s.","Você cutuca o nariz e mostra para %s.",8323198
+" concorda com %s.","%s passes the time with a finger deep in one nostril.",0,0,0,"%s无聊地挖鼻孔来打发时间。","%s коротает время, засунув палец в ноздрю.","%s pasa el tiempo con un dedo metido profundamente en una fosa nasal.","%s passa o tempo com um dedo enfiado profundamente em uma narina.",8323198
+"concorda com %s.","With a finger deep in one nostril, you pass the time.",0,0,0,"你无聊地挖鼻孔来打发时间。","Засунув палец в ноздрю, вы коротаете время.","Con un dedo metido profundamente en una fosa nasal, pasas el tiempo.","Com um dedo enfiado profundamente em uma narina, você passa o tempo.",8323198
+"oncorda com %s.","%s picks her nose and shows it to %s.",0,0,0,"%s挖了挖鼻孔，把手指伸到%s面前。","%s ковыряется в носу и показывает это %s.","%s se hurga la nariz y se lo muestra a %s.","%s cutuca o nariz e mostra para %s.",8323198
+"ncorda com %s.","%s picks her nose and shows it to you.",0,0,0,"%s挖了挖鼻孔，把手指伸到你面前。","%s смотрит на %s и паникует.","%s se hurga la nariz y te lo muestra.","%s cutuca o nariz e mostra para você.",8323198
+"corda com %s.","%s takes one look at %s and panics.",0,0,0,"%s看了一眼%s，然后大惊失色。","%s смотрит на %s и паникует.","%s le echa un vistazo a %s y entra en pánico.","%s dá uma olhada em %s e entra em pânico.",8323198
+"orda com %s.","%s takes one look at you and panics.",0,0,0,"%s看了一眼你，然后大惊失色。","%s смотрит на вас и паникует.","%s te echa un vistazo y entra en pánico.","%s dá uma olhada em você e entra em pânico.",8323198
+"rda com %s.","You take one look at %s and panic.",0,0,0,"你看了一眼%s，然后大惊失色。","Вы смотрите на %s и паникуете.","Le echas un vistazo a %s y entras en pánico.","Você dá uma olhada em %s e entra em pânico.",8323198
+"da com %s.","%s runs around in a frenzied state of panic.",0,0,0,"%s惊恐地跑来跑去。","%s бегает вокруг и безумно паникует.","%s corre en círculos en un estado de pánico frenético.","%s corre em círculos em um estado de pânico frenético.",8323198
+"a com %s.","You run around in a frenzied state of panic.",0,0,0,"你惊恐地跑来跑去。","Вы бегаете вокруг и безумно паникуете.","Corres en círculos en un estado de pánico frenético.","Você corre em círculos em um estado de pânico frenético.",8323198
+" com %s.","%s peers at %s searchingly.",0,0,0,"%s仔细地打量了一下%s。","%s всматривается в %s.","%s mira a %s buscando.","%s olha para %s procurando.",8323198
+"com %s.","%s peers at you searchingly.",0,0,0,"%s仔细地打量了一下你。","%s всматривается в вас.","%s te mira buscando.","%s olha para você procurando.",8323198
+"om %s.","You peer at %s searchingly.",0,0,0,"你仔细地打量了一下%s。","Вы всматриваетесь в %s.","Miras a %s buscando.","Você olha para %s procurando.",8323198
+"m %s.","%s peers around, searchingly.",0,0,0,"%s仔细地打量了一下四周。","%s внимательно осматривается вокруг.","%s mira a su alrededor, buscando.","%s olha ao redor, procurando.",8323198
+" %s.","You peer around, searchingly.",0,0,0,"你仔细地打量了一下四周。","Вы внимательно осматриваетесь вокруг.","Miras a tu alrededor, buscando.","Você olha ao seu redor, procurando.",8323198
+"%s.","%s pleads with %s.",0,0,0,"%s向%s恳求。","%s умоляет %s.","%s suplica a %s.","%s implora a %s.",8323198
+"s.","%s pleads with you.",0,0,0,"%s向你恳求。","%s умоляет вас.","%s te suplica.","%s implora a você.",8323198
+".","You plead with %s.",0,0,0,"你向%s恳求。","Вы умоляете %s.","Le suplicas a %s.","Você implora a %s.",8323198
+"","%s drops to his knees and pleads in desperation.",0,0,0,"%s跪了下来，绝望地恳求着。","%s падает на колени и умоляет в отчаянии.","%s cae de rodillas y suplica desesperadamente.","%s cai de joelhos e implora desesperadamente.",4128894
+"%s agrees.","You drop to your knees and plead in desperation.",0,0,0,"你跪了下来，绝望地恳求着。","Вы падаете на колени и умоляете в отчаяние.","Caes de rodillas y suplicas desesperadamente.","Você cai de joelhos e implora desesperadamente.",8323198
+"s agrees.","%s drops to her knees and plead in desperation.",0,0,0,"%s跪了下来，绝望地恳求着。","%s падает на колени и в отчаянии умоляет.","%s cae de rodillas y suplica desesperadamente.","%s cai de joelhos e implora desesperadamente.",8323198
+" agrees.","%s points at %s.",0,0,0,"%s指着%s。","%s указывает на %s.","%s señala a %s.","%s aponta para %s.",8323198
+"agrees.","%s points at you.",0,0,0,"%s指着你。","%s указывает на вас.","%s te señala.","%s aponta para você.",8323198
+"grees.","You point at %s.",0,0,0,"你指着%s。","Вы указываете на %s.","Señalas a %s.","Você aponta para %s.",8323198
+"rees.","%s points over yonder.",0,0,0,"%s指向远方。","%s указывает вон туда.","%s señala hacia allá.","%s aponta para lá.",8323198
+"ees.","You point over yonder.",0,0,0,"你指向远方。","Вы указываете вон туда.","Señalas hacia allá.","Você aponta para lá.",8323198
+"es.","%s pokes %s.  Hey!",0,0,0,"%s戳了戳%s说：“嗨！”","%s тычет в %s. Эй!","%s pincha a %s. ¡Oye!","%s cutuca %s. Ei!",8323198
+"s.","%s pokes you.  Hey!",0,0,0,"%s戳了戳你说：“嗨！”","%s тычет в тебя. Эй!","%s te pincha. ¡Oye!","%s te cutuca. Ei!",8323198
+".","You poke %s.  Hey!",0,0,0,"你戳了戳%s说：“嗨！”","Вы тычете в %s. Эй!","Pinchas a %s. ¡Oye!","Você cutuca %s. Ei!",8323198
+"","%s pokes his belly and giggles.",0,0,0,"%s戳了戳他的肚子然后咯咯地傻笑。","%s тычет себя в живот и хихикает.","%s se pincha la barriga y se ríe.","%s cutuca a barriga e ri.",8323198
+"%s表示赞同。","You poke your belly and giggle.",0,0,0,"你戳了戳你的肚子然后咯咯地傻笑。","Вы тычете себя в живот и хихикаете.","Te pinchas la barriga y te ríes.","Você cutuca a barriga e ri.",8323198
+"s表示赞同。","%s pokes her belly and giggles.",0,0,0,"%s戳了戳她的肚子然后咯咯地傻笑。","%s тычет себя в живот и хихикает.","%s se pincha la barriga y se ríe.","%s cutuca a barriga e ri.",8323198
+"表示赞同。","%s says a prayer for %s.",0,0,0,"%s虔诚地为%s祈祷。","%s молится за %s.","%s dice una oración por %s.","%s faz uma oração por %s.",8323198
+"��示赞同。","%s says a prayer for you.",0,0,0,"%s虔诚地为你祈祷。","%s молится за вас.","%s dice una oración por ti.","%s faz uma oração por você.",8323198
+"�示赞同。","You say a prayer for %s.",0,0,0,"你虔诚地为%s祈祷。","Вы молитесь за %s.","Dices una oración por %s.","Você faz uma oração por %s.",8323198
+"示赞同。","%s prays to the Gods.",0,0,0,"%s虔诚地向神祈祷。","%s молится богам.","%s reza a los Dioses.","%s reza aos Deuses.",8323198
+"��赞同。","You pray to the Gods.",0,0,0,"你虔诚地向神祈祷。","Вы молитесь богам.","Rezas a los Dioses.","Você reza aos Deuses.",8323198
+"�赞同。","%s roars with bestial vigor at %s.  So fierce!",0,0,0,"%s对着%s发出野兽般的狂吼。好凶啊！","%s рычит на %s со звериной силой. Так свирепо!","%s ruge con vigor bestial a %s. ¡Qué feroz!","%s ruge com vigor bestial para %s. Que feroz!",8323198
+"赞同。","%s roars with bestial vigor at you.  So fierce!",0,0,0,"%s对着你发出野兽般的狂吼。好可怕啊！","%s рычит на вас со звериной силой. Так свирепо!","%s ruge con vigor bestial a ti. ¡Qué feroz!","%s ruge com vigor bestial para você. Que feroz!",8323198
+"��同。","You roar with bestial vigor at %s.  So fierce!",0,0,0,"你对着%s发出野兽般的狂吼。好可怕啊！","Вы рычите на %s со звериной силой. Так свирепо!","Ruges con vigor bestial a %s. ¡Qué feroz!","Você ruge com vigor bestial para %s. Que feroz!",8323198
+"�同。","%s roars with bestial vigor.  So fierce!",0,0,0,"%s发出野兽般的狂吼。好凶啊！","%s Рычит со звериной силой. Так свирепо!","%s ruge con vigor bestial. ¡Qué feroz!","%s ruge com vigor bestial. Que feroz!",8323198
+"同。","You roar with bestial vigor.  So fierce!",0,0,0,"你发出野兽般的狂吼。好凶啊！","Вы рычите со звериной силой. Так свирепо!","Ruges con vigor bestial. ¡Qué feroz!","Você ruge com vigor bestial. Que feroz!",8323198
+"��。","%s rolls on the floor laughing at %s.",0,0,0,"%s对着%s笑翻在地。","%s катается по полу, смеясь над %s.","%s se revuelca por el suelo riéndose de %s.","%s rola no chão rindo de %s.",8323198
+"�。","%s rolls on the floor laughing at you.",0,0,0,"%s对着你笑翻在地。","%s катается по полу, смеясь над вами.","%s se revuelca por el suelo riéndose de ti.","%s rola no chão rindo de você.",8323198
+"。","You roll on the floor laughing at %s.",0,0,0,"你对着%s笑翻在地。","Вы катаетесь по полу, смеясь над %s.","Te revuelcas por el suelo riéndote de %s.","Você rola no chão rindo de %s.",8323198
+"��","%s rolls on the floor laughing.",0,0,0,"%s笑翻在地。","%s катается по полу от смеха.","%s se revuelca por el suelo riéndose.","%s rola no chão rindo.",8323198
+"�","You roll on the floor laughing.",0,0,0,"你笑翻在地。","Вы катаетесь по полу от смеха.","Te revuelcas por el suelo riéndote.","Você rola no chão rindo.",8323198
+"","%s makes a rude gesture at %s.",0,0,0,"%s对%s做了个粗鲁的手势。","%s показывает %s неприличный жест.","%s hace un gesto obsceno a %s.","%s faz um gesto obsceno para %s.",8323198
+"%s согласен.","%s makes a rude gesture at you.",0,0,0,"%s对你做了个粗鲁的手势。","%s показывает вам неприличный жест.","%s hace un gesto obsceno a ti.","%s faz um gesto obsceno para você.",8323198
+"s согласен.","You make a rude gesture at %s.",0,0,0,"你对%s做了个粗鲁的手势。","Вы показываете %s неприличный жест.","Haces un gesto obsceno a %s.","Você faz um gesto obsceno para %s.",8323198
+" согласен.","%s makes a rude gesture.",0,0,0,"%s做了个粗鲁的手势。","%s показывает неприличный жест.","%s hace un gesto grosero.","%s faz um gesto obsceno.",8323198
+"согласен.","You make a rude gesture.",0,0,0,"你做了个粗鲁的手势。","Вы показываете неприличный жест.","Haces un gesto grosero.","Você faz um gesto obsceno.",8323198
+"�огласен.","%s salutes %s with respect.",0,0,0,"%s满怀敬意地向%s致礼。","%s приветствует %s с уважением.","%s saluda a %s con respeto.","%s saúda %s com respeito.",8323198
+"огласен.","%s salutes you with respect.",0,0,0,"%s满怀敬意地向你致礼。","%s приветствует вас с уважением.","%s te saluda con respeto.","%s saúda você com respeito.",8323198
+"�гласен.","You salute %s with respect.",0,0,0,"你满怀敬意地向%s致礼。","Вы приветствуете %s с уважением.","Saludas a %s con respeto.","Você saúda %s com respeito.",8323198
+"гласен.","%s stands at attention and salutes.",0,0,0,"%s立正敬礼。","%s стоит по стойке смирно и отдает честь.","%s se pone en posición de atención y saluda.","%s fica em posição de sentido e saúda.",4128894
+"�ласен.","You stand at attention and salute.",0,0,0,"你立正敬礼。","Вы стоите по стойке смирно и отдаете честь.","Te pones en posición de atención y saludas.","Você fica em posição de sentido e saúda.",8323198
+"ласен.","%s scratches %s.  How catty!",0,0,0,"%s在帮%s搔痒。好可爱啊！","%s царапает %s. Как подло!","%s araña a %s. ¡Qué felino!","%s arranha %s. Que felino!",8323198
+"�асен.","%s scratches you.  How catty!",0,0,0,"%s在帮你搔痒。好可爱啊！","%s царапает вас. Как подло!","%s te araña. ¡Qué felino!","%s arranha você. Que felino!",8323198
+"асен.","You scratch %s.  How catty!",0,0,0,"你在帮%s搔痒。好可爱啊！","Вы царапаете %s. Как подло!","Arañas a %s. ¡Qué felino!","Você arranha %s. Que felino!",8323198
+"�сен.","%s scratches himself.  Ah, much better!",0,0,0,"%s在帮他自己搔痒。啊，舒服多了！","%s чешется. Ах, гораздо лучше!","%s se rasca a sí mismo. ¡Ah, mucho mejor!","%s se arranha. Ah, muito melhor!",8323198
+"сен.","You scratch yourself.  Ah, much better!",0,0,0,"你在帮你自己搔痒。啊，舒服多了！","Вы чешетесь. Ах, гораздо лучше!","Te rascas a ti mismo. ¡Ah, mucho mejor!","Você se arranha. Ah, muito melhor!",8323198
+"�ен.","%s scratches herself.  Ah, much better!",0,0,0,"%s在帮她自己搔痒。啊，舒服多了！","%s чешет себя. Ах, так намного лучше!","%s se rasca a sí misma. ¡Ah, mucho mejor!","%s se arranha. Ah, muito melhor!",8323198
+"ен.","%s thinks %s is a sexy devil.",0,0,0,"%s觉得%s真是魅力十足。","%s думает что %s  дьявольски привлекателен.","%s piensa que %s es un demonio sexy.","%s acha que %s é um demônio sexy.",8323198
+"�н.","%s thinks you are a sexy devil.",0,0,0,"%s觉得你真是魅力十足。","%s думает что вы дьявольски привлекательны.","%s piensa que eres un demonio sexy.","%s acha que você é um demônio sexy.",8323198
+"н.","You think %s is a sexy devil.",0,0,0,"你觉得%s真是魅力十足。","Вы думаете что %s дьявольски привлекательны.","Piensas que %s es un demonio sexy.","Você acha que %s é um demônio sexy.",8323198
+"�.","%s is too sexy for his tunic...so sexy it hurts.",0,0,0,"%s的装束实在是太有诱惑力了……让人怦然心动。","%s слишком сексуален для своей туники... так сексуален, что больно.","%s es demasiado sexy para su túnica... tan sexy que duele.","%s é muito sexy para sua túnica... tão sexy que dói.",8323198
+".","You're too sexy for your tunic...so sexy it hurts.",0,0,0,"你的装束实在是太有诱惑力了……让人怦然心动。","Вы слишком сексуальны для своей туники... так сексуальны, что больно.","Eres demasiado sexy para tu túnica... tan sexy que duele.","Você é muito sexy para sua túnica... tão sexy que dói.",8323198
+"","%s is too sexy for her tunic...so sexy it hurts.",0,0,0,"%s的装束实在是太有诱惑力了……让人怦然心动。","%s слишком сексуальна для своей туники... так сексуальна, что больно.","%s es demasiado sexy para su túnica... tan sexy que duele.","%s é muito sexy para sua túnica... tão sexy que dói.",8323198
+"%s está de acuerdo.","%s shakes his rear at %s.",0,0,0,"%s对着%s扭了扭屁股。","%s трясет своим задом, глядя на %s.","%s sacude su trasero a %s.","%s sacode a bunda para %s.",8323198
+"s está de acuerdo.","%s shakes his rear at you.",0,0,0,"%s对着你扭了扭屁股。","%s трясет своим задом, глядя на вас.","%s sacude su trasero a ti.","%s sacode a bunda para você.",8323198
+" está de acuerdo.","You shake your rear at %s.",0,0,0,"你对着%s扭了扭屁股。","Вы трясете своим задом, глядя на %s.","Sacudes tu trasero a %s.","Você sacode a bunda para %s.",8323198
+"está de acuerdo.","%s shakes his rear.",0,0,0,"%s扭了扭屁股。","%s трясет задом.","%s sacude su trasero.","%s sacode a bunda.",8323198
+"stá de acuerdo.","You shake your rear.",0,0,0,"你扭了扭屁股。","Вы трясете задом.","Sacudes tu trasero.","Você sacode a bunda.",8323198
+"tá de acuerdo.","%s shakes her rear at %s.",0,0,0,"%s对着%s扭了扭屁股。","%s трясёт задом перед %s.","%s sacude su trasero a %s.","%s sacode a bunda para %s.",8323198
+"á de acuerdo.","%s shakes her rear at you.",0,0,0,"%s对着你扭了扭屁股。","%s трясёт задом перед вами.","%s sacude su trasero a ti.","%s sacode a bunda para você.",8323198
+"� de acuerdo.","%s shakes her rear.",0,0,0,"%s扭了扭屁股。","%s трясёт задом.","%s sacude su trasero.","%s sacode a bunda.",8323198
+" de acuerdo.","%s shouts at %s.",0,0,0,"%s对着%s大叫。","%s кричит на %s.","%s grita a %s.","%s grita para %s.",8323198
+"de acuerdo.","%s shouts at you.",0,0,0,"%s对着你大叫。","%s кричит на вас.","%s te grita.","%s grita para você.",8323198
+"e acuerdo.","You shout at %s.",0,0,0,"你对着%s大叫。","Вы кричите на %s.","Gritas a %s.","Você grita para %s.",8323198
+" acuerdo.","%s shouts.",0,0,0,"%s在大叫。","%s кричит.","%s grita.","%s grita.",8323198
+"acuerdo.","You shout.",0,0,0,"你在大叫。","Вы кричите.","Gritas.","Você grita.",8323198
+"cuerdo.","%s shrugs at %s.  Who knows?",0,0,0,"%s对着%s耸了耸肩说：“天知道。”","%s пожимает плечами глядя на %s. Кто знает?","%s se encoge de hombros a %s. ¿Quién sabe?","%s dá de ombros para %s. Quem sabe?",8323198
+"uerdo.","%s shrugs at you.  Who knows?",0,0,0,"%s对着你耸了耸肩说：“天知道。”","%s пожимает плечами глядя на вас. Кто знает?","%s se encoge de hombros a ti. ¿Quién sabe?","%s dá de ombros para você. Quem sabe?",8323198
+"erdo.","You shrug at %s.  Who knows?",0,0,0,"你对着%s耸了耸肩说：“天知道。”","Вы пожимаете плечами глядя на %s. Кто знает?","Te encoges de hombros a %s. ¿Quién sabe?","Você dá de ombros para %s. Quem sabe?",8323198
+"rdo.","%s shrugs.  Who knows?",0,0,0,"%s耸了耸肩说：“天知道。”","%s пожимает плечами. Кто знает?","%s se encoge de hombros. ¿Quién sabe?","%s dá de ombros. Quem sabe?",4128894
+"do.","You shrug.  Who knows?",0,0,0,"你耸了耸肩说：“天知道。”","Вы пожимаете плечами. Кто знает?","Te encoges de hombros. ¿Quién sabe?","Você dá de ombros. Quem sabe?",8323198
+"o.","%s smiles shyly at %s.",0,0,0,"%s害羞地避开了%s。","%s застенчиво улыбается %s.","%s sonríe tímidamente a %s.","%s sorri timidamente para %s.",4128894
+".","%s smiles shyly at you.",0,0,0,"%s害羞地避开了你。","%s застенчиво улыбается вам.","%s sonríe tímidamente a ti.","%s sorri timidamente para você.",4128894
+"","You smile shyly at %s.",0,0,0,"你在%s面前感到很害羞。","Вы застенчиво улыбаетесь %s.","Sonríes tímidamente a %s.","Você sorri timidamente para %s.",4128894
+"%s concorda.","%s smiles shyly.",0,0,0,"%s显得十分害羞！","%s застенчиво улыбается.","%s sonríe tímidamente.","%s sorri timidamente.",4128894
+"s concorda.","You smile shyly.",0,0,0,"你显得十分害羞！","Вы застенчиво улыбаетесь.","Sonríes tímidamente.","Você sorri timidamente.",4128894
+" concorda.","%s sighs at %s.",0,0,0,"%s对着%s叹了口气。","%s вздыхает, глядя на %s.","%s suspira a %s.","%s suspira para %s.",8323198
+"concorda.","%s sighs at you.",0,0,0,"%s对着你叹了口气","%s вздыхает, глядя на вас.","%s suspira a ti.","%s suspira para você.",8323198
+"oncorda.","You sigh at %s.",0,0,0,"你对着%s叹了口气","Вы вздыхаете, глядя на %s.","Suspiras a %s.","Você suspira para %s.",8323198
+"ncorda.","%s lets out a long, drawn-out sigh.",0,0,0,"%s长长地叹了一口气。","%s испускает долгий, протяжный выдох.","%s suelta un suspiro largo y prolongado.","%s solta um suspiro longo e prolongado.",8323198
+"corda.","You let out a long, drawn-out sigh.",0,0,0,"你长长地叹了一口气。","Вы испускаете долгий, протяжный выдох.","Sueltas un suspiro largo y prolongado.","Você solta um suspiro longo e prolongado.",8323198
+"orda.","",0,0,0,"","","","",8323196
+"rda.","",0,0,0,"","","","",8323196
+"da.","%s falls asleep. Zzzzzzz.",0,0,0,"%s进入了梦乡。Zzzzzzz…","%s засыпает. Ззззз.","%s se queda dormido. Zzzzzzz.","%s adormece. Zzzzzzz.",8323198
+"a.","You fall asleep.  Zzzzzzz.",0,0,0,"你进入了梦乡。Zzzzzzz…","Вы засыпаете. Ззззз.","Te quedas dormido. Zzzzzzz.","Você adormece. Zzzzzzz.",8323198
+".","%s bares his teeth and snarls at %s.",0,0,0,"%s呲牙咧嘴地朝着%s怒吼。","%s скалит зубы и рычит на %s.","%s enseña los dientes y gruñe a %s.","%s mostra os dentes e rosna para %s.",8323198
+"","%s bares his teeth and snarls at you.",0,0,0,"%s呲牙咧嘴地朝着你怒吼。","%s скалит зубы и рычит на тебя.","%s enseña los dientes y gruñe a ti.","%s mostra os dentes e rosna para você.",8323198
+"You agree.","You bare your teeth and snarl at %s.",0,0,0,"你呲牙咧嘴地朝着%s怒吼。","Вы скалите зубы и рычите на %s.","Enseñas los dientes y gruñes a %s.","Você mostra os dentes e rosna para %s.",8323198
+"ou agree.","%s bares his teeth and snarls.",0,0,0,"%s呲牙咧嘴地开始怒吼。","%s рычит и скалит зубы.","%s muestra los dientes y gruñe.","%s mostra os dentes e rosna.",8323198
+"u agree.","You bare your teeth and snarl.",0,0,0,"你呲牙咧嘴地开始怒吼。","Вы рычите и скалите зубы.","Enseñas los dientes y gruñes.","Você mostra os dentes e rosna.",8323198
+" agree.","%s bares her teeth and snarls at %s.",0,0,0,"%s呲牙咧嘴地朝着%s怒吼。","%s обнажает зубы и рычит на %s.","%s enseña los dientes y gruñe a %s.","%s mostra os dentes e rosna para %s.",8323198
+"agree.","%s bares her teeth and snarls at you.",0,0,0,"%s呲牙咧嘴地朝着你怒吼。","%s обнажает зубы и рычит на вас.","%s gruñe ante ti.","%s mostra os dentes e rosna para você.",8323198
+"gree.","%s bares her teeth and snarls.",0,0,0,"%s呲牙咧嘴地开始怒吼。","%s обнажает зубы и рычит.","%s muestra los dientes y gruñe.","%s mostra os dentes e rosna.",8323198
+"ree.","%s spits on %s.",0,0,0,"%s对着%s吐口水。","%s плюет на %s.","%s escupe a %s.","%s cospe em %s.",8323198
+"ee.","%s spits on you.",0,0,0,"%s对着你吐口水","%s плюет на вас.","%s te escupe.","%s cospe em você.",8323198
+"e.","You spit on %s.",0,0,0,"你对着%s吐口水。","Вы плюете на %s.","Escupes a %s.","Você cospe em %s.",8323198
+".","%s spits on the ground.",0,0,0,"%s朝地上吐口水。","%s плюет на землю.","%s escupe en el suelo.","%s cospe no chão.",8323198
+"","You spit on the ground.",0,0,0,"你朝地上吐口水。","Вы плюете на землю.","Escupes en el suelo.","Você cospe no chão.",8323198
+"你表示赞同。","%s stares %s down.",0,0,0,"%s用目光压倒了%s。","%s смотрит на %s свысока.","%s mira fijamente a %s.","%s encara %s.",8323198
+"��表示赞同。","%s stares you down.",0,0,0,"%s用目光压倒了你。","%s смотрит на вас свысока.","%s te mira fijamente.","%s encara você.",8323198
+"�表示赞同。","You stare %s down.",0,0,0,"你用目光压倒了%s。","Вы смотрите на %s свысока.","Miras fijamente a %s.","Você encara %s.",8323198
+"表示赞同。","%s stares off into the distance.",0,0,0,"%s凝视着远方。","%s смотрит вдаль.","%s mira fijamente a la distancia.","%s encara a distância.",8323198
+"��示赞同。","You stare off into the distance.",0,0,0,"你凝视着远方。","Вы смотрите вдаль.","Miras fijamente a la distancia.","Você encara a distância.",8323198
+"�示赞同。","%s is surprised by %s's actions.",0,0,0,"%s对于%s的行为感到很惊讶。","%s удивлен действиями %s.","%s está sorprendido por las acciones de %s.","%s está surpreso com as ações de %s.",4128894
+"示赞同。","%s is surprised by your actions.",0,0,0,"%s对于你的行为感到很惊讶。","%s удивлен вашими действиями.","%s está sorprendido por tus acciones.","%s está surpreso com suas ações.",4128894
+"��赞同。","You are surprised by %s's actions.",0,0,0,"你对于%s的行为感到很惊讶。","Вы удивлены действиями %s.","Estás sorprendido por las acciones de %s.","Você está surpreso com as ações de %s.",4128894
+"�赞同。","%s is so surprised!",0,0,0,"%s感到非常惊讶!","%s удивлен!","%s está muy sorprendido.","%s está muito surpreso.",8323198
+"赞同。","You are so surprised!",0,0,0,"你感到非常的惊讶!","Вы удивлены!","¡Estás muy sorprendido!","Você está muito surpreso!",8323198
+"��同。","%s surrenders before %s.  Such is the agony of defeat...",0,0,0,"%s向%s投降。失败的滋味真不好受啊……","%s сдается перед %s. Такова агония поражения...","%s se rinde ante %s. Tal es la agonía de la derrota...","%s se rende a %s. Tal é a agonia da derrota...",8323198
+"�同。","%s surrenders before you.  Such is the agony of defeat...",0,0,0,"%s向你投降。失败的滋味真不好受啊……","%s сдается перед вами. Такова агония поражения...","%s se rinde ante ti. Tal es la agonía de la derrota...","%s se rende a você. Tal é a agonia da derrota...",8323198
+"同。","You surrender before %s.  Such is the agony of defeat...",0,0,0,"你向%s投降。失败的滋味真不好受啊…","Вы сдаетесь перед %s. Такова агония поражения...","Te rindes ante %s. Tal es la agonía de la derrota...","Você se rende a %s. Tal é a agonia da derrota...",8323198
+"��。","%s surrenders to his opponents.",0,0,0,"%s向他的对手投降。","%s сдается своему опоненту.","%s se rinde ante sus oponentes.","%s se rende aos seus oponentes.",8323198
+"�。","You surrender to your opponents.",0,0,0,"你向对手投降。","Вы сдаетесь вашему опоненту.","Te rindes ante tus oponentes.","Você se rende aos seus oponentes.",8323198
+"。","%s surrenders to her opponents.",0,0,0,"%s向她的对手投降。","%s сдаётся перед своими соперниками.","%s se rinde ante sus oponentes.","%s se rende aos seus oponentes.",8323198
+"��","%s wants to talk things over with %s.",0,0,0,"%s有些事想和%s讨论一下。","%s хочет обсудить некоторые вещи с %s.","%s quiere hablar las cosas con %s.","%s quer conversar com %s.",8323198
+"�","%s wants to talk things over with you.",0,0,0,"%s有些事想和你讨论一下。","%s хочет обсудить некоторые вещи с вами.","%s quiere hablar las cosas contigo.","%s quer conversar com você.",8323198
+"","You want to talk things over with %s.",0,0,0,"你有些事想和%s讨论一下。","Вы хотите обсудить некоторые вещи с %s.","Quieres hablar las cosas con %s.","Você quer conversar com %s.",8323198
+"Вы согласны.","%s talks to himself since no one else seems interested.",0,0,0,"因为没有人感兴趣，%s只能自言自语。","%s разговаривает сам с собой, так как больше никому это не интересно.","%s habla consigo mismo ya que nadie más parece interesado.","%s fala consigo mesmo, já que ninguém mais parece interessado.",8323198
+"�ы согласны.","You talk to yourself since no one else seems interested.",0,0,0,"看上去没有人感兴趣，你只能自言自语。","Вы разговариваете сами с собой, так как больше никому это не интересно.","Hablas contigo mismo ya que nadie más parece interesado.","Você fala consigo mesmo, já que ninguém mais parece interessado.",8323198
+"ы согласны.","%s talks to herself since no one else seems interested.",0,0,0,"看上去没有人感兴趣，%s只能自言自语。","%s разговаривает сама с собой, так как больше никому это не интересно.","%s habla consigo misma ya que nadie más parece interesado.","%s fala consigo mesma, já que ninguém mais parece interessado.",8323198
+"� согласны.","%s talks excitedly with %s.",0,0,0,"%s正和%s兴高采烈地交谈着。","%s взволнованно разговаривает с %s.","%s habla emocionado con %s.","%s fala animadamente com %s.",8323198
+" согласны.","%s talks excitedly with you.",0,0,0,"%s正和你兴高采烈地交谈着。","%s взволнованно разговаривает с вами.","%s habla emocionado contigo.","%s fala animadamente com você.",8323198
+"согласны.","You talk excitedly with %s.",0,0,0,"你正和%s兴高采烈地交谈着。","Вы взволнованно разговариваете с %s.","Hablas emocionado con %s.","Você fala animadamente com %s.",8323198
+"�огласны.","%s talks excitedly with everyone.",0,0,0,"%s正和大家兴高采烈地交谈着。","%s взволнованно разговаривает со всеми.","%s habla emocionado con todos.","%s fala animadamente com todos.",8323198
+"огласны.","You talk excitedly with everyone.",0,0,0,"你正和大家兴高采烈地交谈着。","Вы взволнованно разговариваете со всеми.","Hablas emocionado con todos.","Você fala animadamente com todos.",8323198
+"�гласны.","%s questions %s.",0,0,0,"%s正在向%s提问。","%s задает вопросы %s.","%s cuestiona a %s.","%s questiona %s.",8323198
+"гласны.","%s questions you.",0,0,0,"%s向你提问。","%s задает вам вопросы.","%s te cuestiona.","%s questiona você.",8323198
+"�ласны.","You question %s.",0,0,0,"你向%s提问。","Вы задаете вопросы %s.","Cuestionas a %s.","Você questiona %s.",8323198
+"ласны.","%s wants to know the meaning of life.",0,0,0,"%s想要知道生活的意义。","%s хочет знать в чем смысл жизни.","%s quiere saber el significado de la vida.","%s quer saber o significado da vida.",8323198
+"�асны.","You want to know the meaning of life.",0,0,0,"你想要知道生活的意义。","Вы хотите знать в чем смысл жизни.","Quieres saber el significado de la vida.","Você quer saber o significado da vida.",8323198
+"асны.","%s taps his foot as he waits for %s.",0,0,0,"%s一边用脚打着拍子一边等待%s。","%s стучит ногой ожидая %s.","%s golpea con el pie mientras espera a %s.","%s bate o pé enquanto espera por %s.",8323198
+"�сны.","%s taps his foot as he waits for you.",0,0,0,"%s一边用脚打着拍子一边等你。","%s стучит ногой ожидая вас.","%s golpea con el pie mientras te espera.","%s bate o pé enquanto espera por você.",8323198
+"сны.","You tap your foot as you wait for %s.",0,0,0,"你一边用脚打着拍子一边等待%s。","Вы стучите ногой ожидая %s.","Golpeas con el pie mientras esperas a %s.","Você bate o pé enquanto espera por %s.",8323198
+"�ны.","%s taps his foot.  Hurry up already!",0,0,0,"%s不耐烦地用脚打着拍子，快一点！","%s топает ногой. Давай быстрее!","%s golpea con el pie. ¡Date prisa ya!","%s bate o pé. Apresse-se!",8323198
+"ны.","You tap your foot.  Hurry up already!",0,0,0,"你不耐烦地用脚打着拍子，快一点！","Вы топаете ногой. Давай быстрее!","Golpeas con el pie. ¡Date prisa ya!","Você bate o pé. Apresse-se!",8323198
+"�ы.","%s taps her foot as she waits for %s.",0,0,0,"%s一边用脚打着拍子一边等待%s。","%s топает ногой, ожидая %s.","%s golpea con el pie mientras espera a %s.","%s bate o pé enquanto espera por %s.",8323198
+"ы.","%s taps her foot as she waits for you.",0,0,0,"%s一边用脚打着拍子一边等你。","%s топает ногой, ожидая вас.","%s golpea con el pie mientras te espera.","%s bate o pé enquanto espera por você.",8323198
+"�.","%s taps her foot.  Hurry up already!",0,0,0,"%s不耐烦地用脚打着拍子，快一点！","%s топает ногой. Ну же, быстрее!","%s golpea con el pie. ¡Date prisa ya!","%s bate o pé. Apresse-se!",8323198
+".","%s thanks %s.",0,0,0,"%s向%s表示感谢。","%s благодарит %s.","%s agradece a %s.","%s agradece a %s.",8323198
+"","%s thanks you.",0,0,0,"%s对你表示感谢。","%s благодарит вас.","%s te agradece.","%s agradece a você.",8323198
+"Estás de acuerdo.","You thank %s.",0,0,0,"你对%s表示感谢。","Вы благодарите %s.","Agradeces a %s.","Você agradece a %s.",8323198
+"stás de acuerdo.","%s thanks everyone.",0,0,0,"%s向大家表示感谢。","%s благодарит всех.","%s agradece a todos.","%s agradece a todos.",8323198
+"tás de acuerdo.","You thank everyone around you.",0,0,0,"你向周围的大家表示感谢。","Вы благодарите всех вокруг.","Agradeces a todos a tu alrededor.","Você agradece a todos ao seu redor.",8323198
+"ás de acuerdo.","%s threatens %s with the wrath of doom.",0,0,0,"%s怒不可遏地威胁%s。","%s угрожает %s роком смерти.","%s amenaza a %s con la ira de la perdición.","%s ameaça %s com a ira da perdição.",8323198
+"�s de acuerdo.","%s threatens you with the wrath of doom.",0,0,0,"%s怒不可遏地威胁你。","%s угрожает вам роком смерти.","%s te amenaza con la ira de la perdición.","%s ameaça você com a ira da perdição.",8323198
+"s de acuerdo.","You threaten %s with the wrath of doom.",0,0,0,"你怒不可遏地威胁%s。","Вы угрожаете %s роком смерти.","Amenazas a %s con la ira de la perdición.","Você ameaça %s com a ira da perdição.",8323198
+" de acuerdo.","%s threatens everyone with the wrath of doom.",0,0,0,"%s怒不可遏地威胁大家。","%s угрожает всем роком смерти.","%s amenaza a todos con la ira de la perdición.","%s ameaça todos com a ira da perdição.",8323198
+"de acuerdo.","You threaten everyone with the wrath of doom.",0,0,0,"你怒不可遏地威胁大家。","Вы угрожаете всем роком смерти.","Amenazas a todos con la ira de la perdición.","Você ameaça todos com a ira da perdição.",8323198
+"e acuerdo.","%s lets %s know that he is tired.",0,0,0,"%s告诉%s他已经很累了。","%s говорит %s что устал.","%s le hace saber a %s que está cansado.","%s informa a %s que está cansado.",8323198
+" acuerdo.","%s lets you know that he is tired.",0,0,0,"%s告诉你他已经很累了。","%s говорит вам что устал.","%s te hace saber que está cansado.","%s te informa que está cansado.",8323198
+"acuerdo.","You let %s know that you are tired.",0,0,0,"你告诉%s你已经很累了。","Вы говорите %s что устали.","Le haces saber a %s que estás cansado.","Você informa a %s que está cansado.",8323198
+"cuerdo.","%s lets everyone know that he is tired.",0,0,0,"%s告诉大家他已经很累了。","%s говорит всем что он устал.","%s les hace saber a todos que está cansado.","%s informa a todos que está cansado.",8323198
+"uerdo.","You let everyone know that you are tired.",0,0,0,"你告诉大家你已经很累了。","Вы говорите всем что устали.","Les haces saber a todos que estás cansado.","Você informa a todos que está cansado.",8323198
+"erdo.","%s lets %s know that she is tired.",0,0,0,"%s告诉%s她已经很累了。","%s говорит %s что она устала.","%s le hace saber a %s que está cansada.","%s informa a %s que está cansada.",8323198
+"rdo.","%s lets you know that she is tired.",0,0,0,"%s告诉你她已经很累了。","%s говорит вам что она устала.","%s te hace saber que está cansada.","%s te informa que está cansada.",8323198
+"do.","%s lets everyone know that she is tired.",0,0,0,"%s告诉大家她已经很累了。","%s говорит всем что она устала.","%s les hace saber a todos que está cansada.","%s informa a todos que está cansada.",8323198
+"o.","%s basks in the glory of victory with %s.",0,0,0,"%s与%s一起分享胜利的荣耀。","%s купается в лучах славы вместе с %s.","%s se regodea en la gloria de la victoria con %s.","%s se alegra na glória da vitória com %s.",8323198
+".","%s basks in the glory of victory with you.",0,0,0,"%s与你一起分享胜利的荣耀。","%s купается в лучах славы вместе с вами.","%s se regodea en la gloria de la victoria contigo.","%s se alegra na glória da vitória com você.",8323198
+"","You bask in the glory of victory with %s.",0,0,0,"你与%s一起分享胜利的荣耀。","Вы купаетесь в лучах славы вместе с %s.","Te regocijas en la gloria de la victoria con %s.","Você se alegra na glória da vitória com %s.",8323198
+"Você concorda.","%s basks in the glory of victory.",0,0,0,"%s沉醉在胜利的荣耀之中。","%s купается в лучах славы.","%s se regodea en la gloria de la victoria.","%s se alegra na glória da vitória.",8323198
+"ocê concorda.","You bask in the glory of victory.",0,0,0,"你沉醉在胜利的荣耀之中。","Вы купаетесь в лучах славы.","Te regocijas en la gloria de la victoria.","Você se alegra na glória da vitória.",8323198
+"cê concorda.","%s waves at %s.",0,0,0,"%s向%s挥手致意。","%s машет %s рукой.","%s saluda con la mano a %s.","%s acena para %s.",8323198
+"ê concorda.","%s waves at you.",0,0,0,"%s向你挥手致意。","%s машет вам рукой.","%s te saluda con la mano.","%s acena para você.",8323198
+"� concorda.","You wave at %s.",0,0,0,"你向%s挥手致意。","Вы машете %s рукой.","Saludas con la mano a %s.","Você acena para %s.",8323198
+" concorda.","%s waves.",0,0,0,"%s挥了挥手。","%s махает рукой.","%s saluda con la mano.","%s acena.",8323198
+"concorda.","You wave.",0,0,0,"你挥了挥手。","Вы махаете рукой.","Saludas con la mano.","Você acena.",8323198
+"oncorda.","%s welcomes %s.",0,0,0,"%s欢迎%s的到来。","%s приветствует %s.","%s da la bienvenida a %s.","%s dá as boas-vindas a %s.",8323198
+"ncorda.","%s welcomes you.",0,0,0,"%s欢迎你的到来。","%s приветствует вас.","%s te da la bienvenida.","%s dá as boas-vindas a você.",8323198
+"corda.","You welcome %s.",0,0,0,"你欢迎%s的到来。","Вы приветствуете %s.","Das la bienvenida a %s.","Você dá as boas-vindas a %s.",8323198
+"orda.","%s welcomes everyone.",0,0,0,"%s向大家表示欢迎。","%s приветствует всех.","%s da la bienvenida a todos.","%s dá as boas-vindas a todos.",8323198
+"rda.","You welcome everyone.",0,0,0,"你向大家表示欢迎。","Вы приветствуете всех.","Das la bienvenida a todos.","Você dá as boas-vindas a todos.",8323198
+"da.","%s whines pathetically at %s.",0,0,0,"%s可怜巴巴地向%s诉苦。","%s жалобно скулит на %s.","%s lloriquea patéticamente a %s.","%s implora pateticamente a %s.",8323198
+"a.","%s whines pathetically at you.",0,0,0,"%s可怜巴巴地向你诉苦。","%s жалобно скулит на вас.","%s lloriquea patéticamente a ti.","%s implora pateticamente a você.",8323198
+".","You whine pathetically at %s.",0,0,0,"你可怜巴巴地向%s诉苦。","Вы жалобно ску́лите на %s.","Lloriqueas patéticamente a %s.","Você implora pateticamente a %s.",8323198
+"","%s whines pathetically.",0,0,0,"%s在可怜巴巴地诉苦。","%s жалобно скулит.","%s lloriquea patéticamente.","%s implora pateticamente.",8323198
+"%s is amazed by %s!","You whine pathetically.",0,0,0,"你在可怜巴巴地诉苦。","Вы жалобно скулите.","Lloriqueas patéticamente.","Você implora pateticamente.",8323198
+"s is amazed by %s!","%s whistles at %s.",0,0,0,"%s对着%s吹了一声口哨。","%s свистит %s.","%s silba a %s.","%s assobia para %s.",8323198
+" is amazed by %s!","%s whistles at you.",0,0,0,"%s对着你吹了一声口哨。","%s свистит вам.","%s te silba.","%s assobia para você.",8323198
+"is amazed by %s!","You whistle at %s.",0,0,0,"你对着%s吹了一声口哨。","Вы свистите %s.","Silbas a %s.","Você assobia para %s.",8323198
+"s amazed by %s!","%s lets forth a sharp whistle.",0,0,0,"%s响亮地吹了一声口哨。","%s издает резкий свист.","%s emite un silbido agudo.","%s emite um assobio agudo.",8323198
+" amazed by %s!","You let forth a sharp whistle.",0,0,0,"你响亮地吹了一声口哨。","Вы издаете резкий свист.","Emites un silbido agudo.","Você emite um assobio agudo.",8323198
+"amazed by %s!","%s works with %s.",0,0,0,"%s在和%s一起工作。","%s работает с %s.","%s trabaja con %s.","%s trabalha com %s.",8323198
+"mazed by %s!","%s works with you.",0,0,0,"%s和你一起工作。","%s работает с вами.","%s trabaja contigo.","%s trabalha com você.",8323198
+"azed by %s!","You work with %s.",0,0,0,"你和%s一起工作。","Вы работаете с %s.","Trabajas con %s.","Você trabalha com %s.",8323198
+"zed by %s!","%s begins to work.",0,0,0,"%s开始工作。","%s начинает работать.","%s empieza a trabajar.","%s começa a trabalhar.",8323198
+"ed by %s!","You begin to work.",0,0,0,"你开始工作。","Вы начинаете работать.","Empiezas a trabajar.","Você começa a trabalhar.",8323198
+"d by %s!","%s yawns sleepily at %s.",0,0,0,"%s对着%s深深地打了个哈欠。","%s сонно зевает, глядя на %s.","%s bosteza con sueño a %s.","%s boceja sonolento para %s.",8323198
+" by %s!","%s yawns sleepily at you.",0,0,0,"%s对着你深深地打了个哈欠。","%s сонно зевает, глядя на вас.","%s bosteza con sueño a ti.","%s boceja sonolento para você.",8323198
+"by %s!","You yawn sleepily at %s.",0,0,0,"你对着%s深深地打了个哈欠。","Вы сонно зеваете, глядя на %s.","Bostezas con sueño a %s.","Você boceja sonolento para %s.",8323198
+"y %s!","%s yawns sleepily.",0,0,0,"%s深深地打了个哈欠。","%s сонно зевает.","%s bosteza con sueño.","%s boceja sonolento.",8323198
+" %s!","You yawn sleepily.",0,0,0,"你深深地打了个哈欠。","Вы сонно зеваете.","Bostezas con sueño.","Você boceja sonolento.",8323198
+"%s!","%s boggles at %s.",0,0,0,"%s对%s不置可否。","%s в полном недоумении смотрит на %s.","%s se queda boquiabierto ante %s.","%s fica boquiaberto com %s.",8323198
+"s!","%s boggles at you.",0,0,0,"%s对你不置可否。","%s в полном недоумении смотрит на вас.","%s se queda boquiabierto ante ti.","%s fica boquiaberto com você.",8323198
+"!","You boggle at %s.",0,0,0,"你对%s不置可否。","Вы в полном недоумении смотрите на %s.","Te quedas boquiabierto ante %s.","Você fica boquiaberto com %s.",8323198
+"","%s boggles at the situation.",0,0,0,"%s对这个状况不置可否。","%s в полном недоумении от происходящего.","%s se queda boquiabierto ante la situación.","%s fica boquiaberto com a situação.",8323198
+"%s让%s感到很惊奇！","You boggle at the situation.",0,0,0,"你对这个状况不置可否。","Вы в шоке от сложившейся ситуации.","Te quedas boquiabierto ante la situación.","Você fica boquiaberto com a situação.",8323198
+"s让%s感到很惊奇！","%s tries to calm %s down.",0,0,0,"%s试图让%s冷静下来。","%s пытается успокоить %s.","%s intenta calmar a %s.","%s tenta acalmar %s.",8323198
+"让%s感到很惊奇！","%s tries to calm you down.",0,0,0,"%s试图让你冷静下来。","%s пытается вас успокоить.","%s intenta calmarte.","%s tenta acalmar você.",8323198
+"��%s感到很惊奇！","You try to calm %s down.",0,0,0,"你试图让%s冷静下来。","Вы пытаетесь успокоить %s.","Intentas calmar a %s.","Você tenta acalmar %s.",8323198
+"�%s感到很惊奇！","%s remains calm.",0,0,0,"%s保持冷静。","%s сохраняет спокойствие.","%s permanece calmado.","%s permanece calmo.",8323198
+"%s感到很惊奇！","You remain calm.",0,0,0,"你保持冷静。","Вы сохраняете спокойствие.","Permaneces calmado.","Você permanece calmo.",8323198
+"s感到很惊奇！","%s lets %s know that he is cold.",0,0,0,"%s告诉%s他感到很冷。","%s lets %s know that he is cold.","%s le hace saber a %s que tiene frío.","%s informa a %s que tem frio.",8323198
+"感到很惊奇！","%s lets you know that he is cold.",0,0,0,"%s告诉你他感到很冷。","%s говорит вам что он замерз.","%s te hace saber que tiene frío.","%s te informa que tem frio.",8323198
+"��到很惊奇！","You let %s know that you are cold.",0,0,0,"你告诉%s你感到很冷。","You let %s know that you are cold.","Le haces saber a %s que tienes frío.","Você informa a %s que tem frio.",8323198
+"�到很惊奇！","%s lets everyone know that he is cold.",0,0,0,"%s告诉大家他感到很冷。","%s lets everyone know that he is cold.","%s les hace saber a todos que tiene frío.","%s informa a todos que tem frio.",8323198
+"到很惊奇！","You let everyone know that you are cold.",0,0,0,"你告诉大家你感到很冷。","You let everyone know that you are cold.","Les haces saber a todos que tienes frío.","Você informa a todos que tem frio.",8323198
+"��很惊奇！","%s lets %s know that she is cold.",0,0,0,"%s告诉%s她感到很冷。","%s lets %s know that she is cold.","%s le hace saber a %s que tiene frío.","%s informa a %s que tem frio.",8323198
+"�很惊奇！","%s lets you know that she is cold.",0,0,0,"%s告诉你她感到很冷。","%s говорит вам что она замерзла.","%s te hace saber que tiene frío.","%s te informa que tem frio.",8323198
+"很惊奇！","%s lets everyone know that she is cold.",0,0,0,"%s告诉大家她感到很冷。","%s lets everyone know that she is cold.","%s les hace saber a todos que tiene frío.","%s informa a todos que tem frio.",8323198
+"��惊奇！","%s comforts %s.",0,0,0,"%s在安慰%s。","%s утешает %s.","%s consuela a %s.","%s consola %s.",8323198
+"�惊奇！","%s comforts you.",0,0,0,"%s安慰你。","%s утешает вас.","%s te consuela.","%s consola você.",8323198
+"惊奇！","You comfort %s.",0,0,0,"你安慰%s。","Вы утешаете %s.","Consuelas a %s.","Você consola %s.",8323198
+"��奇！","%s needs comforting.",0,0,0,"%s需要被安慰。","%s нужно успокоится.","%s necesita consuelo.","%s precisa de consolo.",8323198
+"�奇！","You need to be comforted.",0,0,0,"你需要安慰。","Вам нужно успокоится.","Necesitas consuelo.","Você precisa de consolo.",8323198
+"奇！","%s cuddles up against %s.",0,0,0,"%s靠着%s睡去。","%s cuddles up against %s.","%s se acurruca contra %s.","%s se aconchega em %s.",8323198
+"��！","%s cuddles up against you.",0,0,0,"%s靠着你睡去。","%s cuddles up against you.","%s se acurruca contra ti.","%s se aconchega em você.",8323198
+"�！","You cuddle up against %s.",0,0,0,"你靠着%s睡去。","You cuddle up against %s.","Te acurrucas contra %s.","Você se aconchega em %s.",8323198
+"！","%s needs cuddling.",0,0,0,"%s想要被拥抱一下。","%s needs cuddling.","%s necesita mimos.","%s precisa de carinho.",8323198
+"��","You need to be cuddled.",0,0,0,"你想要被拥抱一下。","You need to be cuddled.","Necesitas mimos.","Você precisa de carinho.",8323198
+"�","%s ducks behind %s.",0,0,0,"%s躲到%s身后。","%s прячется за %s.","%s se agacha detrás de %s.","%s se abaixa atrás de %s.",8323198
+"","%s ducks behind you.",0,0,0,"%s紧紧地跟在你地后面。","%s прячется за вами.","%s se agacha detrás de ti.","%s se abaixa atrás de você.",8323198
+"%s восхищен %s!","You duck behind %s.",0,0,0,"你紧紧地跟在%s后面。","Вы прячетесь за %s.","Te agachas detrás de %s.","Você se abaixa atrás de %s.",8323198
+"s восхищен %s!","%s ducks for cover.",0,0,0,"%s蹲着藏了起来。","%s ducks for cover.","%s se agacha para cubrirse.","%s se abaixa para se proteger.",8323198
+" восхищен %s!","You duck for cover.",0,0,0,"你蹲着藏了起来。","You duck for cover.","Te agachas para cubrirte.","Você se abaixa para se proteger.",8323198
+"восхищен %s!","%s thinks %s is the son of a motherless ogre.",0,0,0,"%s认为%s是个没有教养的家伙。","%s thinks %s is the son of a motherless ogre.","%s piensa que %s es hijo de un ogro sin madre.","%s acha que %s é filho de um ogro sem mãe.",8323198
+"�осхищен %s!","%s thinks you are the son of a motherless ogre.",0,0,0,"%s认为你是个没有教养的家伙。","%s thinks you are the son of a motherless ogre.","%s piensa que eres hijo de un ogro sin madre.","%s acha que você é filho de um ogro sem mãe.",8323198
+"осхищен %s!","You think %s is the son of a motherless ogre.",0,0,0,"你认为%s是个没教养的家伙。","You think %s is the son of a motherless ogre.","Piensas que %s es hijo de un ogro sin madre.","Você acha que %s é filho de um ogro sem mãe.",8323198
+"�схищен %s!","%s thinks everyone around him is a son of a motherless ogre.",0,0,0,"%s认为他周围的人都是没教养的家伙。","%s thinks everyone around him is a son of a motherless ogre.","%s piensa que todos a su alrededor son hijos de un ogro sin madre.","%s acha que todos ao seu redor são filhos de um ogro sem mãe.",8323198
+"схищен %s!","You think everyone around you is a son of a motherless ogre.",0,0,0,"你觉得你身边的人都是没有教养的家伙。","You think everyone around you is a son of a motherless ogre.","Piensas que todos a tu alrededor son hijos de un ogro sin madre.","Você acha que todos ao seu redor são filhos de um ogro sem mãe.",8323198
+"�хищен %s!","%s thinks everyone around her is a son of a motherless ogre.",0,0,0,"%s觉得她身边的人都是没有教养的家伙。","%s thinks everyone around her is a son of a motherless ogre.","%s piensa que todos a su alrededor son hijos de un ogro sin madre.","%s acha que todos ao seu redor são filhos de um ogro sem mãe.",8323198
+"хищен %s!","%s introduces himself to %s.",0,0,0,"%s向%s作了一番自我介绍。","%s представляет себя %s.","%s se presenta a %s.","%s se apresenta a %s.",8323198
+"�ищен %s!","%s introduces himself to you.",0,0,0,"%s向你介绍他自己。","%s представляет себя вам.","%s se presenta a ti.","%s se apresenta a você.",8323198
+"ищен %s!","You introduce yourself to %s.",0,0,0,"你向%s作了一番自我介绍。","Вы представляете себя %s.","Te presentas a %s.","Você se apresenta a %s.",8323198
+"�щен %s!","%s introduces himself to everyone.",0,0,0,"%s向大家作了一番自我介绍。","%s представляет себя всем.","%s se presenta a todos.","%s se apresenta a todos.",8323198
+"щен %s!","You introduce yourself to everyone.",0,0,0,"你向大家介绍你自己。","Вы представляете себя всем.","Te presentas a todos.","Você se apresenta a todos.",8323198
+"�ен %s!","%s introduces herself to %s.",0,0,0,"%s向%s介绍她自己。","%s introduces herself to %s.","%s se presenta a %s.","%s se apresenta a %s.",8323198
+"ен %s!","%s introduces herself to you.",0,0,0,"%s向你作了一番自我介绍。","%s introduces herself to you.","%s se presenta a ti.","%s se apresenta a você.",8323198
+"�н %s!","%s introduces herself to everyone.",0,0,0,"%s向大家介绍她自己。","%s introduces herself to everyone.","%s se presenta a todos.","%s se apresenta a todos.",8323198
+"н %s!","%s lets %s know that he was just kidding!",0,0,0,"%s告诉%s他只是在开玩笑。","%s дает %s понять, что он просто пошутил!","%s le hace saber a %s que estaba bromeando.","%s informa a %s que estava brincando.",8323198
+"� %s!","%s lets you know that he was just kidding!",0,0,0,"%s告诉你他只是在开玩笑。","%s дает вам понять, что он просто пошутил!","%s te hace saber que estaba bromeando.","%s te informa que estava brincando.",8323198
+" %s!","You let %s know that you were just kidding!",0,0,0,"你告诉%s你只是在开玩笑。","Вы даете %s понять, что вы просто пошутили!","Le haces saber a %s que estabas bromeando.","Você informa a %s que estava brincando.",8323198
+"%s!","%s was just kidding!",0,0,0,"%s只是在开玩笑。","%s просто пошутил!","%s estaba bromeando.","%s estava brincando.",8323198
+"s!","You were just kidding!",0,0,0,"你只是在开玩笑。","Вы просто пошутили!","Estabas bromeando.","Você estava brincando.",8323198
+"!","%s lets %s know that she was just kidding!",0,0,0,"%s告诉%s她只是在开玩笑。","%s даёт %s понять, что она просто пошутила!","%s le hace saber a %s que estaba bromeando.","%s informa a %s que estava brincando.",8323198
+"","%s lets you know that she was just kidding!",0,0,0,"%s告诉你她只是在开玩笑。","%s даёт вам понять, что она просто пошутила!","%s te hace saber que estaba bromeando.","%s te informa que estaba brincando.",8323198
+"%s está asombrado por %s.","%s licks %s.",0,0,0,"%s舔了舔%s。","%s облизывает %s.","%s lame a %s.","%s lambe %s.",8323198
+"s está asombrado por %s.","%s licks you.",0,0,0,"%s舔了舔你。","%s облизывает вас.","%s te lame.","%s te lambe.",8323198
+" está asombrado por %s.","You lick %s.",0,0,0,"你舔了舔%s。","Вы облизывает %s.","Lames a %s.","Você lambe %s.",8323198
+"está asombrado por %s.","%s licks his lips.",0,0,0,"%s舔了舔嘴唇。","%s облизывает свои губы.","%s se lame los labios.","%s lambe os lábios.",8323198
+"stá asombrado por %s.","You lick your lips.",0,0,0,"你舔了舔嘴唇。","Вы облизываете губы.","Te lames los labios.","Você lambe os lábios.",8323198
+"tá asombrado por %s.","%s licks her lips.",0,0,0,"%s舔了舔嘴唇。","%s облизывает губы.","%s se lame los labios.","%s lambe os lábios.",8323198
+"á asombrado por %s.","%s listens intently to %s.",0,0,0,"%s正在专心地听%s讲话。","%s внимательно слушает %s.","%s escucha atentamente a %s.","%s escuta atentamente %s.",8323198
+"� asombrado por %s.","%s listens intently to you.",0,0,0,"%s认真地听你说话。","%s внимательно слушает вас.","%s te escucha atentamente.","%s te escuta atentamente.",8323198
+" asombrado por %s.","You listen intently to %s.",0,0,0,"你认真地听%s说话。","Вы внимательно слушаете %s.","Escuchas atentamente a %s.","Você escuta atentamente %s.",8323198
+"asombrado por %s.","%s is listening!",0,0,0,"%s正在专心地听着。","%s слушает!","%s está escuchando.","%s está ouvindo.",8323198
+"sombrado por %s.","You are listening!",0,0,0,"你正在仔细地聆听！","Вы слушаете!","¡Estás escuchando!","Você está ouvindo!",8323198
+"ombrado por %s.","%s wants %s to know that he is hopelessly lost.",0,0,0,"%s想要让%s知道他完全地失败了。","%s хочет, чтобы %s знал — он безнадёжно заблудился.","%s quiere que %s sepa que está irremediablemente perdido.","%s quer que %s saiba que está irremediavelmente perdido.",8323198
+"mbrado por %s.","%s wants you to know that he is hopelessly lost.",0,0,0,"%s告诉你他已经彻底失败了。","%s хочет, чтобы вы знали, что он безнадежно заблудился.","%s quiere que sepas que está irremediablemente perdido.","%s quer que você saiba que está irremediavelmente perdido.",8323198
+"brado por %s.","You want %s to know that you are hopelessly lost.",0,0,0,"你告诉%s你已经彻底失败了。","Вы хотите, чтобы %s знал — вы безнадёжно заблудились.","Quieres que %s sepa que estás irremediablemente perdido.","Você quer que %s saiba que está irremediavelmente perdido.",8323198
+"rado por %s.","%s is hopelessly lost.",0,0,0,"%s彻底地失败了。","%s безнадежно заблудился.","%s está irremediablemente perdido.","%s está irremediavelmente perdido.",8323198
+"ado por %s.","You are hopelessly lost.",0,0,0,"你彻底地失败了。","Вы безнадежно заблудились.","Estás irremediablemente perdido.","Você está irremediavelmente perdido.",8323198
+"do por %s.","%s wants %s to know that she is hopelessly lost.",0,0,0,"%s想要让%s知道她完全地失败了。","%s хочет, чтобы %s знала — она безнадёжно заблудилась.","%s quiere que %s sepa que está irremediablemente perdida.","%s quer que %s saiba que está irremediavelmente perdida.",8323198
+"o por %s.","%s wants you to know that she is hopelessly lost.",0,0,0,"%s告诉你她已经彻底失败了。","%s хочет, чтобы вы знали — она безнадёжно заблудилась.","%s quiere que sepas que está irremediablemente perdida.","%s quer que você saiba que está irremediavelmente perdida.",8323198
+" por %s.","%s mocks the foolishness of %s.",0,0,0,"%s嘲笑%s的愚蠢。","%s насмехается над глупостью %s.","%s se burla de la tontería de %s.","%s zomba da tolice de %s.",8323198
+"por %s.","%s mocks your foolishness.",0,0,0,"%s嘲笑你的愚蠢。","%s насмехается над вашей глупостью.","%s se burla de tu tontería.","%s zomba da sua tolice.",8323198
+"or %s.","You mock the foolishness of %s.",0,0,0,"你嘲笑%s的愚蠢。","Вы насмехаетесь над глупостью %s.","Te burlas de la tontería de %s.","Você zomba da tolice de %s.",8323198
+"r %s.","%s mocks life and all it stands for.",0,0,0,"%s似乎万念俱灰了。","%s насмехается над жизнью и всем, что она собой представляет.","%s se burla de la vida y de todo lo que representa.","%s zomba da vida e de tudo o que ela representa.",8323198
+" %s.","You mock life and all it stands for.",0,0,0,"你看破红尘，觉得一切都无所谓了。","Вы насмехаетесь над жизнью и всем, что она собой представляет.","Te burlas de la vida y de todo lo que representa.","Você zomba da vida e de tudo o que ela representa.",8323198
+"%s.","%s ponders %s's actions.",0,0,0,"%s认真思考着%s的行为。","%s обдумывает действия %s.","%s reflexiona sobre las acciones de %s.","%s reflete sobre as ações de %s.",8323198
+"s.","%s ponders your actions.",0,0,0,"%s对你的行为认真的思考着。","%s обдумывает ваши действия.","%s reflexiona sobre tus acciones.","%s reflete sobre suas ações.",8323198
+".","You ponder %s's actions.",0,0,0,"你对%s的行为认真的思考着。","Вы обдумываете действия %s.","Reflexionas sobre las acciones de %s.","Você reflete sobre as ações de %s.",8323198
+"","%s ponders the situation.",0,0,0,"%s对这样的状况认真的思考着。","%s обдумывает ситуацию.","%s reflexiona sobre la situación.","%s reflete sobre a situação.",8323198
+"%s está maravilhado com %s.","You ponder the situation.",0,0,0,"你仔细斟酌着当前的状况。","Вы обдумываете ситуацию.","Reflexionas sobre la situación.","Você reflete sobre a situação.",8323198
+"s está maravilhado com %s.","%s pounces on top of %s.",0,0,0,"%s向%s飞身猛扑了过去。","%s набрасывается на %s.","%s salta encima de %s.","%s pula em cima de %s.",8323198
+" está maravilhado com %s.","%s pounces on top of you.",0,0,0,"%s向着你扑了过来。","%s набрасывается на вас.","%s salta encima de ti.","%s pula em cima de você.",8323198
+"está maravilhado com %s.","You pounce on top of %s.",0,0,0,"你向着%s扑了过去。","Вы набрасываете на %s.","Saltas encima de %s.","Você pula em cima de %s.",8323198
+"stá maravilhado com %s.","%s pounces out from the shadows.",0,0,0,"%s从暗处扑了出来。","%s выскакивает из тени.","%s salta desde las sombras.","%s pula das sombras.",8323198
+"tá maravilhado com %s.","You pounce out from the shadows.",0,0,0,"你从暗处扑了出来。","Вы выскакиваете из тени.","Saltas desde las sombras.","Você pula das sombras.",8323198
+"á maravilhado com %s.","%s lavishes praise upon %s.",0,0,0,"%s对于%s大加赞赏。","%s щедро хватит %s.","%s prodiga elogios a %s.","%s prodigaliza elogios a %s.",8323198
+"� maravilhado com %s.","%s lavishes praise upon you.",0,0,0,"%s对于你大加赞赏。","%s щедро хвалит вас.","%s prodiga elogios a ti.","%s prodigaliza elogios a você.",8323198
+" maravilhado com %s.","You lavish praise upon %s.",0,0,0,"你对于%s大加赞赏。","Вы щедро хвалите %s.","Prodigas elogios a %s.","Você prodigaliza elogios a %s.",8323198
+"maravilhado com %s.","%s praises the Light.",0,0,0,"%s赞美光明的力量。","%s восхваляет Свет.","%s alaba la Luz.","%s louva a Luz.",8323198
+"aravilhado com %s.","You praise the Light.",0,0,0,"你赞美光明的力量。","Вы восхваляете Свет.","Alabas la Luz.","Você louva a Luz.",8323198
+"ravilhado com %s.","%s purrs at %s.",0,0,0,"%s对着%s发出咕噜声。","%s мурлычет для %s.","%s ronronea a %s.","%s ronrona para %s.",8323198
+"avilhado com %s.","%s purrs at you.",0,0,0,"%s对着你发出咕噜声。","%s мурлычет для вас.","%s ronronea a ti.","%s ronrona para você.",8323198
+"vilhado com %s.","You purr at %s.",0,0,0,"你对着%s发出咕噜声。","Вы мурлычете для %s.","Ronroneas a %s.","Você ronrona para %s.",8323198
+"ilhado com %s.","%s purrs like a kitten.",0,0,0,"%s像猫一样发出咕噜声。","%s мурлыкает как котенок.","%s ronronea como un gatito.","%s ronrona como um gatinho.",8323198
+"lhado com %s.","You purr like a kitten.",0,0,0,"你像猫一样发出咕噜声。","Вы мурлыкаете как котенок.","Ronroneas como un gatito.","Você ronrona como um gatinho.",8323198
+"hado com %s.","%s is puzzled by %s.",0,0,0,"%s被%s搞糊涂了。","%s озадачен действиями %s.","%s está desconcertado por %s.","%s está perplexo com %s.",8323198
+"ado com %s.","%s puzzled by you. What are you doing?",0,0,0,"%s被你搞糊涂了。你在做什么啊？","%s озадачен вашими действиями. Что вы творите?","%s está desconcertado por ti. ¿Qué estás haciendo?","%s está perplexo com você. O que você está fazendo?",8323198
+"do com %s.","You are puzzled by %s.",0,0,0,"你被%s搞糊涂了。","Вы озадачены действиями %s.","Estás desconcertado por %s.","Você está perplexo com %s.",8323198
+"o com %s.","%s is puzzled. What's going on here?",0,0,0,"%s被搞糊涂了。这到底是怎么一回事啊？","%s озадачен. Что тут происходит?","%s está desconcertado. ¿Qué está pasando aquí?","%s está perplexo. O que está acontecendo aqui?",8323198
+" com %s.","You are puzzled. What's going on here?",0,0,0,"你被搞糊涂了。这到底是怎么一回事啊？","Вы озадачены. Что тут происходит?","Estás desconcertado. ¿Qué está pasando aquí?","Você está perplexo. O que está acontecendo aqui?",8323198
+"com %s.","%s looks at %s and raises his hand in the air.",0,0,0,"%s看着%s并举起了他的手。","%s смотрит на %s и поднмает руку свою руку вверх.","%s mira a %s y levanta la mano en el aire.","%s olha para %s e levanta a mão no ar.",8323198
+"om %s.","%s looks at you and raises his hand.",0,0,0,"%s看着你，举起了他的手。","%s смотрит на вас и поднимает руку.","%s te mira y levanta la mano.","%s te olha e levanta a mão.",8323198
+"m %s.","You look at %s and raise your hand.",0,0,0,"你看着%s，举起了你的手。","Вы смотрите на %s и поднимаете руку.","Miras a %s y levantas la mano.","Você olha para %s e levanta a mão.",8323198
+" %s.","%s raises his hand in the air.",0,0,0,"%s举起了他的手。","%s поднимает руку вверх.","%s levanta la mano.","%s levanta a mão no ar.",8323198
+"%s.","You raise your hand in the air.",0,0,0,"你举起了你的手。","Вы поднимаете руку вверх.","Levantas la mano en el aire.","Você levanta a mão no ar.",8323198
+"s.","%s looks at %s and raises her hand in the air.",0,0,0,"%s看着%s并举起了她的手。","%s смотрит на %s и поднимает руку вверх.","%s mira a %s y levanta la mano en el aire.","%s olha para %s e levanta a mão no ar.",8323198
+".","%s looks at you and raises her hand.",0,0,0,"%s看着你，举起了她的手。","%s смотрит на вас и поднимает руку.","%s te mira y levanta la mano.","%s te olha e levanta a mão.",8323198
+"","%s raises her hand in the air.",0,0,0,"%s举起了她的手。","%s поднимает руку вверх.","%s levanta la mano.","%s levanta a mão no ar.",8323198
+"%s is amazed by you!","%s lets %s know that he is ready!",0,0,0,"%s告诉%s已经准备好了！","%s даёт %s понять, что он готов!","%s le hace saber a %s que está listo.","%s informa a %s que está pronto.",8323198
+"s is amazed by you!","%s lets you know that he is ready!",0,0,0,"%s告诉你已经准备好了！","%s даёт вам понять, что он готов!","%s te hace saber que está listo.","%s te informa que está pronto.",8323198
+" is amazed by you!","You let %s know that you are ready!",0,0,0,"你告诉%s你已经准备好了。","Вы даёте %s понять, что вы готовы!","Le haces saber a %s que estás listo.","Você informa a %s que está pronto.",8323198
+"is amazed by you!","%s lets everyone know that he is ready!",0,0,0,"%s让大家知道他已经准备好了。","%s даёт всем понять, что он готов!","%s les hace saber a todos que está listo.","%s informa a todos que está pronto.",8323198
+"s amazed by you!","You let everyone know that you are ready!",0,0,0,"你告诉大家你已经准备好了！","Вы даёте всем понять, что вы готовы!","Les haces saber a todos que estás listo.","Você informa a todos que está pronto.",8323198
+" amazed by you!","%s lets you know that she is ready!",0,0,0,"%s告诉你她已经准备好了！","%s даёт вам понять, что она готова!","%s te hace saber que está lista.","%s te informa que está pronta.",8323198
+"amazed by you!","%s lets everyone know that she is ready!",0,0,0,"%s告诉大家她已经准备好了！","%s даёт всем понять, что она готова!","%s les hace saber a todos que está lista.","%s informa a todos que está pronta.",8323198
+"mazed by you!","%s shimmies before %s.",0,0,0,"%s在%s面前舞动。","%s дрожит перед %s.","%s se contonea ante %s.","%s rebola diante de %s.",8323198
+"azed by you!","%s shimmies before you.",0,0,0,"%s在你面前舞动。","%s дрожит перед вами.","%s se contonea ante ti.","%s rebola diante de você.",8323198
+"zed by you!","You shimmy before %s.",0,0,0,"你在%s面前舞动。","Вы дрожите перед %s.","Te contoneas ante %s.","Você rebola diante de %s.",8323198
+"ed by you!","%s shimmies before the masses.",0,0,0,"%s在众人面前舞动。","%s дрожит перед толпой.","%s se contonea ante las masas.","%s rebola diante das massas.",8323198
+"d by you!","You shimmy before the masses.",0,0,0,"你在众人面前舞动。","Вы дрожите перед толпой.","Te contoneas ante las masas.","Você rebola diante das massas.",8323198
+" by you!","%s shivers beside %s. Chilling!",0,0,0,"%s靠着%s，冷得不断颤抖。","%s дрожит рядом с %s. Бррр!","%s tiembla junto a %s. ¡Qué escalofrío!","%s treme perto de %s. Que calafrio!",8323198
+"by you!","%s shivers beside you. Chilling!",0,0,0,"%s靠着你，冷得不断颤抖。","%s дрожит рядом с вами. Бррр!","%s tiembla junto a ti. ¡Qué escalofrío!","%s treme perto de você. Que calafrio!",8323198
+"y you!","You shiver beside %s. Chilling!",0,0,0,"你靠着%s冷得不断颤抖。","Вы дрожите рядом с %s. Бррр!","Tiemblas junto a %s. ¡Qué escalofrío!","Você treme perto de %s. Que calafrio!",8323198
+" you!","%s shivers in his boots. Chilling!",0,0,0,"%s站着冷得不断颤抖。","%s дрожит в своих сапогах. Бррр!","%s tiembla en sus botas. ¡Qué escalofrío!","%s treme nas botas. Que calafrio!",8323198
+"you!","You shiver in your boots. Chilling!",0,0,0,"你冷得不断颤抖。","Вы дрожите в своих сапогах. Бррр!","Tiemblas en tus botas. ¡Qué escalofrío!","Você treme nas botas. Que calafrio!",8323198
+"ou!","%s shivers in her boots. Chilling!",0,0,0,"%s冷得不断颤抖。","%s дрожит в своих сапогах. Бррр!","%s tiembla en sus botas. ¡Qué escalofrío!","%s treme nas botas. Que calafrio!",8323198
+"u!","%s shoos %s away. Be gone pest!",0,0,0,"%s发出嘘声驱赶%s。走开，讨厌的家伙！","%s прогоняет %s. Убирайся, паразит!","%s ahuyenta a %s. ¡Largo, peste!","%s espanta %s. Vá embora, peste!",8323198
+"!","%s shoos you away. Be gone pest!",0,0,0,"%s发出嘘声驱赶你。走开，讨厌的家伙！","%s прогоняет вас. Убирайтесь, паразит!","%s te ahuyenta. ¡Largo, peste!","%s espanta você. Vá embora, peste!",8323198
+"","You shoo %s away. Be gone pest!",0,0,0,"你嘘走了%s。走开，讨厌的家伙！","Вы прогоняете %s. Убирайся, паразит!","Ahuyentas a %s. ¡Largo, peste!","Você espanta %s. Vá embora, peste!",8323198
+"你让%s感到很惊奇！","%s shoos the measly pests away.",0,0,0,"%s发出嘘声让那些讨厌的家伙走开。","%s прогоняет жалких паразитов.","%s ahuyenta a las miserables pestes.","%s espanta as pestes miseráveis.",8323198
+"��让%s感到很惊奇！","You shoo the measly pests away.",0,0,0,"你发出嘘声让那些讨厌的家伙走开。","Вы прогоняете жалких вредителей.","Ahuyentas a las miserables pestes.","Você espanta as pestes miseráveis.",8323198
+"�让%s感到很惊奇！","%s slaps %s across the face. Ouch!",0,0,0,"%s扇了%s一耳光，啊！","%s бьёт %s по лицу. Ауч!","%s abofetea a %s en la cara. ¡Ay!","%s dá um tapa na cara de %s. Ai!",8323198
+"让%s感到很惊奇！","%s slaps you across the face. Ouch!",0,0,0,"%s扇了你一耳光，啊！","%s бьёт вас по лицу. Ауч!","%s te abofetea en la cara. ¡Ay!","%s dá um tapa na sua cara. Ai!",8323198
+"��%s感到很惊奇！","You slap %s across the face. Ouch!",0,0,0,"你扇了%s一耳光，啊！","Вы бьёте %s по лицу. Ауч!","Abofeteas a %s en la cara. ¡Ay!","Você dá um tapa na cara de %s. Ai!",8323198
+"�%s感到很惊奇！","%s slaps himself across the face. Ouch!",0,0,0,"%s扇了自己一个耳光，啊！","%s бьёт себя по лицу. Ауч!","%s se abofetea a sí mismo en la cara. ¡Ay!","%s dá um tapa na própria cara. Ai!",8323198
+"%s感到很惊奇！","You slap yourself across the face. Ouch!",0,0,0,"你扇了自己一个耳光，啊！","Вы бьете себя по лицу. Ауч!","Te abofeteas a ti mismo en la cara. ¡Ay!","Você dá um tapa na sua própria cara. Ai!",8323198
+"s感到很惊奇！","%s slaps herself across the face. Ouch!",0,0,0,"%s扇了她自己一个耳光，啊！","%s бьет себя по лицу. Ауч!","%s se abofetea a sí misma en la cara. ¡Ay!","%s dá um tapa na própria cara. Ai!",8323198
+"感到很惊奇！","%s smirks slyly at %s.",0,0,0,"%s顽皮的对着%s傻笑。","%s хитро ухмыляется %s.","%s sonríe con picardía a %s.","%s sorri maliciosamente para %s.",8323198
+"��到很惊奇！","%s smirks slyly at you.",0,0,0,"%s顽皮的对着你傻笑。","%s хитро ухмыляется вам.","%s sonríe con picardía a ti.","%s sorri maliciosamente para você.",8323198
+"�到很惊奇！","You smirk slyly at %s.",0,0,0,"你顽皮的对着%s傻笑。","Вы хитро ухмыляетесь %s.","Sonríes con picardía a %s.","Você sorri maliciosamente para %s.",8323198
+"到很惊奇！","A sly smirk spreads across %s's face.",0,0,0,"%s的脸上渐渐的露出了顽皮的傻笑。","Хитрая ухмылка расплывается по лицу %s.","Una sonrisa astuta se extiende por el rostro de %s.","Um sorriso astuto se espalha pelo rosto de %s.",8323198
+"��很惊奇！","A sly smirk spreads across your face.",0,0,0,"你的脸上渐渐的露出了顽皮的傻笑。","Хитрая ухмылка расплывается по вашему лицу.","Una sonrisa astuta se extiende por tu rostro.","Um sorriso astuto se espalha pelo seu rosto.",8323198
+"�很惊奇！","%s sniffs %s.",0,0,0,"%s仔细的嗅了嗅%s。","%s нюхает %s.","%s huele a %s.","%s cheira %s.",8323198
+"很惊奇！","%s sniffs you.",0,0,0,"%s仔细地嗅了嗅你。","%s нюхает вас.","%s te huele.","%s cheira você.",8323198
+"��惊奇！","You sniff %s.",0,0,0,"你仔细的嗅了嗅%s。","Вы нюхаете %s.","Hueles a %s.","Você cheira %s.",8323198
+"�惊奇！","%s sniffs the air around him.",0,0,0,"%s嗅了嗅周围的空气。","%s нюхает воздух вокруг себя.","%s huele el aire a su alrededor.","%s cheira o ar ao seu redor.",8323198
+"惊奇！","You sniff the air around you.",0,0,0,"你嗅了嗅周围的空气。","Вы нюхаете воздух вокруг себя.","Hueles el aire a tu alrededor.","Você cheira o ar ao seu redor.",8323198
+"��奇！","%s sniffs the air around her.",0,0,0,"%s嗅了嗅周围的空气。","","%s huele el aire a su alrededor.","%s cheira o ar ao seu redor.",8323198
+"�奇！","%s snubs %s.",0,0,0,"%s对%s十分冷淡。","%s пренебрегает %s.","%s desprecia a %s.","%s despreza %s.",8323198
+"奇！","%s snubs you.",0,0,0,"%s对你十分冷淡。","%s пренебрегает вами.","%s te desprecia.","%s despreza você.",8323198
+"��！","You snub %s.",0,0,0,"你对%s十分冷淡。","Вы пренебрегаете %s.","Desprecias a %s.","Você despreza %s.",8323198
+"�！","%s snubs all of the lowly peons around him.",0,0,0,"%s大声训斥着周围卑贱的苦工。","%s snubs all of the lowly peons around him.","%s desprecia a todos los peones humildes a su alrededor.","%s despreza todos os peões humildes ao seu redor.",8323198
+"！","You snub all of the lowly peons around you.",0,0,0,"你大声训斥着周围卑贱的苦工。","You snub all of the lowly peons around you.","Desprecias a todos los peones humildes a tu alrededor.","Você despreza todos os peões humildes ao seu redor.",8323198
+"��","%s snubs all of the lowly peons around her.",0,0,0,"%s对周围卑贱的苦工十分冷淡。","%s snubs all of the lowly peons around her.","%s desprecia a todos los peones humildes a su alrededor.","%s despreza todos os peões humildes ao seu redor.",8323198
+"�","%s soothes %s. There, there...things will be ok.",0,0,0,"%s安抚着%s。一切……一切都会好的。","%s soothes %s. There, there...things will be ok.","%s consuela a %s. Ahí, ahí... todo estará bien.","%s consola %s. Aí, aí... tudo ficará bem.",4128894
+"","%s soothes you. There, there...things will be ok.",0,0,0,"%s安抚着你。一切……一切都会好的。","%s soothes you. There, there...things will be ok.","%s te consuela. Ahí, ahí... todo estará bien.","%s consola você. Aí, aí... tudo ficará bem.",4128894
+"%s восхищен вами!","You soothe %s. There, there...things will be ok.",0,0,0,"你安抚着%s。一切……一切都会好的。","You soothe %s. There, there...things will be ok.","Consuelas a %s. Ahí, ahí... todo estará bien.","Você consola %s. Aí, aí... tudo ficará bem.",4128894
+"s восхищен вами!","%s needs to be soothed.",0,0,0,"%s需要安慰。","%s необходимо успокоиться.","%s necesita ser calmado.","%s precisa ser acalmado.",8323198
+" восхищен вами!","You need to be soothed.",0,0,0,"你需要安慰。","Вам необходимо успокоиться.","Necesitas ser calmado.","Você precisa ser acalmado.",8323198
+"восхищен вами!","%s smells %s. Wow, someone stinks!",0,0,0,"%s把鼻子凑过来闻了闻%s。哇哦，你好臭啊！","%s чувствует запах %s. Ого,кто-то воняет!","%s huele a %s. Vaya, alguien apesta.","%s cheira %s. Nossa, alguém está fedendo.",8323198
+"�осхищен вами!","%s smells you. Wow, someone stinks!",0,0,0,"%s把鼻子凑过来闻了闻你。Wow，你好臭啊！","%s чувствует ваш запах. Ого, кто-то воняет!","%s te huele. Vaya, alguien apesta.","%s cheira você. Nossa, alguém está fedendo.",8323198
+"осхищен вами!","You smell %s. Wow, someone stinks!",0,0,0,"你把鼻子凑过来闻了闻%s。哇哦，你好臭啊！","Вы чувствуете запах %s. Ого, кто-то воняет!","Hueles a %s. Vaya, alguien apesta.","Você cheira %s. Nossa, alguém está fedendo.",8323198
+"�схищен вами!","%s smells the air around him. Wow, someone stinks!",0,0,0,"%s闻了闻周围的空气。哇哦，有些人好臭啊！","%s нюхает воздух вокруг себя. Ого, кто-то воняет!","%s huele el aire a su alrededor. Vaya, alguien apesta.","%s cheira o ar ao seu redor. Nossa, alguém está fedendo.",8323198
+"схищен вами!","You smell the air around you. Wow, someone stinks!",0,0,0,"你闻了闻周围的空气。Wow，有些人好臭啊！","Вы нюхаете воздух вокруг себя. Ого, кто-то воняет!","Hueles el aire a tu alrededor. Vaya, alguien apesta.","Você cheira o ar ao seu redor. Nossa, alguém está fedendo.",8323198
+"�хищен вами!","%s smells the air around her. Wow, someone stinks!",0,0,0,"%s闻了闻周围的空气。Wow，有些人好臭啊！","%s smells the air around her. Wow, someone stinks!","%s huele el aire a su alrededor. Vaya, alguien apesta.","%s cheira o ar ao seu redor. Nossa, alguém está fedendo.",8323198
+"хищен вами!","%s makes a taunting gesture at %s. Bring it!",0,0,0,"%s对%s做了个嘲弄的姿势。记住了！","%s makes a taunting gesture at %s. Bring it!","%s hace un gesto de burla a %s. ¡Ven si te atreves!","%s faz um gesto provocador para %s. Vem me pegar!",8323198
+"�ищен вами!","%s makes a taunting gesture at you. Bring it!",0,0,0,"%s对你做了个嘲弄的姿势。记住了！","%s makes a taunting gesture at you. Bring it!","%s hace un gesto burlón a ti. ¡Ven a por mí!","%s faz um gesto provocador para você. Vem me pegar!",8323198
+"ищен вами!","You make a taunting gesture at %s. Bring it!",0,0,0,"你对%s做了个嘲弄的姿势。记住了！","You make a taunting gesture at %s. Bring it!","Haces un gesto de burla a %s. ¡Ven si te atreves!","Você faz um gesto provocador para %s. Vem me pegar!",8323198
+"�щен вами!","%s taunts everyone around him. Bring it fools!",0,0,0,"%s对周围的人做了个嘲弄的姿势。记住了！笨蛋！","%s taunts everyone around him. Bring it fools!","%s se burla de todos a su alrededor. ¡Venid, tontos!","%s zomba de todos ao seu redor. Venham, tolos!",8323198
+"щен вами!","You taunt everyone around you. Bring it fools!",0,0,0,"你对周围的人做了个嘲弄的姿势。记住了！笨蛋！","You taunt everyone around you. Bring it fools!","Te burlas de todos a tu alrededor. ¡Venid, tontos!","Você zomba de todos ao seu redor. Venham, tolos!",8323198
+"�ен вами!","%s taunts everyone around her. Bring it fools!",0,0,0,"%s对周围的人做了个嘲弄的姿势。记住了！笨蛋！","%s taunts everyone around her. Bring it fools!","%s se burla de todos a su alrededor. ¡Venid, tontos!","%s zomba de todos ao seu redor. Venham, tolos!",8323198
+"ен вами!","%s teases %s.",0,0,0,"%s嘲弄了%s一番。","%s дразнит %s.","%s se burla de %s.","%s zomba de %s.",8323198
+"�н вами!","%s teases you.",0,0,0,"%s嘲弄了你一番。","%s дразнит вас.","%s se burla de ti.","%s zomba de você.",8323198
+"н вами!","You tease %s.",0,0,0,"你嘲弄了%s一番。","Вы дразните %s.","Te burlas de %s.","Você zomba de %s.",8323198
+"� вами!","%s is such a tease.",0,0,0,"%s真是个喜欢嘲弄别人的家伙。","%s is such a tease.","%s es un gran bromista.","%s é um grande brincalhão.",8323198
+" вами!","You are such a tease.",0,0,0,"你真是个喜欢嘲弄别人的家伙。","You are such a tease.","Eres un gran bromista.","Você é um grande brincalhão.",8323198
+"вами!","%s lets %s know he is thirsty. Spare a drink?",0,0,0,"%s告诉%s他很渴。朋友，有没有喝的？","%s lets %s know he is thirsty. Spare a drink?","%s le hace saber a %s que tiene sed. ¿Una bebida de sobra?","%s informa a %s que tem sede. Uma bebida extra?",8323198
+"�ами!","%s lets you know he is thirsty. Spare a drink?",0,0,0,"%s告诉你他很渴。朋友，有没有可以喝的？","%s lets you know he is thirsty. Spare a drink?","%s te hace saber que tiene sed. ¿Una bebida de sobra?","%s te informa que tem sede. Uma bebida extra?",8323198
+"ами!","You let %s know you are thirsty. Spare a drink?",0,0,0,"你告诉%s你很渴。朋友，有没有可以喝的？","%s lets you know he is thirsty. Spare a drink?","Le haces saber a %s que tienes sed. ¿Una bebida de sobra?","Você informa a %s que tem sede. Uma bebida extra?",8323198
+"�ми!","%s is so thirsty. Can anyone spare a drink?",0,0,0,"%s感到非常的口渴。有没有人能给点喝的？","%s is so thirsty. Can anyone spare a drink?","%s tiene mucha sed. ¿Alguien puede ofrecer una bebida?","%s está com muita sede. Alguém pode oferecer uma bebida?",8323198
+"ми!","You are so thirsty. Can anyone spare a drink?",0,0,0,"你感到非常的口渴。有没有人能给点喝的？","You are so thirsty. Can anyone spare a drink?","Tienes mucha sed. ¿Alguien puede ofrecer una bebida?","Você está com muita sede. Alguém pode oferecer uma bebida?",8323198
+"�и!","%s lets %s know she is thirsty. Spare a drink?",0,0,0,"%s告诉%s她很渴。朋友，有没有喝的？","%s lets %s know she is thirsty. Spare a drink?","%s le hace saber a %s que tiene sed. ¿Una bebida de sobra?","%s informa a %s que tem sede. Uma bebida extra?",8323198
+"и!","%s lets you know she is thirsty. Spare a drink?",0,0,0,"%s告诉你她很渴。朋友，有没有喝的？","%s lets you know she is thirsty. Spare a drink?","%s te hace saber que tiene sed. ¿Una bebida de sobra?","%s te informa que tem sede. Uma bebida extra?",8323198
+"�!","%s vetoes %s's motion.",0,0,0,"%s反对%s这样做。","%s осуждает предложение %s.","%s veta la moción de %s.","%s veta a moção de %s.",8323198
+"!","%s vetoes your motion.",0,0,0,"%s反对你这样做。","%s осуждает ваше предложение.","%s veta tu moción.","%s veta sua moção.",8323198
+"","You veto %s's motion.",0,0,0,"你反对%s这样做。","Вы осуждаете предложение %s.","Vetas la moción de %s.","Você veta a moção de %s.",8323198
+"%s está asombrado por ti.","%s vetoes the motion on the floor.",0,0,0,"%s极力反对这样的行为。","%s отвергает предложение, вынесенное на обсуждение.","%s veta la moción en la sala.","%s veta a moção na sala.",8323198
+"s está asombrado por ti.","You veto the motion on the floor.",0,0,0,"你极力反对这样的行为。","Вы отвергаете предложение, вынесенное на обсуждение.","Vetas la moción en la sala.","Você veta a moção na sala.",8323198
+" está asombrado por ti.","%s snickers at %s.",0,0,0,"%s对着%s窃笑。","%s хихикает над %s.","%s se ríe entre dientes de %s.","%s ri baixinho de %s.",8323198
+"está asombrado por ti.","%s snickers at you.",0,0,0,"%s对着你窃笑。","%s хихикает над вами.","%s se ríe entre dientes de ti.","%s ri baixinho de você.",8323198
+"stá asombrado por ti.","You snicker at %s.",0,0,0,"你对着%s窃笑。","Вы хихикаете над %s.","Te ríes entre dientes de %s.","Você ri baixinho de %s.",8323198
+"tá asombrado por ti.","%s quietly snickers to himself.",0,0,0,"%s暗自偷笑。","%s тихонько хихикает про себя.","%s se ríe silenciosamente para sí mismo.","%s ri silenciosamente para si mesmo.",8323198
+"á asombrado por ti.","You quietly snicker to yourself.",0,0,0,"你暗自偷笑。","Вы тихонько хихикаете про себя.","Te ríes silenciosamente para ti mismo.","Você ri silenciosamente para si mesmo.",8323198
+"� asombrado por ti.","%s quietly snickers to herself.",0,0,0,"%s暗自偷笑。","%s quietly snickers to herself.","%s se ríe silenciosamente para sí misma.","%s ri silenciosamente para si mesma.",8323198
+" asombrado por ti.","%s tickles %s.  Hee hee!",0,0,0,"%s在挠%s的胳肢窝。嘿嘿！","%s щекочет %s. Хи-хи!","%s le hace cosquillas a %s. ¡Ji, ji!","%s faz cócegas em %s. Hi, hi!",8323198
+"asombrado por ti.","%s tickles you.  Hee hee!",0,0,0,"%s在挠你的胳肢窝。嘿嘿！","%s щекочет вас. Хи-хи!","%s te hace cosquillas. ¡Ji, ji!","%s faz cócegas em você. Hi, hi!",8323198
+"sombrado por ti.","You tickle %s.  Hee hee!",0,0,0,"你在挠%s的胳肢窝。嘿嘿！","Вы щекочете %s. Хи-хи!","Le haces cosquillas a %s. ¡Ji, ji!","Você faz cócegas em %s. Hi, hi!",8323198
+"ombrado por ti.","%s wants to be tickled.  Hee hee!",0,0,0,"%s想要被挠挠胳肢窝。嘿嘿！","%s wants to be tickled.  Hee hee!","%s quiere que le hagan cosquillas. ¡Ji, ji!","%s quer cócegas. Hi, hi!",8323198
+"mbrado por ti.","You want to be tickled.  Hee hee!",0,0,0,"你想要被挠挠胳肢窝。嘿嘿！","You want to be tickled.  Hee hee!","Quieres que te hagan cosquillas. ¡Ji, ji!","Você quer cócegas. Hi, hi!",8323198
+"brado por ti.","%s plays the world's smallest violin for %s.",0,0,0,"%s在%s面前小声地哭了起来。","%s играет на самой маленькой скрипке в мире для %s.","%s toca el violín más pequeño del mundo para %s.","%s toca o menor violino do mundo para %s.",8323198
+"rado por ti.","%s plays the world's smallest violin for you.",0,0,0,"%s在你面前小声地哭了起来。","%s играет для вас на самой маленькой скрипке в мире.","%s toca el violín más pequeño del mundo para ti.","%s toca o menor violino do mundo para você.",8323198
+"ado por ti.","You play the world's smallest violin for %s.",0,0,0,"你在%s面前小声地哭了起来。","Вы играете на самой маленькой скрипке в мире для %s.","Tocas el violín más pequeño del mundo para %s.","Você toca o menor violino do mundo para %s.",8323198
+"do por ti.","%s begins to play the world's smallest violin.",0,0,0,"%s小声地哭了起来。","%s начинает играть на самой маленькой скрипке в мире.","%s empieza a tocar el violín más pequeño del mundo.","%s começa a tocar o menor violino do mundo.",8323198
+"o por ti.","You begin to play the world's smallest violin.",0,0,0,"你小声地哭了起来。","Вы начинаете играть на самой маленькой скрипке в мире.","Empiezas a tocar el violín más pequeño del mundo.","Você começa a tocar o menor violino do mundo.",8323198
+" por ti.","%s smiles at %s.",0,0,0,"%s对%s露出了微笑。","%s улыбается %s.","%s sonríe a %s.","%s sorri para %s.",8323198
+"por ti.","%s smiles at you.",0,0,0,"%s对你露出了微笑。","%s улыбается вам.","%s te sonríe.","%s sorri para você.",8323198
+"or ti.","You smile at %s.",0,0,0,"你对%s露出了微笑。","Вы улыбаетесь %s.","Sonríes a %s.","Você sorri para %s.",8323198
+"r ti.","%s smiles.",0,0,0,"%s露出了微笑。","%s улыбается.","%s sonríe.","%s sorri.",8323198
+" ti.","You smile.",0,0,0,"你露出了微笑。","Вы улыбаетесь.","Sonríes.","Você sorri.",8323198
+"á maravilhado com você.","%s lets %s know that she is ready!",0,0,0,"%s告诉%s她已经准备好了。","%s lets %s know that she is ready!","%s le hace saber a %s que está lista.","%s informa a %s que está pronta.",8323198
+"� maravilhado com você.","%s makes a rude gesture at %s.",0,0,0,"%s对%s做了个粗鲁的手势。","%s показывает %s неприличный жест.","%s hace un gesto grosero a %s.","%s faz um gesto obsceno para %s.",8323198
+" maravilhado com você.","%s makes a rude gesture at you.",0,0,0,"%s对你做了个粗鲁的手势。","%s показывает вам неприличный жест.","%s hace un gesto grosero a ti.","%s faz um gesto obsceno para você.",8323198
+"maravilhado com você.","You make a rude gesture at %s.",0,0,0,"你对%s做了个粗鲁的手势。","Вы показываете %s неприличный жест.","Haces un gesto grosero a %s.","Você faz um gesto obsceno para %s.",8323198
+"aravilhado com você.","%s makes a rude gesture.",0,0,0,"%s做了个粗鲁的手势。","%s делает неприличный жест.","%s hace un gesto grosero.","%s faz um gesto obsceno.",8323198
+"ravilhado com você.","You make a rude gesture.",0,0,0,"你做了个粗鲁的手势。","Вы делаете неприличный жест.","Haces un gesto grosero.","Você faz um gesto obsceno.",8323198
+"ocê.","%s looks down upon %s with pity.",0,0,0,"%s轻蔑地看着%s这个可怜的家伙。","%s смотрит на %s с жалостью.","%s mira con lástima a %s.","%s olha com pena para %s.",4128894
+"cê.","%s looks down upon you with pity.",0,0,0,"%s轻蔑地看着你这个可怜的家伙。","%s смотрит на вас с жалостью.","%s te mira con lástima.","%s te olha com pena.",4128894
+"ê.","You look down upon %s with pity.",0,0,0,"你轻蔑地看着%s这个可怜的家伙。","Вы смотрите на %s с жалостью.","Miras con lástima a %s.","Você olha com pena para %s.",4128894
+"�.","%s pities those around him.",0,0,0,"%s对他周围的人表示同情。","%s pities those around him.","%s siente lástima por quienes lo rodean.","%s sente pena daqueles ao seu redor.",4128894
+".","%s pities those around her.",0,0,0,"%s对她周围的人表示同情。","%s pities those around her.","%s siente lástima por quienes la rodean.","%s sente pena daqueles ao seu redor.",4128894
+"","You pity those around you.",0,0,0,"你对你周围的人表示同情。","You pity those around you.","Sientes lástima por quienes te rodean.","Você sente pena de quem está ao seu redor.",4128894
+"You are amazed by %s!","%s growls menacingly at %s.",0,0,0,"%s对着%s高声怒吼。","%s угрожающе рычит на %s.","%s gruñe amenazadoramente a %s.","%s rosna ameaçadoramente para %s.",4128894
+"ou are amazed by %s!","%s growls menacingly at you.",0,0,0,"%s对着你高声怒吼。","%s угрожающе рычит на вас.","%s gruñe amenazadoramente a ti.","%s rosna ameaçadoramente para você.",4128894
+"u are amazed by %s!","You growl menacingly at %s.",0,0,0,"你对着%s高声怒吼。","Вы угрожающе рычите на %s.","Gruñes amenazadoramente a %s.","Você rosna ameaçadoramente para %s.",4128894
+" are amazed by %s!","%s growls menacingly.",0,0,0,"%s在高声怒吼。","%s угрожающе рычит.","%s gruñe amenazadoramente.","%s rosna ameaçadoramente.",4128894
+"are amazed by %s!","You growl menacingly.",0,0,0,"你在高声怒吼。","Вы угрожающе рычите.","Gruñes amenazadoramente.","Você rosna ameaçadoramente.",4128894
+"re amazed by %s!","%s barks at %s.",0,0,0,"%s对着%s咆哮。","%s лает на %s.","%s ladra a %s.","%s late para %s.",4128894
+"e amazed by %s!","%s barks at you.",0,0,0,"%s对着你咆哮。","%s лает на вас.","%s ladra a ti.","%s late para você.",4128894
+" amazed by %s!","You bark at %s.",0,0,0,"你对着%s咆哮。","Вы лаете на %s.","Ladras a %s.","Você late para %s.",3604518
+"amazed by %s!","%s barks. Woof woof!",0,0,0,"%s仰天长啸。呜~~~","%s лает. Гав-гав!","Se oye un aullido.","%s late. Au au!",4128894
+"mazed by %s!","You bark. Woof woof!",0,0,0,"你仰天长啸。呜……！","Вы лаете. Гав-гав!","Se oye un aullido.","Você late. Au au!",4128894
+" by %s!","%s is scared of %s.",0,0,0,"%s非常害怕%s。","%s боится %s.","%s tiene miedo de %s.","%s tem medo de %s.",4128894
+"by %s!","%s is scared of you.",0,0,0,"%s非常害怕你。","%s боится вас.","%s tiene miedo de ti.","%s tem medo de você.",4128894
+"y %s!","You are scared of %s.",0,0,0,"你非常害怕%s。","Вы боитесь %s.","Tienes miedo de %s.","Você tem medo de %s.",4128894
+" %s!","%s is scared!",0,0,0,"%s看上去十分惊恐不安。","%s наруган!","%s tiene miedo.","%s tem medo.",4128894
+"%s!","You are scared!",0,0,0,"你看上去十分惊恐不安。","Вы напуганы!","¡Tienes miedo!","Você tem medo!",4128894
+"s!","%s flops about helplessly around %s.",0,0,0,"%s无助地在%s旁边走来走去。","%s flops about helplessly around %s.","%s se revuelca impotente alrededor de %s.","%s se contorce impotente ao redor de %s.",4128894
+"!","%s flops about helplessly around you.",0,0,0,"%s无助地在你旁边走来走去。","%s flops about helplessly around you.","%s se revuelca impotente alrededor de ti.","%s se contorce impotente ao redor de você.",4128894
+"","You flop about helplessly around %s.",0,0,0,"你无助地在%s旁边走来走去。","You flop about helplessly around %s.","Te revuelcas impotente alrededor de %s.","Você se contorce impotente ao redor de %s.",4128894
+"%s让你感到很惊奇！","%s flops about helplessly.",0,0,0,"%s无助地走来走去。","%s flops about helplessly.","%s se revuelca impotente.","%s se contorce impotente.",4128894
+"s让你感到很惊奇！","You flop about helplessly.",0,0,0,"你无助地走来走去。","You flop about helplessly.","Te revuelcas impotente.","Você se contorce impotente.",4128894
+"让你感到很惊奇！","%s loves %s.",0,0,0,"%s爱%s。","%s любит %s.","%s ama a %s.","%s ama %s.",4128894
+"��你感到很惊奇！","%s loves you.",0,0,0,"%s爱你。","%s любит вас.","%s te ama.","%s te ama.",4128894
+"�你感到很惊奇！","You love %s.",0,0,0,"你爱%s。","Вы любите %s.","Amas a %s.","Você ama %s.",4128894
+"你感到很惊奇！","%s feels the love.",0,0,0,"%s感受到了爱。","%s влюблен.","%s siente el amor.","%s sente o amor.",4128894
+"��感到很惊奇！","You feel the love.",0,0,0,"你感受到了深深的爱意。","Вы влюблены.","Sientes el amor.","Você sente o amor.",4128894
+"�感到很惊奇！","%s moos at %s. Mooooooooooo.",0,0,0,"%s对%s发出牛叫声。哞~~~","%s мычит на %s. Мууууууууу.","%s muge a %s. Mooooooooooo.","%s muge para %s. Mooooooooooo.",4128894
+"感到很惊奇！","%s moos at you. Mooooooooooo.",0,0,0,"%s对你发出牛叫声。哞~~~","%s мычит на вас. Мууууууууу.","%s muge a ti. Mooooooooooo.","%s muge para você. Mooooooooooo.",4128894
+"��到很惊奇！","You moo at %s. Mooooooooooo.",0,0,0,"你对%s发出牛叫声。哞~~~","Вы мычите на %s. Мууууууууу.","Muges a %s. Mooooooooooo.","Você muge para %s. Mooooooooooo.",4128894
+"�到很惊奇！","%s moos. Mooooooooooo.",0,0,0,"%s发出牛叫声。哞~~~","%s мычит. Мууууууууу.","%s muge. Mooooooooooo.","%s muge. Mooooooooooo.",4128894
+"到很惊奇！","Mooooooooooo.",0,0,0,"哞~~~","Мууууууууу.","Mooooooooooo.","Mooooooooooo.",4128894
+"��很惊奇！","%s commends %s on a job well done.",0,0,0,"%s赞扬%s的工作完成得很出色。","%s хвалит %s за хорошо выполненную работу.","%s felicita a %s por un trabajo bien hecho.","%s felicita %s por um trabalho bem feito.",4128894
+"�很惊奇！","%s commends you on a job well done.",0,0,0,"%s赞扬你的工作完成得很出色。","%s хвалит вас за хорошо выполненную работу.","%s te felicita por un trabajo bien hecho.","%s felicita você por um trabalho bem feito.",4128894
+"很惊奇！","You commend %s on a job well done.",0,0,0,"你赞扬%s的工作完成得很出色。","Вы хвалите %s за хорошо выполненную работу.","Felicitas a %s por un trabajo bien hecho.","Você felicita %s por um trabalho bem feito.",4128894
+"��惊奇！","%s commends everyone on a job well done.",0,0,0,"%s赞扬大家的工作完成得很出色。","%s хвалит всех за хорошо выполненную раоту.","%s felicita a todos por un trabajo bien hecho.","%s felicita todos por um trabalho bem feito.",4128894
+"�惊奇！","You commend everyone on a job well done.",0,0,0,"你赞扬大家的工作完成得很出色。","Вы хвалите всех за хорошо выполненную работу.","Felicitas a todos por un trabajo bien hecho.","Você felicita todos por um trabalho bem feito.",4128894
+"�хитились %s!","",0,0,0,"","","","",4128892
+"хитились %s!","",0,0,0,"","","","",4128892
+"�итились %s!","",0,0,0,"","","","",4128892
+"итились %s!","%s cries out for help!",0,0,0,"%s大声呼救！","%s зовет на помощь!","%s pide ayuda a gritos.","%s grita por ajuda.",4128894
+"�тились %s!","You cry out for help!",0,0,0,"你大声呼救！","Вы зовете на помощь!","Pides ayuda a gritos.","Você grita por ajuda.",4128894
+"тились %s!","",0,0,0,"","","","",4128892
+"�ились %s!","",0,0,0,"","","","",4128892
+"ились %s!","",0,0,0,"","","","",4128892
+"�лись %s!","%s yells incoming enemies!",0,0,0,"%s大叫敌人来了！","%s кричит о наступающих врагах! ","%s grita ¡enemigos acercándose!","%s grita: inimigos se aproximando!",4128894
+"лись %s!","You yell incoming enemies!",0,0,0,"你大叫敌人来了！","Вы кричите о наступающих врагах!","Gritas ¡enemigos acercándose!","Você grita: inimigos se aproximando!",4128894
+"�ись %s!","",0,0,0,"","","","",4128892
+"ись %s!","",0,0,0,"","","","",4128892
+"�сь %s!","",0,0,0,"","","","",4128892
+"сь %s!","%s starts to charge.",0,0,0,"%s开始冲锋。","%s начинает атаковать.","%s comienza a cargar.","%s começa a carregar.",4128894
+"�ь %s!","You start to charge.",0,0,0,"你开始冲锋。","Вы начинаете атаковать.","Empiezas a cargar.","Você começa a carregar.",4128894
+"ь %s!","%s yells for %s to flee!",0,0,0,"%s高声喊叫，让%s赶快逃跑！","%s yells for %s to flee!","%s grita a %s que huya.","%s grita para %s fugir.",4128894
+"� %s!","%s yells for you to flee!",0,0,0,"%s高声喊叫，让你赶快逃跑！","%s yells for you to flee!","%s te grita que huyas.","%s grita para você fugir.",4128894
+" %s!","You yell for %s to flee!",0,0,0,"你高声喊叫，让%s赶快逃跑！","You yell for %s to flee!","Gritas a %s que huya.","Você grita para %s fugir.",4128894
+"%s!","%s yells for everyone to flee!",0,0,0,"%s高声喊叫，让所有人都赶快逃跑！","%s кричит всем бежать!","%s grita a todos que huyan.","%s grita para todos fugirem.",4128894
+"s!","You yell for everyone to flee!",0,0,0,"你叫所有人快跑！","Вы кричите всем бежать!","Gritas a todos que huyan.","Você grita para todos fugirem.",4128894
+"!","%s tells you to attack %s.",0,0,0,"%s要你进攻%s。","%s tells you to attack %s.","%s te dice que ataques a %s.","%s diz a você para atacar %s.",4128894
+"","%s tells everyone to attack you.",0,0,0,"%s要所有人攻击你。","%s tells everyone to attack you.","%s le dice a todos que te ataquen.","%s diz a todos para atacarem você.",4128894
+"¡Estás asombrado por %s!","You tell everyone to attack %s.",0,0,0,"你要所有人进攻%s。","You tell everyone to attack %s.","Le dices a todos que ataquen a %s.","Você diz a todos para atacarem %s.",4128894
+"�Estás asombrado por %s!","%s tells you to attack something.",0,0,0,"%s要你攻击某样东西。","%s tells you to attack something.","%s te dice que ataques algo.","%s diz a você para atacar algo.",4128894
+"Estás asombrado por %s!","You tell everyone to attack something.",0,0,0,"你告诉所有人进攻某物。","You tell everyone to attack something.","Le dices a todos que ataquen algo.","Você diz a todos para atacarem algo.",4128894
+"stás asombrado por %s!","%s is low on mana.",0,0,0,"%s的法力不足。","У %s мало маны.","%s tiene poco maná.","%s está com pouca mana.",4128894
+"tás asombrado por %s!","You announce that you have low mana!",0,0,0,"你宣布你的法力不足！","You announce that you have low mana!","¡Anuncias que tienes poco maná!","Você anuncia que tem pouca mana!",4128894
+"ás asombrado por %s!","%s motions for %s to follow.",0,0,0,"%s示意%s跟着。","%s motions for %s to follow.","%s hace señas a %s para que lo siga.","%s acena para %s segui-lo.",4128894
+"�s asombrado por %s!","%s motions for you to follow.",0,0,0,"%s示意你跟着。","%s motions for you to follow.","%s te hace señas para que lo sigas.","%s acena para você segui-lo.",4128894
+"s asombrado por %s!","You motion for %s to follow.",0,0,0,"你示意%s跟着。","You motion for %s to follow.","Haces señas a %s para que te siga.","Você acena para %s segui-lo.",4128894
+" asombrado por %s!","%s motions for you to follow.",0,0,0,"%s示意你跟着。","%s motions for you to follow.","%s te hace señas para que lo sigas.","%s acena para você segui-lo.",4128894
+"asombrado por %s!","You motion for everyone to follow.",0,0,0,"你示意所有人跟着。","You motion for everyone to follow.","Haces señas a todos para que te sigan.","Você acena para todos segui-lo.",4128894
+"sombrado por %s!","%s asks %s to wait.",0,0,0,"%s要%s等着。","%s просит %s подождать.","%s pide a %s que espere.","%s pede a %s para esperar.",4128894
+"ombrado por %s!","%s asks you to wait.",0,0,0,"%s要你等着。","%s просит вас подождать.","%s te pide que esperes.","%s pede para você esperar.",4128894
+"mbrado por %s!","You ask %s to wait.",0,0,0,"你要%s等着。","Вы просите %s подождать.","Le pides a %s que espere.","Você pede a %s para esperar.",4128894
+"brado por %s!","%s asks you to wait.",0,0,0,"%s要你等着。","%s asks you to wait.","%s te pide que esperes.","%s pede para você esperar.",4128894
+"rado por %s!","You ask everyone to wait.",0,0,0,"你要所有人等着。","You ask everyone to wait.","Le pides a todos que esperen.","Você pede a todos para esperarem.",4128894
+"ado por %s!","%s calls out for healing!",0,0,0,"%s大声请求治疗！","%s calls out for healing!","%s pide curación a gritos.","%s grita por cura.",4128894
+"do por %s!","You call out for healing!",0,0,0,"你大声请求治疗！","You call out for healing!","Pides curación a gritos.","Você grita por cura.",4128894
+"o por %s!","%s orders you to open fire.",0,0,0,"%s命令你开火。","%s orders you to open fire.","%s te ordena abrir fuego.","%s ordena que você abra fogo.",4128894
+" por %s!","You give the order to open fire.",0,0,0,"你命令开火。","You give the order to open fire.","Das la orden de abrir fuego.","Você dá a ordem de abrir fogo.",4128894
+"por %s!","%s flirts with %s.",0,0,0,"%s对%s调情。","%s флиртует с %s.","%s coquetea con %s.","%s flerta com %s.",4128894
+"or %s!","%s flirts with you.",0,0,0,"%s对你调情。","%s флиртует с вами.","%s coquetea contigo.","%s flerta com você.",4128894
+"r %s!","You flirt with %s.",0,0,0,"你对%s调情。","Вы флиртуете с %s.","Coqueteas con %s.","Você flerta com %s.",4128894
+" %s!","%s flirts.",0,0,0,"%s调情。","%s флиртует.","%s coquetea.","%s flerta.",4128894
+"%s!","You flirt.",0,0,0,"你调情。","Вы флиртуете.","Coqueteas.","Você flerta.",4128894
+"s!","%s tells a joke to %s.",0,0,0,"%s对%s讲了个笑话。","%s рассказывает %s анекдот.","%s le cuenta un chiste a %s.","%s conta uma piada para %s.",4128894
+"!","%s tells you a joke.",0,0,0,"%s给你讲了一个笑话。","%s рассказывает вам анекдот.","%s te cuenta un chiste.","%s conta uma piada para você.",4128894
+"","You tell %s a joke.",0,0,0,"你给%s讲了一个笑话。","Вы рассказываете %s анекдот.","Le cuentas un chiste a %s.","Você conta uma piada para %s.",4128894
+"Você está maravilhado com %s.","%s tells a joke.",0,0,0,"%s讲了一个笑话。","%s рассказывает анекдот.","%s cuenta un chiste.","%s conta uma piada.",4128894
+"ocê está maravilhado com %s.","You tell a joke.",0,0,0,"你讲了一个笑话。","Вы рассказываете анекдот.","Cuentas un chiste.","Você conta uma piada.",4128894
+"cê está maravilhado com %s.","%s claps for %s, clearly unimpressed.",0,0,0,"%s为%s鼓掌，但很明显不太在意。","%s хлопает в ладоши для %s, явно без восхищения.","%s aplaude a %s, claramente poco impresionado.","%s aplaude %s, claramente pouco impressionado.",4128894
+"ê está maravilhado com %s.","%s claps for you, clearly unimpressed.",0,0,0,"%s为你鼓掌，但很明显不太在意。","%s хлопает вам в ладоши, явно без восхищения.","%s te aplaude, claramente poco impresionado.","%s aplaude você, claramente pouco impressionado.",4128894
+"� está maravilhado com %s.","You clap for %s, clearly unimpressed.",0,0,0,"你为%s鼓掌，但很明显不太在意。","Вы хлопаете в ладоши для %s, явно без восхищения.","Aplaudes a %s, claramente poco impresionado.","Você aplaude %s, claramente pouco impressionado.",4128894
+" está maravilhado com %s.","%s claps half heartedly, clearly unimpressed.",0,0,0,"%s心不在焉地鼓掌，很明显不太在意。","%s хлопает в ладоши без особого энтузиазма, явно без восхищения.","%s aplaude a medias, claramente poco impresionado.","%s aplaude pela metade, claramente pouco impressionado.",4128894
+"está maravilhado com %s.","You clap half heartedly, clearly unimpressed.",0,0,0,"你心不在焉地鼓掌，很明显不太在意。","Вы хлопаете в ладоши без особого энтузиазма, явно без восхищения.","Aplaudes a medias, claramente poco impresionado.","Você aplaude pela metade, claramente pouco impressionado.",4128894
+"stá maravilhado com %s.","%s winks slyly at %s.",0,0,0,"%s神秘地朝%s眨了眨眼。","%s хитро подмигивает %s.","%s guiña un ojo con picardía a %s.","%s pisca maliciosamente para %s.",4128894
+"tá maravilhado com %s.","%s winks slyly at you.",0,0,0,"%s神秘地朝你眨了眨眼。","%s хитро подмигивает вам.","%s te guiña un ojo con picardía.","%s pisca maliciosamente para você.",4128894
+"á maravilhado com %s.","You wink slyly at %s.",0,0,0,"你神秘地朝%s眨了眨眼。","Вы хитро подмигиваете %s.","Guiñas un ojo con picardía a %s.","Você pisca maliciosamente para %s.",4128894
+"� maravilhado com %s.","%s winks slyly.",0,0,0,"%s神秘地眨了眨眼。","%s хитро подмигивает.","%s guiña un ojo con picardía.","%s pisca maliciosamente.",4128894
+" maravilhado com %s.","You wink slyly.",0,0,0,"你神秘地眨了眨眼。","Вы хитро подмигиваете.","Guiñas un ojo con picardía.","Você pisca maliciosamente.",4128894
+"maravilhado com %s.","%s gently pats %s.",0,0,0,"%s轻轻地拍了拍%s。","%s нежно похлопывает %s.","%s palmea suavemente a %s.","%s dá tapinhas suaves em %s.",4128894
+"aravilhado com %s.","%s gently pats you.",0,0,0,"%s轻轻拍了拍你。","%s нежно похлопывает вас.","%s te palmea suavemente.","%s dá tapinhas suaves em você.",4128894
+"ravilhado com %s.","You gently pat %s.",0,0,0,"你轻轻拍了拍%s。","Вы нежно похлопываете %s.","Palmeas suavemente a %s.","Você dá tapinhas suaves em %s.",4128894
+"avilhado com %s.","%s needs a pat.",0,0,0,"%s需要一些安慰。","%s нуждается в похлопывании.","%s necesita una palmadita.","%s precisa de um tapinha.",4128894
+"vilhado com %s.","You need a pat.",0,0,0,"你需要一些安慰。","Вам нужно похлопывание.","¡Necesitas una palmadita!","Você precisa de um tapinha!",4128894
+"ilhado com %s.","%s thinks %s is serious.",0,0,0,"%s认为%s很严肃。","%s считает, что %s настроен серьезно.","%s piensa que %s habla en serio.","%s acha que %s está falando sério.",3604524
+"lhado com %s.","%s thinks you are serious.",0,0,0,"%s认为你是认真的。","%s считает, что вы настроены серьезно.","%s piensa que hablas en serio.","%s acha que você está falando sério.",3604524
+"hado com %s.","You think %s is serious.",0,0,0,"你认为%s是认真的。","Вы считаете, что %s настроен серьезно.","Piensas que %s habla en serio.","Você acha que %s está falando sério.",3604524
+"ado com %s.","%s thinks this is serious business.",0,0,0,"%s认为这是一件严肃的事情。","%s считает, что дело действительно серьезное.","%s piensa que esto es un asunto serio.","%s acha que isso é um assunto sério.",3604524
+"do com %s.","You think this is serious business.",0,0,0,"你认为这是一件严肃的事情。","Вы считаете, что дело действительно серьезное.","Piensas que esto es un asunto serio.","Você acha que isso é um assunto sério.",3604524

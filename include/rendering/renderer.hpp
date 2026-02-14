@@ -125,6 +125,7 @@ public:
     void cancelEmote();
     bool isEmoteActive() const { return emoteActive; }
     static std::string getEmoteText(const std::string& emoteName, const std::string* targetName = nullptr);
+    static uint32_t getEmoteDbcId(const std::string& emoteName);
 
     // Targeting support
     void setTargetPosition(const glm::vec3* pos);

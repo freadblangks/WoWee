@@ -229,6 +229,15 @@ public:
      * @param target Target name (for whispers, empty otherwise)
      */
     void sendChatMessage(ChatType type, const std::string& message, const std::string& target = "");
+    void sendTextEmote(uint32_t textEmoteId, uint64_t targetGuid = 0);
+    void joinChannel(const std::string& channelName, const std::string& password = "");
+    void leaveChannel(const std::string& channelName);
+    const std::vector<std::string>& getJoinedChannels() const { return joinedChannels_; }
+    std::string getChannelByIndex(int index) const;
+
+    // Chat bubble callback: (senderGuid, message, isYell)
+    using ChatBubbleCallback = std::function<void(uint64_t, const std::string&, bool)>;
+    void setChatBubbleCallback(ChatBubbleCallback cb) { chatBubbleCallback_ = std::move(cb); }
 
     /**
      * Get chat history (recent messages)
@@ -845,6 +854,9 @@ private:
      * Handle SMSG_MESSAGECHAT from server
      */
     void handleMessageChat(network::Packet& packet);
+    void handleTextEmote(network::Packet& packet);
+    void handleChannelNotify(network::Packet& packet);
+    void autoJoinDefaultChannels();
 
     // ---- Phase 1 handlers ----
     void handleNameQueryResponse(network::Packet& packet);
@@ -1031,6 +1043,8 @@ private:
     // Chat
     std::deque<MessageChatData> chatHistory;    // Recent chat messages
     size_t maxChatHistory = 100;             // Maximum chat messages to keep
+    std::vector<std::string> joinedChannels_;   // Active channel memberships
+    ChatBubbleCallback chatBubbleCallback_;
 
     // Targeting
     uint64_t targetGuid = 0;

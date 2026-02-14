@@ -351,6 +351,19 @@ enum class LogicalOpcode : uint16_t {
     SMSG_ARENA_ERROR,
     MSG_INSPECT_ARENA_TEAMS,
 
+    // ---- Emotes ----
+    CMSG_EMOTE,
+    SMSG_EMOTE,
+    CMSG_TEXT_EMOTE,
+    SMSG_TEXT_EMOTE,
+
+    // ---- Channels ----
+    CMSG_JOIN_CHANNEL,
+    CMSG_LEAVE_CHANNEL,
+    SMSG_CHANNEL_NOTIFY,
+    CMSG_CHANNEL_LIST,
+    SMSG_CHANNEL_LIST,
+
     // Sentinel
     COUNT
 };

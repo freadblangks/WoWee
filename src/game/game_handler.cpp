@@ -737,6 +737,18 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
             break;
 
+        case Opcode::SMSG_TEXT_EMOTE:
+            if (state == WorldState::IN_WORLD) {
+                handleTextEmote(packet);
+            }
+            break;
+
+        case Opcode::SMSG_CHANNEL_NOTIFY:
+            if (state == WorldState::IN_WORLD) {
+                handleChannelNotify(packet);
+            }
+            break;
+
         case Opcode::SMSG_QUERY_TIME_RESPONSE:
             if (state == WorldState::IN_WORLD) {
                 handleQueryTimeResponse(packet);
@@ -1947,6 +1959,9 @@ void GameHandler::handleLoginVerifyWorld(network::Packet& packet) {
     if (worldEntryCallback_) {
         worldEntryCallback_(data.mapId, data.x, data.y, data.z);
     }
+
+    // Auto-join default chat channels
+    autoJoinDefaultChannels();
 
     // Auto-query guild info on login
     const Character* activeChar = getActiveCharacter();
@@ -3939,6 +3954,15 @@ void GameHandler::handleMessageChat(network::Packet& packet) {
         lastWhisperSender_ = data.senderName;
     }
 
+    // Trigger chat bubble for SAY/YELL messages from others
+    if (chatBubbleCallback_ && data.senderGuid != 0) {
+        if (data.type == ChatType::SAY || data.type == ChatType::YELL ||
+            data.type == ChatType::MONSTER_SAY || data.type == ChatType::MONSTER_YELL) {
+            bool isYell = (data.type == ChatType::YELL || data.type == ChatType::MONSTER_YELL);
+            chatBubbleCallback_(data.senderGuid, data.message, isYell);
+        }
+    }
+
     // Log the message
     std::string senderInfo;
     if (!data.senderName.empty()) {
@@ -3959,6 +3983,126 @@ void GameHandler::handleMessageChat(network::Packet& packet) {
     LOG_INFO("========================================");
     LOG_INFO(channelInfo, senderInfo, ": ", data.message);
     LOG_INFO("========================================");
+}
+
+void GameHandler::sendTextEmote(uint32_t textEmoteId, uint64_t targetGuid) {
+    if (state != WorldState::IN_WORLD || !socket) return;
+    auto packet = TextEmotePacket::build(textEmoteId, targetGuid);
+    socket->send(packet);
+}
+
+void GameHandler::handleTextEmote(network::Packet& packet) {
+    TextEmoteData data;
+    if (!TextEmoteParser::parse(packet, data)) {
+        LOG_WARNING("Failed to parse SMSG_TEXT_EMOTE");
+        return;
+    }
+
+    // Skip our own text emotes (we already have local echo)
+    if (data.senderGuid == playerGuid && data.senderGuid != 0) {
+        return;
+    }
+
+    // Resolve sender name
+    std::string senderName;
+    auto nameIt = playerNameCache.find(data.senderGuid);
+    if (nameIt != playerNameCache.end()) {
+        senderName = nameIt->second;
+    } else {
+        auto entity = entityManager.getEntity(data.senderGuid);
+        if (entity) {
+            auto unit = std::dynamic_pointer_cast<Unit>(entity);
+            if (unit) senderName = unit->getName();
+        }
+    }
+    if (senderName.empty()) {
+        senderName = "Unknown";
+        queryPlayerName(data.senderGuid);
+    }
+
+    // Build emote message text (server sends textEmoteId, we look up the text)
+    // For now, just display a generic emote message
+    MessageChatData chatMsg;
+    chatMsg.type = ChatType::TEXT_EMOTE;
+    chatMsg.language = ChatLanguage::COMMON;
+    chatMsg.senderGuid = data.senderGuid;
+    chatMsg.senderName = senderName;
+    chatMsg.message = data.targetName.empty()
+        ? senderName + " performs an emote."
+        : senderName + " performs an emote at " + data.targetName + ".";
+
+    chatHistory.push_back(chatMsg);
+    if (chatHistory.size() > maxChatHistory) {
+        chatHistory.erase(chatHistory.begin());
+    }
+
+    LOG_INFO("TEXT_EMOTE from ", senderName, " (emoteId=", data.textEmoteId, ")");
+}
+
+void GameHandler::joinChannel(const std::string& channelName, const std::string& password) {
+    if (state != WorldState::IN_WORLD || !socket) return;
+    auto packet = JoinChannelPacket::build(channelName, password);
+    socket->send(packet);
+    LOG_INFO("Requesting to join channel: ", channelName);
+}
+
+void GameHandler::leaveChannel(const std::string& channelName) {
+    if (state != WorldState::IN_WORLD || !socket) return;
+    auto packet = LeaveChannelPacket::build(channelName);
+    socket->send(packet);
+    LOG_INFO("Requesting to leave channel: ", channelName);
+}
+
+std::string GameHandler::getChannelByIndex(int index) const {
+    if (index < 1 || index > static_cast<int>(joinedChannels_.size())) return "";
+    return joinedChannels_[index - 1];
+}
+
+void GameHandler::handleChannelNotify(network::Packet& packet) {
+    ChannelNotifyData data;
+    if (!ChannelNotifyParser::parse(packet, data)) {
+        LOG_WARNING("Failed to parse SMSG_CHANNEL_NOTIFY");
+        return;
+    }
+
+    switch (data.notifyType) {
+        case ChannelNotifyType::YOU_JOINED: {
+            // Add to active channels if not already present
+            bool found = false;
+            for (const auto& ch : joinedChannels_) {
+                if (ch == data.channelName) { found = true; break; }
+            }
+            if (!found) {
+                joinedChannels_.push_back(data.channelName);
+            }
+            MessageChatData msg;
+            msg.type = ChatType::SYSTEM;
+            msg.message = "Joined channel: " + data.channelName;
+            addLocalChatMessage(msg);
+            LOG_INFO("Joined channel: ", data.channelName);
+            break;
+        }
+        case ChannelNotifyType::YOU_LEFT: {
+            joinedChannels_.erase(
+                std::remove(joinedChannels_.begin(), joinedChannels_.end(), data.channelName),
+                joinedChannels_.end());
+            MessageChatData msg;
+            msg.type = ChatType::SYSTEM;
+            msg.message = "Left channel: " + data.channelName;
+            addLocalChatMessage(msg);
+            LOG_INFO("Left channel: ", data.channelName);
+            break;
+        }
+        default:
+            LOG_DEBUG("Channel notify type ", static_cast<int>(data.notifyType),
+                     " for channel ", data.channelName);
+            break;
+    }
+}
+
+void GameHandler::autoJoinDefaultChannels() {
+    joinChannel("General");
+    joinChannel("Trade");
 }
 
 void GameHandler::setTarget(uint64_t guid) {

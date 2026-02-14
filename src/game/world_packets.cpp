@@ -1294,6 +1294,77 @@ const char* getChatTypeString(ChatType type) {
 }
 
 // ============================================================
+// Text Emotes
+// ============================================================
+
+network::Packet TextEmotePacket::build(uint32_t textEmoteId, uint64_t targetGuid) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_TEXT_EMOTE));
+    packet.writeUInt32(textEmoteId);
+    packet.writeUInt32(0);  // emoteNum (unused)
+    packet.writeUInt64(targetGuid);
+    LOG_DEBUG("Built CMSG_TEXT_EMOTE: emoteId=", textEmoteId, " target=0x", std::hex, targetGuid, std::dec);
+    return packet;
+}
+
+bool TextEmoteParser::parse(network::Packet& packet, TextEmoteData& data) {
+    size_t bytesLeft = packet.getSize() - packet.getReadPos();
+    if (bytesLeft < 20) {
+        LOG_WARNING("SMSG_TEXT_EMOTE too short: ", bytesLeft, " bytes");
+        return false;
+    }
+    data.senderGuid = packet.readUInt64();
+    data.textEmoteId = packet.readUInt32();
+    data.emoteNum = packet.readUInt32();
+    uint32_t nameLen = packet.readUInt32();
+    if (nameLen > 0 && nameLen <= 256) {
+        data.targetName = packet.readString();
+    } else if (nameLen > 0) {
+        // Skip garbage
+        return false;
+    }
+    return true;
+}
+
+// ============================================================
+// Channel System
+// ============================================================
+
+network::Packet JoinChannelPacket::build(const std::string& channelName, const std::string& password) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_JOIN_CHANNEL));
+    packet.writeUInt32(0);  // channelId (unused)
+    packet.writeUInt8(0);   // hasVoice
+    packet.writeUInt8(0);   // joinedByZone
+    packet.writeString(channelName);
+    packet.writeString(password);
+    LOG_DEBUG("Built CMSG_JOIN_CHANNEL: channel=", channelName);
+    return packet;
+}
+
+network::Packet LeaveChannelPacket::build(const std::string& channelName) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_LEAVE_CHANNEL));
+    packet.writeUInt32(0);  // channelId (unused)
+    packet.writeString(channelName);
+    LOG_DEBUG("Built CMSG_LEAVE_CHANNEL: channel=", channelName);
+    return packet;
+}
+
+bool ChannelNotifyParser::parse(network::Packet& packet, ChannelNotifyData& data) {
+    size_t bytesLeft = packet.getSize() - packet.getReadPos();
+    if (bytesLeft < 2) {
+        LOG_WARNING("SMSG_CHANNEL_NOTIFY too short");
+        return false;
+    }
+    data.notifyType = static_cast<ChannelNotifyType>(packet.readUInt8());
+    data.channelName = packet.readString();
+    // Some notification types have additional fields (guid, etc.)
+    bytesLeft = packet.getSize() - packet.getReadPos();
+    if (bytesLeft >= 8) {
+        data.senderGuid = packet.readUInt64();
+    }
+    return true;
+}
+
+// ============================================================
 // Phase 1: Foundation — Targeting, Name Queries
 // ============================================================
 

@@ -65,6 +65,7 @@ namespace rendering {
 
 struct EmoteInfo {
     uint32_t animId = 0;
+    uint32_t dbcId = 0;  // EmotesText.dbc record ID (for CMSG_TEXT_EMOTE)
     bool loop = false;
     std::string textNoTarget;
     std::string textTarget;
@@ -100,26 +101,26 @@ static bool isLoopingEmote(const std::string& command) {
 static void loadFallbackEmotes() {
     if (!EMOTE_TABLE.empty()) return;
     EMOTE_TABLE = {
-        {"wave",    {67,  false, "You wave.", "You wave at %s.", "wave"}},
-        {"bow",     {66,  false, "You bow down graciously.", "You bow down before %s.", "bow"}},
-        {"laugh",   {70,  false, "You laugh.", "You laugh at %s.", "laugh"}},
-        {"point",   {84,  false, "You point over yonder.", "You point at %s.", "point"}},
-        {"cheer",   {68,  false, "You cheer!", "You cheer at %s.", "cheer"}},
-        {"dance",   {69,  true,  "You burst into dance.", "You dance with %s.", "dance"}},
-        {"kneel",   {75,  false, "You kneel down.", "You kneel before %s.", "kneel"}},
-        {"applaud", {80,  false, "You applaud. Bravo!", "You applaud at %s. Bravo!", "applaud"}},
-        {"shout",   {81,  false, "You shout.", "You shout at %s.", "shout"}},
-        {"chicken", {78,  false, "With arms flapping, you strut around. Cluck, Cluck, Chicken!",
+        {"wave",    {67,  0, false, "You wave.", "You wave at %s.", "wave"}},
+        {"bow",     {66,  0, false, "You bow down graciously.", "You bow down before %s.", "bow"}},
+        {"laugh",   {70,  0, false, "You laugh.", "You laugh at %s.", "laugh"}},
+        {"point",   {84,  0, false, "You point over yonder.", "You point at %s.", "point"}},
+        {"cheer",   {68,  0, false, "You cheer!", "You cheer at %s.", "cheer"}},
+        {"dance",   {69,  0, true,  "You burst into dance.", "You dance with %s.", "dance"}},
+        {"kneel",   {75,  0, false, "You kneel down.", "You kneel before %s.", "kneel"}},
+        {"applaud", {80,  0, false, "You applaud. Bravo!", "You applaud at %s. Bravo!", "applaud"}},
+        {"shout",   {81,  0, false, "You shout.", "You shout at %s.", "shout"}},
+        {"chicken", {78,  0, false, "With arms flapping, you strut around. Cluck, Cluck, Chicken!",
                      "With arms flapping, you strut around %s. Cluck, Cluck, Chicken!", "chicken"}},
-        {"cry",     {77,  false, "You cry.", "You cry on %s's shoulder.", "cry"}},
-        {"kiss",    {76,  false, "You blow a kiss into the wind.", "You blow a kiss to %s.", "kiss"}},
-        {"roar",    {74,  false, "You roar with bestial vigor. So fierce!", "You roar with bestial vigor at %s. So fierce!", "roar"}},
-        {"salute",  {113, false, "You salute.", "You salute %s with respect.", "salute"}},
-        {"rude",    {73,  false, "You make a rude gesture.", "You make a rude gesture at %s.", "rude"}},
-        {"flex",    {82,  false, "You flex your muscles. Oooooh so strong!", "You flex at %s. Oooooh so strong!", "flex"}},
-        {"shy",     {83,  false, "You smile shyly.", "You smile shyly at %s.", "shy"}},
-        {"beg",     {79,  false, "You beg everyone around you. How pathetic.", "You beg %s. How pathetic.", "beg"}},
-        {"eat",     {61,  false, "You begin to eat.", "You begin to eat in front of %s.", "eat"}},
+        {"cry",     {77,  0, false, "You cry.", "You cry on %s's shoulder.", "cry"}},
+        {"kiss",    {76,  0, false, "You blow a kiss into the wind.", "You blow a kiss to %s.", "kiss"}},
+        {"roar",    {74,  0, false, "You roar with bestial vigor. So fierce!", "You roar with bestial vigor at %s. So fierce!", "roar"}},
+        {"salute",  {113, 0, false, "You salute.", "You salute %s with respect.", "salute"}},
+        {"rude",    {73,  0, false, "You make a rude gesture.", "You make a rude gesture at %s.", "rude"}},
+        {"flex",    {82,  0, false, "You flex your muscles. Oooooh so strong!", "You flex at %s. Oooooh so strong!", "flex"}},
+        {"shy",     {83,  0, false, "You smile shyly.", "You smile shyly at %s.", "shy"}},
+        {"beg",     {79,  0, false, "You beg everyone around you. How pathetic.", "You beg %s. How pathetic.", "beg"}},
+        {"eat",     {61,  0, false, "You begin to eat.", "You begin to eat in front of %s.", "eat"}},
     };
 }
 
@@ -183,6 +184,7 @@ static void loadEmotesFromDbc() {
     EMOTE_TABLE.clear();
     EMOTE_TABLE.reserve(emotesTextDbc->getRecordCount());
     for (uint32_t r = 0; r < emotesTextDbc->getRecordCount(); ++r) {
+        uint32_t recordId = emotesTextDbc->getUInt32(r, etL ? (*etL)["ID"] : 0);
         std::string cmdRaw = emotesTextDbc->getString(r, etL ? (*etL)["Command"] : 1);
         if (cmdRaw.empty()) continue;
 
@@ -211,6 +213,7 @@ static void loadEmotesFromDbc() {
             if (cmd.empty()) continue;
             EmoteInfo info;
             info.animId = animId;
+            info.dbcId = recordId;
             info.loop = isLoopingEmote(cmd);
             info.textNoTarget = textNoTarget;
             info.textTarget = textTarget;
@@ -1567,6 +1570,15 @@ std::string Renderer::getEmoteText(const std::string& emoteName, const std::stri
         return "You " + info.command + ".";
     }
     return "";
+}
+
+uint32_t Renderer::getEmoteDbcId(const std::string& emoteName) {
+    loadEmotesFromDbc();
+    auto it = EMOTE_TABLE.find(emoteName);
+    if (it != EMOTE_TABLE.end()) {
+        return it->second.dbcId;
+    }
+    return 0;
 }
 
 void Renderer::setTargetPosition(const glm::vec3* pos) {

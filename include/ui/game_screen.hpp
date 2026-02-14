@@ -49,6 +49,16 @@ private:
     int lastChatType = 0;  // Track chat type changes
     bool chatInputMoveCursorToEnd = false;
 
+    // Chat tabs
+    int activeChatTab_ = 0;
+    struct ChatTab {
+        std::string name;
+        uint32_t typeMask;  // bitmask of ChatType values to show
+    };
+    std::vector<ChatTab> chatTabs_;
+    void initChatTabs();
+    bool shouldShowMessage(const game::MessageChatData& msg, int tabIndex) const;
+
     // UI state
     bool showEntityWindow = false;
     bool showChatWindow = true;
@@ -170,6 +180,7 @@ private:
     void renderMinimapMarkers(game::GameHandler& gameHandler);
     void renderGuildRoster(game::GameHandler& gameHandler);
     void renderGuildInvitePopup(game::GameHandler& gameHandler);
+    void renderChatBubbles(game::GameHandler& gameHandler);
 
     /**
      * Inventory screen
@@ -208,6 +219,17 @@ private:
 
     // Gender placeholder replacement
     std::string replaceGenderPlaceholders(const std::string& text, game::GameHandler& gameHandler);
+
+    // Chat bubbles
+    struct ChatBubble {
+        uint64_t senderGuid = 0;
+        std::string message;
+        float timeRemaining = 0.0f;
+        float totalDuration = 0.0f;
+        bool isYell = false;
+    };
+    std::vector<ChatBubble> chatBubbles_;
+    bool chatBubbleCallbackSet_ = false;
 
     // Left-click targeting: distinguish click from camera drag
     glm::vec2 leftClickPressPos_ = glm::vec2(0.0f);

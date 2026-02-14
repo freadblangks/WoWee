@@ -671,6 +671,115 @@ public:
 const char* getChatTypeString(ChatType type);
 
 // ============================================================
+// Text Emotes
+// ============================================================
+
+/**
+ * CMSG_TEXT_EMOTE packet builder
+ */
+class TextEmotePacket {
+public:
+    static network::Packet build(uint32_t textEmoteId, uint64_t targetGuid = 0);
+};
+
+/**
+ * SMSG_TEXT_EMOTE data
+ */
+struct TextEmoteData {
+    uint64_t senderGuid = 0;
+    uint32_t textEmoteId = 0;
+    uint32_t emoteNum = 0;
+    std::string targetName;
+
+    bool isValid() const { return senderGuid != 0; }
+};
+
+/**
+ * SMSG_TEXT_EMOTE parser
+ */
+class TextEmoteParser {
+public:
+    static bool parse(network::Packet& packet, TextEmoteData& data);
+};
+
+// ============================================================
+// Channel System
+// ============================================================
+
+/**
+ * CMSG_JOIN_CHANNEL packet builder
+ */
+class JoinChannelPacket {
+public:
+    static network::Packet build(const std::string& channelName, const std::string& password = "");
+};
+
+/**
+ * CMSG_LEAVE_CHANNEL packet builder
+ */
+class LeaveChannelPacket {
+public:
+    static network::Packet build(const std::string& channelName);
+};
+
+/**
+ * Channel notification types
+ */
+enum class ChannelNotifyType : uint8_t {
+    YOU_JOINED = 0x00,
+    YOU_LEFT = 0x01,
+    WRONG_PASSWORD = 0x02,
+    NOT_MEMBER = 0x03,
+    NOT_MODERATOR = 0x04,
+    PASSWORD_CHANGED = 0x05,
+    OWNER_CHANGED = 0x06,
+    PLAYER_NOT_FOUND = 0x07,
+    NOT_OWNER = 0x08,
+    CHANNEL_OWNER = 0x09,
+    MODE_CHANGE = 0x0A,
+    ANNOUNCEMENTS_ON = 0x0B,
+    ANNOUNCEMENTS_OFF = 0x0C,
+    MODERATION_ON = 0x0D,
+    MODERATION_OFF = 0x0E,
+    MUTED = 0x0F,
+    PLAYER_KICKED = 0x10,
+    BANNED = 0x11,
+    PLAYER_BANNED = 0x12,
+    PLAYER_UNBANNED = 0x13,
+    PLAYER_NOT_BANNED = 0x14,
+    PLAYER_ALREADY_MEMBER = 0x15,
+    INVITE = 0x16,
+    INVITE_WRONG_FACTION = 0x17,
+    WRONG_FACTION = 0x18,
+    INVALID_NAME = 0x19,
+    NOT_MODERATED = 0x1A,
+    PLAYER_INVITED = 0x1B,
+    PLAYER_INVITE_BANNED = 0x1C,
+    THROTTLED = 0x1D,
+    NOT_IN_AREA = 0x1E,
+    NOT_IN_LFG = 0x1F,
+};
+
+/**
+ * SMSG_CHANNEL_NOTIFY data
+ */
+struct ChannelNotifyData {
+    ChannelNotifyType notifyType = ChannelNotifyType::YOU_JOINED;
+    std::string channelName;
+    uint64_t senderGuid = 0;
+
+    bool isValid() const { return !channelName.empty(); }
+};
+
+/**
+ * SMSG_CHANNEL_NOTIFY parser
+ */
+class ChannelNotifyParser {
+public:
+    static bool parse(network::Packet& packet, ChannelNotifyData& data);
+};
+
+// ============================================================
 // Server Info Commands
 // ============================================================
 

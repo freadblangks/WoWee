@@ -117,9 +117,71 @@ namespace wowee { namespace ui {
 
 GameScreen::GameScreen() {
     loadSettings();
+    initChatTabs();
+}
+
+void GameScreen::initChatTabs() {
+    chatTabs_.clear();
+    // General tab: shows everything
+    chatTabs_.push_back({"General", 0xFFFFFFFF});
+    // Combat tab: system + loot messages
+    chatTabs_.push_back({"Combat", (1u << static_cast<uint8_t>(game::ChatType::SYSTEM)) |
+                                    (1u << static_cast<uint8_t>(game::ChatType::LOOT))});
+    // Whispers tab
+    chatTabs_.push_back({"Whispers", (1u << static_cast<uint8_t>(game::ChatType::WHISPER)) |
+                                      (1u << static_cast<uint8_t>(game::ChatType::WHISPER_INFORM))});
+    // Trade/LFG tab: channel messages
+    chatTabs_.push_back({"Trade/LFG", (1u << static_cast<uint8_t>(game::ChatType::CHANNEL))});
+}
+
+bool GameScreen::shouldShowMessage(const game::MessageChatData& msg, int tabIndex) const {
+    if (tabIndex < 0 || tabIndex >= static_cast<int>(chatTabs_.size())) return true;
+    const auto& tab = chatTabs_[tabIndex];
+    if (tab.typeMask == 0xFFFFFFFF) return true;  // General tab shows all
+
+    uint32_t typeBit = 1u << static_cast<uint8_t>(msg.type);
+
+    // For Trade/LFG tab, also filter by channel name
+    if (tabIndex == 3 && msg.type == game::ChatType::CHANNEL) {
+        const std::string& ch = msg.channelName;
+        if (ch.find("Trade") == std::string::npos &&
+            ch.find("General") == std::string::npos &&
+            ch.find("LookingForGroup") == std::string::npos) {
+            return false;
+        }
+        return true;
+    }
+
+    return (tab.typeMask & typeBit) != 0;
 }
 
 void GameScreen::render(game::GameHandler& gameHandler) {
+    // Set up chat bubble callback (once)
+    if (!chatBubbleCallbackSet_) {
+        gameHandler.setChatBubbleCallback([this](uint64_t guid, const std::string& msg, bool isYell) {
+            float duration = 8.0f + static_cast<float>(msg.size()) * 0.06f;
+            if (isYell) duration += 2.0f;
+            if (duration > 15.0f) duration = 15.0f;
+
+            // Replace existing bubble for same sender
+            for (auto& b : chatBubbles_) {
+                if (b.senderGuid == guid) {
+                    b.message = msg;
+                    b.timeRemaining = duration;
+                    b.totalDuration = duration;
+                    b.isYell = isYell;
+                    return;
+                }
+            }
+            // Evict oldest if too many
+            if (chatBubbles_.size() >= 10) {
+                chatBubbles_.erase(chatBubbles_.begin());
+            }
+            chatBubbles_.push_back({guid, msg, duration, duration, isYell});
+        });
+        chatBubbleCallbackSet_ = true;
+    }
+
     // Apply UI transparency setting
     float prevAlpha = ImGui::GetStyle().Alpha;
     ImGui::GetStyle().Alpha = uiOpacity_;
@@ -185,6 +247,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderMinimapMarkers(gameHandler);
     renderDeathScreen(gameHandler);
     renderResurrectDialog(gameHandler);
+    renderChatBubbles(gameHandler);
     renderEscapeMenu();
     renderSettingsWindow();
 
@@ -485,6 +548,17 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
         chatWindowPos_ = ImGui::GetWindowPos();
     }
 
+    // Chat tabs
+    if (ImGui::BeginTabBar("ChatTabs")) {
+        for (int i = 0; i < static_cast<int>(chatTabs_.size()); ++i) {
+            if (ImGui::BeginTabItem(chatTabs_[i].name.c_str())) {
+                activeChatTab_ = i;
+                ImGui::EndTabItem();
+            }
+        }
+        ImGui::EndTabBar();
+    }
+
     // Chat history
     const auto& chatHistory = gameHandler.getChatHistory();
 
@@ -546,6 +620,8 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
     };
 
     for (const auto& msg : chatHistory) {
+        if (!shouldShowMessage(msg, activeChatTab_)) continue;
+
         ImVec4 color = getChatTypeColor(msg.type);
 
         if (msg.type == game::ChatType::SYSTEM) {
@@ -1955,6 +2031,45 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                 message = (spacePos != std::string::npos) ? command.substr(spacePos + 1) : "";
                 isChannelCommand = true;
                 switchChatType = 9;
+            } else if (cmdLower == "join") {
+                // /join ChannelName [password]
+                if (spacePos != std::string::npos) {
+                    std::string rest = command.substr(spacePos + 1);
+                    size_t pwStart = rest.find(' ');
+                    std::string channelName = (pwStart != std::string::npos) ? rest.substr(0, pwStart) : rest;
+                    std::string password = (pwStart != std::string::npos) ? rest.substr(pwStart + 1) : "";
+                    gameHandler.joinChannel(channelName, password);
+                }
+                chatInputBuffer[0] = '\0';
+                return;
+            } else if (cmdLower == "leave") {
+                // /leave ChannelName
+                if (spacePos != std::string::npos) {
+                    std::string channelName = command.substr(spacePos + 1);
+                    gameHandler.leaveChannel(channelName);
+                }
+                chatInputBuffer[0] = '\0';
+                return;
+            } else if (cmdLower.size() == 1 && cmdLower[0] >= '1' && cmdLower[0] <= '9') {
+                // /1 msg, /2 msg — channel shortcuts
+                int channelIdx = cmdLower[0] - '0';
+                std::string channelName = gameHandler.getChannelByIndex(channelIdx);
+                if (!channelName.empty() && spacePos != std::string::npos) {
+                    message = command.substr(spacePos + 1);
+                    type = game::ChatType::CHANNEL;
+                    target = channelName;
+                    isChannelCommand = true;
+                } else if (channelName.empty()) {
+                    game::MessageChatData errMsg;
+                    errMsg.type = game::ChatType::SYSTEM;
+                    errMsg.message = "You are not in channel " + std::to_string(channelIdx) + ".";
+                    gameHandler.addLocalChatMessage(errMsg);
+                    chatInputBuffer[0] = '\0';
+                    return;
+                } else {
+                    chatInputBuffer[0] = '\0';
+                    return;
+                }
             } else if (cmdLower == "w" || cmdLower == "whisper" || cmdLower == "tell" || cmdLower == "t") {
                 switchChatType = 4;
                 if (spacePos != std::string::npos) {
@@ -2001,6 +2116,13 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                     auto* renderer = core::Application::getInstance().getRenderer();
                     if (renderer) {
                         renderer->playEmote(cmdLower);
+                    }
+
+                    // Send CMSG_TEXT_EMOTE to server
+                    uint32_t dbcId = rendering::Renderer::getEmoteDbcId(cmdLower);
+                    if (dbcId != 0) {
+                        uint64_t targetGuid = gameHandler.hasTarget() ? gameHandler.getTargetGuid() : 0;
+                        gameHandler.sendTextEmote(dbcId, targetGuid);
                     }
 
                     // Add local chat message
@@ -5440,6 +5562,86 @@ std::string GameScreen::replaceGenderPlaceholders(const std::string& text, game:
     return result;
 }
 
+void GameScreen::renderChatBubbles(game::GameHandler& gameHandler) {
+    if (chatBubbles_.empty()) return;
+
+    auto* renderer = core::Application::getInstance().getRenderer();
+    auto* camera = renderer ? renderer->getCamera() : nullptr;
+    if (!camera) return;
+
+    auto* window = core::Application::getInstance().getWindow();
+    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
+    float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
+
+    // Get delta time from ImGui
+    float dt = ImGui::GetIO().DeltaTime;
+
+    glm::mat4 viewProj = camera->getProjectionMatrix() * camera->getViewMatrix();
+
+    // Update and render bubbles
+    for (int i = static_cast<int>(chatBubbles_.size()) - 1; i >= 0; --i) {
+        auto& bubble = chatBubbles_[i];
+        bubble.timeRemaining -= dt;
+        if (bubble.timeRemaining <= 0.0f) {
+            chatBubbles_.erase(chatBubbles_.begin() + i);
+            continue;
+        }
+
+        // Get entity position
+        auto entity = gameHandler.getEntityManager().getEntity(bubble.senderGuid);
+        if (!entity) continue;
+
+        // Convert canonical → render coordinates, offset up by 2.5 units for bubble above head
+        glm::vec3 canonical(entity->getX(), entity->getY(), entity->getZ() + 2.5f);
+        glm::vec3 renderPos = core::coords::canonicalToRender(canonical);
+
+        // Project to screen
+        glm::vec4 clipPos = viewProj * glm::vec4(renderPos, 1.0f);
+        if (clipPos.w <= 0.0f) continue;  // Behind camera
+
+        glm::vec2 ndc(clipPos.x / clipPos.w, clipPos.y / clipPos.w);
+        float screenX = (ndc.x * 0.5f + 0.5f) * screenW;
+        float screenY = (1.0f - (ndc.y * 0.5f + 0.5f)) * screenH;  // Flip Y
+
+        // Skip if off-screen
+        if (screenX < -200.0f || screenX > screenW + 200.0f ||
+            screenY < -100.0f || screenY > screenH + 100.0f) continue;
+
+        // Fade alpha over last 2 seconds
+        float alpha = 1.0f;
+        if (bubble.timeRemaining < 2.0f) {
+            alpha = bubble.timeRemaining / 2.0f;
+        }
+
+        // Draw bubble window
+        std::string winId = "##ChatBubble" + std::to_string(bubble.senderGuid);
+        ImGui::SetNextWindowPos(ImVec2(screenX, screenY), ImGuiCond_Always, ImVec2(0.5f, 1.0f));
+        ImGui::SetNextWindowBgAlpha(0.7f * alpha);
+        ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+            ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs |
+            ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 4));
+
+        ImGui::Begin(winId.c_str(), nullptr, flags);
+
+        ImVec4 textColor = bubble.isYell
+            ? ImVec4(1.0f, 0.2f, 0.2f, alpha)
+            : ImVec4(1.0f, 1.0f, 1.0f, alpha);
+
+        ImGui::PushStyleColor(ImGuiCol_Text, textColor);
+        ImGui::PushTextWrapPos(200.0f);
+        ImGui::TextWrapped("%s", bubble.message.c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::PopStyleColor();
+
+        ImGui::End();
+        ImGui::PopStyleVar(2);
+    }
+}
+
 void GameScreen::saveSettings() {
     std::string path = getSettingsPath();
     std::filesystem::path dir = std::filesystem::path(path).parent_path();
@@ -5474,6 +5676,9 @@ void GameScreen::saveSettings() {
     // Controls
     out << "mouse_sensitivity=" << pendingMouseSensitivity << "\n";
     out << "invert_mouse=" << (pendingInvertMouse ? 1 : 0) << "\n";
+
+    // Chat
+    out << "chat_active_tab=" << activeChatTab_ << "\n";
 
     LOG_INFO("Settings saved to ", path);
 }
@@ -5525,6 +5730,8 @@ void GameScreen::loadSettings() {
             // Controls
             else if (key == "mouse_sensitivity") pendingMouseSensitivity = std::clamp(std::stof(val), 0.05f, 1.0f);
             else if (key == "invert_mouse") pendingInvertMouse = (std::stoi(val) != 0);
+            // Chat
+            else if (key == "chat_active_tab") activeChatTab_ = std::clamp(std::stoi(val), 0, 3);
         } catch (...) {}
     }
     LOG_INFO("Settings loaded from ", path);

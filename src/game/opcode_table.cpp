@@ -281,6 +281,15 @@ static const OpcodeNameEntry kOpcodeNames[] = {
     {"SMSG_ARENA_TEAM_STATS", LogicalOpcode::SMSG_ARENA_TEAM_STATS},
     {"SMSG_ARENA_ERROR", LogicalOpcode::SMSG_ARENA_ERROR},
     {"MSG_INSPECT_ARENA_TEAMS", LogicalOpcode::MSG_INSPECT_ARENA_TEAMS},
+    {"CMSG_EMOTE", LogicalOpcode::CMSG_EMOTE},
+    {"SMSG_EMOTE", LogicalOpcode::SMSG_EMOTE},
+    {"CMSG_TEXT_EMOTE", LogicalOpcode::CMSG_TEXT_EMOTE},
+    {"SMSG_TEXT_EMOTE", LogicalOpcode::SMSG_TEXT_EMOTE},
+    {"CMSG_JOIN_CHANNEL", LogicalOpcode::CMSG_JOIN_CHANNEL},
+    {"CMSG_LEAVE_CHANNEL", LogicalOpcode::CMSG_LEAVE_CHANNEL},
+    {"SMSG_CHANNEL_NOTIFY", LogicalOpcode::SMSG_CHANNEL_NOTIFY},
+    {"CMSG_CHANNEL_LIST", LogicalOpcode::CMSG_CHANNEL_LIST},
+    {"SMSG_CHANNEL_LIST", LogicalOpcode::SMSG_CHANNEL_LIST},
 };
 // clang-format on
 
@@ -563,6 +572,15 @@ void OpcodeTable::loadWotlkDefaults() {
         {LogicalOpcode::SMSG_ARENA_TEAM_STATS, 0x035B},
         {LogicalOpcode::SMSG_ARENA_ERROR, 0x0376},
         {LogicalOpcode::MSG_INSPECT_ARENA_TEAMS, 0x0377},
+        {LogicalOpcode::CMSG_EMOTE, 0x102},
+        {LogicalOpcode::SMSG_EMOTE, 0x103},
+        {LogicalOpcode::CMSG_TEXT_EMOTE, 0x104},
+        {LogicalOpcode::SMSG_TEXT_EMOTE, 0x105},
+        {LogicalOpcode::CMSG_JOIN_CHANNEL, 0x097},
+        {LogicalOpcode::CMSG_LEAVE_CHANNEL, 0x098},
+        {LogicalOpcode::SMSG_CHANNEL_NOTIFY, 0x099},
+        {LogicalOpcode::CMSG_CHANNEL_LIST, 0x09A},
+        {LogicalOpcode::SMSG_CHANNEL_LIST, 0x09B},
     };
 
     logicalToWire_.clear();

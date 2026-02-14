@@ -29,6 +29,11 @@ public:
     void setAssetManager(pipeline::AssetManager* am) {
         assetManager_ = am;
         previewInitialized_ = false;
+        previewGuid_ = 0;
+        previewAppearanceBytes_ = 0;
+        previewFacialFeatures_ = 0;
+        previewUseFemaleModel_ = false;
+        previewEquipHash_ = 0;
     }
 
     /**

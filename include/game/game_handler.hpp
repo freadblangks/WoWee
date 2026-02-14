@@ -330,7 +330,11 @@ public:
     void queryGuildInfo(uint32_t guildId);
 
     // Guild state accessors
-    bool isInGuild() const { return !guildName_.empty(); }
+    bool isInGuild() const {
+        if (!guildName_.empty()) return true;
+        const Character* ch = getActiveCharacter();
+        return ch && ch->hasGuild();
+    }
     const std::string& getGuildName() const { return guildName_; }
     const GuildRosterData& getGuildRoster() const { return guildRoster_; }
     bool hasGuildRoster() const { return hasGuildRoster_; }

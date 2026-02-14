@@ -823,7 +823,7 @@ public:
 /** CMSG_WHO packet builder */
 class WhoPacket {
 public:
-    static network::Packet build(uint32_t minLevel = 0, uint32_t maxLevel = 0,
+    static network::Packet build(uint32_t minLevel = 0, uint32_t maxLevel = 100,
                                  const std::string& playerName = "",
                                  const std::string& guildName = "",
                                  uint32_t raceMask = 0xFFFFFFFF,

@@ -1431,7 +1431,10 @@ network::Packet WhoPacket::build(uint32_t minLevel, uint32_t maxLevel,
     packet.writeString(guildName);
     packet.writeUInt32(raceMask);
     packet.writeUInt32(classMask);
-    packet.writeUInt32(zones);  // Number of zones
+    packet.writeUInt32(zones);    // Number of zone IDs (0 = no zone filter)
+    // Zone ID array would go here if zones > 0
+    packet.writeUInt32(0);        // stringCount (number of search strings)
+    // String array would go here if stringCount > 0
     LOG_DEBUG("Built CMSG_WHO: player=", playerName);
     return packet;
 }

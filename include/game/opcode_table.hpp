@@ -279,6 +279,7 @@ enum class LogicalOpcode : uint16_t {
     SMSG_INVENTORY_CHANGE_FAILURE,
     CMSG_INSPECT,
     SMSG_INSPECT_RESULTS,
+    SMSG_INSPECT_TALENT,
 
     // ---- Death/Respawn ----
     CMSG_REPOP_REQUEST,

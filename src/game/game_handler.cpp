@@ -801,6 +801,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
 
         case Opcode::SMSG_INSPECT_RESULTS:
+        case Opcode::SMSG_INSPECT_TALENT:
             handleInspectResults(packet);
             break;
 
@@ -5259,76 +5260,92 @@ void GameHandler::handleItemQueryResponse(network::Packet& packet) {
 }
 
 void GameHandler::handleInspectResults(network::Packet& packet) {
-    // Best-effort parsing across Classic/TBC/WotLK variants.
-    // We only care about item entry IDs per equip slot.
-    if (packet.getSize() - packet.getReadPos() < 8) return;
+    // SMSG_INSPECT_TALENT (WotLK 3.3.5a) format:
+    // PackedGUID, uint32 unspentTalents, uint8 talentGroupCount, uint8 activeTalentGroup
+    // Per talent group: uint8 talentCount, [talentId(u32) + rank(u8)]..., uint8 glyphCount, [glyphId(u16)]...
+    // Then enchantment bitmask + enchant IDs
+    if (packet.getSize() - packet.getReadPos() < 4) return;
 
-    uint64_t guid = packet.readUInt64();
+    uint64_t guid = UpdateObjectParser::readPackedGuid(packet);
     if (guid == 0) return;
 
-    const size_t remaining = packet.getSize() - packet.getReadPos();
-
-    auto tryParseFixed = [&](size_t perSlotBytes, size_t itemIdOffset) -> std::optional<std::array<uint32_t, 19>> {
-        if (remaining < 19 * perSlotBytes) return std::nullopt;
-        auto saved = packet.getReadPos();
-        std::array<uint32_t, 19> items{};
-        bool plausible = false;
-
-        for (int i = 0; i < 19; i++) {
-            if (perSlotBytes == 4) {
-                items[i] = packet.readUInt32();
-            } else if (perSlotBytes == 8) {
-                uint32_t a = packet.readUInt32();
-                uint32_t b = packet.readUInt32();
-                items[i] = (itemIdOffset == 0) ? a : b;
-            } else {
-                packet.setReadPos(saved);
-                return std::nullopt;
-            }
-            if (items[i] > 0 && items[i] < 5000000u) plausible = true;
+    size_t bytesLeft = packet.getSize() - packet.getReadPos();
+    if (bytesLeft < 6) {
+        LOG_WARNING("SMSG_INSPECT_TALENT: too short after guid, ", bytesLeft, " bytes");
+        // Show basic inspect message even without talent data
+        auto entity = entityManager.getEntity(guid);
+        std::string name = "Target";
+        if (entity) {
+            auto player = std::dynamic_pointer_cast<Player>(entity);
+            if (player && !player->getName().empty()) name = player->getName();
         }
-
-        // Rewind to allow other attempts if implausible.
-        if (!plausible) {
-            packet.setReadPos(saved);
-            return std::nullopt;
-        }
-        return items;
-    };
-
-    std::optional<std::array<uint32_t, 19>> parsed;
-    // Common shapes: [guid][19*uint32 itemId] or [guid][19*(uint32 itemId, uint32 enchant)].
-    parsed = tryParseFixed(4, 0);
-    if (!parsed) parsed = tryParseFixed(8, 0);
-    if (!parsed) parsed = tryParseFixed(8, 4); // sometimes itemId is second dword
-
-    if (!parsed) {
-        LOG_WARNING("SMSG_INSPECT_RESULTS: unrecognized payload size=", remaining, " for guid=0x", std::hex, guid, std::dec);
+        addSystemChatMessage("Inspecting " + name + " (no talent data available).");
         return;
     }
 
-    inspectedPlayerItemEntries_[guid] = *parsed;
+    uint32_t unspentTalents = packet.readUInt32();
+    uint8_t talentGroupCount = packet.readUInt8();
+    uint8_t activeTalentGroup = packet.readUInt8();
 
-    // Query item templates so we can resolve displayInfoId/inventoryType.
-    for (uint32_t entry : *parsed) {
-        if (entry == 0) continue;
-        queryItemInfo(entry, 0);
+    // Resolve player name
+    auto entity = entityManager.getEntity(guid);
+    std::string playerName = "Target";
+    if (entity) {
+        auto player = std::dynamic_pointer_cast<Player>(entity);
+        if (player && !player->getName().empty()) playerName = player->getName();
     }
 
-    // If templates already exist, emit immediately.
-    if (playerEquipmentCallback_) {
-        std::array<uint32_t, 19> displayIds{};
-        std::array<uint8_t, 19> invTypes{};
-        for (int s = 0; s < 19; s++) {
-            uint32_t entry = (*parsed)[s];
-            if (entry == 0) continue;
-            auto infoIt = itemInfoCache_.find(entry);
-            if (infoIt == itemInfoCache_.end()) continue;
-            displayIds[s] = infoIt->second.displayInfoId;
-            invTypes[s] = static_cast<uint8_t>(infoIt->second.inventoryType);
+    // Parse talent groups
+    uint32_t totalTalents = 0;
+    for (uint8_t g = 0; g < talentGroupCount && g < 2; ++g) {
+        bytesLeft = packet.getSize() - packet.getReadPos();
+        if (bytesLeft < 1) break;
+
+        uint8_t talentCount = packet.readUInt8();
+        for (uint8_t t = 0; t < talentCount; ++t) {
+            bytesLeft = packet.getSize() - packet.getReadPos();
+            if (bytesLeft < 5) break;
+            packet.readUInt32(); // talentId
+            packet.readUInt8();  // rank
+            totalTalents++;
         }
-        playerEquipmentCallback_(guid, displayIds, invTypes);
+
+        bytesLeft = packet.getSize() - packet.getReadPos();
+        if (bytesLeft < 1) break;
+        uint8_t glyphCount = packet.readUInt8();
+        for (uint8_t gl = 0; gl < glyphCount; ++gl) {
+            bytesLeft = packet.getSize() - packet.getReadPos();
+            if (bytesLeft < 2) break;
+            packet.readUInt16(); // glyphId
+        }
     }
+
+    // Parse enchantment slot mask + enchant IDs
+    bytesLeft = packet.getSize() - packet.getReadPos();
+    if (bytesLeft >= 4) {
+        uint32_t slotMask = packet.readUInt32();
+        for (int slot = 0; slot < 19; ++slot) {
+            if (slotMask & (1u << slot)) {
+                bytesLeft = packet.getSize() - packet.getReadPos();
+                if (bytesLeft < 2) break;
+                packet.readUInt16(); // enchantId
+            }
+        }
+    }
+
+    // Display inspect results
+    std::string msg = "Inspect: " + playerName;
+    msg += " - " + std::to_string(totalTalents) + " talent points spent";
+    if (unspentTalents > 0) {
+        msg += ", " + std::to_string(unspentTalents) + " unspent";
+    }
+    if (talentGroupCount > 1) {
+        msg += " (dual spec, active: " + std::to_string(activeTalentGroup + 1) + ")";
+    }
+    addSystemChatMessage(msg);
+
+    LOG_INFO("Inspect results for ", playerName, ": ", totalTalents, " talents, ",
+             unspentTalents, " unspent, ", (int)talentGroupCount, " specs");
 }
 
 uint64_t GameHandler::resolveOnlineItemGuid(uint32_t itemId) const {

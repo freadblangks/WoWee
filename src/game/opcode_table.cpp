@@ -290,6 +290,7 @@ static const OpcodeNameEntry kOpcodeNames[] = {
     {"SMSG_CHANNEL_NOTIFY", LogicalOpcode::SMSG_CHANNEL_NOTIFY},
     {"CMSG_CHANNEL_LIST", LogicalOpcode::CMSG_CHANNEL_LIST},
     {"SMSG_CHANNEL_LIST", LogicalOpcode::SMSG_CHANNEL_LIST},
+    {"SMSG_INSPECT_TALENT", LogicalOpcode::SMSG_INSPECT_TALENT},
 };
 // clang-format on
 
@@ -581,6 +582,7 @@ void OpcodeTable::loadWotlkDefaults() {
         {LogicalOpcode::SMSG_CHANNEL_NOTIFY, 0x099},
         {LogicalOpcode::CMSG_CHANNEL_LIST, 0x09A},
         {LogicalOpcode::SMSG_CHANNEL_LIST, 0x09B},
+        {LogicalOpcode::SMSG_INSPECT_TALENT, 0x3F4},
     };
 
     logicalToWire_.clear();

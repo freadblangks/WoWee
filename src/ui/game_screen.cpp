@@ -3369,6 +3369,13 @@ void GameScreen::renderGuildRoster(game::GameHandler& gameHandler) {
                 showGuildRoster_ = false;
                 return;
             }
+            // Re-query guild name if we have guildId but no name yet
+            if (gameHandler.getGuildName().empty()) {
+                const auto* ch = gameHandler.getActiveCharacter();
+                if (ch && ch->hasGuild()) {
+                    gameHandler.queryGuildInfo(ch->guildId);
+                }
+            }
             gameHandler.requestGuildRoster();
         }
     }

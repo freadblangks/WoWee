@@ -2363,9 +2363,11 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                     }
                     case CT_PAGE_A:
                     case CT_PAGE_B: {
-                        // Request: [4 seed][20 sha1][4 addr][1 length]
-                        if (pos + 29 > checkEnd) { pos = checkEnd; break; }
-                        pos += 29;
+                        // Vanilla: [4 seed][20 sha1] = 24 bytes
+                        // WotLK:   [4 seed][20 sha1][4 addr][1 length] = 29 bytes
+                        int pageSize = (build <= 6005) ? 24 : 29;
+                        if (pos + pageSize > checkEnd) { pos = checkEnd; break; }
+                        pos += pageSize;
                         // Response: [uint8 result=0] (page matches expected)
                         resultData.push_back(0x00);
                         break;
@@ -2413,9 +2415,11 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                         break;
                     }
                     case CT_PROC: {
-                        // Request: [4 seed][20 sha1][1 stringIdx][1 stringIdx2][4 offset]
-                        if (pos + 30 > checkEnd) { pos = checkEnd; break; }
-                        pos += 30;
+                        // Vanilla: [4 seed][20 sha1][1 stringIdx] = 25 bytes
+                        // WotLK:   [4 seed][20 sha1][1 stringIdx][1 stringIdx2][4 offset] = 30 bytes
+                        int procSize = (build <= 6005) ? 25 : 30;
+                        if (pos + procSize > checkEnd) { pos = checkEnd; break; }
+                        pos += procSize;
                         // Response: [uint8 result=1] (proc NOT found = clean)
                         resultData.push_back(0x01);
                         break;
@@ -2458,6 +2462,10 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                      [&]{char s[12];snprintf(s,12,"%08x",checksum);return std::string(s);}(), ")");
             break;
         }
+
+        case 0x03: // WARDEN_SMSG_MODULE_INITIALIZE
+            LOG_INFO("Warden: MODULE_INITIALIZE (", decrypted.size(), " bytes, no response needed)");
+            break;
 
         default:
             LOG_INFO("Warden: Unknown opcode 0x", std::hex, (int)wardenOpcode, std::dec,

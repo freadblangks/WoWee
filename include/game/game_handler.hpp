@@ -494,6 +494,14 @@ public:
     using PlayerDespawnCallback = std::function<void(uint64_t guid)>;
     void setPlayerDespawnCallback(PlayerDespawnCallback cb) { playerDespawnCallback_ = std::move(cb); }
 
+    // Online player equipment visuals callback.
+    // Sends a best-effort view of equipped items for players in view using ItemDisplayInfo IDs.
+    // Arrays are indexed by EquipSlot (0..18). Values are 0 when unknown/unavailable.
+    using PlayerEquipmentCallback = std::function<void(uint64_t guid,
+                                                      const std::array<uint32_t, 19>& displayInfoIds,
+                                                      const std::array<uint8_t, 19>& inventoryTypes)>;
+    void setPlayerEquipmentCallback(PlayerEquipmentCallback cb) { playerEquipmentCallback_ = std::move(cb); }
+
     // GameObject spawn callback (online mode - triggered when gameobject enters view)
     // Parameters: guid, entry, displayId, x, y, z (canonical), orientation
     using GameObjectSpawnCallback = std::function<void(uint64_t guid, uint32_t entry, uint32_t displayId, float x, float y, float z, float orientation)>;
@@ -831,6 +839,10 @@ private:
     void handleItemQueryResponse(network::Packet& packet);
     void queryItemInfo(uint32_t entry, uint64_t guid);
     void rebuildOnlineInventory();
+    void maybeDetectVisibleItemLayout();
+    void updateOtherPlayerVisibleItems(uint64_t guid, const std::map<uint16_t, uint32_t>& fields);
+    void emitOtherPlayerEquipment(uint64_t guid);
+    void emitAllOtherPlayerEquipment();
     void detectInventorySlotBases(const std::map<uint16_t, uint32_t>& fields);
     bool applyInventoryFields(const std::map<uint16_t, uint32_t>& fields);
     uint64_t resolveOnlineItemGuid(uint32_t itemId) const;
@@ -1065,6 +1077,13 @@ private:
     std::map<uint16_t, uint32_t> lastPlayerFields_;
     bool onlineEquipDirty_ = false;
 
+    // Visible equipment for other players: detect the update-field layout (base + stride)
+    // using the local player's own equipped items, then decode other players by index.
+    int visibleItemEntryBase_ = -1;
+    int visibleItemStride_ = 2;
+    std::unordered_map<uint64_t, std::array<uint32_t, 19>> otherPlayerVisibleItemEntries_;
+    std::unordered_set<uint64_t> otherPlayerVisibleDirty_;
+
     // ---- Phase 2: Combat ----
     bool autoAttacking = false;
     uint64_t autoAttackTarget = 0;
@@ -1081,6 +1100,7 @@ private:
     CreatureDespawnCallback creatureDespawnCallback_;
     PlayerSpawnCallback playerSpawnCallback_;
     PlayerDespawnCallback playerDespawnCallback_;
+    PlayerEquipmentCallback playerEquipmentCallback_;
     CreatureMoveCallback creatureMoveCallback_;
     TransportMoveCallback transportMoveCallback_;
     TransportSpawnCallback transportSpawnCallback_;

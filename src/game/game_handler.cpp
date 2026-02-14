@@ -2844,6 +2844,8 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     creatureDespawnCallback_(guid);
                 } else if (entity->getType() == ObjectType::PLAYER && playerDespawnCallback_) {
                     playerDespawnCallback_(guid);
+                    otherPlayerVisibleItemEntries_.erase(guid);
+                    otherPlayerVisibleDirty_.erase(guid);
                 } else if (entity->getType() == ObjectType::GAMEOBJECT && gameObjectDespawnCallback_) {
                     gameObjectDespawnCallback_(guid);
                 }
@@ -2949,6 +2951,9 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                 // Auto-query names (Phase 1)
                 if (block.objectType == ObjectType::PLAYER) {
                     queryPlayerName(block.guid);
+                    if (block.guid != playerGuid) {
+                        updateOtherPlayerVisibleItems(block.guid, entity->getFields());
+                    }
                 } else if (block.objectType == ObjectType::UNIT) {
                     auto it = block.fields.find(fieldIndex(UF::OBJECT_FIELD_ENTRY));
                     if (it != block.fields.end() && it->second != 0) {
@@ -3287,6 +3292,10 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         entity->setField(field.first, field.second);
                     }
 
+                    if (entity->getType() == ObjectType::PLAYER && block.guid != playerGuid) {
+                        updateOtherPlayerVisibleItems(block.guid, entity->getFields());
+                    }
+
                     // Update cached health/mana/power values (Phase 2) — single pass
                     if (entity->getType() == ObjectType::UNIT || entity->getType() == ObjectType::PLAYER) {
                         auto unit = std::static_pointer_cast<Unit>(entity);
@@ -3425,6 +3434,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             lastPlayerFields_[key] = val;
                         }
                         maybeDetectCoinageIndex(oldFieldsSnapshot, lastPlayerFields_);
+                        maybeDetectVisibleItemLayout();
                         detectInventorySlotBases(block.fields);
                         bool slotsChanged = false;
                         const uint16_t ufPlayerXp = fieldIndex(UF::PLAYER_XP);
@@ -4966,6 +4976,8 @@ void GameHandler::handleItemQueryResponse(network::Packet& packet) {
     if (data.valid) {
         itemInfoCache_[data.entry] = data;
         rebuildOnlineInventory();
+        maybeDetectVisibleItemLayout();
+        emitAllOtherPlayerEquipment();
     }
 }
 
@@ -5178,6 +5190,122 @@ void GameHandler::rebuildOnlineInventory() {
     }(), " backpack=", [&](){
         int c = 0; for (auto g : backpackSlotGuids_) if (g) c++; return c;
     }());
+}
+
+void GameHandler::maybeDetectVisibleItemLayout() {
+    if (visibleItemEntryBase_ >= 0) return;
+    if (lastPlayerFields_.empty()) return;
+
+    std::array<uint32_t, 19> equipEntries{};
+    int nonZero = 0;
+    for (int i = 0; i < 19; i++) {
+        const auto& slot = inventory.getEquipSlot(static_cast<EquipSlot>(i));
+        equipEntries[i] = slot.empty() ? 0u : slot.item.itemId;
+        if (equipEntries[i] != 0) nonZero++;
+    }
+    if (nonZero < 2) return;
+
+    const uint16_t maxKey = lastPlayerFields_.rbegin()->first;
+    int bestBase = -1;
+    int bestStride = 0;
+    int bestMatches = 0;
+
+    const int strides[] = {2, 3, 4, 1};
+    for (int stride : strides) {
+        for (const auto& [baseIdxU16, _v] : lastPlayerFields_) {
+            const int base = static_cast<int>(baseIdxU16);
+            if (base + 18 * stride > static_cast<int>(maxKey)) continue;
+
+            int matches = 0;
+            for (int s = 0; s < 19; s++) {
+                uint32_t want = equipEntries[s];
+                if (want == 0) continue;
+                const uint16_t idx = static_cast<uint16_t>(base + s * stride);
+                auto it = lastPlayerFields_.find(idx);
+                if (it != lastPlayerFields_.end() && it->second == want) matches++;
+            }
+
+            if (matches > bestMatches || (matches == bestMatches && matches > 0 && base < bestBase)) {
+                bestMatches = matches;
+                bestBase = base;
+                bestStride = stride;
+            }
+        }
+    }
+
+    if (bestMatches < 2 || bestBase < 0 || bestStride <= 0) return;
+
+    visibleItemEntryBase_ = bestBase;
+    visibleItemStride_ = bestStride;
+    LOG_INFO("Detected PLAYER_VISIBLE_ITEM entry layout: base=", visibleItemEntryBase_,
+             " stride=", visibleItemStride_, " (matches=", bestMatches, ")");
+
+    // Backfill existing player entities already in view.
+    for (const auto& [guid, ent] : entityManager.getEntities()) {
+        if (!ent || ent->getType() != ObjectType::PLAYER) continue;
+        if (guid == playerGuid) continue;
+        updateOtherPlayerVisibleItems(guid, ent->getFields());
+    }
+}
+
+void GameHandler::updateOtherPlayerVisibleItems(uint64_t guid, const std::map<uint16_t, uint32_t>& fields) {
+    if (guid == 0 || guid == playerGuid) return;
+    if (visibleItemEntryBase_ < 0 || visibleItemStride_ <= 0) return;
+
+    std::array<uint32_t, 19> newEntries{};
+    for (int s = 0; s < 19; s++) {
+        uint16_t idx = static_cast<uint16_t>(visibleItemEntryBase_ + s * visibleItemStride_);
+        auto it = fields.find(idx);
+        if (it != fields.end()) newEntries[s] = it->second;
+    }
+
+    bool changed = false;
+    auto& old = otherPlayerVisibleItemEntries_[guid];
+    if (old != newEntries) {
+        old = newEntries;
+        changed = true;
+    }
+
+    // Request item templates for any new visible entries.
+    for (uint32_t entry : newEntries) {
+        if (entry == 0) continue;
+        if (!itemInfoCache_.count(entry) && !pendingItemQueries_.count(entry)) {
+            queryItemInfo(entry, 0);
+        }
+    }
+
+    if (changed) {
+        otherPlayerVisibleDirty_.insert(guid);
+        emitOtherPlayerEquipment(guid);
+    }
+}
+
+void GameHandler::emitOtherPlayerEquipment(uint64_t guid) {
+    if (!playerEquipmentCallback_) return;
+    auto it = otherPlayerVisibleItemEntries_.find(guid);
+    if (it == otherPlayerVisibleItemEntries_.end()) return;
+
+    std::array<uint32_t, 19> displayIds{};
+    std::array<uint8_t, 19> invTypes{};
+
+    for (int s = 0; s < 19; s++) {
+        uint32_t entry = it->second[s];
+        if (entry == 0) continue;
+        auto infoIt = itemInfoCache_.find(entry);
+        if (infoIt == itemInfoCache_.end()) continue;
+        displayIds[s] = infoIt->second.displayInfoId;
+        invTypes[s] = static_cast<uint8_t>(infoIt->second.inventoryType);
+    }
+
+    playerEquipmentCallback_(guid, displayIds, invTypes);
+    otherPlayerVisibleDirty_.erase(guid);
+}
+
+void GameHandler::emitAllOtherPlayerEquipment() {
+    if (!playerEquipmentCallback_) return;
+    for (const auto& [guid, _] : otherPlayerVisibleItemEntries_) {
+        emitOtherPlayerEquipment(guid);
+    }
 }
 
 // ============================================================

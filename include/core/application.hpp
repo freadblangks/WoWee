@@ -8,6 +8,7 @@
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
+#include <array>
 
 namespace wowee {
 
@@ -96,6 +97,9 @@ private:
                            uint32_t appearanceBytes,
                            uint8_t facialFeatures,
                            float x, float y, float z, float orientation);
+    void setOnlinePlayerEquipment(uint64_t guid,
+                                  const std::array<uint32_t, 19>& displayInfoIds,
+                                  const std::array<uint8_t, 19>& inventoryTypes);
     void despawnOnlinePlayer(uint64_t guid);
     void buildCreatureDisplayLookups();
     std::string getModelPathForDisplayId(uint32_t displayId) const;
@@ -228,6 +232,18 @@ private:
 
     // Online player instances (separate from creatures so we can apply per-player skin/hair textures).
     std::unordered_map<uint64_t, uint32_t> playerInstances_;  // guid → render instanceId
+    struct OnlinePlayerAppearanceState {
+        uint32_t instanceId = 0;
+        uint32_t modelId = 0;
+        uint8_t raceId = 0;
+        uint8_t genderId = 0;
+        uint32_t appearanceBytes = 0;
+        uint8_t facialFeatures = 0;
+        std::string bodySkinPath;
+        std::vector<std::string> underwearPaths;
+    };
+    std::unordered_map<uint64_t, OnlinePlayerAppearanceState> onlinePlayerAppearance_;
+    std::unordered_map<uint64_t, std::pair<std::array<uint32_t, 19>, std::array<uint8_t, 19>>> pendingOnlinePlayerEquipment_;
     // Cache base player model geometry by (raceId, genderId)
     std::unordered_map<uint32_t, uint32_t> playerModelCache_; // key=(race<<8)|gender → modelId
     struct PlayerTextureSlots { int skin = -1; int hair = -1; int underwear = -1; };

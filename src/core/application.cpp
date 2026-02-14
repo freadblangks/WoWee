@@ -1214,6 +1214,13 @@ void Application::setupUICallbacks() {
         pendingPlayerSpawnGuids_.insert(guid);
     });
 
+    // Online player equipment callback - apply armor geosets/skin overlays per player instance.
+    gameHandler->setPlayerEquipmentCallback([this](uint64_t guid,
+                                                  const std::array<uint32_t, 19>& displayInfoIds,
+                                                  const std::array<uint8_t, 19>& inventoryTypes) {
+        setOnlinePlayerEquipment(guid, displayInfoIds, inventoryTypes);
+    });
+
     // Creature despawn callback (online mode) - remove creature models
     gameHandler->setCreatureDespawnCallback([this](uint64_t guid) {
         despawnOnlineCreature(guid);
@@ -3742,6 +3749,172 @@ void Application::spawnOnlinePlayer(uint64_t guid,
 
     charRenderer->playAnimation(instanceId, 0, true);
     playerInstances_[guid] = instanceId;
+
+    OnlinePlayerAppearanceState st;
+    st.instanceId = instanceId;
+    st.modelId = modelId;
+    st.raceId = raceId;
+    st.genderId = genderId;
+    st.appearanceBytes = appearanceBytes;
+    st.facialFeatures = facialFeatures;
+    st.bodySkinPath = bodySkinPath;
+    st.underwearPaths = underwearPaths;
+    onlinePlayerAppearance_[guid] = std::move(st);
+}
+
+void Application::setOnlinePlayerEquipment(uint64_t guid,
+                                          const std::array<uint32_t, 19>& displayInfoIds,
+                                          const std::array<uint8_t, 19>& inventoryTypes) {
+    if (!renderer || !renderer->getCharacterRenderer() || !assetManager || !assetManager->isInitialized()) return;
+
+    // If the player isn't spawned yet, store equipment until spawn.
+    if (!playerInstances_.count(guid) || !onlinePlayerAppearance_.count(guid)) {
+        pendingOnlinePlayerEquipment_[guid] = {displayInfoIds, inventoryTypes};
+        return;
+    }
+
+    auto it = onlinePlayerAppearance_.find(guid);
+    if (it == onlinePlayerAppearance_.end()) return;
+    const OnlinePlayerAppearanceState& st = it->second;
+
+    auto* charRenderer = renderer->getCharacterRenderer();
+    if (!charRenderer) return;
+    if (st.instanceId == 0 || st.modelId == 0) return;
+
+    if (st.bodySkinPath.empty()) return;
+
+    auto displayInfoDbc = assetManager->loadDBC("ItemDisplayInfo.dbc");
+    if (!displayInfoDbc) return;
+    const auto* idiL = pipeline::getActiveDBCLayout() ? pipeline::getActiveDBCLayout()->getLayout("ItemDisplayInfo") : nullptr;
+
+    auto getGeosetGroup = [&](uint32_t displayInfoId, uint32_t fieldIdx) -> uint32_t {
+        if (displayInfoId == 0) return 0;
+        int32_t recIdx = displayInfoDbc->findRecordById(displayInfoId);
+        if (recIdx < 0) return 0;
+        return displayInfoDbc->getUInt32(static_cast<uint32_t>(recIdx), fieldIdx);
+    };
+
+    auto findDisplayIdByInvType = [&](std::initializer_list<uint8_t> types) -> uint32_t {
+        for (int s = 0; s < 19; s++) {
+            uint8_t inv = inventoryTypes[s];
+            if (inv == 0 || displayInfoIds[s] == 0) continue;
+            for (uint8_t t : types) {
+                if (inv == t) return displayInfoIds[s];
+            }
+        }
+        return 0;
+    };
+
+    auto hasInvType = [&](std::initializer_list<uint8_t> types) -> bool {
+        for (int s = 0; s < 19; s++) {
+            uint8_t inv = inventoryTypes[s];
+            if (inv == 0) continue;
+            for (uint8_t t : types) {
+                if (inv == t) return true;
+            }
+        }
+        return false;
+    };
+
+    // --- Geosets ---
+    std::unordered_set<uint16_t> geosets;
+    for (uint16_t i = 0; i <= 18; i++) geosets.insert(i);
+
+    uint8_t hairStyleId = static_cast<uint8_t>((st.appearanceBytes >> 16) & 0xFF);
+    geosets.insert(static_cast<uint16_t>(100 + hairStyleId + 1));
+    geosets.insert(static_cast<uint16_t>(200 + st.facialFeatures + 1));
+    geosets.insert(701);
+
+    const uint32_t geosetGroup1Field = idiL ? (*idiL)["GeosetGroup1"] : 7;
+    const uint32_t geosetGroup3Field = idiL ? (*idiL)["GeosetGroup3"] : 9;
+
+    // Chest/Shirt/Robe (invType 4,5,20)
+    {
+        uint32_t did = findDisplayIdByInvType({4, 5, 20});
+        uint32_t gg1 = getGeosetGroup(did, geosetGroup1Field);
+        geosets.insert(static_cast<uint16_t>(gg1 > 0 ? 501 + gg1 : 501));
+
+        uint32_t gg3 = getGeosetGroup(did, geosetGroup3Field);
+        if (gg3 > 0) geosets.insert(static_cast<uint16_t>(1301 + gg3));
+    }
+
+    // Legs (invType 7)
+    {
+        uint32_t did = findDisplayIdByInvType({7});
+        uint32_t gg1 = getGeosetGroup(did, geosetGroup1Field);
+        if (geosets.count(1302) == 0 && geosets.count(1303) == 0) {
+            geosets.insert(static_cast<uint16_t>(gg1 > 0 ? 1301 + gg1 : 1301));
+        }
+    }
+
+    // Feet (invType 8)
+    {
+        uint32_t did = findDisplayIdByInvType({8});
+        uint32_t gg1 = getGeosetGroup(did, geosetGroup1Field);
+        geosets.insert(static_cast<uint16_t>(gg1 > 0 ? 401 + gg1 : 401));
+    }
+
+    // Hands (invType 10)
+    {
+        uint32_t did = findDisplayIdByInvType({10});
+        uint32_t gg1 = getGeosetGroup(did, geosetGroup1Field);
+        geosets.insert(static_cast<uint16_t>(gg1 > 0 ? 301 + gg1 : 301));
+    }
+
+    // Back/Cloak (invType 16)
+    geosets.insert(hasInvType({16}) ? 1502 : 1501);
+    // Tabard (invType 19)
+    if (hasInvType({19})) geosets.insert(1201);
+
+    charRenderer->setActiveGeosets(st.instanceId, geosets);
+
+    // --- Textures (skin atlas compositing) ---
+    static const char* componentDirs[] = {
+        "ArmUpperTexture",
+        "ArmLowerTexture",
+        "HandTexture",
+        "TorsoUpperTexture",
+        "TorsoLowerTexture",
+        "LegUpperTexture",
+        "LegLowerTexture",
+        "FootTexture",
+    };
+
+    std::vector<std::pair<int, std::string>> regionLayers;
+    const bool isFemale = (st.genderId == 1);
+
+    for (int s = 0; s < 19; s++) {
+        uint32_t did = displayInfoIds[s];
+        if (did == 0) continue;
+        int32_t recIdx = displayInfoDbc->findRecordById(did);
+        if (recIdx < 0) continue;
+
+        for (int region = 0; region < 8; region++) {
+            std::string texName = displayInfoDbc->getString(static_cast<uint32_t>(recIdx), 14 + region);
+            if (texName.empty()) texName = displayInfoDbc->getString(static_cast<uint32_t>(recIdx), 15 + region);
+            if (texName.empty()) continue;
+
+            std::string base = "Item\\TextureComponents\\" + std::string(componentDirs[region]) + "\\" + texName;
+            std::string genderPath = base + (isFemale ? "_F.blp" : "_M.blp");
+            std::string unisexPath = base + "_U.blp";
+            std::string fullPath;
+            if (assetManager->fileExists(genderPath)) fullPath = genderPath;
+            else if (assetManager->fileExists(unisexPath)) fullPath = unisexPath;
+            else fullPath = base + ".blp";
+
+            regionLayers.emplace_back(region, fullPath);
+        }
+    }
+
+    const auto slotsIt = playerTextureSlotsByModelId_.find(st.modelId);
+    if (slotsIt == playerTextureSlotsByModelId_.end()) return;
+    const PlayerTextureSlots& slots = slotsIt->second;
+    if (slots.skin < 0) return;
+
+    GLuint newTex = charRenderer->compositeWithRegions(st.bodySkinPath, st.underwearPaths, regionLayers);
+    if (newTex != 0) {
+        charRenderer->setTextureSlotOverride(st.instanceId, static_cast<uint16_t>(slots.skin), newTex);
+    }
 }
 
 void Application::despawnOnlinePlayer(uint64_t guid) {
@@ -3750,6 +3923,8 @@ void Application::despawnOnlinePlayer(uint64_t guid) {
     if (it == playerInstances_.end()) return;
     renderer->getCharacterRenderer()->removeInstance(it->second);
     playerInstances_.erase(it);
+    onlinePlayerAppearance_.erase(guid);
+    pendingOnlinePlayerEquipment_.erase(guid);
 }
 
 void Application::spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_t displayId, float x, float y, float z, float orientation) {
@@ -4099,6 +4274,12 @@ void Application::processPlayerSpawnQueue() {
         }
 
         spawnOnlinePlayer(s.guid, s.raceId, s.genderId, s.appearanceBytes, s.facialFeatures, s.x, s.y, s.z, s.orientation);
+        // Apply any equipment updates that arrived before the player was spawned.
+        auto pit = pendingOnlinePlayerEquipment_.find(s.guid);
+        if (pit != pendingOnlinePlayerEquipment_.end()) {
+            setOnlinePlayerEquipment(s.guid, pit->second.first, pit->second.second);
+            pendingOnlinePlayerEquipment_.erase(pit);
+        }
         processed++;
     }
 }

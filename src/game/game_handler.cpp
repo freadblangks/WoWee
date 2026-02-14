@@ -2948,6 +2948,14 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                 // Add to manager
                 entityManager.addEntity(block.guid, entity);
 
+                // For the local player, capture the full initial field state (CREATE_OBJECT carries the
+                // large baseline update-field set, including visible item fields on many cores).
+                // Later VALUES updates often only include deltas and may never touch visible item fields.
+                if (block.guid == playerGuid && block.objectType == ObjectType::PLAYER) {
+                    lastPlayerFields_ = entity->getFields();
+                    maybeDetectVisibleItemLayout();
+                }
+
                 // Auto-query names (Phase 1)
                 if (block.objectType == ObjectType::PLAYER) {
                     queryPlayerName(block.guid);
@@ -4963,7 +4971,11 @@ void GameHandler::queryItemInfo(uint32_t entry, uint64_t guid) {
     if (state != WorldState::IN_WORLD || !socket) return;
 
     pendingItemQueries_.insert(entry);
-    auto packet = ItemQueryPacket::build(entry, guid);
+    // Some cores reject CMSG_ITEM_QUERY_SINGLE when the GUID is 0.
+    // If we don't have the item object's GUID (e.g. visible equipment decoding),
+    // fall back to the player's GUID to keep the request non-zero.
+    uint64_t queryGuid = (guid != 0) ? guid : playerGuid;
+    auto packet = ItemQueryPacket::build(entry, queryGuid);
     socket->send(packet);
 }
 

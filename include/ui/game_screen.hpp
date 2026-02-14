@@ -82,6 +82,7 @@ private:
     int pendingUiOpacity = 65;
     bool pendingMinimapRotate = false;
     bool pendingMinimapSquare = false;
+    bool pendingSeparateBags = true;
 
     // UI element transparency (0.0 = fully transparent, 1.0 = fully opaque)
     float uiOpacity_ = 0.65f;

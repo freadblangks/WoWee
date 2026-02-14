@@ -5,6 +5,7 @@
 #include "game/world_packets.hpp"
 #include <GL/glew.h>
 #include <imgui.h>
+#include <array>
 #include <functional>
 #include <memory>
 #include <unordered_map>
@@ -28,6 +29,14 @@ public:
     bool isOpen() const { return open; }
     void toggle() { open = !open; }
     void setOpen(bool o) { open = o; }
+
+    // Separate bag window controls
+    void toggleBackpack();
+    void toggleBag(int idx);
+    void openAllBags();
+    void closeAllBags();
+    void setSeparateBags(bool sep) { separateBags_ = sep; }
+    bool isSeparateBags() const { return separateBags_; }
 
     bool isCharacterOpen() const { return characterOpen; }
     void toggleCharacter() { characterOpen = !characterOpen; }
@@ -64,6 +73,9 @@ private:
     bool open = false;
     bool characterOpen = false;
     bool bKeyWasDown = false;
+    bool separateBags_ = true;
+    bool backpackOpen_ = false;
+    std::array<bool, 4> bagOpen_{};
     bool cKeyWasDown = false;
     bool equipmentDirty = false;
     bool inventoryDirty = false;
@@ -106,6 +118,10 @@ private:
     int heldBackpackIndex = -1;
     game::EquipSlot heldEquipSlot = game::EquipSlot::NUM_SLOTS;
 
+    void renderSeparateBags(game::Inventory& inventory, uint64_t moneyCopper);
+    void renderAggregateBags(game::Inventory& inventory, uint64_t moneyCopper);
+    void renderBagWindow(const char* title, bool& isOpen, game::Inventory& inventory,
+                         int bagIndex, float defaultX, float defaultY, uint64_t moneyCopper);
     void renderEquipmentPanel(game::Inventory& inventory);
     void renderBackpackPanel(game::Inventory& inventory);
     void renderStatsPanel(game::Inventory& inventory, uint32_t playerLevel);

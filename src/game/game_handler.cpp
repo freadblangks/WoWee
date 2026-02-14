@@ -5539,7 +5539,13 @@ void GameHandler::maybeDetectVisibleItemLayout() {
 
 void GameHandler::updateOtherPlayerVisibleItems(uint64_t guid, const std::map<uint16_t, uint32_t>& fields) {
     if (guid == 0 || guid == playerGuid) return;
-    if (visibleItemEntryBase_ < 0 || visibleItemStride_ <= 0) return;
+    if (visibleItemEntryBase_ < 0 || visibleItemStride_ <= 0) {
+        // Layout not detected yet — queue this player for inspect as fallback.
+        if (socket && state == WorldState::IN_WORLD) {
+            pendingAutoInspect_.insert(guid);
+        }
+        return;
+    }
 
     std::array<uint32_t, 19> newEntries{};
     for (int s = 0; s < 19; s++) {
@@ -5713,18 +5719,16 @@ void GameHandler::handleAttackStop(network::Packet& packet) {
 
 void GameHandler::dismount() {
     if (!socket) return;
-    if (!isMounted()) {
-        // Local/server desync guard: clear visual mount even when server says unmounted.
+    // Clear local mount state immediately (optimistic dismount).
+    // Server will confirm via SMSG_UPDATE_OBJECT with mountDisplayId=0.
+    if (currentMountDisplayId_ != 0 || taxiMountActive_) {
         if (mountCallback_) {
             mountCallback_(0);
         }
         currentMountDisplayId_ = 0;
         taxiMountActive_ = false;
         taxiMountDisplayId_ = 0;
-        onTaxiFlight_ = false;
-        taxiActivatePending_ = false;
-        taxiClientActive_ = false;
-        LOG_INFO("Dismount desync recovery: force-cleared local mount state");
+        LOG_INFO("Dismount: cleared local mount state");
     }
     network::Packet pkt(wireOpcode(Opcode::CMSG_CANCEL_MOUNT_AURA));
     socket->send(pkt);

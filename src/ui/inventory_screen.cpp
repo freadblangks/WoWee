@@ -11,7 +11,9 @@
 #include "core/logger.hpp"
 #include <imgui.h>
 #include <SDL2/SDL.h>
+#include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <unordered_set>
 
 namespace wowee {
@@ -529,13 +531,30 @@ void InventoryScreen::renderHeldItem() {
 // Bags window (B key) — bottom of screen, no equipment panel
 // ============================================================
 
+void InventoryScreen::toggleBackpack() {
+    backpackOpen_ = !backpackOpen_;
+}
+
+void InventoryScreen::toggleBag(int idx) {
+    if (idx >= 0 && idx < 4)
+        bagOpen_[idx] = !bagOpen_[idx];
+}
+
+void InventoryScreen::openAllBags() {
+    backpackOpen_ = true;
+    for (auto& b : bagOpen_) b = true;
+}
+
+void InventoryScreen::closeAllBags() {
+    backpackOpen_ = false;
+    for (auto& b : bagOpen_) b = false;
+}
+
 void InventoryScreen::render(game::Inventory& inventory, uint64_t moneyCopper) {
     // B key toggle (edge-triggered)
     bool uiWantsKeyboard = ImGui::GetIO().WantCaptureKeyboard;
     bool bDown = !uiWantsKeyboard && core::Input::getInstance().isKeyPressed(SDL_SCANCODE_B);
-    if (bDown && !bKeyWasDown) {
-        open = !open;
-    }
+    bool bToggled = bDown && !bKeyWasDown;
     bKeyWasDown = bDown;
 
     // C key toggle for character screen (edge-triggered)
@@ -544,6 +563,18 @@ void InventoryScreen::render(game::Inventory& inventory, uint64_t moneyCopper) {
         characterOpen = !characterOpen;
     }
     cKeyWasDown = cDown;
+
+    if (separateBags_) {
+        if (bToggled) {
+            bool anyOpen = backpackOpen_;
+            for (auto b : bagOpen_) anyOpen |= b;
+            if (anyOpen) closeAllBags();
+            else openAllBags();
+        }
+        open = backpackOpen_ || std::any_of(bagOpen_.begin(), bagOpen_.end(), [](bool b){ return b; });
+    } else {
+        if (bToggled) open = !open;
+    }
 
     if (!open) {
         if (holdingItem) cancelPickup(inventory);
@@ -560,52 +591,11 @@ void InventoryScreen::render(game::Inventory& inventory, uint64_t moneyCopper) {
         cancelPickup(inventory);
     }
 
-    ImGuiIO& io = ImGui::GetIO();
-    float screenW = io.DisplaySize.x;
-    float screenH = io.DisplaySize.y;
-
-    // Calculate bag window size
-    constexpr float slotSize = 40.0f;
-    constexpr int columns = 4;
-    int rows = (inventory.getBackpackSize() + columns - 1) / columns;
-    float bagContentH = rows * (slotSize + 4.0f) + 40.0f; // slots + header + money
-
-    // Check for extra bags and add space
-    for (int bag = 0; bag < game::Inventory::NUM_BAG_SLOTS; bag++) {
-        int bagSize = inventory.getBagSize(bag);
-        if (bagSize <= 0) continue;
-        int bagRows = (bagSize + columns - 1) / columns;
-        bagContentH += bagRows * (slotSize + 4.0f) + 30.0f; // slots + header
+    if (separateBags_) {
+        renderSeparateBags(inventory, moneyCopper);
+    } else {
+        renderAggregateBags(inventory, moneyCopper);
     }
-
-    float windowW = columns * (slotSize + 4.0f) + 30.0f;
-    float windowH = bagContentH + 50.0f; // padding
-
-    // Position at bottom-right of screen
-    float posX = screenW - windowW - 10.0f;
-    float posY = screenH - windowH - 60.0f; // above action bar area
-
-    ImGui::SetNextWindowPos(ImVec2(posX, posY), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(windowW, windowH), ImGuiCond_Always);
-
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
-    if (!ImGui::Begin("Bags", &open, flags)) {
-        ImGui::End();
-        return;
-    }
-
-    renderBackpackPanel(inventory);
-
-    // Money display
-    ImGui::Spacing();
-    uint64_t gold = moneyCopper / 10000;
-    uint64_t silver = (moneyCopper / 100) % 100;
-    uint64_t copper = moneyCopper % 100;
-    ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.0f, 1.0f), "%llug %llus %lluc",
-                       static_cast<unsigned long long>(gold),
-                       static_cast<unsigned long long>(silver),
-                       static_cast<unsigned long long>(copper));
-    ImGui::End();
 
     // Detect held item dropped outside inventory windows → drop confirmation
     if (holdingItem && heldItem.itemId != 6948 && ImGui::IsMouseReleased(ImGuiMouseButton_Left) &&
@@ -644,6 +634,175 @@ void InventoryScreen::render(game::Inventory& inventory, uint64_t moneyCopper) {
 
     // Draw held item at cursor
     renderHeldItem();
+}
+
+// ============================================================
+// Aggregate mode — original single-window bags
+// ============================================================
+
+void InventoryScreen::renderAggregateBags(game::Inventory& inventory, uint64_t moneyCopper) {
+    ImGuiIO& io = ImGui::GetIO();
+    float screenW = io.DisplaySize.x;
+    float screenH = io.DisplaySize.y;
+
+    constexpr float slotSize = 40.0f;
+    constexpr int columns = 4;
+    int rows = (inventory.getBackpackSize() + columns - 1) / columns;
+    float bagContentH = rows * (slotSize + 4.0f) + 40.0f;
+
+    for (int bag = 0; bag < game::Inventory::NUM_BAG_SLOTS; bag++) {
+        int bagSize = inventory.getBagSize(bag);
+        if (bagSize <= 0) continue;
+        int bagRows = (bagSize + columns - 1) / columns;
+        bagContentH += bagRows * (slotSize + 4.0f) + 30.0f;
+    }
+
+    float windowW = columns * (slotSize + 4.0f) + 30.0f;
+    float windowH = bagContentH + 50.0f;
+
+    float posX = screenW - windowW - 10.0f;
+    float posY = screenH - windowH - 60.0f;
+
+    ImGui::SetNextWindowPos(ImVec2(posX, posY), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(windowW, windowH), ImGuiCond_Always);
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
+    if (!ImGui::Begin("Bags", &open, flags)) {
+        ImGui::End();
+        return;
+    }
+
+    renderBackpackPanel(inventory);
+
+    ImGui::Spacing();
+    uint64_t gold = moneyCopper / 10000;
+    uint64_t silver = (moneyCopper / 100) % 100;
+    uint64_t copper = moneyCopper % 100;
+    ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.0f, 1.0f), "%llug %llus %lluc",
+                       static_cast<unsigned long long>(gold),
+                       static_cast<unsigned long long>(silver),
+                       static_cast<unsigned long long>(copper));
+    ImGui::End();
+}
+
+// ============================================================
+// Separate mode — individual draggable bag windows
+// ============================================================
+
+void InventoryScreen::renderSeparateBags(game::Inventory& inventory, uint64_t moneyCopper) {
+    ImGuiIO& io = ImGui::GetIO();
+    float screenW = io.DisplaySize.x;
+    float screenH = io.DisplaySize.y;
+
+    constexpr float slotSize = 40.0f;
+    constexpr int columns = 4;
+    constexpr float baseWindowW = columns * (slotSize + 4.0f) + 30.0f;
+
+    // Backpack window (rightmost, bottom-right)
+    if (backpackOpen_) {
+        int bpRows = (inventory.getBackpackSize() + columns - 1) / columns;
+        float bpH = bpRows * (slotSize + 4.0f) + 80.0f; // header + money + padding
+        float defaultX = screenW - baseWindowW - 10.0f;
+        float defaultY = screenH - bpH - 60.0f;
+        renderBagWindow("Backpack", backpackOpen_, inventory, -1, defaultX, defaultY, moneyCopper);
+    }
+
+    // Extra bag windows (stacked to the left of backpack)
+    for (int bag = 0; bag < game::Inventory::NUM_BAG_SLOTS; bag++) {
+        if (!bagOpen_[bag]) continue;
+        int bagSize = inventory.getBagSize(bag);
+        if (bagSize <= 0) {
+            bagOpen_[bag] = false;
+            continue;
+        }
+
+        int bagRows = (bagSize + columns - 1) / columns;
+        float bagH = bagRows * (slotSize + 4.0f) + 60.0f;
+        float defaultX = screenW - (baseWindowW + 10.0f) * (bag + 2) - 10.0f;
+        float defaultY = screenH - bagH - 60.0f;
+
+        // Build title from equipped bag item name
+        char title[64];
+        game::EquipSlot bagSlot = static_cast<game::EquipSlot>(static_cast<int>(game::EquipSlot::BAG1) + bag);
+        const auto& bagItem = inventory.getEquipSlot(bagSlot);
+        if (!bagItem.empty() && !bagItem.item.name.empty()) {
+            snprintf(title, sizeof(title), "%s##bag%d", bagItem.item.name.c_str(), bag);
+        } else {
+            snprintf(title, sizeof(title), "Bag %d##bag%d", bag + 1, bag);
+        }
+
+        renderBagWindow(title, bagOpen_[bag], inventory, bag, defaultX, defaultY, 0);
+    }
+
+    // Update open state based on individual windows
+    open = backpackOpen_ || std::any_of(bagOpen_.begin(), bagOpen_.end(), [](bool b){ return b; });
+}
+
+void InventoryScreen::renderBagWindow(const char* title, bool& isOpen,
+                                       game::Inventory& inventory, int bagIndex,
+                                       float defaultX, float defaultY, uint64_t moneyCopper) {
+    constexpr float slotSize = 40.0f;
+    constexpr int columns = 4;
+
+    int numSlots = (bagIndex < 0) ? inventory.getBackpackSize() : inventory.getBagSize(bagIndex);
+    if (numSlots <= 0) return;
+
+    int rows = (numSlots + columns - 1) / columns;
+    float contentH = rows * (slotSize + 4.0f) + 10.0f;
+    if (bagIndex < 0) contentH += 25.0f; // money display for backpack
+    float gridW = columns * (slotSize + 4.0f) + 30.0f;
+    // Ensure window is wide enough for the title + close button
+    const char* displayTitle = title;
+    const char* hashPos = strstr(title, "##");
+    float titleW = ImGui::CalcTextSize(displayTitle, hashPos).x + 50.0f; // close button + padding
+    float windowW = std::max(gridW, titleW);
+    float windowH = contentH + 40.0f; // title bar + padding
+
+    ImGui::SetNextWindowPos(ImVec2(defaultX, defaultY), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(windowW, windowH), ImGuiCond_Always);
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize;
+    if (!ImGui::Begin(title, &isOpen, flags)) {
+        ImGui::End();
+        return;
+    }
+
+    // Render item slots in 4-column grid
+    for (int i = 0; i < numSlots; i++) {
+        if (i % columns != 0) ImGui::SameLine();
+
+        const game::ItemSlot& slot = (bagIndex < 0)
+            ? inventory.getBackpackSlot(i)
+            : inventory.getBagSlot(bagIndex, i);
+
+        char id[32];
+        if (bagIndex < 0) {
+            snprintf(id, sizeof(id), "##sbp_%d", i);
+        } else {
+            snprintf(id, sizeof(id), "##sb%d_%d", bagIndex, i);
+        }
+        ImGui::PushID(id);
+
+        // For backpack slots, pass actual backpack index for drag/drop
+        int bpIdx = (bagIndex < 0) ? i : -1;
+        renderItemSlot(inventory, slot, slotSize, nullptr,
+                       SlotKind::BACKPACK, bpIdx, game::EquipSlot::NUM_SLOTS);
+        ImGui::PopID();
+    }
+
+    // Money display at bottom of backpack
+    if (bagIndex < 0 && moneyCopper > 0) {
+        ImGui::Spacing();
+        uint64_t gold = moneyCopper / 10000;
+        uint64_t silver = (moneyCopper / 100) % 100;
+        uint64_t copper = moneyCopper % 100;
+        ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.0f, 1.0f), "%llug %llus %lluc",
+                           static_cast<unsigned long long>(gold),
+                           static_cast<unsigned long long>(silver),
+                           static_cast<unsigned long long>(copper));
+    }
+
+    ImGui::End();
 }
 
 // ============================================================

@@ -2860,8 +2860,10 @@ void GameScreen::renderBagBar(game::GameHandler& gameHandler) {
                                        ImVec2(0, 0), ImVec2(1, 1),
                                        ImVec4(0.1f, 0.1f, 0.1f, 0.9f),
                                        ImVec4(1, 1, 1, 1))) {
-                    // TODO: Open specific bag
-                    inventoryScreen.toggle();
+                    if (inventoryScreen.isSeparateBags())
+                        inventoryScreen.toggleBag(i);
+                    else
+                        inventoryScreen.toggle();
                 }
                 if (ImGui::IsItemHovered()) {
                     ImGui::SetTooltip("%s", bagItem.item.name.c_str());
@@ -2870,7 +2872,7 @@ void GameScreen::renderBagBar(game::GameHandler& gameHandler) {
                 // Empty bag slot
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.15f, 0.15f, 0.8f));
                 if (ImGui::Button("##empty", ImVec2(slotSize, slotSize))) {
-                    // Empty slot - maybe show equipment to find a bag?
+                    // Empty slot - no bag equipped
                 }
                 ImGui::PopStyleColor();
                 if (ImGui::IsItemHovered()) {
@@ -2902,11 +2904,17 @@ void GameScreen::renderBagBar(game::GameHandler& gameHandler) {
                                    ImVec2(0, 0), ImVec2(1, 1),
                                    ImVec4(0.1f, 0.1f, 0.1f, 0.9f),
                                    ImVec4(1, 1, 1, 1))) {
-                inventoryScreen.toggle();
+                if (inventoryScreen.isSeparateBags())
+                    inventoryScreen.toggleBackpack();
+                else
+                    inventoryScreen.toggle();
             }
         } else {
             if (ImGui::Button("B", ImVec2(slotSize, slotSize))) {
-                inventoryScreen.toggle();
+                if (inventoryScreen.isSeparateBags())
+                    inventoryScreen.toggleBackpack();
+                else
+                    inventoryScreen.toggle();
             }
         }
         if (ImGui::IsItemHovered()) {
@@ -3398,10 +3406,10 @@ void GameScreen::renderBuffBar(game::GameHandler& gameHandler) {
             }
 
             // Right-click to cancel buffs / dismount
-            if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && isBuff) {
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
                 if (gameHandler.isMounted()) {
                     gameHandler.dismount();
-                } else {
+                } else if (isBuff) {
                     gameHandler.cancelAura(aura.spellId);
                 }
             }
@@ -4982,6 +4990,14 @@ void GameScreen::renderSettingsWindow() {
                 }
 
                 ImGui::Spacing();
+                ImGui::Text("Bags");
+                ImGui::Separator();
+                if (ImGui::Checkbox("Separate Bag Windows", &pendingSeparateBags)) {
+                    inventoryScreen.setSeparateBags(pendingSeparateBags);
+                    saveSettings();
+                }
+
+                ImGui::Spacing();
                 ImGui::Separator();
                 ImGui::Spacing();
 
@@ -4991,6 +5007,8 @@ void GameScreen::renderSettingsWindow() {
                     pendingUiOpacity = 65;
                     pendingMinimapRotate = false;
                     pendingMinimapSquare = false;
+                    pendingSeparateBags = true;
+                    inventoryScreen.setSeparateBags(true);
                     uiOpacity_ = 0.65f;
                     minimapRotate_ = false;
                     minimapSquare_ = false;
@@ -5438,6 +5456,7 @@ void GameScreen::saveSettings() {
     out << "ui_opacity=" << pendingUiOpacity << "\n";
     out << "minimap_rotate=" << (pendingMinimapRotate ? 1 : 0) << "\n";
     out << "minimap_square=" << (pendingMinimapSquare ? 1 : 0) << "\n";
+    out << "separate_bags=" << (pendingSeparateBags ? 1 : 0) << "\n";
 
     // Audio
     out << "master_volume=" << pendingMasterVolume << "\n";
@@ -5487,6 +5506,9 @@ void GameScreen::loadSettings() {
                 int v = std::stoi(val);
                 minimapSquare_ = (v != 0);
                 pendingMinimapSquare = minimapSquare_;
+            } else if (key == "separate_bags") {
+                pendingSeparateBags = (std::stoi(val) != 0);
+                inventoryScreen.setSeparateBags(pendingSeparateBags);
             }
             // Audio
             else if (key == "master_volume") pendingMasterVolume = std::clamp(std::stoi(val), 0, 100);

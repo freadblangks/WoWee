@@ -1140,6 +1140,10 @@ private:
     };
     std::unordered_map<uint64_t, LocalLootState> localLootState_;
     uint64_t playerMoneyCopper_ = 0;
+    // Some servers/custom clients shift update field indices. We can auto-detect coinage by correlating
+    // money-notify deltas with update-field diffs and then overriding UF::PLAYER_FIELD_COINAGE at runtime.
+    uint32_t pendingMoneyDelta_ = 0;
+    float pendingMoneyDeltaTimer_ = 0.0f;
 
     // Gossip
     bool gossipWindowOpen = false;

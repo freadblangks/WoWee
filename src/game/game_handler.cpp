@@ -255,6 +255,14 @@ void GameHandler::update(float deltaTime) {
         clearTarget();
     }
 
+    if (pendingMoneyDeltaTimer_ > 0.0f) {
+        pendingMoneyDeltaTimer_ -= deltaTime;
+        if (pendingMoneyDeltaTimer_ <= 0.0f) {
+            pendingMoneyDeltaTimer_ = 0.0f;
+            pendingMoneyDelta_ = 0;
+        }
+    }
+
     // Send periodic heartbeat if in world
     if (state == WorldState::IN_WORLD) {
         timeSinceLastPing += deltaTime;
@@ -992,6 +1000,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
             if (packet.getSize() - packet.getReadPos() >= 4) {
                 uint32_t amount = packet.readUInt32();
                 playerMoneyCopper_ += amount;
+                pendingMoneyDelta_ = amount;
+                pendingMoneyDeltaTimer_ = 2.0f;
                 LOG_INFO("Looted ", amount, " copper (total: ", playerMoneyCopper_, ")");
             }
             break;
@@ -2765,6 +2775,46 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
         return true;
     };
 
+    auto maybeDetectCoinageIndex = [&](const std::map<uint16_t, uint32_t>& oldFields,
+                                       const std::map<uint16_t, uint32_t>& newFields) {
+        if (pendingMoneyDelta_ == 0 || pendingMoneyDeltaTimer_ <= 0.0f) return;
+        if (oldFields.empty() || newFields.empty()) return;
+
+        constexpr uint32_t kMaxPlausibleCoinage = 2147483647u;
+        std::vector<uint16_t> candidates;
+        candidates.reserve(8);
+
+        for (const auto& [idx, newVal] : newFields) {
+            auto itOld = oldFields.find(idx);
+            if (itOld == oldFields.end()) continue;
+            uint32_t oldVal = itOld->second;
+            if (newVal < oldVal) continue;
+            uint32_t delta = newVal - oldVal;
+            if (delta != pendingMoneyDelta_) continue;
+            if (newVal > kMaxPlausibleCoinage) continue;
+            candidates.push_back(idx);
+        }
+
+        if (candidates.empty()) return;
+
+        uint16_t current = fieldIndex(UF::PLAYER_FIELD_COINAGE);
+        uint16_t chosen = candidates[0];
+        if (std::find(candidates.begin(), candidates.end(), current) != candidates.end()) {
+            chosen = current;
+        } else {
+            std::sort(candidates.begin(), candidates.end());
+            chosen = candidates[0];
+        }
+
+        if (chosen != current && current != 0xFFFF) {
+            updateFieldTable_.setIndex(UF::PLAYER_FIELD_COINAGE, chosen);
+            LOG_WARNING("Auto-detected PLAYER_FIELD_COINAGE index: ", chosen, " (was ", current, ")");
+        }
+
+        pendingMoneyDelta_ = 0;
+        pendingMoneyDeltaTimer_ = 0.0f;
+    };
+
     // Process out-of-range objects first
     for (uint64_t guid : data.outOfRangeGuids) {
         if (entityManager.hasEntity(guid)) {
@@ -3089,6 +3139,9 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         }
                     }
 
+                    // Auto-detect coinage index using the previous snapshot vs this full snapshot.
+                    maybeDetectCoinageIndex(lastPlayerFields_, block.fields);
+
                     lastPlayerFields_ = block.fields;
                     detectInventorySlotBases(block.fields);
 
@@ -3352,6 +3405,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     }
                     // Update XP / inventory slot / skill fields for player entity
                     if (block.guid == playerGuid) {
+                        std::map<uint16_t, uint32_t> oldFieldsSnapshot = lastPlayerFields_;
                         if (block.hasMovement && block.runSpeed > 0.1f && block.runSpeed < 100.0f) {
                             serverRunSpeed_ = block.runSpeed;
                             // Some server dismount paths update run speed without updating mount display field.
@@ -3368,6 +3422,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         for (const auto& [key, val] : block.fields) {
                             lastPlayerFields_[key] = val;
                         }
+                        maybeDetectCoinageIndex(oldFieldsSnapshot, lastPlayerFields_);
                         detectInventorySlotBases(block.fields);
                         bool slotsChanged = false;
                         const uint16_t ufPlayerXp = fieldIndex(UF::PLAYER_XP);
@@ -4924,7 +4979,7 @@ uint64_t GameHandler::resolveOnlineItemGuid(uint32_t itemId) const {
 
 void GameHandler::detectInventorySlotBases(const std::map<uint16_t, uint32_t>& fields) {
     if (invSlotBase_ >= 0 && packSlotBase_ >= 0) return;
-    if (onlineItems_.empty() || fields.empty()) return;
+    if (fields.empty()) return;
 
     std::vector<uint16_t> matchingPairs;
     matchingPairs.reserve(32);
@@ -4935,7 +4990,23 @@ void GameHandler::detectInventorySlotBases(const std::map<uint16_t, uint32_t>& f
         if (itHigh == fields.end()) continue;
         uint64_t guid = (uint64_t(itHigh->second) << 32) | low;
         if (guid == 0) continue;
-        if (onlineItems_.count(guid)) {
+        // Primary signal: GUID pairs that match spawned ITEM objects.
+        if (!onlineItems_.empty() && onlineItems_.count(guid)) {
+            matchingPairs.push_back(idx);
+        }
+    }
+
+    // Fallback signal (when ITEM objects haven't been seen yet):
+    // collect any plausible non-zero GUID pairs and derive a base by density.
+    if (matchingPairs.empty()) {
+        for (const auto& [idx, low] : fields) {
+            if ((idx % 2) != 0) continue;
+            auto itHigh = fields.find(static_cast<uint16_t>(idx + 1));
+            if (itHigh == fields.end()) continue;
+            uint64_t guid = (uint64_t(itHigh->second) << 32) | low;
+            if (guid == 0) continue;
+            // Heuristic: item GUIDs tend to be non-trivial and change often; ignore tiny values.
+            if (guid < 0x10000ull) continue;
             matchingPairs.push_back(idx);
         }
     }

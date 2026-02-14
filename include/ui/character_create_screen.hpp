@@ -29,6 +29,9 @@ public:
     void reset();
     void initializePreview(pipeline::AssetManager* am);
 
+    /** Set allowed races/classes from expansion profile. Empty = allow all (WotLK default). */
+    void setExpansionConstraints(const std::vector<uint32_t>& races, const std::vector<uint32_t>& classes);
+
 private:
     char nameBuffer[13] = {};  // WoW max name = 12 chars + null
     int raceIndex = 0;
@@ -46,6 +49,11 @@ private:
 
     std::vector<game::Class> availableClasses;
     void updateAvailableClasses();
+
+    // Expansion-filtered race/class lists
+    std::vector<game::Race> availableRaces_;    // Alliance-first, then horde order
+    int allianceRaceCount_ = 0;                 // How many of availableRaces_ are alliance
+    std::vector<game::Class> expansionClasses_; // Allowed classes (empty = all)
 
     std::function<void(const game::CharCreateData&)> onCreate;
     std::function<void()> onCancel;
@@ -65,6 +73,7 @@ private:
     int prevRangeGender_ = -1;
     int prevRangeSkin_ = -1;
     int prevRangeHairStyle_ = -1;
+    float createTimer_ = -1.0f;  // >=0 while waiting for SMSG_CHAR_CREATE response
     bool draggingPreview_ = false;
     float dragStartX_ = 0.0f;
 

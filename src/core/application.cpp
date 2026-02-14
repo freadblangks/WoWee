@@ -1721,6 +1721,12 @@ void Application::setupUICallbacks() {
     // "Create Character" button on character screen
     uiManager->getCharacterScreen().setOnCreateCharacter([this]() {
         uiManager->getCharacterCreateScreen().reset();
+        // Apply expansion race/class constraints before showing the screen
+        if (expansionRegistry_ && expansionRegistry_->getActive()) {
+            auto* profile = expansionRegistry_->getActive();
+            uiManager->getCharacterCreateScreen().setExpansionConstraints(
+                profile->races, profile->classes);
+        }
         uiManager->getCharacterCreateScreen().initializePreview(assetManager.get());
         setState(AppState::CHARACTER_CREATION);
     });

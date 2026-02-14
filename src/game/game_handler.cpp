@@ -150,6 +150,12 @@ bool GameHandler::connect(const std::string& host,
     wardenGateNextStatusLog_ = 2.0f;
     wardenPacketsAfterGate_ = 0;
     wardenCharEnumBlockedLogged_ = false;
+    wardenCrypto_.reset();
+    wardenState_ = WardenState::WAIT_MODULE_USE;
+    wardenModuleHash_.clear();
+    wardenModuleKey_.clear();
+    wardenModuleSize_ = 0;
+    wardenModuleData_.clear();
 
     // Generate random client seed
     this->clientSeed = generateClientSeed();
@@ -200,6 +206,12 @@ void GameHandler::disconnect() {
     wardenGateNextStatusLog_ = 2.0f;
     wardenPacketsAfterGate_ = 0;
     wardenCharEnumBlockedLogged_ = false;
+    wardenCrypto_.reset();
+    wardenState_ = WardenState::WAIT_MODULE_USE;
+    wardenModuleHash_.clear();
+    wardenModuleKey_.clear();
+    wardenModuleSize_ = 0;
+    wardenModuleData_.clear();
     setState(WorldState::DISCONNECTED);
     LOG_INFO("Disconnected from world server");
 }

@@ -5,11 +5,13 @@
 #include "pipeline/dbc_layout.hpp"
 #include <imgui.h>
 #include <cstring>
+#include <algorithm>
 
 namespace wowee {
 namespace ui {
 
-static const game::Race allRaces[] = {
+// Full WotLK race/class lists (used as defaults when no expansion constraints set)
+static const game::Race kAllRaces[] = {
     // Alliance
     game::Race::HUMAN, game::Race::DWARF, game::Race::NIGHT_ELF,
     game::Race::GNOME, game::Race::DRAENEI,
@@ -17,21 +19,68 @@ static const game::Race allRaces[] = {
     game::Race::ORC, game::Race::UNDEAD, game::Race::TAUREN,
     game::Race::TROLL, game::Race::BLOOD_ELF,
 };
-static constexpr int RACE_COUNT = 10;
-static constexpr int ALLIANCE_COUNT = 5;
+static constexpr int kAllRaceCount = 10;
+static constexpr int kAllianceCount = 5;
 
-static const game::Class allClasses[] = {
+static const game::Class kAllClasses[] = {
     game::Class::WARRIOR, game::Class::PALADIN, game::Class::HUNTER,
     game::Class::ROGUE, game::Class::PRIEST, game::Class::DEATH_KNIGHT,
     game::Class::SHAMAN, game::Class::MAGE, game::Class::WARLOCK,
     game::Class::DRUID,
 };
 
+
 CharacterCreateScreen::CharacterCreateScreen() {
     reset();
 }
 
 CharacterCreateScreen::~CharacterCreateScreen() = default;
+
+void CharacterCreateScreen::setExpansionConstraints(
+        const std::vector<uint32_t>& races, const std::vector<uint32_t>& classes) {
+    // Build filtered race list: alliance first, then horde
+    availableRaces_.clear();
+    expansionClasses_.clear();
+
+    if (!races.empty()) {
+        // Alliance races in display order
+        for (auto r : std::initializer_list<game::Race>{
+                game::Race::HUMAN, game::Race::DWARF, game::Race::NIGHT_ELF,
+                game::Race::GNOME, game::Race::DRAENEI}) {
+            if (std::find(races.begin(), races.end(), static_cast<uint32_t>(r)) != races.end()) {
+                availableRaces_.push_back(r);
+            }
+        }
+        allianceRaceCount_ = static_cast<int>(availableRaces_.size());
+
+        // Horde races in display order
+        for (auto r : std::initializer_list<game::Race>{
+                game::Race::ORC, game::Race::UNDEAD, game::Race::TAUREN,
+                game::Race::TROLL, game::Race::BLOOD_ELF}) {
+            if (std::find(races.begin(), races.end(), static_cast<uint32_t>(r)) != races.end()) {
+                availableRaces_.push_back(r);
+            }
+        }
+    }
+
+    if (!classes.empty()) {
+        for (auto cls : kAllClasses) {
+            if (std::find(classes.begin(), classes.end(), static_cast<uint32_t>(cls)) != classes.end()) {
+                expansionClasses_.push_back(cls);
+            }
+        }
+    }
+
+    // If no constraints provided, fall back to WotLK defaults
+    if (availableRaces_.empty()) {
+        availableRaces_.assign(kAllRaces, kAllRaces + kAllRaceCount);
+        allianceRaceCount_ = kAllianceCount;
+    }
+
+    raceIndex = 0;
+    classIndex = 0;
+    updateAvailableClasses();
+}
 
 void CharacterCreateScreen::reset() {
     std::memset(nameBuffer, 0, sizeof(nameBuffer));
@@ -50,7 +99,15 @@ void CharacterCreateScreen::reset() {
     maxFacialHair = 8;
     statusMessage.clear();
     statusIsError = false;
+    createTimer_ = -1.0f;
     hairColorIds_.clear();
+
+    // Populate default races if not yet set by setExpansionConstraints
+    if (availableRaces_.empty()) {
+        availableRaces_.assign(kAllRaces, kAllRaces + kAllRaceCount);
+        allianceRaceCount_ = kAllianceCount;
+    }
+
     updateAvailableClasses();
 
     // Reset preview tracking to force model reload on next render
@@ -81,20 +138,36 @@ void CharacterCreateScreen::update(float deltaTime) {
     if (preview_) {
         preview_->update(deltaTime);
     }
+    // Timeout waiting for server response
+    if (createTimer_ >= 0.0f) {
+        createTimer_ += deltaTime;
+        if (createTimer_ > 10.0f) {
+            createTimer_ = -1.0f;
+            setStatus("Server did not respond. Try again.", true);
+        }
+    }
 }
 
 void CharacterCreateScreen::setStatus(const std::string& msg, bool isError) {
     statusMessage = msg;
     statusIsError = isError;
+    if (isError || msg.empty()) {
+        createTimer_ = -1.0f;  // Stop waiting on error/clear
+    }
 }
 
 void CharacterCreateScreen::updateAvailableClasses() {
     availableClasses.clear();
-    game::Race race = allRaces[raceIndex];
-    for (auto cls : allClasses) {
-        if (game::isValidRaceClassCombo(race, cls)) {
-            availableClasses.push_back(cls);
+    if (availableRaces_.empty() || raceIndex >= static_cast<int>(availableRaces_.size())) return;
+    game::Race race = availableRaces_[raceIndex];
+    for (auto cls : kAllClasses) {
+        if (!game::isValidRaceClassCombo(race, cls)) continue;
+        // If expansion constraints set, only allow listed classes
+        if (!expansionClasses_.empty()) {
+            if (std::find(expansionClasses_.begin(), expansionClasses_.end(), cls) == expansionClasses_.end())
+                continue;
         }
+        availableClasses.push_back(cls);
     }
     // Clamp class index
     if (classIndex >= static_cast<int>(availableClasses.size())) {
@@ -123,7 +196,7 @@ void CharacterCreateScreen::updatePreviewIfNeeded() {
             hairColorId = static_cast<uint8_t>(hairColor);
         }
         preview_->loadCharacter(
-            allRaces[raceIndex],
+            availableRaces_[raceIndex],
             static_cast<game::Gender>(genderIndex),
             static_cast<uint8_t>(skin),
             static_cast<uint8_t>(face),
@@ -167,7 +240,7 @@ void CharacterCreateScreen::updateAppearanceRanges() {
     auto dbc = assetManager_->loadDBC("CharSections.dbc");
     if (!dbc) return;
 
-    uint32_t targetRaceId = static_cast<uint32_t>(allRaces[raceIndex]);
+    uint32_t targetRaceId = static_cast<uint32_t>(availableRaces_[raceIndex]);
     uint32_t targetSexId = (genderIndex == 1) ? 1u : 0u;
 
     const auto* csL = pipeline::getActiveDBCLayout() ? pipeline::getActiveDBCLayout()->getLayout("CharSections") : nullptr;
@@ -320,41 +393,46 @@ void CharacterCreateScreen::render(game::GameHandler& /*gameHandler*/) {
 
     ImGui::Spacing();
 
-    // Race selection
+    // Race selection (filtered by expansion)
+    int raceCount = static_cast<int>(availableRaces_.size());
     ImGui::Text("Race:");
     ImGui::Spacing();
     ImGui::Indent(10.0f);
-    ImGui::TextColored(ImVec4(0.3f, 0.5f, 1.0f, 1.0f), "Alliance:");
-    ImGui::SameLine();
-    for (int i = 0; i < ALLIANCE_COUNT; ++i) {
-        if (i > 0) ImGui::SameLine();
-        bool selected = (raceIndex == i);
-        if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.5f, 1.0f, 0.8f));
-        if (ImGui::SmallButton(game::getRaceName(allRaces[i]))) {
-            if (raceIndex != i) {
-                raceIndex = i;
-                classIndex = 0;
-                skin = face = hairStyle = hairColor = facialHair = 0;
-                updateAvailableClasses();
+    if (allianceRaceCount_ > 0) {
+        ImGui::TextColored(ImVec4(0.3f, 0.5f, 1.0f, 1.0f), "Alliance:");
+        ImGui::SameLine();
+        for (int i = 0; i < allianceRaceCount_; ++i) {
+            if (i > 0) ImGui::SameLine();
+            bool selected = (raceIndex == i);
+            if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.5f, 1.0f, 0.8f));
+            if (ImGui::SmallButton(game::getRaceName(availableRaces_[i]))) {
+                if (raceIndex != i) {
+                    raceIndex = i;
+                    classIndex = 0;
+                    skin = face = hairStyle = hairColor = facialHair = 0;
+                    updateAvailableClasses();
+                }
             }
+            if (selected) ImGui::PopStyleColor();
         }
-        if (selected) ImGui::PopStyleColor();
     }
-    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Horde:");
-    ImGui::SameLine();
-    for (int i = ALLIANCE_COUNT; i < RACE_COUNT; ++i) {
-        if (i > ALLIANCE_COUNT) ImGui::SameLine();
-        bool selected = (raceIndex == i);
-        if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1.0f, 0.3f, 0.3f, 0.8f));
-        if (ImGui::SmallButton(game::getRaceName(allRaces[i]))) {
-            if (raceIndex != i) {
-                raceIndex = i;
-                classIndex = 0;
-                skin = face = hairStyle = hairColor = facialHair = 0;
-                updateAvailableClasses();
+    if (allianceRaceCount_ < raceCount) {
+        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Horde:");
+        ImGui::SameLine();
+        for (int i = allianceRaceCount_; i < raceCount; ++i) {
+            if (i > allianceRaceCount_) ImGui::SameLine();
+            bool selected = (raceIndex == i);
+            if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1.0f, 0.3f, 0.3f, 0.8f));
+            if (ImGui::SmallButton(game::getRaceName(availableRaces_[i]))) {
+                if (raceIndex != i) {
+                    raceIndex = i;
+                    classIndex = 0;
+                    skin = face = hairStyle = hairColor = facialHair = 0;
+                    updateAvailableClasses();
+                }
             }
+            if (selected) ImGui::PopStyleColor();
         }
-        if (selected) ImGui::PopStyleColor();
     }
     ImGui::Unindent(10.0f);
 
@@ -460,9 +538,10 @@ void CharacterCreateScreen::render(game::GameHandler& /*gameHandler*/) {
             setStatus("No valid class for this race.", true);
         } else {
             setStatus("Creating character...", false);
+            createTimer_ = 0.0f;
             game::CharCreateData data;
             data.name = name;
-            data.race = allRaces[raceIndex];
+            data.race = availableRaces_[raceIndex];
             data.characterClass = availableClasses[classIndex];
             data.gender = currentGender;
             data.useFemaleModel = (genderIndex == 2 && bodyTypeIndex == 1);  // Nonbinary + Feminine

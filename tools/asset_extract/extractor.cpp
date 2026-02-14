@@ -796,6 +796,31 @@ bool Extractor::run(const Options& opts) {
         }
     }
 
+    // Cache WoW.exe for Warden MEM_CHECK responses
+    {
+        const char* exeNames[] = { "WoW.exe", "TurtleWoW.exe", "Wow.exe" };
+        std::vector<std::string> searchDirs = {
+            fs::path(opts.mpqDir).parent_path().string(),  // WoW.exe is typically next to Data/
+            opts.mpqDir                                      // Some layouts put it inside Data/
+        };
+        for (const auto& dir : searchDirs) {
+            bool found = false;
+            for (const char* name : exeNames) {
+                auto src = fs::path(dir) / name;
+                if (fs::exists(src)) {
+                    auto dstDir = fs::path(opts.outputDir) / "misc";
+                    fs::create_directories(dstDir);
+                    auto dst = dstDir / "WoW.exe";
+                    fs::copy_file(src, dst, fs::copy_options::overwrite_existing);
+                    std::cout << "Cached " << name << " -> " << dst.string() << "\n";
+                    found = true;
+                    break;
+                }
+            }
+            if (found) break;
+        }
+    }
+
     std::cout << "Done in " << secs / 60 << "m " << secs % 60 << "s\n";
 
     return true;

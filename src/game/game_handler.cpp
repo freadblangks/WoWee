@@ -3739,6 +3739,11 @@ void GameHandler::handleMessageChat(network::Packet& packet) {
                 }
             }
         }
+
+        // If still unknown, proactively query the server so the UI can show names soon after.
+        if (data.senderName.empty()) {
+            queryPlayerName(data.senderGuid);
+        }
     }
 
     // Add to chat history
@@ -4824,6 +4829,13 @@ void GameHandler::handleNameQueryResponse(network::Packet& packet) {
         if (entity && entity->getType() == ObjectType::PLAYER) {
             auto player = std::static_pointer_cast<Player>(entity);
             player->setName(data.name);
+        }
+
+        // Backfill chat history entries that arrived before we knew the name.
+        for (auto& msg : chatHistory) {
+            if (msg.senderGuid == data.guid && msg.senderName.empty()) {
+                msg.senderName = data.name;
+            }
         }
     }
 }

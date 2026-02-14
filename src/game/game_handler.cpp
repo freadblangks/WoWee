@@ -2361,14 +2361,19 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                         for (int i = 0; i < readLen; i++) resultData.push_back(0x00);
                         break;
                     }
-                    case CT_PAGE_A:
-                    case CT_PAGE_B: {
-                        // Vanilla: [4 seed][20 sha1] = 24 bytes
+                    case CT_PAGE_A: {
+                        // Vanilla: [4 seed][20 sha1] = 24 bytes (no addr+len)
                         // WotLK:   [4 seed][20 sha1][4 addr][1 length] = 29 bytes
                         int pageSize = (build <= 6005) ? 24 : 29;
                         if (pos + pageSize > checkEnd) { pos = checkEnd; break; }
                         pos += pageSize;
-                        // Response: [uint8 result=0] (page matches expected)
+                        resultData.push_back(0x00);
+                        break;
+                    }
+                    case CT_PAGE_B: {
+                        // PAGE_B always has [4 seed][20 sha1][4 addr][1 length] = 29 bytes
+                        if (pos + 29 > checkEnd) { pos = checkEnd; break; }
+                        pos += 29;
                         resultData.push_back(0x00);
                         break;
                     }

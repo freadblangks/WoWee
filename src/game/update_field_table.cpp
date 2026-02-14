@@ -48,6 +48,8 @@ static const UFNameEntry kUFNames[] = {
     {"PLAYER_EXPLORED_ZONES_START", UF::PLAYER_EXPLORED_ZONES_START},
     {"GAMEOBJECT_DISPLAYID", UF::GAMEOBJECT_DISPLAYID},
     {"ITEM_FIELD_STACK_COUNT", UF::ITEM_FIELD_STACK_COUNT},
+    {"CONTAINER_FIELD_NUM_SLOTS", UF::CONTAINER_FIELD_NUM_SLOTS},
+    {"CONTAINER_FIELD_SLOT_1", UF::CONTAINER_FIELD_SLOT_1},
 };
 
 static constexpr size_t kUFNameCount = sizeof(kUFNames) / sizeof(kUFNames[0]);
@@ -85,6 +87,8 @@ void UpdateFieldTable::loadWotlkDefaults() {
         {UF::PLAYER_EXPLORED_ZONES_START, 1041},
         {UF::GAMEOBJECT_DISPLAYID, 8},
         {UF::ITEM_FIELD_STACK_COUNT, 14},
+        {UF::CONTAINER_FIELD_NUM_SLOTS, 64},  // ITEM_END + 0 for WotLK
+        {UF::CONTAINER_FIELD_SLOT_1, 66},      // ITEM_END + 2 for WotLK
     };
     for (auto& d : defaults) {
         fieldMap_[static_cast<uint16_t>(d.field)] = d.idx;

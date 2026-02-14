@@ -52,6 +52,10 @@ enum class UF : uint16_t {
     // Item fields
     ITEM_FIELD_STACK_COUNT,
 
+    // Container fields
+    CONTAINER_FIELD_NUM_SLOTS,
+    CONTAINER_FIELD_SLOT_1,
+
     COUNT
 };
 

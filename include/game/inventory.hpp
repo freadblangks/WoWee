@@ -72,6 +72,7 @@ public:
 
     // Extra bags
     int getBagSize(int bagIndex) const;
+    void setBagSize(int bagIndex, int size);
     const ItemSlot& getBagSlot(int bagIndex, int slotIndex) const;
     bool setBagSlot(int bagIndex, int slotIndex, const ItemDef& item);
 

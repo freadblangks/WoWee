@@ -45,6 +45,11 @@ public:
         return MovementPacket::build(opcode, info, playerGuid);
     }
 
+    /** Build CMSG_CAST_SPELL (WotLK default: castCount + spellId + castFlags + targets) */
+    virtual network::Packet buildCastSpell(uint32_t spellId, uint64_t targetGuid, uint8_t castCount) {
+        return CastSpellPacket::build(spellId, targetGuid, castCount);
+    }
+
     // --- Character Enumeration ---
 
     /** Parse SMSG_CHAR_ENUM */
@@ -201,6 +206,7 @@ public:
     network::Packet buildMovementPacket(LogicalOpcode opcode,
                                          const MovementInfo& info,
                                          uint64_t playerGuid = 0) override;
+    network::Packet buildCastSpell(uint32_t spellId, uint64_t targetGuid, uint8_t castCount) override;
     bool parseMessageChat(network::Packet& packet, MessageChatData& data) override;
     bool parseGuildRoster(network::Packet& packet, GuildRosterData& data) override;
     bool parseGuildQueryResponse(network::Packet& packet, GuildQueryResponseData& data) override;

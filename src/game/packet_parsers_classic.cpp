@@ -258,6 +258,44 @@ network::Packet ClassicPacketParsers::buildMovementPacket(LogicalOpcode opcode,
 }
 
 // ============================================================================
+// Classic buildCastSpell
+// Vanilla 1.12.x: NO castCount prefix, NO castFlags byte
+// Format: uint32 spellId + uint32 targetFlags + [PackedGuid if unit target]
+// ============================================================================
+network::Packet ClassicPacketParsers::buildCastSpell(uint32_t spellId, uint64_t targetGuid, uint8_t /*castCount*/) {
+    network::Packet packet(wireOpcode(LogicalOpcode::CMSG_CAST_SPELL));
+
+    packet.writeUInt32(spellId);
+
+    // SpellCastTargets — vanilla uses uint16 target mask (not uint32 like WotLK)
+    if (targetGuid != 0) {
+        packet.writeUInt16(0x02); // TARGET_FLAG_UNIT
+
+        // Write packed GUID
+        uint8_t mask = 0;
+        uint8_t bytes[8];
+        int byteCount = 0;
+        uint64_t g = targetGuid;
+        for (int i = 0; i < 8; ++i) {
+            uint8_t b = g & 0xFF;
+            if (b != 0) {
+                mask |= (1 << i);
+                bytes[byteCount++] = b;
+            }
+            g >>= 8;
+        }
+        packet.writeUInt8(mask);
+        for (int i = 0; i < byteCount; ++i) {
+            packet.writeUInt8(bytes[i]);
+        }
+    } else {
+        packet.writeUInt16(0x00); // TARGET_FLAG_SELF
+    }
+
+    return packet;
+}
+
+// ============================================================================
 // Classic 1.12.1 parseCharEnum
 // Differences from TBC:
 // - Equipment: 20 items, but NO enchantment field per slot

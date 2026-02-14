@@ -859,6 +859,7 @@ private:
     void emitAllOtherPlayerEquipment();
     void detectInventorySlotBases(const std::map<uint16_t, uint32_t>& fields);
     bool applyInventoryFields(const std::map<uint16_t, uint32_t>& fields);
+    void extractContainerFields(uint64_t containerGuid, const std::map<uint16_t, uint32_t>& fields);
     uint64_t resolveOnlineItemGuid(uint32_t itemId) const;
 
     // ---- Phase 2 handlers ----
@@ -1094,6 +1095,12 @@ private:
     std::unordered_set<uint32_t> pendingItemQueries_;
     std::array<uint64_t, 23> equipSlotGuids_{};
     std::array<uint64_t, 16> backpackSlotGuids_{};
+    // Container (bag) contents: containerGuid -> array of item GUIDs per slot
+    struct ContainerInfo {
+        uint32_t numSlots = 0;
+        std::array<uint64_t, 36> slotGuids{};  // max 36 slots
+    };
+    std::unordered_map<uint64_t, ContainerInfo> containerContents_;
     int invSlotBase_ = -1;
     int packSlotBase_ = -1;
     std::map<uint16_t, uint32_t> lastPlayerFields_;

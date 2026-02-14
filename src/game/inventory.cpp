@@ -50,6 +50,11 @@ int Inventory::getBagSize(int bagIndex) const {
     return bags[bagIndex].size;
 }
 
+void Inventory::setBagSize(int bagIndex, int size) {
+    if (bagIndex < 0 || bagIndex >= NUM_BAG_SLOTS) return;
+    bags[bagIndex].size = std::min(size, MAX_BAG_SIZE);
+}
+
 const ItemSlot& Inventory::getBagSlot(int bagIndex, int slotIndex) const {
     if (bagIndex < 0 || bagIndex >= NUM_BAG_SLOTS) return EMPTY_SLOT;
     if (slotIndex < 0 || slotIndex >= bags[bagIndex].size) return EMPTY_SLOT;

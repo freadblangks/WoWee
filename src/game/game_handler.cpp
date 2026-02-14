@@ -3161,8 +3161,8 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             go->getX(), go->getY(), go->getZ(), go->getOrientation());
                     }
                 }
-                // Track online item objects
-                if (block.objectType == ObjectType::ITEM) {
+                // Track online item objects (CONTAINER = bags, also tracked as items)
+                if (block.objectType == ObjectType::ITEM || block.objectType == ObjectType::CONTAINER) {
                     auto entryIt = block.fields.find(fieldIndex(UF::OBJECT_FIELD_ENTRY));
                     auto stackIt = block.fields.find(fieldIndex(UF::ITEM_FIELD_STACK_COUNT));
                     if (entryIt != block.fields.end() && entryIt->second != 0) {
@@ -3171,6 +3171,10 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         info.stackCount = (stackIt != block.fields.end()) ? stackIt->second : 1;
                         onlineItems_[block.guid] = info;
                         queryItemInfo(info.entry, block.guid);
+                    }
+                    // Extract container slot GUIDs for bags
+                    if (block.objectType == ObjectType::CONTAINER) {
+                        extractContainerFields(block.guid, block.fields);
                     }
                 }
 
@@ -3550,12 +3554,16 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     }
 
                     // Update item stack count for online items
-                    if (entity->getType() == ObjectType::ITEM) {
+                    if (entity->getType() == ObjectType::ITEM || entity->getType() == ObjectType::CONTAINER) {
                         for (const auto& [key, val] : block.fields) {
                             if (key == fieldIndex(UF::ITEM_FIELD_STACK_COUNT)) {
                                 auto it = onlineItems_.find(block.guid);
                                 if (it != onlineItems_.end()) it->second.stackCount = val;
                             }
+                        }
+                        // Update container slot GUIDs on bag content changes
+                        if (entity->getType() == ObjectType::CONTAINER) {
+                            extractContainerFields(block.guid, block.fields);
                         }
                         rebuildOnlineInventory();
                     }
@@ -3773,7 +3781,8 @@ void GameHandler::handleDestroyObject(network::Packet& packet) {
     }
     hostileAttackers_.erase(data.guid);
 
-    // Remove online item tracking
+    // Remove online item/container tracking
+    containerContents_.erase(data.guid);
     if (onlineItems_.erase(data.guid)) {
         rebuildOnlineInventory();
     }
@@ -5264,6 +5273,32 @@ bool GameHandler::applyInventoryFields(const std::map<uint16_t, uint32_t>& field
     return slotsChanged;
 }
 
+void GameHandler::extractContainerFields(uint64_t containerGuid, const std::map<uint16_t, uint32_t>& fields) {
+    const uint16_t numSlotsIdx = fieldIndex(UF::CONTAINER_FIELD_NUM_SLOTS);
+    const uint16_t slot1Idx = fieldIndex(UF::CONTAINER_FIELD_SLOT_1);
+    if (numSlotsIdx == 0xFFFF || slot1Idx == 0xFFFF) return;
+
+    auto& info = containerContents_[containerGuid];
+
+    // Read number of slots
+    auto numIt = fields.find(numSlotsIdx);
+    if (numIt != fields.end()) {
+        info.numSlots = std::min(numIt->second, 36u);
+    }
+
+    // Read slot GUIDs (each is 2 uint32 fields: lo + hi)
+    for (const auto& [key, val] : fields) {
+        if (key < slot1Idx) continue;
+        int offset = key - slot1Idx;
+        int slotIndex = offset / 2;
+        if (slotIndex >= 36) continue;
+        bool isLow = (offset % 2 == 0);
+        uint64_t& guid = info.slotGuids[slotIndex];
+        if (isLow) guid = (guid & 0xFFFFFFFF00000000ULL) | val;
+        else guid = (guid & 0x00000000FFFFFFFFULL) | (uint64_t(val) << 32);
+    }
+}
+
 void GameHandler::rebuildOnlineInventory() {
 
     inventory = Inventory();
@@ -5336,6 +5371,78 @@ void GameHandler::rebuildOnlineInventory() {
         }
 
         inventory.setBackpackSlot(i, def);
+    }
+
+    // Bag contents (BAG1-BAG4 are equip slots 19-22)
+    for (int bagIdx = 0; bagIdx < 4; bagIdx++) {
+        uint64_t bagGuid = equipSlotGuids_[19 + bagIdx];
+        if (bagGuid == 0) continue;
+
+        // Determine bag size from container fields or item template
+        int numSlots = 0;
+        auto contIt = containerContents_.find(bagGuid);
+        if (contIt != containerContents_.end()) {
+            numSlots = static_cast<int>(contIt->second.numSlots);
+        }
+        if (numSlots <= 0) {
+            auto bagItemIt = onlineItems_.find(bagGuid);
+            if (bagItemIt != onlineItems_.end()) {
+                auto bagInfoIt = itemInfoCache_.find(bagItemIt->second.entry);
+                if (bagInfoIt != itemInfoCache_.end()) {
+                    numSlots = bagInfoIt->second.containerSlots;
+                }
+            }
+        }
+        if (numSlots <= 0) continue;
+
+        // Set the bag size in the inventory bag data
+        inventory.setBagSize(bagIdx, numSlots);
+
+        // Also set bagSlots on the equipped bag item (for UI display)
+        auto& bagEquipSlot = inventory.getEquipSlot(static_cast<EquipSlot>(19 + bagIdx));
+        if (!bagEquipSlot.empty()) {
+            ItemDef bagDef = bagEquipSlot.item;
+            bagDef.bagSlots = numSlots;
+            inventory.setEquipSlot(static_cast<EquipSlot>(19 + bagIdx), bagDef);
+        }
+
+        // Populate bag slot items
+        if (contIt == containerContents_.end()) continue;
+        const auto& container = contIt->second;
+        for (int s = 0; s < numSlots && s < 36; s++) {
+            uint64_t itemGuid = container.slotGuids[s];
+            if (itemGuid == 0) continue;
+
+            auto itemIt = onlineItems_.find(itemGuid);
+            if (itemIt == onlineItems_.end()) continue;
+
+            ItemDef def;
+            def.itemId = itemIt->second.entry;
+            def.stackCount = itemIt->second.stackCount;
+            def.maxStack = 1;
+
+            auto infoIt = itemInfoCache_.find(itemIt->second.entry);
+            if (infoIt != itemInfoCache_.end()) {
+                def.name = infoIt->second.name;
+                def.quality = static_cast<ItemQuality>(infoIt->second.quality);
+                def.inventoryType = infoIt->second.inventoryType;
+                def.maxStack = std::max(1, infoIt->second.maxStack);
+                def.displayInfoId = infoIt->second.displayInfoId;
+                def.subclassName = infoIt->second.subclassName;
+                def.armor = infoIt->second.armor;
+                def.stamina = infoIt->second.stamina;
+                def.strength = infoIt->second.strength;
+                def.agility = infoIt->second.agility;
+                def.intellect = infoIt->second.intellect;
+                def.spirit = infoIt->second.spirit;
+                def.bagSlots = infoIt->second.containerSlots;
+            } else {
+                def.name = "Item " + std::to_string(def.itemId);
+                queryItemInfo(def.itemId, itemGuid);
+            }
+
+            inventory.setBagSlot(bagIdx, s, def);
+        }
     }
 
     onlineEquipDirty_ = true;
@@ -6090,7 +6197,9 @@ void GameHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
     }
 
     uint64_t target = targetGuid != 0 ? targetGuid : this->targetGuid;
-    auto packet = CastSpellPacket::build(spellId, target, ++castCount);
+    auto packet = packetParsers_
+        ? packetParsers_->buildCastSpell(spellId, target, ++castCount)
+        : CastSpellPacket::build(spellId, target, ++castCount);
     socket->send(packet);
     LOG_INFO("Casting spell: ", spellId, " on 0x", std::hex, target, std::dec);
 }

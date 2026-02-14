@@ -239,6 +239,10 @@ public:
     using ChatBubbleCallback = std::function<void(uint64_t, const std::string&, bool)>;
     void setChatBubbleCallback(ChatBubbleCallback cb) { chatBubbleCallback_ = std::move(cb); }
 
+    // Emote animation callback: (entityGuid, animationId)
+    using EmoteAnimCallback = std::function<void(uint64_t, uint32_t)>;
+    void setEmoteAnimCallback(EmoteAnimCallback cb) { emoteAnimCallback_ = std::move(cb); }
+
     /**
      * Get chat history (recent messages)
      * @param maxMessages Maximum number of messages to return (0 = all)
@@ -1049,6 +1053,7 @@ private:
     size_t maxChatHistory = 100;             // Maximum chat messages to keep
     std::vector<std::string> joinedChannels_;   // Active channel memberships
     ChatBubbleCallback chatBubbleCallback_;
+    EmoteAnimCallback emoteAnimCallback_;
 
     // Targeting
     uint64_t targetGuid = 0;

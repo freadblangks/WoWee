@@ -6,6 +6,7 @@
 #include "game/warden_module.hpp"
 #include "game/opcodes.hpp"
 #include "game/update_field_table.hpp"
+#include "rendering/renderer.hpp"
 #include "pipeline/dbc_layout.hpp"
 #include "network/world_socket.hpp"
 #include "network/packet.hpp"
@@ -4021,23 +4022,35 @@ void GameHandler::handleTextEmote(network::Packet& packet) {
         queryPlayerName(data.senderGuid);
     }
 
-    // Build emote message text (server sends textEmoteId, we look up the text)
-    // For now, just display a generic emote message
+    // Resolve emote text from DBC using third-person "others see" templates
+    const std::string* targetPtr = data.targetName.empty() ? nullptr : &data.targetName;
+    std::string emoteText = rendering::Renderer::getEmoteTextByDbcId(data.textEmoteId, senderName, targetPtr);
+    if (emoteText.empty()) {
+        // Fallback if DBC lookup fails
+        emoteText = data.targetName.empty()
+            ? senderName + " performs an emote."
+            : senderName + " performs an emote at " + data.targetName + ".";
+    }
+
     MessageChatData chatMsg;
     chatMsg.type = ChatType::TEXT_EMOTE;
     chatMsg.language = ChatLanguage::COMMON;
     chatMsg.senderGuid = data.senderGuid;
     chatMsg.senderName = senderName;
-    chatMsg.message = data.targetName.empty()
-        ? senderName + " performs an emote."
-        : senderName + " performs an emote at " + data.targetName + ".";
+    chatMsg.message = emoteText;
 
     chatHistory.push_back(chatMsg);
     if (chatHistory.size() > maxChatHistory) {
         chatHistory.erase(chatHistory.begin());
     }
 
-    LOG_INFO("TEXT_EMOTE from ", senderName, " (emoteId=", data.textEmoteId, ")");
+    // Trigger emote animation on sender's entity via callback
+    uint32_t animId = rendering::Renderer::getEmoteAnimByDbcId(data.textEmoteId);
+    if (animId != 0 && emoteAnimCallback_) {
+        emoteAnimCallback_(data.senderGuid, animId);
+    }
+
+    LOG_INFO("TEXT_EMOTE from ", senderName, " (emoteId=", data.textEmoteId, ", anim=", animId, ")");
 }
 
 void GameHandler::joinChannel(const std::string& channelName, const std::string& password) {

@@ -67,12 +67,15 @@ struct EmoteInfo {
     uint32_t animId = 0;
     uint32_t dbcId = 0;  // EmotesText.dbc record ID (for CMSG_TEXT_EMOTE)
     bool loop = false;
-    std::string textNoTarget;
-    std::string textTarget;
+    std::string textNoTarget;       // sender sees, no target: "You dance."
+    std::string textTarget;         // sender sees, with target: "You dance with %s."
+    std::string othersNoTarget;     // others see, no target: "%s dances."
+    std::string othersTarget;       // others see, with target: "%s dances with %s."
     std::string command;
 };
 
 static std::unordered_map<std::string, EmoteInfo> EMOTE_TABLE;
+static std::unordered_map<uint32_t, const EmoteInfo*> EMOTE_BY_DBCID; // reverse lookup: dbcId → EmoteInfo*
 static bool emoteTableLoaded = false;
 
 static std::vector<std::string> parseEmoteCommands(const std::string& raw) {
@@ -101,26 +104,27 @@ static bool isLoopingEmote(const std::string& command) {
 static void loadFallbackEmotes() {
     if (!EMOTE_TABLE.empty()) return;
     EMOTE_TABLE = {
-        {"wave",    {67,  0, false, "You wave.", "You wave at %s.", "wave"}},
-        {"bow",     {66,  0, false, "You bow down graciously.", "You bow down before %s.", "bow"}},
-        {"laugh",   {70,  0, false, "You laugh.", "You laugh at %s.", "laugh"}},
-        {"point",   {84,  0, false, "You point over yonder.", "You point at %s.", "point"}},
-        {"cheer",   {68,  0, false, "You cheer!", "You cheer at %s.", "cheer"}},
-        {"dance",   {69,  0, true,  "You burst into dance.", "You dance with %s.", "dance"}},
-        {"kneel",   {75,  0, false, "You kneel down.", "You kneel before %s.", "kneel"}},
-        {"applaud", {80,  0, false, "You applaud. Bravo!", "You applaud at %s. Bravo!", "applaud"}},
-        {"shout",   {81,  0, false, "You shout.", "You shout at %s.", "shout"}},
+        {"wave",    {67,  0, false, "You wave.", "You wave at %s.", "%s waves.", "%s waves at %s.", "wave"}},
+        {"bow",     {66,  0, false, "You bow down graciously.", "You bow down before %s.", "%s bows down graciously.", "%s bows down before %s.", "bow"}},
+        {"laugh",   {70,  0, false, "You laugh.", "You laugh at %s.", "%s laughs.", "%s laughs at %s.", "laugh"}},
+        {"point",   {84,  0, false, "You point over yonder.", "You point at %s.", "%s points over yonder.", "%s points at %s.", "point"}},
+        {"cheer",   {68,  0, false, "You cheer!", "You cheer at %s.", "%s cheers!", "%s cheers at %s.", "cheer"}},
+        {"dance",   {69,  0, true,  "You burst into dance.", "You dance with %s.", "%s bursts into dance.", "%s dances with %s.", "dance"}},
+        {"kneel",   {75,  0, false, "You kneel down.", "You kneel before %s.", "%s kneels down.", "%s kneels before %s.", "kneel"}},
+        {"applaud", {80,  0, false, "You applaud. Bravo!", "You applaud at %s. Bravo!", "%s applauds. Bravo!", "%s applauds at %s. Bravo!", "applaud"}},
+        {"shout",   {81,  0, false, "You shout.", "You shout at %s.", "%s shouts.", "%s shouts at %s.", "shout"}},
         {"chicken", {78,  0, false, "With arms flapping, you strut around. Cluck, Cluck, Chicken!",
-                     "With arms flapping, you strut around %s. Cluck, Cluck, Chicken!", "chicken"}},
-        {"cry",     {77,  0, false, "You cry.", "You cry on %s's shoulder.", "cry"}},
-        {"kiss",    {76,  0, false, "You blow a kiss into the wind.", "You blow a kiss to %s.", "kiss"}},
-        {"roar",    {74,  0, false, "You roar with bestial vigor. So fierce!", "You roar with bestial vigor at %s. So fierce!", "roar"}},
-        {"salute",  {113, 0, false, "You salute.", "You salute %s with respect.", "salute"}},
-        {"rude",    {73,  0, false, "You make a rude gesture.", "You make a rude gesture at %s.", "rude"}},
-        {"flex",    {82,  0, false, "You flex your muscles. Oooooh so strong!", "You flex at %s. Oooooh so strong!", "flex"}},
-        {"shy",     {83,  0, false, "You smile shyly.", "You smile shyly at %s.", "shy"}},
-        {"beg",     {79,  0, false, "You beg everyone around you. How pathetic.", "You beg %s. How pathetic.", "beg"}},
-        {"eat",     {61,  0, false, "You begin to eat.", "You begin to eat in front of %s.", "eat"}},
+                     "With arms flapping, you strut around %s. Cluck, Cluck, Chicken!",
+                     "%s struts around. Cluck, Cluck, Chicken!", "%s struts around %s. Cluck, Cluck, Chicken!", "chicken"}},
+        {"cry",     {77,  0, false, "You cry.", "You cry on %s's shoulder.", "%s cries.", "%s cries on %s's shoulder.", "cry"}},
+        {"kiss",    {76,  0, false, "You blow a kiss into the wind.", "You blow a kiss to %s.", "%s blows a kiss into the wind.", "%s blows a kiss to %s.", "kiss"}},
+        {"roar",    {74,  0, false, "You roar with bestial vigor. So fierce!", "You roar with bestial vigor at %s. So fierce!", "%s roars with bestial vigor. So fierce!", "%s roars with bestial vigor at %s. So fierce!", "roar"}},
+        {"salute",  {113, 0, false, "You salute.", "You salute %s with respect.", "%s salutes.", "%s salutes %s with respect.", "salute"}},
+        {"rude",    {73,  0, false, "You make a rude gesture.", "You make a rude gesture at %s.", "%s makes a rude gesture.", "%s makes a rude gesture at %s.", "rude"}},
+        {"flex",    {82,  0, false, "You flex your muscles. Oooooh so strong!", "You flex at %s. Oooooh so strong!", "%s flexes. Oooooh so strong!", "%s flexes at %s. Oooooh so strong!", "flex"}},
+        {"shy",     {83,  0, false, "You smile shyly.", "You smile shyly at %s.", "%s smiles shyly.", "%s smiles shyly at %s.", "shy"}},
+        {"beg",     {79,  0, false, "You beg everyone around you. How pathetic.", "You beg %s. How pathetic.", "%s begs everyone around. How pathetic.", "%s begs %s. How pathetic.", "beg"}},
+        {"eat",     {61,  0, false, "You begin to eat.", "You begin to eat in front of %s.", "%s begins to eat.", "%s begins to eat in front of %s.", "eat"}},
     };
 }
 
@@ -197,17 +201,16 @@ static void loadEmotesFromDbc() {
             animId = emoteRef;  // fallback if EmotesText stores animation id directly
         }
 
-        uint32_t senderTargetTextId = emotesTextDbc->getUInt32(r, etL ? (*etL)["SenderTargetTextID"] : 5);  // unisex, target, sender
-        uint32_t senderNoTargetTextId = emotesTextDbc->getUInt32(r, etL ? (*etL)["SenderNoTargetTextID"] : 9); // unisex, no target, sender
+        uint32_t senderTargetTextId = emotesTextDbc->getUInt32(r, etL ? (*etL)["SenderTargetTextID"] : 5);
+        uint32_t senderNoTargetTextId = emotesTextDbc->getUInt32(r, etL ? (*etL)["SenderNoTargetTextID"] : 9);
+        uint32_t othersTargetTextId = emotesTextDbc->getUInt32(r, etL ? (*etL)["OthersTargetTextID"] : 3);
+        uint32_t othersNoTargetTextId = emotesTextDbc->getUInt32(r, etL ? (*etL)["OthersNoTargetTextID"] : 7);
 
-        std::string textTarget;
-        std::string textNoTarget;
-        if (auto it = textData.find(senderTargetTextId); it != textData.end()) {
-            textTarget = it->second;
-        }
-        if (auto it = textData.find(senderNoTargetTextId); it != textData.end()) {
-            textNoTarget = it->second;
-        }
+        std::string textTarget, textNoTarget, oTarget, oNoTarget;
+        if (auto it = textData.find(senderTargetTextId); it != textData.end()) textTarget = it->second;
+        if (auto it = textData.find(senderNoTargetTextId); it != textData.end()) textNoTarget = it->second;
+        if (auto it = textData.find(othersTargetTextId); it != textData.end()) oTarget = it->second;
+        if (auto it = textData.find(othersNoTargetTextId); it != textData.end()) oNoTarget = it->second;
 
         for (const std::string& cmd : parseEmoteCommands(cmdRaw)) {
             if (cmd.empty()) continue;
@@ -217,6 +220,8 @@ static void loadEmotesFromDbc() {
             info.loop = isLoopingEmote(cmd);
             info.textNoTarget = textNoTarget;
             info.textTarget = textTarget;
+            info.othersNoTarget = oNoTarget;
+            info.othersTarget = oTarget;
             info.command = cmd;
             EMOTE_TABLE.emplace(cmd, std::move(info));
         }
@@ -227,6 +232,14 @@ static void loadEmotesFromDbc() {
         loadFallbackEmotes();
     } else {
         LOG_INFO("Emotes: loaded ", EMOTE_TABLE.size(), " commands from DBC");
+    }
+
+    // Build reverse lookup by dbcId (only first command per emote needed)
+    EMOTE_BY_DBCID.clear();
+    for (auto& [cmd, info] : EMOTE_TABLE) {
+        if (info.dbcId != 0) {
+            EMOTE_BY_DBCID.emplace(info.dbcId, &info);
+        }
     }
 }
 
@@ -1577,6 +1590,50 @@ uint32_t Renderer::getEmoteDbcId(const std::string& emoteName) {
     auto it = EMOTE_TABLE.find(emoteName);
     if (it != EMOTE_TABLE.end()) {
         return it->second.dbcId;
+    }
+    return 0;
+}
+
+std::string Renderer::getEmoteTextByDbcId(uint32_t dbcId, const std::string& senderName,
+                                           const std::string* targetName) {
+    loadEmotesFromDbc();
+    auto it = EMOTE_BY_DBCID.find(dbcId);
+    if (it == EMOTE_BY_DBCID.end()) return "";
+
+    const EmoteInfo& info = *it->second;
+
+    // Use "others see" text templates: "%s dances." / "%s dances with %s."
+    if (targetName && !targetName->empty()) {
+        if (!info.othersTarget.empty()) {
+            // Replace first %s with sender, second %s with target
+            std::string out;
+            out.reserve(info.othersTarget.size() + senderName.size() + targetName->size());
+            bool firstReplaced = false;
+            for (size_t i = 0; i < info.othersTarget.size(); ++i) {
+                if (info.othersTarget[i] == '%' && i + 1 < info.othersTarget.size() && info.othersTarget[i + 1] == 's') {
+                    out += firstReplaced ? *targetName : senderName;
+                    firstReplaced = true;
+                    ++i;
+                } else {
+                    out.push_back(info.othersTarget[i]);
+                }
+            }
+            return out;
+        }
+        return senderName + " " + info.command + "s at " + *targetName + ".";
+    } else {
+        if (!info.othersNoTarget.empty()) {
+            return replacePlaceholders(info.othersNoTarget, &senderName);
+        }
+        return senderName + " " + info.command + "s.";
+    }
+}
+
+uint32_t Renderer::getEmoteAnimByDbcId(uint32_t dbcId) {
+    loadEmotesFromDbc();
+    auto it = EMOTE_BY_DBCID.find(dbcId);
+    if (it != EMOTE_BY_DBCID.end()) {
+        return it->second->animId;
     }
     return 0;
 }

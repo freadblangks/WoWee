@@ -837,6 +837,7 @@ private:
     void handleCreatureQueryResponse(network::Packet& packet);
     void handleGameObjectQueryResponse(network::Packet& packet);
     void handleItemQueryResponse(network::Packet& packet);
+    void handleInspectResults(network::Packet& packet);
     void queryItemInfo(uint32_t entry, uint64_t guid);
     void rebuildOnlineInventory();
     void maybeDetectVisibleItemLayout();
@@ -1084,6 +1085,11 @@ private:
     std::unordered_map<uint64_t, std::array<uint32_t, 19>> otherPlayerVisibleItemEntries_;
     std::unordered_set<uint64_t> otherPlayerVisibleDirty_;
     std::unordered_map<uint64_t, uint32_t> otherPlayerMoveTimeMs_;
+
+    // Inspect fallback (when visible item fields are missing/unreliable)
+    std::unordered_map<uint64_t, std::array<uint32_t, 19>> inspectedPlayerItemEntries_;
+    std::unordered_set<uint64_t> pendingAutoInspect_;
+    float inspectRateLimit_ = 0.0f;
 
     // ---- Phase 2: Combat ----
     bool autoAttacking = false;

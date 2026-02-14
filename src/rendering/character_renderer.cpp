@@ -1792,6 +1792,22 @@ bool CharacterRenderer::attachWeapon(uint32_t charInstanceId, uint32_t attachmen
         }
     }
 
+    // Validate bone index (bad attachment tables should not silently bind to origin)
+    if (found && boneIndex >= charModel.bones.size()) {
+        found = false;
+    }
+    if (!found) {
+        int32_t targetKeyBone = (attachmentId == 1) ? 26 : 27;
+        for (size_t i = 0; i < charModel.bones.size(); i++) {
+            if (charModel.bones[i].keyBoneId == targetKeyBone) {
+                boneIndex = static_cast<uint16_t>(i);
+                offset = glm::vec3(0.0f);
+                found = true;
+                break;
+            }
+        }
+    }
+
     if (!found) {
         core::Logger::getInstance().warning("attachWeapon: no bone found for attachment ", attachmentId);
         return false;
@@ -1915,6 +1931,22 @@ bool CharacterRenderer::getAttachmentTransform(uint32_t instanceId, uint32_t att
     }
 
     if (!found) return false;
+
+    // Validate bone index; invalid indices bind attachments to origin (looks like weapons at feet).
+    if (boneIndex >= model.bones.size()) {
+        // Fallback: key bones (26/27) for hand attachments.
+        int32_t targetKeyBone = (attachmentId == 1) ? 26 : 27;
+        found = false;
+        for (size_t i = 0; i < model.bones.size(); i++) {
+            if (model.bones[i].keyBoneId == targetKeyBone) {
+                boneIndex = static_cast<uint16_t>(i);
+                offset = glm::vec3(0.0f);
+                found = true;
+                break;
+            }
+        }
+        if (!found) return false;
+    }
 
     // Get bone matrix
     glm::mat4 boneMat(1.0f);

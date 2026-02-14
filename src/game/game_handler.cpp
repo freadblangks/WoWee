@@ -263,6 +263,20 @@ void GameHandler::update(float deltaTime) {
         }
     }
 
+    // Auto-inspect throttling (fallback for player equipment visuals).
+    if (inspectRateLimit_ > 0.0f) {
+        inspectRateLimit_ = std::max(0.0f, inspectRateLimit_ - deltaTime);
+    }
+    if (state == WorldState::IN_WORLD && socket && inspectRateLimit_ <= 0.0f && !pendingAutoInspect_.empty()) {
+        uint64_t guid = *pendingAutoInspect_.begin();
+        pendingAutoInspect_.erase(pendingAutoInspect_.begin());
+        if (guid != 0 && guid != playerGuid && entityManager.hasEntity(guid)) {
+            auto pkt = InspectPacket::build(guid);
+            socket->send(pkt);
+            inspectRateLimit_ = 0.75f; // keep it gentle
+        }
+    }
+
     // Send periodic heartbeat if in world
     if (state == WorldState::IN_WORLD) {
         timeSinceLastPing += deltaTime;
@@ -758,6 +772,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
 
         case Opcode::SMSG_ITEM_QUERY_SINGLE_RESPONSE:
             handleItemQueryResponse(packet);
+            break;
+
+        case Opcode::SMSG_INSPECT_RESULTS:
+            handleInspectResults(packet);
             break;
 
         // ---- XP ----
@@ -2847,6 +2865,8 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     otherPlayerVisibleItemEntries_.erase(guid);
                     otherPlayerVisibleDirty_.erase(guid);
                     otherPlayerMoveTimeMs_.erase(guid);
+                    inspectedPlayerItemEntries_.erase(guid);
+                    pendingAutoInspect_.erase(guid);
                 } else if (entity->getType() == ObjectType::GAMEOBJECT && gameObjectDespawnCallback_) {
                     gameObjectDespawnCallback_(guid);
                 }
@@ -3263,6 +3283,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     }
                     if (applyInventoryFields(block.fields)) slotsChanged = true;
                     if (slotsChanged) rebuildOnlineInventory();
+                    maybeDetectVisibleItemLayout();
                     extractSkillFields(lastPlayerFields_);
                     extractExploredZoneFields(lastPlayerFields_);
                 }
@@ -4991,6 +5012,95 @@ void GameHandler::handleItemQueryResponse(network::Packet& packet) {
         rebuildOnlineInventory();
         maybeDetectVisibleItemLayout();
         emitAllOtherPlayerEquipment();
+        // If we have inspect-based item entry lists, re-emit for any players that now resolve.
+        if (playerEquipmentCallback_) {
+            for (const auto& [guid, entries] : inspectedPlayerItemEntries_) {
+                std::array<uint32_t, 19> displayIds{};
+                std::array<uint8_t, 19> invTypes{};
+                for (int s = 0; s < 19; s++) {
+                    uint32_t entry = entries[s];
+                    if (entry == 0) continue;
+                    auto infoIt = itemInfoCache_.find(entry);
+                    if (infoIt == itemInfoCache_.end()) continue;
+                    displayIds[s] = infoIt->second.displayInfoId;
+                    invTypes[s] = static_cast<uint8_t>(infoIt->second.inventoryType);
+                }
+                playerEquipmentCallback_(guid, displayIds, invTypes);
+            }
+        }
+    }
+}
+
+void GameHandler::handleInspectResults(network::Packet& packet) {
+    // Best-effort parsing across Classic/TBC/WotLK variants.
+    // We only care about item entry IDs per equip slot.
+    if (packet.getSize() - packet.getReadPos() < 8) return;
+
+    uint64_t guid = packet.readUInt64();
+    if (guid == 0) return;
+
+    const size_t remaining = packet.getSize() - packet.getReadPos();
+
+    auto tryParseFixed = [&](size_t perSlotBytes, size_t itemIdOffset) -> std::optional<std::array<uint32_t, 19>> {
+        if (remaining < 19 * perSlotBytes) return std::nullopt;
+        auto saved = packet.getReadPos();
+        std::array<uint32_t, 19> items{};
+        bool plausible = false;
+
+        for (int i = 0; i < 19; i++) {
+            if (perSlotBytes == 4) {
+                items[i] = packet.readUInt32();
+            } else if (perSlotBytes == 8) {
+                uint32_t a = packet.readUInt32();
+                uint32_t b = packet.readUInt32();
+                items[i] = (itemIdOffset == 0) ? a : b;
+            } else {
+                packet.setReadPos(saved);
+                return std::nullopt;
+            }
+            if (items[i] > 0 && items[i] < 5000000u) plausible = true;
+        }
+
+        // Rewind to allow other attempts if implausible.
+        if (!plausible) {
+            packet.setReadPos(saved);
+            return std::nullopt;
+        }
+        return items;
+    };
+
+    std::optional<std::array<uint32_t, 19>> parsed;
+    // Common shapes: [guid][19*uint32 itemId] or [guid][19*(uint32 itemId, uint32 enchant)].
+    parsed = tryParseFixed(4, 0);
+    if (!parsed) parsed = tryParseFixed(8, 0);
+    if (!parsed) parsed = tryParseFixed(8, 4); // sometimes itemId is second dword
+
+    if (!parsed) {
+        LOG_WARNING("SMSG_INSPECT_RESULTS: unrecognized payload size=", remaining, " for guid=0x", std::hex, guid, std::dec);
+        return;
+    }
+
+    inspectedPlayerItemEntries_[guid] = *parsed;
+
+    // Query item templates so we can resolve displayInfoId/inventoryType.
+    for (uint32_t entry : *parsed) {
+        if (entry == 0) continue;
+        queryItemInfo(entry, 0);
+    }
+
+    // If templates already exist, emit immediately.
+    if (playerEquipmentCallback_) {
+        std::array<uint32_t, 19> displayIds{};
+        std::array<uint8_t, 19> invTypes{};
+        for (int s = 0; s < 19; s++) {
+            uint32_t entry = (*parsed)[s];
+            if (entry == 0) continue;
+            auto infoIt = itemInfoCache_.find(entry);
+            if (infoIt == itemInfoCache_.end()) continue;
+            displayIds[s] = infoIt->second.displayInfoId;
+            invTypes[s] = static_cast<uint8_t>(infoIt->second.inventoryType);
+        }
+        playerEquipmentCallback_(guid, displayIds, invTypes);
     }
 }
 
@@ -5233,6 +5343,8 @@ void GameHandler::maybeDetectVisibleItemLayout() {
     int bestBase = -1;
     int bestStride = 0;
     int bestMatches = 0;
+    int bestMismatches = 9999;
+    int bestScore = -999999;
 
     const int strides[] = {2, 3, 4, 1};
     for (int stride : strides) {
@@ -5241,16 +5353,28 @@ void GameHandler::maybeDetectVisibleItemLayout() {
             if (base + 18 * stride > static_cast<int>(maxKey)) continue;
 
             int matches = 0;
+            int mismatches = 0;
             for (int s = 0; s < 19; s++) {
                 uint32_t want = equipEntries[s];
                 if (want == 0) continue;
                 const uint16_t idx = static_cast<uint16_t>(base + s * stride);
                 auto it = lastPlayerFields_.find(idx);
-                if (it != lastPlayerFields_.end() && it->second == want) matches++;
+                if (it == lastPlayerFields_.end()) continue;
+                if (it->second == want) {
+                    matches++;
+                } else if (it->second != 0) {
+                    mismatches++;
+                }
             }
 
-            if (matches > bestMatches || (matches == bestMatches && matches > 0 && base < bestBase)) {
+            int score = matches * 2 - mismatches * 3;
+            if (score > bestScore ||
+                (score == bestScore && matches > bestMatches) ||
+                (score == bestScore && matches == bestMatches && mismatches < bestMismatches) ||
+                (score == bestScore && matches == bestMatches && mismatches == bestMismatches && base < bestBase)) {
+                bestScore = score;
                 bestMatches = matches;
+                bestMismatches = mismatches;
                 bestBase = base;
                 bestStride = stride;
             }
@@ -5258,11 +5382,13 @@ void GameHandler::maybeDetectVisibleItemLayout() {
     }
 
     if (bestMatches < 2 || bestBase < 0 || bestStride <= 0) return;
+    if (bestMismatches > 1) return;
 
     visibleItemEntryBase_ = bestBase;
     visibleItemStride_ = bestStride;
     LOG_INFO("Detected PLAYER_VISIBLE_ITEM entry layout: base=", visibleItemEntryBase_,
-             " stride=", visibleItemStride_, " (matches=", bestMatches, ")");
+             " stride=", visibleItemStride_, " (matches=", bestMatches,
+             " mismatches=", bestMismatches, " score=", bestScore, ")");
 
     // Backfill existing player entities already in view.
     for (const auto& [guid, ent] : entityManager.getEntities()) {
@@ -5298,6 +5424,13 @@ void GameHandler::updateOtherPlayerVisibleItems(uint64_t guid, const std::map<ui
         }
     }
 
+    // If the server isn't sending visible item fields (all zeros), fall back to inspect.
+    bool any = false;
+    for (uint32_t e : newEntries) { if (e != 0) { any = true; break; } }
+    if (!any && socket && state == WorldState::IN_WORLD) {
+        pendingAutoInspect_.insert(guid);
+    }
+
     if (changed) {
         otherPlayerVisibleDirty_.insert(guid);
         emitOtherPlayerEquipment(guid);
@@ -5311,10 +5444,12 @@ void GameHandler::emitOtherPlayerEquipment(uint64_t guid) {
 
     std::array<uint32_t, 19> displayIds{};
     std::array<uint8_t, 19> invTypes{};
+    bool anyEntry = false;
 
     for (int s = 0; s < 19; s++) {
         uint32_t entry = it->second[s];
         if (entry == 0) continue;
+        anyEntry = true;
         auto infoIt = itemInfoCache_.find(entry);
         if (infoIt == itemInfoCache_.end()) continue;
         displayIds[s] = infoIt->second.displayInfoId;
@@ -5323,6 +5458,13 @@ void GameHandler::emitOtherPlayerEquipment(uint64_t guid) {
 
     playerEquipmentCallback_(guid, displayIds, invTypes);
     otherPlayerVisibleDirty_.erase(guid);
+
+    // If we had entries but couldn't resolve any templates, also try inspect as a fallback.
+    bool anyResolved = false;
+    for (uint32_t did : displayIds) { if (did != 0) { anyResolved = true; break; } }
+    if (anyEntry && !anyResolved) {
+        pendingAutoInspect_.insert(guid);
+    }
 }
 
 void GameHandler::emitAllOtherPlayerEquipment() {

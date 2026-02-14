@@ -2846,6 +2846,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     playerDespawnCallback_(guid);
                     otherPlayerVisibleItemEntries_.erase(guid);
                     otherPlayerVisibleDirty_.erase(guid);
+                    otherPlayerMoveTimeMs_.erase(guid);
                 } else if (entity->getType() == ObjectType::GAMEOBJECT && gameObjectDespawnCallback_) {
                     gameObjectDespawnCallback_(guid);
                 }
@@ -5210,9 +5211,20 @@ void GameHandler::maybeDetectVisibleItemLayout() {
 
     std::array<uint32_t, 19> equipEntries{};
     int nonZero = 0;
+    // Prefer authoritative equipped item entry IDs derived from item objects (onlineItems_),
+    // because Inventory::ItemDef may not be populated yet if templates haven't been queried.
     for (int i = 0; i < 19; i++) {
-        const auto& slot = inventory.getEquipSlot(static_cast<EquipSlot>(i));
-        equipEntries[i] = slot.empty() ? 0u : slot.item.itemId;
+        uint64_t itemGuid = equipSlotGuids_[i];
+        if (itemGuid != 0) {
+            auto it = onlineItems_.find(itemGuid);
+            if (it != onlineItems_.end() && it->second.entry != 0) {
+                equipEntries[i] = it->second.entry;
+            }
+        }
+        if (equipEntries[i] == 0) {
+            const auto& slot = inventory.getEquipSlot(static_cast<EquipSlot>(i));
+            equipEntries[i] = slot.empty() ? 0u : slot.item.itemId;
+        }
         if (equipEntries[i] != 0) nonZero++;
     }
     if (nonZero < 2) return;
@@ -5681,11 +5693,24 @@ void GameHandler::handleOtherPlayerMovement(network::Packet& packet) {
     // Convert server coords to canonical
     glm::vec3 canonical = core::coords::serverToCanonical(glm::vec3(info.x, info.y, info.z));
     float canYaw = core::coords::serverToCanonicalYaw(info.orientation);
-    entity->setPosition(canonical.x, canonical.y, canonical.z, canYaw);
+    // Smooth movement between client-relayed snapshots so animations can play.
+    uint32_t durationMs = 100;
+    auto itPrev = otherPlayerMoveTimeMs_.find(moverGuid);
+    if (itPrev != otherPlayerMoveTimeMs_.end()) {
+        uint32_t dt = info.time - itPrev->second; // handles wrap
+        if (dt >= 30 && dt <= 1000) {
+            if (dt < 50) dt = 50;
+            if (dt > 350) dt = 350;
+            durationMs = dt;
+        }
+    }
+    otherPlayerMoveTimeMs_[moverGuid] = info.time;
+
+    entity->startMoveTo(canonical.x, canonical.y, canonical.z, canYaw, durationMs / 1000.0f);
 
     // Notify renderer
     if (creatureMoveCallback_) {
-        creatureMoveCallback_(moverGuid, canonical.x, canonical.y, canonical.z, 0);
+        creatureMoveCallback_(moverGuid, canonical.x, canonical.y, canonical.z, durationMs);
     }
 }
 

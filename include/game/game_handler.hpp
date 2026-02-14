@@ -1083,6 +1083,7 @@ private:
     int visibleItemStride_ = 2;
     std::unordered_map<uint64_t, std::array<uint32_t, 19>> otherPlayerVisibleItemEntries_;
     std::unordered_set<uint64_t> otherPlayerVisibleDirty_;
+    std::unordered_map<uint64_t, uint32_t> otherPlayerMoveTimeMs_;
 
     // ---- Phase 2: Combat ----
     bool autoAttacking = false;

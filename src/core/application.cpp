@@ -3095,7 +3095,9 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                     if (finalTex != 0 && modelData) {
                         for (size_t ti = 0; ti < modelData->textures.size(); ti++) {
                             uint32_t texType = modelData->textures[ti].type;
-                            if (texType == 1 || texType == 2) {
+                            // Humanoid NPCs typically use creature-skin texture types (11-13).
+                            // Some models use 1/2 (character skin/object skin) depending on client/content.
+                            if (texType == 1 || texType == 2 || texType == 11 || texType == 12 || texType == 13) {
                                 charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), finalTex);
                                 LOG_DEBUG("Applied baked NPC texture to slot ", ti, " (type ", texType, "): ", bakePath);
                                 hasHumanoidTexture = true;

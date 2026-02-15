@@ -253,6 +253,13 @@ void GameHandler::update(float deltaTime) {
     auto socketEnd = std::chrono::high_resolution_clock::now();
     socketTime += std::chrono::duration<float, std::milli>(socketEnd - socketStart).count();
 
+    // Detect server-side disconnect (socket closed during update)
+    if (socket && !socket->isConnected() && state != WorldState::DISCONNECTED) {
+        LOG_WARNING("Server closed connection in state: ", worldStateName(state));
+        disconnect();
+        return;
+    }
+
     // Post-gate visibility: determine whether server goes silent or closes after Warden requirement.
     if (wardenGateSeen_ && socket && socket->isConnected()) {
         wardenGateElapsed_ += deltaTime;
@@ -2281,13 +2288,12 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                 break;
             }
 
-            // SHA1(seed + moduleImage) — the server verifies this against its own copy
+            // SHA1(seed) fallback — wrong answer but sends a response to avoid silent hang.
+            // Correct answer requires executing the Warden module via emulator (not yet functional).
+            // Server will likely disconnect, but GameHandler::update() now detects that gracefully.
             {
-                std::vector<uint8_t> hashInput;
-                hashInput.insert(hashInput.end(), seed.begin(), seed.end());
-                hashInput.insert(hashInput.end(), wardenModuleData_.begin(), wardenModuleData_.end());
-                auto hash = auth::Crypto::sha1(hashInput);
-                LOG_INFO("Warden: SHA1 fallback hash over ", hashInput.size(), " bytes (seed+module)");
+                auto hash = auth::Crypto::sha1(seed);
+                LOG_WARNING("Warden: Sending SHA1(seed) fallback — server will likely reject");
                 std::vector<uint8_t> resp;
                 resp.push_back(0x04);
                 resp.insert(resp.end(), hash.begin(), hash.end());

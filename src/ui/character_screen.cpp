@@ -59,6 +59,18 @@ void CharacterScreen::render(game::GameHandler& gameHandler) {
     // Get character list
     const auto& characters = gameHandler.getCharacters();
 
+    // Handle disconnected state (e.g. Warden kicked us)
+    if (gameHandler.getState() == game::WorldState::DISCONNECTED ||
+        gameHandler.getState() == game::WorldState::FAILED) {
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Disconnected from server.");
+        ImGui::TextWrapped("The server closed the connection. This may be caused by "
+                           "anti-cheat (Warden) verification failure.");
+        ImGui::Spacing();
+        if (ImGui::Button("Back", ImVec2(120, 36))) { if (onBack) onBack(); }
+        ImGui::End();
+        return;
+    }
+
     // Request character list if not available.
     // Also show a loading state while CHAR_LIST_REQUESTED is in-flight (characters may be cleared to avoid stale UI).
     if (characters.empty() &&

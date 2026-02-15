@@ -570,28 +570,7 @@ bool Extractor::enumerateFiles(const Options& opts,
 bool Extractor::run(const Options& opts) {
     auto startTime = std::chrono::steady_clock::now();
 
-    const bool overlayMode = !opts.asOverlay.empty();
-
-    // Overlay mode writes files to expansions/<id>/overlay/ under the output dir
-    const std::string effectiveOutputDir = overlayMode
-        ? opts.outputDir + "/expansions/" + opts.asOverlay + "/overlay"
-        : opts.outputDir;
-
-    // Load base manifest CRCs for overlay deduplication
-    std::unordered_map<std::string, uint32_t> baseCRCs;
-    if (overlayMode) {
-        std::string baseManifestPath = opts.outputDir + "/manifest.json";
-        auto baseEntries = loadManifestEntries(baseManifestPath);
-        if (baseEntries.empty()) {
-            std::cerr << "Warning: base manifest empty or missing at " << baseManifestPath << "\n"
-                      << "  Extract the base expansion first, then use --as-overlay for others.\n";
-        } else {
-            for (auto& [k, v] : baseEntries) {
-                baseCRCs[k] = v.crc32;
-            }
-            std::cout << "Loaded " << baseCRCs.size() << " base manifest entries for CRC comparison\n";
-        }
-    }
+    const std::string effectiveOutputDir = opts.outputDir;
 
     // Enumerate all unique files across all archives
     std::vector<std::string> files;
@@ -708,15 +687,6 @@ bool Extractor::run(const Options& opts) {
             // Compute CRC32
             uint32_t crc = ManifestWriter::computeCRC32(data.data(), data.size());
 
-            // In overlay mode, skip files identical to base
-            if (!baseCRCs.empty()) {
-                auto it = baseCRCs.find(normalized);
-                if (it != baseCRCs.end() && it->second == crc) {
-                    stats.filesSkipped++;
-                    continue;
-                }
-            }
-
             // Create output directory and write file
             fs::path outPath(fullOutputPath);
             fs::create_directories(outPath.parent_path(), ec);
@@ -773,9 +743,8 @@ bool Extractor::run(const Options& opts) {
               << stats.filesFailed.load() << " failed\n";
 
     // Merge with existing manifest so partial extractions don't nuke prior entries
-    // (skip merge for overlay manifests — they're standalone)
     std::string manifestPath = effectiveOutputDir + "/manifest.json";
-    if (!overlayMode && fs::exists(manifestPath)) {
+    if (fs::exists(manifestPath)) {
         auto existing = loadManifestEntries(manifestPath);
         if (!existing.empty()) {
             // New entries override existing ones with same key
@@ -853,7 +822,7 @@ bool Extractor::run(const Options& opts) {
     if (opts.generateDbcCsv) {
         std::cout << "Converting selected DBCs to CSV for committing...\n";
         const std::string dbcDir = effectiveOutputDir + "/db";
-        const std::string csvExpansion = overlayMode ? opts.asOverlay : opts.expansion;
+        const std::string csvExpansion = opts.expansion;
         const std::string csvDir = !opts.dbcCsvOutputDir.empty()
             ? opts.dbcCsvOutputDir
             : (opts.outputDir + "/expansions/" + csvExpansion + "/db");
@@ -885,8 +854,8 @@ bool Extractor::run(const Options& opts) {
         }
     }
 
-    // Cache WoW.exe for Warden MEM_CHECK responses (base extraction only)
-    if (!overlayMode) {
+    // Cache WoW.exe for Warden MEM_CHECK responses
+    {
         const char* exeNames[] = { "WoW.exe", "TurtleWoW.exe", "Wow.exe" };
         std::vector<std::string> searchDirs = {
             fs::path(opts.mpqDir).parent_path().string(),  // WoW.exe is typically next to Data/
@@ -907,41 +876,6 @@ bool Extractor::run(const Options& opts) {
                 }
             }
             if (found) break;
-        }
-    }
-
-    // Auto-update expansion.json with assetManifest field
-    if (overlayMode) {
-        std::string expJsonPath = opts.outputDir + "/expansions/" + opts.asOverlay + "/expansion.json";
-        if (fs::exists(expJsonPath)) {
-            std::ifstream fin(expJsonPath);
-            std::string content((std::istreambuf_iterator<char>(fin)),
-                                 std::istreambuf_iterator<char>());
-            fin.close();
-
-            if (content.find("\"assetManifest\"") == std::string::npos) {
-                // Insert assetManifest before the closing brace
-                size_t lastBrace = content.rfind('}');
-                if (lastBrace != std::string::npos) {
-                    // Find the last non-whitespace before the closing brace to add comma
-                    size_t pos = lastBrace;
-                    while (pos > 0 && (content[pos - 1] == ' ' || content[pos - 1] == '\n' ||
-                                       content[pos - 1] == '\r' || content[pos - 1] == '\t')) {
-                        pos--;
-                    }
-                    std::string insert = ",\n  \"assetManifest\": \"overlay/manifest.json\"\n";
-                    content.insert(pos, insert);
-
-                    std::ofstream fout(expJsonPath);
-                    fout << content;
-                    fout.close();
-                    std::cout << "Updated " << expJsonPath << " with assetManifest\n";
-                }
-            } else {
-                std::cout << "expansion.json already has assetManifest field\n";
-            }
-        } else {
-            std::cerr << "Warning: " << expJsonPath << " not found — create it manually\n";
         }
     }
 

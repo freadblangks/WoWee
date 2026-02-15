@@ -20,11 +20,6 @@ static void printUsage(const char* prog) {
               << "  --skip-dbc          Do not extract DBFilesClient/*.dbc (visual assets only)\n"
               << "  --dbc-csv           Convert selected DBFilesClient/*.dbc to CSV under\n"
               << "                      <output>/expansions/<expansion>/db/*.csv (for committing)\n"
-              << "  --as-overlay <id>   Extract as expansion overlay (only files differing from base\n"
-              << "                      manifest at <output>/manifest.json). Stores overlay assets in\n"
-              << "                      <output>/expansions/<id>/overlay/ and implies --dbc-csv.\n"
-              << "                      Auto-detected when base manifest already exists.\n"
-              << "  --full-base         Force full base extraction even if manifest exists\n"
               << "  --reference-manifest <path>\n"
               << "                      Only extract files NOT in this manifest (delta extraction)\n"
               << "  --dbc-csv-out <dir> Write CSV DBCs into <dir> (overrides default output path)\n"
@@ -38,7 +33,6 @@ int main(int argc, char** argv) {
     wowee::tools::Extractor::Options opts;
     std::string expansion;
     std::string locale;
-    bool forceBase = false;
 
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--mpq-dir") == 0 && i + 1 < argc) {
@@ -59,11 +53,6 @@ int main(int argc, char** argv) {
             opts.generateDbcCsv = true;
         } else if (std::strcmp(argv[i], "--dbc-csv-out") == 0 && i + 1 < argc) {
             opts.dbcCsvOutputDir = argv[++i];
-        } else if (std::strcmp(argv[i], "--as-overlay") == 0 && i + 1 < argc) {
-            opts.asOverlay = argv[++i];
-            opts.generateDbcCsv = true; // Overlay mode always generates per-expansion CSVs
-        } else if (std::strcmp(argv[i], "--full-base") == 0) {
-            forceBase = true;
         } else if (std::strcmp(argv[i], "--reference-manifest") == 0 && i + 1 < argc) {
             opts.referenceManifest = argv[++i];
         } else if (std::strcmp(argv[i], "--verify") == 0) {
@@ -110,20 +99,6 @@ int main(int argc, char** argv) {
     }
     opts.locale = locale;
 
-    // Auto-detect overlay mode: if a base manifest already exists and this expansion
-    // has a profile directory, automatically use overlay mode so the user doesn't have
-    // to think about extraction order.
-    if (opts.asOverlay.empty() && !forceBase && !opts.onlyUsedDbcs) {
-        namespace fs = std::filesystem;
-        std::string baseManifest = opts.outputDir + "/manifest.json";
-        std::string expJson = opts.outputDir + "/expansions/" + expansion + "/expansion.json";
-        if (fs::exists(baseManifest) && fs::exists(expJson)) {
-            opts.asOverlay = expansion;
-            opts.generateDbcCsv = true;
-            std::cout << "Base manifest found — auto-overlay mode for " << expansion << "\n";
-        }
-    }
-
     std::cout << "=== Wowee Asset Extractor ===\n";
     std::cout << "MPQ directory: " << opts.mpqDir << "\n";
     std::cout << "Output:        " << opts.outputDir << "\n";
@@ -144,9 +119,6 @@ int main(int argc, char** argv) {
         }
     }
 
-    if (!opts.asOverlay.empty()) {
-        std::cout << "Overlay:       " << opts.asOverlay << " (only files differing from base)\n";
-    }
     if (!opts.referenceManifest.empty()) {
         std::cout << "Reference:     " << opts.referenceManifest << " (delta mode)\n";
     }

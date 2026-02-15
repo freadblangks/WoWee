@@ -23,7 +23,7 @@
 #include "pipeline/dbc_loader.hpp"
 #include "pipeline/blp_loader.hpp"
 #include "pipeline/dbc_layout.hpp"
-#include "pipeline/hd_pack_manager.hpp"
+
 #include "game/expansion_profile.hpp"
 #include "core/logger.hpp"
 #include <imgui.h>
@@ -5444,79 +5444,6 @@ void GameScreen::renderSettingsWindow() {
                         }
                     }
                     saveSettings();
-                }
-
-                ImGui::EndTabItem();
-            }
-
-            // ============================================================
-            // HD TEXTURES TAB
-            // ============================================================
-            if (ImGui::BeginTabItem("HD Textures")) {
-                ImGui::Spacing();
-
-                auto& app = core::Application::getInstance();
-                auto* hdMgr = app.getHDPackManager();
-
-                if (hdMgr) {
-                    const auto& packs = hdMgr->getAllPacks();
-                    if (packs.empty()) {
-                        ImGui::TextWrapped("No HD texture packs found.");
-                        ImGui::Spacing();
-                        ImGui::TextWrapped("Place packs in Data/hd/<pack_name>/ with a pack.json and manifest.json.");
-                    } else {
-                        ImGui::Text("Available HD Texture Packs:");
-                        ImGui::Spacing();
-
-                        bool changed = false;
-                        for (const auto& pack : packs) {
-                            bool enabled = pack.enabled;
-                            if (ImGui::Checkbox(pack.name.c_str(), &enabled)) {
-                                hdMgr->setPackEnabled(pack.id, enabled);
-                                changed = true;
-                            }
-                            ImGui::SameLine(0, 10);
-                            ImGui::TextDisabled("(%u MB)", pack.totalSizeMB);
-                            if (!pack.group.empty()) {
-                                ImGui::SameLine(0, 10);
-                                ImGui::TextDisabled("[%s]", pack.group.c_str());
-                            }
-                            if (!pack.expansions.empty()) {
-                                std::string expList;
-                                for (const auto& e : pack.expansions) {
-                                    if (!expList.empty()) expList += ", ";
-                                    expList += e;
-                                }
-                                ImGui::TextDisabled("  Compatible: %s", expList.c_str());
-                            }
-                        }
-
-                        if (changed) {
-                            ImGui::Spacing();
-                            ImGui::Separator();
-                            ImGui::Spacing();
-                            if (ImGui::Button("Apply HD Packs", ImVec2(-1, 0))) {
-                                std::string expansionId = "wotlk";
-                                if (app.getExpansionRegistry() && app.getExpansionRegistry()->getActive()) {
-                                    expansionId = app.getExpansionRegistry()->getActive()->id;
-                                }
-                                hdMgr->applyToAssetManager(app.getAssetManager(), expansionId);
-
-                                // Save settings
-                                std::string settingsDir;
-                                const char* xdg = std::getenv("XDG_DATA_HOME");
-                                if (xdg && *xdg) {
-                                    settingsDir = std::string(xdg) + "/wowee";
-                                } else {
-                                    const char* home = std::getenv("HOME");
-                                    settingsDir = std::string(home ? home : ".") + "/.local/share/wowee";
-                                }
-                                hdMgr->saveSettings(settingsDir + "/settings.cfg");
-                            }
-                        }
-                    }
-                } else {
-                    ImGui::Text("HD Pack Manager not available.");
                 }
 
                 ImGui::EndTabItem();

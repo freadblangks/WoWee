@@ -41,7 +41,7 @@
 #include "game/packet_parsers.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/dbc_layout.hpp"
-#include "pipeline/hd_pack_manager.hpp"
+
 #include <SDL2/SDL.h>
 #include <GL/glew.h>
 #include <chrono>
@@ -129,9 +129,6 @@ bool Application::initialize() {
     // Create DBC layout
     dbcLayout_ = std::make_unique<pipeline::DBCLayout>();
 
-    // Create HD pack manager
-    hdPackManager_ = std::make_unique<pipeline::HDPackManager>();
-
     // Create asset manager
     assetManager = std::make_unique<pipeline::AssetManager>();
 
@@ -211,37 +208,6 @@ bool Application::initialize() {
             gameHandler->getTransportManager()->loadTaxiPathNodeDBC(assetManager.get());
         }
 
-        // Initialize HD texture packs
-        if (hdPackManager_) {
-            std::string hdPath = dataPath + "/hd";
-            std::string settingsDir;
-            const char* xdg = std::getenv("XDG_DATA_HOME");
-            if (xdg && *xdg) {
-                settingsDir = std::string(xdg) + "/wowee";
-            } else {
-                const char* home = std::getenv("HOME");
-                settingsDir = std::string(home ? home : ".") + "/.local/share/wowee";
-            }
-            hdPackManager_->loadSettings(settingsDir + "/settings.cfg");
-            hdPackManager_->initialize(hdPath);
-
-            // Apply enabled packs as overlays
-            std::string expansionId = "wotlk";
-            if (expansionRegistry_ && expansionRegistry_->getActive()) {
-                expansionId = expansionRegistry_->getActive()->id;
-            }
-            hdPackManager_->applyToAssetManager(assetManager.get(), expansionId);
-        }
-
-        // Load expansion-specific asset overlay (priority 50, below HD packs at 100+)
-        if (expansionRegistry_) {
-            auto* activeProfile = expansionRegistry_->getActive();
-            if (activeProfile && !activeProfile->assetManifest.empty()) {
-                if (assetManager->addOverlayManifest(activeProfile->assetManifest, 50, "expansion_overlay")) {
-                    LOG_INFO("Added expansion asset overlay: ", activeProfile->assetManifest);
-                }
-            }
-        }
     } else {
         LOG_WARNING("Failed to initialize asset manager - asset loading will be unavailable");
         LOG_WARNING("Set WOW_DATA_PATH environment variable to your WoW Data directory");
@@ -504,14 +470,6 @@ void Application::reloadExpansionData() {
     if (assetManager && !profile->dataPath.empty()) {
         assetManager->setExpansionDataPath(profile->dataPath);
         assetManager->clearDBCCache();
-
-        // Swap expansion asset overlay
-        assetManager->removeOverlay("expansion_overlay");
-        if (!profile->assetManifest.empty()) {
-            if (assetManager->addOverlayManifest(profile->assetManifest, 50, "expansion_overlay")) {
-                LOG_INFO("Swapped expansion asset overlay: ", profile->assetManifest);
-            }
-        }
     }
 
     // Reset map name cache so it reloads from new expansion's Map.dbc

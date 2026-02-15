@@ -141,7 +141,7 @@ set(WOWEE_SOURCES
     src/pipeline/wmo_loader.cpp
     src/pipeline/adt_loader.cpp
     src/pipeline/dbc_layout.cpp
-    src/pipeline/hd_pack_manager.cpp
+
     src/pipeline/terrain_mesh.cpp
 
     # Rendering

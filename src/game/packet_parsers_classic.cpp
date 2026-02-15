@@ -427,10 +427,8 @@ bool ClassicPacketParsers::parseMessageChat(network::Packet& packet, MessageChat
 
     // Classic: NO uint32 unknown field here (WotLK has one)
 
-    // Type-specific data
+    // Type-specific data (matches CMaNGOS-Classic BuildChatPacket)
     switch (data.type) {
-        case ChatType::MONSTER_SAY:
-        case ChatType::MONSTER_YELL:
         case ChatType::MONSTER_EMOTE: {
             // nameLen(u32) + name + targetGuid(u64)
             uint32_t nameLen = packet.readUInt32();
@@ -439,7 +437,33 @@ bool ClassicPacketParsers::parseMessageChat(network::Packet& packet, MessageChat
                 for (uint32_t i = 0; i < nameLen; ++i) {
                     data.senderName[i] = static_cast<char>(packet.readUInt8());
                 }
-                // Remove null terminator if present
+                if (!data.senderName.empty() && data.senderName.back() == '\0') {
+                    data.senderName.pop_back();
+                }
+            }
+            data.receiverGuid = packet.readUInt64();
+            break;
+        }
+
+        case ChatType::SAY:
+        case ChatType::PARTY:
+        case ChatType::YELL: {
+            // senderGuid(u64) + senderGuid(u64) — written twice by server
+            data.senderGuid = packet.readUInt64();
+            /*duplicateGuid*/ packet.readUInt64();
+            break;
+        }
+
+        case ChatType::MONSTER_SAY:
+        case ChatType::MONSTER_YELL: {
+            // senderGuid(u64) + nameLen(u32) + name + targetGuid(u64)
+            data.senderGuid = packet.readUInt64();
+            uint32_t nameLen = packet.readUInt32();
+            if (nameLen > 0 && nameLen < 256) {
+                data.senderName.resize(nameLen);
+                for (uint32_t i = 0; i < nameLen; ++i) {
+                    data.senderName[i] = static_cast<char>(packet.readUInt8());
+                }
                 if (!data.senderName.empty() && data.senderName.back() == '\0') {
                     data.senderName.pop_back();
                 }
@@ -457,15 +481,11 @@ bool ClassicPacketParsers::parseMessageChat(network::Packet& packet, MessageChat
         }
 
         default: {
-            // Most types: senderGuid(u64)
+            // GUILD, OFFICER, RAID, WHISPER, WHISPER_INFORM, etc: senderGuid(u64)
             data.senderGuid = packet.readUInt64();
             break;
         }
     }
-
-    // Classic SAY/YELL/PARTY/GUILD/etc: NO second GUID before message.
-    // Only WHISPER_INFORM has a receiver GUID (same as sender for echo).
-    // Do NOT read an extra uint64 here — it would consume messageLen + message bytes.
 
     // Read message length
     uint32_t messageLen = packet.readUInt32();

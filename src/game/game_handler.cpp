@@ -6570,7 +6570,9 @@ void GameHandler::handleInitialSpells(network::Packet& packet) {
 
 void GameHandler::handleCastFailed(network::Packet& packet) {
     CastFailedData data;
-    if (!CastFailedParser::parse(packet, data)) return;
+    bool ok = packetParsers_ ? packetParsers_->parseCastFailed(packet, data)
+                             : CastFailedParser::parse(packet, data);
+    if (!ok) return;
 
     casting = false;
     currentCastSpellId = 0;

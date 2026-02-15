@@ -267,9 +267,9 @@ network::Packet ClassicPacketParsers::buildCastSpell(uint32_t spellId, uint64_t 
 
     packet.writeUInt32(spellId);
 
-    // SpellCastTargets — vanilla uses uint16 target mask (not uint32 like WotLK)
+    // SpellCastTargets — vanilla/CMaNGOS uses uint32 target mask (same as WotLK)
     if (targetGuid != 0) {
-        packet.writeUInt16(0x02); // TARGET_FLAG_UNIT
+        packet.writeUInt32(0x02); // TARGET_FLAG_UNIT
 
         // Write packed GUID
         uint8_t mask = 0;
@@ -289,10 +289,22 @@ network::Packet ClassicPacketParsers::buildCastSpell(uint32_t spellId, uint64_t 
             packet.writeUInt8(bytes[i]);
         }
     } else {
-        packet.writeUInt16(0x00); // TARGET_FLAG_SELF
+        packet.writeUInt32(0x00); // TARGET_FLAG_SELF
     }
 
     return packet;
+}
+
+// ============================================================================
+// Classic SMSG_CAST_FAILED: no castCount byte (added in TBC/WotLK)
+// Format: spellId(u32) + result(u8)
+// ============================================================================
+bool ClassicPacketParsers::parseCastFailed(network::Packet& packet, CastFailedData& data) {
+    data.castCount = 0;
+    data.spellId = packet.readUInt32();
+    data.result = packet.readUInt8();
+    LOG_INFO("[Classic] Cast failed: spell=", data.spellId, " result=", (int)data.result);
+    return true;
 }
 
 // ============================================================================
@@ -437,16 +449,9 @@ bool ClassicPacketParsers::parseMessageChat(network::Packet& packet, MessageChat
         }
     }
 
-    // Vanilla/Classic: target GUID follows type-specific header for non-monster types
-    // (Monster types already read target/receiver in their switch case)
-    if (data.type != ChatType::MONSTER_SAY &&
-        data.type != ChatType::MONSTER_YELL &&
-        data.type != ChatType::MONSTER_EMOTE &&
-        data.type != ChatType::CHANNEL) {
-        if (packet.getReadPos() + 12 <= packet.getSize()) { // 8 (guid) + 4 (msgLen) minimum
-            data.receiverGuid = packet.readUInt64();
-        }
-    }
+    // Classic SAY/YELL/PARTY/GUILD/etc: NO second GUID before message.
+    // Only WHISPER_INFORM has a receiver GUID (same as sender for echo).
+    // Do NOT read an extra uint64 here — it would consume messageLen + message bytes.
 
     // Read message length
     uint32_t messageLen = packet.readUInt32();

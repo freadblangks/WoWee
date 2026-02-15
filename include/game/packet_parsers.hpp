@@ -95,6 +95,11 @@ public:
         return InitialSpellsParser::parse(packet, data);
     }
 
+    /** Parse SMSG_CAST_FAILED */
+    virtual bool parseCastFailed(network::Packet& packet, CastFailedData& data) {
+        return CastFailedParser::parse(packet, data);
+    }
+
     /** Parse SMSG_AURA_UPDATE / SMSG_AURA_UPDATE_ALL */
     virtual bool parseAuraUpdate(network::Packet& packet, AuraUpdateData& data, bool isAll = false) {
         return AuraUpdateParser::parse(packet, data, isAll);
@@ -207,6 +212,7 @@ public:
                                          const MovementInfo& info,
                                          uint64_t playerGuid = 0) override;
     network::Packet buildCastSpell(uint32_t spellId, uint64_t targetGuid, uint8_t castCount) override;
+    bool parseCastFailed(network::Packet& packet, CastFailedData& data) override;
     bool parseMessageChat(network::Packet& packet, MessageChatData& data) override;
     bool parseGuildRoster(network::Packet& packet, GuildRosterData& data) override;
     bool parseGuildQueryResponse(network::Packet& packet, GuildQueryResponseData& data) override;

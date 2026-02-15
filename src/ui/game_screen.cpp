@@ -1419,7 +1419,7 @@ void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
     ImGui::End();
 
     ImGui::PopStyleColor(2);
-    ImGui::PopStyleVar();
+    ImGui::PopStyleVar(2);
 }
 
 void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
@@ -1545,7 +1545,7 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
     ImGui::End();
 
     ImGui::PopStyleColor(2);
-    ImGui::PopStyleVar();
+    ImGui::PopStyleVar(2);
 }
 
 void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
@@ -2954,14 +2954,17 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
     float barX = (screenW - barW) / 2.0f;
     float barY = screenH - barH;
 
-    ImGui::SetNextWindowPos(ImVec2(barX, barY), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImVec2(barX, barY), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(barW, barH), ImGuiCond_Always);
 
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize |
                              ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
                              ImGuiWindowFlags_NoScrollbar;
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(padding, padding));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.05f, 0.05f, 0.05f, 0.9f));
 
     if (ImGui::Begin("##ActionBar", nullptr, flags)) {
@@ -3042,7 +3045,7 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
                 }
                 clicked = ImGui::ImageButton("##icon",
                     (ImTextureID)(uintptr_t)iconTex,
-                    ImVec2(slotSize - 4, slotSize - 4),
+                    ImVec2(slotSize, slotSize),
                     ImVec2(0, 0), ImVec2(1, 1),
                     bgColor, tintColor);
             } else {
@@ -3162,7 +3165,7 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
     ImGui::End();
 
     ImGui::PopStyleColor();
-    ImGui::PopStyleVar();
+    ImGui::PopStyleVar(2);
 
     // Handle action bar drag: render icon at cursor and detect drop outside
     if (actionBarDragSlot_ >= 0) {
@@ -3217,14 +3220,17 @@ void GameScreen::renderBagBar(game::GameHandler& gameHandler) {
     float barX = screenW - barW - 10.0f;
     float barY = screenH - barH - 10.0f;
 
-    ImGui::SetNextWindowPos(ImVec2(barX, barY), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImVec2(barX, barY), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(barW, barH), ImGuiCond_Always);
 
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize |
                              ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
                              ImGuiWindowFlags_NoScrollbar;
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(padding, padding));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.05f, 0.05f, 0.05f, 0.9f));
 
     if (ImGui::Begin("##BagBar", nullptr, flags)) {
@@ -3264,7 +3270,7 @@ void GameScreen::renderBagBar(game::GameHandler& gameHandler) {
 
             if (bagIcon) {
                 if (ImGui::ImageButton("##bag", (ImTextureID)(uintptr_t)bagIcon,
-                                       ImVec2(slotSize - 4, slotSize - 4),
+                                       ImVec2(slotSize, slotSize),
                                        ImVec2(0, 0), ImVec2(1, 1),
                                        ImVec4(0.1f, 0.1f, 0.1f, 0.9f),
                                        ImVec4(1, 1, 1, 1))) {
@@ -3308,7 +3314,7 @@ void GameScreen::renderBagBar(game::GameHandler& gameHandler) {
         ImGui::PushID(0);
         if (backpackIconTexture_) {
             if (ImGui::ImageButton("##backpack", (ImTextureID)(uintptr_t)backpackIconTexture_,
-                                   ImVec2(slotSize - 4, slotSize - 4),
+                                   ImVec2(slotSize, slotSize),
                                    ImVec2(0, 0), ImVec2(1, 1),
                                    ImVec4(0.1f, 0.1f, 0.1f, 0.9f),
                                    ImVec4(1, 1, 1, 1))) {
@@ -3333,7 +3339,7 @@ void GameScreen::renderBagBar(game::GameHandler& gameHandler) {
     ImGui::End();
 
     ImGui::PopStyleColor();
-    ImGui::PopStyleVar();
+    ImGui::PopStyleVar(4);
 }
 
 // ============================================================
@@ -3432,10 +3438,10 @@ void GameScreen::renderCastBar(game::GameHandler& gameHandler) {
     float barX = (screenW - barW) / 2.0f;
     float barY = screenH - 120.0f;
 
-    ImGui::SetNextWindowPos(ImVec2(barX, barY), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImVec2(barX, barY), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(barW, 40), ImGuiCond_Always);
 
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize |
                              ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
                              ImGuiWindowFlags_NoScrollbar;
 
@@ -3455,7 +3461,7 @@ void GameScreen::renderCastBar(game::GameHandler& gameHandler) {
     ImGui::End();
 
     ImGui::PopStyleColor();
-    ImGui::PopStyleVar();
+    ImGui::PopStyleVar(2);
 }
 
 // ============================================================
@@ -3586,7 +3592,7 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
     ImGui::End();
 
     ImGui::PopStyleColor();
-    ImGui::PopStyleVar();
+    ImGui::PopStyleVar(2);
 }
 
 // ============================================================
@@ -3810,7 +3816,7 @@ void GameScreen::renderBuffBar(game::GameHandler& gameHandler) {
                 ImGui::ImageButton("##aura",
                     (ImTextureID)(uintptr_t)iconTex,
                     ImVec2(ICON_SIZE - 4, ICON_SIZE - 4));
-                ImGui::PopStyleVar();
+                ImGui::PopStyleVar(2);
                 ImGui::PopStyleColor();
             } else {
                 ImGui::PushStyleColor(ImGuiCol_Button, borderColor);
@@ -3856,7 +3862,7 @@ void GameScreen::renderBuffBar(game::GameHandler& gameHandler) {
     }
     ImGui::End();
 
-    ImGui::PopStyleVar();
+    ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
 }
 
@@ -4803,7 +4809,7 @@ void GameScreen::renderEscapeMenu() {
             showEscapeMenu = false;
             showEscapeSettingsNotice = false;
         }
-        ImGui::PopStyleVar();
+        ImGui::PopStyleVar(2);
     }
     ImGui::End();
 }
@@ -4973,7 +4979,7 @@ void GameScreen::renderDeathScreen(game::GameHandler& gameHandler) {
     }
     ImGui::End();
     ImGui::PopStyleColor(2);
-    ImGui::PopStyleVar();
+    ImGui::PopStyleVar(2);
 }
 
 void GameScreen::renderResurrectDialog(game::GameHandler& gameHandler) {
@@ -5027,7 +5033,7 @@ void GameScreen::renderResurrectDialog(game::GameHandler& gameHandler) {
     }
     ImGui::End();
     ImGui::PopStyleColor(2);
-    ImGui::PopStyleVar();
+    ImGui::PopStyleVar(2);
 }
 
 // ============================================================
@@ -5577,7 +5583,7 @@ void GameScreen::renderSettingsWindow() {
         if (ImGui::Button("Back to Game", ImVec2(-1, 0))) {
             showSettingsWindow = false;
         }
-        ImGui::PopStyleVar();
+        ImGui::PopStyleVar(2);
     }
     ImGui::End();
 }

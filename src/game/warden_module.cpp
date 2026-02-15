@@ -69,8 +69,14 @@ bool WardenModule::load(const std::vector<uint8_t>& moduleData,
         // Note: Currently returns true (skipping verification) due to placeholder modulus
     }
 
-    // Step 4: zlib decompress
-    if (!decompressZlib(decryptedData_, decompressedData_)) {
+    // Step 4: Strip RSA signature (last 256 bytes) then zlib decompress
+    std::vector<uint8_t> dataWithoutSig;
+    if (decryptedData_.size() > 256) {
+        dataWithoutSig.assign(decryptedData_.begin(), decryptedData_.end() - 256);
+    } else {
+        dataWithoutSig = decryptedData_;
+    }
+    if (!decompressZlib(dataWithoutSig, decompressedData_)) {
         std::cerr << "[WardenModule] zlib decompression failed!" << std::endl;
         return false;
     }
@@ -506,40 +512,47 @@ bool WardenModule::parseExecutableFormat(const std::vector<uint8_t>& exeData) {
     std::cout << "[WardenModule] Allocated " << moduleSize_ << " bytes of executable memory at "
               << moduleMemory_ << std::endl;
 
-    // Parse skip/copy sections
+    // Parse skip/copy pairs
+    // Format: repeated [2B skip_count][2B copy_count][copy_count bytes data]
+    // Skip = advance dest pointer (zeros), Copy = copy from source to dest
+    // Terminates when skip_count == 0
     size_t pos = 4; // Skip 4-byte size header
     size_t destOffset = 0;
-    bool isSkipSection = true; // Alternates: skip, copy, skip, copy, ...
-    int sectionCount = 0;
+    int pairCount = 0;
 
     while (pos + 2 <= exeData.size()) {
-        // Read 2-byte section length (little-endian)
-        uint16_t sectionLength = exeData[pos] | (exeData[pos + 1] << 8);
+        // Read skip count (2 bytes LE)
+        uint16_t skipCount = exeData[pos] | (exeData[pos + 1] << 8);
         pos += 2;
 
-        if (sectionLength == 0) {
-            break; // End of sections
+        if (skipCount == 0) {
+            break; // End of skip/copy pairs
         }
 
-        if (pos + sectionLength > exeData.size()) {
-            std::cerr << "[WardenModule] Section extends beyond data bounds" << std::endl;
-            #ifdef _WIN32
-                VirtualFree(moduleMemory_, 0, MEM_RELEASE);
-            #else
-                munmap(moduleMemory_, moduleSize_);
-            #endif
-            moduleMemory_ = nullptr;
-            return false;
-        }
+        // Advance dest pointer by skipCount (gaps are zero-filled from memset)
+        destOffset += skipCount;
 
-        if (isSkipSection) {
-            // Skip section - advance destination offset without copying
-            destOffset += sectionLength;
-            std::cout << "[WardenModule]   Skip section: " << sectionLength << " bytes (dest offset now "
-                      << destOffset << ")" << std::endl;
-        } else {
-            // Copy section - copy code to module memory
-            if (destOffset + sectionLength > moduleSize_) {
+        // Read copy count (2 bytes LE)
+        if (pos + 2 > exeData.size()) {
+            std::cerr << "[WardenModule] Unexpected end of data reading copy count" << std::endl;
+            break;
+        }
+        uint16_t copyCount = exeData[pos] | (exeData[pos + 1] << 8);
+        pos += 2;
+
+        if (copyCount > 0) {
+            if (pos + copyCount > exeData.size()) {
+                std::cerr << "[WardenModule] Copy section extends beyond data bounds" << std::endl;
+                #ifdef _WIN32
+                    VirtualFree(moduleMemory_, 0, MEM_RELEASE);
+                #else
+                    munmap(moduleMemory_, moduleSize_);
+                #endif
+                moduleMemory_ = nullptr;
+                return false;
+            }
+
+            if (destOffset + copyCount > moduleSize_) {
                 std::cerr << "[WardenModule] Copy section exceeds module size" << std::endl;
                 #ifdef _WIN32
                     VirtualFree(moduleMemory_, 0, MEM_RELEASE);
@@ -553,27 +566,24 @@ bool WardenModule::parseExecutableFormat(const std::vector<uint8_t>& exeData) {
             std::memcpy(
                 static_cast<uint8_t*>(moduleMemory_) + destOffset,
                 exeData.data() + pos,
-                sectionLength
+                copyCount
             );
-
-            std::cout << "[WardenModule]   Copy section: " << sectionLength << " bytes to offset "
-                      << destOffset << std::endl;
-
-            destOffset += sectionLength;
+            pos += copyCount;
+            destOffset += copyCount;
         }
 
-        pos += sectionLength;
-        isSkipSection = !isSkipSection; // Alternate
-        sectionCount++;
+        pairCount++;
+        std::cout << "[WardenModule]   Pair " << pairCount << ": skip " << skipCount
+                  << ", copy " << copyCount << " (dest offset=" << destOffset << ")" << std::endl;
     }
 
-    std::cout << "[WardenModule] ✓ Parsed " << sectionCount << " sections, final offset: "
+    // Save position — remaining decompressed data contains relocation entries
+    relocDataOffset_ = pos;
+
+    std::cout << "[WardenModule] Parsed " << pairCount << " skip/copy pairs, final offset: "
               << destOffset << "/" << finalCodeSize << std::endl;
-
-    if (destOffset != finalCodeSize) {
-        std::cerr << "[WardenModule] WARNING: Final offset " << destOffset
-                  << " doesn't match expected size " << finalCodeSize << std::endl;
-    }
+    std::cout << "[WardenModule] Relocation data starts at decompressed offset " << relocDataOffset_
+              << " (" << (exeData.size() - relocDataOffset_) << " bytes remaining)" << std::endl;
 
     return true;
 }
@@ -584,36 +594,42 @@ bool WardenModule::applyRelocations() {
         return false;
     }
 
-    // Relocations are embedded in the decompressed data after the executable sections
-    // Format: Delta-encoded offsets with high-bit continuation
-    //
-    // Each offset is encoded as variable-length bytes:
-    // - If high bit (0x80) is set, read next byte and combine
-    // - Continue until byte without high bit
-    // - Final value is delta from previous relocation offset
-    //
-    // For each relocation offset:
-    // - Read 4-byte pointer at that offset
-    // - Add module base address to make it absolute
-    // - Write back to memory
+    // Relocation data is in decompressedData_ starting at relocDataOffset_
+    // Format: delta-encoded 2-byte LE offsets, terminated by 0x0000
+    // Each offset in the module image has moduleBase_ added to the 32-bit value there
 
-    std::cout << "[WardenModule] Applying relocations to module at " << moduleMemory_ << std::endl;
+    if (relocDataOffset_ == 0 || relocDataOffset_ >= decompressedData_.size()) {
+        std::cout << "[WardenModule] No relocation data available" << std::endl;
+        return true;
+    }
 
-    // NOTE: Relocation data format and location varies by module
-    // Without a real module to test against, we can't implement this accurately
-    // This is a placeholder that would need to be filled in with actual logic
-    // once we have real Warden module data to analyze
+    size_t relocPos = relocDataOffset_;
+    uint32_t currentOffset = 0;
+    int relocCount = 0;
 
-    std::cout << "[WardenModule] ⚠ Relocation application is STUB (needs real module data)" << std::endl;
-    std::cout << "[WardenModule]   Would parse delta-encoded offsets and fix absolute references" << std::endl;
+    while (relocPos + 2 <= decompressedData_.size()) {
+        uint16_t delta = decompressedData_[relocPos] | (decompressedData_[relocPos + 1] << 8);
+        relocPos += 2;
 
-    // Placeholder: Assume no relocations or already position-independent
-    // Real implementation would:
-    // 1. Find relocation table in module data
-    // 2. Decode delta offsets
-    // 3. For each offset: *(uint32_t*)(moduleMemory + offset) += (uintptr_t)moduleMemory_
+        if (delta == 0) break;
 
-    return true; // Return true to continue (stub implementation)
+        currentOffset += delta;
+
+        if (currentOffset + 4 <= moduleSize_) {
+            uint32_t* ptr = reinterpret_cast<uint32_t*>(
+                static_cast<uint8_t*>(moduleMemory_) + currentOffset);
+            *ptr += moduleBase_;
+            relocCount++;
+        } else {
+            std::cerr << "[WardenModule] Relocation offset " << currentOffset
+                      << " out of bounds (moduleSize=" << moduleSize_ << ")" << std::endl;
+        }
+    }
+
+    std::cout << "[WardenModule] Applied " << relocCount << " relocations (base=0x"
+              << std::hex << moduleBase_ << std::dec << ")" << std::endl;
+
+    return true;
 }
 
 bool WardenModule::bindAPIs() {

@@ -122,6 +122,10 @@ public:
      */
     void unload();
 
+    const void* getModuleMemory() const { return moduleMemory_; }
+    size_t getModuleSize() const { return moduleSize_; }
+    const std::vector<uint8_t>& getDecompressedData() const { return decompressedData_; }
+
 private:
     bool loaded_;                          // Module successfully loaded
     std::vector<uint8_t> md5Hash_;         // Module identifier
@@ -133,6 +137,7 @@ private:
     void* moduleMemory_;                   // Allocated executable memory region
     size_t moduleSize_;                    // Size of loaded code
     uint32_t moduleBase_;                  // Module base address (for emulator)
+    size_t relocDataOffset_ = 0;           // Offset into decompressedData_ where relocation data starts
     WardenFuncList funcList_;              // Callback functions
     std::unique_ptr<WardenEmulator> emulator_; // Cross-platform x86 emulator
 

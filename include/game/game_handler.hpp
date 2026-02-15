@@ -25,6 +25,7 @@ namespace wowee::game {
     class TransportManager;
     class WardenCrypto;
     class WardenMemory;
+    class WardenModule;
     class WardenModuleManager;
     class PacketParsers;
 }
@@ -1358,6 +1359,7 @@ private:
     uint32_t wardenModuleSize_ = 0;
     std::vector<uint8_t> wardenModuleData_;    // Downloaded module chunks
     std::vector<uint8_t> wardenLoadedModuleImage_; // Parsed module image for key derivation
+    std::shared_ptr<WardenModule> wardenLoadedModule_; // Loaded Warden module
 
     // Pre-computed challenge/response entries from .cr file
     struct WardenCREntry {

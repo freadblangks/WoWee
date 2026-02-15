@@ -60,9 +60,11 @@ private:
     void processRC4(const uint8_t* input, uint8_t* output, size_t length,
                     std::vector<uint8_t>& state, uint8_t& i, uint8_t& j);
 
+public:
     /**
      * SHA1Randx / WardenKeyGenerator: generates pseudo-random bytes from a seed.
-     * Used to derive the 16-byte encrypt and decrypt keys from the session key.
+     * Used to derive the 16-byte encrypt and decrypt keys from a seed.
+     * Public so GameHandler can use it for module hash key derivation.
      */
     static void sha1RandxGenerate(const std::vector<uint8_t>& seed,
                                   uint8_t* outputEncryptKey,

@@ -158,6 +158,7 @@ bool GameHandler::connect(const std::string& host,
     wardenModuleKey_.clear();
     wardenModuleSize_ = 0;
     wardenModuleData_.clear();
+    wardenLoadedModule_.reset();
 
     // Generate random client seed
     this->clientSeed = generateClientSeed();
@@ -214,6 +215,7 @@ void GameHandler::disconnect() {
     wardenModuleKey_.clear();
     wardenModuleSize_ = 0;
     wardenModuleData_.clear();
+    wardenLoadedModule_.reset();
     setState(WorldState::DISCONNECTED);
     LOG_INFO("Disconnected from world server");
 }
@@ -2208,6 +2210,35 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                          wardenModuleData_.size(), " bytes)");
                 wardenState_ = WardenState::WAIT_HASH_REQUEST;
 
+                // Cache raw module to disk
+                {
+                    std::string homeDir;
+                    if (const char* h = std::getenv("HOME")) homeDir = h;
+                    else homeDir = ".";
+                    std::string cacheDir = homeDir + "/.local/share/wowee/warden_cache";
+                    std::filesystem::create_directories(cacheDir);
+
+                    std::string hashHex;
+                    for (auto b : wardenModuleHash_) { char s[4]; snprintf(s, 4, "%02x", b); hashHex += s; }
+                    std::string cachePath = cacheDir + "/" + hashHex + ".wdn";
+
+                    std::ofstream wf(cachePath, std::ios::binary);
+                    if (wf) {
+                        wf.write(reinterpret_cast<const char*>(wardenModuleData_.data()), wardenModuleData_.size());
+                        LOG_INFO("Warden: Cached module to ", cachePath);
+                    }
+                }
+
+                // Load the module (decrypt, decompress, parse, relocate)
+                wardenLoadedModule_ = std::make_shared<WardenModule>();
+                if (wardenLoadedModule_->load(wardenModuleData_, wardenModuleHash_, wardenModuleKey_)) {
+                    LOG_INFO("Warden: Module loaded successfully (image size=",
+                             wardenLoadedModule_->getModuleSize(), " bytes)");
+                } else {
+                    LOG_ERROR("Warden: Module loading FAILED");
+                    wardenLoadedModule_.reset();
+                }
+
                 // Send MODULE_OK (opcode 0x01)
                 std::vector<uint8_t> resp = { 0x01 }; // WARDEN_CMSG_MODULE_OK
                 sendWardenResponse(resp);
@@ -2279,25 +2310,116 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                 }
             }
 
-            // --- Fallback: SHA1(seed + moduleImage) if no CR match ---
-            LOG_WARNING("Warden: No CR match, falling back to SHA1 hash computation");
+            // --- Fallback: compute hash from loaded module ---
+            LOG_WARNING("Warden: No CR match, computing hash from loaded module");
 
-            if (wardenModuleData_.empty() || wardenModuleKey_.empty()) {
-                LOG_ERROR("Warden: No module data and no CR match — cannot compute hash");
+            if (!wardenLoadedModule_ || !wardenLoadedModule_->isLoaded()) {
+                LOG_ERROR("Warden: No loaded module and no CR match — cannot compute hash");
                 wardenState_ = WardenState::WAIT_CHECKS;
                 break;
             }
 
-            // SHA1(seed) fallback — wrong answer but sends a response to avoid silent hang.
-            // Correct answer requires executing the Warden module via emulator (not yet functional).
-            // Server will likely disconnect, but GameHandler::update() now detects that gracefully.
             {
-                auto hash = auth::Crypto::sha1(seed);
-                LOG_WARNING("Warden: Sending SHA1(seed) fallback — server will likely reject");
+                const uint8_t* moduleImage = static_cast<const uint8_t*>(wardenLoadedModule_->getModuleMemory());
+                size_t moduleImageSize = wardenLoadedModule_->getModuleSize();
+                const auto& decompressedData = wardenLoadedModule_->getDecompressedData();
+
+                // --- Empirical test: try multiple SHA1 computations and check against first CR entry ---
+                if (!wardenCREntries_.empty()) {
+                    const auto& firstCR = wardenCREntries_[0];
+                    std::string expectedHex;
+                    for (int i = 0; i < 20; i++) { char s[4]; snprintf(s, 4, "%02x", firstCR.reply[i]); expectedHex += s; }
+                    LOG_INFO("Warden: Empirical test — expected reply from CR[0]=", expectedHex);
+
+                    // Test 1: SHA1(moduleImage)
+                    {
+                        std::vector<uint8_t> data(moduleImage, moduleImage + moduleImageSize);
+                        auto h = auth::Crypto::sha1(data);
+                        bool match = (std::memcmp(h.data(), firstCR.reply, 20) == 0);
+                        std::string hex; for (auto b : h) { char s[4]; snprintf(s, 4, "%02x", b); hex += s; }
+                        LOG_INFO("Warden:   SHA1(moduleImage)=", hex, match ? " MATCH!" : "");
+                    }
+                    // Test 2: SHA1(seed || moduleImage)
+                    {
+                        std::vector<uint8_t> data;
+                        data.insert(data.end(), seed.begin(), seed.end());
+                        data.insert(data.end(), moduleImage, moduleImage + moduleImageSize);
+                        auto h = auth::Crypto::sha1(data);
+                        bool match = (std::memcmp(h.data(), firstCR.reply, 20) == 0);
+                        std::string hex; for (auto b : h) { char s[4]; snprintf(s, 4, "%02x", b); hex += s; }
+                        LOG_INFO("Warden:   SHA1(seed||image)=", hex, match ? " MATCH!" : "");
+                    }
+                    // Test 3: SHA1(moduleImage || seed)
+                    {
+                        std::vector<uint8_t> data(moduleImage, moduleImage + moduleImageSize);
+                        data.insert(data.end(), seed.begin(), seed.end());
+                        auto h = auth::Crypto::sha1(data);
+                        bool match = (std::memcmp(h.data(), firstCR.reply, 20) == 0);
+                        std::string hex; for (auto b : h) { char s[4]; snprintf(s, 4, "%02x", b); hex += s; }
+                        LOG_INFO("Warden:   SHA1(image||seed)=", hex, match ? " MATCH!" : "");
+                    }
+                    // Test 4: SHA1(decompressedData)
+                    {
+                        auto h = auth::Crypto::sha1(decompressedData);
+                        bool match = (std::memcmp(h.data(), firstCR.reply, 20) == 0);
+                        std::string hex; for (auto b : h) { char s[4]; snprintf(s, 4, "%02x", b); hex += s; }
+                        LOG_INFO("Warden:   SHA1(decompressed)=", hex, match ? " MATCH!" : "");
+                    }
+                    // Test 5: SHA1(rawModuleData)
+                    {
+                        auto h = auth::Crypto::sha1(wardenModuleData_);
+                        bool match = (std::memcmp(h.data(), firstCR.reply, 20) == 0);
+                        std::string hex; for (auto b : h) { char s[4]; snprintf(s, 4, "%02x", b); hex += s; }
+                        LOG_INFO("Warden:   SHA1(rawModule)=", hex, match ? " MATCH!" : "");
+                    }
+                    // Test 6: Check if all CR replies are the same (constant hash)
+                    {
+                        bool allSame = true;
+                        for (size_t i = 1; i < wardenCREntries_.size(); i++) {
+                            if (std::memcmp(wardenCREntries_[i].reply, firstCR.reply, 20) != 0) {
+                                allSame = false;
+                                break;
+                            }
+                        }
+                        LOG_INFO("Warden:   All ", wardenCREntries_.size(), " CR replies identical? ", allSame ? "YES" : "NO");
+                    }
+                }
+
+                // --- Compute the hash: SHA1(moduleImage) is the most likely candidate ---
+                // The module's hash response is typically SHA1 of the loaded module image.
+                // This is a constant per module (seed is not used in the hash, only for key derivation).
+                std::vector<uint8_t> imageData(moduleImage, moduleImage + moduleImageSize);
+                auto reply = auth::Crypto::sha1(imageData);
+
+                {
+                    std::string hex;
+                    for (auto b : reply) { char s[4]; snprintf(s, 4, "%02x", b); hex += s; }
+                    LOG_INFO("Warden: Sending SHA1(moduleImage)=", hex);
+                }
+
+                // Send HASH_RESULT (opcode 0x04 + 20-byte hash)
                 std::vector<uint8_t> resp;
                 resp.push_back(0x04);
-                resp.insert(resp.end(), hash.begin(), hash.end());
+                resp.insert(resp.end(), reply.begin(), reply.end());
                 sendWardenResponse(resp);
+
+                // Derive new RC4 keys from the seed using SHA1Randx
+                std::vector<uint8_t> seedVec(seed.begin(), seed.end());
+                // Pad seed to at least 2 bytes for SHA1Randx split
+                // SHA1Randx splits input in half: first_half and second_half
+                uint8_t newEncryptKey[16], newDecryptKey[16];
+                WardenCrypto::sha1RandxGenerate(seedVec, newEncryptKey, newDecryptKey);
+
+                std::vector<uint8_t> ek(newEncryptKey, newEncryptKey + 16);
+                std::vector<uint8_t> dk(newDecryptKey, newDecryptKey + 16);
+                wardenCrypto_->replaceKeys(ek, dk);
+
+                {
+                    std::string ekHex, dkHex;
+                    for (int i = 0; i < 16; i++) { char s[4]; snprintf(s, 4, "%02x", newEncryptKey[i]); ekHex += s; }
+                    for (int i = 0; i < 16; i++) { char s[4]; snprintf(s, 4, "%02x", newDecryptKey[i]); dkHex += s; }
+                    LOG_INFO("Warden: Derived keys from seed: encrypt=", ekHex, " decrypt=", dkHex);
+                }
             }
 
             wardenState_ = WardenState::WAIT_CHECKS;

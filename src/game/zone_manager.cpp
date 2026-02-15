@@ -2,12 +2,47 @@
 #include "core/logger.hpp"
 #include <cstdlib>
 #include <ctime>
+#include <filesystem>
 #include <unordered_set>
 
 namespace wowee {
 namespace game {
 
+// Resolve "assets/Original Music/<name>" to an absolute path, or return empty
+static std::string resolveOriginalMusic(const char* filename) {
+    namespace fs = std::filesystem;
+    fs::path rel = fs::path("assets") / "Original Music" / filename;
+    if (fs::exists(rel)) return fs::canonical(rel).string();
+    fs::path abs = fs::current_path() / rel;
+    if (fs::exists(abs)) return fs::canonical(abs).string();
+    return "";
+}
+
+// Helper: prefix with "file:" so the renderer knows to use playFilePath
+static std::string filePrefix(const std::string& path) {
+    if (path.empty()) return "";
+    return "file:" + path;
+}
+
 void ZoneManager::initialize() {
+    // Resolve original music paths at startup
+    auto om = [](const char* name) -> std::string {
+        std::string path = resolveOriginalMusic(name);
+        return path.empty() ? "" : filePrefix(path);
+    };
+
+    std::string omWanderwewill   = om("Wanderwewill.mp3");
+    std::string omYouNoTake      = om("You No Take Candle!.mp3");
+    std::string omGoldBooty      = om("Gold on the Tide in Booty Bay.mp3");
+    std::string omLanterns       = om("Lanterns Over Lordaeron.mp3");
+    std::string omBarrens        = om("The Barrens Has No End.mp3");
+    std::string omBoneCollector  = om("The Bone Collector.mp3");
+    std::string omLootTheDogs    = om("Loot the Dogs.mp3");
+    std::string omOneMorePull    = om("One More Pull.mp3");
+    std::string omRollNeedGreed  = om("Roll Need Greed.mp3");
+    std::string omRunBackPolka   = om("RunBackPolka.mp3");
+    std::string omWhoPulled      = om("WHO PULLED_.mp3");
+
     // Elwynn Forest (zone 12)
     ZoneInfo elwynn;
     elwynn.id = 12;
@@ -17,6 +52,8 @@ void ZoneManager::initialize() {
         "Sound\\Music\\ZoneMusic\\Forest\\DayForest02.mp3",
         "Sound\\Music\\ZoneMusic\\Forest\\DayForest03.mp3",
     };
+    if (!omWanderwewill.empty()) elwynn.musicPaths.push_back(omWanderwewill);
+    if (!omYouNoTake.empty()) elwynn.musicPaths.push_back(omYouNoTake);
     zones[12] = elwynn;
 
     // Stormwind City (zone 1519)
@@ -43,6 +80,7 @@ void ZoneManager::initialize() {
         "Sound\\Music\\ZoneMusic\\Mountain\\DayMountain02.mp3",
         "Sound\\Music\\ZoneMusic\\Mountain\\DayMountain03.mp3",
     };
+    if (!omRunBackPolka.empty()) dunmorogh.musicPaths.push_back(omRunBackPolka);
     zones[1] = dunmorogh;
 
     // Westfall (zone 40)
@@ -54,7 +92,207 @@ void ZoneManager::initialize() {
         "Sound\\Music\\ZoneMusic\\Plains\\DayPlains02.mp3",
         "Sound\\Music\\ZoneMusic\\Plains\\DayPlains03.mp3",
     };
+    if (!omYouNoTake.empty()) westfall.musicPaths.push_back(omYouNoTake);
     zones[40] = westfall;
+
+    // Tirisfal Glades (zone 85)
+    ZoneInfo tirisfal;
+    tirisfal.id = 85;
+    tirisfal.name = "Tirisfal Glades";
+    tirisfal.musicPaths = {
+        "Sound\\Music\\ZoneMusic\\UndeadForest\\UndeadForest01.mp3",
+        "Sound\\Music\\ZoneMusic\\UndeadForest\\UndeadForest02.mp3",
+        "Sound\\Music\\ZoneMusic\\UndeadForest\\UndeadForest03.mp3",
+    };
+    if (!omLanterns.empty()) tirisfal.musicPaths.push_back(omLanterns);
+    zones[85] = tirisfal;
+
+    // Undercity (zone 1497)
+    ZoneInfo undercity;
+    undercity.id = 1497;
+    undercity.name = "Undercity";
+    undercity.musicPaths = {
+        "Sound\\Music\\CityMusic\\Undercity\\Undercity01-zone.mp3",
+        "Sound\\Music\\CityMusic\\Undercity\\Undercity02-zone.mp3",
+        "Sound\\Music\\CityMusic\\Undercity\\Undercity03-zone.mp3",
+    };
+    if (!omLanterns.empty()) undercity.musicPaths.push_back(omLanterns);
+    zones[1497] = undercity;
+
+    // The Barrens (zone 17)
+    ZoneInfo barrens;
+    barrens.id = 17;
+    barrens.name = "The Barrens";
+    barrens.musicPaths = {
+        "Sound\\Music\\ZoneMusic\\Desert\\DayDesert01.mp3",
+        "Sound\\Music\\ZoneMusic\\Desert\\DayDesert02.mp3",
+        "Sound\\Music\\ZoneMusic\\Desert\\DayDesert03.mp3",
+    };
+    if (!omBarrens.empty()) barrens.musicPaths.push_back(omBarrens);
+    zones[17] = barrens;
+
+    // Stranglethorn Vale (zone 33)
+    ZoneInfo stranglethorn;
+    stranglethorn.id = 33;
+    stranglethorn.name = "Stranglethorn Vale";
+    stranglethorn.musicPaths = {
+        "Sound\\Music\\ZoneMusic\\Jungle\\DayJungle01.mp3",
+        "Sound\\Music\\ZoneMusic\\Jungle\\DayJungle02.mp3",
+        "Sound\\Music\\ZoneMusic\\Jungle\\DayJungle03.mp3",
+    };
+    if (!omGoldBooty.empty()) stranglethorn.musicPaths.push_back(omGoldBooty);
+    zones[33] = stranglethorn;
+
+    // Duskwood (zone 10)
+    ZoneInfo duskwood;
+    duskwood.id = 10;
+    duskwood.name = "Duskwood";
+    duskwood.musicPaths = {
+        "Sound\\Music\\ZoneMusic\\HauntedForest\\HauntedForest01.mp3",
+        "Sound\\Music\\ZoneMusic\\HauntedForest\\HauntedForest02.mp3",
+        "Sound\\Music\\ZoneMusic\\HauntedForest\\HauntedForest03.mp3",
+    };
+    if (!omBoneCollector.empty()) duskwood.musicPaths.push_back(omBoneCollector);
+    zones[10] = duskwood;
+
+    // Burning Steppes (zone 46)
+    ZoneInfo burningSteppes;
+    burningSteppes.id = 46;
+    burningSteppes.name = "Burning Steppes";
+    burningSteppes.musicPaths = {
+        "Sound\\Music\\ZoneMusic\\BarrenDry\\DayBarrenDry01.mp3",
+        "Sound\\Music\\ZoneMusic\\BarrenDry\\DayBarrenDry02.mp3",
+    };
+    if (!omOneMorePull.empty()) burningSteppes.musicPaths.push_back(omOneMorePull);
+    if (!omWhoPulled.empty()) burningSteppes.musicPaths.push_back(omWhoPulled);
+    if (!omLootTheDogs.empty()) burningSteppes.musicPaths.push_back(omLootTheDogs);
+    zones[46] = burningSteppes;
+
+    // Searing Gorge (zone 51)
+    ZoneInfo searingGorge;
+    searingGorge.id = 51;
+    searingGorge.name = "Searing Gorge";
+    searingGorge.musicPaths = {
+        "Sound\\Music\\ZoneMusic\\BarrenDry\\DayBarrenDry01.mp3",
+        "Sound\\Music\\ZoneMusic\\BarrenDry\\DayBarrenDry02.mp3",
+    };
+    if (!omWhoPulled.empty()) searingGorge.musicPaths.push_back(omWhoPulled);
+    if (!omOneMorePull.empty()) searingGorge.musicPaths.push_back(omOneMorePull);
+    if (!omLootTheDogs.empty()) searingGorge.musicPaths.push_back(omLootTheDogs);
+    zones[51] = searingGorge;
+
+    // Ironforge (zone 1537)
+    ZoneInfo ironforge;
+    ironforge.id = 1537;
+    ironforge.name = "Ironforge";
+    ironforge.musicPaths = {
+        "Sound\\Music\\CityMusic\\Ironforge\\Ironforge01-zone.mp3",
+        "Sound\\Music\\CityMusic\\Ironforge\\Ironforge02-zone.mp3",
+        "Sound\\Music\\CityMusic\\Ironforge\\Ironforge03-zone.mp3",
+    };
+    if (!omRunBackPolka.empty()) ironforge.musicPaths.push_back(omRunBackPolka);
+    if (!omRollNeedGreed.empty()) ironforge.musicPaths.push_back(omRollNeedGreed);
+    zones[1537] = ironforge;
+
+    // Loch Modan (zone 38)
+    ZoneInfo lochModan;
+    lochModan.id = 38;
+    lochModan.name = "Loch Modan";
+    lochModan.musicPaths = {
+        "Sound\\Music\\ZoneMusic\\Mountain\\DayMountain01.mp3",
+        "Sound\\Music\\ZoneMusic\\Mountain\\DayMountain02.mp3",
+        "Sound\\Music\\ZoneMusic\\Mountain\\DayMountain03.mp3",
+    };
+    if (!omRollNeedGreed.empty()) lochModan.musicPaths.push_back(omRollNeedGreed);
+    zones[38] = lochModan;
+
+    // --- Kalimdor zones ---
+
+    // Orgrimmar (zone 1637)
+    ZoneInfo orgrimmar;
+    orgrimmar.id = 1637;
+    orgrimmar.name = "Orgrimmar";
+    orgrimmar.musicPaths = {
+        "Sound\\Music\\CityMusic\\Orgrimmar\\orgrimmar01-zone.mp3",
+        "Sound\\Music\\CityMusic\\Orgrimmar\\orgrimmar02-zone.mp3",
+        "Sound\\Music\\CityMusic\\Orgrimmar\\orgrimmar03-zone.mp3",
+    };
+    if (!omWhoPulled.empty()) orgrimmar.musicPaths.push_back(omWhoPulled);
+    if (!omOneMorePull.empty()) orgrimmar.musicPaths.push_back(omOneMorePull);
+    zones[1637] = orgrimmar;
+
+    // Durotar (zone 14)
+    ZoneInfo durotar;
+    durotar.id = 14;
+    durotar.name = "Durotar";
+    durotar.musicPaths = {
+        "Sound\\Music\\ZoneMusic\\Desert\\DayDesert01.mp3",
+        "Sound\\Music\\ZoneMusic\\Desert\\DayDesert02.mp3",
+        "Sound\\Music\\ZoneMusic\\Desert\\DayDesert03.mp3",
+    };
+    if (!omBarrens.empty()) durotar.musicPaths.push_back(omBarrens);
+    zones[14] = durotar;
+
+    // Mulgore (zone 215)
+    ZoneInfo mulgore;
+    mulgore.id = 215;
+    mulgore.name = "Mulgore";
+    mulgore.musicPaths = {
+        "Sound\\Music\\ZoneMusic\\Plains\\DayPlains01.mp3",
+        "Sound\\Music\\ZoneMusic\\Plains\\DayPlains02.mp3",
+        "Sound\\Music\\ZoneMusic\\Plains\\DayPlains03.mp3",
+    };
+    if (!omWanderwewill.empty()) mulgore.musicPaths.push_back(omWanderwewill);
+    if (!omBarrens.empty()) mulgore.musicPaths.push_back(omBarrens);
+    zones[215] = mulgore;
+
+    // Thunder Bluff (zone 1638)
+    ZoneInfo thunderBluff;
+    thunderBluff.id = 1638;
+    thunderBluff.name = "Thunder Bluff";
+    thunderBluff.musicPaths = {
+        "Sound\\Music\\CityMusic\\ThunderBluff\\ThunderBluff01-zone.mp3",
+        "Sound\\Music\\CityMusic\\ThunderBluff\\ThunderBluff02-zone.mp3",
+        "Sound\\Music\\CityMusic\\ThunderBluff\\ThunderBluff03-zone.mp3",
+    };
+    if (!omWanderwewill.empty()) thunderBluff.musicPaths.push_back(omWanderwewill);
+    zones[1638] = thunderBluff;
+
+    // Darkshore (zone 148)
+    ZoneInfo darkshore;
+    darkshore.id = 148;
+    darkshore.name = "Darkshore";
+    darkshore.musicPaths = {
+        "Sound\\Music\\ZoneMusic\\NightElf\\NightElf01.mp3",
+        "Sound\\Music\\ZoneMusic\\NightElf\\NightElf02.mp3",
+        "Sound\\Music\\ZoneMusic\\NightElf\\NightElf03.mp3",
+    };
+    if (!omBoneCollector.empty()) darkshore.musicPaths.push_back(omBoneCollector);
+    if (!omLanterns.empty()) darkshore.musicPaths.push_back(omLanterns);
+    zones[148] = darkshore;
+
+    // Teldrassil (zone 141)
+    ZoneInfo teldrassil;
+    teldrassil.id = 141;
+    teldrassil.name = "Teldrassil";
+    teldrassil.musicPaths = {
+        "Sound\\Music\\ZoneMusic\\NightElf\\NightElf01.mp3",
+        "Sound\\Music\\ZoneMusic\\NightElf\\NightElf02.mp3",
+        "Sound\\Music\\ZoneMusic\\NightElf\\NightElf03.mp3",
+    };
+    if (!omWanderwewill.empty()) teldrassil.musicPaths.push_back(omWanderwewill);
+    zones[141] = teldrassil;
+
+    // Darnassus (zone 1657)
+    ZoneInfo darnassus;
+    darnassus.id = 1657;
+    darnassus.name = "Darnassus";
+    darnassus.musicPaths = {
+        "Sound\\Music\\CityMusic\\Darnassus\\Darnassus01-zone.mp3",
+        "Sound\\Music\\CityMusic\\Darnassus\\Darnassus02-zone.mp3",
+        "Sound\\Music\\CityMusic\\Darnassus\\Darnassus03-zone.mp3",
+    };
+    zones[1657] = darnassus;
 
     // Tile-to-zone mappings for Azeroth (Eastern Kingdoms)
     // Elwynn Forest tiles
@@ -80,6 +318,95 @@ void ZoneManager::initialize() {
         tileToZone[tx * 100 + 52] = 1;
         tileToZone[tx * 100 + 53] = 1;
     }
+
+    // Duskwood tiles (south of Elwynn)
+    for (int tx = 33; tx <= 36; tx++) {
+        tileToZone[tx * 100 + 52] = 10;
+        tileToZone[tx * 100 + 53] = 10;
+    }
+
+    // Tirisfal Glades tiles (northern Eastern Kingdoms)
+    for (int tx = 28; tx <= 31; tx++) {
+        for (int ty = 38; ty <= 41; ty++) {
+            tileToZone[tx * 100 + ty] = 85;
+        }
+    }
+
+    // Stranglethorn Vale tiles (south of Westfall/Duskwood)
+    for (int tx = 33; tx <= 36; tx++) {
+        for (int ty = 54; ty <= 58; ty++) {
+            tileToZone[tx * 100 + ty] = 33;
+        }
+    }
+
+    // Burning Steppes tiles (east of Redridge, north of Blackrock)
+    for (int tx = 29; tx <= 31; tx++) {
+        tileToZone[tx * 100 + 52] = 46;
+        tileToZone[tx * 100 + 53] = 46;
+    }
+
+    // Searing Gorge tiles (north of Burning Steppes)
+    for (int tx = 29; tx <= 31; tx++) {
+        tileToZone[tx * 100 + 50] = 51;
+        tileToZone[tx * 100 + 51] = 51;
+    }
+
+    // Loch Modan tiles (east of Dun Morogh)
+    for (int tx = 35; tx <= 37; tx++) {
+        tileToZone[tx * 100 + 52] = 38;
+        tileToZone[tx * 100 + 53] = 38;
+    }
+
+    // The Barrens tiles (Kalimdor - large zone)
+    for (int tx = 17; tx <= 22; tx++) {
+        for (int ty = 28; ty <= 35; ty++) {
+            tileToZone[tx * 100 + ty] = 17;
+        }
+    }
+
+    // --- Kalimdor tile mappings ---
+
+    // Durotar tiles (east coast, near Orgrimmar)
+    for (int tx = 19; tx <= 22; tx++) {
+        for (int ty = 25; ty <= 28; ty++) {
+            tileToZone[tx * 100 + ty] = 14;
+        }
+    }
+
+    // Orgrimmar tiles (within Durotar)
+    tileToZone[20 * 100 + 26] = 1637;
+    tileToZone[21 * 100 + 26] = 1637;
+    tileToZone[20 * 100 + 27] = 1637;
+    tileToZone[21 * 100 + 27] = 1637;
+
+    // Mulgore tiles (south of Barrens)
+    for (int tx = 15; tx <= 18; tx++) {
+        for (int ty = 33; ty <= 36; ty++) {
+            tileToZone[tx * 100 + ty] = 215;
+        }
+    }
+
+    // Thunder Bluff tiles (within Mulgore)
+    tileToZone[16 * 100 + 34] = 1638;
+    tileToZone[17 * 100 + 34] = 1638;
+
+    // Darkshore tiles (northwest Kalimdor coast)
+    for (int tx = 14; tx <= 17; tx++) {
+        for (int ty = 19; ty <= 24; ty++) {
+            tileToZone[tx * 100 + ty] = 148;
+        }
+    }
+
+    // Teldrassil tiles (island off Darkshore)
+    for (int tx = 13; tx <= 15; tx++) {
+        for (int ty = 15; ty <= 18; ty++) {
+            tileToZone[tx * 100 + ty] = 141;
+        }
+    }
+
+    // Darnassus tiles (within Teldrassil)
+    tileToZone[14 * 100 + 16] = 1657;
+    tileToZone[14 * 100 + 17] = 1657;
 
     std::srand(static_cast<unsigned>(std::time(nullptr)));
 

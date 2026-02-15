@@ -2111,6 +2111,16 @@ void Renderer::update(float deltaTime) {
     auto m22 = std::chrono::high_resolution_clock::now();
     m2Time += std::chrono::duration<float, std::milli>(m22 - m21).count();
 
+    // Helper: play zone music, dispatching local files (file: prefix) vs MPQ paths
+    auto playZoneMusic = [&](const std::string& music) {
+        if (music.empty()) return;
+        if (music.rfind("file:", 0) == 0) {
+            musicManager->crossfadeToFile(music.substr(5));
+        } else {
+            musicManager->crossfadeTo(music);
+        }
+    };
+
     // Update zone detection and music
     if (zoneManager && musicManager && terrainManager && camera) {
         // First check tile-based zone
@@ -2184,7 +2194,7 @@ void Renderer::update(float deltaTime) {
             if (info) {
                 std::string music = zoneManager->getRandomMusic(currentZoneId);
                 if (!music.empty()) {
-                    musicManager->crossfadeTo(music);
+                    playZoneMusic(music);
                     musicSwitchCooldown_ = 6.0f;
                 }
             }
@@ -2205,7 +2215,7 @@ void Renderer::update(float deltaTime) {
             if (info) {
                 std::string music = zoneManager->getRandomMusic(currentZoneId);
                 if (!music.empty()) {
-                    musicManager->crossfadeTo(music);
+                    playZoneMusic(music);
                     musicSwitchCooldown_ = 6.0f;
                 }
             }
@@ -2221,7 +2231,7 @@ void Renderer::update(float deltaTime) {
                 if (musicSwitchCooldown_ <= 0.0f) {
                     std::string music = zoneManager->getRandomMusic(zoneId);
                     if (!music.empty()) {
-                        musicManager->crossfadeTo(music);
+                        playZoneMusic(music);
                         musicSwitchCooldown_ = 6.0f;
                     }
                 }

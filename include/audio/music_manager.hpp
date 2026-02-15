@@ -22,6 +22,7 @@ public:
     void playFilePath(const std::string& filePath, bool loop = true);
     void stopMusic(float fadeMs = 2000.0f);
     void crossfadeTo(const std::string& mpqPath, float fadeMs = 3000.0f);
+    void crossfadeToFile(const std::string& filePath, float fadeMs = 3000.0f);
     void update(float deltaTime);
     void setVolume(int volume);
     int getVolume() const { return volumePercent; }
@@ -43,6 +44,7 @@ private:
     // Crossfade state
     bool crossfading = false;
     std::string pendingTrack;
+    bool pendingIsFile = false;
     float fadeTimer = 0.0f;
     float fadeDuration = 0.0f;
 

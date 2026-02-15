@@ -27,6 +27,7 @@
 #include "game/expansion_profile.hpp"
 #include "core/logger.hpp"
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -1061,7 +1062,9 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
     ImGuiInputTextFlags inputFlags = ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackAlways;
     if (ImGui::InputText("##ChatInput", chatInputBuffer, sizeof(chatInputBuffer), inputFlags, inputCallback, this)) {
         sendChatMessage(gameHandler);
-        refocusChatInput = true;
+        // Close chat input on send so movement keys work immediately.
+        refocusChatInput = false;
+        ImGui::ClearActiveID();
     }
     ImGui::PopStyleColor();
 

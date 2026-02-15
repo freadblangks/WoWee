@@ -291,6 +291,18 @@ static const OpcodeNameEntry kOpcodeNames[] = {
     {"CMSG_CHANNEL_LIST", LogicalOpcode::CMSG_CHANNEL_LIST},
     {"SMSG_CHANNEL_LIST", LogicalOpcode::SMSG_CHANNEL_LIST},
     {"SMSG_INSPECT_TALENT", LogicalOpcode::SMSG_INSPECT_TALENT},
+    // Mail
+    {"SMSG_SHOW_MAILBOX", LogicalOpcode::SMSG_SHOW_MAILBOX},
+    {"CMSG_GET_MAIL_LIST", LogicalOpcode::CMSG_GET_MAIL_LIST},
+    {"SMSG_MAIL_LIST_RESULT", LogicalOpcode::SMSG_MAIL_LIST_RESULT},
+    {"CMSG_SEND_MAIL", LogicalOpcode::CMSG_SEND_MAIL},
+    {"SMSG_SEND_MAIL_RESULT", LogicalOpcode::SMSG_SEND_MAIL_RESULT},
+    {"CMSG_MAIL_TAKE_MONEY", LogicalOpcode::CMSG_MAIL_TAKE_MONEY},
+    {"CMSG_MAIL_TAKE_ITEM", LogicalOpcode::CMSG_MAIL_TAKE_ITEM},
+    {"CMSG_MAIL_DELETE", LogicalOpcode::CMSG_MAIL_DELETE},
+    {"CMSG_MAIL_MARK_AS_READ", LogicalOpcode::CMSG_MAIL_MARK_AS_READ},
+    {"SMSG_RECEIVED_MAIL", LogicalOpcode::SMSG_RECEIVED_MAIL},
+    {"MSG_QUERY_NEXT_MAIL_TIME", LogicalOpcode::MSG_QUERY_NEXT_MAIL_TIME},
 };
 // clang-format on
 
@@ -583,6 +595,18 @@ void OpcodeTable::loadWotlkDefaults() {
         {LogicalOpcode::CMSG_CHANNEL_LIST, 0x09A},
         {LogicalOpcode::SMSG_CHANNEL_LIST, 0x09B},
         {LogicalOpcode::SMSG_INSPECT_TALENT, 0x3F4},
+        // Mail
+        {LogicalOpcode::SMSG_SHOW_MAILBOX, 0x24B},
+        {LogicalOpcode::CMSG_GET_MAIL_LIST, 0x23A},
+        {LogicalOpcode::SMSG_MAIL_LIST_RESULT, 0x23B},
+        {LogicalOpcode::CMSG_SEND_MAIL, 0x238},
+        {LogicalOpcode::SMSG_SEND_MAIL_RESULT, 0x239},
+        {LogicalOpcode::CMSG_MAIL_TAKE_MONEY, 0x245},
+        {LogicalOpcode::CMSG_MAIL_TAKE_ITEM, 0x244},
+        {LogicalOpcode::CMSG_MAIL_DELETE, 0x243},
+        {LogicalOpcode::CMSG_MAIL_MARK_AS_READ, 0x242},
+        {LogicalOpcode::SMSG_RECEIVED_MAIL, 0x285},
+        {LogicalOpcode::MSG_QUERY_NEXT_MAIL_TIME, 0x284},
     };
 
     logicalToWire_.clear();

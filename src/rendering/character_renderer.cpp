@@ -657,7 +657,7 @@ GLuint CharacterRenderer::compositeWithRegions(const std::string& basePath,
                 composite[dstIdx + 3] = base.data[srcIdx + 3];
             }
         }
-        core::Logger::getInstance().info("compositeWithRegions: upscaled 256x256 to 512x512");
+        core::Logger::getInstance().debug("compositeWithRegions: upscaled 256x256 to 512x512");
     } else {
         composite = base.data;
     }
@@ -748,7 +748,7 @@ GLuint CharacterRenderer::compositeWithRegions(const std::string& basePath,
             blitOverlay(composite, width, height, overlay, dstX, dstY);
         }
 
-        core::Logger::getInstance().info("compositeWithRegions: region ", regionIdx,
+        core::Logger::getInstance().debug("compositeWithRegions: region ", regionIdx,
             " at (", dstX, ",", dstY, ") ", overlay.width, "x", overlay.height, " from ", rl.second);
     }
 
@@ -765,7 +765,7 @@ GLuint CharacterRenderer::compositeWithRegions(const std::string& basePath,
     applyAnisotropicFiltering();
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    core::Logger::getInstance().info("compositeWithRegions: created ", width, "x", height,
+    core::Logger::getInstance().debug("compositeWithRegions: created ", width, "x", height,
         " texture with ", regionLayers.size(), " equipment regions");
     compositeCache_[cacheKey] = texId;
     return texId;

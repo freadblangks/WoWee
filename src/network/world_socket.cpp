@@ -296,7 +296,7 @@ void WorldSocket::update() {
     }
 
     if (receivedAny) {
-        LOG_INFO("World socket read ", bytesReadThisTick, " bytes in ", readOps,
+        LOG_DEBUG("World socket read ", bytesReadThisTick, " bytes in ", readOps,
                  " recv call(s), buffered=", receiveBuffer.size());
         // Hex dump received bytes for auth debugging
         if (bytesReadThisTick <= 128) {
@@ -304,11 +304,11 @@ void WorldSocket::update() {
             for (size_t i = 0; i < receiveBuffer.size(); ++i) {
                 char buf[4]; snprintf(buf, sizeof(buf), "%02x ", receiveBuffer[i]); hex += buf;
             }
-            LOG_INFO("World socket raw bytes: ", hex);
+            LOG_DEBUG("World socket raw bytes: ", hex);
         }
         tryParsePackets();
         if (connected && !receiveBuffer.empty()) {
-            LOG_INFO("World socket parse left ", receiveBuffer.size(),
+            LOG_DEBUG("World socket parse left ", receiveBuffer.size(),
                      " bytes buffered (awaiting complete packet)");
         }
     }

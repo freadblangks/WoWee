@@ -2166,5 +2166,77 @@ public:
     static network::Packet build(uint64_t casterGuid, bool accept);
 };
 
+// ============================================================
+// Mail System
+// ============================================================
+
+struct MailAttachment {
+    uint8_t slot = 0;
+    uint32_t itemGuidLow = 0;
+    uint32_t itemId = 0;
+    uint32_t enchantId = 0;
+    uint32_t randomPropertyId = 0;
+    uint32_t randomSuffix = 0;
+    uint32_t stackCount = 1;
+    uint32_t chargesOrDurability = 0;
+    uint32_t maxDurability = 0;
+};
+
+struct MailMessage {
+    uint32_t messageId = 0;
+    uint8_t messageType = 0;    // 0=normal, 2=auction, 3=creature, 4=gameobject
+    uint64_t senderGuid = 0;
+    uint32_t senderEntry = 0;   // For non-player mail
+    std::string senderName;
+    std::string subject;
+    std::string body;
+    uint32_t stationeryId = 0;
+    uint32_t money = 0;
+    uint32_t cod = 0;           // Cash on delivery
+    uint32_t flags = 0;
+    float expirationTime = 0.0f;
+    uint32_t mailTemplateId = 0;
+    bool read = false;
+    std::vector<MailAttachment> attachments;
+};
+
+/** CMSG_GET_MAIL_LIST packet builder */
+class GetMailListPacket {
+public:
+    static network::Packet build(uint64_t mailboxGuid);
+};
+
+/** CMSG_SEND_MAIL packet builder */
+class SendMailPacket {
+public:
+    static network::Packet build(uint64_t mailboxGuid, const std::string& recipient,
+                                 const std::string& subject, const std::string& body,
+                                 uint32_t money, uint32_t cod);
+};
+
+/** CMSG_MAIL_TAKE_MONEY packet builder */
+class MailTakeMoneyPacket {
+public:
+    static network::Packet build(uint64_t mailboxGuid, uint32_t mailId);
+};
+
+/** CMSG_MAIL_TAKE_ITEM packet builder */
+class MailTakeItemPacket {
+public:
+    static network::Packet build(uint64_t mailboxGuid, uint32_t mailId, uint32_t itemIndex);
+};
+
+/** CMSG_MAIL_DELETE packet builder */
+class MailDeletePacket {
+public:
+    static network::Packet build(uint64_t mailboxGuid, uint32_t mailId, uint32_t mailTemplateId);
+};
+
+/** CMSG_MAIL_MARK_AS_READ packet builder */
+class MailMarkAsReadPacket {
+public:
+    static network::Packet build(uint64_t mailboxGuid, uint32_t mailId);
+};
+
 } // namespace game
 } // namespace wowee

@@ -54,10 +54,9 @@ void Logger::log(LogLevel level, const std::string& message) {
 
     line << "] " << message;
 
-    std::cout << line.str() << std::endl;
+    std::cout << line.str() << '\n';
     if (fileStream.is_open()) {
-        fileStream << line.str() << std::endl;
-        fileStream.flush();
+        fileStream << line.str() << '\n';
     }
 }
 

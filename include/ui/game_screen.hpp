@@ -181,6 +181,8 @@ private:
     void renderGuildRoster(game::GameHandler& gameHandler);
     void renderGuildInvitePopup(game::GameHandler& gameHandler);
     void renderChatBubbles(game::GameHandler& gameHandler);
+    void renderMailWindow(game::GameHandler& gameHandler);
+    void renderMailComposeWindow(game::GameHandler& gameHandler);
 
     /**
      * Inventory screen
@@ -241,6 +243,12 @@ private:
     };
     std::vector<ChatBubble> chatBubbles_;
     bool chatBubbleCallbackSet_ = false;
+
+    // Mail compose state
+    char mailRecipientBuffer_[256] = "";
+    char mailSubjectBuffer_[256] = "";
+    char mailBodyBuffer_[2048] = "";
+    int mailComposeMoney_[3] = {0, 0, 0};  // gold, silver, copper
 
     // Left-click targeting: distinguish click from camera drag
     glm::vec2 leftClickPressPos_ = glm::vec2(0.0f);

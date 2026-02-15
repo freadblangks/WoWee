@@ -1116,9 +1116,9 @@ bool DestroyObjectParser::parse(network::Packet& packet, DestroyObjectData& data
         data.isDeath = false;
     }
 
-    LOG_INFO("Parsed SMSG_DESTROY_OBJECT:");
-    LOG_INFO("  GUID: 0x", std::hex, data.guid, std::dec);
-    LOG_INFO("  Is death: ", data.isDeath ? "yes" : "no");
+    LOG_DEBUG("Parsed SMSG_DESTROY_OBJECT:");
+    LOG_DEBUG("  GUID: 0x", std::hex, data.guid, std::dec);
+    LOG_DEBUG("  Is death: ", data.isDeath ? "yes" : "no");
 
     return true;
 }
@@ -2101,7 +2101,7 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
     data.armor = static_cast<int32_t>(packet.readUInt32());
 
     data.valid = !data.name.empty();
-    LOG_INFO("Item query response: ", data.name, " (quality=", data.quality,
+    LOG_DEBUG("Item query response: ", data.name, " (quality=", data.quality,
              " invType=", data.inventoryType, " stack=", data.maxStack, ")");
     return true;
 }
@@ -2463,7 +2463,7 @@ bool SpellStartParser::parse(network::Packet& packet, SpellStartData& data) {
         }
     }
 
-    LOG_INFO("Spell start: spell=", data.spellId, " castTime=", data.castTime, "ms");
+    LOG_DEBUG("Spell start: spell=", data.spellId, " castTime=", data.castTime, "ms");
     return true;
 }
 
@@ -2485,7 +2485,7 @@ bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
     data.missCount = packet.readUInt8();
     // Skip miss details for now
 
-    LOG_INFO("Spell go: spell=", data.spellId, " hits=", (int)data.hitCount,
+    LOG_DEBUG("Spell go: spell=", data.spellId, " hits=", (int)data.hitCount,
              " misses=", (int)data.missCount);
     return true;
 }
@@ -3300,6 +3300,62 @@ network::Packet ActivateTaxiPacket::build(uint64_t npcGuid, uint32_t srcNode, ui
 network::Packet GameObjectUsePacket::build(uint64_t guid) {
     network::Packet packet(wireOpcode(Opcode::CMSG_GAMEOBJECT_USE));
     packet.writeUInt64(guid);
+    return packet;
+}
+
+// ============================================================
+// Mail System
+// ============================================================
+
+network::Packet GetMailListPacket::build(uint64_t mailboxGuid) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_GET_MAIL_LIST));
+    packet.writeUInt64(mailboxGuid);
+    return packet;
+}
+
+network::Packet SendMailPacket::build(uint64_t mailboxGuid, const std::string& recipient,
+                                      const std::string& subject, const std::string& body,
+                                      uint32_t money, uint32_t cod) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_SEND_MAIL));
+    packet.writeUInt64(mailboxGuid);
+    packet.writeString(recipient);
+    packet.writeString(subject);
+    packet.writeString(body);
+    packet.writeUInt32(0);       // stationery (default)
+    packet.writeUInt32(0);       // unknown
+    packet.writeUInt8(0);        // attachment count (no item attachments for now)
+    packet.writeUInt32(money);
+    packet.writeUInt32(cod);
+    return packet;
+}
+
+network::Packet MailTakeMoneyPacket::build(uint64_t mailboxGuid, uint32_t mailId) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_MAIL_TAKE_MONEY));
+    packet.writeUInt64(mailboxGuid);
+    packet.writeUInt32(mailId);
+    return packet;
+}
+
+network::Packet MailTakeItemPacket::build(uint64_t mailboxGuid, uint32_t mailId, uint32_t itemIndex) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_MAIL_TAKE_ITEM));
+    packet.writeUInt64(mailboxGuid);
+    packet.writeUInt32(mailId);
+    packet.writeUInt32(itemIndex);
+    return packet;
+}
+
+network::Packet MailDeletePacket::build(uint64_t mailboxGuid, uint32_t mailId, uint32_t mailTemplateId) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_MAIL_DELETE));
+    packet.writeUInt64(mailboxGuid);
+    packet.writeUInt32(mailId);
+    packet.writeUInt32(mailTemplateId);
+    return packet;
+}
+
+network::Packet MailMarkAsReadPacket::build(uint64_t mailboxGuid, uint32_t mailId) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_MAIL_MARK_AS_READ));
+    packet.writeUInt64(mailboxGuid);
+    packet.writeUInt32(mailId);
     return packet;
 }
 

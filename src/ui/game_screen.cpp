@@ -252,6 +252,8 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderVendorWindow(gameHandler);
     renderTrainerWindow(gameHandler);
     renderTaxiWindow(gameHandler);
+    renderMailWindow(gameHandler);
+    renderMailComposeWindow(gameHandler);
     // renderQuestMarkers(gameHandler);  // Disabled - using 3D billboard markers now
     renderMinimapMarkers(gameHandler);
     renderDeathScreen(gameHandler);
@@ -6026,6 +6028,264 @@ void GameScreen::loadSettings() {
         } catch (...) {}
     }
     LOG_INFO("Settings loaded from ", path);
+}
+
+// ============================================================
+// Mail Window
+// ============================================================
+
+void GameScreen::renderMailWindow(game::GameHandler& gameHandler) {
+    if (!gameHandler.isMailboxOpen()) return;
+
+    auto* window = core::Application::getInstance().getWindow();
+    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
+
+    ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 250, 80), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(ImVec2(600, 500), ImGuiCond_Appearing);
+
+    bool open = true;
+    if (ImGui::Begin("Mailbox", &open)) {
+        const auto& inbox = gameHandler.getMailInbox();
+
+        // Top bar: money + compose button
+        uint64_t money = gameHandler.getMoneyCopper();
+        uint32_t mg = static_cast<uint32_t>(money / 10000);
+        uint32_t ms = static_cast<uint32_t>((money / 100) % 100);
+        uint32_t mc = static_cast<uint32_t>(money % 100);
+        ImGui::Text("Your money: %ug %us %uc", mg, ms, mc);
+        ImGui::SameLine(ImGui::GetWindowWidth() - 100);
+        if (ImGui::Button("Compose")) {
+            mailRecipientBuffer_[0] = '\0';
+            mailSubjectBuffer_[0] = '\0';
+            mailBodyBuffer_[0] = '\0';
+            mailComposeMoney_[0] = 0;
+            mailComposeMoney_[1] = 0;
+            mailComposeMoney_[2] = 0;
+            gameHandler.openMailCompose();
+        }
+        ImGui::Separator();
+
+        if (inbox.empty()) {
+            ImGui::TextDisabled("No mail.");
+        } else {
+            // Two-panel layout: left = mail list, right = selected mail detail
+            float listWidth = 220.0f;
+
+            // Left panel - mail list
+            ImGui::BeginChild("MailList", ImVec2(listWidth, 0), true);
+            for (size_t i = 0; i < inbox.size(); ++i) {
+                const auto& mail = inbox[i];
+                ImGui::PushID(static_cast<int>(i));
+
+                bool selected = (gameHandler.getSelectedMailIndex() == static_cast<int>(i));
+                std::string label = mail.subject.empty() ? "(No Subject)" : mail.subject;
+
+                // Unread indicator
+                if (!mail.read) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.5f, 1.0f));
+                }
+
+                if (ImGui::Selectable(label.c_str(), selected)) {
+                    gameHandler.setSelectedMailIndex(static_cast<int>(i));
+                    // Mark as read
+                    if (!mail.read) {
+                        gameHandler.mailMarkAsRead(mail.messageId);
+                    }
+                }
+
+                if (!mail.read) {
+                    ImGui::PopStyleColor();
+                }
+
+                // Sub-info line
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "  From: %s", mail.senderName.c_str());
+                if (mail.money > 0) {
+                    ImGui::SameLine();
+                    ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.0f, 1.0f), " [G]");
+                }
+                if (!mail.attachments.empty()) {
+                    ImGui::SameLine();
+                    ImGui::TextColored(ImVec4(0.5f, 0.8f, 1.0f, 1.0f), " [A]");
+                }
+
+                ImGui::PopID();
+            }
+            ImGui::EndChild();
+
+            ImGui::SameLine();
+
+            // Right panel - selected mail detail
+            ImGui::BeginChild("MailDetail", ImVec2(0, 0), true);
+            int sel = gameHandler.getSelectedMailIndex();
+            if (sel >= 0 && sel < static_cast<int>(inbox.size())) {
+                const auto& mail = inbox[sel];
+
+                ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.0f, 1.0f), "%s",
+                    mail.subject.empty() ? "(No Subject)" : mail.subject.c_str());
+                ImGui::Text("From: %s", mail.senderName.c_str());
+
+                if (mail.messageType == 2) {
+                    ImGui::TextColored(ImVec4(0.8f, 0.6f, 0.2f, 1.0f), "[Auction House]");
+                }
+                ImGui::Separator();
+
+                // Body text
+                if (!mail.body.empty()) {
+                    ImGui::TextWrapped("%s", mail.body.c_str());
+                    ImGui::Separator();
+                }
+
+                // Money
+                if (mail.money > 0) {
+                    uint32_t g = mail.money / 10000;
+                    uint32_t s = (mail.money / 100) % 100;
+                    uint32_t c = mail.money % 100;
+                    ImGui::Text("Money: %ug %us %uc", g, s, c);
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Take Money")) {
+                        gameHandler.mailTakeMoney(mail.messageId);
+                    }
+                }
+
+                // COD warning
+                if (mail.cod > 0) {
+                    uint32_t g = mail.cod / 10000;
+                    uint32_t s = (mail.cod / 100) % 100;
+                    uint32_t c = mail.cod % 100;
+                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
+                        "COD: %ug %us %uc (you pay this to take items)", g, s, c);
+                }
+
+                // Attachments
+                if (!mail.attachments.empty()) {
+                    ImGui::Text("Attachments: %zu", mail.attachments.size());
+                    for (size_t j = 0; j < mail.attachments.size(); ++j) {
+                        const auto& att = mail.attachments[j];
+                        ImGui::PushID(static_cast<int>(j));
+
+                        auto* info = gameHandler.getItemInfo(att.itemId);
+                        if (info && info->valid) {
+                            ImGui::BulletText("%s x%u", info->name.c_str(), att.stackCount);
+                        } else {
+                            ImGui::BulletText("Item %u x%u", att.itemId, att.stackCount);
+                            gameHandler.ensureItemInfo(att.itemId);
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Take")) {
+                            gameHandler.mailTakeItem(mail.messageId, att.slot);
+                        }
+
+                        ImGui::PopID();
+                    }
+                }
+
+                ImGui::Spacing();
+                ImGui::Separator();
+
+                // Action buttons
+                if (ImGui::Button("Delete")) {
+                    gameHandler.mailDelete(mail.messageId);
+                }
+                ImGui::SameLine();
+                if (mail.messageType == 0 && ImGui::Button("Reply")) {
+                    // Pre-fill compose with sender as recipient
+                    strncpy(mailRecipientBuffer_, mail.senderName.c_str(), sizeof(mailRecipientBuffer_) - 1);
+                    mailRecipientBuffer_[sizeof(mailRecipientBuffer_) - 1] = '\0';
+                    std::string reSubject = "Re: " + mail.subject;
+                    strncpy(mailSubjectBuffer_, reSubject.c_str(), sizeof(mailSubjectBuffer_) - 1);
+                    mailSubjectBuffer_[sizeof(mailSubjectBuffer_) - 1] = '\0';
+                    mailBodyBuffer_[0] = '\0';
+                    mailComposeMoney_[0] = 0;
+                    mailComposeMoney_[1] = 0;
+                    mailComposeMoney_[2] = 0;
+                    gameHandler.openMailCompose();
+                }
+            } else {
+                ImGui::TextDisabled("Select a mail to read.");
+            }
+            ImGui::EndChild();
+        }
+    }
+    ImGui::End();
+
+    if (!open) {
+        gameHandler.closeMailbox();
+    }
+}
+
+void GameScreen::renderMailComposeWindow(game::GameHandler& gameHandler) {
+    if (!gameHandler.isMailComposeOpen()) return;
+
+    auto* window = core::Application::getInstance().getWindow();
+    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
+    float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
+
+    ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 175, screenH / 2 - 200), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(ImVec2(380, 400), ImGuiCond_Appearing);
+
+    bool open = true;
+    if (ImGui::Begin("Send Mail", &open)) {
+        ImGui::Text("To:");
+        ImGui::SameLine(60);
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputText("##MailTo", mailRecipientBuffer_, sizeof(mailRecipientBuffer_));
+
+        ImGui::Text("Subject:");
+        ImGui::SameLine(60);
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputText("##MailSubject", mailSubjectBuffer_, sizeof(mailSubjectBuffer_));
+
+        ImGui::Text("Body:");
+        ImGui::InputTextMultiline("##MailBody", mailBodyBuffer_, sizeof(mailBodyBuffer_),
+                                   ImVec2(-1, 150));
+
+        ImGui::Text("Money:");
+        ImGui::SameLine(60);
+        ImGui::SetNextItemWidth(60);
+        ImGui::InputInt("##MailGold", &mailComposeMoney_[0], 0, 0);
+        if (mailComposeMoney_[0] < 0) mailComposeMoney_[0] = 0;
+        ImGui::SameLine();
+        ImGui::Text("g");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(40);
+        ImGui::InputInt("##MailSilver", &mailComposeMoney_[1], 0, 0);
+        if (mailComposeMoney_[1] < 0) mailComposeMoney_[1] = 0;
+        if (mailComposeMoney_[1] > 99) mailComposeMoney_[1] = 99;
+        ImGui::SameLine();
+        ImGui::Text("s");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(40);
+        ImGui::InputInt("##MailCopper", &mailComposeMoney_[2], 0, 0);
+        if (mailComposeMoney_[2] < 0) mailComposeMoney_[2] = 0;
+        if (mailComposeMoney_[2] > 99) mailComposeMoney_[2] = 99;
+        ImGui::SameLine();
+        ImGui::Text("c");
+
+        uint32_t totalMoney = static_cast<uint32_t>(mailComposeMoney_[0]) * 10000 +
+                              static_cast<uint32_t>(mailComposeMoney_[1]) * 100 +
+                              static_cast<uint32_t>(mailComposeMoney_[2]);
+
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Sending cost: 30c");
+
+        ImGui::Spacing();
+        bool canSend = (strlen(mailRecipientBuffer_) > 0);
+        if (!canSend) ImGui::BeginDisabled();
+        if (ImGui::Button("Send", ImVec2(80, 0))) {
+            gameHandler.sendMail(mailRecipientBuffer_, mailSubjectBuffer_,
+                                 mailBodyBuffer_, totalMoney);
+        }
+        if (!canSend) ImGui::EndDisabled();
+
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(80, 0))) {
+            gameHandler.closeMailCompose();
+        }
+    }
+    ImGui::End();
+
+    if (!open) {
+        gameHandler.closeMailCompose();
+    }
 }
 
 }} // namespace wowee::ui

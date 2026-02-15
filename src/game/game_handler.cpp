@@ -1508,6 +1508,20 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
             break;
 
+        // ---- Mail ----
+        case Opcode::SMSG_SHOW_MAILBOX:
+            handleShowMailbox(packet);
+            break;
+        case Opcode::SMSG_MAIL_LIST_RESULT:
+            handleMailListResult(packet);
+            break;
+        case Opcode::SMSG_SEND_MAIL_RESULT:
+            handleSendMailResult(packet);
+            break;
+        case Opcode::SMSG_RECEIVED_MAIL:
+            handleReceivedMail(packet);
+            break;
+
         default:
             // In pre-world states we need full visibility (char create/login handshakes).
             // In-world we keep de-duplication to avoid heavy log I/O in busy areas.
@@ -3978,7 +3992,7 @@ void GameHandler::handleCompressedUpdateObject(network::Packet& packet) {
 }
 
 void GameHandler::handleDestroyObject(network::Packet& packet) {
-    LOG_INFO("Handling SMSG_DESTROY_OBJECT");
+    LOG_DEBUG("Handling SMSG_DESTROY_OBJECT");
 
     DestroyObjectData data;
     if (!DestroyObjectParser::parse(packet, data)) {
@@ -9602,6 +9616,278 @@ void GameHandler::updateAttachedTransportChildren(float /*deltaTime*/) {
 
     for (uint64_t guid : stale) {
         transportAttachments_.erase(guid);
+    }
+}
+
+// ============================================================
+// Mail System
+// ============================================================
+
+void GameHandler::closeMailbox() {
+    mailboxOpen_ = false;
+    mailboxGuid_ = 0;
+    mailInbox_.clear();
+    selectedMailIndex_ = -1;
+    showMailCompose_ = false;
+}
+
+void GameHandler::refreshMailList() {
+    if (state != WorldState::IN_WORLD || !socket || mailboxGuid_ == 0) return;
+    auto packet = GetMailListPacket::build(mailboxGuid_);
+    socket->send(packet);
+}
+
+void GameHandler::sendMail(const std::string& recipient, const std::string& subject,
+                           const std::string& body, uint32_t money, uint32_t cod) {
+    if (state != WorldState::IN_WORLD || !socket || mailboxGuid_ == 0) return;
+    auto packet = SendMailPacket::build(mailboxGuid_, recipient, subject, body, money, cod);
+    socket->send(packet);
+}
+
+void GameHandler::mailTakeMoney(uint32_t mailId) {
+    if (state != WorldState::IN_WORLD || !socket || mailboxGuid_ == 0) return;
+    auto packet = MailTakeMoneyPacket::build(mailboxGuid_, mailId);
+    socket->send(packet);
+}
+
+void GameHandler::mailTakeItem(uint32_t mailId, uint32_t itemIndex) {
+    if (state != WorldState::IN_WORLD || !socket || mailboxGuid_ == 0) return;
+    auto packet = MailTakeItemPacket::build(mailboxGuid_, mailId, itemIndex);
+    socket->send(packet);
+}
+
+void GameHandler::mailDelete(uint32_t mailId) {
+    if (state != WorldState::IN_WORLD || !socket || mailboxGuid_ == 0) return;
+    // Find mail template ID for this mail
+    uint32_t templateId = 0;
+    for (const auto& m : mailInbox_) {
+        if (m.messageId == mailId) {
+            templateId = m.mailTemplateId;
+            break;
+        }
+    }
+    auto packet = MailDeletePacket::build(mailboxGuid_, mailId, templateId);
+    socket->send(packet);
+}
+
+void GameHandler::mailMarkAsRead(uint32_t mailId) {
+    if (state != WorldState::IN_WORLD || !socket || mailboxGuid_ == 0) return;
+    auto packet = MailMarkAsReadPacket::build(mailboxGuid_, mailId);
+    socket->send(packet);
+}
+
+void GameHandler::handleShowMailbox(network::Packet& packet) {
+    if (packet.getSize() - packet.getReadPos() < 8) {
+        LOG_WARNING("SMSG_SHOW_MAILBOX too short");
+        return;
+    }
+    uint64_t guid = packet.readUInt64();
+    LOG_INFO("SMSG_SHOW_MAILBOX: guid=0x", std::hex, guid, std::dec);
+    mailboxGuid_ = guid;
+    mailboxOpen_ = true;
+    selectedMailIndex_ = -1;
+    showMailCompose_ = false;
+    // Request inbox contents
+    refreshMailList();
+}
+
+void GameHandler::handleMailListResult(network::Packet& packet) {
+    size_t remaining = packet.getSize() - packet.getReadPos();
+    if (remaining < 5) {
+        LOG_WARNING("SMSG_MAIL_LIST_RESULT too short (", remaining, " bytes)");
+        return;
+    }
+
+    uint32_t totalCount = packet.readUInt32();
+    uint8_t shownCount = packet.readUInt8();
+
+    LOG_INFO("SMSG_MAIL_LIST_RESULT: total=", totalCount, " shown=", (int)shownCount);
+
+    mailInbox_.clear();
+    mailInbox_.reserve(shownCount);
+
+    for (uint8_t i = 0; i < shownCount; ++i) {
+        remaining = packet.getSize() - packet.getReadPos();
+        if (remaining < 2) break;
+
+        // Read size of this mail entry (uint16)
+        uint16_t msgSize = packet.readUInt16();
+        size_t startPos = packet.getReadPos();
+
+        MailMessage msg;
+        if (remaining < static_cast<size_t>(msgSize) + 2) {
+            LOG_WARNING("Mail entry ", i, " truncated");
+            break;
+        }
+
+        msg.messageId = packet.readUInt32();
+        msg.messageType = packet.readUInt8();
+
+        switch (msg.messageType) {
+            case 0: // Normal player mail
+                msg.senderGuid = packet.readUInt64();
+                break;
+            case 2: // Auction
+            case 3: // Creature
+            case 4: // GameObject
+            case 5: // Calendar
+                msg.senderEntry = packet.readUInt32();
+                break;
+            default:
+                msg.senderEntry = packet.readUInt32();
+                break;
+        }
+
+        msg.cod = packet.readUInt32();
+        packet.readUInt32(); // unknown / item text id
+        packet.readUInt32(); // unknown
+        msg.stationeryId = packet.readUInt32();
+        msg.money = packet.readUInt32();
+        msg.flags = packet.readUInt32();
+        msg.expirationTime = packet.readFloat();
+        msg.mailTemplateId = packet.readUInt32();
+        msg.subject = packet.readString();
+
+        // Body - only present if not a mail template
+        if (msg.mailTemplateId == 0) {
+            msg.body = packet.readString();
+        }
+
+        // Attachments
+        uint8_t attachCount = packet.readUInt8();
+        msg.attachments.reserve(attachCount);
+        for (uint8_t j = 0; j < attachCount; ++j) {
+            MailAttachment att;
+            att.slot = packet.readUInt8();
+            att.itemGuidLow = packet.readUInt32();
+            att.itemId = packet.readUInt32();
+
+            // Enchantments (7 slots: id, duration, charges per slot = 21 uint32s)
+            for (int e = 0; e < 7; ++e) {
+                uint32_t enchId = packet.readUInt32();
+                packet.readUInt32(); // duration
+                packet.readUInt32(); // charges
+                if (e == 0) att.enchantId = enchId;
+            }
+
+            att.randomPropertyId = packet.readUInt32();
+            att.randomSuffix = packet.readUInt32();
+            att.stackCount = packet.readUInt32();
+            att.chargesOrDurability = packet.readUInt32();
+            att.maxDurability = packet.readUInt32();
+
+            msg.attachments.push_back(att);
+        }
+
+        msg.read = (msg.flags & 0x01) != 0; // MAIL_CHECK_MASK_READ
+
+        // Resolve sender name for player mail
+        if (msg.messageType == 0 && msg.senderGuid != 0) {
+            msg.senderName = getCachedPlayerName(msg.senderGuid);
+            if (msg.senderName.empty()) {
+                queryPlayerName(msg.senderGuid);
+                msg.senderName = "Unknown";
+            }
+        } else if (msg.messageType == 2) {
+            msg.senderName = "Auction House";
+        } else if (msg.messageType == 3) {
+            msg.senderName = getCachedCreatureName(msg.senderEntry);
+            if (msg.senderName.empty()) msg.senderName = "NPC";
+        } else {
+            msg.senderName = "System";
+        }
+
+        mailInbox_.push_back(std::move(msg));
+
+        // Skip any unread bytes in this mail entry
+        size_t consumed = packet.getReadPos() - startPos;
+        if (consumed < msgSize) {
+            size_t skip = msgSize - consumed;
+            for (size_t s = 0; s < skip && packet.getReadPos() < packet.getSize(); ++s) {
+                packet.readUInt8();
+            }
+        }
+    }
+
+    LOG_INFO("Parsed ", mailInbox_.size(), " mail messages");
+}
+
+void GameHandler::handleSendMailResult(network::Packet& packet) {
+    if (packet.getSize() - packet.getReadPos() < 12) {
+        LOG_WARNING("SMSG_SEND_MAIL_RESULT too short");
+        return;
+    }
+
+    uint32_t mailId = packet.readUInt32();
+    uint32_t command = packet.readUInt32();
+    uint32_t error = packet.readUInt32();
+
+    // Commands: 0=send, 1=moneyTaken, 2=itemTaken, 3=returnedToSender, 4=deleted, 5=madePermanent
+    // Errors: 0=OK, 1=equip, 2=cannotSend, 3=messageTooBig, 4=noMoney, ...
+    static const char* cmdNames[] = {"Send", "TakeMoney", "TakeItem", "Return", "Delete", "MadePermanent"};
+    const char* cmdName = (command < 6) ? cmdNames[command] : "Unknown";
+
+    LOG_INFO("SMSG_SEND_MAIL_RESULT: mailId=", mailId, " cmd=", cmdName, " error=", error);
+
+    if (error == 0) {
+        // Success
+        switch (command) {
+            case 0: // Send
+                addSystemChatMessage("Mail sent successfully.");
+                showMailCompose_ = false;
+                refreshMailList();
+                break;
+            case 1: // Money taken
+                addSystemChatMessage("Money received from mail.");
+                refreshMailList();
+                break;
+            case 2: // Item taken
+                addSystemChatMessage("Item received from mail.");
+                refreshMailList();
+                break;
+            case 4: // Deleted
+                selectedMailIndex_ = -1;
+                refreshMailList();
+                break;
+            default:
+                refreshMailList();
+                break;
+        }
+    } else {
+        // Error
+        std::string errMsg = "Mail error: ";
+        switch (error) {
+            case 1: errMsg += "Equipment error."; break;
+            case 2: errMsg += "Cannot send mail."; break;
+            case 3: errMsg += "Message too big."; break;
+            case 4: errMsg += "Not enough money."; break;
+            case 5: errMsg += "Not enough items."; break;
+            case 6: errMsg += "Recipient not found."; break;
+            case 7: errMsg += "Cannot send to that player."; break;
+            case 8: errMsg += "Equip error."; break;
+            case 9: errMsg += "Inventory full."; break;
+            case 10: errMsg += "Not a GM."; break;
+            case 11: errMsg += "Max attachments exceeded."; break;
+            case 14: errMsg += "Cannot send wrapped COD."; break;
+            case 15: errMsg += "Mail and chat suspended."; break;
+            case 16: errMsg += "Too many attachments."; break;
+            default: errMsg += "Unknown error (" + std::to_string(error) + ")."; break;
+        }
+        addSystemChatMessage(errMsg);
+    }
+}
+
+void GameHandler::handleReceivedMail(network::Packet& packet) {
+    // Server notifies us that new mail arrived
+    if (packet.getSize() - packet.getReadPos() >= 4) {
+        float nextMailTime = packet.readFloat();
+        (void)nextMailTime;
+    }
+    LOG_INFO("SMSG_RECEIVED_MAIL: New mail arrived!");
+    addSystemChatMessage("New mail has arrived.");
+    // If mailbox is open, refresh
+    if (mailboxOpen_) {
+        refreshMailList();
     }
 }
 

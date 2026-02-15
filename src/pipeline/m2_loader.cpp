@@ -744,7 +744,7 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
         header.nParticleEmitters = r32();
         header.ofsParticleEmitters = r32();
 
-        core::Logger::getInstance().info("Vanilla M2 (version ", header.version,
+        core::Logger::getInstance().debug("Vanilla M2 (version ", header.version,
             "): nVerts=", header.nVertices, " nViews=", header.nViews,
             " ofsViews=", ofsViews, " nTex=", header.nTextures);
     } else {
@@ -1315,7 +1315,7 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
             }
         }
 
-        core::Logger::getInstance().info("Vanilla M2: embedded skin loaded — ",
+        core::Logger::getInstance().debug("Vanilla M2: embedded skin loaded — ",
             model.indices.size(), " indices, ", model.batches.size(), " batches");
     }
 

@@ -762,6 +762,23 @@ public:
     bool isVendorWindowOpen() const { return vendorWindowOpen; }
     const ListInventoryData& getVendorItems() const { return currentVendorItems; }
 
+    // Mail
+    bool isMailboxOpen() const { return mailboxOpen_; }
+    const std::vector<MailMessage>& getMailInbox() const { return mailInbox_; }
+    int getSelectedMailIndex() const { return selectedMailIndex_; }
+    void setSelectedMailIndex(int idx) { selectedMailIndex_ = idx; }
+    bool isMailComposeOpen() const { return showMailCompose_; }
+    void openMailCompose() { showMailCompose_ = true; }
+    void closeMailCompose() { showMailCompose_ = false; }
+    void closeMailbox();
+    void sendMail(const std::string& recipient, const std::string& subject,
+                  const std::string& body, uint32_t money, uint32_t cod = 0);
+    void mailTakeMoney(uint32_t mailId);
+    void mailTakeItem(uint32_t mailId, uint32_t itemIndex);
+    void mailDelete(uint32_t mailId);
+    void mailMarkAsRead(uint32_t mailId);
+    void refreshMailList();
+
     // Trainer
     bool isTrainerWindowOpen() const { return trainerWindowOpen_; }
     const TrainerListData& getTrainerSpells() const { return currentTrainerList_; }
@@ -986,6 +1003,12 @@ private:
     void handleArenaTeamInvite(network::Packet& packet);
     void handleArenaTeamEvent(network::Packet& packet);
     void handleArenaError(network::Packet& packet);
+
+    // ---- Mail handlers ----
+    void handleShowMailbox(network::Packet& packet);
+    void handleMailListResult(network::Packet& packet);
+    void handleSendMailResult(network::Packet& packet);
+    void handleReceivedMail(network::Packet& packet);
 
     // ---- Taxi handlers ----
     void handleShowTaxiNodes(network::Packet& packet);
@@ -1321,6 +1344,13 @@ private:
     void sanitizeMovementForTaxi();
     void startClientTaxiPath(const std::vector<uint32_t>& pathNodes);
     void updateClientTaxi(float deltaTime);
+
+    // Mail
+    bool mailboxOpen_ = false;
+    uint64_t mailboxGuid_ = 0;
+    std::vector<MailMessage> mailInbox_;
+    int selectedMailIndex_ = -1;
+    bool showMailCompose_ = false;
 
     // Vendor
     bool vendorWindowOpen = false;

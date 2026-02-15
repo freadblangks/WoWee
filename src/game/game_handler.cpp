@@ -2281,9 +2281,13 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                 break;
             }
 
-            // SHA1 fallback (unlikely to work for vanilla modules, but log for debugging)
+            // SHA1(seed + moduleImage) — the server verifies this against its own copy
             {
-                auto hash = auth::Crypto::sha1(seed);
+                std::vector<uint8_t> hashInput;
+                hashInput.insert(hashInput.end(), seed.begin(), seed.end());
+                hashInput.insert(hashInput.end(), wardenModuleData_.begin(), wardenModuleData_.end());
+                auto hash = auth::Crypto::sha1(hashInput);
+                LOG_INFO("Warden: SHA1 fallback hash over ", hashInput.size(), " bytes (seed+module)");
                 std::vector<uint8_t> resp;
                 resp.push_back(0x04);
                 resp.insert(resp.end(), hash.begin(), hash.end());

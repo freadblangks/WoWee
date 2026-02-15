@@ -23,9 +23,10 @@ void DBCLayout::loadWotlkDefaults() {
         { "InventoryIcon", 5 }, { "GeosetGroup1", 7 }, { "GeosetGroup3", 9 }}};
 
     // CharSections.dbc
+    // Binary layout: ID(0) Race(1) Sex(2) Section(3) Tex1(4) Tex2(5) Tex3(6) Flags(7) Variation(8) Color(9)
     layouts_["CharSections"] = {{{ "RaceID", 1 }, { "SexID", 2 }, { "BaseSection", 3 },
-        { "VariationIndex", 4 }, { "ColorIndex", 5 },
-        { "Texture1", 6 }, { "Texture2", 7 }, { "Texture3", 8 }}};
+        { "Texture1", 4 }, { "Texture2", 5 }, { "Texture3", 6 },
+        { "Flags", 7 }, { "VariationIndex", 8 }, { "ColorIndex", 9 }}};
 
     // SpellIcon.dbc (Icon.dbc in code but actually SpellIcon)
     layouts_["SpellIcon"] = {{{ "ID", 0 }, { "Path", 1 }}};

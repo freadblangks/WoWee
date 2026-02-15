@@ -12,8 +12,8 @@
   },
   "CharSections": {
     "RaceID": 1, "SexID": 2, "BaseSection": 3,
-    "VariationIndex": 4, "ColorIndex": 5,
-    "Texture1": 6, "Texture2": 7, "Texture3": 8
+    "Texture1": 4, "Texture2": 5, "Texture3": 6,
+    "Flags": 7, "VariationIndex": 8, "ColorIndex": 9
   },
   "SpellIcon": { "ID": 0, "Path": 1 },
   "FactionTemplate": {

@@ -379,9 +379,15 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
             }
 
             bool unlit = false;
+            uint32_t matFlags = 0;
             if (batch.materialId < modelData.materialFlags.size()) {
-                unlit = (modelData.materialFlags[batch.materialId] & 0x01) != 0;
+                matFlags = modelData.materialFlags[batch.materialId];
+                unlit = (matFlags & 0x01) != 0;
             }
+
+            // Skip materials that are sky/window panes (render as grey curtains if drawn opaque)
+            // 0x20 = F_SIDN (night sky window), 0x40 = F_WINDOW
+            if (matFlags & 0x60) continue;
 
             // Merge key: texture ID + alphaTest + unlit (unlit batches must not merge with lit)
             uint64_t key = (static_cast<uint64_t>(texId) << 2)

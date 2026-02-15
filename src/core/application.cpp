@@ -1103,7 +1103,7 @@ void Application::setupUICallbacks() {
         gameHandler->sendChatMessage(game::ChatType::SAY, cmd.str(), "");
     };
 
-    // /unstuck — prefer safe position or nearest floor, avoid blind +Z snaps.
+    // /unstuck — nudge player forward and snap to floor at destination.
     gameHandler->setUnstuckCallback([this, sampleBestFloorAt, clearStuckMovement, syncTeleportedPositionToServer, forceServerTeleportCommand]() {
         if (!renderer || !renderer->getCameraController()) return;
         worldEntryMovementGraceTimer_ = std::max(worldEntryMovementGraceTimer_, 1.5f);
@@ -1115,35 +1115,26 @@ void Application::setupUICallbacks() {
         if (!ft) return;
 
         glm::vec3 pos = *ft;
-        if (cc->hasLastSafePosition()) {
-            pos = cc->getLastSafePosition();
-            pos.z += 1.5f;
-            cc->teleportTo(pos);
-            syncTeleportedPositionToServer(pos);
-            forceServerTeleportCommand(pos);
-            clearStuckMovement();
-            LOG_INFO("Unstuck: teleported to last safe position");
-            return;
-        }
 
-        if (auto floor = sampleBestFloorAt(pos.x, pos.y, pos.z + 60.0f)) {
-            pos.z = *floor + 0.2f;
-        } else {
-            pos.z += 20.0f;
-        }
-
-        // Nudge forward to break free of collision seams / stuck geometry.
+        // Always nudge forward first to escape stuck geometry (M2 models, collision seams).
         if (gameHandler) {
             float renderYaw = gameHandler->getMovementInfo().orientation + glm::radians(90.0f);
             pos.x += std::cos(renderYaw) * 5.0f;
             pos.y += std::sin(renderYaw) * 5.0f;
         }
 
+        // Sample floor at the DESTINATION position (after nudge).
+        if (auto floor = sampleBestFloorAt(pos.x, pos.y, pos.z + 60.0f)) {
+            pos.z = *floor + 0.2f;
+        } else {
+            pos.z += 20.0f;
+        }
+
         cc->teleportTo(pos);
         syncTeleportedPositionToServer(pos);
         forceServerTeleportCommand(pos);
         clearStuckMovement();
-        LOG_INFO("Unstuck: recovered to sampled floor");
+        LOG_INFO("Unstuck: nudged forward and snapped to floor");
     });
 
     // /unstuckgy — stronger recovery: safe/home position, then sampled floor fallback.

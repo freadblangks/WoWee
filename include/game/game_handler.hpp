@@ -800,6 +800,12 @@ public:
      */
     void update(float deltaTime);
 
+    /**
+     * Reset DBC-backed caches so they reload from new expansion data.
+     * Called by Application when the expansion profile changes.
+     */
+    void resetDbcCaches();
+
 private:
     void autoTargetAttacker(uint64_t attackerGuid);
 

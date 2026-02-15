@@ -220,6 +220,24 @@ void GameHandler::disconnect() {
     LOG_INFO("Disconnected from world server");
 }
 
+void GameHandler::resetDbcCaches() {
+    spellNameCacheLoaded_ = false;
+    spellNameCache_.clear();
+    skillLineDbcLoaded_ = false;
+    skillLineNames_.clear();
+    skillLineCategories_.clear();
+    skillLineAbilityLoaded_ = false;
+    spellToSkillLine_.clear();
+    taxiDbcLoaded_ = false;
+    taxiNodes_.clear();
+    taxiPathEdges_.clear();
+    taxiPathNodes_.clear();
+    talentDbcLoaded_ = false;
+    talentCache_.clear();
+    talentTabCache_.clear();
+    LOG_INFO("GameHandler: DBC caches cleared for expansion switch");
+}
+
 bool GameHandler::isConnected() const {
     return socket && socket->isConnected();
 }

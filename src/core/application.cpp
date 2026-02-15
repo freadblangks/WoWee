@@ -516,6 +516,11 @@ void Application::reloadExpansionData() {
     // Reset map name cache so it reloads from new expansion's Map.dbc
     mapNameCacheLoaded_ = false;
     mapNameById_.clear();
+
+    // Reset game handler DBC caches so they reload from new expansion data
+    if (gameHandler) {
+        gameHandler->resetDbcCaches();
+    }
 }
 
 void Application::logoutToLogin() {

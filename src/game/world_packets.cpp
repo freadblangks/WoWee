@@ -3223,18 +3223,24 @@ network::Packet ResurrectResponsePacket::build(uint64_t casterGuid, bool accept)
 // ============================================================
 
 bool ShowTaxiNodesParser::parse(network::Packet& packet, ShowTaxiNodesData& data) {
-    if (packet.getSize() - packet.getReadPos() < 4 + 8 + 4 + TLK_TAXI_MASK_SIZE * 4) {
-        LOG_ERROR("ShowTaxiNodesParser: packet too short");
+    // Minimum: windowInfo(4) + npcGuid(8) + nearestNode(4) + at least 1 mask uint32(4)
+    size_t remaining = packet.getSize() - packet.getReadPos();
+    if (remaining < 4 + 8 + 4 + 4) {
+        LOG_ERROR("ShowTaxiNodesParser: packet too short (", remaining, " bytes)");
         return false;
     }
     data.windowInfo = packet.readUInt32();
     data.npcGuid = packet.readUInt64();
     data.nearestNode = packet.readUInt32();
-    for (uint32_t i = 0; i < TLK_TAXI_MASK_SIZE; ++i) {
+    // Read as many mask uint32s as available (Classic/Vanilla=4, WotLK=12)
+    size_t maskBytes = packet.getSize() - packet.getReadPos();
+    uint32_t maskCount = static_cast<uint32_t>(maskBytes / 4);
+    if (maskCount > TLK_TAXI_MASK_SIZE) maskCount = TLK_TAXI_MASK_SIZE;
+    for (uint32_t i = 0; i < maskCount; ++i) {
         data.nodeMask[i] = packet.readUInt32();
     }
     LOG_INFO("ShowTaxiNodes: window=", data.windowInfo, " npc=0x", std::hex, data.npcGuid, std::dec,
-             " nearest=", data.nearestNode);
+             " nearest=", data.nearestNode, " maskSlots=", maskCount);
     return true;
 }
 

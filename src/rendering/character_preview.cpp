@@ -333,12 +333,13 @@ bool CharacterPreview::loadCharacter(game::Race race, game::Gender gender,
     activeGeosets.insert(static_cast<uint16_t>(100 + hairStyle + 1));
     // Facial hair geoset: group 2 = 200 + variation + 1
     activeGeosets.insert(static_cast<uint16_t>(200 + facialHair + 1));
-    activeGeosets.insert(301);   // Gloves: bare hands
+    activeGeosets.insert(302);   // Gloves: bare hands
     activeGeosets.insert(401);   // Boots: bare feet
     activeGeosets.insert(501);   // Chest: bare
-    activeGeosets.insert(701);   // Ears: default
+    activeGeosets.insert(702);   // Ears: default
+    activeGeosets.insert(802);   // Wristbands: default
     activeGeosets.insert(1301);  // Trousers: bare legs
-    activeGeosets.insert(1501);  // Back body (cloak=none)
+    activeGeosets.insert(1502);  // Back body (cloak=none)
     charRenderer_->setActiveGeosets(instanceId_, activeGeosets);
 
     // Play idle animation (Stand = animation ID 0)

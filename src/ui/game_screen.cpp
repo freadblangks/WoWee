@@ -1419,7 +1419,7 @@ void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
     ImGui::End();
 
     ImGui::PopStyleColor(2);
-    ImGui::PopStyleVar(2);
+    ImGui::PopStyleVar();
 }
 
 void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
@@ -1545,7 +1545,7 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
     ImGui::End();
 
     ImGui::PopStyleColor(2);
-    ImGui::PopStyleVar(2);
+    ImGui::PopStyleVar();
 }
 
 void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
@@ -3165,7 +3165,7 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
     ImGui::End();
 
     ImGui::PopStyleColor();
-    ImGui::PopStyleVar(2);
+    ImGui::PopStyleVar(4);
 
     // Handle action bar drag: render icon at cursor and detect drop outside
     if (actionBarDragSlot_ >= 0) {
@@ -3461,7 +3461,7 @@ void GameScreen::renderCastBar(game::GameHandler& gameHandler) {
     ImGui::End();
 
     ImGui::PopStyleColor();
-    ImGui::PopStyleVar(2);
+    ImGui::PopStyleVar();
 }
 
 // ============================================================
@@ -3592,7 +3592,7 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
     ImGui::End();
 
     ImGui::PopStyleColor();
-    ImGui::PopStyleVar(2);
+    ImGui::PopStyleVar();
 }
 
 // ============================================================
@@ -3816,7 +3816,7 @@ void GameScreen::renderBuffBar(game::GameHandler& gameHandler) {
                 ImGui::ImageButton("##aura",
                     (ImTextureID)(uintptr_t)iconTex,
                     ImVec2(ICON_SIZE - 4, ICON_SIZE - 4));
-                ImGui::PopStyleVar(2);
+                ImGui::PopStyleVar();
                 ImGui::PopStyleColor();
             } else {
                 ImGui::PushStyleColor(ImGuiCol_Button, borderColor);
@@ -3862,7 +3862,7 @@ void GameScreen::renderBuffBar(game::GameHandler& gameHandler) {
     }
     ImGui::End();
 
-    ImGui::PopStyleVar(2);
+    ImGui::PopStyleVar();
     ImGui::PopStyleColor();
 }
 
@@ -4809,7 +4809,7 @@ void GameScreen::renderEscapeMenu() {
             showEscapeMenu = false;
             showEscapeSettingsNotice = false;
         }
-        ImGui::PopStyleVar(2);
+        ImGui::PopStyleVar();
     }
     ImGui::End();
 }
@@ -4979,7 +4979,7 @@ void GameScreen::renderDeathScreen(game::GameHandler& gameHandler) {
     }
     ImGui::End();
     ImGui::PopStyleColor(2);
-    ImGui::PopStyleVar(2);
+    ImGui::PopStyleVar();
 }
 
 void GameScreen::renderResurrectDialog(game::GameHandler& gameHandler) {
@@ -5033,7 +5033,7 @@ void GameScreen::renderResurrectDialog(game::GameHandler& gameHandler) {
     }
     ImGui::End();
     ImGui::PopStyleColor(2);
-    ImGui::PopStyleVar(2);
+    ImGui::PopStyleVar();
 }
 
 // ============================================================

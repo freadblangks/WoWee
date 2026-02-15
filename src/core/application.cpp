@@ -2084,12 +2084,13 @@ void Application::spawnPlayerCharacter() {
 	        activeGeosets.insert(static_cast<uint16_t>(100 + hairStyleId + 1));
 	        // Facial hair geoset: group 2 = 200 + variation + 1
 	        activeGeosets.insert(static_cast<uint16_t>(200 + facialId + 1));
-	        activeGeosets.insert(301);   // Gloves: bare hands
+	        activeGeosets.insert(302);   // Gloves: bare hands
 	        activeGeosets.insert(401);   // Boots: bare feet
 	        activeGeosets.insert(501);   // Chest: bare
-	        activeGeosets.insert(701);   // Ears: default
+	        activeGeosets.insert(702);   // Ears: default
+	        activeGeosets.insert(802);   // Wristbands: default
 	        activeGeosets.insert(1301);  // Trousers: bare legs
-	        activeGeosets.insert(1501);  // Back body (cloak=none)
+	        activeGeosets.insert(1502);  // Back body (cloak=none)
 	        // 1703 = DK eye glow mesh — skip for normal characters
 	        // Normal eyes are part of the face texture on the body mesh
 	        charRenderer->setActiveGeosets(instanceId, activeGeosets);
@@ -3317,11 +3318,11 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
             }
 
             // Default equipment geosets (bare/no armor)
-            uint16_t geosetGloves = 301;   // Bare hands
+            uint16_t geosetGloves = 302;   // Bare hands
             uint16_t geosetBoots = 401;    // Bare feet
             uint16_t geosetChest = 501;    // Bare chest
             uint16_t geosetPants = 1301;   // Bare legs
-            uint16_t geosetCape = 1501;    // No cape
+            uint16_t geosetCape = 1502;    // No cape
             uint16_t geosetTabard = 1201;  // No tabard
 
             // Load equipment geosets from ItemDisplayInfo.dbc
@@ -3398,7 +3399,8 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
             activeGeosets.insert(geosetPants);
             activeGeosets.insert(geosetCape);
             activeGeosets.insert(geosetTabard);
-            activeGeosets.insert(701);  // Ears: default
+            activeGeosets.insert(702);  // Ears: default
+            activeGeosets.insert(802);  // Wristbands: default
 
             // Hide hair under helmets: replace style-specific scalp with bald scalp
             if (extra.equipDisplayId[0] != 0 && hairGeoset > 1) {
@@ -3809,12 +3811,13 @@ void Application::spawnOnlinePlayer(uint64_t guid,
     for (uint16_t i = 0; i <= 18; i++) activeGeosets.insert(i);
     activeGeosets.insert(static_cast<uint16_t>(100 + hairStyleId + 1));
     activeGeosets.insert(static_cast<uint16_t>(200 + facialFeatures + 1));
-    activeGeosets.insert(301);
+    activeGeosets.insert(302);
     activeGeosets.insert(401);
     activeGeosets.insert(501);
-    activeGeosets.insert(701);
+    activeGeosets.insert(702);
+    activeGeosets.insert(802);
     activeGeosets.insert(1301);
-    activeGeosets.insert(1501);
+    activeGeosets.insert(1502);
     charRenderer->setActiveGeosets(instanceId, activeGeosets);
 
     charRenderer->playAnimation(instanceId, 0, true);

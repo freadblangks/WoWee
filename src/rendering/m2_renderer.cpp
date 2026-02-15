@@ -659,6 +659,7 @@ void M2Renderer::shutdown() {
     textureCache.clear();
     textureCacheBytes_ = 0;
     textureCacheCounter_ = 0;
+    textureHasAlphaById_.clear();
     if (whiteTexture != 0) {
         glDeleteTextures(1, &whiteTexture);
         whiteTexture = 0;
@@ -2420,8 +2421,19 @@ void M2Renderer::renderM2Particles(const glm::mat4& view, const glm::mat4& proj)
     for (auto& [key, group] : groups) {
         if (group.vertexData.empty()) continue;
 
-        // Set blend mode
-        if (group.blendType == 4) {
+        // Set blend mode. Many classic glow textures use a black background with no alpha,
+        // and expect additive blending so black contributes nothing.
+        bool texHasAlpha = true;
+        if (auto it = textureHasAlphaById_.find(group.texture); it != textureHasAlphaById_.end()) {
+            texHasAlpha = it->second;
+        }
+
+        uint8_t blendType = group.blendType;
+        if ((blendType == 1 || blendType == 2) && !texHasAlpha) {
+            blendType = 4; // Treat as additive fallback
+        }
+
+        if (blendType == 3 || blendType == 4) {
             glBlendFunc(GL_SRC_ALPHA, GL_ONE);  // Additive
         } else {
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);  // Alpha
@@ -2717,6 +2729,15 @@ GLuint M2Renderer::loadTexture(const std::string& path) {
         return whiteTexture;
     }
 
+    // Track whether the texture actually uses alpha (any pixel with alpha < 255).
+    bool hasAlpha = false;
+    for (size_t i = 3; i < blp.data.size(); i += 4) {
+        if (blp.data[i] != 255) {
+            hasAlpha = true;
+            break;
+        }
+    }
+
     GLuint textureID;
     glGenTextures(1, &textureID);
     glBindTexture(GL_TEXTURE_2D, textureID);
@@ -2738,9 +2759,11 @@ GLuint M2Renderer::loadTexture(const std::string& path) {
     e.id = textureID;
     size_t base = static_cast<size_t>(blp.width) * static_cast<size_t>(blp.height) * 4ull;
     e.approxBytes = base + (base / 3);
+    e.hasAlpha = hasAlpha;
     e.lastUse = ++textureCacheCounter_;
     textureCacheBytes_ += e.approxBytes;
     textureCache[key] = e;
+    textureHasAlphaById_[textureID] = hasAlpha;
     LOG_DEBUG("M2: Loaded texture: ", path, " (", blp.width, "x", blp.height, ")");
 
     return textureID;

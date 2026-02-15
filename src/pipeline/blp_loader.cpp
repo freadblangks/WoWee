@@ -167,13 +167,8 @@ BLPImage BLPLoader::loadBLP2(const uint8_t* data, size_t size) {
             return BLPImage();
     }
 
-    // DXT1 with alphaDepth=0 has no meaningful alpha channel, but the DXT1
-    // color-key mode can produce alpha=0 pixels. Force all alpha to 255.
-    if (header->alphaDepth == 0) {
-        for (int i = 0; i < pixelCount; i++) {
-            image.data[i * 4 + 3] = 255;
-        }
-    }
+    // Note: DXT1 may encode 1-bit transparency via the color-key mode (c0 <= c1).
+    // Do not override alpha based on alphaDepth; preserve whatever the DXT decompressor produced.
 
     return image;
 }

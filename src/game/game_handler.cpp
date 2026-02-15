@@ -8459,7 +8459,22 @@ void GameHandler::handleShowTaxiNodes(network::Packet& packet) {
 void GameHandler::applyTaxiMountForCurrentNode() {
     if (taxiMountActive_ || !mountCallback_) return;
     auto it = taxiNodes_.find(currentTaxiData_.nearestNode);
-    if (it == taxiNodes_.end()) return;
+    if (it == taxiNodes_.end()) {
+        // Node not in DBC (custom server nodes, missing data) — use hardcoded fallback.
+        bool isAlliance = true;
+        switch (playerRace_) {
+            case Race::ORC: case Race::UNDEAD: case Race::TAUREN: case Race::TROLL:
+            case Race::GOBLIN: case Race::BLOOD_ELF:
+                isAlliance = false; break;
+            default: break;
+        }
+        uint32_t mountId = isAlliance ? 1210u : 1310u;
+        taxiMountDisplayId_ = mountId;
+        taxiMountActive_ = true;
+        LOG_INFO("Taxi mount fallback (node ", currentTaxiData_.nearestNode, " not in DBC): displayId=", mountId);
+        mountCallback_(mountId);
+        return;
+    }
 
     bool isAlliance = true;
     switch (playerRace_) {

@@ -49,6 +49,25 @@ public:
     void setOnDeleteCharacter(std::function<void(uint64_t)> cb) { onDeleteCharacter = std::move(cb); }
 
     /**
+     * Reset selection state (e.g., when switching servers)
+     */
+    void reset() {
+        selectedCharacterIndex = -1;
+        characterSelected = false;
+        selectedCharacterGuid = 0;
+        restoredLastCharacter = false;
+        newlyCreatedCharacterName.clear();
+        statusMessage.clear();
+        deleteConfirmStage = 0;
+        previewInitialized_ = false;
+        previewGuid_ = 0;
+        previewAppearanceBytes_ = 0;
+        previewFacialFeatures_ = 0;
+        previewUseFemaleModel_ = false;
+        previewEquipHash_ = 0;
+    }
+
+    /**
      * Check if a character has been selected
      */
     bool hasSelection() const { return characterSelected; }

@@ -537,6 +537,11 @@ void Application::logoutToLogin() {
             music->stopMusic(0.0f);
         }
     }
+    // Clear stale realm/character selection so switching servers starts fresh
+    if (uiManager) {
+        uiManager->getRealmScreen().reset();
+        uiManager->getCharacterScreen().reset();
+    }
     setState(AppState::AUTHENTICATION);
 }
 
@@ -1733,6 +1738,12 @@ void Application::setupUICallbacks() {
 
     // "Back" button on character screen
     uiManager->getCharacterScreen().setOnBack([this]() {
+        // Disconnect from world server and reset UI state for fresh realm selection
+        if (gameHandler) {
+            gameHandler->disconnect();
+        }
+        uiManager->getRealmScreen().reset();
+        uiManager->getCharacterScreen().reset();
         setState(AppState::REALM_SELECTION);
     });
 

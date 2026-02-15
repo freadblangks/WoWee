@@ -31,6 +31,17 @@ public:
     }
 
     /**
+     * Reset selection state (e.g., when switching servers)
+     */
+    void reset() {
+        selectedRealmIndex = -1;
+        realmSelected = false;
+        selectedRealmName.clear();
+        selectedRealmAddress.clear();
+        statusMessage.clear();
+    }
+
+    /**
      * Check if a realm has been selected
      */
     bool hasSelection() const { return realmSelected; }

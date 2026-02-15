@@ -34,6 +34,9 @@ bool AuthHandler::connect(const std::string& host, uint16_t port) {
     const std::string hostTrimmed = trimHost(host);
     LOG_INFO("Connecting to auth server: ", hostTrimmed, ":", port);
 
+    // Clear stale realm list from previous connection
+    realms.clear();
+
     socket = std::make_unique<network::TCPSocket>();
 
     // Set up packet callback

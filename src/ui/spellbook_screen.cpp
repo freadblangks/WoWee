@@ -221,8 +221,8 @@ const SpellInfo* SpellbookScreen::getSpellInfo(uint32_t spellId) const {
 
 void SpellbookScreen::render(game::GameHandler& gameHandler, pipeline::AssetManager* assetManager) {
     // P key toggle (edge-triggered)
-    bool uiWantsKeyboard = ImGui::GetIO().WantCaptureKeyboard;
-    bool pDown = !uiWantsKeyboard && core::Input::getInstance().isKeyPressed(SDL_SCANCODE_P);
+    bool wantsTextInput = ImGui::GetIO().WantTextInput;
+    bool pDown = !wantsTextInput && core::Input::getInstance().isKeyPressed(SDL_SCANCODE_P);
     if (pDown && !pKeyWasDown) {
         open = !open;
     }

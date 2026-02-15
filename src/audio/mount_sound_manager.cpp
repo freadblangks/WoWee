@@ -320,12 +320,6 @@ const MountSoundManager::FamilySounds& MountSoundManager::getCurrentFamilySounds
         return it->second;
     }
 
-    // Fall back to horse for unknown families
-    it = familySounds_.find(MountFamily::HORSE);
-    if (it != familySounds_.end()) {
-        return it->second;
-    }
-
     return empty;
 }
 
@@ -537,7 +531,7 @@ MountFamily MountSoundManager::detectMountFamilyFromPath(const std::string& mode
         lower.find("wyvern") != std::string::npos)
         return MountFamily::DRAGON;
 
-    return MountFamily::HORSE;  // Default fallback
+    return MountFamily::UNKNOWN;  // Unknown family: stay silent
 }
 
 MountFamily MountSoundManager::detectMountFamily(uint32_t creatureDisplayId) const {
@@ -605,8 +599,8 @@ MountFamily MountSoundManager::detectMountFamily(uint32_t creatureDisplayId) con
     if (creatureDisplayId >= 25800 && creatureDisplayId <= 25900)
         return MountFamily::DRAGON;
 
-    // Default to HORSE for unknown ground mounts (safe fallback)
-    return MountFamily::HORSE;
+    // Unknown family: stay silent (avoid incorrect horse sounds on custom mounts)
+    return MountFamily::UNKNOWN;
 }
 
 void MountSoundManager::updateMountSounds() {

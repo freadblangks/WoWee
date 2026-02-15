@@ -12,8 +12,8 @@ namespace wowee { namespace ui {
 
 void TalentScreen::render(game::GameHandler& gameHandler) {
     // N key toggle (edge-triggered)
-    bool uiWantsKeyboard = ImGui::GetIO().WantCaptureKeyboard;
-    bool nDown = !uiWantsKeyboard && core::Input::getInstance().isKeyPressed(SDL_SCANCODE_N);
+    bool wantsTextInput = ImGui::GetIO().WantTextInput;
+    bool nDown = !wantsTextInput && core::Input::getInstance().isKeyPressed(SDL_SCANCODE_N);
     if (nDown && !nKeyWasDown) {
         open = !open;
     }

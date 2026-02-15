@@ -552,13 +552,13 @@ void InventoryScreen::closeAllBags() {
 
 void InventoryScreen::render(game::Inventory& inventory, uint64_t moneyCopper) {
     // B key toggle (edge-triggered)
-    bool uiWantsKeyboard = ImGui::GetIO().WantCaptureKeyboard;
-    bool bDown = !uiWantsKeyboard && core::Input::getInstance().isKeyPressed(SDL_SCANCODE_B);
+    bool wantsTextInput = ImGui::GetIO().WantTextInput;
+    bool bDown = !wantsTextInput && core::Input::getInstance().isKeyPressed(SDL_SCANCODE_B);
     bool bToggled = bDown && !bKeyWasDown;
     bKeyWasDown = bDown;
 
     // C key toggle for character screen (edge-triggered)
-    bool cDown = !uiWantsKeyboard && core::Input::getInstance().isKeyPressed(SDL_SCANCODE_C);
+    bool cDown = !wantsTextInput && core::Input::getInstance().isKeyPressed(SDL_SCANCODE_C);
     if (cDown && !cKeyWasDown) {
         characterOpen = !characterOpen;
     }
@@ -582,7 +582,7 @@ void InventoryScreen::render(game::Inventory& inventory, uint64_t moneyCopper) {
     }
 
     // Escape cancels held item
-    if (holdingItem && !uiWantsKeyboard && core::Input::getInstance().isKeyPressed(SDL_SCANCODE_ESCAPE)) {
+    if (holdingItem && !wantsTextInput && core::Input::getInstance().isKeyPressed(SDL_SCANCODE_ESCAPE)) {
         cancelPickup(inventory);
     }
 

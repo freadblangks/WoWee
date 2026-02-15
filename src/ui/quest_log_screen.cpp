@@ -99,8 +99,8 @@ std::string replaceGenderPlaceholders(const std::string& text, game::GameHandler
 
 void QuestLogScreen::render(game::GameHandler& gameHandler) {
     // L key toggle (edge-triggered)
-    bool uiWantsKeyboard = ImGui::GetIO().WantCaptureKeyboard;
-    bool lDown = !uiWantsKeyboard && core::Input::getInstance().isKeyPressed(SDL_SCANCODE_L);
+    bool wantsTextInput = ImGui::GetIO().WantTextInput;
+    bool lDown = !wantsTextInput && core::Input::getInstance().isKeyPressed(SDL_SCANCODE_L);
     if (lDown && !lKeyWasDown) {
         open = !open;
     }

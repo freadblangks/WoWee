@@ -100,7 +100,7 @@ private:
     };
     std::unordered_map<MountFamily, FamilySounds, MountFamilyHash> familySounds_;
 
-    // Helper to get sounds for current family (falls back to HORSE)
+    // Helper to get sounds for current family (unknown/unloaded -> silent)
     const FamilySounds& getCurrentFamilySounds() const;
 
     // Sound state tracking

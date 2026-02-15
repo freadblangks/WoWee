@@ -164,15 +164,14 @@ std::vector<std::string> AssetManager::getOverlayIds() const {
 }
 
 std::string AssetManager::resolveLayeredPath(const std::string& normalizedPath) const {
-    // For character textures, pick the highest-resolution variant across overlays/base.
-    // Turtle/classic overlays often include low-res character skins; the base dataset may have higher-res.
-    auto isCharacterTexture = [&]() -> bool {
-        if (normalizedPath.size() < 4) return false;
-        if (normalizedPath.rfind("character\\", 0) != 0) return false;
-        return normalizedPath.compare(normalizedPath.size() - 4, 4, ".blp") == 0;
+    // For textures (.blp), pick the highest-resolution variant across overlays/base.
+    // Turtle/classic overlays can include lower-res textures; the base dataset may have higher-res.
+    auto isBlpTexture = [&]() -> bool {
+        return normalizedPath.size() >= 4 &&
+               normalizedPath.compare(normalizedPath.size() - 4, 4, ".blp") == 0;
     };
 
-    if (isCharacterTexture()) {
+    if (isBlpTexture()) {
         uint64_t bestSize = 0;
         std::string bestFsPath;
 

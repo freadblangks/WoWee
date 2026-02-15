@@ -260,16 +260,16 @@ network::Packet ClassicPacketParsers::buildMovementPacket(LogicalOpcode opcode,
 // ============================================================================
 // Classic buildCastSpell
 // Vanilla 1.12.x: NO castCount prefix, NO castFlags byte
-// Format: uint32 spellId + uint32 targetFlags + [PackedGuid if unit target]
+// Format: uint32 spellId + uint16 targetFlags + [PackedGuid if unit target]
 // ============================================================================
 network::Packet ClassicPacketParsers::buildCastSpell(uint32_t spellId, uint64_t targetGuid, uint8_t /*castCount*/) {
     network::Packet packet(wireOpcode(LogicalOpcode::CMSG_CAST_SPELL));
 
     packet.writeUInt32(spellId);
 
-    // SpellCastTargets — vanilla/CMaNGOS uses uint32 target mask (same as WotLK)
+    // SpellCastTargets — vanilla/CMaNGOS uses uint16 target mask (WotLK uses uint32)
     if (targetGuid != 0) {
-        packet.writeUInt32(0x02); // TARGET_FLAG_UNIT
+        packet.writeUInt16(0x02); // TARGET_FLAG_UNIT
 
         // Write packed GUID
         uint8_t mask = 0;
@@ -289,9 +289,23 @@ network::Packet ClassicPacketParsers::buildCastSpell(uint32_t spellId, uint64_t 
             packet.writeUInt8(bytes[i]);
         }
     } else {
-        packet.writeUInt32(0x00); // TARGET_FLAG_SELF
+        packet.writeUInt16(0x00); // TARGET_FLAG_SELF
     }
 
+    return packet;
+}
+
+// ============================================================================
+// Classic CMSG_USE_ITEM
+// Vanilla 1.12.x: bag(u8) + slot(u8) + spellIndex(u8) + SpellCastTargets(u16)
+// NO spellId, itemGuid, glyphIndex, or castFlags fields (those are WotLK)
+// ============================================================================
+network::Packet ClassicPacketParsers::buildUseItem(uint8_t bagIndex, uint8_t slotIndex, uint64_t /*itemGuid*/) {
+    network::Packet packet(wireOpcode(LogicalOpcode::CMSG_USE_ITEM));
+    packet.writeUInt8(bagIndex);
+    packet.writeUInt8(slotIndex);
+    packet.writeUInt8(0);       // spell_index (which item spell to trigger, usually 0)
+    packet.writeUInt16(0x0000); // SpellCastTargets: TARGET_FLAG_SELF
     return packet;
 }
 

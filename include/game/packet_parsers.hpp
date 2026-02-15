@@ -50,6 +50,11 @@ public:
         return CastSpellPacket::build(spellId, targetGuid, castCount);
     }
 
+    /** Build CMSG_USE_ITEM (WotLK default: bag + slot + castCount + spellId + itemGuid + glyphIndex + castFlags + targets) */
+    virtual network::Packet buildUseItem(uint8_t bagIndex, uint8_t slotIndex, uint64_t itemGuid) {
+        return UseItemPacket::build(bagIndex, slotIndex, itemGuid);
+    }
+
     // --- Character Enumeration ---
 
     /** Parse SMSG_CHAR_ENUM */
@@ -238,6 +243,7 @@ public:
                                          const MovementInfo& info,
                                          uint64_t playerGuid = 0) override;
     network::Packet buildCastSpell(uint32_t spellId, uint64_t targetGuid, uint8_t castCount) override;
+    network::Packet buildUseItem(uint8_t bagIndex, uint8_t slotIndex, uint64_t itemGuid) override;
     bool parseCastFailed(network::Packet& packet, CastFailedData& data) override;
     bool parseMessageChat(network::Packet& packet, MessageChatData& data) override;
     bool parseGameObjectQueryResponse(network::Packet& packet, GameObjectQueryResponseData& data) override;

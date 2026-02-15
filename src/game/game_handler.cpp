@@ -7626,7 +7626,9 @@ void GameHandler::useItemBySlot(int backpackIndex) {
     }
     if (itemGuid != 0 && state == WorldState::IN_WORLD && socket) {
         // WoW inventory: equipment 0-18, bags 19-22, backpack 23-38
-        auto packet = UseItemPacket::build(0xFF, static_cast<uint8_t>(23 + backpackIndex), itemGuid);
+        auto packet = packetParsers_
+            ? packetParsers_->buildUseItem(0xFF, static_cast<uint8_t>(23 + backpackIndex), itemGuid)
+            : UseItemPacket::build(0xFF, static_cast<uint8_t>(23 + backpackIndex), itemGuid);
         socket->send(packet);
     } else if (itemGuid == 0) {
         LOG_WARNING("Use item failed: missing item GUID for slot ", backpackIndex);

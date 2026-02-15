@@ -374,38 +374,39 @@ UPDATE realmlist SET address='your.server.ip' WHERE id=1;
 
 ## WoW Data Files
 
-The client needs access to WoW 3.3.5a data files for terrain, models, and textures.
+The client needs access to extracted WoW data (terrain, models, textures) indexed by `manifest.json`.
+
+If you have a fresh WoW install (MPQs only), extract once with:
+
+```bash
+./extract_assets.sh /path/to/WoW-3.3.5a/Data wotlk
+```
 
 ### Setting WOW_DATA_PATH
 
 ```bash
 # Linux/Mac
-export WOW_DATA_PATH="/path/to/WoW-3.3.5a/Data"
+export WOW_DATA_PATH="/path/to/extracted/Data"
 
 # Or add to ~/.bashrc
-echo 'export WOW_DATA_PATH="/path/to/WoW-3.3.5a/Data"' >> ~/.bashrc
+echo 'export WOW_DATA_PATH="/path/to/extracted/Data"' >> ~/.bashrc
 source ~/.bashrc
 
 # Run client
-cd /home/k/Desktop/wowee/wowee
+cd /path/to/wowee
 ./build/bin/wowee
 ```
 
 ### Data Directory Structure
 
-Your WoW Data directory should contain:
+Your extracted data directory should contain (example):
 ```
 Data/
-├── common.MPQ
-├── common-2.MPQ
-├── expansion.MPQ
-├── lichking.MPQ
-├── patch.MPQ
-├── patch-2.MPQ
-├── patch-3.MPQ
-└── enUS/  (or your locale)
-    ├── locale-enUS.MPQ
-    └── patch-enUS-3.MPQ
+├── manifest.json
+├── interface/
+├── sound/
+├── world/
+└── expansions/
 ```
 
 ## Testing Features
@@ -567,8 +568,8 @@ account set gmlevel demo 3 -1
 
 3. **Start Client:**
 ```bash
-cd /home/k/Desktop/wowee/wowee
-export WOW_DATA_PATH="/path/to/WoW-3.3.5a/Data"
+cd /path/to/wowee
+export WOW_DATA_PATH="/path/to/extracted/Data"
 ./build/bin/wowee
 ```
 

@@ -89,7 +89,7 @@ Wowee follows a modular architecture with clear separation of concerns:
 - VAO/VBO/EBO management
 
 **Texture** - Texture management
-- Loading (will support BLP format)
+- Loading (BLP via `AssetManager`, optional PNG overrides for development)
 - OpenGL texture object
 - Mipmap generation
 
@@ -191,11 +191,14 @@ Wowee follows a modular architecture with clear separation of concerns:
 
 ### 6. Asset Pipeline (`src/pipeline/`)
 
-**MPQManager** - Archive management
-- Loads .mpq files (via StormLib)
-- Priority-based file lookup (patch files override base files)
-- Data extraction with caching
-- Locale support (enUS, enGB, etc.)
+**AssetManager** - Runtime asset access
+- Loads an extracted loose-file tree indexed by `Data/manifest.json`
+- Layered resolution via optional overlay manifests (multi-expansion dedup)
+- File cache + path normalization
+
+**asset_extract (tool)** - MPQ extraction
+- Uses StormLib to extract MPQs into `Data/` and generate `manifest.json`
+- Driven by `extract_assets.sh`
 
 **BLPLoader** - Texture parser
 - BLP format (Blizzard texture format)
@@ -385,7 +388,7 @@ Window::swapBuffers()
 ```
 World::loadMap(mapId)
     ↓
-MPQManager::readFile("World/Maps/{map}/map.adt")
+AssetManager::readFile("World/Maps/{map}/map.adt")
     ↓
 ADTLoader::load(adtData)
     ├─ Parse MCNK chunks (terrain)
@@ -394,7 +397,7 @@ ADTLoader::load(adtData)
     └─ Parse MCNR chunks (normals)
     ↓
 For each texture reference:
-    MPQManager::readFile(texturePath)
+    AssetManager::readFile(texturePath)
     ↓
     BLPLoader::load(blpData)
     ↓

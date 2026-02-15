@@ -9,8 +9,10 @@ Implemented today:
 - SRP6a authentication + world connection
 - Character creation/selection and in-world entry
 - Full 3D rendering pipeline (terrain, water, sky, M2/WMO, particles)
-- Core gameplay systems (movement, combat, spells, inventory, quests, vendors, loot, chat)
+- Core gameplay plumbing (movement, combat/spell casting, inventory/equipment, chat)
 - Transport support (boats/zeppelins) with active ongoing fixes
+
+For a more honest snapshot of gaps and current direction, see `docs/status.md`.
 
 ## Build And Run
 
@@ -34,9 +36,22 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j"$(nproc)"
 ```
 
-### 4. Provide WoW Data
+### 4. Provide WoW Data (Extract + Manifest)
 
-Put your legal WoW 3.3.5a data in `Data/` (or set `WOW_DATA_PATH`).
+Wowee loads assets from an extracted loose-file tree indexed by `manifest.json`.
+
+If you do not already have an extracted `Data/manifest.json`, extract from your WoW install:
+
+```bash
+# WotLK 3.3.5a example
+./extract_assets.sh /path/to/WoW/Data wotlk
+```
+
+By default wowee uses `./Data/`. To override:
+
+```bash
+export WOW_DATA_PATH=/path/to/extracted/Data
+```
 
 ### 5. Run
 
@@ -80,5 +95,5 @@ Use `BUILD_INSTRUCTIONS.md` for distro-specific package lists.
 
 ### Missing assets (models/textures/terrain)
 
-- Verify WoW data files exist under `Data/`
-- Or export `WOW_DATA_PATH=/path/to/WoW/Data`
+- Verify `Data/manifest.json` exists (or re-run `./extract_assets.sh ...`)
+- Or export `WOW_DATA_PATH=/path/to/extracted/Data`

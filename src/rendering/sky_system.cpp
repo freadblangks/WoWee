@@ -178,8 +178,7 @@ float SkySystem::getWhiteLadyPhase() const {
 }
 
 float SkySystem::getBlueChildPhase() const {
-    // TODO: Second moon support
-    return 0.25f;  // Placeholder phase
+    return celestial_ ? celestial_->getBlueChildPhase() : 0.25f;
 }
 
 } // namespace rendering

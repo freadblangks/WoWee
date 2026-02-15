@@ -4,9 +4,18 @@
   <img src="assets/Wowee.png" alt="Wowee Logo" width="240" />
 </p>
 
-A native C++ client for World of Warcraft 3.3.5a (Wrath of the Lich King) with a fully functional OpenGL rendering engine.
+A native C++ World of Warcraft client with a custom OpenGL renderer.
+
+Primary target today is **WotLK 3.3.5a**, with active work to broaden compatibility across **Vanilla (Classic) + TBC + WotLK**.
 
 > **Legal Disclaimer**: This is an educational/research project. It does not include any Blizzard Entertainment assets, data files, or proprietary code. World of Warcraft and all related assets are the property of Blizzard Entertainment, Inc. This project is not affiliated with or endorsed by Blizzard Entertainment. Users are responsible for supplying their own legally obtained game data files and for ensuring compliance with all applicable laws in their jurisdiction.
+
+## Status & Direction (2026-02-15)
+
+- **Compatibility direction**: support **Vanilla (Classic) + TBC + WotLK** by selecting an expansion profile and using opcode/parser variants (`src/game/packet_parsers_classic.cpp`, `src/game/packet_parsers_tbc.cpp`).
+- **Primary target**: WoW **WotLK 3.3.5a (build 12340)** online client, tested mainly against WotLK emulator cores (AzerothCore/TrinityCore variants).
+- **Current focus**: protocol correctness (chat, spell casting results, transports) and visuals accuracy (M2/WMO edge cases, equipment textures).
+- **Warden**: crypto + module plumbing are implemented; full module execution is still in progress (see Warden docs).
 
 ## Features
 
@@ -16,7 +25,7 @@ A native C++ client for World of Warcraft 3.3.5a (Wrath of the Lich King) with a
 - **Sky System** -- WoW-accurate DBC-driven lighting with skybox authority
   - **Skybox** -- Camera-locked celestial sphere (M2 model support, gradient fallback)
   - **Celestial Bodies** -- Sun (lighting-driven), White Lady + Blue Child (Azeroth's two moons)
-  - **Moon Phases** -- Server time-driven deterministic phases (30-day / 27-day cycles)
+  - **Moon Phases** -- Game time-driven deterministic phases when server time is available (fallback: local cycling for development)
   - **Stars** -- Baked into skybox assets (procedural fallback for development/debug only)
 - **Atmosphere** -- Procedural clouds (FBM noise), lens flare with chromatic aberration, cloud/fog star occlusion
 - **Weather** -- Rain and snow particle systems (2000 particles, camera-relative)
@@ -26,7 +35,10 @@ A native C++ client for World of Warcraft 3.3.5a (Wrath of the Lich King) with a
 - **Post-Processing** -- HDR, tonemapping, shadow mapping (2048x2048)
 
 ### Asset Pipeline
-- **MPQ** archive extraction (StormLib), **BLP** DXT1/3/5 textures, **ADT** terrain tiles, **M2** character models with animations, **WMO** buildings, **DBC** database files (Spell, Item, SkillLine, Faction, etc.)
+- Extracted loose-file **`Data/`** tree indexed by **`manifest.json`** (fast lookup + caching)
+- Optional **overlay layers** for multi-expansion asset deduplication
+- `asset_extract` + `extract_assets.sh` for MPQ extraction (StormLib tooling)
+- File formats: **BLP** (DXT1/3/5), **ADT**, **M2**, **WMO**, **DBC** (Spell/Item/Faction/etc.)
 
 ### Gameplay Systems
 - **Authentication** -- Full SRP6a implementation with RC4 header encryption
@@ -41,7 +53,7 @@ A native C++ client for World of Warcraft 3.3.5a (Wrath of the Lich King) with a
 - **Vendors** -- Buy and sell items, gold tracking, inventory sync
 - **Loot** -- Loot window, gold looting, item pickup
 - **Gossip** -- NPC interaction, dialogue options
-- **Chat** -- SAY, YELL, WHISPER, chat window with formatting
+- **Chat** -- Tabs/channels, emotes, chat bubbles, clickable URLs, clickable item links with tooltips
 - **Party** -- Group invites, party list
 - **UI** -- Loading screens with progress bar, settings window with opacity slider
 
@@ -52,34 +64,53 @@ A native C++ client for World of Warcraft 3.3.5a (Wrath of the Lich King) with a
 ```bash
 # Ubuntu/Debian
 sudo apt install libsdl2-dev libglew-dev libglm-dev \
-                 libssl-dev libstorm-dev cmake build-essential
+                 libssl-dev cmake build-essential \
+                 libstorm-dev  # for asset_extract
 
 # Fedora
 sudo dnf install SDL2-devel glew-devel glm-devel \
-                 openssl-devel StormLib-devel cmake gcc-c++
+                 openssl-devel cmake gcc-c++ \
+                 StormLib-devel  # for asset_extract
 
 # Arch
-sudo pacman -S sdl2 glew glm openssl stormlib cmake base-devel
+sudo pacman -S sdl2 glew glm openssl cmake base-devel \
+                 stormlib  # for asset_extract
 ```
 
 ### Game Data
 
-This project requires WoW 3.3.5a (patch 3.3.5, build 12340) data files. You must supply your own legally obtained copy. Place (or symlink) the MPQ files into a `Data/` directory at the project root:
+This project requires WoW client data that you extract from your own legally obtained install.
 
-```
-wowee/
-└── Data/
-    ├── common.MPQ
-    ├── common-2.MPQ
-    ├── expansion.MPQ
-    ├── lichking.MPQ
-    ├── patch.MPQ
-    ├── patch-2.MPQ
-    ├── patch-3.MPQ
-    └── enUS/          (or your locale)
+Wowee loads assets via an extracted loose-file tree indexed by `manifest.json` (it does not read MPQs at runtime).
+
+#### 1) Extract MPQs into `./Data/`
+
+```bash
+# WotLK 3.3.5a example
+./extract_assets.sh /path/to/WoW/Data wotlk
 ```
 
-Alternatively, set the `WOW_DATA_PATH` environment variable to point to your WoW data directory.
+```
+Data/
+  manifest.json
+  interface/
+  sound/
+  world/
+  expansions/
+```
+
+Notes:
+
+- `StormLib` is required to build/run the extractor (`asset_extract`), but the main client does not require StormLib at runtime.
+- `extract_assets.sh` supports `classic`, `turtle`, `tbc`, `wotlk` targets.
+
+#### 2) Point wowee at the extracted data
+
+By default, wowee looks for `./Data/`. You can override with:
+
+```bash
+export WOW_DATA_PATH=/path/to/extracted/Data
+```
 
 ### Compile & Run
 
@@ -142,6 +173,7 @@ make -j$(nproc)
 ## Documentation
 
 ### Getting Started
+- [Project Status](docs/status.md) -- Current code state, limitations, and near-term direction
 - [Quick Start](docs/quickstart.md) -- Installation and first steps
 - [Build Instructions](BUILD_INSTRUCTIONS.md) -- Detailed dependency, build, and run guide
 
@@ -153,20 +185,22 @@ make -j$(nproc)
 - [SRP Implementation](docs/srp-implementation.md) -- Cryptographic details
 - [Packet Framing](docs/packet-framing.md) -- Network protocol framing
 - [Realm List](docs/realm-list.md) -- Realm selection system
+- [Warden Quick Reference](docs/WARDEN_QUICK_REFERENCE.md) -- Testing notes and common fixes
+- [Warden Implementation](docs/WARDEN_IMPLEMENTATION.md) -- What works today and what remains
 
 ## Technical Details
 
 - **Graphics**: OpenGL 3.3 Core, GLSL 330, forward rendering with post-processing
 - **Performance**: 60 FPS (vsync), ~50k triangles/frame, ~30 draw calls, <10% GPU
 - **Platform**: Linux (primary), C++20, CMake 3.15+
-- **Dependencies**: SDL2, OpenGL/GLEW, GLM, OpenSSL, StormLib, ImGui, FFmpeg
+- **Dependencies**: SDL2, OpenGL/GLEW, GLM, OpenSSL, ImGui, FFmpeg (StormLib for asset extraction tooling; Unicorn optional for Warden emulation)
 - **Architecture**: Modular design with clear separation (core, rendering, networking, game logic, asset pipeline, UI, audio)
 - **Networking**: Non-blocking TCP, SRP6a authentication, RC4 encryption, WoW 3.3.5a protocol
-- **Asset Loading**: Async terrain streaming, lazy loading, MPQ archive support
+- **Asset Loading**: Extracted loose-file tree + `manifest.json` indexing, async terrain streaming, overlay layers
 - **Sky System**: WoW-accurate DBC-driven architecture
   - **Skybox Authority**: Stars baked into M2 sky dome models (not procedurally generated)
   - **Lore-Accurate Moons**: White Lady (30-day cycle) + Blue Child (27-day cycle)
-  - **Deterministic Phases**: Computed from server game time (consistent across sessions)
+  - **Deterministic Phases**: Computed from server game time when available (fallback: local time/dev cycling)
   - **Camera-Locked**: Sky dome uses rotation-only transform (translation ignored)
   - **No Latitude Math**: Per-zone artistic constants, not Earth-like planetary simulation
   - **Zone Identity**: Different skyboxes per continent (Azeroth, Outland, Northrend)

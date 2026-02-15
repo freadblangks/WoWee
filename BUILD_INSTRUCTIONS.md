@@ -69,25 +69,36 @@ Binary output:
 build/bin/wowee
 ```
 
-## 4. Provide WoW 3.3.5a Data
+## 4. Provide WoW Data (Extract + Manifest)
 
-Supply your own legally obtained data files in either:
+Wowee loads assets from an extracted loose-file tree indexed by `manifest.json` (it does not read MPQs at runtime).
 
-1. `./Data/`
-2. Path pointed to by `WOW_DATA_PATH`
+### Option A: Extract into `./Data/` (recommended)
 
-Example:
+Run:
+
+```bash
+# WotLK 3.3.5a example
+./extract_assets.sh /path/to/WoW/Data wotlk
+```
+
+The output includes:
 
 ```text
 Data/
-  common.MPQ
-  common-2.MPQ
-  expansion.MPQ
-  lichking.MPQ
-  patch.MPQ
-  patch-2.MPQ
-  patch-3.MPQ
-  enUS/
+  manifest.json
+  interface/
+  sound/
+  world/
+  expansions/
+```
+
+### Option B: Use an existing extracted data tree
+
+Point wowee at your extracted `Data/` directory:
+
+```bash
+export WOW_DATA_PATH=/path/to/extracted/Data
 ```
 
 ## 5. Run
@@ -118,12 +129,12 @@ Ensure `extern/imgui` exists:
 git clone https://github.com/ocornut/imgui.git extern/imgui
 ```
 
-### MPQ/Data not found at runtime
+### Data not found at runtime
 
-Place data under `./Data` or set:
+Verify `Data/manifest.json` exists (or re-run `./extract_assets.sh ...`), or set:
 
 ```bash
-export WOW_DATA_PATH=/path/to/WoW/Data
+export WOW_DATA_PATH=/path/to/extracted/Data
 ```
 
 ### Clean rebuild

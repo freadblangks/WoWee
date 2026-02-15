@@ -1807,6 +1807,7 @@ void Application::spawnPlayerCharacter() {
                 std::string bodySkinPath = std::string("Character\\") + raceFolderName + "\\" + genderFolder + "\\" + raceGender + "Skin00_00.blp";
                 std::string pelvisPath = std::string("Character\\") + raceFolderName + "\\" + genderFolder + "\\" + raceGender + "NakedPelvisSkin00_00.blp";
                 std::string faceLowerTexturePath;
+                std::string faceUpperTexturePath;
                 std::vector<std::string> underwearPaths;
 
                 // Extract appearance bytes for texture lookups
@@ -1862,15 +1863,21 @@ void Application::spawnPlayerCharacter() {
                                              " (style=", (int)charHairStyleId, " color=", (int)charHairColorId, ")");
                                 }
                             }
-                            // Section 1 = face lower: match variation=faceId
+                            // Section 1 = face: match variation=faceId, colorIndex=skinId
+                            // Texture1 = face lower, Texture2 = face upper
                             else if (baseSection == 1 && !foundFaceLower &&
                                      variationIndex == charFaceId && colorIndex == charSkinId) {
                                 std::string tex1 = charSectionsDbc->getString(r, csTex1);
+                                std::string tex2 = charSectionsDbc->getString(r, csTex1 + 1);
                                 if (!tex1.empty()) {
                                     faceLowerTexturePath = tex1;
-                                    foundFaceLower = true;
-                                    LOG_INFO("  DBC face texture: ", faceLowerTexturePath);
+                                    LOG_INFO("  DBC face lower: ", faceLowerTexturePath);
                                 }
+                                if (!tex2.empty()) {
+                                    faceUpperTexturePath = tex2;
+                                    LOG_INFO("  DBC face upper: ", faceUpperTexturePath);
+                                }
+                                foundFaceLower = true;
                             }
                             // Section 4 = underwear
                             else if (baseSection == 4 && !foundUnderwear && colorIndex == charSkinId) {
@@ -1943,21 +1950,25 @@ void Application::spawnPlayerCharacter() {
                     bodySkinPath_ = bodySkinPath;
                     underwearPaths_ = underwearPaths;
 
-                    // Composite body skin + underwear overlays
-                    if (!underwearPaths.empty()) {
+                    // Composite body skin + face + underwear overlays
+                    {
                         std::vector<std::string> layers;
                         layers.push_back(bodySkinPath);
+                        if (!faceLowerTexturePath.empty()) layers.push_back(faceLowerTexturePath);
+                        if (!faceUpperTexturePath.empty()) layers.push_back(faceUpperTexturePath);
                         for (const auto& up : underwearPaths) {
                             layers.push_back(up);
                         }
-                        GLuint compositeTex = charRenderer->compositeTextures(layers);
-                        if (compositeTex != 0) {
-                            for (size_t ti = 0; ti < model.textures.size(); ti++) {
-                                if (model.textures[ti].type == 1) {
-                                    charRenderer->setModelTexture(1, static_cast<uint32_t>(ti), compositeTex);
-                                    skinTextureSlotIndex_ = static_cast<uint32_t>(ti);
-                                    LOG_INFO("Replaced type-1 texture slot ", ti, " with composited body+underwear");
-                                    break;
+                        if (layers.size() > 1) {
+                            GLuint compositeTex = charRenderer->compositeTextures(layers);
+                            if (compositeTex != 0) {
+                                for (size_t ti = 0; ti < model.textures.size(); ti++) {
+                                    if (model.textures[ti].type == 1) {
+                                        charRenderer->setModelTexture(1, static_cast<uint32_t>(ti), compositeTex);
+                                        skinTextureSlotIndex_ = static_cast<uint32_t>(ti);
+                                        LOG_INFO("Replaced type-1 texture slot ", ti, " with composited body+face+underwear");
+                                        break;
+                                    }
                                 }
                             }
                         }
@@ -3727,6 +3738,8 @@ void Application::spawnOnlinePlayer(uint64_t guid,
     std::string pelvisPath = std::string("Character\\") + raceFolderName + "\\" + genderFolder + "\\" + raceGender + "NakedPelvisSkin00_00.blp";
     std::vector<std::string> underwearPaths;
     std::string hairTexturePath;
+    std::string faceLowerPath;
+    std::string faceUpperPath;
 
     uint8_t skinId = appearanceBytes & 0xFF;
     uint8_t faceId = (appearanceBytes >> 8) & 0xFF;
@@ -3743,7 +3756,6 @@ void Application::spawnOnlinePlayer(uint64_t guid,
         bool foundUnderwear = false;
         bool foundHair = false;
         bool foundFaceLower = false;
-        (void)faceId; // face lower not yet applied as separate layer
 
         for (uint32_t r = 0; r < charSectionsDbc->getRecordCount(); r++) {
             uint32_t rRace = charSectionsDbc->getUInt32(r, csL ? (*csL)["RaceID"] : 1);
@@ -3769,6 +3781,10 @@ void Application::spawnOnlinePlayer(uint64_t guid,
                 foundUnderwear = true;
             } else if (baseSection == 1 && !foundFaceLower &&
                        variationIndex == faceId && colorIndex == skinId) {
+                std::string tex1 = charSectionsDbc->getString(r, csTex1);
+                std::string tex2 = charSectionsDbc->getString(r, csTex1 + 1);
+                if (!tex1.empty()) faceLowerPath = tex1;
+                if (!tex2.empty()) faceUpperPath = tex2;
                 foundFaceLower = true;
             }
 
@@ -3776,15 +3792,19 @@ void Application::spawnOnlinePlayer(uint64_t guid,
         }
     }
 
-    // Composite base skin + underwear overlays (same as local character logic)
+    // Composite base skin + face + underwear overlays
     GLuint compositeTex = 0;
-    if (!underwearPaths.empty()) {
+    {
         std::vector<std::string> layers;
         layers.push_back(bodySkinPath);
+        if (!faceLowerPath.empty()) layers.push_back(faceLowerPath);
+        if (!faceUpperPath.empty()) layers.push_back(faceUpperPath);
         for (const auto& up : underwearPaths) layers.push_back(up);
-        compositeTex = charRenderer->compositeTextures(layers);
-    } else {
-        compositeTex = charRenderer->loadTexture(bodySkinPath);
+        if (layers.size() > 1) {
+            compositeTex = charRenderer->compositeTextures(layers);
+        } else {
+            compositeTex = charRenderer->loadTexture(bodySkinPath);
+        }
     }
 
     GLuint hairTex = 0;

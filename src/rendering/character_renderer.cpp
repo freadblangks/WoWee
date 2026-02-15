@@ -483,6 +483,21 @@ GLuint CharacterRenderer::compositeTextures(const std::vector<std::string>& laye
 
     core::Logger::getInstance().info("Composite: base layer ", width, "x", height, " from ", layerPaths[0]);
 
+    // WoW character texture atlas regions (from WoW Model Viewer / CharComponentTextureSections)
+    // Coordinates at 256x256 base resolution:
+    // Region          X    Y    W    H
+    // Base            0    0    256  256
+    // Arm Upper       0    0    128  64
+    // Arm Lower       0    64   128  64
+    // Hand            0    128  128  32
+    // Face Upper      0    160  128  32
+    // Face Lower      0    192  128  64
+    // Torso Upper     128  0    128  64
+    // Torso Lower     128  64   128  32
+    // Pelvis Upper    128  96   128  64
+    // Pelvis Lower    128  160  128  64
+    // Foot            128  224  128  32
+
     // Alpha-blend each overlay onto the composite
     for (size_t layer = 1; layer < layerPaths.size(); layer++) {
         if (layerPaths[layer].empty()) continue;
@@ -500,57 +515,61 @@ GLuint CharacterRenderer::compositeTextures(const std::vector<std::string>& laye
             // Same size: full alpha-blend
             blitOverlay(composite, width, height, overlay, 0, 0);
         } else {
-            // WoW character texture layout (512x512, from CharComponentTextureSections):
-            // Region               X    Y    W    H
-            // 0  Base              0    0    512  512
-            // 1  Arm Upper         0    0    256  128
-            // 2  Arm Lower         0    128  256  128
-            // 3  Hand              0    256  256  64
-            // 4  Face Upper        0    320  256  64
-            // 5  Face Lower        0    384  256  128
-            // 6  Torso Upper       256  0    256  128
-            // 7  Torso Lower       256  128  256  64
-            // 8  Pelvis Upper      256  192  256  128
-            // 9  Pelvis Lower      256  320  256  128
-            // 10 Foot              256  448  256  64
-            //
             // Determine region by filename keywords
+            // Coordinates scale with base texture size (256x256 is reference)
+            float s = width / 256.0f;
             int dstX = 0, dstY = 0;
             std::string pathLower = layerPaths[layer];
             for (auto& c : pathLower) c = std::tolower(c);
 
-            if (pathLower.find("pelvis") != std::string::npos) {
-                // Pelvis Upper: (256, 192) 256x128
-                dstX = 256;
-                dstY = 192;
-                core::Logger::getInstance().info("Composite: placing pelvis region at (", dstX, ",", dstY, ")");
+            if (pathLower.find("faceupper") != std::string::npos) {
+                dstX = 0; dstY = static_cast<int>(160 * s);
+            } else if (pathLower.find("facelower") != std::string::npos) {
+                dstX = 0; dstY = static_cast<int>(192 * s);
+            } else if (pathLower.find("pelvis") != std::string::npos) {
+                dstX = static_cast<int>(128 * s);
+                dstY = static_cast<int>(96 * s);
             } else if (pathLower.find("torso") != std::string::npos) {
-                // Torso Upper: (256, 0) 256x128
-                dstX = 256;
+                dstX = static_cast<int>(128 * s);
                 dstY = 0;
-                core::Logger::getInstance().info("Composite: placing torso region at (", dstX, ",", dstY, ")");
             } else if (pathLower.find("armupper") != std::string::npos) {
                 dstX = 0; dstY = 0;
             } else if (pathLower.find("armlower") != std::string::npos) {
-                dstX = 0; dstY = 128;
+                dstX = 0; dstY = static_cast<int>(64 * s);
             } else if (pathLower.find("hand") != std::string::npos) {
-                dstX = 0; dstY = 256;
+                dstX = 0; dstY = static_cast<int>(128 * s);
             } else if (pathLower.find("foot") != std::string::npos || pathLower.find("feet") != std::string::npos) {
-                dstX = 256; dstY = 448;
+                dstX = static_cast<int>(128 * s); dstY = static_cast<int>(224 * s);
             } else if (pathLower.find("legupper") != std::string::npos || pathLower.find("leg") != std::string::npos) {
-                dstX = 256; dstY = 320;
+                dstX = static_cast<int>(128 * s); dstY = static_cast<int>(160 * s);
             } else {
                 // Unknown — center placement as fallback
                 dstX = (width - overlay.width) / 2;
                 dstY = (height - overlay.height) / 2;
-                core::Logger::getInstance().info("Composite: unknown region '", layerPaths[layer], "', placing at (", dstX, ",", dstY, ")");
             }
 
+            core::Logger::getInstance().info("Composite: placing '", layerPaths[layer], "' at (", dstX, ",", dstY, ") on ", width, "x", height);
             blitOverlay(composite, width, height, overlay, dstX, dstY);
         }
     }
 
     // Debug dump removed: it was always-on and could stall badly under load.
+
+    // Debug: dump first composite to /tmp for visual inspection
+    {
+        static bool dumped = false;
+        if (!dumped && layerPaths.size() > 1) {
+            dumped = true;
+            std::string dumpPath = "/tmp/wowee_composite_debug.raw";
+            FILE* f = fopen(dumpPath.c_str(), "wb");
+            if (f) {
+                fwrite(composite.data(), 1, composite.size(), f);
+                fclose(f);
+                core::Logger::getInstance().info("DEBUG: dumped composite ", width, "x", height,
+                    " RGBA to ", dumpPath);
+            }
+        }
+    }
 
     // Upload composite to GPU
     GLuint texId;
@@ -643,7 +662,10 @@ GLuint CharacterRenderer::compositeWithRegions(const std::string& basePath,
         composite = base.data;
     }
 
-    // Blend underwear overlays (same logic as compositeTextures)
+    // Blend face + underwear overlays
+    // These are native-resolution textures (designed for 256x256 base).
+    // If we upscaled the base to 512x512, use blitOverlayScaled2x and 2x coords.
+    bool upscaled = (base.width == 256 && base.height == 256 && width == 512);
     for (const auto& ul : baseLayers) {
         if (ul.empty()) continue;
         auto overlay = assetManager->loadTexture(ul);
@@ -652,29 +674,42 @@ GLuint CharacterRenderer::compositeWithRegions(const std::string& basePath,
         if (overlay.width == width && overlay.height == height) {
             blitOverlay(composite, width, height, overlay, 0, 0);
         } else {
+            // WoW 256-scale atlas coordinates (from CharComponentTextureSections)
             int dstX = 0, dstY = 0;
             std::string pathLower = ul;
             for (auto& c : pathLower) c = std::tolower(c);
 
-            if (pathLower.find("pelvis") != std::string::npos) {
-                dstX = 256; dstY = 192;
+            if (pathLower.find("faceupper") != std::string::npos) {
+                dstX = 0; dstY = 160;
+            } else if (pathLower.find("facelower") != std::string::npos) {
+                dstX = 0; dstY = 192;
+            } else if (pathLower.find("pelvis") != std::string::npos) {
+                dstX = 128; dstY = 96;
             } else if (pathLower.find("torso") != std::string::npos) {
-                dstX = 256; dstY = 0;
+                dstX = 128; dstY = 0;
             } else if (pathLower.find("armupper") != std::string::npos) {
                 dstX = 0; dstY = 0;
             } else if (pathLower.find("armlower") != std::string::npos) {
-                dstX = 0; dstY = 128;
+                dstX = 0; dstY = 64;
             } else if (pathLower.find("hand") != std::string::npos) {
-                dstX = 0; dstY = 256;
+                dstX = 0; dstY = 128;
             } else if (pathLower.find("foot") != std::string::npos || pathLower.find("feet") != std::string::npos) {
-                dstX = 256; dstY = 448;
+                dstX = 128; dstY = 224;
             } else if (pathLower.find("legupper") != std::string::npos || pathLower.find("leg") != std::string::npos) {
-                dstX = 256; dstY = 320;
+                dstX = 128; dstY = 160;
             } else {
-                dstX = (width - overlay.width) / 2;
-                dstY = (height - overlay.height) / 2;
+                dstX = (base.width - overlay.width) / 2;
+                dstY = (base.height - overlay.height) / 2;
             }
-            blitOverlay(composite, width, height, overlay, dstX, dstY);
+
+            if (upscaled) {
+                // Scale coords and texels to match 512x512 canvas
+                dstX *= 2;
+                dstY *= 2;
+                blitOverlayScaled2x(composite, width, height, overlay, dstX, dstY);
+            } else {
+                blitOverlay(composite, width, height, overlay, dstX, dstY);
+            }
         }
     }
 

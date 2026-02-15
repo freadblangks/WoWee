@@ -7655,7 +7655,9 @@ void GameHandler::handleLootRemoved(network::Packet& packet) {
 }
 
 void GameHandler::handleGossipMessage(network::Packet& packet) {
-    if (!GossipMessageParser::parse(packet, currentGossip)) return;
+    bool ok = packetParsers_ ? packetParsers_->parseGossipMessage(packet, currentGossip)
+                             : GossipMessageParser::parse(packet, currentGossip);
+    if (!ok) return;
     if (questDetailsOpen) return; // Don't reopen gossip while viewing quest
     gossipWindowOpen = true;
     vendorWindowOpen = false; // Close vendor if gossip opens

@@ -580,5 +580,54 @@ bool ClassicPacketParsers::parseGuildQueryResponse(network::Packet& packet, Guil
     return true;
 }
 
+// ============================================================================
+// Gossip — Classic has no menuId, and quest items lack questFlags + isRepeatable
+// ============================================================================
+
+bool ClassicPacketParsers::parseGossipMessage(network::Packet& packet, GossipMessageData& data) {
+    size_t remaining = packet.getSize() - packet.getReadPos();
+    if (remaining < 8 + 4 + 4) {
+        LOG_ERROR("Classic SMSG_GOSSIP_MESSAGE too small: ", remaining, " bytes");
+        return false;
+    }
+
+    data.npcGuid = packet.readUInt64();
+    // Classic: NO menuId field (WotLK adds uint32 menuId here)
+    data.menuId = 0;
+    data.titleTextId = packet.readUInt32();
+    uint32_t optionCount = packet.readUInt32();
+
+    data.options.clear();
+    data.options.reserve(optionCount);
+    for (uint32_t i = 0; i < optionCount; ++i) {
+        GossipOption opt;
+        opt.id = packet.readUInt32();
+        opt.icon = packet.readUInt8();
+        opt.isCoded = (packet.readUInt8() != 0);
+        opt.boxMoney = packet.readUInt32();
+        opt.text = packet.readString();
+        opt.boxText = packet.readString();
+        data.options.push_back(opt);
+    }
+
+    uint32_t questCount = packet.readUInt32();
+    data.quests.clear();
+    data.quests.reserve(questCount);
+    for (uint32_t i = 0; i < questCount; ++i) {
+        GossipQuestItem quest;
+        quest.questId = packet.readUInt32();
+        quest.questIcon = packet.readUInt32();
+        quest.questLevel = static_cast<int32_t>(packet.readUInt32());
+        // Classic: NO questFlags, NO isRepeatable
+        quest.questFlags = 0;
+        quest.isRepeatable = 0;
+        quest.title = packet.readString();
+        data.quests.push_back(quest);
+    }
+
+    LOG_INFO("Classic Gossip: ", optionCount, " options, ", questCount, " quests");
+    return true;
+}
+
 } // namespace game
 } // namespace wowee

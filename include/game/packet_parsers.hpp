@@ -117,6 +117,13 @@ public:
         return NameQueryResponseParser::parse(packet, data);
     }
 
+    // --- Gossip ---
+
+    /** Parse SMSG_GOSSIP_MESSAGE */
+    virtual bool parseGossipMessage(network::Packet& packet, GossipMessageData& data) {
+        return GossipMessageParser::parse(packet, data);
+    }
+
     // --- Destroy Object ---
 
     /** Parse SMSG_DESTROY_OBJECT */
@@ -226,6 +233,7 @@ public:
     network::Packet buildCastSpell(uint32_t spellId, uint64_t targetGuid, uint8_t castCount) override;
     bool parseCastFailed(network::Packet& packet, CastFailedData& data) override;
     bool parseMessageChat(network::Packet& packet, MessageChatData& data) override;
+    bool parseGossipMessage(network::Packet& packet, GossipMessageData& data) override;
     bool parseGuildRoster(network::Packet& packet, GuildRosterData& data) override;
     bool parseGuildQueryResponse(network::Packet& packet, GuildQueryResponseData& data) override;
     network::Packet buildJoinChannel(const std::string& channelName, const std::string& password) override;

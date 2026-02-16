@@ -576,22 +576,9 @@ GLuint CharacterRenderer::compositeTextures(const std::vector<std::string>& laye
 }
 
 void CharacterRenderer::clearCompositeCache() {
-    // Delete GPU textures that aren't referenced by any model's texture slots
-    for (auto& [key, texId] : compositeCache_) {
-        if (texId && texId != whiteTexture) {
-            // Check if any model still references this texture
-            bool inUse = false;
-            for (const auto& [mid, gm] : models) {
-                for (GLuint tid : gm.textureIds) {
-                    if (tid == texId) { inUse = true; break; }
-                }
-                if (inUse) break;
-            }
-            if (!inUse) {
-                glDeleteTextures(1, &texId);
-            }
-        }
-    }
+    // Just clear the lookup map so next compositeWithRegions() creates fresh textures.
+    // Don't delete GPU textures — they may still be referenced by models or instances.
+    // Orphaned textures will be cleaned up when their model/instance is destroyed.
     compositeCache_.clear();
 }
 

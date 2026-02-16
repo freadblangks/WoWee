@@ -572,7 +572,7 @@ void parseAnimTrackVanilla(const std::vector<uint8_t>& data,
 // FBlocks are like M2Track but WITHOUT the interpolationType/globalSequence prefix.
 void parseFBlock(const std::vector<uint8_t>& data, uint32_t offset,
                  M2FBlock& fb, int valueType) {
-    // valueType: 0 = color (3 bytes RGB), 1 = alpha (uint16), 2 = scale (float pair)
+    // valueType: 0 = color (CImVector, 4 bytes RGBA), 1 = alpha (uint16), 2 = scale (float pair)
     if (offset + sizeof(FBlockDisk) > data.size()) return;
 
     FBlockDisk disk = readValue<FBlockDisk>(data, offset);
@@ -595,15 +595,14 @@ void parseFBlock(const std::vector<uint8_t>& data, uint32_t offset,
     uint32_t ofsKeys = disk.ofsKeys;
 
     if (valueType == 0) {
-        // Color: 3 bytes per key.
-        // WotLK particle FBlock color keys are stored as BGR in practice for many assets
-        // (notably water/waterfall emitters). Decode to RGB explicitly.
-        if (ofsKeys + nKeys * 3 > data.size()) return;
+        // Color: CImVector (4 bytes RGBA) per key. We extract RGB, ignore A.
+        if (ofsKeys + nKeys * 4 > data.size()) return;
         fb.vec3Values.reserve(nKeys);
         for (uint32_t i = 0; i < nKeys; i++) {
-            uint8_t b = data[ofsKeys + i * 3 + 0];
-            uint8_t g = data[ofsKeys + i * 3 + 1];
-            uint8_t r = data[ofsKeys + i * 3 + 2];
+            uint8_t r = data[ofsKeys + i * 4 + 0];
+            uint8_t g = data[ofsKeys + i * 4 + 1];
+            uint8_t b = data[ofsKeys + i * 4 + 2];
+            // byte 3 is alpha, handled separately by the alpha FBlock
             fb.vec3Values.emplace_back(r / 255.0f, g / 255.0f, b / 255.0f);
         }
     } else if (valueType == 1) {

@@ -527,7 +527,7 @@ bool M2Renderer::initialize(pipeline::AssetManager* assets) {
                 vec4 viewPos = uView * vec4(aPos, 1.0);
                 gl_Position = uProjection * viewPos;
                 float dist = max(-viewPos.z, 1.0);
-                gl_PointSize = clamp(aSize * 800.0 / dist, 1.0, 256.0);
+                gl_PointSize = clamp(aSize * 400.0 / dist, 1.0, 64.0);
                 vColor = aColor;
                 vTile = aTile;
             }
@@ -542,6 +542,12 @@ bool M2Renderer::initialize(pipeline::AssetManager* assets) {
             out vec4 FragColor;
 
             void main() {
+                // Circular soft-edge falloff (GL_POINTS are square by default)
+                vec2 center = gl_PointCoord - vec2(0.5);
+                float dist = length(center);
+                if (dist > 0.5) discard;
+                float edgeFade = smoothstep(0.5, 0.2, dist);
+
                 vec2 tileCount = max(uTileCount, vec2(1.0));
                 float tilesX = tileCount.x;
                 float tilesY = tileCount.y;
@@ -553,6 +559,7 @@ bool M2Renderer::initialize(pipeline::AssetManager* assets) {
                 vec2 uv = gl_PointCoord * tileSize + vec2(col, row) * tileSize;
                 vec4 texColor = texture(uTexture, uv);
                 FragColor = texColor * vColor;
+                FragColor.a *= edgeFade;
                 if (FragColor.a < 0.01) discard;
             }
         )";
@@ -1520,6 +1527,11 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
 
         if (!model.hasAnimation || model.disableAnimation) {
             instance.animTime += dtMs;
+            // Wrap animation time for models with particle emitters so emission
+            // rate tracks keep looping instead of running past their keyframes.
+            if (!model.particleEmitters.empty() && instance.animTime > 3333.0f) {
+                instance.animTime = std::fmod(instance.animTime, 3333.0f);
+            }
             continue;
         }
 
@@ -1535,6 +1547,11 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
         }
 
         // Handle animation looping / variation transitions
+        // When animDuration is 0 (e.g. "Stand" with infinite loop) but the model
+        // has particle emitters, wrap time so particle emission tracks keep looping.
+        if (instance.animDuration <= 0.0f && !model.particleEmitters.empty()) {
+            instance.animDuration = 3333.0f;  // ~3.3s loop for continuous particle effects
+        }
         if (instance.animDuration > 0.0f && instance.animTime >= instance.animDuration) {
             if (instance.playingVariation) {
                 // Variation finished — return to idle
@@ -1637,16 +1654,20 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
     }
 
     // Phase 3: Particle update (sequential — uses RNG, not thread-safe)
-    for (size_t idx : boneWorkIndices_) {
-        if (idx >= instances.size()) continue;
+    // Run for ALL nearby instances with particle emitters, not just those in
+    // boneWorkIndices_, so particles keep animating even when bone updates are culled.
+    for (size_t idx = 0; idx < instances.size(); ++idx) {
         auto& instance = instances[idx];
         auto mdlIt = models.find(instance.modelId);
         if (mdlIt == models.end()) continue;
         const auto& model = mdlIt->second;
-        if (!model.particleEmitters.empty()) {
-            emitParticles(instance, model, deltaTime);
-            updateParticles(instance, deltaTime);
-        }
+        if (model.particleEmitters.empty()) continue;
+        // Distance cull: only update particles within visible range
+        glm::vec3 toCam = instance.position - cachedCamPos_;
+        float distSq = glm::dot(toCam, toCam);
+        if (distSq > cachedMaxRenderDistSq_) continue;
+        emitParticles(instance, model, deltaTime);
+        updateParticles(instance, deltaTime);
     }
 }
 
@@ -2254,6 +2275,17 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
             glm::mat3 rotMat = glm::mat3(inst.modelMatrix * boneXform);
             p.velocity = rotMat * dir * speed;
 
+            // When emission speed is ~0 and bone animation isn't loaded (.anim files),
+            // particles pile up at the same position. Give them a drift so they
+            // spread outward like a mist/spray effect instead of clustering.
+            if (std::abs(speed) < 0.01f) {
+                p.velocity = rotMat * glm::vec3(
+                    distN(particleRng_) * 1.0f,
+                    distN(particleRng_) * 1.0f,
+                    -dist01(particleRng_) * 0.5f
+                );
+            }
+
             const uint32_t tilesX = std::max<uint16_t>(em.textureCols, 1);
             const uint32_t tilesY = std::max<uint16_t>(em.textureRows, 1);
             const uint32_t totalTiles = tilesX * tilesY;
@@ -2291,9 +2323,22 @@ void M2Renderer::updateParticles(M2Instance& inst, float dt) {
         }
         // Apply gravity
         if (p.emitterIndex >= 0 && p.emitterIndex < static_cast<int>(gpu.particleEmitters.size())) {
-            float grav = interpFloat(gpu.particleEmitters[p.emitterIndex].gravity,
+            const auto& pem = gpu.particleEmitters[p.emitterIndex];
+            float grav = interpFloat(pem.gravity,
                                       inst.animTime, inst.currentSequenceIndex,
                                       gpu.sequences, gpu.globalSequenceDurations);
+            // When M2 gravity is 0, apply default gravity so particles arc downward.
+            // Many fountain M2s rely on bone animation (.anim files) we don't load yet.
+            if (grav == 0.0f) {
+                float emSpeed = interpFloat(pem.emissionSpeed,
+                                             inst.animTime, inst.currentSequenceIndex,
+                                             gpu.sequences, gpu.globalSequenceDurations);
+                if (std::abs(emSpeed) > 0.1f) {
+                    grav = 4.0f;  // spray particles
+                } else {
+                    grav = 1.5f;  // mist/drift particles - gentler fall
+                }
+            }
             p.velocity.z -= grav * dt;
         }
         p.position += p.velocity * dt;
@@ -2349,11 +2394,23 @@ void M2Renderer::renderM2Particles(const glm::mat4& view, const glm::mat4& proj)
 
             float lifeRatio = p.life / std::max(p.maxLife, 0.001f);
             glm::vec3 color = interpFBlockVec3(em.particleColor, lifeRatio);
-            float alpha = interpFBlockFloat(em.particleAlpha, lifeRatio);
-            float scale = interpFBlockFloat(em.particleScale, lifeRatio);
+            float alpha = std::min(interpFBlockFloat(em.particleAlpha, lifeRatio), 1.0f);
+            float rawScale = interpFBlockFloat(em.particleScale, lifeRatio);
 
-            // Note: blue-dominant color correction removed — it was over-brightening
-            // water/fountain particles, making them look like spell effects.
+            // FBlock colors are tint values meant to multiply a bright texture.
+            // Desaturate toward white so particles look like water spray, not neon.
+            color = glm::mix(color, glm::vec3(1.0f), 0.7f);
+
+            // Large-scale particles (>2.0) are volume/backdrop effects meant to be
+            // nearly invisible mist. Fade them heavily since we render as point sprites.
+            if (rawScale > 2.0f) {
+                alpha *= 0.02f;
+            }
+            // Reduce additive particle intensity to prevent blinding overlap
+            if (em.blendingType == 3 || em.blendingType == 4) {
+                alpha *= 0.05f;
+            }
+            float scale = std::min(rawScale, 1.5f);
 
             GLuint tex = whiteTexture;
             if (p.emitterIndex < static_cast<int>(gpu.particleTextures.size())) {

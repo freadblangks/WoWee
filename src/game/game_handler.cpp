@@ -314,8 +314,8 @@ void GameHandler::update(float deltaTime) {
         if (guid != 0 && guid != playerGuid && entityManager.hasEntity(guid)) {
             auto pkt = InspectPacket::build(guid);
             socket->send(pkt);
-            inspectRateLimit_ = 0.75f; // keep it gentle
-            LOG_INFO("Sent CMSG_INSPECT for player 0x", std::hex, guid, std::dec);
+            inspectRateLimit_ = 2.0f; // throttle to avoid compositing stutter
+            LOG_DEBUG("Sent CMSG_INSPECT for player 0x", std::hex, guid, std::dec);
         }
     }
 
@@ -4040,7 +4040,7 @@ void GameHandler::handleDestroyObject(network::Packet& packet) {
         LOG_INFO("Destroyed entity: 0x", std::hex, data.guid, std::dec,
                  " (", (data.isDeath ? "death" : "despawn"), ")");
     } else {
-        LOG_WARNING("Destroy object for unknown entity: 0x", std::hex, data.guid, std::dec);
+        LOG_DEBUG("Destroy object for unknown entity: 0x", std::hex, data.guid, std::dec);
     }
 
     // Clean up auto-attack and target if destroyed entity was our target
@@ -6033,7 +6033,7 @@ void GameHandler::updateOtherPlayerVisibleItems(uint64_t guid, const std::map<ui
         // Layout not detected yet — queue this player for inspect as fallback.
         if (socket && state == WorldState::IN_WORLD) {
             pendingAutoInspect_.insert(guid);
-            LOG_INFO("Queued player 0x", std::hex, guid, std::dec, " for auto-inspect (layout not detected)");
+            LOG_DEBUG("Queued player 0x", std::hex, guid, std::dec, " for auto-inspect (layout not detected)");
         }
         return;
     }

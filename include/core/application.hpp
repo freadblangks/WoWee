@@ -224,7 +224,7 @@ private:
         float x, y, z, orientation;
     };
     std::vector<PendingCreatureSpawn> pendingCreatureSpawns_;
-    static constexpr int MAX_SPAWNS_PER_FRAME = 96;
+    static constexpr int MAX_SPAWNS_PER_FRAME = 8;
     static constexpr uint16_t MAX_CREATURE_SPAWN_RETRIES = 300;
     std::unordered_set<uint64_t> pendingCreatureSpawnGuids_;
     std::unordered_map<uint64_t, uint16_t> creatureSpawnRetryCounts_;
@@ -244,6 +244,9 @@ private:
     };
     std::unordered_map<uint64_t, OnlinePlayerAppearanceState> onlinePlayerAppearance_;
     std::unordered_map<uint64_t, std::pair<std::array<uint32_t, 19>, std::array<uint8_t, 19>>> pendingOnlinePlayerEquipment_;
+    // Deferred equipment compositing queue — processes max 1 per frame to avoid stutter
+    std::vector<std::pair<uint64_t, std::pair<std::array<uint32_t, 19>, std::array<uint8_t, 19>>>> deferredEquipmentQueue_;
+    void processDeferredEquipmentQueue();
     // Cache base player model geometry by (raceId, genderId)
     std::unordered_map<uint32_t, uint32_t> playerModelCache_; // key=(race<<8)|gender → modelId
     struct PlayerTextureSlots { int skin = -1; int hair = -1; int underwear = -1; };

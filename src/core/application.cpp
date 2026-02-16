@@ -584,6 +584,8 @@ void Application::update(float deltaTime) {
             processPlayerSpawnQueue();
             // Process deferred online creature spawns (throttled)
             processCreatureSpawnQueue();
+            // Process deferred equipment compositing (max 1 per frame to avoid stutter)
+            processDeferredEquipmentQueue();
             auto cq2 = std::chrono::high_resolution_clock::now();
             creatureQTime += std::chrono::duration<float, std::milli>(cq2 - cq1).count();
 
@@ -1209,7 +1211,10 @@ void Application::setupUICallbacks() {
     gameHandler->setPlayerEquipmentCallback([this](uint64_t guid,
                                                   const std::array<uint32_t, 19>& displayInfoIds,
                                                   const std::array<uint8_t, 19>& inventoryTypes) {
-        setOnlinePlayerEquipment(guid, displayInfoIds, inventoryTypes);
+        // Queue equipment compositing instead of doing it immediately —
+        // compositeWithRegions is expensive (file I/O + CPU blit + GPU upload)
+        // and causes frame stutters if multiple players update at once.
+        deferredEquipmentQueue_.push_back({guid, {displayInfoIds, inventoryTypes}});
     });
 
     // Creature despawn callback (online mode) - remove creature models
@@ -4496,11 +4501,19 @@ void Application::processPlayerSpawnQueue() {
         // Apply any equipment updates that arrived before the player was spawned.
         auto pit = pendingOnlinePlayerEquipment_.find(s.guid);
         if (pit != pendingOnlinePlayerEquipment_.end()) {
-            setOnlinePlayerEquipment(s.guid, pit->second.first, pit->second.second);
+            deferredEquipmentQueue_.push_back({s.guid, pit->second});
             pendingOnlinePlayerEquipment_.erase(pit);
         }
         processed++;
     }
+}
+
+void Application::processDeferredEquipmentQueue() {
+    if (deferredEquipmentQueue_.empty()) return;
+    // Process at most 1 per frame — compositeWithRegions is expensive
+    auto [guid, equipData] = deferredEquipmentQueue_.front();
+    deferredEquipmentQueue_.erase(deferredEquipmentQueue_.begin());
+    setOnlinePlayerEquipment(guid, equipData.first, equipData.second);
 }
 
 void Application::processGameObjectSpawnQueue() {

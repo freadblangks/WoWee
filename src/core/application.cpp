@@ -1191,6 +1191,14 @@ void Application::setupUICallbacks() {
                                               uint32_t appearanceBytes,
                                               uint8_t facialFeatures,
                                               float x, float y, float z, float orientation) {
+        // Skip local player — already spawned as the main character
+        uint64_t localGuid = gameHandler ? gameHandler->getPlayerGuid() : 0;
+        uint64_t activeGuid = gameHandler ? gameHandler->getActiveCharacterGuid() : 0;
+        if ((localGuid != 0 && guid == localGuid) ||
+            (activeGuid != 0 && guid == activeGuid) ||
+            (spawnedPlayerGuid_ != 0 && guid == spawnedPlayerGuid_)) {
+            return;
+        }
         if (playerInstances_.count(guid)) return;
         if (pendingPlayerSpawnGuids_.count(guid)) return;
         pendingPlayerSpawns_.push_back({guid, raceId, genderId, appearanceBytes, facialFeatures, x, y, z, orientation});
@@ -1947,8 +1955,12 @@ void Application::spawnPlayerCharacter() {
 
                 if (useCharSections) {
                     // Save skin composite state for re-compositing on equipment changes
+                    // Include face textures so compositeWithRegions can rebuild the full base
                     bodySkinPath_ = bodySkinPath;
-                    underwearPaths_ = underwearPaths;
+                    underwearPaths_.clear();
+                    if (!faceLowerTexturePath.empty()) underwearPaths_.push_back(faceLowerTexturePath);
+                    if (!faceUpperTexturePath.empty()) underwearPaths_.push_back(faceUpperTexturePath);
+                    for (const auto& up : underwearPaths) underwearPaths_.push_back(up);
 
                     // Composite body skin + face + underwear overlays
                     {
@@ -2080,8 +2092,8 @@ void Application::spawnPlayerCharacter() {
 	        // Default geosets for the active character (match CharacterPreview logic).
 	        // Previous hardcoded values (notably always inserting 101) caused wrong hair meshes in-world.
 	        std::unordered_set<uint16_t> activeGeosets;
-	        // Body parts (group 0)
-	        for (uint16_t i = 0; i <= 18; i++) activeGeosets.insert(i);
+	        // Body parts (group 0: IDs 0-99, some models use up to 27)
+	        for (uint16_t i = 0; i <= 99; i++) activeGeosets.insert(i);
 
 	        uint8_t hairStyleId = 0;
 	        uint8_t facialId = 0;
@@ -2095,13 +2107,14 @@ void Application::spawnPlayerCharacter() {
 	        activeGeosets.insert(static_cast<uint16_t>(100 + hairStyleId + 1));
 	        // Facial hair geoset: group 2 = 200 + variation + 1
 	        activeGeosets.insert(static_cast<uint16_t>(200 + facialId + 1));
-	        activeGeosets.insert(302);   // Gloves: bare hands
-	        activeGeosets.insert(401);   // Boots: bare feet
-	        activeGeosets.insert(501);   // Chest: bare
+	        activeGeosets.insert(401);   // Bare forearms (no gloves) — group 4
+	        activeGeosets.insert(502);   // Bare shins (no boots) — group 5 (wider mesh matches thighs)
 	        activeGeosets.insert(702);   // Ears: default
-	        activeGeosets.insert(802);   // Wristbands: default
-	        activeGeosets.insert(1301);  // Trousers: bare legs
-	        activeGeosets.insert(1502);  // Back body (cloak=none)
+	        activeGeosets.insert(801);   // Bare wrists (no chest armor sleeves) — group 8
+	        activeGeosets.insert(902);   // Kneepads: default — group 9
+	        activeGeosets.insert(1301);  // Bare legs (no pants) — group 13
+	        activeGeosets.insert(1502);  // No cloak — group 15
+	        activeGeosets.insert(2002);  // Bare feet — group 20
 	        // 1703 = DK eye glow mesh — skip for normal characters
 	        // Normal eyes are part of the face texture on the body mesh
 	        charRenderer->setActiveGeosets(instanceId, activeGeosets);
@@ -3105,15 +3118,10 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                           " hands=", extra.equipDisplayId[8], " tabard=", extra.equipDisplayId[9],
                           " cape=", extra.equipDisplayId[10]);
 
-                // Use baked texture for body skin only (types 1, 2)
-                // Type 6 (hair) needs its own texture from CharSections.dbc
-                if (!extra.bakeName.empty()) {
-                    std::string bakePath = "Textures\\BakedNpcTextures\\" + extra.bakeName;
-
-                    // Build equipment texture region layers from NPC equipment display IDs
-                    // (texture-only compositing — no geoset changes to avoid invisibility bugs)
-                    std::vector<std::pair<int, std::string>> npcRegionLayers;
-                    auto npcItemDisplayDbc = assetManager->loadDBC("ItemDisplayInfo.dbc");
+                // Build equipment texture region layers from NPC equipment display IDs
+                // (texture-only compositing — no geoset changes to avoid invisibility bugs)
+                std::vector<std::pair<int, std::string>> npcRegionLayers;
+                auto npcItemDisplayDbc = assetManager->loadDBC("ItemDisplayInfo.dbc");
                     if (npcItemDisplayDbc) {
                         static const char* npcComponentDirs[] = {
                             "ArmUpperTexture", "ArmLowerTexture", "HandTexture",
@@ -3162,6 +3170,11 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                         }
                     }
 
+                // Use baked texture for body skin (types 1, 2)
+                // Type 6 (hair) needs its own texture from CharSections.dbc
+                if (!extra.bakeName.empty()) {
+                    std::string bakePath = "Textures\\BakedNpcTextures\\" + extra.bakeName;
+
                     // Composite equipment textures over baked NPC texture, or just load baked texture
                     GLuint finalTex = 0;
                     if (!npcRegionLayers.empty()) {
@@ -3188,6 +3201,79 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                     }
                 } else {
                     LOG_DEBUG("  Humanoid extra has empty bakeName, trying CharSections fallback");
+
+                    // Build skin texture from CharSections.dbc (same as player character)
+                    auto csFallbackDbc = assetManager->loadDBC("CharSections.dbc");
+                    if (csFallbackDbc) {
+                        const auto* csFL = pipeline::getActiveDBCLayout()
+                            ? pipeline::getActiveDBCLayout()->getLayout("CharSections") : nullptr;
+                        uint32_t npcRace = static_cast<uint32_t>(extra.raceId);
+                        uint32_t npcSex = static_cast<uint32_t>(extra.sexId);
+                        uint32_t npcSkin = static_cast<uint32_t>(extra.skinId);
+                        uint32_t npcFace = static_cast<uint32_t>(extra.faceId);
+                        std::string npcSkinPath, npcFaceLower, npcFaceUpper;
+                        std::vector<std::string> npcUnderwear;
+
+                        for (uint32_t r = 0; r < csFallbackDbc->getRecordCount(); r++) {
+                            uint32_t rId = csFallbackDbc->getUInt32(r, csFL ? (*csFL)["RaceID"] : 1);
+                            uint32_t sId = csFallbackDbc->getUInt32(r, csFL ? (*csFL)["SexID"] : 2);
+                            if (rId != npcRace || sId != npcSex) continue;
+
+                            uint32_t section = csFallbackDbc->getUInt32(r, csFL ? (*csFL)["BaseSection"] : 3);
+                            uint32_t variation = csFallbackDbc->getUInt32(r, csFL ? (*csFL)["VariationIndex"] : 8);
+                            uint32_t color = csFallbackDbc->getUInt32(r, csFL ? (*csFL)["ColorIndex"] : 9);
+                            uint32_t tex1F = csFL ? (*csFL)["Texture1"] : 4;
+
+                            // Section 0 = skin: match colorIndex = skinId
+                            if (section == 0 && npcSkinPath.empty() && color == npcSkin) {
+                                npcSkinPath = csFallbackDbc->getString(r, tex1F);
+                            }
+                            // Section 1 = face: match variation=faceId, color=skinId
+                            else if (section == 1 && npcFaceLower.empty() &&
+                                     variation == npcFace && color == npcSkin) {
+                                npcFaceLower = csFallbackDbc->getString(r, tex1F);
+                                npcFaceUpper = csFallbackDbc->getString(r, tex1F + 1);
+                            }
+                            // Section 4 = underwear: match color=skinId
+                            else if (section == 4 && npcUnderwear.empty() && color == npcSkin) {
+                                for (uint32_t f = tex1F; f <= tex1F + 2; f++) {
+                                    std::string tex = csFallbackDbc->getString(r, f);
+                                    if (!tex.empty()) npcUnderwear.push_back(tex);
+                                }
+                            }
+                        }
+
+                        if (!npcSkinPath.empty()) {
+                            // Composite skin + face + underwear
+                            std::vector<std::string> skinLayers;
+                            skinLayers.push_back(npcSkinPath);
+                            if (!npcFaceLower.empty()) skinLayers.push_back(npcFaceLower);
+                            if (!npcFaceUpper.empty()) skinLayers.push_back(npcFaceUpper);
+                            for (const auto& uw : npcUnderwear) skinLayers.push_back(uw);
+
+                            GLuint npcSkinTex = 0;
+                            if (!npcRegionLayers.empty()) {
+                                npcSkinTex = charRenderer->compositeWithRegions(npcSkinPath,
+                                    std::vector<std::string>(skinLayers.begin() + 1, skinLayers.end()),
+                                    npcRegionLayers);
+                            } else if (skinLayers.size() > 1) {
+                                npcSkinTex = charRenderer->compositeTextures(skinLayers);
+                            } else {
+                                npcSkinTex = charRenderer->loadTexture(npcSkinPath);
+                            }
+
+                            if (npcSkinTex != 0 && modelData) {
+                                for (size_t ti = 0; ti < modelData->textures.size(); ti++) {
+                                    uint32_t texType = modelData->textures[ti].type;
+                                    if (texType == 1 || texType == 2 || texType == 11 || texType == 12 || texType == 13) {
+                                        charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), npcSkinTex);
+                                        hasHumanoidTexture = true;
+                                    }
+                                }
+                                LOG_DEBUG("Applied CharSections skin to NPC: ", npcSkinPath);
+                            }
+                        }
+                    }
                 }
 
                 // Load hair texture from CharSections.dbc (section 3)
@@ -3329,12 +3415,13 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
             }
 
             // Default equipment geosets (bare/no armor)
-            uint16_t geosetGloves = 302;   // Bare hands
-            uint16_t geosetBoots = 401;    // Bare feet
-            uint16_t geosetChest = 501;    // Bare chest
-            uint16_t geosetPants = 1301;   // Bare legs
-            uint16_t geosetCape = 1502;    // No cape
-            uint16_t geosetTabard = 1201;  // No tabard
+            // CharGeosets: group 4=gloves(forearm), 5=boots(shin), 8=sleeves, 9=kneepads, 13=pants
+            uint16_t geosetGloves = 401;   // Bare forearms (group 4)
+            uint16_t geosetBoots = 502;    // Bare shins (group 5, wider mesh)
+            uint16_t geosetSleeves = 801;  // Bare wrists (group 8, controlled by chest)
+            uint16_t geosetPants = 1301;   // Bare legs (group 13)
+            uint16_t geosetCape = 1502;    // No cape (group 15)
+            uint16_t geosetTabard = 1201;  // No tabard (group 12)
 
             // Load equipment geosets from ItemDisplayInfo.dbc
             // DBC columns: 7=GeosetGroup[0], 8=GeosetGroup[1], 9=GeosetGroup[2]
@@ -3345,21 +3432,19 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                 const uint32_t fGG1 = idiL ? (*idiL)["GeosetGroup1"] : 7;
                 const uint32_t fGG3 = idiL ? (*idiL)["GeosetGroup3"] : 9;
 
-                // Helm (slot 0) - noted for helmet model attachment below
-
-                // Chest (slot 3) - geoset group 5xx
+                // Chest (slot 3) → group 8 (sleeves/wristbands)
                 if (extra.equipDisplayId[3] != 0) {
                     int32_t idx = itemDisplayDbc->findRecordById(extra.equipDisplayId[3]);
                     if (idx >= 0) {
                         uint32_t gg = itemDisplayDbc->getUInt32(static_cast<uint32_t>(idx), fGG1);
-                        if (gg > 0) geosetChest = static_cast<uint16_t>(501 + gg);
+                        if (gg > 0) geosetSleeves = static_cast<uint16_t>(801 + gg);
                         // Robes: GeosetGroup[2] > 0 shows kilt legs
                         uint32_t gg3 = itemDisplayDbc->getUInt32(static_cast<uint32_t>(idx), fGG3);
                         if (gg3 > 0) geosetPants = static_cast<uint16_t>(1301 + gg3);
                     }
                 }
 
-                // Legs (slot 5) - geoset group 13xx
+                // Legs (slot 5) → group 13 (trousers)
                 if (extra.equipDisplayId[5] != 0) {
                     int32_t idx = itemDisplayDbc->findRecordById(extra.equipDisplayId[5]);
                     if (idx >= 0) {
@@ -3368,37 +3453,37 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                     }
                 }
 
-                // Feet (slot 6) - geoset group 4xx
+                // Feet (slot 6) → group 5 (boots/shins)
                 if (extra.equipDisplayId[6] != 0) {
                     int32_t idx = itemDisplayDbc->findRecordById(extra.equipDisplayId[6]);
                     if (idx >= 0) {
                         uint32_t gg = itemDisplayDbc->getUInt32(static_cast<uint32_t>(idx), fGG1);
-                        if (gg > 0) geosetBoots = static_cast<uint16_t>(401 + gg);
+                        if (gg > 0) geosetBoots = static_cast<uint16_t>(501 + gg);
                     }
                 }
 
-                // Hands (slot 8) - geoset group 3xx
+                // Hands (slot 8) → group 4 (gloves/forearms)
                 if (extra.equipDisplayId[8] != 0) {
                     int32_t idx = itemDisplayDbc->findRecordById(extra.equipDisplayId[8]);
                     if (idx >= 0) {
                         uint32_t gg = itemDisplayDbc->getUInt32(static_cast<uint32_t>(idx), fGG1);
-                        if (gg > 0) geosetGloves = static_cast<uint16_t>(301 + gg);
+                        if (gg > 0) geosetGloves = static_cast<uint16_t>(401 + gg);
                     }
                 }
 
-                // Tabard (slot 9) - geoset group 12xx
+                // Tabard (slot 9) → group 12
                 if (extra.equipDisplayId[9] != 0) {
                     int32_t idx = itemDisplayDbc->findRecordById(extra.equipDisplayId[9]);
                     if (idx >= 0) {
-                        geosetTabard = 1202;  // Show tabard mesh
+                        geosetTabard = 1202;
                     }
                 }
 
-                // Cape (slot 10) - geoset group 15xx
+                // Cape (slot 10) → group 15
                 if (extra.equipDisplayId[10] != 0) {
                     int32_t idx = itemDisplayDbc->findRecordById(extra.equipDisplayId[10]);
                     if (idx >= 0) {
-                        geosetCape = 1502;  // Show cloak mesh
+                        geosetCape = 1502;
                     }
                 }
             }
@@ -3406,12 +3491,13 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
             // Apply equipment geosets
             activeGeosets.insert(geosetGloves);
             activeGeosets.insert(geosetBoots);
-            activeGeosets.insert(geosetChest);
+            activeGeosets.insert(geosetSleeves);
             activeGeosets.insert(geosetPants);
             activeGeosets.insert(geosetCape);
             activeGeosets.insert(geosetTabard);
             activeGeosets.insert(702);  // Ears: default
-            activeGeosets.insert(802);  // Wristbands: default
+            activeGeosets.insert(902);  // Kneepads: default
+            activeGeosets.insert(2002); // Bare feet mesh
 
             // Hide hair under helmets: replace style-specific scalp with bald scalp
             if (extra.equipDisplayId[0] != 0 && hairGeoset > 1) {
@@ -3440,7 +3526,7 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
             LOG_INFO("NPC geosets for instance ", instanceId, ": [", geosetList, "]");
             charRenderer->setActiveGeosets(instanceId, activeGeosets);
             LOG_DEBUG("Set humanoid geosets: hair=", (int)hairGeoset,
-                      " chest=", geosetChest, " pants=", geosetPants,
+                      " sleeves=", geosetSleeves, " pants=", geosetPants,
                       " boots=", geosetBoots, " gloves=", geosetGloves);
 
             // Load and attach helmet model if equipped
@@ -3617,6 +3703,16 @@ void Application::spawnOnlinePlayer(uint64_t guid,
     if (!renderer || !renderer->getCharacterRenderer() || !assetManager || !assetManager->isInitialized()) return;
     if (playerInstances_.count(guid)) return;
 
+    // Skip local player — already spawned as the main character
+    if (gameHandler) {
+        uint64_t localGuid = gameHandler->getPlayerGuid();
+        uint64_t activeGuid = gameHandler->getActiveCharacterGuid();
+        if ((localGuid != 0 && guid == localGuid) ||
+            (activeGuid != 0 && guid == activeGuid) ||
+            (spawnedPlayerGuid_ != 0 && guid == spawnedPlayerGuid_)) {
+            return;
+        }
+    }
     auto* charRenderer = renderer->getCharacterRenderer();
 
     // Base geometry model: cache by (race, gender)
@@ -3828,16 +3924,18 @@ void Application::spawnOnlinePlayer(uint64_t guid,
 
     // Geosets: body + hair/facial hair selections
     std::unordered_set<uint16_t> activeGeosets;
-    for (uint16_t i = 0; i <= 18; i++) activeGeosets.insert(i);
+    // Body parts (group 0: IDs 0-99, some models use up to 27)
+    for (uint16_t i = 0; i <= 99; i++) activeGeosets.insert(i);
     activeGeosets.insert(static_cast<uint16_t>(100 + hairStyleId + 1));
     activeGeosets.insert(static_cast<uint16_t>(200 + facialFeatures + 1));
-    activeGeosets.insert(302);
-    activeGeosets.insert(401);
-    activeGeosets.insert(501);
-    activeGeosets.insert(702);
-    activeGeosets.insert(802);
-    activeGeosets.insert(1301);
-    activeGeosets.insert(1502);
+    activeGeosets.insert(401);   // Bare forearms (no gloves) — group 4
+    activeGeosets.insert(502);   // Bare shins (no boots) — group 5 (wider mesh)
+    activeGeosets.insert(702);   // Ears
+    activeGeosets.insert(801);   // Bare wrists (no sleeves) — group 8
+    activeGeosets.insert(902);   // Kneepads — group 9
+    activeGeosets.insert(1301);  // Bare legs — group 13
+    activeGeosets.insert(1502);  // No cloak — group 15
+    activeGeosets.insert(2002);  // Bare feet — group 20
     charRenderer->setActiveGeosets(instanceId, activeGeosets);
 
     charRenderer->playAnimation(instanceId, 0, true);
@@ -3851,7 +3949,10 @@ void Application::spawnOnlinePlayer(uint64_t guid,
     st.appearanceBytes = appearanceBytes;
     st.facialFeatures = facialFeatures;
     st.bodySkinPath = bodySkinPath;
-    st.underwearPaths = underwearPaths;
+    // Include face textures so compositeWithRegions can rebuild the full base
+    if (!faceLowerPath.empty()) st.underwearPaths.push_back(faceLowerPath);
+    if (!faceUpperPath.empty()) st.underwearPaths.push_back(faceUpperPath);
+    for (const auto& up : underwearPaths) st.underwearPaths.push_back(up);
     onlinePlayerAppearance_[guid] = std::move(st);
 }
 
@@ -3859,6 +3960,13 @@ void Application::setOnlinePlayerEquipment(uint64_t guid,
                                           const std::array<uint32_t, 19>& displayInfoIds,
                                           const std::array<uint8_t, 19>& inventoryTypes) {
     if (!renderer || !renderer->getCharacterRenderer() || !assetManager || !assetManager->isInitialized()) return;
+
+    // Skip local player — equipment handled by GameScreen::updateCharacterGeosets/Textures
+    // via consumeOnlineEquipmentDirty(), which fires on the same server update.
+    if (gameHandler) {
+        uint64_t localGuid = gameHandler->getPlayerGuid();
+        if (localGuid != 0 && guid == localGuid) return;
+    }
 
     // If the player isn't spawned yet, store equipment until spawn.
     if (!playerInstances_.count(guid) || !onlinePlayerAppearance_.count(guid)) {
@@ -3911,12 +4019,17 @@ void Application::setOnlinePlayerEquipment(uint64_t guid,
 
     // --- Geosets ---
     std::unordered_set<uint16_t> geosets;
-    for (uint16_t i = 0; i <= 18; i++) geosets.insert(i);
+    // Body parts (group 0: IDs 0-99, some models use up to 27)
+    for (uint16_t i = 0; i <= 99; i++) geosets.insert(i);
 
     uint8_t hairStyleId = static_cast<uint8_t>((st.appearanceBytes >> 16) & 0xFF);
     geosets.insert(static_cast<uint16_t>(100 + hairStyleId + 1));
     geosets.insert(static_cast<uint16_t>(200 + st.facialFeatures + 1));
-    geosets.insert(701);
+    geosets.insert(401);   // Body joint patches (knees)
+    geosets.insert(402);   // Body joint patches (elbows)
+    geosets.insert(701);   // Ears
+    geosets.insert(902);   // Kneepads
+    geosets.insert(2002);  // Bare feet mesh
 
     const uint32_t geosetGroup1Field = idiL ? (*idiL)["GeosetGroup1"] : 7;
     const uint32_t geosetGroup3Field = idiL ? (*idiL)["GeosetGroup3"] : 9;
@@ -3940,11 +4053,11 @@ void Application::setOnlinePlayerEquipment(uint64_t guid,
         }
     }
 
-    // Feet (invType 8)
+    // Feet (invType 8): 401/402 are body patches (always on), 403+ are boot meshes
     {
         uint32_t did = findDisplayIdByInvType({8});
         uint32_t gg1 = getGeosetGroup(did, geosetGroup1Field);
-        geosets.insert(static_cast<uint16_t>(gg1 > 0 ? 401 + gg1 : 401));
+        if (gg1 > 0) geosets.insert(static_cast<uint16_t>(402 + gg1));
     }
 
     // Hands (invType 10)

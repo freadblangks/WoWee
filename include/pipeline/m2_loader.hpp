@@ -183,6 +183,9 @@ struct M2Model {
     std::vector<M2Sequence> sequences;
     std::vector<uint32_t> globalSequenceDurations;  // Per-global-sequence loop durations (ms)
 
+    // Bone lookup table (vertex bone indices reference this to get global bone index)
+    std::vector<uint16_t> boneLookupTable;
+
     // Rendering
     std::vector<M2Batch> batches;
     std::vector<M2Texture> textures;

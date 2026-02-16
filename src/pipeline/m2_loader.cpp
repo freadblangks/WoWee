@@ -966,6 +966,12 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
         model.textureLookup = readArray<uint16_t>(m2Data, header.ofsTexLookup, header.nTexLookup);
     }
 
+    // Read bone lookup table (vertex bone indices reference this to get actual bone index)
+    if (header.nBoneLookupTable > 0 && header.ofsBoneLookupTable > 0) {
+        model.boneLookupTable = readArray<uint16_t>(m2Data, header.ofsBoneLookupTable, header.nBoneLookupTable);
+        core::Logger::getInstance().debug("  BoneLookupTable: ", model.boneLookupTable.size(), " entries");
+    }
+
     // Read render flags / materials (blend modes)
     if (header.nRenderFlags > 0 && header.ofsRenderFlags > 0) {
         struct M2MaterialDisk { uint16_t flags; uint16_t blendMode; };

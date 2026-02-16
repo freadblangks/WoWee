@@ -2628,9 +2628,9 @@ void GameScreen::updateCharacterGeosets(game::Inventory& inventory) {
         return false;
     };
 
-    // Base geosets always present
+    // Base geosets always present (group 0: IDs 0-99, some models use up to 27)
     std::unordered_set<uint16_t> geosets;
-    for (uint16_t i = 0; i <= 18; i++) {
+    for (uint16_t i = 0; i <= 99; i++) {
         geosets.insert(i);
     }
     // Hair/facial geosets must match the active character's appearance, otherwise
@@ -2647,52 +2647,67 @@ void GameScreen::updateCharacterGeosets(game::Inventory& inventory) {
         geosets.insert(static_cast<uint16_t>(100 + hairStyleId + 1)); // Group 1 hair
         geosets.insert(static_cast<uint16_t>(200 + facialId + 1));    // Group 2 facial
     }
-    geosets.insert(701);  // Ears
+    geosets.insert(702);  // Ears: visible (default)
+    geosets.insert(2002); // Bare feet mesh (group 20 = CG_FEET, always on)
+
+    // CharGeosets mapping (verified via vertex bounding boxes):
+    //   Group 4 (401+) = GLOVES (forearm area, Z~1.1-1.4)
+    //   Group 5 (501+) = BOOTS  (shin area, Z~0.1-0.6)
+    //   Group 8 (801+) = WRISTBANDS/SLEEVES (controlled by chest armor)
+    //   Group 9 (901+) = KNEEPADS
+    //   Group 13 (1301+) = TROUSERS/PANTS
+    //   Group 15 (1501+) = CAPE/CLOAK
+    //   Group 20 (2002) = FEET
+
+    // Gloves: inventoryType 10 → group 4 (forearms)
+    // 401=bare forearms, 402+=glove styles covering forearm
+    {
+        uint32_t did = findEquippedDisplayId({10});
+        uint32_t gg = getGeosetGroup(did, 0);
+        geosets.insert(static_cast<uint16_t>(gg > 0 ? 401 + gg : 401));
+    }
+
+    // Boots: inventoryType 8 → group 5 (shins/lower legs)
+    // 501=narrow bare shin, 502=wider (matches thigh width better). Use 502 as bare default.
+    // When boots equipped, gg selects boot style: 501+gg (gg=1→502, gg=2→503, etc.)
+    {
+        uint32_t did = findEquippedDisplayId({8});
+        uint32_t gg = getGeosetGroup(did, 0);
+        geosets.insert(static_cast<uint16_t>(gg > 0 ? 501 + gg : 502));
+    }
 
     // Chest/Shirt: inventoryType 4 (shirt), 5 (chest), 20 (robe)
-    // geosetGroup_1 > 0 → use mesh variant (502+), otherwise bare (501) + texture only
+    // Controls group 8 (wristbands/sleeve length): 801=bare wrists, 802+=sleeve styles
+    // Also controls group 13 (trousers) via GeosetGroup[2] for robes
     {
         uint32_t did = findEquippedDisplayId({4, 5, 20});
         uint32_t gg = getGeosetGroup(did, 0);
-        geosets.insert(static_cast<uint16_t>(gg > 0 ? 501 + gg : (did > 0 ? 501 : 501)));
-        // geosetGroup_3 > 0 on robes also shows kilt legs (1302)
+        geosets.insert(static_cast<uint16_t>(gg > 0 ? 801 + gg : 801));
+        // Robe kilt: GeosetGroup[2] > 0 → show kilt legs (1302+)
         uint32_t gg3 = getGeosetGroup(did, 2);
         if (gg3 > 0) {
             geosets.insert(static_cast<uint16_t>(1301 + gg3));
         }
     }
 
-    // Legs: inventoryType 7
-    // geosetGroup_1 > 0 → kilt/skirt mesh (1302+), otherwise bare legs (1301) + texture
+    // Kneepads: group 9 (always default 902)
+    geosets.insert(902);
+
+    // Legs/Pants: inventoryType 7 → group 13 (trousers/thighs)
+    // 1301=bare legs, 1302+=pant/kilt styles
     {
         uint32_t did = findEquippedDisplayId({7});
         uint32_t gg = getGeosetGroup(did, 0);
-        // Only add leg geoset if robe hasn't already set a kilt geoset
+        // Only add if robe hasn't already set a kilt geoset
         if (geosets.count(1302) == 0 && geosets.count(1303) == 0) {
             geosets.insert(static_cast<uint16_t>(gg > 0 ? 1301 + gg : 1301));
         }
     }
 
-    // Feet/Boots: inventoryType 8
-    // geosetGroup_1 > 0 → boot mesh (402+), otherwise bare feet (401) + texture
-    {
-        uint32_t did = findEquippedDisplayId({8});
-        uint32_t gg = getGeosetGroup(did, 0);
-        geosets.insert(static_cast<uint16_t>(gg > 0 ? 401 + gg : 401));
-    }
-
-    // Gloves/Hands: inventoryType 10
-    // geosetGroup_1 > 0 → glove mesh (302+), otherwise bare hands (301)
-    {
-        uint32_t did = findEquippedDisplayId({10});
-        uint32_t gg = getGeosetGroup(did, 0);
-        geosets.insert(static_cast<uint16_t>(gg > 0 ? 301 + gg : 301));
-    }
-
-    // Back/Cloak: inventoryType 16 — geoset only, no skin texture (cloaks are separate models)
+    // Back/Cloak: inventoryType 16 → group 15
     geosets.insert(hasEquippedType({16}) ? 1502 : 1501);
 
-    // Tabard: inventoryType 19
+    // Tabard: inventoryType 19 → group 12
     if (hasEquippedType({19})) {
         geosets.insert(1201);
     }
@@ -2789,15 +2804,28 @@ void GameScreen::updateCharacterTextures(game::Inventory& inventory) {
         }
     }
 
+    // TEMP: log region layers for debugging
+    {
+        static const char* regionNames[] = {"ArmUpper","ArmLower","Hand","TorsoUpper","TorsoLower","LegUpper","LegLower","Foot"};
+        for (const auto& rl : regionLayers) {
+            LOG_INFO("TEX_REGION: region=", rl.first, "(", (rl.first < 8 ? regionNames[rl.first] : "?"), ") path=", rl.second);
+        }
+        LOG_INFO("TEX_REGION: total=", regionLayers.size(), " regions, baseSkin=", bodySkinPath);
+    }
+
     // Re-composite: base skin + underwear + equipment regions
+    // Clear composite cache first to prevent stale textures from being reused
+    charRenderer->clearCompositeCache();
+    // Use per-instance texture override (not model-level) to avoid deleting cached composites.
+    uint32_t instanceId = renderer->getCharacterInstanceId();
     GLuint newTex = charRenderer->compositeWithRegions(bodySkinPath, underwearPaths, regionLayers);
-    if (newTex != 0) {
-        charRenderer->setModelTexture(1, skinSlot, newTex);
+    if (newTex != 0 && instanceId != 0) {
+        charRenderer->setTextureSlotOverride(instanceId, static_cast<uint16_t>(skinSlot), newTex);
     }
 
     // Cloak cape texture — separate from skin atlas, uses texture slot type-2 (Object Skin)
     uint32_t cloakSlot = app.getCloakTextureSlotIndex();
-    if (cloakSlot > 0) {
+    if (cloakSlot > 0 && instanceId != 0) {
         // Find equipped cloak (inventoryType 16)
         uint32_t cloakDisplayId = 0;
         for (int s = 0; s < game::Inventory::NUM_EQUIP_SLOTS; s++) {
@@ -2818,14 +2846,14 @@ void GameScreen::updateCharacterTextures(game::Inventory& inventory) {
                     std::string capePath = "Item\\ObjectComponents\\Cape\\" + capeName + ".blp";
                     GLuint capeTex = charRenderer->loadTexture(capePath);
                     if (capeTex != 0) {
-                        charRenderer->setModelTexture(1, cloakSlot, capeTex);
+                        charRenderer->setTextureSlotOverride(instanceId, static_cast<uint16_t>(cloakSlot), capeTex);
                         LOG_INFO("Cloak texture applied: ", capePath);
                     }
                 }
             }
         } else {
-            // No cloak equipped — reset to white fallback
-            charRenderer->resetModelTexture(1, cloakSlot);
+            // No cloak equipped — clear override so model's default (white) shows
+            charRenderer->clearTextureSlotOverride(instanceId, static_cast<uint16_t>(cloakSlot));
         }
     }
 }

@@ -210,6 +210,9 @@ public:
                                 const std::vector<std::string>& baseLayers,
                                 const std::vector<std::pair<int, std::string>>& regionLayers);
 
+    /** Clear the composite texture cache (forces re-compositing on next call). */
+    void clearCompositeCache();
+
     /** Load a BLP texture from MPQ and return the GL texture ID (cached). */
     GLuint loadTexture(const std::string& path);
 
@@ -259,7 +262,8 @@ private:
     uint32_t nextInstanceId = 1;
 
     // Maximum bones supported (GPU uniform limit)
-    static constexpr int MAX_BONES = 200;
+    // WoW character models can have 210+ bones; GPU reports 4096 components (~256 mat4)
+    static constexpr int MAX_BONES = 240;
 };
 
 } // namespace rendering

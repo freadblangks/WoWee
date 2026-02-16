@@ -333,13 +333,14 @@ bool CharacterPreview::loadCharacter(game::Race race, game::Gender gender,
     activeGeosets.insert(static_cast<uint16_t>(100 + hairStyle + 1));
     // Facial hair geoset: group 2 = 200 + variation + 1
     activeGeosets.insert(static_cast<uint16_t>(200 + facialHair + 1));
-    activeGeosets.insert(302);   // Gloves: bare hands
-    activeGeosets.insert(401);   // Boots: bare feet
-    activeGeosets.insert(501);   // Chest: bare
+    activeGeosets.insert(401);   // Bare forearms (no gloves) — group 4
+    activeGeosets.insert(502);   // Bare shins (no boots) — group 5 (wider mesh)
     activeGeosets.insert(702);   // Ears: default
-    activeGeosets.insert(802);   // Wristbands: default
-    activeGeosets.insert(1301);  // Trousers: bare legs
-    activeGeosets.insert(1502);  // Back body (cloak=none)
+    activeGeosets.insert(801);   // Bare wrists (no sleeves) — group 8
+    activeGeosets.insert(902);   // Kneepads: default — group 9
+    activeGeosets.insert(1301);  // Bare legs (no pants) — group 13
+    activeGeosets.insert(1502);  // No cloak — group 15
+    activeGeosets.insert(2002);  // Bare feet mesh — group 20
     charRenderer_->setActiveGeosets(instanceId_, activeGeosets);
 
     // Play idle animation (Stand = animation ID 0)
@@ -412,44 +413,46 @@ bool CharacterPreview::applyEquipment(const std::vector<game::EquipmentItem>& eq
     geosets.insert(static_cast<uint16_t>(100 + hairStyle_ + 1));    // Hair style
     geosets.insert(static_cast<uint16_t>(200 + facialHair_ + 1));  // Facial hair
     geosets.insert(701);   // Ears
+    geosets.insert(902);   // Kneepads: default (group 9)
+    geosets.insert(2002);  // Bare feet mesh (group 20 = CG_FEET)
 
-    // Default naked geosets
-    uint16_t geosetGloves = 301;
-    uint16_t geosetBoots = 401;
-    uint16_t geosetChest = 501;
-    uint16_t geosetPants = 1301;
+    // CharGeosets: group 4=gloves(forearm), 5=boots(shin), 8=sleeves, 13=pants
+    uint16_t geosetGloves = 401;   // Bare forearms (group 4)
+    uint16_t geosetBoots = 502;    // Bare shins (group 5, wider mesh)
+    uint16_t geosetSleeves = 801;  // Bare wrists (group 8)
+    uint16_t geosetPants = 1301;   // Bare legs (group 13)
 
-    // Chest/Shirt/Robe
+    // Chest/Shirt/Robe → group 8 (sleeves)
     {
         uint32_t did = findDisplayId({4, 5, 20});
         uint32_t gg = getGeosetGroup(did, 0);
-        if (gg > 0) geosetChest = static_cast<uint16_t>(501 + gg);
+        if (gg > 0) geosetSleeves = static_cast<uint16_t>(801 + gg);
         // Robe kilt legs
         uint32_t gg3 = getGeosetGroup(did, 2);
         if (gg3 > 0) geosetPants = static_cast<uint16_t>(1301 + gg3);
     }
-    // Legs
+    // Legs → group 13 (trousers)
     {
         uint32_t did = findDisplayId({7});
         uint32_t gg = getGeosetGroup(did, 0);
         if (gg > 0) geosetPants = static_cast<uint16_t>(1301 + gg);
     }
-    // Feet
+    // Boots → group 5 (shins)
     {
         uint32_t did = findDisplayId({8});
         uint32_t gg = getGeosetGroup(did, 0);
-        if (gg > 0) geosetBoots = static_cast<uint16_t>(401 + gg);
+        if (gg > 0) geosetBoots = static_cast<uint16_t>(501 + gg);
     }
-    // Hands
+    // Gloves → group 4 (forearms)
     {
         uint32_t did = findDisplayId({10});
         uint32_t gg = getGeosetGroup(did, 0);
-        if (gg > 0) geosetGloves = static_cast<uint16_t>(301 + gg);
+        if (gg > 0) geosetGloves = static_cast<uint16_t>(401 + gg);
     }
 
     geosets.insert(geosetGloves);
     geosets.insert(geosetBoots);
-    geosets.insert(geosetChest);
+    geosets.insert(geosetSleeves);
     geosets.insert(geosetPants);
     geosets.insert(hasInvType({16}) ? 1502 : 1501); // Cloak mesh toggle (visual may still be limited)
     if (hasInvType({19})) geosets.insert(1201);     // Tabard mesh toggle

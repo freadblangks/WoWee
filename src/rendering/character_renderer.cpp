@@ -78,7 +78,7 @@ bool CharacterRenderer::initialize() {
         uniform mat4 uModel;
         uniform mat4 uView;
         uniform mat4 uProjection;
-        uniform mat4 uBones[200];
+        uniform mat4 uBones[240];
 
         out vec3 FragPos;
         out vec3 Normal;
@@ -205,7 +205,7 @@ bool CharacterRenderer::initialize() {
 
         uniform mat4 uLightSpaceMatrix;
         uniform mat4 uModel;
-        uniform mat4 uBones[200];
+        uniform mat4 uBones[240];
 
         out vec2 vTexCoord;
 
@@ -556,20 +556,7 @@ GLuint CharacterRenderer::compositeTextures(const std::vector<std::string>& laye
     // Debug dump removed: it was always-on and could stall badly under load.
 
     // Debug: dump first composite to /tmp for visual inspection
-    {
-        static bool dumped = false;
-        if (!dumped && layerPaths.size() > 1) {
-            dumped = true;
-            std::string dumpPath = "/tmp/wowee_composite_debug.raw";
-            FILE* f = fopen(dumpPath.c_str(), "wb");
-            if (f) {
-                fwrite(composite.data(), 1, composite.size(), f);
-                fclose(f);
-                core::Logger::getInstance().info("DEBUG: dumped composite ", width, "x", height,
-                    " RGBA to ", dumpPath);
-            }
-        }
-    }
+
 
     // Upload composite to GPU
     GLuint texId;
@@ -586,6 +573,26 @@ GLuint CharacterRenderer::compositeTextures(const std::vector<std::string>& laye
 
     core::Logger::getInstance().info("Composite texture created: ", width, "x", height, " from ", layerPaths.size(), " layers");
     return texId;
+}
+
+void CharacterRenderer::clearCompositeCache() {
+    // Delete GPU textures that aren't referenced by any model's texture slots
+    for (auto& [key, texId] : compositeCache_) {
+        if (texId && texId != whiteTexture) {
+            // Check if any model still references this texture
+            bool inUse = false;
+            for (const auto& [mid, gm] : models) {
+                for (GLuint tid : gm.textureIds) {
+                    if (tid == texId) { inUse = true; break; }
+                }
+                if (inUse) break;
+            }
+            if (!inUse) {
+                glDeleteTextures(1, &texId);
+            }
+        }
+    }
+    compositeCache_.clear();
 }
 
 GLuint CharacterRenderer::compositeWithRegions(const std::string& basePath,
@@ -606,16 +613,17 @@ GLuint CharacterRenderer::compositeWithRegions(const std::string& basePath,
         return cacheIt->second;
     }
 
-    // Region index → pixel coordinates on the 512x512 atlas
-    static const int regionCoords[][2] = {
+    // Region index → pixel coordinates on the 256x256 base atlas
+    // These are scaled up by (width/256, height/256) for larger textures (512x512, 1024x1024)
+    static const int regionCoords256[][2] = {
         {   0,   0 },  // 0 = ArmUpper
-        {   0, 128 },  // 1 = ArmLower
-        {   0, 256 },  // 2 = Hand
-        { 256,   0 },  // 3 = TorsoUpper
-        { 256, 128 },  // 4 = TorsoLower
-        { 256, 192 },  // 5 = LegUpper
-        { 256, 320 },  // 6 = LegLower
-        { 256, 448 },  // 7 = Foot
+        {   0,  64 },  // 1 = ArmLower
+        {   0, 128 },  // 2 = Hand
+        { 128,   0 },  // 3 = TorsoUpper
+        { 128,  64 },  // 4 = TorsoLower
+        { 128,  96 },  // 5 = LegUpper
+        { 128, 160 },  // 6 = LegLower
+        { 128, 224 },  // 7 = Foot
     };
 
     // First, build base skin + underwear using existing compositeTextures
@@ -637,6 +645,8 @@ GLuint CharacterRenderer::compositeWithRegions(const std::string& basePath,
     std::vector<uint8_t> composite;
     int width = base.width;
     int height = base.height;
+
+
 
     // If base texture is 256x256 (e.g., baked NPC texture), upscale to 512x512
     // so equipment regions can be composited at correct coordinates
@@ -663,8 +673,8 @@ GLuint CharacterRenderer::compositeWithRegions(const std::string& basePath,
     }
 
     // Blend face + underwear overlays
-    // These are native-resolution textures (designed for 256x256 base).
-    // If we upscaled the base to 512x512, use blitOverlayScaled2x and 2x coords.
+    // If we upscaled from 256→512, scale coords and texels with blitOverlayScaled2x.
+    // For native 512/1024 textures, face overlays are full atlas size (hit width==width branch).
     bool upscaled = (base.width == 256 && base.height == 256 && width == 512);
     for (const auto& ul : baseLayers) {
         if (ul.empty()) continue;
@@ -678,6 +688,11 @@ GLuint CharacterRenderer::compositeWithRegions(const std::string& basePath,
             int dstX = 0, dstY = 0;
             std::string pathLower = ul;
             for (auto& c : pathLower) c = std::tolower(c);
+
+            // Scale factor from 256-base coordinates to actual canvas size
+            int coordScale = width / 256;
+            if (coordScale < 1) coordScale = 1;
+            bool useScale = true;
 
             if (pathLower.find("faceupper") != std::string::npos) {
                 dstX = 0; dstY = 160;
@@ -698,14 +713,19 @@ GLuint CharacterRenderer::compositeWithRegions(const std::string& basePath,
             } else if (pathLower.find("legupper") != std::string::npos || pathLower.find("leg") != std::string::npos) {
                 dstX = 128; dstY = 160;
             } else {
-                dstX = (base.width - overlay.width) / 2;
-                dstY = (base.height - overlay.height) / 2;
+                // Fallback: center overlay on canvas (already in canvas coords)
+                dstX = (width - overlay.width) / 2;
+                dstY = (height - overlay.height) / 2;
+                useScale = false;
+            }
+
+            if (useScale) {
+                dstX *= coordScale;
+                dstY *= coordScale;
             }
 
             if (upscaled) {
-                // Scale coords and texels to match 512x512 canvas
-                dstX *= 2;
-                dstY *= 2;
+                // Overlay is 256-base sized, needs 2x texel scaling for 512 canvas
                 blitOverlayScaled2x(composite, width, height, overlay, dstX, dstY);
             } else {
                 blitOverlay(composite, width, height, overlay, dstX, dstY);
@@ -713,17 +733,23 @@ GLuint CharacterRenderer::compositeWithRegions(const std::string& basePath,
         }
     }
 
-    // Expected region sizes on the 512x512 atlas
-    static const int regionSizes[][2] = {
-        { 256, 128 },  // 0 = ArmUpper
-        { 256, 128 },  // 1 = ArmLower
-        { 256,  64 },  // 2 = Hand
-        { 256, 128 },  // 3 = TorsoUpper
-        { 256,  64 },  // 4 = TorsoLower
-        { 256, 128 },  // 5 = LegUpper
-        { 256, 128 },  // 6 = LegLower
-        { 256,  64 },  // 7 = Foot
+    // Expected region sizes on the 256x256 base atlas (scaled like coords)
+    static const int regionSizes256[][2] = {
+        { 128,  64 },  // 0 = ArmUpper
+        { 128,  64 },  // 1 = ArmLower
+        { 128,  32 },  // 2 = Hand
+        { 128,  64 },  // 3 = TorsoUpper
+        { 128,  32 },  // 4 = TorsoLower
+        { 128,  64 },  // 5 = LegUpper
+        { 128,  64 },  // 6 = LegLower
+        { 128,  32 },  // 7 = Foot
     };
+
+    // Scale factor from 256-base to actual texture size
+    int scaleX = width / 256;
+    int scaleY = height / 256;
+    if (scaleX < 1) scaleX = 1;
+    if (scaleY < 1) scaleY = 1;
 
     // Now blit equipment region textures at explicit coordinates
     for (const auto& rl : regionLayers) {
@@ -736,12 +762,12 @@ GLuint CharacterRenderer::compositeWithRegions(const std::string& basePath,
             continue;
         }
 
-        int dstX = regionCoords[regionIdx][0];
-        int dstY = regionCoords[regionIdx][1];
+        int dstX = regionCoords256[regionIdx][0] * scaleX;
+        int dstY = regionCoords256[regionIdx][1] * scaleY;
 
-        // Component textures are stored at half resolution — scale 2x if needed
-        int expectedW = regionSizes[regionIdx][0];
-        int expectedH = regionSizes[regionIdx][1];
+        // Expected full-resolution size for this region at current atlas scale
+        int expectedW = regionSizes256[regionIdx][0] * scaleX;
+        int expectedH = regionSizes256[regionIdx][1] * scaleY;
         if (overlay.width * 2 == expectedW && overlay.height * 2 == expectedH) {
             blitOverlayScaled2x(composite, width, height, overlay, dstX, dstY);
         } else {
@@ -750,6 +776,26 @@ GLuint CharacterRenderer::compositeWithRegions(const std::string& basePath,
 
         core::Logger::getInstance().debug("compositeWithRegions: region ", regionIdx,
             " at (", dstX, ",", dstY, ") ", overlay.width, "x", overlay.height, " from ", rl.second);
+    }
+
+    // Debug: dump composite to /tmp for visual inspection
+    {
+        static int dumpCount = 0;
+        if (dumpCount < 6) {
+            dumpCount++;
+            std::string dumpPath = "/tmp/wowee_composite_" + std::to_string(dumpCount) + ".ppm";
+            FILE* f = fopen(dumpPath.c_str(), "wb");
+            if (f) {
+                fprintf(f, "P6\n%d %d\n255\n", width, height);
+                for (int i = 0; i < width * height; i++) {
+                    fputc(composite[i * 4 + 0], f);
+                    fputc(composite[i * 4 + 1], f);
+                    fputc(composite[i * 4 + 2], f);
+                }
+                fclose(f);
+                core::Logger::getInstance().info("compositeWithRegions: dumped to ", dumpPath);
+            }
+        }
     }
 
     // Upload to GPU
@@ -840,6 +886,37 @@ bool CharacterRenderer::loadModel(const pipeline::M2Model& model, uint32_t id) {
     core::Logger::getInstance().debug("Loaded M2 model ", id, " (", model.vertices.size(),
                        " verts, ", model.bones.size(), " bones, ", model.sequences.size(),
                        " anims, ", model.textures.size(), " textures)");
+
+    // Debug: dump vertex bounding boxes per submesh group for player model
+    if (id == 1) {
+        core::Logger::getInstance().info("MODEL1_VERSION: ", model.version);
+        std::map<uint16_t, std::array<float,6>> groupBounds; // group -> minX,minY,minZ,maxX,maxY,maxZ
+        for (const auto& b : model.batches) {
+            uint16_t grp = b.submeshId;
+            for (uint32_t idx = b.indexStart; idx < b.indexStart + b.indexCount && idx < model.indices.size(); idx++) {
+                uint16_t vi = model.indices[idx];
+                if (vi >= model.vertices.size()) continue;
+                const auto& v = model.vertices[vi];
+                auto it = groupBounds.find(grp);
+                if (it == groupBounds.end()) {
+                    groupBounds[grp] = {v.position.x, v.position.y, v.position.z,
+                                        v.position.x, v.position.y, v.position.z};
+                } else {
+                    auto& bb = it->second;
+                    bb[0] = std::min(bb[0], v.position.x);
+                    bb[1] = std::min(bb[1], v.position.y);
+                    bb[2] = std::min(bb[2], v.position.z);
+                    bb[3] = std::max(bb[3], v.position.x);
+                    bb[4] = std::max(bb[4], v.position.y);
+                    bb[5] = std::max(bb[5], v.position.z);
+                }
+            }
+        }
+        for (const auto& [grp, bb] : groupBounds) {
+            core::Logger::getInstance().info("MODEL1_BOUNDS: submesh=", grp,
+                " X[", bb[0], "..", bb[3], "] Y[", bb[1], "..", bb[4], "] Z[", bb[2], "..", bb[5], "]");
+        }
+    }
 
     return true;
 }
@@ -1367,11 +1444,24 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
 	                    if (texSlot >= gm.textureIds.size()) continue;
 
 	                    GLuint texId = gm.textureIds[texSlot];
-                        auto itO = inst.textureSlotOverrides.find(texSlot);
-                        if (itO != inst.textureSlotOverrides.end() && itO->second != 0) {
-                            texId = itO->second;
-                        }
 	                    uint32_t texType = (texSlot < gm.data.textures.size()) ? gm.data.textures[texSlot].type : 0;
+                        // Apply texture slot overrides.
+                        // For type-1 (skin) overrides, only apply to skin-group batches
+                        // to prevent the skin composite from bleeding onto cloak/hair.
+                        {
+                            auto itO = inst.textureSlotOverrides.find(texSlot);
+                            if (itO != inst.textureSlotOverrides.end() && itO->second != 0) {
+                                if (texType == 1) {
+                                    // Only apply skin override to skin groups
+                                    uint16_t grp = b.submeshId / 100;
+                                    bool isSkinGroup = (grp == 0 || grp == 3 || grp == 4 || grp == 5 ||
+                                                        grp == 8 || grp == 9 || grp == 13 || grp == 20);
+                                    if (isSkinGroup) texId = itO->second;
+                                } else {
+                                    texId = itO->second;
+                                }
+                            }
+                        }
 
 	                    if (!hasFirst) {
 	                        first = {texId, texType};
@@ -1440,14 +1530,17 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
 	                // Resolve texture for this batch (prefer hair textures for hair geosets).
 	                GLuint texId = resolveBatchTexture(instance, gpuModel, batch);
 
-                // For body parts with white/fallback texture, use skin (type 1) texture
-                // This handles humanoid models where some body parts use different texture slots
-                // that may not be set (e.g., baked NPC textures only set slot 0)
-                // Only apply to body skin slots (type 1), NOT hair (type 6) or other types
+
+
+                // For body/equipment parts with white/fallback texture, use skin (type 1) texture.
+                // Groups that share the body skin atlas: 0=body, 3=gloves, 4=boots, 5=chest,
+                // 8=wristbands, 9=pelvis, 13=pants. Hair (group 1) and facial hair (group 2) do NOT.
                 if (texId == whiteTexture) {
                     uint16_t group = batch.submeshId / 100;
-                    if (group == 0) {
-                        // Check if this batch's texture slot is a body skin type
+                    bool isSkinGroup = (group == 0 || group == 3 || group == 4 || group == 5 ||
+                                        group == 8 || group == 9 || group == 13);
+                    if (isSkinGroup) {
+                        // Check if this batch's texture slot is a hair type (don't override hair)
                         uint32_t texType = 0;
                         if (batch.textureIndex < gpuModel.data.textureLookup.size()) {
                             uint16_t lk = gpuModel.data.textureLookup[batch.textureIndex];
@@ -1455,7 +1548,6 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
                                 texType = gpuModel.data.textures[lk].type;
                             }
                         }
-                        // Only fall back for body skin (type 1), underwear (type 8), or cloak (type 2)
                         // Do NOT apply skin composite to hair (type 6) batches
                         if (texType != 6) {
                             for (size_t ti = 0; ti < gpuModel.textureIds.size(); ti++) {

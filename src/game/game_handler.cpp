@@ -3347,7 +3347,9 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     }
                 // Trigger creature spawn callback for units/players with displayId
                     if ((block.objectType == ObjectType::UNIT || block.objectType == ObjectType::PLAYER) && unit->getDisplayId() != 0) {
-                        if (block.objectType == ObjectType::PLAYER && block.guid != playerGuid) {
+                        if (block.objectType == ObjectType::PLAYER && block.guid == playerGuid) {
+                            // Skip local player — spawned separately via spawnPlayerCharacter()
+                        } else if (block.objectType == ObjectType::PLAYER) {
                             if (playerSpawnCallback_) {
                                 uint8_t race = 0, gender = 0, facial = 0;
                                 uint32_t appearanceBytes = 0;
@@ -3725,7 +3727,9 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             displayIdChanged &&
                             unit->getDisplayId() != 0 &&
                             unit->getDisplayId() != oldDisplayId) {
-                            if (entity->getType() == ObjectType::PLAYER && block.guid != playerGuid) {
+                            if (entity->getType() == ObjectType::PLAYER && block.guid == playerGuid) {
+                                // Skip local player — spawned separately
+                            } else if (entity->getType() == ObjectType::PLAYER) {
                                 if (playerSpawnCallback_) {
                                     uint8_t race = 0, gender = 0, facial = 0;
                                     uint32_t appearanceBytes = 0;

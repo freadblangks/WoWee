@@ -186,7 +186,8 @@ void InventoryScreen::updatePreviewEquipment(game::Inventory& inventory) {
     };
 
     std::unordered_set<uint16_t> geosets;
-    for (uint16_t i = 0; i <= 18; i++) geosets.insert(i);
+    // Body parts (group 0: IDs 0-99, some models use up to 27)
+    for (uint16_t i = 0; i <= 99; i++) geosets.insert(i);
 
     // Hair geoset: group 1 = 100 + hairStyle + 1
     geosets.insert(static_cast<uint16_t>(100 + playerHairStyle_ + 1));

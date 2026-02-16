@@ -2108,7 +2108,7 @@ void Application::spawnPlayerCharacter() {
 	        // Facial hair geoset: group 2 = 200 + variation + 1
 	        activeGeosets.insert(static_cast<uint16_t>(200 + facialId + 1));
 	        activeGeosets.insert(401);   // Bare forearms (no gloves) — group 4
-	        activeGeosets.insert(502);   // Bare shins (no boots) — group 5 (wider mesh matches thighs)
+	        activeGeosets.insert(502);   // Bare shins (no boots) — group 5
 	        activeGeosets.insert(702);   // Ears: default
 	        activeGeosets.insert(801);   // Bare wrists (no chest armor sleeves) — group 8
 	        activeGeosets.insert(902);   // Kneepads: default — group 9
@@ -3417,7 +3417,7 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
             // Default equipment geosets (bare/no armor)
             // CharGeosets: group 4=gloves(forearm), 5=boots(shin), 8=sleeves, 9=kneepads, 13=pants
             uint16_t geosetGloves = 401;   // Bare forearms (group 4)
-            uint16_t geosetBoots = 502;    // Bare shins (group 5, wider mesh)
+            uint16_t geosetBoots = 502;    // Bare shins (group 5)
             uint16_t geosetSleeves = 801;  // Bare wrists (group 8, controlled by chest)
             uint16_t geosetPants = 1301;   // Bare legs (group 13)
             uint16_t geosetCape = 1502;    // No cape (group 15)
@@ -3929,7 +3929,7 @@ void Application::spawnOnlinePlayer(uint64_t guid,
     activeGeosets.insert(static_cast<uint16_t>(100 + hairStyleId + 1));
     activeGeosets.insert(static_cast<uint16_t>(200 + facialFeatures + 1));
     activeGeosets.insert(401);   // Bare forearms (no gloves) — group 4
-    activeGeosets.insert(502);   // Bare shins (no boots) — group 5 (wider mesh)
+    activeGeosets.insert(502);   // Bare shins (no boots) — group 5
     activeGeosets.insert(702);   // Ears
     activeGeosets.insert(801);   // Bare wrists (no sleeves) — group 8
     activeGeosets.insert(902);   // Kneepads — group 9

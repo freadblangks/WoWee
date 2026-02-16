@@ -334,7 +334,7 @@ bool CharacterPreview::loadCharacter(game::Race race, game::Gender gender,
     // Facial hair geoset: group 2 = 200 + variation + 1
     activeGeosets.insert(static_cast<uint16_t>(200 + facialHair + 1));
     activeGeosets.insert(401);   // Bare forearms (no gloves) — group 4
-    activeGeosets.insert(502);   // Bare shins (no boots) — group 5 (wider mesh)
+    activeGeosets.insert(502);   // Bare shins (no boots) — group 5
     activeGeosets.insert(702);   // Ears: default
     activeGeosets.insert(801);   // Bare wrists (no sleeves) — group 8
     activeGeosets.insert(902);   // Kneepads: default — group 9
@@ -418,7 +418,7 @@ bool CharacterPreview::applyEquipment(const std::vector<game::EquipmentItem>& eq
 
     // CharGeosets: group 4=gloves(forearm), 5=boots(shin), 8=sleeves, 13=pants
     uint16_t geosetGloves = 401;   // Bare forearms (group 4)
-    uint16_t geosetBoots = 502;    // Bare shins (group 5, wider mesh)
+    uint16_t geosetBoots = 502;    // Bare shins (group 5)
     uint16_t geosetSleeves = 801;  // Bare wrists (group 8)
     uint16_t geosetPants = 1301;   // Bare legs (group 13)
 

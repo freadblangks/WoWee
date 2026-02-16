@@ -251,6 +251,7 @@ private:
     };
     std::unordered_map<std::string, TextureCacheEntry> textureCache;
     std::unordered_map<std::string, GLuint> compositeCache_;  // key → GPU texture for reuse
+    std::unordered_set<std::string> failedTextureCache_;  // negative cache for missing textures
     size_t textureCacheBytes_ = 0;
     uint64_t textureCacheCounter_ = 0;
     size_t textureCacheBudgetBytes_ = 1024ull * 1024 * 1024;  // Default, overridden at init

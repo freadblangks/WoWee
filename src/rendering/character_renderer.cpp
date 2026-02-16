@@ -357,11 +357,15 @@ GLuint CharacterRenderer::loadTexture(const std::string& path) {
         return whiteTexture;
     }
 
+    // Check negative cache to avoid repeated file I/O for textures that don't exist
+    if (failedTextureCache_.count(key)) {
+        return whiteTexture;
+    }
+
     auto blpImage = assetManager->loadTexture(key);
     if (!blpImage.isValid()) {
         core::Logger::getInstance().warning("Failed to load texture: ", path);
-        // Do not cache failures as white. Some asset reads can fail transiently and
-        // we want later retries (e.g., mount skins loaded shortly after model spawn).
+        failedTextureCache_.insert(key);
         return whiteTexture;
     }
 
@@ -552,11 +556,6 @@ GLuint CharacterRenderer::compositeTextures(const std::vector<std::string>& laye
             blitOverlay(composite, width, height, overlay, dstX, dstY);
         }
     }
-
-    // Debug dump removed: it was always-on and could stall badly under load.
-
-    // Debug: dump first composite to /tmp for visual inspection
-
 
     // Upload composite to GPU
     GLuint texId;
@@ -765,26 +764,6 @@ GLuint CharacterRenderer::compositeWithRegions(const std::string& basePath,
             " at (", dstX, ",", dstY, ") ", overlay.width, "x", overlay.height, " from ", rl.second);
     }
 
-    // Debug: dump composite to /tmp for visual inspection
-    {
-        static int dumpCount = 0;
-        if (dumpCount < 6) {
-            dumpCount++;
-            std::string dumpPath = "/tmp/wowee_composite_" + std::to_string(dumpCount) + ".ppm";
-            FILE* f = fopen(dumpPath.c_str(), "wb");
-            if (f) {
-                fprintf(f, "P6\n%d %d\n255\n", width, height);
-                for (int i = 0; i < width * height; i++) {
-                    fputc(composite[i * 4 + 0], f);
-                    fputc(composite[i * 4 + 1], f);
-                    fputc(composite[i * 4 + 2], f);
-                }
-                fclose(f);
-                core::Logger::getInstance().info("compositeWithRegions: dumped to ", dumpPath);
-            }
-        }
-    }
-
     // Upload to GPU
     GLuint texId;
     glGenTextures(1, &texId);
@@ -873,37 +852,6 @@ bool CharacterRenderer::loadModel(const pipeline::M2Model& model, uint32_t id) {
     core::Logger::getInstance().debug("Loaded M2 model ", id, " (", model.vertices.size(),
                        " verts, ", model.bones.size(), " bones, ", model.sequences.size(),
                        " anims, ", model.textures.size(), " textures)");
-
-    // Debug: dump vertex bounding boxes per submesh group for player model
-    if (id == 1) {
-        core::Logger::getInstance().info("MODEL1_VERSION: ", model.version);
-        std::map<uint16_t, std::array<float,6>> groupBounds; // group -> minX,minY,minZ,maxX,maxY,maxZ
-        for (const auto& b : model.batches) {
-            uint16_t grp = b.submeshId;
-            for (uint32_t idx = b.indexStart; idx < b.indexStart + b.indexCount && idx < model.indices.size(); idx++) {
-                uint16_t vi = model.indices[idx];
-                if (vi >= model.vertices.size()) continue;
-                const auto& v = model.vertices[vi];
-                auto it = groupBounds.find(grp);
-                if (it == groupBounds.end()) {
-                    groupBounds[grp] = {v.position.x, v.position.y, v.position.z,
-                                        v.position.x, v.position.y, v.position.z};
-                } else {
-                    auto& bb = it->second;
-                    bb[0] = std::min(bb[0], v.position.x);
-                    bb[1] = std::min(bb[1], v.position.y);
-                    bb[2] = std::min(bb[2], v.position.z);
-                    bb[3] = std::max(bb[3], v.position.x);
-                    bb[4] = std::max(bb[4], v.position.y);
-                    bb[5] = std::max(bb[5], v.position.z);
-                }
-            }
-        }
-        for (const auto& [grp, bb] : groupBounds) {
-            core::Logger::getInstance().info("MODEL1_BOUNDS: submesh=", grp,
-                " X[", bb[0], "..", bb[3], "] Y[", bb[1], "..", bb[4], "] Z[", bb[2], "..", bb[5], "]");
-        }
-    }
 
     return true;
 }

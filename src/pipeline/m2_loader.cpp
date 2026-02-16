@@ -1127,6 +1127,7 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
                 if (midpoint < 0.0f || midpoint > 1.0f) midpoint = 0.5f;
 
                 // Synthesize color FBlock from static BGRA values
+                // Vanilla M2 stores 3× uint32 as BGRA (little-endian: byte0=B, byte1=G, byte2=R, byte3=A)
                 {
                     em.particleColor.timestamps = {0.0f, midpoint, 1.0f};
                     em.particleColor.vec3Values.resize(3);

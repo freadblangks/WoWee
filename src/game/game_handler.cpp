@@ -284,10 +284,10 @@ void GameHandler::update(float deltaTime) {
     if (wardenGateSeen_ && socket && socket->isConnected()) {
         wardenGateElapsed_ += deltaTime;
         if (wardenGateElapsed_ >= wardenGateNextStatusLog_) {
-            LOG_INFO("Warden gate status: elapsed=", wardenGateElapsed_,
+            LOG_DEBUG("Warden gate status: elapsed=", wardenGateElapsed_,
                      "s connected=", socket->isConnected() ? "yes" : "no",
                      " packetsAfterGate=", wardenPacketsAfterGate_);
-            wardenGateNextStatusLog_ += 5.0f;
+            wardenGateNextStatusLog_ += 30.0f;
         }
     }
 
@@ -4196,11 +4196,7 @@ void GameHandler::handleMessageChat(network::Packet& packet) {
         channelInfo = "[" + data.channelName + "] ";
     }
 
-    LOG_INFO("========================================");
-    LOG_INFO(" CHAT [", getChatTypeString(data.type), "]");
-    LOG_INFO("========================================");
-    LOG_INFO(channelInfo, senderInfo, ": ", data.message);
-    LOG_INFO("========================================");
+    LOG_DEBUG("[", getChatTypeString(data.type), "] ", channelInfo, senderInfo, ": ", data.message);
 }
 
 void GameHandler::sendTextEmote(uint32_t textEmoteId, uint64_t targetGuid) {

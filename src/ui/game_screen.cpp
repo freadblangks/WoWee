@@ -2804,15 +2804,6 @@ void GameScreen::updateCharacterTextures(game::Inventory& inventory) {
         }
     }
 
-    // TEMP: log region layers for debugging
-    {
-        static const char* regionNames[] = {"ArmUpper","ArmLower","Hand","TorsoUpper","TorsoLower","LegUpper","LegLower","Foot"};
-        for (const auto& rl : regionLayers) {
-            LOG_INFO("TEX_REGION: region=", rl.first, "(", (rl.first < 8 ? regionNames[rl.first] : "?"), ") path=", rl.second);
-        }
-        LOG_INFO("TEX_REGION: total=", regionLayers.size(), " regions, baseSkin=", bodySkinPath);
-    }
-
     // Re-composite: base skin + underwear + equipment regions
     // Clear composite cache first to prevent stale textures from being reused
     charRenderer->clearCompositeCache();

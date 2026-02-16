@@ -2352,14 +2352,8 @@ void M2Renderer::renderM2Particles(const glm::mat4& view, const glm::mat4& proj)
             float alpha = interpFBlockFloat(em.particleAlpha, lifeRatio);
             float scale = interpFBlockFloat(em.particleScale, lifeRatio);
 
-            // Some waterfall/spray emitters become overly dark after channel-correct decoding.
-            // Apply a small correction only for strongly blue-dominant particle colors.
-            if (color.b > color.r * 1.4f && color.b > color.g * 1.15f) {
-                float luma = color.r * 0.2126f + color.g * 0.7152f + color.b * 0.0722f;
-                color = glm::mix(color, glm::vec3(luma), 0.35f);
-                color *= 1.35f;
-                color = glm::clamp(color, glm::vec3(0.28f, 0.35f, 0.45f), glm::vec3(1.0f));
-            }
+            // Note: blue-dominant color correction removed — it was over-brightening
+            // water/fountain particles, making them look like spell effects.
 
             GLuint tex = whiteTexture;
             if (p.emitterIndex < static_cast<int>(gpu.particleTextures.size())) {
@@ -2421,18 +2415,9 @@ void M2Renderer::renderM2Particles(const glm::mat4& view, const glm::mat4& proj)
     for (auto& [key, group] : groups) {
         if (group.vertexData.empty()) continue;
 
-        // Set blend mode. Many classic glow textures use a black background with no alpha,
-        // and expect additive blending so black contributes nothing.
-        bool texHasAlpha = true;
-        if (auto it = textureHasAlphaById_.find(group.texture); it != textureHasAlphaById_.end()) {
-            texHasAlpha = it->second;
-        }
-
+        // Use blend mode as specified by the emitter — don't override based on texture alpha.
+        // BlendType: 0=opaque, 1=alphaKey, 2=alpha, 3=add, 4=mod
         uint8_t blendType = group.blendType;
-        if ((blendType == 1 || blendType == 2) && !texHasAlpha) {
-            blendType = 4; // Treat as additive fallback
-        }
-
         if (blendType == 3 || blendType == 4) {
             glBlendFunc(GL_SRC_ALPHA, GL_ONE);  // Additive
         } else {

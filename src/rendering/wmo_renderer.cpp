@@ -1189,7 +1189,6 @@ void WMORenderer::render(const Camera& camera, const glm::mat4& view, const glm:
                 const auto& group = model.groups[gi];
                 glm::vec3 groupCenter = (group.boundingBoxMin + group.boundingBoxMax) * 0.5f;
                 glm::vec4 worldCenter = instance.modelMatrix * glm::vec4(groupCenter, 1.0f);
-                float distToGroup = glm::length(cameraPos - glm::vec3(worldCenter));
 
                 // Log bounding box to identify groups that are positioned HIGH (floating shell)
                 glm::vec3 size = group.boundingBoxMax - group.boundingBoxMin;
@@ -1233,8 +1232,8 @@ void WMORenderer::render(const Camera& camera, const glm::mat4& view, const glm:
                     float distToGroup = glm::length(cameraPos - glm::vec3(worldCenter));
 
                     static int logCounter = 0;
-                    if (logCounter++ % 300 == 0) {
-                        LOG_INFO("LOD Shell Group ", gi, ": worldZ=", worldCenter.z, " sizeZ=", size.z,
+                    if (logCounter++ % 10000 == 0) {
+                        LOG_DEBUG("LOD Shell Group ", gi, ": worldZ=", worldCenter.z, " sizeZ=", size.z,
                                  " distToGroup=", distToGroup, " (hiding if < 185)");
                     }
 

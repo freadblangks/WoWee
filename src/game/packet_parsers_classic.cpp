@@ -507,16 +507,8 @@ bool ClassicPacketParsers::parseMessageChat(network::Packet& packet, MessageChat
         data.chatTag = packet.readUInt8();
     }
 
-    LOG_INFO("[Classic] Parsed SMSG_MESSAGECHAT:");
-    LOG_INFO("  Type: ", getChatTypeString(data.type));
-    LOG_INFO("  Sender GUID: 0x", std::hex, data.senderGuid, std::dec);
-    if (!data.senderName.empty()) {
-        LOG_INFO("  Sender name: ", data.senderName);
-    }
-    if (!data.channelName.empty()) {
-        LOG_INFO("  Channel: ", data.channelName);
-    }
-    LOG_INFO("  Message: ", data.message);
+    LOG_DEBUG("[Classic] SMSG_MESSAGECHAT: type=", getChatTypeString(data.type),
+             " sender=", data.senderName.empty() ? std::to_string(data.senderGuid) : data.senderName);
 
     return true;
 }

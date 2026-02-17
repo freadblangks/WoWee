@@ -911,6 +911,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_COOLDOWN_EVENT:
             handleCooldownEvent(packet);
             break;
+        case Opcode::SMSG_CANCEL_AUTO_REPEAT:
+            break; // Server signals to stop a repeating spell (wand/shoot); no client action needed
         case Opcode::SMSG_AURA_UPDATE:
             handleAuraUpdate(packet, false);
             break;
@@ -8216,13 +8218,14 @@ void GameHandler::handleGossipMessage(network::Packet& packet) {
 
     // Query quest data and update quest log based on gossip quests
     for (const auto& questItem : currentGossip.quests) {
-        // Update quest log based on questIcon:
-        // questIcon & 0x04 = blue ? (turn-in/reward)
-        // questIcon & 0x02 = yellow ! (available)
-        // questIcon & 0x01 = gray ? (incomplete)
-        bool isCompletable = (questItem.questIcon & 0x04) != 0;  // Can turn in
-        bool isIncomplete = (questItem.questIcon & 0x01) != 0;   // Have but incomplete
-        // Note: questIcon & 0x02 = available (new quest), not added to log yet
+        // WotLK gossip questIcon is an integer enum, NOT a bitmask:
+        //   2 = yellow !  (available, not yet accepted)
+        //   4 = gray ?    (active, objectives incomplete)
+        //   5 = gold ?    (complete, ready to turn in)
+        // Bit-masking these values is wrong: 4 & 0x04 = true, treating incomplete
+        // quests as completable and causing the server to reject the turn-in request.
+        bool isCompletable = (questItem.questIcon == 5);  // Gold ? = can turn in
+        bool isIncomplete  = (questItem.questIcon == 4);  // Gray ? = in progress
 
         // Add or update quest in log
         bool found = false;

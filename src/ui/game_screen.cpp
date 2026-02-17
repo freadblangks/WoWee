@@ -1328,6 +1328,8 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                         bool allowSpiritInteract = (gameHandler.isPlayerDead() || gameHandler.isPlayerGhost()) && isSpiritNpc();
                         if (!unit->isHostile() && (unit->isInteractable() || allowSpiritInteract)) {
                             gameHandler.interactWithNpc(target->getGuid());
+                        } else if (unit->isHostile()) {
+                            gameHandler.startAutoAttack(target->getGuid());
                         }
                     }
                 } else if (target->getType() == game::ObjectType::GAMEOBJECT) {
@@ -2967,16 +2969,29 @@ GLuint GameScreen::getSpellIcon(uint32_t spellId, pipeline::AssetManager* am) {
             }
         }
 
-        // Load Spell.dbc: field 133 = SpellIconID
+        // Load Spell.dbc: SpellIconID field
         auto spellDbc = am->loadDBC("Spell.dbc");
         const auto* spellL = pipeline::getActiveDBCLayout() ? pipeline::getActiveDBCLayout()->getLayout("Spell") : nullptr;
-        if (spellDbc && spellDbc->isLoaded() && spellDbc->getFieldCount() > 133) {
-            for (uint32_t i = 0; i < spellDbc->getRecordCount(); i++) {
-                uint32_t id = spellDbc->getUInt32(i, spellL ? (*spellL)["ID"] : 0);
-                uint32_t iconId = spellDbc->getUInt32(i, spellL ? (*spellL)["IconID"] : 133);
-                if (id > 0 && iconId > 0) {
-                    spellIconIds_[id] = iconId;
+        if (spellDbc && spellDbc->isLoaded()) {
+            uint32_t fieldCount = spellDbc->getFieldCount();
+            // Try expansion layout first
+            auto tryLoadIcons = [&](uint32_t idField, uint32_t iconField) {
+                spellIconIds_.clear();
+                if (iconField >= fieldCount) return;
+                for (uint32_t i = 0; i < spellDbc->getRecordCount(); i++) {
+                    uint32_t id = spellDbc->getUInt32(i, idField);
+                    uint32_t iconId = spellDbc->getUInt32(i, iconField);
+                    if (id > 0 && iconId > 0) {
+                        spellIconIds_[id] = iconId;
+                    }
                 }
+            };
+            if (spellL) {
+                tryLoadIcons((*spellL)["ID"], (*spellL)["IconID"]);
+            }
+            // Fallback to WotLK field 133 if expansion layout yielded nothing
+            if (spellIconIds_.empty() && fieldCount > 133) {
+                tryLoadIcons(0, 133);
             }
         }
     }

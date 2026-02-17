@@ -316,8 +316,12 @@ network::Packet ClassicPacketParsers::buildUseItem(uint8_t bagIndex, uint8_t slo
 bool ClassicPacketParsers::parseCastFailed(network::Packet& packet, CastFailedData& data) {
     data.castCount = 0;
     data.spellId = packet.readUInt32();
-    data.result = packet.readUInt8();
-    LOG_INFO("[Classic] Cast failed: spell=", data.spellId, " result=", (int)data.result);
+    uint8_t vanillaResult = packet.readUInt8();
+    // Vanilla enum starts at 0=AFFECTING_COMBAT (no SUCCESS entry).
+    // WotLK enum starts at 0=SUCCESS, 1=AFFECTING_COMBAT.
+    // Shift +1 to align with WotLK result strings.
+    data.result = vanillaResult + 1;
+    LOG_DEBUG("[Classic] Cast failed: spell=", data.spellId, " vanillaResult=", (int)vanillaResult);
     return true;
 }
 
@@ -943,6 +947,211 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
     LOG_DEBUG("[Classic] Item query response: ", data.name, " (quality=", data.quality,
              " invType=", data.inventoryType, " stack=", data.maxStack, ")");
     return true;
+}
+
+// ============================================================================
+// Turtle WoW (build 7234) parseMovementBlock
+//
+// Turtle WoW is a heavily modified vanilla (1.12.1) server.  Through hex dump
+// analysis the wire format is nearly identical to Classic with one key addition:
+//
+//   LIVING section:
+//     moveFlags       u32     (NO moveFlags2 — confirmed by position alignment)
+//     time            u32
+//     position        4×float
+//     transport       guarded by moveFlags & 0x02000000 (Classic flag)
+//                     packed GUID + 4 floats + u32 timestamp (TBC-style addition)
+//     pitch           guarded by SWIMMING (0x200000)
+//     fallTime        u32
+//     jump data       guarded by JUMPING  (0x2000)
+//     splineElev      guarded by 0x04000000
+//     speeds          6 floats (walk/run/runBack/swim/swimBack/turnRate)
+//     spline          guarded by 0x00400000 (Classic flag) OR 0x08000000 (TBC flag)
+//
+//   Tail (same as Classic):
+//     LOWGUID  → 1×u32
+//     HIGHGUID → 1×u32
+//
+// The ONLY confirmed difference from pure Classic is:
+//   Transport data includes a u32 timestamp after the 4 transport floats
+//   (Classic omits this; TBC/WotLK include it).  Without this, entities on
+//   transports cause a 4-byte desync that cascades to later blocks.
+// ============================================================================
+namespace TurtleMoveFlags {
+    constexpr uint32_t ONTRANSPORT      = 0x02000000;  // Classic transport flag
+    constexpr uint32_t JUMPING          = 0x00002000;
+    constexpr uint32_t SWIMMING         = 0x00200000;
+    constexpr uint32_t SPLINE_ELEVATION = 0x04000000;
+    constexpr uint32_t SPLINE_CLASSIC   = 0x00400000;  // Classic spline enabled
+    constexpr uint32_t SPLINE_TBC       = 0x08000000;  // TBC spline enabled
+}
+
+bool TurtlePacketParsers::parseMovementBlock(network::Packet& packet, UpdateBlock& block) {
+    uint8_t updateFlags = packet.readUInt8();
+    block.updateFlags = static_cast<uint16_t>(updateFlags);
+
+    LOG_DEBUG("  [Turtle] UpdateFlags: 0x", std::hex, (int)updateFlags, std::dec);
+
+    const uint8_t UPDATEFLAG_LIVING       = 0x20;
+    const uint8_t UPDATEFLAG_HAS_POSITION = 0x40;
+    const uint8_t UPDATEFLAG_HAS_TARGET   = 0x04;
+    const uint8_t UPDATEFLAG_TRANSPORT    = 0x02;
+    const uint8_t UPDATEFLAG_LOWGUID      = 0x08;
+    const uint8_t UPDATEFLAG_HIGHGUID     = 0x10;
+
+    if (updateFlags & UPDATEFLAG_LIVING) {
+        size_t livingStart = packet.getReadPos();
+
+        uint32_t moveFlags = packet.readUInt32();
+        // Turtle: NO moveFlags2 (confirmed by hex dump — positions are only correct without it)
+        /*uint32_t time =*/ packet.readUInt32();
+
+        // Position
+        block.x = packet.readFloat();
+        block.y = packet.readFloat();
+        block.z = packet.readFloat();
+        block.orientation = packet.readFloat();
+        block.hasMovement = true;
+
+        LOG_DEBUG("  [Turtle] LIVING: (", block.x, ", ", block.y, ", ", block.z,
+                  "), o=", block.orientation, " moveFlags=0x", std::hex, moveFlags, std::dec);
+
+        // Transport — Classic flag position 0x02000000
+        if (moveFlags & TurtleMoveFlags::ONTRANSPORT) {
+            block.onTransport = true;
+            block.transportGuid = UpdateObjectParser::readPackedGuid(packet);
+            block.transportX = packet.readFloat();
+            block.transportY = packet.readFloat();
+            block.transportZ = packet.readFloat();
+            block.transportO = packet.readFloat();
+            /*uint32_t transportTime =*/ packet.readUInt32();  // Turtle adds TBC-style timestamp
+        }
+
+        // Pitch (swimming only, Classic-style)
+        if (moveFlags & TurtleMoveFlags::SWIMMING) {
+            /*float pitch =*/ packet.readFloat();
+        }
+
+        // Fall time (always present)
+        /*uint32_t fallTime =*/ packet.readUInt32();
+
+        // Jump data
+        if (moveFlags & TurtleMoveFlags::JUMPING) {
+            /*float jumpVelocity =*/ packet.readFloat();
+            /*float jumpSinAngle =*/ packet.readFloat();
+            /*float jumpCosAngle =*/ packet.readFloat();
+            /*float jumpXYSpeed =*/ packet.readFloat();
+        }
+
+        // Spline elevation
+        if (moveFlags & TurtleMoveFlags::SPLINE_ELEVATION) {
+            /*float splineElevation =*/ packet.readFloat();
+        }
+
+        // Turtle: 6 speeds (same as Classic — no flight speeds)
+        float walkSpeed = packet.readFloat();
+        float runSpeed = packet.readFloat();
+        float runBackSpeed = packet.readFloat();
+        float swimSpeed = packet.readFloat();
+        float swimBackSpeed = packet.readFloat();
+        float turnRate = packet.readFloat();
+
+        block.runSpeed = runSpeed;
+
+        LOG_DEBUG("  [Turtle] Speeds: walk=", walkSpeed, " run=", runSpeed,
+                  " runBack=", runBackSpeed, " swim=", swimSpeed,
+                  " swimBack=", swimBackSpeed, " turn=", turnRate);
+
+        // Spline data — check both Classic (0x00400000) and TBC (0x08000000) flag positions
+        bool hasSpline = (moveFlags & TurtleMoveFlags::SPLINE_CLASSIC) ||
+                         (moveFlags & TurtleMoveFlags::SPLINE_TBC);
+        if (hasSpline) {
+            uint32_t splineFlags = packet.readUInt32();
+            LOG_DEBUG("  [Turtle] Spline: flags=0x", std::hex, splineFlags, std::dec);
+
+            if (splineFlags & 0x00010000) {
+                packet.readFloat(); packet.readFloat(); packet.readFloat();
+            } else if (splineFlags & 0x00020000) {
+                packet.readUInt64();
+            } else if (splineFlags & 0x00040000) {
+                packet.readFloat();
+            }
+
+            /*uint32_t timePassed =*/ packet.readUInt32();
+            /*uint32_t duration =*/ packet.readUInt32();
+            /*uint32_t splineId =*/ packet.readUInt32();
+
+            uint32_t pointCount = packet.readUInt32();
+            if (pointCount > 256) {
+                LOG_WARNING("  [Turtle] Spline pointCount=", pointCount, " exceeds max, capping");
+                pointCount = 0;
+            }
+            for (uint32_t i = 0; i < pointCount; i++) {
+                packet.readFloat(); packet.readFloat(); packet.readFloat();
+            }
+
+            // End point
+            packet.readFloat(); packet.readFloat(); packet.readFloat();
+        }
+
+        LOG_DEBUG("  [Turtle] LIVING block consumed ", packet.getReadPos() - livingStart,
+                  " bytes, readPos now=", packet.getReadPos());
+    }
+    else if (updateFlags & UPDATEFLAG_HAS_POSITION) {
+        block.x = packet.readFloat();
+        block.y = packet.readFloat();
+        block.z = packet.readFloat();
+        block.orientation = packet.readFloat();
+        block.hasMovement = true;
+
+        LOG_DEBUG("  [Turtle] STATIONARY: (", block.x, ", ", block.y, ", ", block.z, ")");
+    }
+
+    // Target GUID
+    if (updateFlags & UPDATEFLAG_HAS_TARGET) {
+        /*uint64_t targetGuid =*/ UpdateObjectParser::readPackedGuid(packet);
+    }
+
+    // Transport time
+    if (updateFlags & UPDATEFLAG_TRANSPORT) {
+        /*uint32_t transportTime =*/ packet.readUInt32();
+    }
+
+    // Low GUID — Classic-style: 1×u32 (NOT TBC's 2×u32)
+    if (updateFlags & UPDATEFLAG_LOWGUID) {
+        /*uint32_t lowGuid =*/ packet.readUInt32();
+    }
+
+    // High GUID — 1×u32
+    if (updateFlags & UPDATEFLAG_HIGHGUID) {
+        /*uint32_t highGuid =*/ packet.readUInt32();
+    }
+
+    return true;
+}
+
+// ============================================================================
+// Classic/Vanilla quest giver status
+//
+// Vanilla sends status as uint32 with different enum values:
+//   0=NONE, 1=UNAVAILABLE, 2=CHAT, 3=INCOMPLETE, 4=REWARD_REP, 5=AVAILABLE
+// WotLK uses uint8 with:
+//   0=NONE, 1=UNAVAILABLE, 5=INCOMPLETE, 6=REWARD_REP, 7=AVAILABLE_LOW, 8=AVAILABLE, 10=REWARD
+//
+// Read uint32, translate to WotLK enum values.
+// ============================================================================
+uint8_t ClassicPacketParsers::readQuestGiverStatus(network::Packet& packet) {
+    uint32_t vanillaStatus = packet.readUInt32();
+    switch (vanillaStatus) {
+        case 0: return 0;  // NONE
+        case 1: return 1;  // UNAVAILABLE
+        case 2: return 0;  // CHAT → NONE (no marker)
+        case 3: return 5;  // INCOMPLETE → WotLK INCOMPLETE
+        case 4: return 6;  // REWARD_REP → WotLK REWARD_REP
+        case 5: return 8;  // AVAILABLE → WotLK AVAILABLE
+        case 6: return 10; // REWARD → WotLK REWARD
+        default: return 0;
+    }
 }
 
 } // namespace game

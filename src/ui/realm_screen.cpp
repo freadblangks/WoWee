@@ -127,8 +127,8 @@ void RealmScreen::render(auth::AuthHandler& authHandler) {
                 ImGui::TableSetColumnIndex(1);
                 if (realm.icon == 0) ImGui::Text("Normal");
                 else if (realm.icon == 1) ImGui::Text("PvP");
-                else if (realm.icon == 4) ImGui::Text("RP");
-                else if (realm.icon == 6) ImGui::Text("RP-PvP");
+                else if (realm.icon == 6) ImGui::Text("RP");
+                else if (realm.icon == 8) ImGui::Text("RP-PvP");
                 else ImGui::Text("Type %d", realm.icon);
 
                 // Population column
@@ -136,8 +136,8 @@ void RealmScreen::render(auth::AuthHandler& authHandler) {
                 ImVec4 popColor = getPopulationColor(realm.population);
                 ImGui::PushStyleColor(ImGuiCol_Text, popColor);
                 if (realm.population < 0.5f) ImGui::Text("Low");
-                else if (realm.population < 1.0f) ImGui::Text("Medium");
-                else if (realm.population < 2.0f) ImGui::Text("High");
+                else if (realm.population < 1.5f) ImGui::Text("Medium");
+                else if (realm.population < 2.5f) ImGui::Text("High");
                 else ImGui::Text("Full");
                 ImGui::PopStyleColor();
 
@@ -238,9 +238,9 @@ const char* RealmScreen::getRealmStatus(uint8_t flags) const {
 ImVec4 RealmScreen::getPopulationColor(float population) const {
     if (population < 0.5f) {
         return ImVec4(0.3f, 1.0f, 0.3f, 1.0f);  // Green - Low
-    } else if (population < 1.0f) {
+    } else if (population < 1.5f) {
         return ImVec4(1.0f, 1.0f, 0.3f, 1.0f);  // Yellow - Medium
-    } else if (population < 2.0f) {
+    } else if (population < 2.5f) {
         return ImVec4(1.0f, 0.6f, 0.0f, 1.0f);  // Orange - High
     } else {
         return ImVec4(1.0f, 0.3f, 0.3f, 1.0f);  // Red - Full

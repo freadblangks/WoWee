@@ -20,13 +20,14 @@ public:
 
     uint32_t getZoneId(int tileX, int tileY) const;
     const ZoneInfo* getZoneInfo(uint32_t zoneId) const;
-    std::string getRandomMusic(uint32_t zoneId) const;
+    std::string getRandomMusic(uint32_t zoneId);
     std::vector<std::string> getAllMusicPaths() const;
 
 private:
     // tile key = tileX * 100 + tileY
     std::unordered_map<int, uint32_t> tileToZone;
     std::unordered_map<uint32_t, ZoneInfo> zones;
+    std::string lastPlayedMusic_;
 };
 
 } // namespace game

@@ -440,8 +440,9 @@ bool TbcPacketParsers::parseUpdateObject(network::Packet& packet, UpdateObjectDa
         }
 
         if (!ok) {
-            LOG_ERROR("Failed to parse update block ", i + 1);
-            return false;
+            LOG_WARNING("Failed to parse update block ", i + 1, " of ", data.blockCount,
+                        " — keeping ", data.blocks.size(), " parsed blocks");
+            break;
         }
         data.blocks.push_back(block);
     }

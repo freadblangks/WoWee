@@ -29,28 +29,46 @@ void SpellbookScreen::loadSpellDBC(pipeline::AssetManager* assetManager) {
         return;
     }
 
-    // WoW 3.3.5a Spell.dbc fields (0-based):
-    // 0 = SpellID, 4 = Attributes, 133 = SpellIconID, 136 = SpellName_enUS, 153 = RankText_enUS
+    // Try expansion-specific layout first, then fall back to WotLK hardcoded indices
+    // if the DBC is from WotLK MPQs but the active expansion uses different field offsets.
     const auto* spellL = pipeline::getActiveDBCLayout() ? pipeline::getActiveDBCLayout()->getLayout("Spell") : nullptr;
-    uint32_t count = dbc->getRecordCount();
-    for (uint32_t i = 0; i < count; ++i) {
-        uint32_t spellId = dbc->getUInt32(i, spellL ? (*spellL)["ID"] : 0);
-        if (spellId == 0) continue;
 
-        SpellInfo info;
-        info.spellId = spellId;
-        info.attributes = dbc->getUInt32(i, spellL ? (*spellL)["Attributes"] : 4);
-        info.iconId = dbc->getUInt32(i, spellL ? (*spellL)["IconID"] : 133);
-        info.name = dbc->getString(i, spellL ? (*spellL)["Name"] : 136);
-        info.rank = dbc->getString(i, spellL ? (*spellL)["Rank"] : 153);
+    auto tryLoad = [&](uint32_t idField, uint32_t attrField, uint32_t iconField,
+                       uint32_t nameField, uint32_t rankField, const char* label) {
+        spellData.clear();
+        uint32_t count = dbc->getRecordCount();
+        for (uint32_t i = 0; i < count; ++i) {
+            uint32_t spellId = dbc->getUInt32(i, idField);
+            if (spellId == 0) continue;
 
-        if (!info.name.empty()) {
-            spellData[spellId] = std::move(info);
+            SpellInfo info;
+            info.spellId = spellId;
+            info.attributes = dbc->getUInt32(i, attrField);
+            info.iconId = dbc->getUInt32(i, iconField);
+            info.name = dbc->getString(i, nameField);
+            info.rank = dbc->getString(i, rankField);
+
+            if (!info.name.empty()) {
+                spellData[spellId] = std::move(info);
+            }
         }
+        LOG_INFO("Spellbook: Loaded ", spellData.size(), " spells from Spell.dbc (", label, ")");
+    };
+
+    // Try active expansion layout
+    if (spellL) {
+        tryLoad((*spellL)["ID"], (*spellL)["Attributes"], (*spellL)["IconID"],
+                (*spellL)["Name"], (*spellL)["Rank"], "expansion layout");
     }
 
-    dbcLoaded = true;
-    LOG_INFO("Spellbook: Loaded ", spellData.size(), " spells from Spell.dbc");
+    // If layout failed or loaded 0 spells, try WotLK hardcoded indices
+    // (binary DBC may be from WotLK MPQs regardless of active expansion)
+    if (spellData.empty() && fieldCount >= 200) {
+        LOG_INFO("Spellbook: Retrying with WotLK field indices (DBC has ", fieldCount, " fields)");
+        tryLoad(0, 4, 133, 136, 153, "WotLK fallback");
+    }
+
+    dbcLoaded = !spellData.empty();
 }
 
 void SpellbookScreen::loadSpellIconDBC(pipeline::AssetManager* assetManager) {

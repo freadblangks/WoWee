@@ -430,14 +430,26 @@ const ZoneInfo* ZoneManager::getZoneInfo(uint32_t zoneId) const {
     return nullptr;
 }
 
-std::string ZoneManager::getRandomMusic(uint32_t zoneId) const {
+std::string ZoneManager::getRandomMusic(uint32_t zoneId) {
     auto it = zones.find(zoneId);
     if (it == zones.end() || it->second.musicPaths.empty()) {
         return "";
     }
 
     const auto& paths = it->second.musicPaths;
-    return paths[std::rand() % paths.size()];
+    if (paths.size() == 1) {
+        lastPlayedMusic_ = paths[0];
+        return paths[0];
+    }
+
+    // Avoid playing the same track back-to-back
+    std::string pick;
+    for (int attempts = 0; attempts < 5; ++attempts) {
+        pick = paths[std::rand() % paths.size()];
+        if (pick != lastPlayedMusic_) break;
+    }
+    lastPlayedMusic_ = pick;
+    return pick;
 }
 
 std::vector<std::string> ZoneManager::getAllMusicPaths() const {

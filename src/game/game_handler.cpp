@@ -1213,23 +1213,21 @@ void GameHandler::handlePacket(network::Packet& packet) {
             handleGameObjectQueryResponse(packet);
             break;
         case Opcode::SMSG_QUESTGIVER_STATUS: {
-            // uint64 npcGuid + uint8 status
             if (packet.getSize() - packet.getReadPos() >= 9) {
                 uint64_t npcGuid = packet.readUInt64();
-                uint8_t status = packet.readUInt8();
+                uint8_t status = packetParsers_->readQuestGiverStatus(packet);
                 npcQuestStatus_[npcGuid] = static_cast<QuestGiverStatus>(status);
                 LOG_DEBUG("SMSG_QUESTGIVER_STATUS: guid=0x", std::hex, npcGuid, std::dec, " status=", (int)status);
             }
             break;
         }
         case Opcode::SMSG_QUESTGIVER_STATUS_MULTIPLE: {
-            // uint32 count, then count * (uint64 guid + uint8 status)
             if (packet.getSize() - packet.getReadPos() >= 4) {
                 uint32_t count = packet.readUInt32();
                 for (uint32_t i = 0; i < count; ++i) {
                     if (packet.getSize() - packet.getReadPos() < 9) break;
                     uint64_t npcGuid = packet.readUInt64();
-                    uint8_t status = packet.readUInt8();
+                    uint8_t status = packetParsers_->readQuestGiverStatus(packet);
                     npcQuestStatus_[npcGuid] = static_cast<QuestGiverStatus>(status);
                 }
                 LOG_DEBUG("SMSG_QUESTGIVER_STATUS_MULTIPLE: ", count, " entries");
@@ -5416,8 +5414,13 @@ void GameHandler::addLocalChatMessage(const MessageChatData& msg) {
 
 void GameHandler::queryPlayerName(uint64_t guid) {
     if (playerNameCache.count(guid) || pendingNameQueries.count(guid)) return;
-    if (state != WorldState::IN_WORLD || !socket) return;
+    if (state != WorldState::IN_WORLD || !socket) {
+        LOG_INFO("queryPlayerName: skipped guid=0x", std::hex, guid, std::dec,
+                 " state=", worldStateName(state), " socket=", (socket ? "yes" : "no"));
+        return;
+    }
 
+    LOG_INFO("queryPlayerName: sending CMSG_NAME_QUERY for guid=0x", std::hex, guid, std::dec);
     pendingNameQueries.insert(guid);
     auto packet = NameQueryPacket::build(guid);
     socket->send(packet);
@@ -5459,6 +5462,10 @@ void GameHandler::handleNameQueryResponse(network::Packet& packet) {
     }
 
     pendingNameQueries.erase(data.guid);
+
+    LOG_INFO("Name query response: guid=0x", std::hex, data.guid, std::dec,
+             " found=", (int)data.found, " name='", data.name, "'",
+             " race=", (int)data.race, " class=", (int)data.classId);
 
     if (data.isValid()) {
         playerNameCache[data.guid] = data.name;

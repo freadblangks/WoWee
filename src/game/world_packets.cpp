@@ -2802,16 +2802,26 @@ network::Packet QuestgiverAcceptQuestPacket::build(uint64_t npcGuid, uint32_t qu
     network::Packet packet(wireOpcode(Opcode::CMSG_QUESTGIVER_ACCEPT_QUEST));
     packet.writeUInt64(npcGuid);
     packet.writeUInt32(questId);
-    packet.writeUInt32(0);  // unused
     return packet;
 }
 
 bool QuestDetailsParser::parse(network::Packet& packet, QuestDetailsData& data) {
-    if (packet.getSize() < 28) return false;
+    if (packet.getSize() < 20) return false;
     data.npcGuid = packet.readUInt64();
+
+    // WotLK has informUnit(u64) before questId; Vanilla/TBC do not.
+    // Detect: try WotLK first (read informUnit + questId), then check if title
+    // string looks valid. If not, rewind and try vanilla (questId directly).
+    size_t preInform = packet.getReadPos();
     /*informUnit*/ packet.readUInt64();
     data.questId = packet.readUInt32();
     data.title = packet.readString();
+    if (data.title.empty() || data.questId > 100000) {
+        // Likely vanilla format — rewind past informUnit
+        packet.setReadPos(preInform);
+        data.questId = packet.readUInt32();
+        data.title = packet.readString();
+    }
     data.details = packet.readString();
     data.objectives = packet.readString();
 

@@ -148,6 +148,15 @@ public:
         return GossipMessageParser::parse(packet, data);
     }
 
+    // --- Quest Giver Status ---
+
+    /** Read quest giver status from packet.
+     *  WotLK: uint8, vanilla/classic: uint32 with different enum values.
+     *  Returns the status value normalized to WotLK enum values. */
+    virtual uint8_t readQuestGiverStatus(network::Packet& packet) {
+        return packet.readUInt8();
+    }
+
     // --- Destroy Object ---
 
     /** Parse SMSG_DESTROY_OBJECT */
@@ -294,13 +303,31 @@ public:
     network::Packet buildMailDelete(uint64_t mailboxGuid, uint32_t mailId, uint32_t mailTemplateId) override;
     network::Packet buildItemQuery(uint32_t entry, uint64_t guid) override;
     bool parseItemQueryResponse(network::Packet& packet, ItemQueryResponseData& data) override;
+    uint8_t readQuestGiverStatus(network::Packet& packet) override;
+};
+
+/**
+ * Turtle WoW (build 7234) packet parsers.
+ *
+ * Turtle WoW is a heavily modified vanilla server that sends TBC-style
+ * movement blocks (moveFlags2, transport timestamps, 8 speeds including flight)
+ * while keeping all other Classic packet formats.
+ *
+ * Inherits all Classic overrides (charEnum, chat, gossip, mail, items, etc.)
+ * but delegates movement block parsing to TBC format.
+ */
+class TurtlePacketParsers : public ClassicPacketParsers {
+public:
+    uint8_t movementFlags2Size() const override { return 0; }
+    bool parseMovementBlock(network::Packet& packet, UpdateBlock& block) override;
 };
 
 /**
  * Factory function to create the right parser set for an expansion.
  */
 inline std::unique_ptr<PacketParsers> createPacketParsers(const std::string& expansionId) {
-    if (expansionId == "classic" || expansionId == "turtle") return std::make_unique<ClassicPacketParsers>();
+    if (expansionId == "classic") return std::make_unique<ClassicPacketParsers>();
+    if (expansionId == "turtle") return std::make_unique<TurtlePacketParsers>();
     if (expansionId == "tbc") return std::make_unique<TbcPacketParsers>();
     return std::make_unique<WotlkPacketParsers>();
 }

@@ -2286,6 +2286,16 @@ void Renderer::update(float deltaTime) {
         }
 
         musicManager->update(deltaTime);
+
+        // When a track finishes, pick a new random track from the current zone
+        if (!musicManager->isPlaying() && !inTavern_ && !inBlacksmith_ &&
+            currentZoneId != 0 && musicSwitchCooldown_ <= 0.0f) {
+            std::string music = zoneManager->getRandomMusic(currentZoneId);
+            if (!music.empty()) {
+                playZoneMusic(music);
+                musicSwitchCooldown_ = 2.0f;
+            }
+        }
     }
 
     // Update performance HUD

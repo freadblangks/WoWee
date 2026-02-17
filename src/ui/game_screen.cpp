@@ -2986,7 +2986,12 @@ GLuint GameScreen::getSpellIcon(uint32_t spellId, pipeline::AssetManager* am) {
                     }
                 }
             };
-            if (spellL) {
+            // If the DBC has WotLK-range field count (≥200 fields), it's the binary
+            // WotLK Spell.dbc (CSV fallback). Use WotLK layout regardless of expansion,
+            // since Turtle/Classic CSV files are garbled and fall back to WotLK binary.
+            if (fieldCount >= 200) {
+                tryLoadIcons(0, 133); // WotLK IconID field
+            } else if (spellL) {
                 tryLoadIcons((*spellL)["ID"], (*spellL)["IconID"]);
             }
             // Fallback to WotLK field 133 if expansion layout yielded nothing

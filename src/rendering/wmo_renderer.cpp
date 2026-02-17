@@ -371,6 +371,7 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
                 }
             }
 
+
             bool alphaTest = false;
             uint32_t blendMode = 0;
             if (batch.materialId < modelData.materialBlendModes.size()) {
@@ -1206,9 +1207,11 @@ void WMORenderer::render(const Camera& camera, const glm::mat4& view, const glm:
         for (uint32_t gi : dl.visibleGroups) {
             const auto& group = model.groups[gi];
 
-            // Skip groups with SHOW_SKYBOX flag (0x20000) — these are transparent
-            // sky windows meant to show the skybox behind them, not solid geometry
-            if (group.groupFlags & 0x20000) {
+            // Skip non-renderable groups:
+            // 0x20000 = SHOW_SKYBOX (transparent sky windows)
+            // 0x4000000 = ANTIPORTAL (occlusion planes, not visible geometry)
+            // 0x8000000 = disables batch rendering
+            if (group.groupFlags & (0x20000 | 0x4000000 | 0x8000000)) {
                 continue;
             }
 
@@ -1217,6 +1220,7 @@ void WMORenderer::render(const Camera& camera, const glm::mat4& view, const glm:
             if (group.allUntextured) {
                 continue;
             }
+
 
             // STORMWIND.WMO specific fix: LOD shell visibility control
             // Combination of distance culling + backface culling for best results

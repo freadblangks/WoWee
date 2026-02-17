@@ -1198,6 +1198,20 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
         gpuModel.batches.push_back(bgpu);
     }
 
+    // Detect particle emitter volume models: box mesh (24 verts, 36 indices)
+    // with disproportionately large bounds. These are invisible bounding volumes
+    // that only exist to spawn particles — their mesh should never be rendered.
+    if (!isInvisibleTrap && gpuModel.vertexCount <= 24 && gpuModel.indexCount <= 36
+        && !model.particleEmitters.empty()) {
+        glm::vec3 size = gpuModel.boundMax - gpuModel.boundMin;
+        float maxDim = std::max({size.x, size.y, size.z});
+        if (maxDim > 5.0f) {
+            gpuModel.isInvisibleTrap = true;
+            LOG_DEBUG("M2 emitter volume hidden: '", model.name, "' size=(",
+                      size.x, " x ", size.y, " x ", size.z, ")");
+        }
+    }
+
     models[modelId] = std::move(gpuModel);
 
     LOG_DEBUG("Loaded M2 model: ", model.name, " (", models[modelId].vertexCount, " vertices, ",

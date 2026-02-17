@@ -426,6 +426,8 @@ bool WMOLoader::loadGroup(const std::vector<uint8_t>& groupData,
             }
 
             // Read MOGP header
+            // NOTE: In WMO group files, the MOGP data starts directly at flags
+            // (groupName/descriptiveGroupName are handled by the root WMO's MOGI chunk).
             uint32_t mogpOffset = offset;
             group.flags = read<uint32_t>(groupData, mogpOffset);
             bool isInterior = (group.flags & 0x2000) != 0;

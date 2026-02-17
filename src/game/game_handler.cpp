@@ -5551,6 +5551,8 @@ void GameHandler::queryItemInfo(uint32_t entry, uint64_t guid) {
         ? packetParsers_->buildItemQuery(entry, queryGuid)
         : ItemQueryPacket::build(entry, queryGuid);
     socket->send(packet);
+    LOG_INFO("queryItemInfo: entry=", entry, " guid=0x", std::hex, queryGuid, std::dec,
+             " pending=", pendingItemQueries_.size());
 }
 
 void GameHandler::handleItemQueryResponse(network::Packet& packet) {
@@ -5558,9 +5560,15 @@ void GameHandler::handleItemQueryResponse(network::Packet& packet) {
     bool parsed = packetParsers_
         ? packetParsers_->parseItemQueryResponse(packet, data)
         : ItemQueryResponseParser::parse(packet, data);
-    if (!parsed) return;
+    if (!parsed) {
+        LOG_WARNING("handleItemQueryResponse: parse failed, size=", packet.getSize());
+        return;
+    }
 
     pendingItemQueries_.erase(data.entry);
+    LOG_INFO("handleItemQueryResponse: entry=", data.entry, " valid=", data.valid,
+             " name='", data.name, "' displayInfoId=", data.displayInfoId,
+             " pending=", pendingItemQueries_.size());
 
     if (data.valid) {
         itemInfoCache_[data.entry] = data;

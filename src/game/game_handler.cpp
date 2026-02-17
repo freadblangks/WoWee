@@ -5547,7 +5547,9 @@ void GameHandler::queryItemInfo(uint32_t entry, uint64_t guid) {
     // If we don't have the item object's GUID (e.g. visible equipment decoding),
     // fall back to the player's GUID to keep the request non-zero.
     uint64_t queryGuid = (guid != 0) ? guid : playerGuid;
-    auto packet = ItemQueryPacket::build(entry, queryGuid);
+    auto packet = packetParsers_
+        ? packetParsers_->buildItemQuery(entry, queryGuid)
+        : ItemQueryPacket::build(entry, queryGuid);
     socket->send(packet);
 }
 

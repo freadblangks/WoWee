@@ -846,6 +846,14 @@ network::Packet ClassicPacketParsers::buildMailDelete(uint64_t mailboxGuid,
 // Vanilla has NO SoundOverrideSubclass, NO Flags2, NO ScalingStatDistribution,
 // NO ScalingStatValue, and only 2 damage types (not 5).
 // ============================================================================
+network::Packet ClassicPacketParsers::buildItemQuery(uint32_t entry, uint64_t /*guid*/) {
+    // Vanilla CMSG_ITEM_QUERY_SINGLE: just uint32 entry (no GUID field)
+    network::Packet packet(wireOpcode(Opcode::CMSG_ITEM_QUERY_SINGLE));
+    packet.writeUInt32(entry);
+    LOG_DEBUG("[Classic] Built CMSG_ITEM_QUERY_SINGLE: entry=", entry);
+    return packet;
+}
+
 bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQueryResponseData& data) {
     data.entry = packet.readUInt32();
 
@@ -893,12 +901,11 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
     data.maxStack = static_cast<int32_t>(packet.readUInt32()); // Stackable
     data.containerSlots = packet.readUInt32();
 
-    // Vanilla: 10 stat pairs (same as WotLK)
-    uint32_t statsCount = packet.readUInt32();
+    // Vanilla: 10 stat pairs, NO statsCount prefix
     for (uint32_t i = 0; i < 10; i++) {
         uint32_t statType = packet.readUInt32();
         int32_t statValue = static_cast<int32_t>(packet.readUInt32());
-        if (i < statsCount) {
+        if (statType != 0) {
             switch (statType) {
                 case 3: data.agility = statValue; break;
                 case 4: data.strength = statValue; break;
@@ -912,8 +919,8 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
 
     // Vanilla: NO ScalingStatDistribution, NO ScalingStatValue
 
-    // Vanilla: only 2 damage types (not 5)
-    for (int i = 0; i < 2; i++) {
+    // Vanilla: 5 damage types (same count as WotLK)
+    for (int i = 0; i < 5; i++) {
         packet.readFloat();   // DamageMin
         packet.readFloat();   // DamageMax
         packet.readUInt32();  // DamageType

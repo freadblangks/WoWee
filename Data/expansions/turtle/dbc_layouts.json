@@ -41,8 +41,7 @@
     "Skin1": 6, "Skin2": 7, "Skin3": 8
   },
   "TaxiNodes": {
-    "ID": 0, "MapID": 1, "X": 2, "Y": 3, "Z": 4, "Name": 5,
-    "MountDisplayIdAlliance": 12, "MountDisplayIdHorde": 13
+    "ID": 0, "MapID": 1, "X": 2, "Y": 3, "Z": 4, "Name": 5
   },
   "TaxiPath": { "ID": 0, "FromNode": 1, "ToNode": 2, "Cost": 3 },
   "TaxiPathNode": {

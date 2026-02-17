@@ -1023,21 +1023,46 @@ void Renderer::updateCharacterAnimation() {
 
             // Taxi flight: use flying animations instead of ground movement
             if (taxiFlight_) {
-                // Prefer FlyForward, fall back to FlyIdle, then ANIM_RUN
-                if (characterRenderer->hasAnimation(mountInstanceId_, ANIM_FLY_FORWARD)) {
-                    mountAnimId = ANIM_FLY_FORWARD;
-                } else if (characterRenderer->hasAnimation(mountInstanceId_, ANIM_FLY_IDLE)) {
-                    mountAnimId = ANIM_FLY_IDLE;
-                } else {
-                    mountAnimId = ANIM_RUN;
+                // Log available animations once when taxi starts
+                if (!taxiAnimsLogged_) {
+                    taxiAnimsLogged_ = true;
+                    LOG_INFO("Taxi flight active: mountInstanceId_=", mountInstanceId_,
+                             " curMountAnim=", curMountAnim, " haveMountState=", haveMountState);
+                    std::vector<pipeline::M2Sequence> seqs;
+                    if (characterRenderer->getAnimationSequences(mountInstanceId_, seqs)) {
+                        std::string animList;
+                        for (const auto& s : seqs) {
+                            if (!animList.empty()) animList += ", ";
+                            animList += std::to_string(s.id);
+                        }
+                        LOG_INFO("Taxi mount available animations: [", animList, "]");
+                    }
+                }
+
+                // Try multiple flying animation IDs in priority order:
+                // 159=FlyForward, 158=FlyIdle (WotLK flying mounts)
+                // 234=FlyRun, 229=FlyStand (Vanilla creature fly anims)
+                // 233=FlyWalk, 141=FlyMounted, 369=FlyRun (alternate IDs)
+                // 6=Fly (classic creature fly)
+                // Fallback: Run, then Stand (hover)
+                uint32_t flyAnims[] = {ANIM_FLY_FORWARD, ANIM_FLY_IDLE, 234, 229, 233, 141, 369, 6, ANIM_RUN};
+                mountAnimId = ANIM_STAND; // ultimate fallback: hover/idle
+                for (uint32_t fa : flyAnims) {
+                    if (characterRenderer->hasAnimation(mountInstanceId_, fa)) {
+                        mountAnimId = fa;
+                        break;
+                    }
                 }
 
                 if (!haveMountState || curMountAnim != mountAnimId) {
+                    LOG_INFO("Taxi mount: playing animation ", mountAnimId);
                     characterRenderer->playAnimation(mountInstanceId_, mountAnimId, true);
                 }
 
                 // Skip all ground mount logic (jumps, fidgets, etc.)
                 goto taxi_mount_done;
+            } else {
+                taxiAnimsLogged_ = false;
             }
 
             // Check for jump trigger - use cached per-mount animation IDs

@@ -396,6 +396,7 @@ void Application::setState(AppState newState) {
             playerCharacterSpawned = false;
             weaponsSheathed_ = false;
             wasAutoAttacking_ = false;
+            loadedMapId_ = 0xFFFFFFFF;
             spawnedPlayerGuid_ = 0;
             spawnedAppearanceBytes_ = 0;
             spawnedFacialFeatures_ = 0;
@@ -498,6 +499,7 @@ void Application::logoutToLogin() {
     playerCharacterSpawned = false;
     weaponsSheathed_ = false;
     wasAutoAttacking_ = false;
+    loadedMapId_ = 0xFFFFFFFF;
     world.reset();
     if (renderer) {
         // Remove old player model so it doesn't persist into next session
@@ -998,10 +1000,30 @@ void Application::setupUICallbacks() {
     // World entry callback (online mode) - load terrain when entering world
     gameHandler->setWorldEntryCallback([this](uint32_t mapId, float x, float y, float z) {
         LOG_INFO("Online world entry: mapId=", mapId, " pos=(", x, ", ", y, ", ", z, ")");
+
+        // Same-map teleport (taxi landing, GM teleport on same continent):
+        // just update position, let terrain streamer handle tile loading incrementally.
+        // A full reload is only needed on first entry or map change.
+        if (mapId == loadedMapId_ && renderer && renderer->getTerrainManager()) {
+            LOG_INFO("Same-map teleport (map ", mapId, "), skipping full world reload");
+            glm::vec3 canonical = core::coords::serverToCanonical(glm::vec3(x, y, z));
+            glm::vec3 renderPos = core::coords::canonicalToRender(canonical);
+            renderer->getCharacterPosition() = renderPos;
+            if (renderer->getCameraController()) {
+                auto* ft = renderer->getCameraController()->getFollowTargetMutable();
+                if (ft) *ft = renderPos;
+            }
+            worldEntryMovementGraceTimer_ = 2.0f;
+            taxiLandingClampTimer_ = 0.0f;
+            lastTaxiFlight_ = false;
+            return;
+        }
+
         worldEntryMovementGraceTimer_ = 2.0f;
         taxiLandingClampTimer_ = 0.0f;
         lastTaxiFlight_ = false;
         loadOnlineWorldTerrain(mapId, x, y, z);
+        loadedMapId_ = mapId;
     });
 
     auto sampleBestFloorAt = [this](float x, float y, float probeZ) -> std::optional<float> {
@@ -2824,18 +2846,23 @@ void Application::buildCreatureDisplayLookups() {
     };
     auto resolveDisplayIdForExactPath = [&](const std::string& exactPath) -> uint32_t {
         const std::string target = normalizePath(exactPath);
-        uint32_t modelId = 0;
+        // Collect ALL model IDs that map to this path (multiple model IDs can
+        // share the same .m2 file, e.g. modelId 147 and 792 both → Gryphon.m2)
+        std::vector<uint32_t> modelIds;
         for (const auto& [mid, path] : modelIdToPath_) {
             if (normalizePath(path) == target) {
-                modelId = mid;
-                break;
+                modelIds.push_back(mid);
             }
         }
-        if (modelId == 0) return 0;
+        if (modelIds.empty()) return 0;
         uint32_t bestDisplayId = 0;
         int bestScore = -1;
         for (const auto& [dispId, data] : displayDataMap_) {
-            if (data.modelId != modelId) continue;
+            bool matches = false;
+            for (uint32_t mid : modelIds) {
+                if (data.modelId == mid) { matches = true; break; }
+            }
+            if (!matches) continue;
             int score = 0;
             if (!data.skin1.empty()) score += 3;
             if (!data.skin2.empty()) score += 2;
@@ -4845,8 +4872,15 @@ void Application::processPendingMount() {
     bool isTaxi = gameHandler && gameHandler->isOnTaxiFlight();
     uint32_t startAnim = 0; // ANIM_STAND
     if (isTaxi) {
-        if (charRenderer->hasAnimation(instanceId, 159)) startAnim = 159; // FlyForward
-        else if (charRenderer->hasAnimation(instanceId, 158)) startAnim = 158; // FlyIdle
+        // Try WotLK fly anims first, then Vanilla-friendly fallbacks
+        uint32_t taxiCandidates[] = {159, 158, 234, 229, 233, 141, 369, 6, 5}; // FlyForward, FlyIdle, FlyRun(234), FlyStand(229), FlyWalk(233), FlyMounted, FlyRun, Fly, Run
+        for (uint32_t anim : taxiCandidates) {
+            if (charRenderer->hasAnimation(instanceId, anim)) {
+                startAnim = anim;
+                break;
+            }
+        }
+        // If none found, startAnim stays 0 (Stand/hover) which is fine for flying creatures
     }
     charRenderer->playAnimation(instanceId, startAnim, true);
 

@@ -180,6 +180,7 @@ private:
     uint32_t gryphonDisplayId_ = 0;
     uint32_t wyvernDisplayId_ = 0;
     bool lastTaxiFlight_ = false;
+    uint32_t loadedMapId_ = 0xFFFFFFFF;  // Map ID of currently loaded terrain (0xFFFFFFFF = none)
     float taxiLandingClampTimer_ = 0.0f;
     float worldEntryMovementGraceTimer_ = 0.0f;
     float taxiStreamCooldown_ = 0.0f;

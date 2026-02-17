@@ -8688,7 +8688,8 @@ void GameHandler::handleTeleportAck(network::Packet& packet) {
         LOG_INFO("Sent MSG_MOVE_TELEPORT_ACK response");
     }
 
-    // Notify application to reload terrain at new position
+    // Notify application of teleport — the callback decides whether to do
+    // a full world reload (map change) or just update position (same map).
     if (worldEntryCallback_) {
         worldEntryCallback_(currentMapId_, serverX, serverY, serverZ);
     }

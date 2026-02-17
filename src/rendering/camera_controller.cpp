@@ -127,6 +127,12 @@ void CameraController::update(float deltaTime) {
 
     // During taxi flights, skip movement logic but keep camera orbit/zoom controls.
     if (externalFollow_) {
+        // Cancel any active intro/idle orbit so mouse panning works during taxi.
+        // The intro handling code (below) is unreachable during externalFollow_.
+        introActive = false;
+        idleOrbit_ = false;
+        idleTimer_ = 0.0f;
+
         camera->setRotation(yaw, pitch);
         float zoomLerp = 1.0f - std::exp(-ZOOM_SMOOTH_SPEED * deltaTime);
         currentDistance += (userTargetDistance - currentDistance) * zoomLerp;

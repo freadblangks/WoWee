@@ -1415,11 +1415,20 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item) {
         uint32_t mapId = 0;
         glm::vec3 pos;
         if (gameHandler_->getHomeBind(mapId, pos)) {
-            ImGui::TextColored(ImVec4(0.8f, 0.9f, 1.0f, 1.0f),
-                               "Home: map %u (%.1f, %.1f, %.1f)", mapId, pos.x, pos.y, pos.z);
+            const char* mapName = "Unknown";
+            switch (mapId) {
+                case 0:   mapName = "Eastern Kingdoms"; break;
+                case 1:   mapName = "Kalimdor"; break;
+                case 530:  mapName = "Outland"; break;
+                case 571:  mapName = "Northrend"; break;
+                case 13:   mapName = "Test"; break;
+                case 169:  mapName = "Emerald Dream"; break;
+            }
+            ImGui::TextColored(ImVec4(0.8f, 0.9f, 1.0f, 1.0f), "Home: %s", mapName);
         } else {
             ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Home: not set");
         }
+        ImGui::TextDisabled("Use: Teleport home");
     }
 
     // Slot type

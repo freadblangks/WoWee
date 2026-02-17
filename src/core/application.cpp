@@ -961,6 +961,15 @@ void Application::setupUICallbacks() {
         }
     });
 
+    // Realm screen back button - return to login
+    uiManager->getRealmScreen().setOnBack([this]() {
+        if (authHandler) {
+            authHandler->disconnect();
+        }
+        uiManager->getRealmScreen().reset();
+        setState(AppState::AUTHENTICATION);
+    });
+
     // Character selection callback
     uiManager->getCharacterScreen().setOnCharacterSelected([this](uint64_t characterGuid) {
         LOG_INFO("Character selected: GUID=0x", std::hex, characterGuid, std::dec);

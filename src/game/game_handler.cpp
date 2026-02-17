@@ -7,6 +7,7 @@
 #include "game/opcodes.hpp"
 #include "game/update_field_table.hpp"
 #include "rendering/renderer.hpp"
+#include "audio/spell_sound_manager.hpp"
 #include "pipeline/dbc_layout.hpp"
 #include "network/world_socket.hpp"
 #include "network/packet.hpp"
@@ -6917,14 +6918,12 @@ void GameHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
 
     if (casting) return; // Already casting
 
-    // Hearthstone is item-bound; use the item rather than direct spell cast.
-    if (spellId == 8690) {
-        LOG_INFO("Hearthstone spell intercepted, routing to useItemById(6948)");
-        useItemById(6948);
-        return;
-    }
-
+    // Hearthstone: cast spell directly (server checks item in inventory)
+    // Using CMSG_CAST_SPELL is more reliable than CMSG_USE_ITEM which
+    // depends on slot indices matching between client and server.
     uint64_t target = targetGuid != 0 ? targetGuid : this->targetGuid;
+    // Self-targeted spells like hearthstone should not send a target
+    if (spellId == 8690) target = 0;
     auto packet = packetParsers_
         ? packetParsers_->buildCastSpell(spellId, target, ++castCount)
         : CastSpellPacket::build(spellId, target, ++castCount);
@@ -7031,6 +7030,13 @@ void GameHandler::handleSpellStart(network::Packet& packet) {
         currentCastSpellId = data.spellId;
         castTimeTotal = data.castTime / 1000.0f;
         castTimeRemaining = castTimeTotal;
+
+        // Play precast (channeling) sound
+        if (auto* renderer = core::Application::getInstance().getRenderer()) {
+            if (auto* ssm = renderer->getSpellSoundManager()) {
+                ssm->playPrecast(audio::SpellSoundManager::MagicSchool::ARCANE, audio::SpellSoundManager::SpellPower::MEDIUM);
+            }
+        }
     }
 }
 
@@ -7040,6 +7046,13 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
 
     // Cast completed
     if (data.casterUnit == playerGuid) {
+        // Play cast-complete sound before clearing state
+        if (auto* renderer = core::Application::getInstance().getRenderer()) {
+            if (auto* ssm = renderer->getSpellSoundManager()) {
+                ssm->playCast(audio::SpellSoundManager::MagicSchool::ARCANE);
+            }
+        }
+
         casting = false;
         currentCastSpellId = 0;
         castTimeRemaining = 0.0f;

@@ -30,12 +30,15 @@ public:
         onRealmSelected = callback;
     }
 
+    void setOnBack(std::function<void()> cb) { onBack = std::move(cb); }
+
     /**
      * Reset selection state (e.g., when switching servers)
      */
     void reset() {
         selectedRealmIndex = -1;
         realmSelected = false;
+        autoSelectAttempted = false;
         selectedRealmName.clear();
         selectedRealmAddress.clear();
         statusMessage.clear();
@@ -56,6 +59,7 @@ private:
     // UI state
     int selectedRealmIndex = -1;
     bool realmSelected = false;
+    bool autoSelectAttempted = false;
     std::string selectedRealmName;
     std::string selectedRealmAddress;
 
@@ -64,6 +68,7 @@ private:
 
     // Callbacks
     std::function<void(const std::string&, const std::string&)> onRealmSelected;
+    std::function<void()> onBack;
 
     /**
      * Update status message

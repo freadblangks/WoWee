@@ -543,14 +543,16 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
     float chatH = 220.0f;
     float chatX = 8.0f;
     float chatY = screenH - chatH - 80.0f;  // Above action bar
-    if (!chatWindowPosInit_) {
-        chatWindowPos_ = ImVec2(chatX, chatY);
-        chatWindowPosInit_ = true;
-    }
     if (chatWindowLocked) {
+        // Always recompute position from current window size when locked
+        chatWindowPos_ = ImVec2(chatX, chatY);
         ImGui::SetNextWindowSize(ImVec2(chatW, chatH), ImGuiCond_Always);
         ImGui::SetNextWindowPos(chatWindowPos_, ImGuiCond_Always);
     } else {
+        if (!chatWindowPosInit_) {
+            chatWindowPos_ = ImVec2(chatX, chatY);
+            chatWindowPosInit_ = true;
+        }
         ImGui::SetNextWindowSize(ImVec2(chatW, chatH), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowPos(chatWindowPos_, ImGuiCond_FirstUseEver);
     }
@@ -3035,10 +3037,10 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
     float barX = (screenW - barW) / 2.0f;
     float barY = screenH - barH;
 
-    ImGui::SetNextWindowPos(ImVec2(barX, barY), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(barX, barY), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(barW, barH), ImGuiCond_Always);
 
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize |
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                              ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
                              ImGuiWindowFlags_NoScrollbar;
 
@@ -3098,10 +3100,12 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
             // Try to get icon texture for this slot
             GLuint iconTex = 0;
             const game::ItemDef* barItemDef = nullptr;
+            uint32_t itemDisplayInfoId = 0;
+            std::string itemNameFromQuery;
             if (slot.type == game::ActionBarSlot::SPELL && slot.id != 0) {
                 iconTex = getSpellIcon(slot.id, assetMgr);
             } else if (slot.type == game::ActionBarSlot::ITEM && slot.id != 0) {
-                // Look up item in inventory for icon and name
+                // Search backpack
                 auto& inv = gameHandler.getInventory();
                 for (int bi = 0; bi < inv.getBackpackSize(); bi++) {
                     const auto& bs = inv.getBackpackSlot(bi);
@@ -3110,8 +3114,41 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
                         break;
                     }
                 }
+                // Search equipped slots
+                if (!barItemDef) {
+                    for (int ei = 0; ei < game::Inventory::NUM_EQUIP_SLOTS; ei++) {
+                        const auto& es = inv.getEquipSlot(static_cast<game::EquipSlot>(ei));
+                        if (!es.empty() && es.item.itemId == slot.id) {
+                            barItemDef = &es.item;
+                            break;
+                        }
+                    }
+                }
+                // Search extra bags
+                if (!barItemDef) {
+                    for (int bag = 0; bag < game::Inventory::NUM_BAG_SLOTS && !barItemDef; bag++) {
+                        for (int si = 0; si < inv.getBagSize(bag); si++) {
+                            const auto& bs = inv.getBagSlot(bag, si);
+                            if (!bs.empty() && bs.item.itemId == slot.id) {
+                                barItemDef = &bs.item;
+                                break;
+                            }
+                        }
+                    }
+                }
                 if (barItemDef && barItemDef->displayInfoId != 0) {
-                    iconTex = inventoryScreen.getItemIcon(barItemDef->displayInfoId);
+                    itemDisplayInfoId = barItemDef->displayInfoId;
+                }
+                // Fallback: use item info cache (from server query responses)
+                if (itemDisplayInfoId == 0) {
+                    if (auto* info = gameHandler.getItemInfo(slot.id)) {
+                        itemDisplayInfoId = info->displayInfoId;
+                        if (itemNameFromQuery.empty() && !info->name.empty())
+                            itemNameFromQuery = info->name;
+                    }
+                }
+                if (itemDisplayInfoId != 0) {
+                    iconTex = inventoryScreen.getItemIcon(itemDisplayInfoId);
                 }
             }
 
@@ -3201,18 +3238,49 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
             }
 
             // Tooltip
-            if (ImGui::IsItemHovered() && slot.type == game::ActionBarSlot::SPELL && slot.id != 0) {
-                std::string fullName = getSpellName(slot.id);
+            if (ImGui::IsItemHovered() && !slot.isEmpty() && slot.id != 0) {
                 ImGui::BeginTooltip();
-                ImGui::Text("%s", fullName.c_str());
-                ImGui::TextDisabled("Spell ID: %u", slot.id);
-                ImGui::EndTooltip();
-            } else if (ImGui::IsItemHovered() && slot.type == game::ActionBarSlot::ITEM && slot.id != 0) {
-                ImGui::BeginTooltip();
-                if (barItemDef) {
-                    ImGui::Text("%s", barItemDef->name.c_str());
-                } else {
-                    ImGui::Text("Item #%u", slot.id);
+                if (slot.type == game::ActionBarSlot::SPELL) {
+                    std::string fullName = getSpellName(slot.id);
+                    ImGui::Text("%s", fullName.c_str());
+                    // Hearthstone: show bind point info
+                    if (slot.id == 8690) {
+                        uint32_t mapId = 0;
+                        glm::vec3 pos;
+                        if (gameHandler.getHomeBind(mapId, pos)) {
+                            const char* mapName = "Unknown";
+                            switch (mapId) {
+                                case 0:   mapName = "Eastern Kingdoms"; break;
+                                case 1:   mapName = "Kalimdor"; break;
+                                case 530:  mapName = "Outland"; break;
+                                case 571:  mapName = "Northrend"; break;
+                            }
+                            ImGui::TextColored(ImVec4(0.8f, 0.9f, 1.0f, 1.0f),
+                                "Home: %s", mapName);
+                        }
+                        ImGui::TextDisabled("Use: Teleport home");
+                    }
+                } else if (slot.type == game::ActionBarSlot::ITEM) {
+                    if (barItemDef && !barItemDef->name.empty()) {
+                        ImGui::Text("%s", barItemDef->name.c_str());
+                    } else if (!itemNameFromQuery.empty()) {
+                        ImGui::Text("%s", itemNameFromQuery.c_str());
+                    } else {
+                        ImGui::Text("Item #%u", slot.id);
+                    }
+                }
+                // Show cooldown time remaining
+                if (onCooldown) {
+                    float cd = slot.cooldownRemaining;
+                    if (cd >= 60.0f) {
+                        int mins = static_cast<int>(cd) / 60;
+                        int secs = static_cast<int>(cd) % 60;
+                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
+                            "Cooldown: %d min %d sec", mins, secs);
+                    } else {
+                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
+                            "Cooldown: %.1f sec", cd);
+                    }
                 }
                 ImGui::EndTooltip();
             }
@@ -3301,10 +3369,10 @@ void GameScreen::renderBagBar(game::GameHandler& gameHandler) {
     float barX = screenW - barW - 10.0f;
     float barY = screenH - barH - 10.0f;
 
-    ImGui::SetNextWindowPos(ImVec2(barX, barY), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(barX, barY), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(barW, barH), ImGuiCond_Always);
 
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize |
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                              ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
                              ImGuiWindowFlags_NoScrollbar;
 
@@ -3534,8 +3602,12 @@ void GameScreen::renderCastBar(game::GameHandler& gameHandler) {
         ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.8f, 0.6f, 0.2f, 1.0f));
 
         char overlay[64];
-        snprintf(overlay, sizeof(overlay), "Spell %u (%.1fs)",
-                 gameHandler.getCurrentCastSpellId(), gameHandler.getCastTimeRemaining());
+        uint32_t currentSpellId = gameHandler.getCurrentCastSpellId();
+        const std::string& spellName = gameHandler.getSpellName(currentSpellId);
+        if (!spellName.empty())
+            snprintf(overlay, sizeof(overlay), "%s (%.1fs)", spellName.c_str(), gameHandler.getCastTimeRemaining());
+        else
+            snprintf(overlay, sizeof(overlay), "Casting... (%.1fs)", gameHandler.getCastTimeRemaining());
         ImGui::ProgressBar(progress, ImVec2(-1, 20), overlay);
         ImGui::PopStyleColor();
     }

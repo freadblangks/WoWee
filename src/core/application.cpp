@@ -480,6 +480,13 @@ void Application::reloadExpansionData() {
     if (gameHandler) {
         gameHandler->resetDbcCaches();
     }
+
+    // Rebuild creature display lookups with the new expansion's DBC layout
+    creatureLookupsBuilt_ = false;
+    displayDataMap_.clear();
+    humanoidExtraMap_.clear();
+    creatureModelIds_.clear();
+    buildCreatureDisplayLookups();
 }
 
 void Application::logoutToLogin() {
@@ -2757,12 +2764,19 @@ void Application::buildCreatureDisplayLookups() {
     // Col 5: HairStyleID
     // Col 6: HairColorID
     // Col 7: FacialHairID
-    // Col 8-18: Item display IDs (equipment slots)
-    // Col 19: Flags
-    // Col 20: BakeName (pre-baked texture path)
+    // Turtle/Vanilla: 19 fields — 10 equip slots (8-17), BakeName=18 (no Flags field)
+    // WotLK/TBC/Classic: 21 fields — 11 equip slots (8-18), Flags=19, BakeName=20
     if (auto cdie = assetManager->loadDBC("CreatureDisplayInfoExtra.dbc"); cdie && cdie->isLoaded()) {
         const auto* cdieL = pipeline::getActiveDBCLayout() ? pipeline::getActiveDBCLayout()->getLayout("CreatureDisplayInfoExtra") : nullptr;
         const uint32_t cdieEquip0 = cdieL ? (*cdieL)["EquipDisplay0"] : 8;
+        const uint32_t bakeField = cdieL ? (*cdieL)["BakeName"] : 20;
+        // Count equipment slots: Vanilla/Turtle has 10, WotLK/TBC has 11
+        int numEquipSlots = 10;
+        if (cdieL && cdieL->field("EquipDisplay10") != 0xFFFFFFFF) {
+            numEquipSlots = 11;
+        } else if (!cdieL) {
+            numEquipSlots = 11;  // Default (WotLK) has 11
+        }
         uint32_t withBakeName = 0;
         for (uint32_t i = 0; i < cdie->getRecordCount(); i++) {
             HumanoidDisplayExtra extra;
@@ -2773,14 +2787,15 @@ void Application::buildCreatureDisplayLookups() {
             extra.hairStyleId = static_cast<uint8_t>(cdie->getUInt32(i, cdieL ? (*cdieL)["HairStyleID"] : 5));
             extra.hairColorId = static_cast<uint8_t>(cdie->getUInt32(i, cdieL ? (*cdieL)["HairColorID"] : 6));
             extra.facialHairId = static_cast<uint8_t>(cdie->getUInt32(i, cdieL ? (*cdieL)["FacialHairID"] : 7));
-            for (int eq = 0; eq < 11; eq++) {
+            for (int eq = 0; eq < numEquipSlots; eq++) {
                 extra.equipDisplayId[eq] = cdie->getUInt32(i, cdieEquip0 + eq);
             }
-            extra.bakeName = cdie->getString(i, cdieL ? (*cdieL)["BakeName"] : 20);
+            extra.bakeName = cdie->getString(i, bakeField);
             if (!extra.bakeName.empty()) withBakeName++;
             humanoidExtraMap_[cdie->getUInt32(i, cdieL ? (*cdieL)["ID"] : 0)] = extra;
         }
-        LOG_INFO("Loaded ", humanoidExtraMap_.size(), " humanoid display extra entries (", withBakeName, " with baked textures)");
+        LOG_INFO("Loaded ", humanoidExtraMap_.size(), " humanoid display extra entries (",
+                 withBakeName, " with baked textures, ", numEquipSlots, " equip slots)");
     }
 
     // CreatureModelData.dbc: modelId (col 0) → modelPath (col 2, .mdx → .m2)

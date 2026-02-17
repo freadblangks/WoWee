@@ -4396,6 +4396,9 @@ void GameHandler::handleChannelNotify(network::Packet& packet) {
 }
 
 void GameHandler::autoJoinDefaultChannels() {
+    LOG_INFO("autoJoinDefaultChannels: general=", chatAutoJoin.general,
+             " trade=", chatAutoJoin.trade, " localDefense=", chatAutoJoin.localDefense,
+             " lfg=", chatAutoJoin.lfg, " local=", chatAutoJoin.local);
     if (chatAutoJoin.general) joinChannel("General");
     if (chatAutoJoin.trade) joinChannel("Trade");
     if (chatAutoJoin.localDefense) joinChannel("LocalDefense");
@@ -5550,7 +5553,10 @@ void GameHandler::queryItemInfo(uint32_t entry, uint64_t guid) {
 
 void GameHandler::handleItemQueryResponse(network::Packet& packet) {
     ItemQueryResponseData data;
-    if (!ItemQueryResponseParser::parse(packet, data)) return;
+    bool parsed = packetParsers_
+        ? packetParsers_->parseItemQueryResponse(packet, data)
+        : ItemQueryResponseParser::parse(packet, data);
+    if (!parsed) return;
 
     pendingItemQueries_.erase(data.entry);
 
@@ -6903,6 +6909,7 @@ void GameHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
 
     // Hearthstone is item-bound; use the item rather than direct spell cast.
     if (spellId == 8690) {
+        LOG_INFO("Hearthstone spell intercepted, routing to useItemById(6948)");
         useItemById(6948);
         return;
     }
@@ -7904,6 +7911,46 @@ void GameHandler::autoEquipItemBySlot(int backpackIndex) {
     }
 }
 
+void GameHandler::autoEquipItemInBag(int bagIndex, int slotIndex) {
+    if (bagIndex < 0 || bagIndex >= inventory.NUM_BAG_SLOTS) return;
+    if (slotIndex < 0 || slotIndex >= inventory.getBagSize(bagIndex)) return;
+
+    if (state == WorldState::IN_WORLD && socket) {
+        // Bag items: bag = equip slot 19+bagIndex, slot = index within bag
+        auto packet = AutoEquipItemPacket::build(
+            static_cast<uint8_t>(19 + bagIndex), static_cast<uint8_t>(slotIndex));
+        socket->send(packet);
+    }
+}
+
+void GameHandler::sellItemInBag(int bagIndex, int slotIndex) {
+    if (bagIndex < 0 || bagIndex >= inventory.NUM_BAG_SLOTS) return;
+    if (slotIndex < 0 || slotIndex >= inventory.getBagSize(bagIndex)) return;
+    const auto& slot = inventory.getBagSlot(bagIndex, slotIndex);
+    if (slot.empty()) return;
+
+    // Resolve item GUID from container contents
+    uint64_t itemGuid = 0;
+    uint64_t bagGuid = equipSlotGuids_[19 + bagIndex];
+    if (bagGuid != 0) {
+        auto it = containerContents_.find(bagGuid);
+        if (it != containerContents_.end() && slotIndex < static_cast<int>(it->second.numSlots)) {
+            itemGuid = it->second.slotGuids[slotIndex];
+        }
+    }
+    if (itemGuid == 0) {
+        itemGuid = resolveOnlineItemGuid(slot.item.itemId);
+    }
+
+    if (itemGuid != 0 && currentVendorItems.vendorGuid != 0) {
+        sellItem(currentVendorItems.vendorGuid, itemGuid, 1);
+    } else if (itemGuid == 0) {
+        addSystemChatMessage("Cannot sell: item not found.");
+    } else {
+        addSystemChatMessage("Cannot sell: no vendor.");
+    }
+}
+
 void GameHandler::unequipToBackpack(EquipSlot equipSlot) {
     if (state != WorldState::IN_WORLD || !socket) return;
 
@@ -7926,35 +7973,105 @@ void GameHandler::unequipToBackpack(EquipSlot equipSlot) {
     socket->send(packet);
 }
 
+void GameHandler::swapContainerItems(uint8_t srcBag, uint8_t srcSlot, uint8_t dstBag, uint8_t dstSlot) {
+    if (!socket || !socket->isConnected()) return;
+    LOG_INFO("swapContainerItems: src(bag=", (int)srcBag, " slot=", (int)srcSlot,
+             ") -> dst(bag=", (int)dstBag, " slot=", (int)dstSlot, ")");
+    auto packet = SwapItemPacket::build(dstBag, dstSlot, srcBag, srcSlot);
+    socket->send(packet);
+}
+
 void GameHandler::useItemBySlot(int backpackIndex) {
     if (backpackIndex < 0 || backpackIndex >= inventory.getBackpackSize()) return;
     const auto& slot = inventory.getBackpackSlot(backpackIndex);
-    if (slot.empty()) return;
+    if (slot.empty()) {
+        LOG_WARNING("useItemBySlot: slot ", backpackIndex, " is empty");
+        return;
+    }
+
+    LOG_INFO("useItemBySlot: backpackIndex=", backpackIndex, " itemId=", slot.item.itemId,
+             " wowSlot=", 23 + backpackIndex);
 
     uint64_t itemGuid = backpackSlotGuids_[backpackIndex];
     if (itemGuid == 0) {
         itemGuid = resolveOnlineItemGuid(slot.item.itemId);
     }
+    LOG_INFO("useItemBySlot: itemGuid=0x", std::hex, itemGuid, std::dec);
+
     if (itemGuid != 0 && state == WorldState::IN_WORLD && socket) {
         // WoW inventory: equipment 0-18, bags 19-22, backpack 23-38
         auto packet = packetParsers_
             ? packetParsers_->buildUseItem(0xFF, static_cast<uint8_t>(23 + backpackIndex), itemGuid)
             : UseItemPacket::build(0xFF, static_cast<uint8_t>(23 + backpackIndex), itemGuid);
+        LOG_INFO("useItemBySlot: sending CMSG_USE_ITEM, packetSize=", packet.getSize());
         socket->send(packet);
     } else if (itemGuid == 0) {
         LOG_WARNING("Use item failed: missing item GUID for slot ", backpackIndex);
     }
 }
 
+void GameHandler::useItemInBag(int bagIndex, int slotIndex) {
+    if (bagIndex < 0 || bagIndex >= inventory.NUM_BAG_SLOTS) return;
+    if (slotIndex < 0 || slotIndex >= inventory.getBagSize(bagIndex)) return;
+    const auto& slot = inventory.getBagSlot(bagIndex, slotIndex);
+    if (slot.empty()) return;
+
+    // Resolve item GUID from container contents
+    uint64_t itemGuid = 0;
+    uint64_t bagGuid = equipSlotGuids_[19 + bagIndex];
+    if (bagGuid != 0) {
+        auto it = containerContents_.find(bagGuid);
+        if (it != containerContents_.end() && slotIndex < static_cast<int>(it->second.numSlots)) {
+            itemGuid = it->second.slotGuids[slotIndex];
+        }
+    }
+    if (itemGuid == 0) {
+        itemGuid = resolveOnlineItemGuid(slot.item.itemId);
+    }
+
+    LOG_INFO("useItemInBag: bag=", bagIndex, " slot=", slotIndex, " itemId=", slot.item.itemId,
+             " itemGuid=0x", std::hex, itemGuid, std::dec);
+
+    if (itemGuid != 0 && state == WorldState::IN_WORLD && socket) {
+        // WoW bag addressing: bagIndex = equip slot of bag container (19-22)
+        // For CMSG_USE_ITEM: bag = 19+bagIndex, slot = slot within bag
+        uint8_t wowBag = static_cast<uint8_t>(19 + bagIndex);
+        auto packet = packetParsers_
+            ? packetParsers_->buildUseItem(wowBag, static_cast<uint8_t>(slotIndex), itemGuid)
+            : UseItemPacket::build(wowBag, static_cast<uint8_t>(slotIndex), itemGuid);
+        LOG_INFO("useItemInBag: sending CMSG_USE_ITEM, bag=", (int)wowBag, " slot=", slotIndex,
+                 " packetSize=", packet.getSize());
+        socket->send(packet);
+    } else if (itemGuid == 0) {
+        LOG_WARNING("Use item in bag failed: missing item GUID for bag ", bagIndex, " slot ", slotIndex);
+    }
+}
+
 void GameHandler::useItemById(uint32_t itemId) {
     if (itemId == 0) return;
+    LOG_INFO("useItemById: searching for itemId=", itemId, " in backpack (", inventory.getBackpackSize(), " slots)");
+    // Search backpack first
     for (int i = 0; i < inventory.getBackpackSize(); i++) {
         const auto& slot = inventory.getBackpackSlot(i);
         if (!slot.empty() && slot.item.itemId == itemId) {
+            LOG_INFO("useItemById: found itemId=", itemId, " at backpack slot ", i);
             useItemBySlot(i);
             return;
         }
     }
+    // Search bags
+    for (int bag = 0; bag < inventory.NUM_BAG_SLOTS; bag++) {
+        int bagSize = inventory.getBagSize(bag);
+        for (int slot = 0; slot < bagSize; slot++) {
+            const auto& bagSlot = inventory.getBagSlot(bag, slot);
+            if (!bagSlot.empty() && bagSlot.item.itemId == itemId) {
+                LOG_INFO("useItemById: found itemId=", itemId, " in bag ", bag, " slot ", slot);
+                useItemInBag(bag, slot);
+                return;
+            }
+        }
+    }
+    LOG_WARNING("useItemById: itemId=", itemId, " not found in inventory");
 }
 
 void GameHandler::unstuck() {

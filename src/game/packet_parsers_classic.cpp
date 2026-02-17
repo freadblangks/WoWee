@@ -841,5 +841,91 @@ network::Packet ClassicPacketParsers::buildMailDelete(uint64_t mailboxGuid,
     return packet;
 }
 
+// ============================================================================
+// Classic SMSG_ITEM_QUERY_SINGLE_RESPONSE
+// Vanilla has NO SoundOverrideSubclass, NO Flags2, NO ScalingStatDistribution,
+// NO ScalingStatValue, and only 2 damage types (not 5).
+// ============================================================================
+bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQueryResponseData& data) {
+    data.entry = packet.readUInt32();
+
+    // High bit set means item not found
+    if (data.entry & 0x80000000) {
+        data.entry &= ~0x80000000;
+        return true;
+    }
+
+    uint32_t itemClass = packet.readUInt32();
+    uint32_t subClass = packet.readUInt32();
+    // Vanilla: NO SoundOverrideSubclass
+
+    (void)itemClass;
+    (void)subClass;
+
+    // 4 name strings
+    data.name = packet.readString();
+    packet.readString(); // name2
+    packet.readString(); // name3
+    packet.readString(); // name4
+
+    data.displayInfoId = packet.readUInt32();
+    data.quality = packet.readUInt32();
+
+    packet.readUInt32(); // Flags
+    // Vanilla: NO Flags2
+    packet.readUInt32(); // BuyPrice
+    data.sellPrice = packet.readUInt32(); // SellPrice
+
+    data.inventoryType = packet.readUInt32();
+
+    packet.readUInt32(); // AllowableClass
+    packet.readUInt32(); // AllowableRace
+    packet.readUInt32(); // ItemLevel
+    packet.readUInt32(); // RequiredLevel
+    packet.readUInt32(); // RequiredSkill
+    packet.readUInt32(); // RequiredSkillRank
+    packet.readUInt32(); // RequiredSpell
+    packet.readUInt32(); // RequiredHonorRank
+    packet.readUInt32(); // RequiredCityRank
+    packet.readUInt32(); // RequiredReputationFaction
+    packet.readUInt32(); // RequiredReputationRank
+    packet.readUInt32(); // MaxCount
+    data.maxStack = static_cast<int32_t>(packet.readUInt32()); // Stackable
+    data.containerSlots = packet.readUInt32();
+
+    // Vanilla: 10 stat pairs (same as WotLK)
+    uint32_t statsCount = packet.readUInt32();
+    for (uint32_t i = 0; i < 10; i++) {
+        uint32_t statType = packet.readUInt32();
+        int32_t statValue = static_cast<int32_t>(packet.readUInt32());
+        if (i < statsCount) {
+            switch (statType) {
+                case 3: data.agility = statValue; break;
+                case 4: data.strength = statValue; break;
+                case 5: data.intellect = statValue; break;
+                case 6: data.spirit = statValue; break;
+                case 7: data.stamina = statValue; break;
+                default: break;
+            }
+        }
+    }
+
+    // Vanilla: NO ScalingStatDistribution, NO ScalingStatValue
+
+    // Vanilla: only 2 damage types (not 5)
+    for (int i = 0; i < 2; i++) {
+        packet.readFloat();   // DamageMin
+        packet.readFloat();   // DamageMax
+        packet.readUInt32();  // DamageType
+    }
+
+    data.armor = static_cast<int32_t>(packet.readUInt32());
+
+    data.valid = !data.name.empty();
+    LOG_DEBUG("[Classic] Item query response: ", data.name, " (quality=", data.quality,
+             " invType=", data.inventoryType, " stack=", data.maxStack, ")");
+    return true;
+}
+
 } // namespace game
 } // namespace wowee

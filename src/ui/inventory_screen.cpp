@@ -361,6 +361,20 @@ void InventoryScreen::pickupFromBackpack(game::Inventory& inv, int index) {
     inventoryDirty = true;
 }
 
+void InventoryScreen::pickupFromBag(game::Inventory& inv, int bagIndex, int slotIndex) {
+    const auto& slot = inv.getBagSlot(bagIndex, slotIndex);
+    if (slot.empty()) return;
+    holdingItem = true;
+    heldItem = slot.item;
+    heldSource = HeldSource::BAG;
+    heldBackpackIndex = -1;
+    heldBagIndex = bagIndex;
+    heldBagSlotIndex = slotIndex;
+    heldEquipSlot = game::EquipSlot::NUM_SLOTS;
+    inv.clearBagSlot(bagIndex, slotIndex);
+    inventoryDirty = true;
+}
+
 void InventoryScreen::pickupFromEquipment(game::Inventory& inv, game::EquipSlot slot) {
     const auto& es = inv.getEquipSlot(slot);
     if (es.empty()) return;
@@ -376,8 +390,24 @@ void InventoryScreen::pickupFromEquipment(game::Inventory& inv, game::EquipSlot 
 
 void InventoryScreen::placeInBackpack(game::Inventory& inv, int index) {
     if (!holdingItem) return;
-    if (gameHandler_ && heldSource == HeldSource::EQUIPMENT) {
-        // Online mode: avoid client-side unequip; wait for server update.
+    if (gameHandler_) {
+        // Online mode: send server swap packet for all container moves
+        uint8_t dstBag = 0xFF;
+        uint8_t dstSlot = static_cast<uint8_t>(23 + index);
+        uint8_t srcBag = 0xFF;
+        uint8_t srcSlot = 0;
+        if (heldSource == HeldSource::BACKPACK && heldBackpackIndex >= 0) {
+            srcSlot = static_cast<uint8_t>(23 + heldBackpackIndex);
+        } else if (heldSource == HeldSource::BAG) {
+            srcBag = static_cast<uint8_t>(19 + heldBagIndex);
+            srcSlot = static_cast<uint8_t>(heldBagSlotIndex);
+        } else if (heldSource == HeldSource::EQUIPMENT) {
+            srcSlot = static_cast<uint8_t>(heldEquipSlot);
+        } else {
+            cancelPickup(inv);
+            return;
+        }
+        gameHandler_->swapContainerItems(srcBag, srcSlot, dstBag, dstSlot);
         cancelPickup(inv);
         return;
     }
@@ -396,17 +426,58 @@ void InventoryScreen::placeInBackpack(game::Inventory& inv, int index) {
     inventoryDirty = true;
 }
 
+void InventoryScreen::placeInBag(game::Inventory& inv, int bagIndex, int slotIndex) {
+    if (!holdingItem) return;
+    if (gameHandler_) {
+        // Online mode: send server swap packet
+        uint8_t dstBag = static_cast<uint8_t>(19 + bagIndex);
+        uint8_t dstSlot = static_cast<uint8_t>(slotIndex);
+        uint8_t srcBag = 0xFF;
+        uint8_t srcSlot = 0;
+        if (heldSource == HeldSource::BACKPACK && heldBackpackIndex >= 0) {
+            srcSlot = static_cast<uint8_t>(23 + heldBackpackIndex);
+        } else if (heldSource == HeldSource::BAG) {
+            srcBag = static_cast<uint8_t>(19 + heldBagIndex);
+            srcSlot = static_cast<uint8_t>(heldBagSlotIndex);
+        } else if (heldSource == HeldSource::EQUIPMENT) {
+            srcSlot = static_cast<uint8_t>(heldEquipSlot);
+        } else {
+            cancelPickup(inv);
+            return;
+        }
+        gameHandler_->swapContainerItems(srcBag, srcSlot, dstBag, dstSlot);
+        cancelPickup(inv);
+        return;
+    }
+    const auto& target = inv.getBagSlot(bagIndex, slotIndex);
+    if (target.empty()) {
+        inv.setBagSlot(bagIndex, slotIndex, heldItem);
+        holdingItem = false;
+    } else {
+        game::ItemDef targetItem = target.item;
+        inv.setBagSlot(bagIndex, slotIndex, heldItem);
+        heldItem = targetItem;
+        heldSource = HeldSource::BAG;
+        heldBagIndex = bagIndex;
+        heldBagSlotIndex = slotIndex;
+    }
+    inventoryDirty = true;
+}
+
 void InventoryScreen::placeInEquipment(game::Inventory& inv, game::EquipSlot slot) {
     if (!holdingItem) return;
     if (gameHandler_) {
         if (heldSource == HeldSource::BACKPACK && heldBackpackIndex >= 0) {
-            // Online mode: request server auto-equip and keep local state intact.
             gameHandler_->autoEquipItemBySlot(heldBackpackIndex);
             cancelPickup(inv);
             return;
         }
+        if (heldSource == HeldSource::BAG) {
+            gameHandler_->autoEquipItemInBag(heldBagIndex, heldBagSlotIndex);
+            cancelPickup(inv);
+            return;
+        }
         if (heldSource == HeldSource::EQUIPMENT) {
-            // Online mode: avoid client-side equipment swaps.
             cancelPickup(inv);
             return;
         }
@@ -467,6 +538,12 @@ void InventoryScreen::cancelPickup(game::Inventory& inv) {
     if (heldSource == HeldSource::BACKPACK && heldBackpackIndex >= 0) {
         if (inv.getBackpackSlot(heldBackpackIndex).empty()) {
             inv.setBackpackSlot(heldBackpackIndex, heldItem);
+        } else {
+            inv.addItem(heldItem);
+        }
+    } else if (heldSource == HeldSource::BAG && heldBagIndex >= 0 && heldBagSlotIndex >= 0) {
+        if (inv.getBagSlot(heldBagIndex, heldBagSlotIndex).empty()) {
+            inv.setBagSlot(heldBagIndex, heldBagSlotIndex, heldItem);
         } else {
             inv.addItem(heldItem);
         }
@@ -784,10 +861,16 @@ void InventoryScreen::renderBagWindow(const char* title, bool& isOpen,
         }
         ImGui::PushID(id);
 
-        // For backpack slots, pass actual backpack index for drag/drop
-        int bpIdx = (bagIndex < 0) ? i : -1;
-        renderItemSlot(inventory, slot, slotSize, nullptr,
-                       SlotKind::BACKPACK, bpIdx, game::EquipSlot::NUM_SLOTS);
+        if (bagIndex < 0) {
+            // Backpack slot
+            renderItemSlot(inventory, slot, slotSize, nullptr,
+                           SlotKind::BACKPACK, i, game::EquipSlot::NUM_SLOTS);
+        } else {
+            // Bag slot - pass bag index info for interactions
+            renderItemSlot(inventory, slot, slotSize, nullptr,
+                           SlotKind::BACKPACK, -1, game::EquipSlot::NUM_SLOTS,
+                           bagIndex, i);
+        }
         ImGui::PopID();
     }
 
@@ -1151,7 +1234,8 @@ void InventoryScreen::renderBackpackPanel(game::Inventory& inventory) {
             snprintf(sid, sizeof(sid), "##bag%d_%d", bag, s);
             ImGui::PushID(sid);
             renderItemSlot(inventory, slot, slotSize, nullptr,
-                           SlotKind::BACKPACK, -1, game::EquipSlot::NUM_SLOTS);
+                           SlotKind::BACKPACK, -1, game::EquipSlot::NUM_SLOTS,
+                           bag, s);
             ImGui::PopID();
         }
     }
@@ -1160,7 +1244,10 @@ void InventoryScreen::renderBackpackPanel(game::Inventory& inventory) {
 void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::ItemSlot& slot,
                                       float size, const char* label,
                                       SlotKind kind, int backpackIndex,
-                                      game::EquipSlot equipSlot) {
+                                      game::EquipSlot equipSlot,
+                                      int bagIndex, int bagSlotIndex) {
+    // Bag items are valid inventory slots even though backpackIndex is -1
+    bool isBagSlot = (bagIndex >= 0 && bagSlotIndex >= 0);
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     ImVec2 pos = ImGui::GetCursorScreenPos();
 
@@ -1169,7 +1256,7 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
     // Determine if this is a valid drop target for held item
     bool validDrop = false;
     if (holdingItem) {
-        if (kind == SlotKind::BACKPACK && backpackIndex >= 0) {
+        if (kind == SlotKind::BACKPACK && (backpackIndex >= 0 || isBagSlot)) {
             validDrop = true;
         } else if (kind == SlotKind::EQUIPMENT && heldItem.inventoryType > 0) {
             game::EquipSlot validSlot = getEquipSlotForType(heldItem.inventoryType, inventory);
@@ -1207,6 +1294,8 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
         if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && holdingItem && validDrop) {
             if (kind == SlotKind::BACKPACK && backpackIndex >= 0) {
                 placeInBackpack(inventory, backpackIndex);
+            } else if (kind == SlotKind::BACKPACK && isBagSlot) {
+                placeInBag(inventory, bagIndex, bagSlotIndex);
             } else if (kind == SlotKind::EQUIPMENT) {
                 placeInEquipment(inventory, equipSlot);
             }
@@ -1266,60 +1355,50 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
             if (!holdingItem) {
                 if (kind == SlotKind::BACKPACK && backpackIndex >= 0) {
                     pickupFromBackpack(inventory, backpackIndex);
+                } else if (kind == SlotKind::BACKPACK && isBagSlot) {
+                    pickupFromBag(inventory, bagIndex, bagSlotIndex);
                 } else if (kind == SlotKind::EQUIPMENT) {
-                    if (gameHandler_) {
-                        // Online mode: don't mutate local equipment state.
-                        game::MessageChatData msg{};
-                        msg.type = game::ChatType::SYSTEM;
-                        msg.language = game::ChatLanguage::UNIVERSAL;
-                        msg.message = "Moving equipped items not supported yet (online mode).";
-                        gameHandler_->addLocalChatMessage(msg);
-                    } else {
-                        pickupFromEquipment(inventory, equipSlot);
-                    }
+                    game::MessageChatData msg{};
+                    msg.type = game::ChatType::SYSTEM;
+                    msg.language = game::ChatLanguage::UNIVERSAL;
+                    msg.message = "Moving equipped items not supported yet (online mode).";
+                    if (gameHandler_) gameHandler_->addLocalChatMessage(msg);
                 }
             } else {
                 if (kind == SlotKind::BACKPACK && backpackIndex >= 0) {
                     placeInBackpack(inventory, backpackIndex);
+                } else if (kind == SlotKind::BACKPACK && isBagSlot) {
+                    placeInBag(inventory, bagIndex, bagSlotIndex);
                 } else if (kind == SlotKind::EQUIPMENT && validDrop) {
                     placeInEquipment(inventory, equipSlot);
                 }
             }
         }
 
-        // Right-click: vendor sell (if vendor mode) or auto-equip/unequip
-        if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && !holdingItem) {
-            LOG_DEBUG("Right-click slot: kind=", (int)kind,
-                      " backpackIndex=", backpackIndex,
-                      " vendorMode=", vendorMode_,
-                      " hasHandler=", (gameHandler_ != nullptr));
-            if (vendorMode_ && gameHandler_ && kind == SlotKind::BACKPACK && backpackIndex >= 0) {
-                // Sell to vendor
+        // Right-click: vendor sell (if vendor mode) or auto-equip/use
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && !holdingItem && gameHandler_) {
+            LOG_INFO("Right-click slot: kind=", (int)kind,
+                     " backpackIndex=", backpackIndex,
+                     " bagIndex=", bagIndex, " bagSlotIndex=", bagSlotIndex,
+                     " vendorMode=", vendorMode_);
+            if (vendorMode_ && kind == SlotKind::BACKPACK && backpackIndex >= 0) {
                 gameHandler_->sellItemBySlot(backpackIndex);
+            } else if (vendorMode_ && kind == SlotKind::BACKPACK && isBagSlot) {
+                gameHandler_->sellItemInBag(bagIndex, bagSlotIndex);
             } else if (kind == SlotKind::EQUIPMENT) {
-                if (gameHandler_) {
-                    // Online mode: request server-side unequip (move to first free backpack slot).
-                    LOG_INFO("UI unequip request: equipSlot=", (int)equipSlot);
-                    gameHandler_->unequipToBackpack(equipSlot);
-                } else {
-                    // Offline mode: Unequip: move to free backpack slot
-                    int freeSlot = inventory.findFreeBackpackSlot();
-                    if (freeSlot >= 0) {
-                        inventory.setBackpackSlot(freeSlot, item);
-                        inventory.clearEquipSlot(equipSlot);
-                        equipmentDirty = true;
-                        inventoryDirty = true;
-                    }
-                }
+                LOG_INFO("UI unequip request: equipSlot=", (int)equipSlot);
+                gameHandler_->unequipToBackpack(equipSlot);
             } else if (kind == SlotKind::BACKPACK && backpackIndex >= 0) {
-                if (gameHandler_) {
-                    if (item.inventoryType > 0) {
-                        // Auto-equip (online)
-                        gameHandler_->autoEquipItemBySlot(backpackIndex);
-                    } else {
-                        // Use consumable (online)
-                        gameHandler_->useItemBySlot(backpackIndex);
-                    }
+                if (item.inventoryType > 0) {
+                    gameHandler_->autoEquipItemBySlot(backpackIndex);
+                } else {
+                    gameHandler_->useItemBySlot(backpackIndex);
+                }
+            } else if (kind == SlotKind::BACKPACK && isBagSlot) {
+                if (item.inventoryType > 0) {
+                    gameHandler_->autoEquipItemInBag(bagIndex, bagSlotIndex);
+                } else {
+                    gameHandler_->useItemInBag(bagIndex, bagSlotIndex);
                 }
             }
         }

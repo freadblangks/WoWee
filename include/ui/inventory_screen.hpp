@@ -113,9 +113,11 @@ private:
     // Drag-and-drop held item state
     bool holdingItem = false;
     game::ItemDef heldItem;
-    enum class HeldSource { NONE, BACKPACK, EQUIPMENT };
+    enum class HeldSource { NONE, BACKPACK, BAG, EQUIPMENT };
     HeldSource heldSource = HeldSource::NONE;
     int heldBackpackIndex = -1;
+    int heldBagIndex = -1;
+    int heldBagSlotIndex = -1;
     game::EquipSlot heldEquipSlot = game::EquipSlot::NUM_SLOTS;
 
     void renderSeparateBags(game::Inventory& inventory, uint64_t moneyCopper);
@@ -131,13 +133,16 @@ private:
     void renderItemSlot(game::Inventory& inventory, const game::ItemSlot& slot,
                         float size, const char* label,
                         SlotKind kind, int backpackIndex,
-                        game::EquipSlot equipSlot);
+                        game::EquipSlot equipSlot,
+                        int bagIndex = -1, int bagSlotIndex = -1);
     void renderItemTooltip(const game::ItemDef& item);
 
     // Held item helpers
     void pickupFromBackpack(game::Inventory& inv, int index);
+    void pickupFromBag(game::Inventory& inv, int bagIndex, int slotIndex);
     void pickupFromEquipment(game::Inventory& inv, game::EquipSlot slot);
     void placeInBackpack(game::Inventory& inv, int index);
+    void placeInBag(game::Inventory& inv, int bagIndex, int slotIndex);
     void placeInEquipment(game::Inventory& inv, game::EquipSlot slot);
     void cancelPickup(game::Inventory& inv);
     game::EquipSlot getEquipSlotForType(uint8_t inventoryType, game::Inventory& inv);

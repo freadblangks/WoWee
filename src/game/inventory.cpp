@@ -68,6 +68,13 @@ bool Inventory::setBagSlot(int bagIndex, int slotIndex, const ItemDef& item) {
     return true;
 }
 
+bool Inventory::clearBagSlot(int bagIndex, int slotIndex) {
+    if (bagIndex < 0 || bagIndex >= NUM_BAG_SLOTS) return false;
+    if (slotIndex < 0 || slotIndex >= bags[bagIndex].size) return false;
+    bags[bagIndex].slots[slotIndex].item = ItemDef{};
+    return true;
+}
+
 const ItemSlot& Inventory::getBankSlot(int index) const {
     if (index < 0 || index >= BANK_SLOTS) return EMPTY_SLOT;
     return bankSlots_[index];

@@ -34,7 +34,7 @@
     "EquipDisplay0": 8, "EquipDisplay1": 9, "EquipDisplay2": 10,
     "EquipDisplay3": 11, "EquipDisplay4": 12, "EquipDisplay5": 13,
     "EquipDisplay6": 14, "EquipDisplay7": 15, "EquipDisplay8": 16,
-    "EquipDisplay9": 17, "EquipDisplay10": 18, "BakeName": 20
+    "EquipDisplay9": 17, "BakeName": 18
   },
   "CreatureDisplayInfo": {
     "ID": 0, "ModelID": 1, "ExtraDisplayId": 3,

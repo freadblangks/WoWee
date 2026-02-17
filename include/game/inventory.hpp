@@ -77,6 +77,7 @@ public:
     void setBagSize(int bagIndex, int size);
     const ItemSlot& getBagSlot(int bagIndex, int slotIndex) const;
     bool setBagSlot(int bagIndex, int slotIndex, const ItemDef& item);
+    bool clearBagSlot(int bagIndex, int slotIndex);
 
     // Bank slots (28 main + 7 bank bags)
     const ItemSlot& getBankSlot(int index) const;

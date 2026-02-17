@@ -122,6 +122,13 @@ public:
         return NameQueryResponseParser::parse(packet, data);
     }
 
+    // --- Item Query ---
+
+    /** Parse SMSG_ITEM_QUERY_SINGLE_RESPONSE */
+    virtual bool parseItemQueryResponse(network::Packet& packet, ItemQueryResponseData& data) {
+        return ItemQueryResponseParser::parse(packet, data);
+    }
+
     // --- GameObject Query ---
 
     /** Parse SMSG_GAMEOBJECT_QUERY_RESPONSE */
@@ -280,6 +287,7 @@ public:
     bool parseMailList(network::Packet& packet, std::vector<MailMessage>& inbox) override;
     network::Packet buildMailTakeItem(uint64_t mailboxGuid, uint32_t mailId, uint32_t itemSlot) override;
     network::Packet buildMailDelete(uint64_t mailboxGuid, uint32_t mailId, uint32_t mailTemplateId) override;
+    bool parseItemQueryResponse(network::Packet& packet, ItemQueryResponseData& data) override;
 };
 
 /**

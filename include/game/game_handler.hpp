@@ -762,8 +762,12 @@ public:
     void buyItem(uint64_t vendorGuid, uint32_t itemId, uint32_t slot, uint32_t count);
     void sellItem(uint64_t vendorGuid, uint64_t itemGuid, uint32_t count);
     void sellItemBySlot(int backpackIndex);
+    void sellItemInBag(int bagIndex, int slotIndex);
     void autoEquipItemBySlot(int backpackIndex);
+    void autoEquipItemInBag(int bagIndex, int slotIndex);
     void useItemBySlot(int backpackIndex);
+    void useItemInBag(int bagIndex, int slotIndex);
+    void swapContainerItems(uint8_t srcBag, uint8_t srcSlot, uint8_t dstBag, uint8_t dstSlot);
     void useItemById(uint32_t itemId);
     bool isVendorWindowOpen() const { return vendorWindowOpen; }
     const ListInventoryData& getVendorItems() const { return currentVendorItems; }

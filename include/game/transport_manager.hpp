@@ -43,7 +43,7 @@ struct ActiveTransport {
     glm::mat4 transform;        // Cached world transform
     glm::mat4 invTransform;     // Cached inverse for collision
 
-    // Player attachment (single-player for now)
+    // Player attachment state
     bool playerOnBoard;
     glm::vec3 playerLocalOffset;
 

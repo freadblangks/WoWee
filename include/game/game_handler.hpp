@@ -1279,6 +1279,7 @@ private:
     bool autoAttacking = false;
     uint64_t autoAttackTarget = 0;
     bool autoAttackOutOfRange_ = false;
+    float autoAttackResendTimer_ = 0.0f;  // Re-send CMSG_ATTACKSWING every ~1s while attacking
     std::unordered_set<uint64_t> hostileAttackers_;
     std::vector<CombatTextEntry> combatText;
 

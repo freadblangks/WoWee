@@ -418,7 +418,6 @@ void Application::setState(AppState newState) {
                         gameHandler->sendMovement(static_cast<game::Opcode>(opcode));
                     }
                 });
-                // Keep player locomotion WoW-like in both single-player and online modes.
                 cc->setUseWoWSpeed(true);
             }
             if (gameHandler) {
@@ -884,7 +883,7 @@ void Application::render() {
 
     renderer->beginFrame();
 
-    // Only render 3D world when in-game (after server connect or single-player)
+    // Only render 3D world when in-game
     if (state == AppState::IN_GAME) {
         if (world) {
             renderer->renderWorld(world.get(), gameHandler.get());

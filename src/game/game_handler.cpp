@@ -522,6 +522,7 @@ void GameHandler::update(float deltaTime) {
         auto distanceStart = std::chrono::high_resolution_clock::now();
 
         // Leave combat if auto-attack target is too far away (leash range)
+        // Also re-send CMSG_ATTACKSWING every second to resume after server SMSG_ATTACKSTOP
         if (autoAttacking && autoAttackTarget != 0) {
             auto targetEntity = entityManager.getEntity(autoAttackTarget);
             if (targetEntity) {
@@ -531,6 +532,13 @@ void GameHandler::update(float deltaTime) {
                 if (dist > 40.0f) {
                     stopAutoAttack();
                     LOG_INFO("Left combat: target too far (", dist, " yards)");
+                } else if (state == WorldState::IN_WORLD && socket) {
+                    autoAttackResendTimer_ += deltaTime;
+                    if (autoAttackResendTimer_ >= 1.0f) {
+                        autoAttackResendTimer_ = 0.0f;
+                        auto pkt = AttackSwingPacket::build(autoAttackTarget);
+                        socket->send(pkt);
+                    }
                 }
             }
         }
@@ -6382,6 +6390,7 @@ void GameHandler::startAutoAttack(uint64_t targetGuid) {
     autoAttacking = true;
     autoAttackTarget = targetGuid;
     autoAttackOutOfRange_ = false;
+    autoAttackResendTimer_ = 0.0f;
     if (state == WorldState::IN_WORLD && socket) {
         auto packet = AttackSwingPacket::build(targetGuid);
         socket->send(packet);
@@ -6394,6 +6403,7 @@ void GameHandler::stopAutoAttack() {
     autoAttacking = false;
     autoAttackTarget = 0;
     autoAttackOutOfRange_ = false;
+    autoAttackResendTimer_ = 0.0f;
     if (state == WorldState::IN_WORLD && socket) {
         auto packet = AttackStopPacket::build();
         socket->send(packet);

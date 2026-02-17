@@ -156,7 +156,8 @@ void CharacterScreen::render(game::GameHandler& gameHandler) {
 
     // Status message
     if (!statusMessage.empty()) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 1.0f, 0.3f, 1.0f));
+        ImVec4 color = statusIsError ? ImVec4(1.0f, 0.3f, 0.3f, 1.0f) : ImVec4(0.3f, 1.0f, 0.3f, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Text, color);
         ImGui::TextWrapped("%s", statusMessage.c_str());
         ImGui::PopStyleColor();
         ImGui::Spacing();
@@ -454,8 +455,9 @@ void CharacterScreen::render(game::GameHandler& gameHandler) {
     ImGui::End();
 }
 
-void CharacterScreen::setStatus(const std::string& message) {
+void CharacterScreen::setStatus(const std::string& message, bool isError) {
     statusMessage = message;
+    statusIsError = isError;
 }
 
 void CharacterScreen::selectCharacterByName(const std::string& name) {

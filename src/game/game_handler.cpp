@@ -699,6 +699,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
             break;
 
+        case Opcode::SMSG_CHARACTER_LOGIN_FAILED:
+            handleCharLoginFailed(packet);
+            break;
+
         case Opcode::SMSG_LOGIN_VERIFY_WORLD:
             if (state == WorldState::ENTERING_WORLD || state == WorldState::IN_WORLD) {
                 handleLoginVerifyWorld(packet);
@@ -1888,6 +1892,32 @@ const Character* GameHandler::getFirstCharacter() const {
 
 
 
+
+void GameHandler::handleCharLoginFailed(network::Packet& packet) {
+    uint8_t reason = packet.readUInt8();
+
+    static const char* reasonNames[] = {
+        "Login failed",          // 0
+        "World server is down",  // 1
+        "Duplicate character",   // 2 (session still active)
+        "No instance servers",   // 3
+        "Login disabled",        // 4
+        "Character not found",   // 5
+        "Locked for transfer",   // 6
+        "Locked by billing",     // 7
+        "Using remote",          // 8
+    };
+    const char* msg = (reason < 9) ? reasonNames[reason] : "Unknown reason";
+
+    LOG_ERROR("SMSG_CHARACTER_LOGIN_FAILED: reason=", (int)reason, " (", msg, ")");
+
+    // Allow the player to re-select a character
+    setState(WorldState::CHAR_LIST_RECEIVED);
+
+    if (charLoginFailCallback_) {
+        charLoginFailCallback_(msg);
+    }
+}
 
 void GameHandler::selectCharacter(uint64_t characterGuid) {
     if (state != WorldState::CHAR_LIST_RECEIVED) {

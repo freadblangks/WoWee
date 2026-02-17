@@ -175,6 +175,9 @@ public:
     void setCharDeleteCallback(CharDeleteCallback cb) { charDeleteCallback_ = std::move(cb); }
     uint8_t getLastCharDeleteResult() const { return lastCharDeleteResult_; }
 
+    using CharLoginFailCallback = std::function<void(const std::string& reason)>;
+    void setCharLoginFailCallback(CharLoginFailCallback cb) { charLoginFailCallback_ = std::move(cb); }
+
     /**
      * Select and log in with a character
      * @param characterGuid GUID of character to log in with
@@ -907,6 +910,11 @@ private:
     void handleCharEnum(network::Packet& packet);
 
     /**
+     * Handle SMSG_CHARACTER_LOGIN_FAILED from server
+     */
+    void handleCharLoginFailed(network::Packet& packet);
+
+    /**
      * Handle SMSG_LOGIN_VERIFY_WORLD from server
      */
     void handleLoginVerifyWorld(network::Packet& packet);
@@ -1469,6 +1477,7 @@ private:
     WorldConnectFailureCallback onFailure;
     CharCreateCallback charCreateCallback_;
     CharDeleteCallback charDeleteCallback_;
+    CharLoginFailCallback charLoginFailCallback_;
     uint8_t lastCharDeleteResult_ = 0xFF;
     bool pendingCharCreateResult_ = false;
     bool pendingCharCreateSuccess_ = false;

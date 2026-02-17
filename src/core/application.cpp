@@ -1006,6 +1006,13 @@ void Application::setupUICallbacks() {
         }
     });
 
+    // Character login failure callback
+    gameHandler->setCharLoginFailCallback([this](const std::string& reason) {
+        LOG_WARNING("Character login failed: ", reason);
+        setState(AppState::CHARACTER_SELECTION);
+        uiManager->getCharacterScreen().setStatus("Login failed: " + reason, true);
+    });
+
     // World entry callback (online mode) - load terrain when entering world
     gameHandler->setWorldEntryCallback([this](uint32_t mapId, float x, float y, float z) {
         LOG_INFO("Online world entry: mapId=", mapId, " pos=(", x, ", ", y, ", ", z, ")");
@@ -1784,7 +1791,7 @@ void Application::setupUICallbacks() {
         } else {
             uint8_t code = gameHandler ? gameHandler->getLastCharDeleteResult() : 0xFF;
             uiManager->getCharacterScreen().setStatus(
-                "Delete failed (code " + std::to_string(static_cast<int>(code)) + ").");
+                "Delete failed (code " + std::to_string(static_cast<int>(code)) + ").", true);
         }
     });
 }

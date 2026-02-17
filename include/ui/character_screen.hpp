@@ -58,6 +58,7 @@ public:
         restoredLastCharacter = false;
         newlyCreatedCharacterName.clear();
         statusMessage.clear();
+        statusIsError = false;
         deleteConfirmStage = 0;
         previewInitialized_ = false;
         previewGuid_ = 0;
@@ -80,7 +81,7 @@ public:
     /**
      * Update status message
      */
-    void setStatus(const std::string& message);
+    void setStatus(const std::string& message, bool isError = false);
 
     /**
      * Select character by name (used after character creation)
@@ -97,6 +98,7 @@ private:
 
     // Status
     std::string statusMessage;
+    bool statusIsError = false;
 
     // Callbacks
     std::function<void(uint64_t)> onCharacterSelected;

@@ -6886,6 +6886,8 @@ void GameHandler::handleAttackerStateUpdate(network::Packet& packet) {
 
     bool isPlayerAttacker = (data.attackerGuid == playerGuid);
     bool isPlayerTarget = (data.targetGuid == playerGuid);
+    if (!isPlayerAttacker && !isPlayerTarget) return;  // Not our combat
+
     if (isPlayerAttacker && meleeSwingCallback_) {
         meleeSwingCallback_();
     }
@@ -6916,12 +6918,15 @@ void GameHandler::handleSpellDamageLog(network::Packet& packet) {
     SpellDamageLogData data;
     if (!SpellDamageLogParser::parse(packet, data)) return;
 
-    if (data.targetGuid == playerGuid && data.attackerGuid != 0) {
+    bool isPlayerSource = (data.attackerGuid == playerGuid);
+    bool isPlayerTarget = (data.targetGuid == playerGuid);
+    if (!isPlayerSource && !isPlayerTarget) return;  // Not our combat
+
+    if (isPlayerTarget && data.attackerGuid != 0) {
         hostileAttackers_.insert(data.attackerGuid);
         autoTargetAttacker(data.attackerGuid);
     }
 
-    bool isPlayerSource = (data.attackerGuid == playerGuid);
     auto type = data.isCrit ? CombatTextEntry::CRIT_DAMAGE : CombatTextEntry::SPELL_DAMAGE;
     addCombatText(type, static_cast<int32_t>(data.damage), data.spellId, isPlayerSource);
 }
@@ -6931,6 +6936,9 @@ void GameHandler::handleSpellHealLog(network::Packet& packet) {
     if (!SpellHealLogParser::parse(packet, data)) return;
 
     bool isPlayerSource = (data.casterGuid == playerGuid);
+    bool isPlayerTarget = (data.targetGuid == playerGuid);
+    if (!isPlayerSource && !isPlayerTarget) return;  // Not our combat
+
     auto type = data.isCrit ? CombatTextEntry::CRIT_HEAL : CombatTextEntry::HEAL;
     addCombatText(type, static_cast<int32_t>(data.heal), data.spellId, isPlayerSource);
 }

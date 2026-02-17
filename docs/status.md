@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated**: 2026-02-15
+**Last updated**: 2026-02-17
 
 ## What This Repo Is
 
@@ -8,25 +8,25 @@ Wowee is a native C++ World of Warcraft client experiment focused on connecting 
 
 ## Current Code State
 
-Implemented (working in normal development use):
+Implemented (working in normal use):
 
 - Auth flow: SRP6a auth + realm list + world connect with header encryption
 - Rendering: terrain, WMO/M2 rendering, water, sky system, particles, minimap/world map, loading video playback
-- Core gameplay plumbing: movement, targeting, action bar basics, inventory/equipment visuals, chat (tabs/channels, emotes, item links)
-- Multi-expansion direction: Classic/TBC/WotLK protocol variance handling exists and is being extended (`src/game/packet_parsers_classic.cpp`, `src/game/packet_parsers_tbc.cpp`)
+- Character system: creation (including nonbinary gender), selection, 3D preview with equipment, character screen
+- Core gameplay: movement, targeting, combat, action bar, inventory/equipment, chat (tabs/channels, emotes, item links)
+- Quests: quest markers (! and ?) on NPCs and minimap, quest log, accept/complete flow, turn-in
+- Trainers: spell trainer UI, buy spells, known/available/unavailable states
+- Vendors, loot, gossip dialogs
+- Spellbook with class tabs, drag-drop to action bar, spell icons
+- Warden anti-cheat: full module execution via Unicorn Engine x86 emulation; module caching
+- Audio: ambient, movement, combat, spell, and UI sound systems
+- Multi-expansion: Classic/Vanilla, TBC, WotLK, and Turtle WoW (1.17) protocol and asset variants
 
-In progress / incomplete (known gaps):
+In progress / known gaps:
 
-- Quests: some quest UI/markers exist, but parts of quest log parsing are still TODOs
-- Transports: functional support exists, but some spline parsing/edge cases are still TODOs
-- Audio: broad coverage for events/music/UI exists, but 3D positional audio is not implemented yet
-- Warden: crypto + module plumbing are in place; full module execution and server-specific compatibility are still in progress
-
-## Near-Term Direction
-
-- Keep tightening packet parsing across server variants (especially Classic/Turtle and TBC)
-- Keep improving visual correctness for characters/equipment and M2/WMO edge cases
-- Progress Warden module execution path (emulation via Unicorn when available)
+- Transports (ships, zeppelins, elevators): partial support, timing and edge cases still buggy
+- 3D positional audio: not implemented (mono/stereo only)
+- Visual edge cases: some M2/WMO rendering gaps (character shin mesh, some particle effects)
 
 ## Where To Look
 
@@ -34,4 +34,3 @@ In progress / incomplete (known gaps):
 - Networking/auth: `src/auth/`, `src/network/`, `src/game/game_handler.cpp`
 - Rendering: `src/rendering/`
 - Assets/extraction: `extract_assets.sh`, `tools/asset_extract/`, `src/pipeline/asset_manager.cpp`
-

@@ -14,12 +14,12 @@ Primary target today is **WotLK 3.3.5a**, with active work to broaden compatibil
 
 > **Legal Disclaimer**: This is an educational/research project. It does not include any Blizzard Entertainment assets, data files, or proprietary code. World of Warcraft and all related assets are the property of Blizzard Entertainment, Inc. This project is not affiliated with or endorsed by Blizzard Entertainment. Users are responsible for supplying their own legally obtained game data files and for ensuring compliance with all applicable laws in their jurisdiction.
 
-## Status & Direction (2026-02-15)
+## Status & Direction (2026-02-17)
 
-- **Compatibility direction**: support **Vanilla (Classic) + TBC + WotLK** by selecting an expansion profile and using opcode/parser variants (`src/game/packet_parsers_classic.cpp`, `src/game/packet_parsers_tbc.cpp`).
-- **Primary target**: WoW **WotLK 3.3.5a (build 12340)** online client, tested mainly against WotLK emulator cores (AzerothCore/TrinityCore variants).
-- **Current focus**: protocol correctness (chat, spell casting results, transports) and visuals accuracy (M2/WMO edge cases, equipment textures).
-- **Warden**: crypto + module plumbing are implemented; full module execution is still in progress (see Warden docs).
+- **Compatibility**: **Vanilla (Classic) + TBC + WotLK** via expansion profiles and opcode/parser variants (`src/game/packet_parsers_classic.cpp`, `src/game/packet_parsers_tbc.cpp`). Turtle WoW (1.17) is also supported.
+- **Primary target**: WoW **WotLK 3.3.5a (build 12340)** online client, tested against AzerothCore/TrinityCore variants and Turtle WoW.
+- **Current focus**: protocol correctness across server variants, visual accuracy (M2/WMO edge cases, equipment textures), and multi-expansion coverage.
+- **Warden**: Full module execution via Unicorn Engine CPU emulation. Decrypts (RC4→RSA→zlib), parses and relocates the PE module, executes via x86 emulation with Windows API interception. Module cache at `~/.local/share/wowee/warden_cache/`.
 
 ## Features
 
@@ -46,20 +46,22 @@ Primary target today is **WotLK 3.3.5a**, with active work to broaden compatibil
 
 ### Gameplay Systems
 - **Authentication** -- Full SRP6a implementation with RC4 header encryption
-- **Character System** -- Creation, selection, 3D preview, stats panel, race/class support
+- **Character System** -- Creation (with nonbinary gender option), selection, 3D preview, stats panel, race/class support
 - **Movement** -- WASD movement, camera orbit, spline path following
 - **Combat** -- Auto-attack, spell casting with cooldowns, damage calculation, death handling
 - **Targeting** -- Tab-cycling, click-to-target, faction-based hostility (using Faction.dbc)
 - **Inventory** -- 23 equipment slots, 16 backpack slots, drag-drop, auto-equip
 - **Spells** -- Spellbook with class specialty tabs, drag-drop to action bar, spell icons
 - **Action Bar** -- 12 slots, drag-drop from spellbook/inventory, click-to-cast, keybindings
+- **Trainers** -- Spell trainer UI, buy spells, known/available/unavailable states
 - **Quests** -- Quest markers (! and ?) on NPCs and minimap, quest log, quest details, turn-in flow
 - **Vendors** -- Buy and sell items, gold tracking, inventory sync
 - **Loot** -- Loot window, gold looting, item pickup
 - **Gossip** -- NPC interaction, dialogue options
 - **Chat** -- Tabs/channels, emotes, chat bubbles, clickable URLs, clickable item links with tooltips
 - **Party** -- Group invites, party list
-- **UI** -- Loading screens with progress bar, settings window with opacity slider
+- **Warden** -- Warden anti-cheat module execution via Unicorn Engine x86 emulation (cross-platform, no Wine)
+- **UI** -- Loading screens with progress bar, settings window, minimap with zoom/rotation/square mode
 
 ## Building
 
@@ -69,16 +71,19 @@ Primary target today is **WotLK 3.3.5a**, with active work to broaden compatibil
 # Ubuntu/Debian
 sudo apt install libsdl2-dev libglew-dev libglm-dev \
                  libssl-dev cmake build-essential \
-                 libstorm-dev  # for asset_extract
+                 libunicorn-dev \          # for Warden module execution
+                 libstorm-dev             # for asset_extract
 
 # Fedora
 sudo dnf install SDL2-devel glew-devel glm-devel \
                  openssl-devel cmake gcc-c++ \
-                 StormLib-devel  # for asset_extract
+                 unicorn-devel \          # for Warden module execution
+                 StormLib-devel           # for asset_extract
 
 # Arch
 sudo pacman -S sdl2 glew glm openssl cmake base-devel \
-                 stormlib  # for asset_extract
+                 unicorn \               # for Warden module execution
+                 stormlib                # for asset_extract
 ```
 
 ### Game Data
@@ -189,15 +194,15 @@ make -j$(nproc)
 - [SRP Implementation](docs/srp-implementation.md) -- Cryptographic details
 - [Packet Framing](docs/packet-framing.md) -- Network protocol framing
 - [Realm List](docs/realm-list.md) -- Realm selection system
-- [Warden Quick Reference](docs/WARDEN_QUICK_REFERENCE.md) -- Testing notes and common fixes
-- [Warden Implementation](docs/WARDEN_IMPLEMENTATION.md) -- What works today and what remains
+- [Warden Quick Reference](docs/WARDEN_QUICK_REFERENCE.md) -- Warden module execution overview and testing
+- [Warden Implementation](docs/WARDEN_IMPLEMENTATION.md) -- Technical details of the implementation
 
 ## Technical Details
 
 - **Graphics**: OpenGL 3.3 Core, GLSL 330, forward rendering with post-processing
 - **Performance**: 60 FPS (vsync), ~50k triangles/frame, ~30 draw calls, <10% GPU
 - **Platform**: Linux (primary), C++20, CMake 3.15+
-- **Dependencies**: SDL2, OpenGL/GLEW, GLM, OpenSSL, ImGui, FFmpeg (StormLib for asset extraction tooling; Unicorn optional for Warden emulation)
+- **Dependencies**: SDL2, OpenGL/GLEW, GLM, OpenSSL, ImGui, FFmpeg, Unicorn Engine (StormLib for asset extraction tooling)
 - **Architecture**: Modular design with clear separation (core, rendering, networking, game logic, asset pipeline, UI, audio)
 - **Networking**: Non-blocking TCP, SRP6a authentication, RC4 encryption, WoW 3.3.5a protocol
 - **Asset Loading**: Extracted loose-file tree + `manifest.json` indexing, async terrain streaming, overlay layers

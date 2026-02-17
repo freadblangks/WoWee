@@ -28,6 +28,11 @@ https://github.com/cmangos/mangos-wotlk
 
 Open-source WoW server emulator. Referenced for protocol documentation and authentication flow.
 
+### AzerothCore
+https://github.com/azerothcore/azerothcore-wotlk
+
+Open-source WoW 3.3.5a server. Referenced for SRP6 authentication details, update field indices, and packet structures.
+
 ## Libraries
 
 This project uses the following open-source libraries:
@@ -37,7 +42,9 @@ This project uses the following open-source libraries:
 | [SDL2](https://libsdl.org/) | zlib | Window management, input handling |
 | [GLEW](http://glew.sourceforge.net/) | BSD/MIT | OpenGL extension loading |
 | [GLM](https://github.com/g-truc/glm) | MIT | Mathematics library |
-| [OpenSSL](https://www.openssl.org/) | Apache 2.0 | Cryptographic functions (SRP6) |
+| [OpenSSL](https://www.openssl.org/) | Apache 2.0 | Cryptographic functions (SRP6, RC4, RSA) |
+| [Unicorn Engine](https://www.unicorn-engine.org/) | LGPL 2 | x86 CPU emulation for Warden module execution |
+| [miniaudio](https://miniaud.io/) | MIT/Unlicense | Audio playback |
 | [StormLib](https://github.com/ladislav-zezula/StormLib) | MIT | MPQ archive extraction |
 | [Dear ImGui](https://github.com/ocornut/imgui) | MIT | Immediate mode GUI |
 

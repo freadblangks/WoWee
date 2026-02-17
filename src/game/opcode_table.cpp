@@ -698,12 +698,11 @@ bool OpcodeTable::loadFromJson(const std::string& path) {
 
     std::string json((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
 
-    // Save old tables so we can restore on failure
+    // Merge/patch on top of existing table (WotLK defaults must be loaded first).
+    // Opcodes NOT in the JSON keep their current mapping, so expansion-specific
+    // JSONs only need to list entries that differ from the WotLK baseline.
     auto savedLogicalToWire = logicalToWire_;
     auto savedWireToLogical = wireToLogical_;
-
-    logicalToWire_.clear();
-    wireToLogical_.clear();
 
     // Parse simple JSON: { "NAME": "0xHEX", ... } or { "NAME": 123, ... }
     size_t pos = 0;
@@ -746,6 +745,11 @@ bool OpcodeTable::loadFromJson(const std::string& path) {
         auto logOp = nameToLogical(key);
         if (logOp) {
             uint16_t logIdx = static_cast<uint16_t>(*logOp);
+            // Remove stale reverse-mapping for this logical opcode's old wire value
+            auto oldIt = logicalToWire_.find(logIdx);
+            if (oldIt != logicalToWire_.end()) {
+                wireToLogical_.erase(oldIt->second);
+            }
             logicalToWire_[logIdx] = wire;
             wireToLogical_[wire] = logIdx;
             ++loaded;

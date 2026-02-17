@@ -4044,7 +4044,7 @@ void GameScreen::renderBuffBar(game::GameHandler& gameHandler) {
 
             ImGui::PushID(static_cast<int>(i));
 
-            bool isBuff = (aura.flags & 0x02) != 0;
+            bool isBuff = (aura.flags & 0x80) == 0;  // 0x80 = negative/debuff flag
             ImVec4 borderColor = isBuff ? ImVec4(0.2f, 0.8f, 0.2f, 0.9f) : ImVec4(0.8f, 0.2f, 0.2f, 0.9f);
 
             // Try to get spell icon
@@ -4078,12 +4078,16 @@ void GameScreen::renderBuffBar(game::GameHandler& gameHandler) {
                 }
             }
 
-            // Tooltip with spell name and duration
+            // Tooltip with spell name and live countdown
             if (ImGui::IsItemHovered()) {
                 std::string name = spellbookScreen.lookupSpellName(aura.spellId, assetMgr);
                 if (name.empty()) name = "Spell #" + std::to_string(aura.spellId);
-                if (aura.durationMs > 0) {
-                    int seconds = aura.durationMs / 1000;
+                uint64_t nowMs = static_cast<uint64_t>(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now().time_since_epoch()).count());
+                int32_t remaining = aura.getRemainingMs(nowMs);
+                if (remaining > 0) {
+                    int seconds = remaining / 1000;
                     if (seconds < 60) {
                         ImGui::SetTooltip("%s (%ds)", name.c_str(), seconds);
                     } else {

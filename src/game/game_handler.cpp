@@ -7162,7 +7162,14 @@ void GameHandler::handleAuraUpdate(network::Packet& packet, bool isAll) {
         if (isAll) {
             auraList->clear();
         }
-        for (const auto& [slot, aura] : data.updates) {
+        uint64_t nowMs = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+        for (auto [slot, aura] : data.updates) {
+            // Stamp client timestamp so the UI can count down duration locally
+            if (aura.durationMs >= 0) {
+                aura.receivedAtMs = nowMs;
+            }
             // Ensure vector is large enough
             while (auraList->size() <= slot) {
                 auraList->push_back(AuraSlot{});

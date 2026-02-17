@@ -18,8 +18,16 @@ struct AuraSlot {
     int32_t durationMs = -1;
     int32_t maxDurationMs = -1;
     uint64_t casterGuid = 0;
+    uint64_t receivedAtMs = 0; // Client timestamp (ms) when durationMs was set
 
     bool isEmpty() const { return spellId == 0; }
+    // Remaining duration in ms, counting down from when the packet was received
+    int32_t getRemainingMs(uint64_t nowMs) const {
+        if (durationMs < 0) return -1;
+        uint64_t elapsed = (nowMs > receivedAtMs) ? (nowMs - receivedAtMs) : 0;
+        int32_t remaining = durationMs - static_cast<int32_t>(elapsed);
+        return (remaining > 0) ? remaining : 0;
+    }
 };
 
 /**

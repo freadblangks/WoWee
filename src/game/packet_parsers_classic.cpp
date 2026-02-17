@@ -856,11 +856,12 @@ network::Packet ClassicPacketParsers::buildMailDelete(uint64_t mailboxGuid,
 // Vanilla has NO SoundOverrideSubclass, NO Flags2, NO ScalingStatDistribution,
 // NO ScalingStatValue, and only 2 damage types (not 5).
 // ============================================================================
-network::Packet ClassicPacketParsers::buildItemQuery(uint32_t entry, uint64_t /*guid*/) {
-    // Vanilla CMSG_ITEM_QUERY_SINGLE: just uint32 entry (no GUID field)
+network::Packet ClassicPacketParsers::buildItemQuery(uint32_t entry, uint64_t guid) {
+    // Vanilla CMSG_ITEM_QUERY_SINGLE: uint32 entry + uint64 guid (same as WotLK)
     network::Packet packet(wireOpcode(Opcode::CMSG_ITEM_QUERY_SINGLE));
     packet.writeUInt32(entry);
-    LOG_DEBUG("[Classic] Built CMSG_ITEM_QUERY_SINGLE: entry=", entry);
+    packet.writeUInt64(guid);
+    LOG_DEBUG("[Classic] Built CMSG_ITEM_QUERY_SINGLE: entry=", entry, " guid=0x", std::hex, guid, std::dec);
     return packet;
 }
 

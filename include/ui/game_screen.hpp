@@ -203,10 +203,6 @@ private:
     TalentScreen talentScreen;
     rendering::WorldMap worldMap;
 
-    bool actionSpellDbAttempted = false;
-    bool actionSpellDbLoaded = false;
-    std::unordered_map<uint32_t, std::string> actionSpellNames;
-
     // Spell icon cache: spellId -> GL texture ID
     std::unordered_map<uint32_t, GLuint> spellIconCache_;
     // SpellIconID -> icon path (from SpellIcon.dbc)

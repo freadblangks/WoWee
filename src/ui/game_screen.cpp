@@ -3084,36 +3084,8 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
             bool onCooldown = !slot.isReady();
 
             auto getSpellName = [&](uint32_t spellId) -> std::string {
-                if (!actionSpellDbAttempted) {
-                    actionSpellDbAttempted = true;
-                    if (assetMgr && assetMgr->isInitialized()) {
-                        auto dbc = assetMgr->loadDBC("Spell.dbc");
-                        if (dbc && dbc->isLoaded()) {
-                            const auto* actionSpellL = pipeline::getActiveDBCLayout() ? pipeline::getActiveDBCLayout()->getLayout("Spell") : nullptr;
-                            uint32_t fieldCount = dbc->getFieldCount();
-                            uint32_t nameField = actionSpellL ? (*actionSpellL)["Name"] : 136;
-                            if (fieldCount < 137) {
-                                if (fieldCount > 10) {
-                                    nameField = fieldCount > 140 ? 136 : 1;
-                                } else {
-                                    nameField = 1;
-                                }
-                            }
-                            uint32_t count = dbc->getRecordCount();
-                            actionSpellNames.reserve(count);
-                            for (uint32_t r = 0; r < count; ++r) {
-                                uint32_t id = dbc->getUInt32(r, actionSpellL ? (*actionSpellL)["ID"] : 0);
-                                std::string name = dbc->getString(r, nameField);
-                                if (!name.empty() && id > 0) {
-                                    actionSpellNames[id] = name;
-                                }
-                            }
-                            actionSpellDbLoaded = true;
-                        }
-                    }
-                }
-                auto it = actionSpellNames.find(spellId);
-                if (it != actionSpellNames.end()) return it->second;
+                std::string name = spellbookScreen.lookupSpellName(spellId, assetMgr);
+                if (!name.empty()) return name;
                 return "Spell #" + std::to_string(spellId);
             };
 
@@ -4108,13 +4080,8 @@ void GameScreen::renderBuffBar(game::GameHandler& gameHandler) {
 
             // Tooltip with spell name and duration
             if (ImGui::IsItemHovered()) {
-                std::string name;
-                auto it = actionSpellNames.find(aura.spellId);
-                if (it != actionSpellNames.end()) {
-                    name = it->second;
-                } else {
-                    name = "Spell #" + std::to_string(aura.spellId);
-                }
+                std::string name = spellbookScreen.lookupSpellName(aura.spellId, assetMgr);
+                if (name.empty()) name = "Spell #" + std::to_string(aura.spellId);
                 if (aura.durationMs > 0) {
                     int seconds = aura.durationMs / 1000;
                     if (seconds < 60) {

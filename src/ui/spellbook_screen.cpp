@@ -71,6 +71,15 @@ void SpellbookScreen::loadSpellDBC(pipeline::AssetManager* assetManager) {
     dbcLoaded = !spellData.empty();
 }
 
+std::string SpellbookScreen::lookupSpellName(uint32_t spellId, pipeline::AssetManager* assetManager) {
+    if (!dbcLoadAttempted) {
+        loadSpellDBC(assetManager);
+    }
+    auto it = spellData.find(spellId);
+    if (it != spellData.end()) return it->second.name;
+    return {};
+}
+
 void SpellbookScreen::loadSpellIconDBC(pipeline::AssetManager* assetManager) {
     if (iconDbLoaded) return;
     iconDbLoaded = true;

@@ -35,6 +35,9 @@ public:
     void toggle() { open = !open; }
     void setOpen(bool o) { open = o; }
 
+    // Spell name lookup — triggers DBC load if needed, used by action bar tooltips
+    std::string lookupSpellName(uint32_t spellId, pipeline::AssetManager* assetManager);
+
     // Drag-and-drop state for action bar assignment
     bool isDraggingSpell() const { return draggingSpell_; }
     uint32_t getDragSpellId() const { return dragSpellId_; }

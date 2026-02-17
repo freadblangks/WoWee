@@ -3656,11 +3656,16 @@ void GameScreen::renderCombatText(game::GameHandler& gameHandler) {
                              ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav;
 
     if (ImGui::Begin("##CombatText", nullptr, flags)) {
-        float centerX = screenW / 2.0f;
-        int index = 0;
+        // Incoming events (enemy attacks player) float near screen center (over the player).
+        // Outgoing events (player attacks enemy) float on the right side (near the target).
+        const float incomingX = screenW * 0.40f;
+        const float outgoingX = screenW * 0.68f;
+
+        int inIdx = 0, outIdx = 0;
         for (const auto& entry : entries) {
             float alpha = 1.0f - (entry.age / game::CombatTextEntry::LIFETIME);
             float yOffset = 200.0f - entry.age * 60.0f;
+            const bool outgoing = entry.isPlayerSource;
 
             ImVec4 color;
             char text[64];
@@ -3668,13 +3673,15 @@ void GameScreen::renderCombatText(game::GameHandler& gameHandler) {
                 case game::CombatTextEntry::MELEE_DAMAGE:
                 case game::CombatTextEntry::SPELL_DAMAGE:
                     snprintf(text, sizeof(text), "-%d", entry.amount);
-                    color = entry.isPlayerSource ?
+                    color = outgoing ?
                         ImVec4(1.0f, 1.0f, 0.3f, alpha) :   // Outgoing = yellow
                         ImVec4(1.0f, 0.3f, 0.3f, alpha);     // Incoming = red
                     break;
                 case game::CombatTextEntry::CRIT_DAMAGE:
                     snprintf(text, sizeof(text), "-%d!", entry.amount);
-                    color = ImVec4(1.0f, 0.5f, 0.0f, alpha);  // Orange for crit
+                    color = outgoing ?
+                        ImVec4(1.0f, 0.8f, 0.0f, alpha) :   // Outgoing crit = bright yellow
+                        ImVec4(1.0f, 0.5f, 0.0f, alpha);     // Incoming crit = orange
                     break;
                 case game::CombatTextEntry::HEAL:
                     snprintf(text, sizeof(text), "+%d", entry.amount);
@@ -3689,12 +3696,16 @@ void GameScreen::renderCombatText(game::GameHandler& gameHandler) {
                     color = ImVec4(0.7f, 0.7f, 0.7f, alpha);
                     break;
                 case game::CombatTextEntry::DODGE:
-                    snprintf(text, sizeof(text), "Dodge");
-                    color = ImVec4(0.7f, 0.7f, 0.7f, alpha);
+                    // outgoing=true: enemy dodged player's attack
+                    // outgoing=false: player dodged incoming attack
+                    snprintf(text, sizeof(text), outgoing ? "Dodge" : "You Dodge");
+                    color = outgoing ? ImVec4(0.6f, 0.6f, 0.6f, alpha)
+                                     : ImVec4(0.4f, 0.9f, 1.0f, alpha);
                     break;
                 case game::CombatTextEntry::PARRY:
-                    snprintf(text, sizeof(text), "Parry");
-                    color = ImVec4(0.7f, 0.7f, 0.7f, alpha);
+                    snprintf(text, sizeof(text), outgoing ? "Parry" : "You Parry");
+                    color = outgoing ? ImVec4(0.6f, 0.6f, 0.6f, alpha)
+                                     : ImVec4(0.4f, 0.9f, 1.0f, alpha);
                     break;
                 default:
                     snprintf(text, sizeof(text), "%d", entry.amount);
@@ -3702,11 +3713,13 @@ void GameScreen::renderCombatText(game::GameHandler& gameHandler) {
                     break;
             }
 
-            // Stagger entries horizontally
-            float xOffset = centerX + (index % 3 - 1) * 80.0f;
+            // Outgoing → right side (near target), incoming → center-left (near player)
+            int& idx = outgoing ? outIdx : inIdx;
+            float baseX = outgoing ? outgoingX : incomingX;
+            float xOffset = baseX + (idx % 3 - 1) * 60.0f;
+            ++idx;
             ImGui::SetCursorPos(ImVec2(xOffset, yOffset));
             ImGui::TextColored(color, "%s", text);
-            index++;
         }
     }
     ImGui::End();

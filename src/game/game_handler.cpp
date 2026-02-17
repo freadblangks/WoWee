@@ -1798,8 +1798,8 @@ void GameHandler::handleCharCreateResponse(network::Packet& packet) {
         return;
     }
 
-    if (data.result == CharCreateResult::SUCCESS) {
-        LOG_INFO("Character created successfully");
+    if (data.result == CharCreateResult::SUCCESS || data.result == CharCreateResult::IN_PROGRESS) {
+        LOG_INFO("Character created successfully (code=", static_cast<int>(data.result), ")");
         requestCharacterList();
         if (charCreateCallback_) {
             charCreateCallback_(true, "Character created!");
@@ -1821,6 +1821,15 @@ void GameHandler::handleCharCreateResponse(network::Packet& packet) {
             case CharCreateResult::LEVEL_REQUIREMENT: msg = "Level requirement not met"; break;
             case CharCreateResult::UNIQUE_CLASS_LIMIT: msg = "Unique class limit reached"; break;
             case CharCreateResult::RESTRICTED_RACECLASS: msg = "Race/class combination not allowed"; break;
+            case CharCreateResult::IN_PROGRESS: msg = "Character creation in progress..."; break;
+            case CharCreateResult::CHARACTER_CHOOSE_RACE: msg = "Please choose a different race"; break;
+            case CharCreateResult::CHARACTER_ARENA_LEADER: msg = "Arena team leader restriction"; break;
+            case CharCreateResult::CHARACTER_DELETE_MAIL: msg = "Character has mail"; break;
+            case CharCreateResult::CHARACTER_SWAP_FACTION: msg = "Faction swap restriction"; break;
+            case CharCreateResult::CHARACTER_RACE_ONLY: msg = "Race-only restriction"; break;
+            case CharCreateResult::CHARACTER_GOLD_LIMIT: msg = "Gold limit reached"; break;
+            case CharCreateResult::FORCE_LOGIN: msg = "Force login required"; break;
+            case CharCreateResult::CHARACTER_IN_GUILD: msg = "Character is in a guild"; break;
             // Name validation errors
             case CharCreateResult::NAME_FAILURE: msg = "Invalid name"; break;
             case CharCreateResult::NAME_NO_NAME: msg = "Please enter a name"; break;

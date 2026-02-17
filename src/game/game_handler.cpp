@@ -979,13 +979,17 @@ void GameHandler::handlePacket(network::Packet& packet) {
                          " pos=(", data.x, ", ", data.y, ", ", data.z, ")");
                 glm::vec3 canonical = core::coords::serverToCanonical(
                     glm::vec3(data.x, data.y, data.z));
+                // Only show message if bind point was already set (not initial login sync)
+                bool wasSet = hasHomeBind_;
                 hasHomeBind_ = true;
                 homeBindMapId_ = data.mapId;
                 homeBindPos_ = canonical;
                 if (bindPointCallback_) {
                     bindPointCallback_(data.mapId, canonical.x, canonical.y, canonical.z);
                 }
-                addSystemChatMessage("Your home has been set.");
+                if (wasSet) {
+                    addSystemChatMessage("Your home has been set.");
+                }
             } else {
                 LOG_WARNING("Failed to parse SMSG_BINDPOINTUPDATE");
             }
@@ -4396,6 +4400,7 @@ void GameHandler::autoJoinDefaultChannels() {
     if (chatAutoJoin.trade) joinChannel("Trade");
     if (chatAutoJoin.localDefense) joinChannel("LocalDefense");
     if (chatAutoJoin.lfg) joinChannel("LookingForGroup");
+    if (chatAutoJoin.local) joinChannel("Local");
 }
 
 void GameHandler::setTarget(uint64_t guid) {

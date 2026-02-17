@@ -243,6 +243,7 @@ public:
         bool trade = true;
         bool localDefense = true;
         bool lfg = true;
+        bool local = true;
     };
     ChatAutoJoin chatAutoJoin;
 

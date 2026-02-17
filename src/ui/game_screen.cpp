@@ -149,7 +149,8 @@ bool GameScreen::shouldShowMessage(const game::MessageChatData& msg, int tabInde
         const std::string& ch = msg.channelName;
         if (ch.find("Trade") == std::string::npos &&
             ch.find("General") == std::string::npos &&
-            ch.find("LookingForGroup") == std::string::npos) {
+            ch.find("LookingForGroup") == std::string::npos &&
+            ch.find("Local") == std::string::npos) {
             return false;
         }
         return true;
@@ -208,6 +209,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     gameHandler.chatAutoJoin.trade = chatAutoJoinTrade_;
     gameHandler.chatAutoJoin.localDefense = chatAutoJoinLocalDefense_;
     gameHandler.chatAutoJoin.lfg = chatAutoJoinLFG_;
+    gameHandler.chatAutoJoin.local = chatAutoJoinLocal_;
 
     // Process targeting input before UI windows
     processTargetInput(gameHandler);
@@ -5685,6 +5687,7 @@ void GameScreen::renderSettingsWindow() {
                 if (ImGui::Checkbox("Trade", &chatAutoJoinTrade_)) saveSettings();
                 if (ImGui::Checkbox("LocalDefense", &chatAutoJoinLocalDefense_)) saveSettings();
                 if (ImGui::Checkbox("LookingForGroup", &chatAutoJoinLFG_)) saveSettings();
+                if (ImGui::Checkbox("Local", &chatAutoJoinLocal_)) saveSettings();
 
                 ImGui::Spacing();
                 ImGui::Spacing();
@@ -5704,6 +5707,7 @@ void GameScreen::renderSettingsWindow() {
                     chatAutoJoinTrade_ = true;
                     chatAutoJoinLocalDefense_ = true;
                     chatAutoJoinLFG_ = true;
+                    chatAutoJoinLocal_ = true;
                     saveSettings();
                 }
 
@@ -6189,6 +6193,7 @@ void GameScreen::saveSettings() {
     out << "chat_autojoin_trade=" << (chatAutoJoinTrade_ ? 1 : 0) << "\n";
     out << "chat_autojoin_localdefense=" << (chatAutoJoinLocalDefense_ ? 1 : 0) << "\n";
     out << "chat_autojoin_lfg=" << (chatAutoJoinLFG_ ? 1 : 0) << "\n";
+    out << "chat_autojoin_local=" << (chatAutoJoinLocal_ ? 1 : 0) << "\n";
 
     LOG_INFO("Settings saved to ", path);
 }
@@ -6248,6 +6253,7 @@ void GameScreen::loadSettings() {
             else if (key == "chat_autojoin_trade") chatAutoJoinTrade_ = (std::stoi(val) != 0);
             else if (key == "chat_autojoin_localdefense") chatAutoJoinLocalDefense_ = (std::stoi(val) != 0);
             else if (key == "chat_autojoin_lfg") chatAutoJoinLFG_ = (std::stoi(val) != 0);
+            else if (key == "chat_autojoin_local") chatAutoJoinLocal_ = (std::stoi(val) != 0);
         } catch (...) {}
     }
     LOG_INFO("Settings loaded from ", path);

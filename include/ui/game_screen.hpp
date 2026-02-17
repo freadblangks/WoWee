@@ -231,6 +231,7 @@ private:
     bool chatAutoJoinTrade_ = true;
     bool chatAutoJoinLocalDefense_ = true;
     bool chatAutoJoinLFG_ = true;
+    bool chatAutoJoinLocal_ = true;
 
     // Join channel input buffer
     char joinChannelBuffer_[128] = "";

@@ -1358,11 +1358,7 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
                 } else if (kind == SlotKind::BACKPACK && isBagSlot) {
                     pickupFromBag(inventory, bagIndex, bagSlotIndex);
                 } else if (kind == SlotKind::EQUIPMENT) {
-                    game::MessageChatData msg{};
-                    msg.type = game::ChatType::SYSTEM;
-                    msg.language = game::ChatLanguage::UNIVERSAL;
-                    msg.message = "Moving equipped items not supported yet (online mode).";
-                    if (gameHandler_) gameHandler_->addLocalChatMessage(msg);
+                    pickupFromEquipment(inventory, equipSlot);
                 }
             } else {
                 if (kind == SlotKind::BACKPACK && backpackIndex >= 0) {

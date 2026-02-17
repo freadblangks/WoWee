@@ -64,6 +64,10 @@ private:
     bool showChatWindow = true;
     bool showPlayerInfo = false;
     bool showGuildRoster_ = false;
+    std::string selectedGuildMember_;
+    bool showGuildNoteEdit_ = false;
+    bool editingOfficerNote_ = false;
+    char guildNoteEditBuffer_[256] = {0};
     bool refocusChatInput = false;
     bool chatWindowLocked = true;
     ImVec2 chatWindowPos_ = ImVec2(0.0f, 0.0f);

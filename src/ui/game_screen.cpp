@@ -1973,6 +1973,31 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                 return;
             }
 
+            // /gdisband command
+            if (cmdLower == "gdisband" || cmdLower == "guilddisband") {
+                gameHandler.disbandGuild();
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            // /gleader command
+            if (cmdLower == "gleader" || cmdLower == "guildleader") {
+                if (spacePos != std::string::npos) {
+                    std::string playerName = command.substr(spacePos + 1);
+                    gameHandler.setGuildLeader(playerName);
+                    chatInputBuffer[0] = '\0';
+                    return;
+                }
+
+                game::MessageChatData msg;
+                msg.type = game::ChatType::SYSTEM;
+                msg.language = game::ChatLanguage::UNIVERSAL;
+                msg.message = "Usage: /gleader <player>";
+                gameHandler.addLocalChatMessage(msg);
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
             // /readycheck command
             if (cmdLower == "readycheck" || cmdLower == "rc") {
                 gameHandler.initiateReadyCheck();
@@ -2019,8 +2044,26 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
 
             // Reply command
             if (cmdLower == "r" || cmdLower == "reply") {
-                std::string replyMsg = (spacePos != std::string::npos) ? command.substr(spacePos + 1) : "";
-                gameHandler.replyToLastWhisper(replyMsg);
+                std::string lastSender = gameHandler.getLastWhisperSender();
+                if (lastSender.empty()) {
+                    game::MessageChatData errMsg;
+                    errMsg.type = game::ChatType::SYSTEM;
+                    errMsg.language = game::ChatLanguage::UNIVERSAL;
+                    errMsg.message = "No one has whispered you yet.";
+                    gameHandler.addLocalChatMessage(errMsg);
+                    chatInputBuffer[0] = '\0';
+                    return;
+                }
+                // Set whisper target to last whisper sender
+                strncpy(whisperTargetBuffer, lastSender.c_str(), sizeof(whisperTargetBuffer) - 1);
+                whisperTargetBuffer[sizeof(whisperTargetBuffer) - 1] = '\0';
+                if (spacePos != std::string::npos) {
+                    // /r message — send reply immediately
+                    std::string replyMsg = command.substr(spacePos + 1);
+                    gameHandler.sendChatMessage(game::ChatType::WHISPER, replyMsg, lastSender);
+                }
+                // Switch to whisper tab
+                selectedChatType = 4;
                 chatInputBuffer[0] = '\0';
                 return;
             }
@@ -3710,8 +3753,8 @@ void GameScreen::renderGuildRoster(game::GameHandler& gameHandler) {
     float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
     float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
 
-    ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 300, screenH / 2 - 250), ImGuiCond_Once);
-    ImGui::SetNextWindowSize(ImVec2(600, 500), ImGuiCond_Once);
+    ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 375, screenH / 2 - 250), ImGuiCond_Once);
+    ImGui::SetNextWindowSize(ImVec2(750, 500), ImGuiCond_Once);
 
     std::string title = gameHandler.isInGuild() ? (gameHandler.getGuildName() + " - Roster") : "Guild Roster";
     bool open = showGuildRoster_;
@@ -3735,8 +3778,10 @@ void GameScreen::renderGuildRoster(game::GameHandler& gameHandler) {
             ImGui::Text("%d members (%d online)", (int)roster.members.size(), onlineCount);
             ImGui::Separator();
 
+            const auto& rankNames = gameHandler.getGuildRankNames();
+
             // Table
-            if (ImGui::BeginTable("GuildRoster", 6,
+            if (ImGui::BeginTable("GuildRoster", 7,
                     ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV |
                     ImGuiTableFlags_Sortable)) {
                 ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_DefaultSort);
@@ -3745,6 +3790,7 @@ void GameScreen::renderGuildRoster(game::GameHandler& gameHandler) {
                 ImGui::TableSetupColumn("Class", ImGuiTableColumnFlags_WidthFixed, 70.0f);
                 ImGui::TableSetupColumn("Zone", ImGuiTableColumnFlags_WidthFixed, 80.0f);
                 ImGui::TableSetupColumn("Note");
+                ImGui::TableSetupColumn("Officer Note");
                 ImGui::TableHeadersRow();
 
                 // Online members first, then offline
@@ -3768,8 +3814,19 @@ void GameScreen::renderGuildRoster(game::GameHandler& gameHandler) {
                     ImGui::TableNextColumn();
                     ImGui::TextColored(textColor, "%s", m.name.c_str());
 
+                    // Right-click context menu
+                    if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                        selectedGuildMember_ = m.name;
+                        ImGui::OpenPopup("GuildMemberContext");
+                    }
+
                     ImGui::TableNextColumn();
-                    ImGui::TextColored(textColor, "%u", m.rankIndex);
+                    // Show rank name instead of index
+                    if (m.rankIndex < rankNames.size()) {
+                        ImGui::TextColored(textColor, "%s", rankNames[m.rankIndex].c_str());
+                    } else {
+                        ImGui::TextColored(textColor, "Rank %u", m.rankIndex);
+                    }
 
                     ImGui::TableNextColumn();
                     ImGui::TextColored(textColor, "%u", m.level);
@@ -3783,8 +3840,79 @@ void GameScreen::renderGuildRoster(game::GameHandler& gameHandler) {
 
                     ImGui::TableNextColumn();
                     ImGui::TextColored(textColor, "%s", m.publicNote.c_str());
+
+                    ImGui::TableNextColumn();
+                    ImGui::TextColored(textColor, "%s", m.officerNote.c_str());
                 }
                 ImGui::EndTable();
+            }
+
+            // Context menu popup
+            if (ImGui::BeginPopup("GuildMemberContext")) {
+                ImGui::Text("%s", selectedGuildMember_.c_str());
+                ImGui::Separator();
+                if (ImGui::MenuItem("Promote")) {
+                    gameHandler.promoteGuildMember(selectedGuildMember_);
+                }
+                if (ImGui::MenuItem("Demote")) {
+                    gameHandler.demoteGuildMember(selectedGuildMember_);
+                }
+                if (ImGui::MenuItem("Kick")) {
+                    gameHandler.kickGuildMember(selectedGuildMember_);
+                }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Set Public Note...")) {
+                    showGuildNoteEdit_ = true;
+                    editingOfficerNote_ = false;
+                    guildNoteEditBuffer_[0] = '\0';
+                    // Pre-fill with existing note
+                    for (const auto& mem : roster.members) {
+                        if (mem.name == selectedGuildMember_) {
+                            snprintf(guildNoteEditBuffer_, sizeof(guildNoteEditBuffer_), "%s", mem.publicNote.c_str());
+                            break;
+                        }
+                    }
+                }
+                if (ImGui::MenuItem("Set Officer Note...")) {
+                    showGuildNoteEdit_ = true;
+                    editingOfficerNote_ = true;
+                    guildNoteEditBuffer_[0] = '\0';
+                    for (const auto& mem : roster.members) {
+                        if (mem.name == selectedGuildMember_) {
+                            snprintf(guildNoteEditBuffer_, sizeof(guildNoteEditBuffer_), "%s", mem.officerNote.c_str());
+                            break;
+                        }
+                    }
+                }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Set as Leader")) {
+                    gameHandler.setGuildLeader(selectedGuildMember_);
+                }
+                ImGui::EndPopup();
+            }
+
+            // Note edit modal
+            if (showGuildNoteEdit_) {
+                ImGui::OpenPopup("EditGuildNote");
+                showGuildNoteEdit_ = false;
+            }
+            if (ImGui::BeginPopupModal("EditGuildNote", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::Text("%s %s for %s:",
+                    editingOfficerNote_ ? "Officer" : "Public", "Note", selectedGuildMember_.c_str());
+                ImGui::InputText("##guildnote", guildNoteEditBuffer_, sizeof(guildNoteEditBuffer_));
+                if (ImGui::Button("Save")) {
+                    if (editingOfficerNote_) {
+                        gameHandler.setGuildOfficerNote(selectedGuildMember_, guildNoteEditBuffer_);
+                    } else {
+                        gameHandler.setGuildPublicNote(selectedGuildMember_, guildNoteEditBuffer_);
+                    }
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Cancel")) {
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
             }
         }
     }

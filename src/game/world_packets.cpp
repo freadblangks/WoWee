@@ -1622,6 +1622,35 @@ network::Packet GuildRemovePacket::build(const std::string& playerName) {
     return packet;
 }
 
+network::Packet GuildDisbandPacket::build() {
+    network::Packet packet(wireOpcode(Opcode::CMSG_GUILD_DISBAND));
+    LOG_DEBUG("Built CMSG_GUILD_DISBAND");
+    return packet;
+}
+
+network::Packet GuildLeaderPacket::build(const std::string& playerName) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_GUILD_LEADER));
+    packet.writeString(playerName);
+    LOG_DEBUG("Built CMSG_GUILD_LEADER: ", playerName);
+    return packet;
+}
+
+network::Packet GuildSetPublicNotePacket::build(const std::string& playerName, const std::string& note) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_GUILD_SET_PUBLIC_NOTE));
+    packet.writeString(playerName);
+    packet.writeString(note);
+    LOG_DEBUG("Built CMSG_GUILD_SET_PUBLIC_NOTE: ", playerName, " -> ", note);
+    return packet;
+}
+
+network::Packet GuildSetOfficerNotePacket::build(const std::string& playerName, const std::string& note) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_GUILD_SET_OFFICER_NOTE));
+    packet.writeString(playerName);
+    packet.writeString(note);
+    LOG_DEBUG("Built CMSG_GUILD_SET_OFFICER_NOTE: ", playerName, " -> ", note);
+    return packet;
+}
+
 network::Packet GuildAcceptPacket::build() {
     network::Packet packet(wireOpcode(Opcode::CMSG_GUILD_ACCEPT));
     LOG_DEBUG("Built CMSG_GUILD_ACCEPT");

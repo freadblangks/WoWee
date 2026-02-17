@@ -1003,6 +1003,30 @@ public:
     static network::Packet build(const std::string& playerName);
 };
 
+/** CMSG_GUILD_DISBAND packet builder (empty body) */
+class GuildDisbandPacket {
+public:
+    static network::Packet build();
+};
+
+/** CMSG_GUILD_LEADER packet builder */
+class GuildLeaderPacket {
+public:
+    static network::Packet build(const std::string& playerName);
+};
+
+/** CMSG_GUILD_SET_PUBLIC_NOTE packet builder */
+class GuildSetPublicNotePacket {
+public:
+    static network::Packet build(const std::string& playerName, const std::string& note);
+};
+
+/** CMSG_GUILD_SET_OFFICER_NOTE packet builder */
+class GuildSetOfficerNotePacket {
+public:
+    static network::Packet build(const std::string& playerName, const std::string& note);
+};
+
 /** CMSG_GUILD_ACCEPT packet builder (empty body) */
 class GuildAcceptPacket {
 public:

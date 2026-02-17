@@ -340,6 +340,10 @@ public:
     void leaveGuild();
     void inviteToGuild(const std::string& playerName);
     void kickGuildMember(const std::string& playerName);
+    void disbandGuild();
+    void setGuildLeader(const std::string& name);
+    void setGuildPublicNote(const std::string& name, const std::string& note);
+    void setGuildOfficerNote(const std::string& name, const std::string& note);
     void acceptGuildInvite();
     void declineGuildInvite();
     void queryGuildInfo(uint32_t guildId);
@@ -353,6 +357,7 @@ public:
     const std::string& getGuildName() const { return guildName_; }
     const GuildRosterData& getGuildRoster() const { return guildRoster_; }
     bool hasGuildRoster() const { return hasGuildRoster_; }
+    const std::vector<std::string>& getGuildRankNames() const { return guildRankNames_; }
     bool hasPendingGuildInvite() const { return pendingGuildInvite_; }
     const std::string& getPendingGuildInviterName() const { return pendingGuildInviterName_; }
     const std::string& getPendingGuildInviteGuildName() const { return pendingGuildInviteGuildName_; }

@@ -955,8 +955,8 @@ void CameraController::update(float deltaTime) {
         // Find max safe distance using raycast + sphere radius
         collisionDistance = currentDistance;
 
-        // WMO raycast collision: zoom in when camera would clip through walls
-        if (wmoRenderer && cachedInsideWMO && currentDistance > MIN_DISTANCE) {
+        // WMO raycast collision: zoom in when camera would clip through walls/floors
+        if (wmoRenderer && currentDistance > MIN_DISTANCE) {
             glm::vec3 camRayOrigin = pivot;
             glm::vec3 camRayDir = camDir;
             float wmoHitDist = wmoRenderer->raycastBoundingBoxes(camRayOrigin, camRayDir, currentDistance);

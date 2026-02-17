@@ -772,7 +772,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
 
         case Opcode::SMSG_CHANNEL_NOTIFY:
-            if (state == WorldState::IN_WORLD) {
+            // Accept during ENTERING_WORLD too — server auto-joins channels before VERIFY_WORLD
+            if (state == WorldState::IN_WORLD || state == WorldState::ENTERING_WORLD) {
                 handleChannelNotify(packet);
             }
             break;
@@ -4331,6 +4332,23 @@ void GameHandler::handleChannelNotify(network::Packet& packet) {
             LOG_INFO("Left channel: ", data.channelName);
             break;
         }
+        case ChannelNotifyType::PLAYER_ALREADY_MEMBER: {
+            // Server says we're already in this channel (e.g. server auto-joined us)
+            // Still track it in our channel list
+            bool found = false;
+            for (const auto& ch : joinedChannels_) {
+                if (ch == data.channelName) { found = true; break; }
+            }
+            if (!found) {
+                joinedChannels_.push_back(data.channelName);
+                LOG_INFO("Already in channel: ", data.channelName);
+            }
+            break;
+        }
+        case ChannelNotifyType::NOT_IN_AREA: {
+            LOG_DEBUG("Cannot join channel ", data.channelName, " (not in area)");
+            break;
+        }
         default:
             LOG_DEBUG("Channel notify type ", static_cast<int>(data.notifyType),
                      " for channel ", data.channelName);
@@ -7172,6 +7190,34 @@ void GameHandler::kickGuildMember(const std::string& playerName) {
     LOG_INFO("Kicking guild member: ", playerName);
 }
 
+void GameHandler::disbandGuild() {
+    if (state != WorldState::IN_WORLD || !socket) return;
+    auto packet = GuildDisbandPacket::build();
+    socket->send(packet);
+    LOG_INFO("Disbanding guild");
+}
+
+void GameHandler::setGuildLeader(const std::string& name) {
+    if (state != WorldState::IN_WORLD || !socket) return;
+    auto packet = GuildLeaderPacket::build(name);
+    socket->send(packet);
+    LOG_INFO("Setting guild leader: ", name);
+}
+
+void GameHandler::setGuildPublicNote(const std::string& name, const std::string& note) {
+    if (state != WorldState::IN_WORLD || !socket) return;
+    auto packet = GuildSetPublicNotePacket::build(name, note);
+    socket->send(packet);
+    LOG_INFO("Setting public note for ", name, ": ", note);
+}
+
+void GameHandler::setGuildOfficerNote(const std::string& name, const std::string& note) {
+    if (state != WorldState::IN_WORLD || !socket) return;
+    auto packet = GuildSetOfficerNotePacket::build(name, note);
+    socket->send(packet);
+    LOG_INFO("Setting officer note for ", name, ": ", note);
+}
+
 void GameHandler::acceptGuildInvite() {
     if (state != WorldState::IN_WORLD || !socket) return;
     pendingGuildInvite_ = false;
@@ -7290,6 +7336,20 @@ void GameHandler::handleGuildEvent(network::Packet& packet) {
         chatMsg.language = ChatLanguage::UNIVERSAL;
         chatMsg.message = msg;
         addLocalChatMessage(chatMsg);
+    }
+
+    // Auto-refresh roster after membership/rank changes
+    switch (data.eventType) {
+        case GuildEvent::PROMOTION:
+        case GuildEvent::DEMOTION:
+        case GuildEvent::JOINED:
+        case GuildEvent::LEFT:
+        case GuildEvent::REMOVED:
+        case GuildEvent::LEADER_CHANGED:
+            if (hasGuildRoster_) requestGuildRoster();
+            break;
+        default:
+            break;
     }
 }
 

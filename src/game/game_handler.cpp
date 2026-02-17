@@ -96,8 +96,8 @@ GameHandler::GameHandler() {
     wardenModuleManager_ = std::make_unique<WardenModuleManager>();
 
     // Default spells always available
-    knownSpells.push_back(6603);  // Attack
-    knownSpells.push_back(8690);  // Hearthstone
+    knownSpells.insert(6603);  // Attack
+    knownSpells.insert(8690);  // Hearthstone
 
     // Default action bar layout
     actionBar[0].type = ActionBarSlot::SPELL;
@@ -1053,9 +1053,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
 
             // Add to known spells immediately for prerequisite re-evaluation
             // (SMSG_LEARNED_SPELL may come separately, but we need immediate update)
-            bool alreadyKnown = std::find(knownSpells.begin(), knownSpells.end(), spellId) != knownSpells.end();
-            if (!alreadyKnown) {
-                knownSpells.push_back(spellId);
+            if (!knownSpells.count(spellId)) {
+                knownSpells.insert(spellId);
                 LOG_INFO("Added spell ", spellId, " to known spells (trainer purchase)");
             }
 
@@ -7010,21 +7009,17 @@ void GameHandler::handleInitialSpells(network::Packet& packet) {
     InitialSpellsData data;
     if (!InitialSpellsParser::parse(packet, data)) return;
 
-    knownSpells = data.spellIds;
+    knownSpells = {data.spellIds.begin(), data.spellIds.end()};
 
     // Debug: check if specific spells are in initial spells
-    bool has527 = std::find(knownSpells.begin(), knownSpells.end(), 527u) != knownSpells.end();
-    bool has988 = std::find(knownSpells.begin(), knownSpells.end(), 988u) != knownSpells.end();
-    bool has1180 = std::find(knownSpells.begin(), knownSpells.end(), 1180u) != knownSpells.end();
+    bool has527 = knownSpells.count(527u);
+    bool has988 = knownSpells.count(988u);
+    bool has1180 = knownSpells.count(1180u);
     LOG_INFO("Initial spells include: 527=", has527, " 988=", has988, " 1180=", has1180);
 
     // Ensure Attack (6603) and Hearthstone (8690) are always present
-    if (std::find(knownSpells.begin(), knownSpells.end(), 6603u) == knownSpells.end()) {
-        knownSpells.insert(knownSpells.begin(), 6603u);
-    }
-    if (std::find(knownSpells.begin(), knownSpells.end(), 8690u) == knownSpells.end()) {
-        knownSpells.push_back(8690u);
-    }
+    knownSpells.insert(6603u);
+    knownSpells.insert(8690u);
 
     // Set initial cooldowns
     for (const auto& cd : data.cooldowns) {
@@ -7172,7 +7167,7 @@ void GameHandler::handleAuraUpdate(network::Packet& packet, bool isAll) {
 
 void GameHandler::handleLearnedSpell(network::Packet& packet) {
     uint32_t spellId = packet.readUInt32();
-    knownSpells.push_back(spellId);
+    knownSpells.insert(spellId);
     LOG_INFO("Learned spell: ", spellId);
 
     // Check if this spell corresponds to a talent rank
@@ -7192,9 +7187,7 @@ void GameHandler::handleLearnedSpell(network::Packet& packet) {
 
 void GameHandler::handleRemovedSpell(network::Packet& packet) {
     uint32_t spellId = packet.readUInt32();
-    knownSpells.erase(
-        std::remove(knownSpells.begin(), knownSpells.end(), spellId),
-        knownSpells.end());
+    knownSpells.erase(spellId);
     LOG_INFO("Removed spell: ", spellId);
 }
 
@@ -7204,12 +7197,10 @@ void GameHandler::handleSupercededSpell(network::Packet& packet) {
     uint32_t newSpellId = packet.readUInt32();
 
     // Remove old spell
-    knownSpells.erase(
-        std::remove(knownSpells.begin(), knownSpells.end(), oldSpellId),
-        knownSpells.end());
+    knownSpells.erase(oldSpellId);
 
     // Add new spell
-    knownSpells.push_back(newSpellId);
+    knownSpells.insert(newSpellId);
 
     LOG_INFO("Spell superceded: ", oldSpellId, " -> ", newSpellId);
 
@@ -7226,9 +7217,7 @@ void GameHandler::handleUnlearnSpells(network::Packet& packet) {
 
     for (uint32_t i = 0; i < spellCount && packet.getSize() - packet.getReadPos() >= 4; ++i) {
         uint32_t spellId = packet.readUInt32();
-        knownSpells.erase(
-            std::remove(knownSpells.begin(), knownSpells.end(), spellId),
-            knownSpells.end());
+        knownSpells.erase(spellId);
         LOG_INFO("  Unlearned spell: ", spellId);
     }
 
@@ -8300,8 +8289,8 @@ void GameHandler::handleTrainerList(network::Packet& packet) {
     }
 
     // Check if specific prerequisite spells are known
-    bool has527 = std::find(knownSpells.begin(), knownSpells.end(), 527u) != knownSpells.end();
-    bool has25312 = std::find(knownSpells.begin(), knownSpells.end(), 25312u) != knownSpells.end();
+    bool has527 = knownSpells.count(527u);
+    bool has25312 = knownSpells.count(25312u);
     LOG_INFO("Prerequisite check: 527=", has527, " 25312=", has25312);
 
     // Debug: log first few trainer spells to see their state

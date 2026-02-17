@@ -136,7 +136,7 @@ void SpellbookScreen::loadSkillLineDBCs(pipeline::AssetManager* assetManager) {
     }
 }
 
-void SpellbookScreen::categorizeSpells(const std::vector<uint32_t>& knownSpells) {
+void SpellbookScreen::categorizeSpells(const std::unordered_set<uint32_t>& knownSpells) {
     spellTabs.clear();
 
     // Only SkillLine category 7 ("Class") gets its own tab (the 3 specialties).

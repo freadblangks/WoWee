@@ -25,9 +25,25 @@ struct DecodedWavCacheEntry {
 static std::unordered_map<uint64_t, DecodedWavCacheEntry> gDecodedWavCache;
 
 static uint64_t makeWavCacheKey(const std::vector<uint8_t>& wavData) {
-    uint64_t ptr = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(wavData.data()));
-    uint64_t sz = static_cast<uint64_t>(wavData.size());
-    return (ptr * 11400714819323198485ull) ^ (sz + 0x9e3779b97f4a7c15ull + (ptr << 6) + (ptr >> 2));
+    // FNV-1a over the first 256 bytes + last 256 bytes + total size.
+    // Full-content hash would be correct but slow for large files; sampling the
+    // edges catches virtually all distinct files while keeping cost O(1).
+    constexpr uint64_t FNV_OFFSET = 14695981039346656037ull;
+    constexpr uint64_t FNV_PRIME  = 1099511628211ull;
+    uint64_t h = FNV_OFFSET;
+    auto mix = [&](uint8_t b) { h ^= b; h *= FNV_PRIME; };
+
+    const size_t sz = wavData.size();
+    const size_t head = std::min(sz, size_t(256));
+    for (size_t i = 0; i < head; ++i) mix(wavData[i]);
+    if (sz > 256) {
+        const size_t tail_start = sz > 512 ? sz - 256 : 256;
+        for (size_t i = tail_start; i < sz; ++i) mix(wavData[i]);
+    }
+    // Mix in the total size so files with identical head/tail but different
+    // lengths still produce different keys.
+    for (int s = 0; s < 8; ++s) mix(static_cast<uint8_t>(sz >> (s * 8)));
+    return h;
 }
 
 static bool decodeWavCached(const std::vector<uint8_t>& wavData, DecodedWavCacheEntry& out) {
@@ -80,6 +96,12 @@ static bool decodeWavCached(const std::vector<uint8_t>& wavData, DecodedWavCache
     entry.sampleRate = sampleRate;
     entry.frames = framesRead;
     entry.pcmData = pcmData;
+    // Evict oldest half when cache grows too large (keeps ~128 most-recent sounds)
+    if (gDecodedWavCache.size() >= 256) {
+        auto it = gDecodedWavCache.begin();
+        for (size_t n = gDecodedWavCache.size() / 2; n > 0; --n, ++it) {}
+        gDecodedWavCache.erase(gDecodedWavCache.begin(), it);
+    }
     gDecodedWavCache.emplace(key, entry);
     out = entry;
     return true;

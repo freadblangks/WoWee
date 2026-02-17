@@ -4860,7 +4860,7 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
             auto isKnown = [&](uint32_t id) {
                 if (id == 0) return true;
                 // Check if spell is in knownSpells list
-                bool found = std::find(knownSpells.begin(), knownSpells.end(), id) != knownSpells.end();
+                bool found = knownSpells.count(id);
                 if (found) return true;
 
                 // Also check if spell is in trainer list with state=2 (explicitly known)

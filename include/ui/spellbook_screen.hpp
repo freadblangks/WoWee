@@ -73,7 +73,7 @@ private:
     void loadSpellDBC(pipeline::AssetManager* assetManager);
     void loadSpellIconDBC(pipeline::AssetManager* assetManager);
     void loadSkillLineDBCs(pipeline::AssetManager* assetManager);
-    void categorizeSpells(const std::vector<uint32_t>& knownSpells);
+    void categorizeSpells(const std::unordered_set<uint32_t>& knownSpells);
     GLuint getSpellIcon(uint32_t iconId, pipeline::AssetManager* assetManager);
     const SpellInfo* getSpellInfo(uint32_t spellId) const;
 };

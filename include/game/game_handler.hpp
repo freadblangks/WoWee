@@ -417,7 +417,7 @@ public:
     void castSpell(uint32_t spellId, uint64_t targetGuid = 0);
     void cancelCast();
     void cancelAura(uint32_t spellId);
-    const std::vector<uint32_t>& getKnownSpells() const { return knownSpells; }
+    const std::unordered_set<uint32_t>& getKnownSpells() const { return knownSpells; }
     bool isCasting() const { return casting; }
     uint32_t getCurrentCastSpellId() const { return currentCastSpellId; }
     float getCastProgress() const { return castTimeTotal > 0 ? (castTimeTotal - castTimeRemaining) / castTimeTotal : 0.0f; }
@@ -1315,7 +1315,7 @@ private:
     uint64_t playerTransportStickyGuid_ = 0;       // Last transport player was on (temporary retention)
     float playerTransportStickyTimer_ = 0.0f;      // Seconds to keep sticky transport alive after transient clears
     std::unique_ptr<TransportManager> transportManager_;  // Transport movement manager
-    std::vector<uint32_t> knownSpells;
+    std::unordered_set<uint32_t> knownSpells;
     std::unordered_map<uint32_t, float> spellCooldowns;    // spellId -> remaining seconds
     uint8_t castCount = 0;
     bool casting = false;

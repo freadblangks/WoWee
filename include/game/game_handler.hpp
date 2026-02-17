@@ -770,6 +770,7 @@ public:
     bool isMailComposeOpen() const { return showMailCompose_; }
     void openMailCompose() { showMailCompose_ = true; }
     void closeMailCompose() { showMailCompose_ = false; }
+    bool hasNewMail() const { return hasNewMail_; }
     void closeMailbox();
     void sendMail(const std::string& recipient, const std::string& subject,
                   const std::string& body, uint32_t money, uint32_t cod = 0);
@@ -1009,6 +1010,7 @@ private:
     void handleMailListResult(network::Packet& packet);
     void handleSendMailResult(network::Packet& packet);
     void handleReceivedMail(network::Packet& packet);
+    void handleQueryNextMailTime(network::Packet& packet);
 
     // ---- Taxi handlers ----
     void handleShowTaxiNodes(network::Packet& packet);
@@ -1351,6 +1353,7 @@ private:
     std::vector<MailMessage> mailInbox_;
     int selectedMailIndex_ = -1;
     bool showMailCompose_ = false;
+    bool hasNewMail_ = false;
 
     // Vendor
     bool vendorWindowOpen = false;

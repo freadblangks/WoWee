@@ -698,5 +698,147 @@ bool ClassicPacketParsers::parseGossipMessage(network::Packet& packet, GossipMes
     return true;
 }
 
+// ============================================================================
+// Classic CMSG_SEND_MAIL — Vanilla 1.12 format
+// Differences from WotLK:
+// - Single uint64 itemGuid instead of uint8 attachmentCount + item array
+// - Trailing uint64 unk3 + uint8 unk4 (clients > 1.9.4)
+// ============================================================================
+network::Packet ClassicPacketParsers::buildSendMail(uint64_t mailboxGuid,
+                                                     const std::string& recipient,
+                                                     const std::string& subject,
+                                                     const std::string& body,
+                                                     uint32_t money, uint32_t cod) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_SEND_MAIL));
+    packet.writeUInt64(mailboxGuid);
+    packet.writeString(recipient);
+    packet.writeString(subject);
+    packet.writeString(body);
+    packet.writeUInt32(0);       // stationery
+    packet.writeUInt32(0);       // unknown
+    packet.writeUInt64(0);       // item GUID (0 = no attachment, single item only in Vanilla)
+    packet.writeUInt32(money);
+    packet.writeUInt32(cod);
+    packet.writeUInt64(0);       // unk3 (clients > 1.9.4)
+    packet.writeUInt8(0);        // unk4 (clients > 1.9.4)
+    return packet;
+}
+
+// ============================================================================
+// Classic SMSG_MAIL_LIST_RESULT — Vanilla 1.12 format (per vmangos)
+// Key differences from WotLK:
+// - uint8 count (not uint32 totalCount + uint8 shownCount)
+// - No msgSize prefix per entry
+// - Subject comes before item data
+// - Single inline item (not attachment count + array)
+// - uint8 stackCount (not uint32)
+// - No enchantment array (single permanentEnchant uint32)
+// ============================================================================
+bool ClassicPacketParsers::parseMailList(network::Packet& packet,
+                                         std::vector<MailMessage>& inbox) {
+    size_t remaining = packet.getSize() - packet.getReadPos();
+    if (remaining < 1) return false;
+
+    uint8_t count = packet.readUInt8();
+    LOG_INFO("SMSG_MAIL_LIST_RESULT (Classic): count=", (int)count);
+
+    inbox.clear();
+    inbox.reserve(count);
+
+    for (uint8_t i = 0; i < count; ++i) {
+        remaining = packet.getSize() - packet.getReadPos();
+        if (remaining < 5) {
+            LOG_WARNING("Classic mail entry ", i, " truncated (", remaining, " bytes left)");
+            break;
+        }
+
+        MailMessage msg;
+
+        // vmangos HandleGetMailList format:
+        // u32 messageId, u8 messageType, sender (guid or u32),
+        // string subject, u32 itemTextId, u32 package, u32 stationery,
+        // item fields (entry, enchant, randomProp, suffixFactor,
+        //              u8 stackCount, u32 charges, u32 maxDur, u32 dur),
+        // u32 money, u32 cod, u32 flags, float expirationTime,
+        // u32 mailTemplateId (build-dependent)
+        msg.messageId = packet.readUInt32();
+        msg.messageType = packet.readUInt8();
+
+        switch (msg.messageType) {
+            case 0: msg.senderGuid = packet.readUInt64(); break;
+            default: msg.senderEntry = packet.readUInt32(); break;
+        }
+
+        msg.subject = packet.readString();
+
+        uint32_t itemTextId = packet.readUInt32();
+        (void)itemTextId;
+        packet.readUInt32(); // package (unused)
+        msg.stationeryId = packet.readUInt32();
+
+        // Single inline item (Vanilla: one item per mail)
+        uint32_t itemEntry = packet.readUInt32();
+        uint32_t permanentEnchant = packet.readUInt32();
+        uint32_t randomPropertyId = packet.readUInt32();
+        uint32_t suffixFactor = packet.readUInt32();
+        uint8_t stackCount = packet.readUInt8();
+        packet.readUInt32(); // charges
+        uint32_t maxDurability = packet.readUInt32();
+        uint32_t durability = packet.readUInt32();
+
+        if (itemEntry != 0) {
+            MailAttachment att;
+            att.slot = 0;
+            att.itemGuidLow = 0; // Not provided in Vanilla list
+            att.itemId = itemEntry;
+            att.enchantId = permanentEnchant;
+            att.randomPropertyId = randomPropertyId;
+            att.randomSuffix = suffixFactor;
+            att.stackCount = stackCount;
+            att.chargesOrDurability = durability;
+            att.maxDurability = maxDurability;
+            msg.attachments.push_back(att);
+        }
+
+        msg.money = packet.readUInt32();
+        msg.cod = packet.readUInt32();
+        msg.flags = packet.readUInt32();
+        msg.expirationTime = packet.readFloat();
+        msg.mailTemplateId = packet.readUInt32();
+
+        msg.read = (msg.flags & 0x01) != 0;
+        inbox.push_back(std::move(msg));
+    }
+
+    LOG_INFO("Parsed ", inbox.size(), " mail messages");
+    return true;
+}
+
+// ============================================================================
+// Classic CMSG_MAIL_TAKE_ITEM — Vanilla only sends mailboxGuid + mailId
+// (no itemSlot — Vanilla only supports 1 item per mail)
+// ============================================================================
+network::Packet ClassicPacketParsers::buildMailTakeItem(uint64_t mailboxGuid,
+                                                         uint32_t mailId,
+                                                         uint32_t /*itemSlot*/) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_MAIL_TAKE_ITEM));
+    packet.writeUInt64(mailboxGuid);
+    packet.writeUInt32(mailId);
+    return packet;
+}
+
+// ============================================================================
+// Classic CMSG_MAIL_DELETE — Vanilla only sends mailboxGuid + mailId
+// (no mailTemplateId field)
+// ============================================================================
+network::Packet ClassicPacketParsers::buildMailDelete(uint64_t mailboxGuid,
+                                                       uint32_t mailId,
+                                                       uint32_t /*mailTemplateId*/) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_MAIL_DELETE));
+    packet.writeUInt64(mailboxGuid);
+    packet.writeUInt32(mailId);
+    return packet;
+}
+
 } // namespace game
 } // namespace wowee

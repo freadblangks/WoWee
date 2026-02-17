@@ -1,4 +1,5 @@
 #include "game/world_packets.hpp"
+#include "game/packet_parsers.hpp"
 #include "game/opcodes.hpp"
 #include "game/character.hpp"
 #include "auth/crypto.hpp"
@@ -3316,14 +3317,15 @@ network::Packet GetMailListPacket::build(uint64_t mailboxGuid) {
 network::Packet SendMailPacket::build(uint64_t mailboxGuid, const std::string& recipient,
                                       const std::string& subject, const std::string& body,
                                       uint32_t money, uint32_t cod) {
+    // WotLK 3.3.5a format
     network::Packet packet(wireOpcode(Opcode::CMSG_SEND_MAIL));
     packet.writeUInt64(mailboxGuid);
     packet.writeString(recipient);
     packet.writeString(subject);
     packet.writeString(body);
-    packet.writeUInt32(0);       // stationery (default)
+    packet.writeUInt32(0);       // stationery
     packet.writeUInt32(0);       // unknown
-    packet.writeUInt8(0);        // attachment count (no item attachments for now)
+    packet.writeUInt8(0);        // attachment count (0 = no attachments)
     packet.writeUInt32(money);
     packet.writeUInt32(cod);
     return packet;
@@ -3357,6 +3359,96 @@ network::Packet MailMarkAsReadPacket::build(uint64_t mailboxGuid, uint32_t mailI
     packet.writeUInt64(mailboxGuid);
     packet.writeUInt32(mailId);
     return packet;
+}
+
+// ============================================================================
+// PacketParsers::parseMailList — WotLK 3.3.5a format (base/default)
+// ============================================================================
+bool PacketParsers::parseMailList(network::Packet& packet, std::vector<MailMessage>& inbox) {
+    size_t remaining = packet.getSize() - packet.getReadPos();
+    if (remaining < 5) return false;
+
+    uint32_t totalCount = packet.readUInt32();
+    uint8_t shownCount = packet.readUInt8();
+    (void)totalCount;
+
+    LOG_INFO("SMSG_MAIL_LIST_RESULT (WotLK): total=", totalCount, " shown=", (int)shownCount);
+
+    inbox.clear();
+    inbox.reserve(shownCount);
+
+    for (uint8_t i = 0; i < shownCount; ++i) {
+        remaining = packet.getSize() - packet.getReadPos();
+        if (remaining < 2) break;
+
+        uint16_t msgSize = packet.readUInt16();
+        size_t startPos = packet.getReadPos();
+
+        MailMessage msg;
+        if (remaining < static_cast<size_t>(msgSize) + 2) {
+            LOG_WARNING("Mail entry ", i, " truncated");
+            break;
+        }
+
+        msg.messageId = packet.readUInt32();
+        msg.messageType = packet.readUInt8();
+
+        switch (msg.messageType) {
+            case 0: msg.senderGuid = packet.readUInt64(); break;
+            case 2: case 3: case 4: case 5:
+                msg.senderEntry = packet.readUInt32(); break;
+            default: msg.senderEntry = packet.readUInt32(); break;
+        }
+
+        msg.cod = packet.readUInt32();
+        packet.readUInt32(); // item text id
+        packet.readUInt32(); // unknown
+        msg.stationeryId = packet.readUInt32();
+        msg.money = packet.readUInt32();
+        msg.flags = packet.readUInt32();
+        msg.expirationTime = packet.readFloat();
+        msg.mailTemplateId = packet.readUInt32();
+        msg.subject = packet.readString();
+
+        if (msg.mailTemplateId == 0) {
+            msg.body = packet.readString();
+        }
+
+        uint8_t attachCount = packet.readUInt8();
+        msg.attachments.reserve(attachCount);
+        for (uint8_t j = 0; j < attachCount; ++j) {
+            MailAttachment att;
+            att.slot = packet.readUInt8();
+            att.itemGuidLow = packet.readUInt32();
+            att.itemId = packet.readUInt32();
+            for (int e = 0; e < 7; ++e) {
+                uint32_t enchId = packet.readUInt32();
+                packet.readUInt32(); // duration
+                packet.readUInt32(); // charges
+                if (e == 0) att.enchantId = enchId;
+            }
+            att.randomPropertyId = packet.readUInt32();
+            att.randomSuffix = packet.readUInt32();
+            att.stackCount = packet.readUInt32();
+            att.chargesOrDurability = packet.readUInt32();
+            att.maxDurability = packet.readUInt32();
+            msg.attachments.push_back(att);
+        }
+
+        msg.read = (msg.flags & 0x01) != 0;
+        inbox.push_back(std::move(msg));
+
+        // Skip unread bytes
+        size_t consumed = packet.getReadPos() - startPos;
+        if (consumed < msgSize) {
+            size_t skip = msgSize - consumed;
+            for (size_t s = 0; s < skip && packet.getReadPos() < packet.getSize(); ++s)
+                packet.readUInt8();
+        }
+    }
+
+    LOG_INFO("Parsed ", inbox.size(), " mail messages");
+    return true;
 }
 
 } // namespace game

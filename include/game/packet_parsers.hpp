@@ -167,6 +167,28 @@ public:
         return LeaveChannelPacket::build(channelName);
     }
 
+    // --- Mail ---
+
+    /** Build CMSG_SEND_MAIL */
+    virtual network::Packet buildSendMail(uint64_t mailboxGuid, const std::string& recipient,
+                                           const std::string& subject, const std::string& body,
+                                           uint32_t money, uint32_t cod) {
+        return SendMailPacket::build(mailboxGuid, recipient, subject, body, money, cod);
+    }
+
+    /** Parse SMSG_MAIL_LIST_RESULT into a vector of MailMessage */
+    virtual bool parseMailList(network::Packet& packet, std::vector<MailMessage>& inbox);
+
+    /** Build CMSG_MAIL_TAKE_ITEM */
+    virtual network::Packet buildMailTakeItem(uint64_t mailboxGuid, uint32_t mailId, uint32_t itemSlot) {
+        return MailTakeItemPacket::build(mailboxGuid, mailId, itemSlot);
+    }
+
+    /** Build CMSG_MAIL_DELETE */
+    virtual network::Packet buildMailDelete(uint64_t mailboxGuid, uint32_t mailId, uint32_t mailTemplateId) {
+        return MailDeletePacket::build(mailboxGuid, mailId, mailTemplateId);
+    }
+
     // --- Utility ---
 
     /** Read a packed GUID from the packet */
@@ -252,6 +274,12 @@ public:
     bool parseGuildQueryResponse(network::Packet& packet, GuildQueryResponseData& data) override;
     network::Packet buildJoinChannel(const std::string& channelName, const std::string& password) override;
     network::Packet buildLeaveChannel(const std::string& channelName) override;
+    network::Packet buildSendMail(uint64_t mailboxGuid, const std::string& recipient,
+                                   const std::string& subject, const std::string& body,
+                                   uint32_t money, uint32_t cod) override;
+    bool parseMailList(network::Packet& packet, std::vector<MailMessage>& inbox) override;
+    network::Packet buildMailTakeItem(uint64_t mailboxGuid, uint32_t mailId, uint32_t itemSlot) override;
+    network::Packet buildMailDelete(uint64_t mailboxGuid, uint32_t mailId, uint32_t mailTemplateId) override;
 };
 
 /**

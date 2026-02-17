@@ -1199,8 +1199,14 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                                 heightOffset = 0.3f;
                             }
                         } else if (t == game::ObjectType::GAMEOBJECT) {
-                            hitRadius = 1.2f;
-                            heightOffset = 0.8f;
+                            // Check GO type — skip non-interactable decorations
+                            auto go = std::static_pointer_cast<game::GameObject>(entity);
+                            auto* goInfo = gameHandler.getCachedGameObjectInfo(go->getEntry());
+                            uint32_t goType = goInfo ? goInfo->type : 0;
+                            // Type 5 = GENERIC (decorations), skip
+                            if (goType == 5) continue;
+                            hitRadius = 2.5f;
+                            heightOffset = 1.2f;
                         }
                         hitCenter = core::coords::canonicalToRender(glm::vec3(entity->getX(), entity->getY(), entity->getZ()));
                         hitCenter.z += heightOffset;
@@ -1262,8 +1268,14 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                                 heightOffset = 0.3f;
                             }
                         } else if (t == game::ObjectType::GAMEOBJECT) {
-                            hitRadius = 1.2f;
-                            heightOffset = 0.8f;
+                            // Check GO type — skip non-interactable decorations
+                            auto go = std::static_pointer_cast<game::GameObject>(entity);
+                            auto* goInfo = gameHandler.getCachedGameObjectInfo(go->getEntry());
+                            uint32_t goType = goInfo ? goInfo->type : 0;
+                            // Type 5 = GENERIC (decorations), skip
+                            if (goType == 5) continue;
+                            hitRadius = 2.5f;
+                            heightOffset = 1.2f;
                         }
                         hitCenter = core::coords::canonicalToRender(
                             glm::vec3(entity->getX(), entity->getY(), entity->getZ()));
@@ -5728,6 +5740,23 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         ImGui::PopStyleVar(2);
     }
     ImGui::End();
+
+    // "New Mail" indicator below the minimap
+    if (gameHandler.hasNewMail()) {
+        float indicatorX = centerX - mapRadius;
+        float indicatorY = centerY + mapRadius + 4.0f;
+        ImGui::SetNextWindowPos(ImVec2(indicatorX, indicatorY), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(mapRadius * 2.0f, 22), ImGuiCond_Always);
+        ImGuiWindowFlags mailFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                      ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+                                      ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoInputs;
+        if (ImGui::Begin("##NewMailIndicator", nullptr, mailFlags)) {
+            // Pulsing effect
+            float pulse = 0.7f + 0.3f * std::sin(static_cast<float>(ImGui::GetTime()) * 3.0f);
+            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.0f, pulse), "New Mail!");
+        }
+        ImGui::End();
+    }
 }
 
 std::string GameScreen::getSettingsPath() {

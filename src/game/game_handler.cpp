@@ -1521,6 +1521,9 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_RECEIVED_MAIL:
             handleReceivedMail(packet);
             break;
+        case Opcode::MSG_QUERY_NEXT_MAIL_TIME:
+            handleQueryNextMailTime(packet);
+            break;
 
         default:
             // In pre-world states we need full visibility (char create/login handshakes).
@@ -5401,6 +5404,13 @@ void GameHandler::handleNameQueryResponse(network::Packet& packet) {
                 msg.senderName = data.name;
             }
         }
+
+        // Backfill mail inbox sender names
+        for (auto& mail : mailInbox_) {
+            if (mail.messageType == 0 && mail.senderGuid == data.guid) {
+                mail.senderName = data.name;
+            }
+        }
     }
 }
 
@@ -7343,8 +7353,39 @@ void GameHandler::interactWithNpc(uint64_t guid) {
 
 void GameHandler::interactWithGameObject(uint64_t guid) {
     if (state != WorldState::IN_WORLD || !socket) return;
+
+    // Rate-limit to prevent spamming the server
+    static uint64_t lastInteractGuid = 0;
+    static std::chrono::steady_clock::time_point lastInteractTime{};
+    auto now = std::chrono::steady_clock::now();
+    if (guid == lastInteractGuid &&
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - lastInteractTime).count() < 1000) {
+        return; // Ignore repeated clicks within 1 second
+    }
+    lastInteractGuid = guid;
+    lastInteractTime = now;
+
+    auto entity = entityManager.getEntity(guid);
+
     auto packet = GameObjectUsePacket::build(guid);
     socket->send(packet);
+
+    // For mailbox GameObjects (type 19), open mail UI and request mail list.
+    // In Vanilla/Classic there is no SMSG_SHOW_MAILBOX — the server just sends
+    // animation/sound and expects the client to request the mail list.
+    if (entity && entity->getType() == ObjectType::GAMEOBJECT) {
+        auto go = std::static_pointer_cast<GameObject>(entity);
+        auto* info = getCachedGameObjectInfo(go->getEntry());
+        if (info && info->type == 19) {
+            LOG_INFO("Mailbox interaction: opening mail UI and requesting mail list");
+            mailboxGuid_ = guid;
+            mailboxOpen_ = true;
+            hasNewMail_ = false;
+            selectedMailIndex_ = -1;
+            showMailCompose_ = false;
+            refreshMailList();
+        }
+    }
 }
 
 void GameHandler::selectGossipOption(uint32_t optionId) {
@@ -9639,8 +9680,21 @@ void GameHandler::refreshMailList() {
 
 void GameHandler::sendMail(const std::string& recipient, const std::string& subject,
                            const std::string& body, uint32_t money, uint32_t cod) {
-    if (state != WorldState::IN_WORLD || !socket || mailboxGuid_ == 0) return;
-    auto packet = SendMailPacket::build(mailboxGuid_, recipient, subject, body, money, cod);
+    if (state != WorldState::IN_WORLD) {
+        LOG_WARNING("sendMail: not in world");
+        return;
+    }
+    if (!socket) {
+        LOG_WARNING("sendMail: no socket");
+        return;
+    }
+    if (mailboxGuid_ == 0) {
+        LOG_WARNING("sendMail: mailboxGuid_ is 0 (mailbox closed?)");
+        return;
+    }
+    auto packet = packetParsers_->buildSendMail(mailboxGuid_, recipient, subject, body, money, cod);
+    LOG_INFO("sendMail: to='", recipient, "' subject='", subject, "' money=", money,
+             " mailboxGuid=", mailboxGuid_);
     socket->send(packet);
 }
 
@@ -9652,7 +9706,7 @@ void GameHandler::mailTakeMoney(uint32_t mailId) {
 
 void GameHandler::mailTakeItem(uint32_t mailId, uint32_t itemIndex) {
     if (state != WorldState::IN_WORLD || !socket || mailboxGuid_ == 0) return;
-    auto packet = MailTakeItemPacket::build(mailboxGuid_, mailId, itemIndex);
+    auto packet = packetParsers_->buildMailTakeItem(mailboxGuid_, mailId, itemIndex);
     socket->send(packet);
 }
 
@@ -9666,7 +9720,7 @@ void GameHandler::mailDelete(uint32_t mailId) {
             break;
         }
     }
-    auto packet = MailDeletePacket::build(mailboxGuid_, mailId, templateId);
+    auto packet = packetParsers_->buildMailDelete(mailboxGuid_, mailId, templateId);
     socket->send(packet);
 }
 
@@ -9685,6 +9739,7 @@ void GameHandler::handleShowMailbox(network::Packet& packet) {
     LOG_INFO("SMSG_SHOW_MAILBOX: guid=0x", std::hex, guid, std::dec);
     mailboxGuid_ = guid;
     mailboxOpen_ = true;
+    hasNewMail_ = false;
     selectedMailIndex_ = -1;
     showMailCompose_ = false;
     // Request inbox contents
@@ -9693,95 +9748,16 @@ void GameHandler::handleShowMailbox(network::Packet& packet) {
 
 void GameHandler::handleMailListResult(network::Packet& packet) {
     size_t remaining = packet.getSize() - packet.getReadPos();
-    if (remaining < 5) {
+    if (remaining < 1) {
         LOG_WARNING("SMSG_MAIL_LIST_RESULT too short (", remaining, " bytes)");
         return;
     }
 
-    uint32_t totalCount = packet.readUInt32();
-    uint8_t shownCount = packet.readUInt8();
+    // Delegate parsing to expansion-aware packet parser
+    packetParsers_->parseMailList(packet, mailInbox_);
 
-    LOG_INFO("SMSG_MAIL_LIST_RESULT: total=", totalCount, " shown=", (int)shownCount);
-
-    mailInbox_.clear();
-    mailInbox_.reserve(shownCount);
-
-    for (uint8_t i = 0; i < shownCount; ++i) {
-        remaining = packet.getSize() - packet.getReadPos();
-        if (remaining < 2) break;
-
-        // Read size of this mail entry (uint16)
-        uint16_t msgSize = packet.readUInt16();
-        size_t startPos = packet.getReadPos();
-
-        MailMessage msg;
-        if (remaining < static_cast<size_t>(msgSize) + 2) {
-            LOG_WARNING("Mail entry ", i, " truncated");
-            break;
-        }
-
-        msg.messageId = packet.readUInt32();
-        msg.messageType = packet.readUInt8();
-
-        switch (msg.messageType) {
-            case 0: // Normal player mail
-                msg.senderGuid = packet.readUInt64();
-                break;
-            case 2: // Auction
-            case 3: // Creature
-            case 4: // GameObject
-            case 5: // Calendar
-                msg.senderEntry = packet.readUInt32();
-                break;
-            default:
-                msg.senderEntry = packet.readUInt32();
-                break;
-        }
-
-        msg.cod = packet.readUInt32();
-        packet.readUInt32(); // unknown / item text id
-        packet.readUInt32(); // unknown
-        msg.stationeryId = packet.readUInt32();
-        msg.money = packet.readUInt32();
-        msg.flags = packet.readUInt32();
-        msg.expirationTime = packet.readFloat();
-        msg.mailTemplateId = packet.readUInt32();
-        msg.subject = packet.readString();
-
-        // Body - only present if not a mail template
-        if (msg.mailTemplateId == 0) {
-            msg.body = packet.readString();
-        }
-
-        // Attachments
-        uint8_t attachCount = packet.readUInt8();
-        msg.attachments.reserve(attachCount);
-        for (uint8_t j = 0; j < attachCount; ++j) {
-            MailAttachment att;
-            att.slot = packet.readUInt8();
-            att.itemGuidLow = packet.readUInt32();
-            att.itemId = packet.readUInt32();
-
-            // Enchantments (7 slots: id, duration, charges per slot = 21 uint32s)
-            for (int e = 0; e < 7; ++e) {
-                uint32_t enchId = packet.readUInt32();
-                packet.readUInt32(); // duration
-                packet.readUInt32(); // charges
-                if (e == 0) att.enchantId = enchId;
-            }
-
-            att.randomPropertyId = packet.readUInt32();
-            att.randomSuffix = packet.readUInt32();
-            att.stackCount = packet.readUInt32();
-            att.chargesOrDurability = packet.readUInt32();
-            att.maxDurability = packet.readUInt32();
-
-            msg.attachments.push_back(att);
-        }
-
-        msg.read = (msg.flags & 0x01) != 0; // MAIL_CHECK_MASK_READ
-
-        // Resolve sender name for player mail
+    // Resolve sender names (needs GameHandler context, so done here)
+    for (auto& msg : mailInbox_) {
         if (msg.messageType == 0 && msg.senderGuid != 0) {
             msg.senderName = getCachedPlayerName(msg.senderGuid);
             if (msg.senderName.empty()) {
@@ -9796,20 +9772,16 @@ void GameHandler::handleMailListResult(network::Packet& packet) {
         } else {
             msg.senderName = "System";
         }
-
-        mailInbox_.push_back(std::move(msg));
-
-        // Skip any unread bytes in this mail entry
-        size_t consumed = packet.getReadPos() - startPos;
-        if (consumed < msgSize) {
-            size_t skip = msgSize - consumed;
-            for (size_t s = 0; s < skip && packet.getReadPos() < packet.getSize(); ++s) {
-                packet.readUInt8();
-            }
-        }
     }
 
-    LOG_INFO("Parsed ", mailInbox_.size(), " mail messages");
+    // Open the mailbox UI if it isn't already open (Vanilla has no SMSG_SHOW_MAILBOX).
+    if (!mailboxOpen_) {
+        LOG_INFO("Opening mailbox UI (triggered by SMSG_MAIL_LIST_RESULT)");
+        mailboxOpen_ = true;
+        hasNewMail_ = false;
+        selectedMailIndex_ = -1;
+        showMailCompose_ = false;
+    }
 }
 
 void GameHandler::handleSendMailResult(network::Packet& packet) {
@@ -9823,7 +9795,7 @@ void GameHandler::handleSendMailResult(network::Packet& packet) {
     uint32_t error = packet.readUInt32();
 
     // Commands: 0=send, 1=moneyTaken, 2=itemTaken, 3=returnedToSender, 4=deleted, 5=madePermanent
-    // Errors: 0=OK, 1=equip, 2=cannotSend, 3=messageTooBig, 4=noMoney, ...
+    // Vanilla errors: 0=OK, 1=equipError, 2=cannotSendToSelf, 3=notEnoughMoney, 4=recipientNotFound, 5=notYourTeam, 6=internalError
     static const char* cmdNames[] = {"Send", "TakeMoney", "TakeItem", "Return", "Delete", "MadePermanent"};
     const char* cmdName = (command < 6) ? cmdNames[command] : "Unknown";
 
@@ -9858,19 +9830,17 @@ void GameHandler::handleSendMailResult(network::Packet& packet) {
         std::string errMsg = "Mail error: ";
         switch (error) {
             case 1: errMsg += "Equipment error."; break;
-            case 2: errMsg += "Cannot send mail."; break;
-            case 3: errMsg += "Message too big."; break;
-            case 4: errMsg += "Not enough money."; break;
-            case 5: errMsg += "Not enough items."; break;
-            case 6: errMsg += "Recipient not found."; break;
-            case 7: errMsg += "Cannot send to that player."; break;
-            case 8: errMsg += "Equip error."; break;
-            case 9: errMsg += "Inventory full."; break;
-            case 10: errMsg += "Not a GM."; break;
-            case 11: errMsg += "Max attachments exceeded."; break;
-            case 14: errMsg += "Cannot send wrapped COD."; break;
-            case 15: errMsg += "Mail and chat suspended."; break;
-            case 16: errMsg += "Too many attachments."; break;
+            case 2: errMsg += "You cannot send mail to yourself."; break;
+            case 3: errMsg += "Not enough money."; break;
+            case 4: errMsg += "Recipient not found."; break;
+            case 5: errMsg += "Cannot send to the opposing faction."; break;
+            case 6: errMsg += "Internal mail error."; break;
+            case 14: errMsg += "Disabled for trial accounts."; break;
+            case 15: errMsg += "Recipient's mailbox is full."; break;
+            case 16: errMsg += "Cannot send wrapped items COD."; break;
+            case 17: errMsg += "Mail and chat suspended."; break;
+            case 18: errMsg += "Too many attachments."; break;
+            case 19: errMsg += "Invalid attachment."; break;
             default: errMsg += "Unknown error (" + std::to_string(error) + ")."; break;
         }
         addSystemChatMessage(errMsg);
@@ -9884,10 +9854,30 @@ void GameHandler::handleReceivedMail(network::Packet& packet) {
         (void)nextMailTime;
     }
     LOG_INFO("SMSG_RECEIVED_MAIL: New mail arrived!");
+    hasNewMail_ = true;
     addSystemChatMessage("New mail has arrived.");
     // If mailbox is open, refresh
     if (mailboxOpen_) {
         refreshMailList();
+    }
+}
+
+void GameHandler::handleQueryNextMailTime(network::Packet& packet) {
+    // Server response to MSG_QUERY_NEXT_MAIL_TIME
+    // If there's pending mail, the packet contains a float with time until next mail delivery
+    // A value of 0.0 or the presence of mail entries means there IS mail waiting
+    size_t remaining = packet.getSize() - packet.getReadPos();
+    if (remaining >= 4) {
+        float nextMailTime = packet.readFloat();
+        // In Vanilla: 0x00000000 = has mail, 0xC7A8C000 (big negative) = no mail
+        uint32_t rawValue;
+        std::memcpy(&rawValue, &nextMailTime, sizeof(uint32_t));
+        if (rawValue == 0 || nextMailTime >= 0.0f) {
+            hasNewMail_ = true;
+            LOG_INFO("MSG_QUERY_NEXT_MAIL_TIME: Player has pending mail");
+        } else {
+            LOG_INFO("MSG_QUERY_NEXT_MAIL_TIME: No pending mail (value=", nextMailTime, ")");
+        }
     }
 }
 

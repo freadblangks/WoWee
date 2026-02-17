@@ -2262,5 +2262,213 @@ public:
     static network::Packet build(uint64_t mailboxGuid, uint32_t mailId);
 };
 
+// ============================================================
+// Bank System
+// ============================================================
+
+/** CMSG_BANKER_ACTIVATE packet builder */
+class BankerActivatePacket {
+public:
+    static network::Packet build(uint64_t guid);
+};
+
+/** CMSG_BUY_BANK_SLOT packet builder */
+class BuyBankSlotPacket {
+public:
+    static network::Packet build(uint64_t guid);
+};
+
+/** CMSG_AUTOBANK_ITEM packet builder (deposit item to bank) */
+class AutoBankItemPacket {
+public:
+    static network::Packet build(uint8_t srcBag, uint8_t srcSlot);
+};
+
+/** CMSG_AUTOSTORE_BANK_ITEM packet builder (withdraw item from bank) */
+class AutoStoreBankItemPacket {
+public:
+    static network::Packet build(uint8_t srcBag, uint8_t srcSlot);
+};
+
+// ============================================================
+// Guild Bank System
+// ============================================================
+
+struct GuildBankItemSlot {
+    uint8_t slotId = 0;
+    uint32_t itemEntry = 0;
+    uint32_t stackCount = 1;
+    uint32_t enchantId = 0;
+    uint32_t randomPropertyId = 0;
+};
+
+struct GuildBankTab {
+    std::string tabName;
+    std::string tabIcon;
+    std::vector<GuildBankItemSlot> items;
+};
+
+struct GuildBankData {
+    uint64_t money = 0;
+    uint8_t tabId = 0;
+    int32_t withdrawAmount = -1;  // -1 = unlimited
+    std::vector<GuildBankTab> tabs;  // Only populated on fullUpdate
+    std::vector<GuildBankItemSlot> tabItems;  // Current tab items
+};
+
+/** CMSG_GUILD_BANKER_ACTIVATE packet builder */
+class GuildBankerActivatePacket {
+public:
+    static network::Packet build(uint64_t guid);
+};
+
+/** CMSG_GUILD_BANK_QUERY_TAB packet builder */
+class GuildBankQueryTabPacket {
+public:
+    static network::Packet build(uint64_t guid, uint8_t tabId, bool fullUpdate);
+};
+
+/** CMSG_GUILD_BANK_BUY_TAB packet builder */
+class GuildBankBuyTabPacket {
+public:
+    static network::Packet build(uint64_t guid, uint8_t tabId);
+};
+
+/** CMSG_GUILD_BANK_DEPOSIT_MONEY packet builder */
+class GuildBankDepositMoneyPacket {
+public:
+    static network::Packet build(uint64_t guid, uint32_t amount);
+};
+
+/** CMSG_GUILD_BANK_WITHDRAW_MONEY packet builder */
+class GuildBankWithdrawMoneyPacket {
+public:
+    static network::Packet build(uint64_t guid, uint32_t amount);
+};
+
+/** CMSG_GUILD_BANK_SWAP_ITEMS packet builder */
+class GuildBankSwapItemsPacket {
+public:
+    // Bank to inventory
+    static network::Packet buildBankToInventory(uint64_t guid, uint8_t tabId, uint8_t bankSlot,
+                                                 uint8_t destBag, uint8_t destSlot, uint32_t splitCount = 0);
+    // Inventory to bank
+    static network::Packet buildInventoryToBank(uint64_t guid, uint8_t tabId, uint8_t bankSlot,
+                                                 uint8_t srcBag, uint8_t srcSlot, uint32_t splitCount = 0);
+};
+
+/** SMSG_GUILD_BANK_LIST parser */
+class GuildBankListParser {
+public:
+    static bool parse(network::Packet& packet, GuildBankData& data);
+};
+
+// ============================================================
+// Auction House System
+// ============================================================
+
+struct AuctionEntry {
+    uint32_t auctionId = 0;
+    uint32_t itemEntry = 0;
+    uint32_t stackCount = 1;
+    uint32_t enchantId = 0;
+    uint32_t randomPropertyId = 0;
+    uint32_t suffixFactor = 0;
+    uint64_t ownerGuid = 0;
+    uint32_t startBid = 0;
+    uint32_t minBidIncrement = 0;
+    uint32_t buyoutPrice = 0;
+    uint32_t timeLeftMs = 0;
+    uint64_t bidderGuid = 0;
+    uint32_t currentBid = 0;
+};
+
+struct AuctionListResult {
+    std::vector<AuctionEntry> auctions;
+    uint32_t totalCount = 0;
+    uint32_t searchDelay = 0;
+};
+
+struct AuctionCommandResult {
+    uint32_t auctionId = 0;
+    uint32_t action = 0;    // 0=create, 1=cancel, 2=bid, 3=buyout
+    uint32_t errorCode = 0; // 0=success
+    uint32_t bidError = 0;  // secondary error for bid actions
+};
+
+struct AuctionHelloData {
+    uint64_t auctioneerGuid = 0;
+    uint32_t auctionHouseId = 0;
+    uint8_t enabled = 1;
+};
+
+/** MSG_AUCTION_HELLO packet builder */
+class AuctionHelloPacket {
+public:
+    static network::Packet build(uint64_t guid);
+};
+
+/** MSG_AUCTION_HELLO parser (server response) */
+class AuctionHelloParser {
+public:
+    static bool parse(network::Packet& packet, AuctionHelloData& data);
+};
+
+/** CMSG_AUCTION_LIST_ITEMS packet builder */
+class AuctionListItemsPacket {
+public:
+    static network::Packet build(uint64_t guid, uint32_t offset,
+                                  const std::string& searchName,
+                                  uint8_t levelMin, uint8_t levelMax,
+                                  uint32_t invTypeMask, uint32_t itemClass,
+                                  uint32_t itemSubClass, uint32_t quality,
+                                  uint8_t usableOnly, uint8_t exactMatch);
+};
+
+/** CMSG_AUCTION_SELL_ITEM packet builder */
+class AuctionSellItemPacket {
+public:
+    static network::Packet build(uint64_t auctioneerGuid, uint64_t itemGuid,
+                                  uint32_t stackCount, uint32_t bid,
+                                  uint32_t buyout, uint32_t duration);
+};
+
+/** CMSG_AUCTION_PLACE_BID packet builder */
+class AuctionPlaceBidPacket {
+public:
+    static network::Packet build(uint64_t auctioneerGuid, uint32_t auctionId, uint32_t amount);
+};
+
+/** CMSG_AUCTION_REMOVE_ITEM packet builder */
+class AuctionRemoveItemPacket {
+public:
+    static network::Packet build(uint64_t auctioneerGuid, uint32_t auctionId);
+};
+
+/** CMSG_AUCTION_LIST_OWNER_ITEMS packet builder */
+class AuctionListOwnerItemsPacket {
+public:
+    static network::Packet build(uint64_t auctioneerGuid, uint32_t offset);
+};
+
+/** CMSG_AUCTION_LIST_BIDDER_ITEMS packet builder */
+class AuctionListBidderItemsPacket {
+public:
+    static network::Packet build(uint64_t auctioneerGuid, uint32_t offset,
+                                  const std::vector<uint32_t>& outbiddedIds = {});
+};
+
+/** SMSG_AUCTION_LIST_RESULT parser (shared for browse/owner/bidder) */
+class AuctionListResultParser {
+public:
+    static bool parse(network::Packet& packet, AuctionListResult& data);
+};
+
+/** SMSG_AUCTION_COMMAND_RESULT parser */
+class AuctionCommandResultParser {
+public:
+    static bool parse(network::Packet& packet, AuctionCommandResult& data);
+};
+
 } // namespace game
 } // namespace wowee

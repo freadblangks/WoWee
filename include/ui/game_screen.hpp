@@ -187,6 +187,9 @@ private:
     void renderChatBubbles(game::GameHandler& gameHandler);
     void renderMailWindow(game::GameHandler& gameHandler);
     void renderMailComposeWindow(game::GameHandler& gameHandler);
+    void renderBankWindow(game::GameHandler& gameHandler);
+    void renderGuildBankWindow(game::GameHandler& gameHandler);
+    void renderAuctionHouseWindow(game::GameHandler& gameHandler);
 
     /**
      * Inventory screen
@@ -253,6 +256,19 @@ private:
     char mailSubjectBuffer_[256] = "";
     char mailBodyBuffer_[2048] = "";
     int mailComposeMoney_[3] = {0, 0, 0};  // gold, silver, copper
+
+    // Auction house UI state
+    char auctionSearchName_[256] = "";
+    int auctionLevelMin_ = 0;
+    int auctionLevelMax_ = 0;
+    int auctionQuality_ = 0;
+    int auctionSellDuration_ = 2;  // 0=12h, 1=24h, 2=48h
+    int auctionSellBid_[3] = {0, 0, 0};     // gold, silver, copper
+    int auctionSellBuyout_[3] = {0, 0, 0};  // gold, silver, copper
+    int auctionSelectedItem_ = -1;
+
+    // Guild bank money input
+    int guildBankMoneyInput_[3] = {0, 0, 0};  // gold, silver, copper
 
     // Left-click targeting: distinguish click from camera drag
     glm::vec2 leftClickPressPos_ = glm::vec2(0.0f);

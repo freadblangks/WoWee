@@ -785,6 +785,51 @@ public:
     void mailMarkAsRead(uint32_t mailId);
     void refreshMailList();
 
+    // Bank
+    void openBank(uint64_t guid);
+    void closeBank();
+    void buyBankSlot();
+    void depositItem(uint8_t srcBag, uint8_t srcSlot);
+    void withdrawItem(uint8_t srcBag, uint8_t srcSlot);
+    bool isBankOpen() const { return bankOpen_; }
+    uint64_t getBankerGuid() const { return bankerGuid_; }
+
+    // Guild Bank
+    void openGuildBank(uint64_t guid);
+    void closeGuildBank();
+    void queryGuildBankTab(uint8_t tabId);
+    void buyGuildBankTab();
+    void depositGuildBankMoney(uint32_t amount);
+    void withdrawGuildBankMoney(uint32_t amount);
+    void guildBankWithdrawItem(uint8_t tabId, uint8_t bankSlot, uint8_t destBag, uint8_t destSlot);
+    void guildBankDepositItem(uint8_t tabId, uint8_t bankSlot, uint8_t srcBag, uint8_t srcSlot);
+    bool isGuildBankOpen() const { return guildBankOpen_; }
+    const GuildBankData& getGuildBankData() const { return guildBankData_; }
+    uint8_t getGuildBankActiveTab() const { return guildBankActiveTab_; }
+    void setGuildBankActiveTab(uint8_t tab) { guildBankActiveTab_ = tab; }
+
+    // Auction House
+    void openAuctionHouse(uint64_t guid);
+    void closeAuctionHouse();
+    void auctionSearch(const std::string& name, uint8_t levelMin, uint8_t levelMax,
+                       uint32_t quality, uint32_t itemClass, uint32_t itemSubClass,
+                       uint32_t invTypeMask, uint8_t usableOnly, uint32_t offset = 0);
+    void auctionSellItem(uint64_t itemGuid, uint32_t stackCount, uint32_t bid,
+                         uint32_t buyout, uint32_t duration);
+    void auctionPlaceBid(uint32_t auctionId, uint32_t amount);
+    void auctionBuyout(uint32_t auctionId, uint32_t buyoutPrice);
+    void auctionCancelItem(uint32_t auctionId);
+    void auctionListOwnerItems(uint32_t offset = 0);
+    void auctionListBidderItems(uint32_t offset = 0);
+    bool isAuctionHouseOpen() const { return auctionOpen_; }
+    uint64_t getAuctioneerGuid() const { return auctioneerGuid_; }
+    const AuctionListResult& getAuctionBrowseResults() const { return auctionBrowseResults_; }
+    const AuctionListResult& getAuctionOwnerResults() const { return auctionOwnerResults_; }
+    const AuctionListResult& getAuctionBidderResults() const { return auctionBidderResults_; }
+    int getAuctionActiveTab() const { return auctionActiveTab_; }
+    void setAuctionActiveTab(int tab) { auctionActiveTab_ = tab; }
+    float getAuctionSearchDelay() const { return auctionSearchDelayTimer_; }
+
     // Trainer
     bool isTrainerWindowOpen() const { return trainerWindowOpen_; }
     const TrainerListData& getTrainerSpells() const { return currentTrainerList_; }
@@ -1009,6 +1054,20 @@ private:
     void handleArenaTeamInvite(network::Packet& packet);
     void handleArenaTeamEvent(network::Packet& packet);
     void handleArenaError(network::Packet& packet);
+
+    // ---- Bank handlers ----
+    void handleShowBank(network::Packet& packet);
+    void handleBuyBankSlotResult(network::Packet& packet);
+
+    // ---- Guild Bank handlers ----
+    void handleGuildBankList(network::Packet& packet);
+
+    // ---- Auction House handlers ----
+    void handleAuctionHello(network::Packet& packet);
+    void handleAuctionListResult(network::Packet& packet);
+    void handleAuctionOwnerListResult(network::Packet& packet);
+    void handleAuctionBidderListResult(network::Packet& packet);
+    void handleAuctionCommandResult(network::Packet& packet);
 
     // ---- Mail handlers ----
     void handleShowMailbox(network::Packet& packet);
@@ -1359,6 +1418,31 @@ private:
     int selectedMailIndex_ = -1;
     bool showMailCompose_ = false;
     bool hasNewMail_ = false;
+
+    // Bank
+    bool bankOpen_ = false;
+    uint64_t bankerGuid_ = 0;
+    std::array<uint64_t, 28> bankSlotGuids_{};
+    std::array<uint64_t, 7> bankBagSlotGuids_{};
+
+    // Guild Bank
+    bool guildBankOpen_ = false;
+    uint64_t guildBankerGuid_ = 0;
+    GuildBankData guildBankData_;
+    uint8_t guildBankActiveTab_ = 0;
+
+    // Auction House
+    bool auctionOpen_ = false;
+    uint64_t auctioneerGuid_ = 0;
+    uint32_t auctionHouseId_ = 0;
+    AuctionListResult auctionBrowseResults_;
+    AuctionListResult auctionOwnerResults_;
+    AuctionListResult auctionBidderResults_;
+    int auctionActiveTab_ = 0;  // 0=Browse, 1=Bids, 2=Auctions
+    float auctionSearchDelayTimer_ = 0.0f;
+    // Routing: which result vector to populate from next SMSG_AUCTION_LIST_RESULT
+    enum class AuctionResultTarget { BROWSE, OWNER, BIDDER };
+    AuctionResultTarget pendingAuctionTarget_ = AuctionResultTarget::BROWSE;
 
     // Vendor
     bool vendorWindowOpen = false;

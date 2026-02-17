@@ -254,6 +254,9 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderTaxiWindow(gameHandler);
     renderMailWindow(gameHandler);
     renderMailComposeWindow(gameHandler);
+    renderBankWindow(gameHandler);
+    renderGuildBankWindow(gameHandler);
+    renderAuctionHouseWindow(gameHandler);
     // renderQuestMarkers(gameHandler);  // Disabled - using 3D billboard markers now
     renderMinimapMarkers(gameHandler);
     renderDeathScreen(gameHandler);
@@ -4177,18 +4180,62 @@ void GameScreen::renderGossipWindow(game::GameHandler& gameHandler) {
 
         ImGui::Spacing();
 
-        // Gossip options
-        static const char* gossipIcons[] = {"[Chat]", "[Vendor]", "[Taxi]", "[Trainer]", "[Spiritguide]",
-                                            "[Tabardvendor]", "[Battlemaster]", "[Banker]", "[Petitioner]",
-                                            "[Tabarddesigner]", "[Auctioneer]"};
+        // Gossip option icons - matches WoW GossipOptionIcon enum
+        static const char* gossipIcons[] = {
+            "[Chat]",          // 0 = GOSSIP_ICON_CHAT
+            "[Vendor]",        // 1 = GOSSIP_ICON_VENDOR
+            "[Taxi]",          // 2 = GOSSIP_ICON_TAXI
+            "[Trainer]",       // 3 = GOSSIP_ICON_TRAINER
+            "[Interact]",      // 4 = GOSSIP_ICON_INTERACT_1
+            "[Interact]",      // 5 = GOSSIP_ICON_INTERACT_2
+            "[Banker]",        // 6 = GOSSIP_ICON_MONEY_BAG (banker)
+            "[Chat]",          // 7 = GOSSIP_ICON_TALK
+            "[Tabard]",        // 8 = GOSSIP_ICON_TABARD
+            "[Battlemaster]",  // 9 = GOSSIP_ICON_BATTLE
+            "[Option]",        // 10 = GOSSIP_ICON_DOT
+        };
+
+        // Default text for server-sent gossip option placeholders
+        static const std::unordered_map<std::string, std::string> gossipPlaceholders = {
+            {"GOSSIP_OPTION_BANKER", "I would like to check my deposit box."},
+            {"GOSSIP_OPTION_AUCTIONEER", "I'd like to browse your auctions."},
+            {"GOSSIP_OPTION_VENDOR", "I want to browse your goods."},
+            {"GOSSIP_OPTION_TAXIVENDOR", "I'd like to fly."},
+            {"GOSSIP_OPTION_TRAINER", "I seek training."},
+            {"GOSSIP_OPTION_INNKEEPER", "Make this inn your home."},
+            {"GOSSIP_OPTION_SPIRITGUIDE", "Return me to life."},
+            {"GOSSIP_OPTION_SPIRITHEALER", "Bring me back to life."},
+            {"GOSSIP_OPTION_STABLEPET", "I'd like to stable my pet."},
+            {"GOSSIP_OPTION_ARMORER", "I need to repair my equipment."},
+            {"GOSSIP_OPTION_GOSSIP", "What can you tell me?"},
+            {"GOSSIP_OPTION_BATTLEFIELD", "I'd like to go to the battleground."},
+            {"GOSSIP_OPTION_TABARDDESIGNER", "I want to create a guild tabard."},
+            {"GOSSIP_OPTION_PETITIONER", "I want to create a guild."},
+        };
 
         for (const auto& opt : gossip.options) {
             ImGui::PushID(static_cast<int>(opt.id));
+
+            // Determine icon label - use text-based detection for shared icons
             const char* icon = (opt.icon < 11) ? gossipIcons[opt.icon] : "[Option]";
-            std::string processedText = replaceGenderPlaceholders(opt.text, gameHandler);
-            char label[256];
-            snprintf(label, sizeof(label), "%s %s", icon, processedText.c_str());
-            if (ImGui::Selectable(label)) {
+            if (opt.text == "GOSSIP_OPTION_AUCTIONEER") icon = "[Auctioneer]";
+            else if (opt.text == "GOSSIP_OPTION_BANKER") icon = "[Banker]";
+            else if (opt.text == "GOSSIP_OPTION_VENDOR") icon = "[Vendor]";
+            else if (opt.text == "GOSSIP_OPTION_TRAINER") icon = "[Trainer]";
+            else if (opt.text == "GOSSIP_OPTION_INNKEEPER") icon = "[Innkeeper]";
+            else if (opt.text == "GOSSIP_OPTION_STABLEPET") icon = "[Stable Master]";
+            else if (opt.text == "GOSSIP_OPTION_ARMORER") icon = "[Repair]";
+
+            // Resolve placeholder text from server
+            std::string displayText = opt.text;
+            auto placeholderIt = gossipPlaceholders.find(displayText);
+            if (placeholderIt != gossipPlaceholders.end()) {
+                displayText = placeholderIt->second;
+            }
+
+            std::string processedText = replaceGenderPlaceholders(displayText, gameHandler);
+            std::string label = std::string(icon) + " " + processedText;
+            if (ImGui::Selectable(label.c_str())) {
                 gameHandler.selectGossipOption(opt.id);
             }
             ImGui::PopID();
@@ -6462,6 +6509,492 @@ void GameScreen::renderMailComposeWindow(game::GameHandler& gameHandler) {
     if (!open) {
         gameHandler.closeMailCompose();
     }
+}
+
+// ============================================================
+// Bank Window
+// ============================================================
+
+void GameScreen::renderBankWindow(game::GameHandler& gameHandler) {
+    if (!gameHandler.isBankOpen()) return;
+
+    bool open = true;
+    ImGui::SetNextWindowSize(ImVec2(480, 420), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Bank", &open)) {
+        ImGui::End();
+        if (!open) gameHandler.closeBank();
+        return;
+    }
+
+    auto& inv = gameHandler.getInventory();
+
+    // Main bank slots (28 = 7 columns × 4 rows)
+    ImGui::Text("Bank Slots");
+    ImGui::Separator();
+    for (int i = 0; i < game::Inventory::BANK_SLOTS; i++) {
+        if (i % 7 != 0) ImGui::SameLine();
+        const auto& slot = inv.getBankSlot(i);
+
+        ImGui::PushID(i + 1000);
+        if (slot.empty()) {
+            ImGui::Button("##bank", ImVec2(42, 42));
+        } else {
+            auto* info = gameHandler.getItemInfo(slot.item.itemId);
+            ImVec4 qc = InventoryScreen::getQualityColor(slot.item.quality);
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(qc.x * 0.3f, qc.y * 0.3f, qc.z * 0.3f, 0.8f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(qc.x * 0.5f, qc.y * 0.5f, qc.z * 0.5f, 0.9f));
+
+            std::string label = std::to_string(slot.item.stackCount > 1 ? slot.item.stackCount : 0);
+            if (slot.item.stackCount <= 1) label = "##b" + std::to_string(i);
+            if (ImGui::Button(label.c_str(), ImVec2(42, 42))) {
+                // Right-click to withdraw: bag=0xFF means bank, slot=i
+                // Use CMSG_AUTOSTORE_BANK_ITEM with bank container
+                // WoW bank slots are inventory slots 39-66 (BANK_SLOT_1 = 39)
+                gameHandler.withdrawItem(0xFF, static_cast<uint8_t>(39 + i));
+            }
+            ImGui::PopStyleColor(2);
+            if (ImGui::IsItemHovered()) {
+                ImGui::BeginTooltip();
+                ImGui::TextColored(qc, "%s", slot.item.name.c_str());
+                if (slot.item.stackCount > 1) ImGui::Text("Count: %u", slot.item.stackCount);
+                ImGui::EndTooltip();
+            }
+        }
+        ImGui::PopID();
+    }
+
+    // Bank bag slots
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Text("Bank Bags");
+    uint8_t purchased = inv.getPurchasedBankBagSlots();
+    for (int i = 0; i < game::Inventory::BANK_BAG_SLOTS; i++) {
+        if (i > 0) ImGui::SameLine();
+        ImGui::PushID(i + 2000);
+
+        int bagSize = inv.getBankBagSize(i);
+        if (i < static_cast<int>(purchased) || bagSize > 0) {
+            if (ImGui::Button(bagSize > 0 ? std::to_string(bagSize).c_str() : "Empty", ImVec2(50, 30))) {
+                // Could open bag contents
+            }
+        } else {
+            if (ImGui::Button("Buy", ImVec2(50, 30))) {
+                gameHandler.buyBankSlot();
+            }
+        }
+        ImGui::PopID();
+    }
+
+    // Show expanded bank bag contents
+    for (int bagIdx = 0; bagIdx < game::Inventory::BANK_BAG_SLOTS; bagIdx++) {
+        int bagSize = inv.getBankBagSize(bagIdx);
+        if (bagSize <= 0) continue;
+
+        ImGui::Spacing();
+        ImGui::Text("Bank Bag %d (%d slots)", bagIdx + 1, bagSize);
+        for (int s = 0; s < bagSize; s++) {
+            if (s % 7 != 0) ImGui::SameLine();
+            const auto& slot = inv.getBankBagSlot(bagIdx, s);
+            ImGui::PushID(3000 + bagIdx * 100 + s);
+            if (slot.empty()) {
+                ImGui::Button("##bb", ImVec2(42, 42));
+            } else {
+                ImVec4 qc = InventoryScreen::getQualityColor(slot.item.quality);
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(qc.x * 0.3f, qc.y * 0.3f, qc.z * 0.3f, 0.8f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(qc.x * 0.5f, qc.y * 0.5f, qc.z * 0.5f, 0.9f));
+                std::string lbl = slot.item.stackCount > 1 ? std::to_string(slot.item.stackCount) : ("##bb" + std::to_string(bagIdx * 100 + s));
+                if (ImGui::Button(lbl.c_str(), ImVec2(42, 42))) {
+                    // Withdraw from bank bag: bank bag container indices start at 67
+                    gameHandler.withdrawItem(static_cast<uint8_t>(67 + bagIdx), static_cast<uint8_t>(s));
+                }
+                ImGui::PopStyleColor(2);
+                if (ImGui::IsItemHovered()) {
+                    ImGui::BeginTooltip();
+                    ImGui::TextColored(qc, "%s", slot.item.name.c_str());
+                    if (slot.item.stackCount > 1) ImGui::Text("Count: %u", slot.item.stackCount);
+                    ImGui::EndTooltip();
+                }
+            }
+            ImGui::PopID();
+        }
+    }
+
+    ImGui::End();
+
+    if (!open) gameHandler.closeBank();
+}
+
+// ============================================================
+// Guild Bank Window
+// ============================================================
+
+void GameScreen::renderGuildBankWindow(game::GameHandler& gameHandler) {
+    if (!gameHandler.isGuildBankOpen()) return;
+
+    bool open = true;
+    ImGui::SetNextWindowSize(ImVec2(520, 500), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Guild Bank", &open)) {
+        ImGui::End();
+        if (!open) gameHandler.closeGuildBank();
+        return;
+    }
+
+    const auto& data = gameHandler.getGuildBankData();
+    uint8_t activeTab = gameHandler.getGuildBankActiveTab();
+
+    // Money display
+    uint32_t gold = static_cast<uint32_t>(data.money / 10000);
+    uint32_t silver = static_cast<uint32_t>((data.money / 100) % 100);
+    uint32_t copper = static_cast<uint32_t>(data.money % 100);
+    ImGui::Text("Guild Bank Money: ");
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(0.9f, 0.8f, 0.3f, 1.0f), "%ug %us %uc", gold, silver, copper);
+
+    // Tab bar
+    if (!data.tabs.empty()) {
+        for (size_t i = 0; i < data.tabs.size(); i++) {
+            if (i > 0) ImGui::SameLine();
+            bool selected = (i == activeTab);
+            if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.5f, 0.8f, 1.0f));
+            std::string tabLabel = data.tabs[i].tabName.empty() ? ("Tab " + std::to_string(i + 1)) : data.tabs[i].tabName;
+            if (ImGui::Button(tabLabel.c_str())) {
+                gameHandler.queryGuildBankTab(static_cast<uint8_t>(i));
+            }
+            if (selected) ImGui::PopStyleColor();
+        }
+    }
+
+    // Buy tab button
+    if (data.tabs.size() < 6) {
+        ImGui::SameLine();
+        if (ImGui::Button("Buy Tab")) {
+            gameHandler.buyGuildBankTab();
+        }
+    }
+
+    ImGui::Separator();
+
+    // Tab items (98 slots = 14 columns × 7 rows)
+    for (size_t i = 0; i < data.tabItems.size(); i++) {
+        if (i % 14 != 0) ImGui::SameLine();
+        const auto& item = data.tabItems[i];
+        ImGui::PushID(static_cast<int>(i) + 5000);
+
+        if (item.itemEntry == 0) {
+            ImGui::Button("##gb", ImVec2(34, 34));
+        } else {
+            auto* info = gameHandler.getItemInfo(item.itemEntry);
+            game::ItemQuality quality = game::ItemQuality::COMMON;
+            std::string name = "Item " + std::to_string(item.itemEntry);
+            if (info) {
+                quality = static_cast<game::ItemQuality>(info->quality);
+                name = info->name;
+            }
+            ImVec4 qc = InventoryScreen::getQualityColor(quality);
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(qc.x * 0.3f, qc.y * 0.3f, qc.z * 0.3f, 0.8f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(qc.x * 0.5f, qc.y * 0.5f, qc.z * 0.5f, 0.9f));
+            std::string lbl = item.stackCount > 1 ? std::to_string(item.stackCount) : ("##gi" + std::to_string(i));
+            if (ImGui::Button(lbl.c_str(), ImVec2(34, 34))) {
+                // Withdraw: auto-store to first free bag slot
+                gameHandler.guildBankWithdrawItem(activeTab, item.slotId, 0xFF, 0);
+            }
+            ImGui::PopStyleColor(2);
+            if (ImGui::IsItemHovered()) {
+                ImGui::BeginTooltip();
+                ImGui::TextColored(qc, "%s", name.c_str());
+                if (item.stackCount > 1) ImGui::Text("Count: %u", item.stackCount);
+                ImGui::EndTooltip();
+            }
+        }
+        ImGui::PopID();
+    }
+
+    // Money deposit/withdraw
+    ImGui::Separator();
+    ImGui::Text("Money:");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(60);
+    ImGui::InputInt("##gbg", &guildBankMoneyInput_[0], 0); ImGui::SameLine(); ImGui::Text("g");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(40);
+    ImGui::InputInt("##gbs", &guildBankMoneyInput_[1], 0); ImGui::SameLine(); ImGui::Text("s");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(40);
+    ImGui::InputInt("##gbc", &guildBankMoneyInput_[2], 0); ImGui::SameLine(); ImGui::Text("c");
+
+    ImGui::SameLine();
+    if (ImGui::Button("Deposit")) {
+        uint32_t amount = guildBankMoneyInput_[0] * 10000 + guildBankMoneyInput_[1] * 100 + guildBankMoneyInput_[2];
+        if (amount > 0) gameHandler.depositGuildBankMoney(amount);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Withdraw")) {
+        uint32_t amount = guildBankMoneyInput_[0] * 10000 + guildBankMoneyInput_[1] * 100 + guildBankMoneyInput_[2];
+        if (amount > 0) gameHandler.withdrawGuildBankMoney(amount);
+    }
+
+    if (data.withdrawAmount >= 0) {
+        ImGui::Text("Remaining withdrawals: %d", data.withdrawAmount);
+    }
+
+    ImGui::End();
+
+    if (!open) gameHandler.closeGuildBank();
+}
+
+// ============================================================
+// Auction House Window
+// ============================================================
+
+void GameScreen::renderAuctionHouseWindow(game::GameHandler& gameHandler) {
+    if (!gameHandler.isAuctionHouseOpen()) return;
+
+    bool open = true;
+    ImGui::SetNextWindowSize(ImVec2(650, 500), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Auction House", &open)) {
+        ImGui::End();
+        if (!open) gameHandler.closeAuctionHouse();
+        return;
+    }
+
+    int tab = gameHandler.getAuctionActiveTab();
+
+    // Tab buttons
+    const char* tabNames[] = {"Browse", "Bids", "Auctions"};
+    for (int i = 0; i < 3; i++) {
+        if (i > 0) ImGui::SameLine();
+        bool selected = (tab == i);
+        if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.5f, 0.8f, 1.0f));
+        if (ImGui::Button(tabNames[i], ImVec2(100, 0))) {
+            gameHandler.setAuctionActiveTab(i);
+            if (i == 1) gameHandler.auctionListBidderItems();
+            else if (i == 2) gameHandler.auctionListOwnerItems();
+        }
+        if (selected) ImGui::PopStyleColor();
+    }
+
+    ImGui::Separator();
+
+    if (tab == 0) {
+        // Browse tab - Search filters
+        ImGui::SetNextItemWidth(200);
+        ImGui::InputText("Name", auctionSearchName_, sizeof(auctionSearchName_));
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(50);
+        ImGui::InputInt("Min Lv", &auctionLevelMin_, 0);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(50);
+        ImGui::InputInt("Max Lv", &auctionLevelMax_, 0);
+
+        const char* qualities[] = {"All", "Poor", "Common", "Uncommon", "Rare", "Epic", "Legendary"};
+        ImGui::SetNextItemWidth(100);
+        ImGui::Combo("Quality", &auctionQuality_, qualities, 7);
+
+        ImGui::SameLine();
+        float delay = gameHandler.getAuctionSearchDelay();
+        if (delay > 0.0f) {
+            ImGui::BeginDisabled();
+            ImGui::Button("Search...");
+            ImGui::EndDisabled();
+        } else {
+            if (ImGui::Button("Search")) {
+                uint32_t q = auctionQuality_ > 0 ? static_cast<uint32_t>(auctionQuality_ - 1) : 0xFFFFFFFF;
+                gameHandler.auctionSearch(auctionSearchName_,
+                    static_cast<uint8_t>(auctionLevelMin_),
+                    static_cast<uint8_t>(auctionLevelMax_),
+                    q, 0xFFFFFFFF, 0xFFFFFFFF, 0, 0);
+            }
+        }
+
+        ImGui::Separator();
+
+        // Results table
+        const auto& results = gameHandler.getAuctionBrowseResults();
+        ImGui::Text("%zu results (of %u total)", results.auctions.size(), results.totalCount);
+
+        if (ImGui::BeginChild("AuctionResults", ImVec2(0, -80), true)) {
+            if (ImGui::BeginTable("AuctionTable", 6, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
+                ImGui::TableSetupColumn("Item", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn("Qty", ImGuiTableColumnFlags_WidthFixed, 40);
+                ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed, 60);
+                ImGui::TableSetupColumn("Bid", ImGuiTableColumnFlags_WidthFixed, 90);
+                ImGui::TableSetupColumn("Buyout", ImGuiTableColumnFlags_WidthFixed, 90);
+                ImGui::TableSetupColumn("##act", ImGuiTableColumnFlags_WidthFixed, 60);
+                ImGui::TableHeadersRow();
+
+                for (size_t i = 0; i < results.auctions.size(); i++) {
+                    const auto& auction = results.auctions[i];
+                    auto* info = gameHandler.getItemInfo(auction.itemEntry);
+                    std::string name = info ? info->name : ("Item #" + std::to_string(auction.itemEntry));
+                    game::ItemQuality quality = info ? static_cast<game::ItemQuality>(info->quality) : game::ItemQuality::COMMON;
+                    ImVec4 qc = InventoryScreen::getQualityColor(quality);
+
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::TextColored(qc, "%s", name.c_str());
+
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::Text("%u", auction.stackCount);
+
+                    ImGui::TableSetColumnIndex(2);
+                    // Time left display
+                    uint32_t mins = auction.timeLeftMs / 60000;
+                    if (mins > 720) ImGui::Text("Long");
+                    else if (mins > 120) ImGui::Text("Medium");
+                    else ImGui::TextColored(ImVec4(1, 0.3f, 0.3f, 1), "Short");
+
+                    ImGui::TableSetColumnIndex(3);
+                    {
+                        uint32_t bid = auction.currentBid > 0 ? auction.currentBid : auction.startBid;
+                        ImGui::Text("%ug%us%uc", bid / 10000, (bid / 100) % 100, bid % 100);
+                    }
+
+                    ImGui::TableSetColumnIndex(4);
+                    if (auction.buyoutPrice > 0) {
+                        ImGui::Text("%ug%us%uc", auction.buyoutPrice / 10000,
+                                    (auction.buyoutPrice / 100) % 100, auction.buyoutPrice % 100);
+                    } else {
+                        ImGui::TextDisabled("--");
+                    }
+
+                    ImGui::TableSetColumnIndex(5);
+                    ImGui::PushID(static_cast<int>(i) + 7000);
+                    if (auction.buyoutPrice > 0 && ImGui::SmallButton("Buy")) {
+                        gameHandler.auctionBuyout(auction.auctionId, auction.buyoutPrice);
+                    }
+                    if (auction.buyoutPrice > 0) ImGui::SameLine();
+                    if (ImGui::SmallButton("Bid")) {
+                        uint32_t bidAmt = auction.currentBid > 0
+                            ? auction.currentBid + auction.minBidIncrement
+                            : auction.startBid;
+                        gameHandler.auctionPlaceBid(auction.auctionId, bidAmt);
+                    }
+                    ImGui::PopID();
+                }
+                ImGui::EndTable();
+            }
+        }
+        ImGui::EndChild();
+
+        // Sell section
+        ImGui::Separator();
+        ImGui::Text("Sell:");
+        ImGui::SameLine();
+        ImGui::Text("Bid:");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(50);
+        ImGui::InputInt("##sbg", &auctionSellBid_[0], 0); ImGui::SameLine(); ImGui::Text("g");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(35);
+        ImGui::InputInt("##sbs", &auctionSellBid_[1], 0); ImGui::SameLine(); ImGui::Text("s");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(35);
+        ImGui::InputInt("##sbc", &auctionSellBid_[2], 0); ImGui::SameLine(); ImGui::Text("c");
+
+        ImGui::Text("     "); ImGui::SameLine();
+        ImGui::Text("Buyout:");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(50);
+        ImGui::InputInt("##sbog", &auctionSellBuyout_[0], 0); ImGui::SameLine(); ImGui::Text("g");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(35);
+        ImGui::InputInt("##sbos", &auctionSellBuyout_[1], 0); ImGui::SameLine(); ImGui::Text("s");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(35);
+        ImGui::InputInt("##sboc", &auctionSellBuyout_[2], 0); ImGui::SameLine(); ImGui::Text("c");
+
+        const char* durations[] = {"12 hours", "24 hours", "48 hours"};
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(90);
+        ImGui::Combo("##dur", &auctionSellDuration_, durations, 3);
+
+    } else if (tab == 1) {
+        // Bids tab
+        const auto& results = gameHandler.getAuctionBidderResults();
+        ImGui::Text("Your Bids: %zu items", results.auctions.size());
+
+        if (ImGui::BeginTable("BidTable", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("Item", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Qty", ImGuiTableColumnFlags_WidthFixed, 40);
+            ImGui::TableSetupColumn("Your Bid", ImGuiTableColumnFlags_WidthFixed, 90);
+            ImGui::TableSetupColumn("Buyout", ImGuiTableColumnFlags_WidthFixed, 90);
+            ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed, 60);
+            ImGui::TableHeadersRow();
+
+            for (const auto& a : results.auctions) {
+                auto* info = gameHandler.getItemInfo(a.itemEntry);
+                std::string name = info ? info->name : ("Item #" + std::to_string(a.itemEntry));
+                game::ItemQuality quality = info ? static_cast<game::ItemQuality>(info->quality) : game::ItemQuality::COMMON;
+
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextColored(InventoryScreen::getQualityColor(quality), "%s", name.c_str());
+                ImGui::TableSetColumnIndex(1);
+                ImGui::Text("%u", a.stackCount);
+                ImGui::TableSetColumnIndex(2);
+                ImGui::Text("%ug%us%uc", a.currentBid / 10000, (a.currentBid / 100) % 100, a.currentBid % 100);
+                ImGui::TableSetColumnIndex(3);
+                if (a.buyoutPrice > 0)
+                    ImGui::Text("%ug%us%uc", a.buyoutPrice / 10000, (a.buyoutPrice / 100) % 100, a.buyoutPrice % 100);
+                else
+                    ImGui::TextDisabled("--");
+                ImGui::TableSetColumnIndex(4);
+                uint32_t mins = a.timeLeftMs / 60000;
+                if (mins > 720) ImGui::Text("Long");
+                else if (mins > 120) ImGui::Text("Medium");
+                else ImGui::TextColored(ImVec4(1, 0.3f, 0.3f, 1), "Short");
+            }
+            ImGui::EndTable();
+        }
+
+    } else if (tab == 2) {
+        // Auctions tab (your listings)
+        const auto& results = gameHandler.getAuctionOwnerResults();
+        ImGui::Text("Your Auctions: %zu items", results.auctions.size());
+
+        if (ImGui::BeginTable("OwnerTable", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("Item", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Qty", ImGuiTableColumnFlags_WidthFixed, 40);
+            ImGui::TableSetupColumn("Bid", ImGuiTableColumnFlags_WidthFixed, 90);
+            ImGui::TableSetupColumn("Buyout", ImGuiTableColumnFlags_WidthFixed, 90);
+            ImGui::TableSetupColumn("##cancel", ImGuiTableColumnFlags_WidthFixed, 60);
+            ImGui::TableHeadersRow();
+
+            for (size_t i = 0; i < results.auctions.size(); i++) {
+                const auto& a = results.auctions[i];
+                auto* info = gameHandler.getItemInfo(a.itemEntry);
+                std::string name = info ? info->name : ("Item #" + std::to_string(a.itemEntry));
+                game::ItemQuality quality = info ? static_cast<game::ItemQuality>(info->quality) : game::ItemQuality::COMMON;
+
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextColored(InventoryScreen::getQualityColor(quality), "%s", name.c_str());
+                ImGui::TableSetColumnIndex(1);
+                ImGui::Text("%u", a.stackCount);
+                ImGui::TableSetColumnIndex(2);
+                {
+                    uint32_t bid = a.currentBid > 0 ? a.currentBid : a.startBid;
+                    ImGui::Text("%ug%us%uc", bid / 10000, (bid / 100) % 100, bid % 100);
+                }
+                ImGui::TableSetColumnIndex(3);
+                if (a.buyoutPrice > 0)
+                    ImGui::Text("%ug%us%uc", a.buyoutPrice / 10000, (a.buyoutPrice / 100) % 100, a.buyoutPrice % 100);
+                else
+                    ImGui::TextDisabled("--");
+                ImGui::TableSetColumnIndex(4);
+                ImGui::PushID(static_cast<int>(i) + 8000);
+                if (ImGui::SmallButton("Cancel")) {
+                    gameHandler.auctionCancelItem(a.auctionId);
+                }
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+    }
+
+    ImGui::End();
+
+    if (!open) gameHandler.closeAuctionHouse();
 }
 
 }} // namespace wowee::ui

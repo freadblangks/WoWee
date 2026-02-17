@@ -56,6 +56,8 @@ public:
     static constexpr int NUM_EQUIP_SLOTS = 23;
     static constexpr int NUM_BAG_SLOTS = 4;
     static constexpr int MAX_BAG_SIZE = 36;
+    static constexpr int BANK_SLOTS = 28;
+    static constexpr int BANK_BAG_SLOTS = 7;
 
     Inventory();
 
@@ -76,6 +78,19 @@ public:
     const ItemSlot& getBagSlot(int bagIndex, int slotIndex) const;
     bool setBagSlot(int bagIndex, int slotIndex, const ItemDef& item);
 
+    // Bank slots (28 main + 7 bank bags)
+    const ItemSlot& getBankSlot(int index) const;
+    bool setBankSlot(int index, const ItemDef& item);
+    bool clearBankSlot(int index);
+
+    const ItemSlot& getBankBagSlot(int bagIndex, int slotIndex) const;
+    bool setBankBagSlot(int bagIndex, int slotIndex, const ItemDef& item);
+    int getBankBagSize(int bagIndex) const;
+    void setBankBagSize(int bagIndex, int size);
+
+    uint8_t getPurchasedBankBagSlots() const { return purchasedBankBagSlots_; }
+    void setPurchasedBankBagSlots(uint8_t count) { purchasedBankBagSlots_ = count; }
+
     // Utility
     int findFreeBackpackSlot() const;
     bool addItem(const ItemDef& item);
@@ -92,6 +107,11 @@ private:
         std::array<ItemSlot, MAX_BAG_SIZE> slots{};
     };
     std::array<BagData, NUM_BAG_SLOTS> bags{};
+
+    // Bank
+    std::array<ItemSlot, BANK_SLOTS> bankSlots_{};
+    std::array<BagData, BANK_BAG_SLOTS> bankBags_{};
+    uint8_t purchasedBankBagSlots_ = 0;
 };
 
 const char* getQualityName(ItemQuality quality);

@@ -307,6 +307,36 @@ static const OpcodeNameEntry kOpcodeNames[] = {
     {"CMSG_MAIL_MARK_AS_READ", LogicalOpcode::CMSG_MAIL_MARK_AS_READ},
     {"SMSG_RECEIVED_MAIL", LogicalOpcode::SMSG_RECEIVED_MAIL},
     {"MSG_QUERY_NEXT_MAIL_TIME", LogicalOpcode::MSG_QUERY_NEXT_MAIL_TIME},
+    // Bank
+    {"CMSG_BANKER_ACTIVATE", LogicalOpcode::CMSG_BANKER_ACTIVATE},
+    {"SMSG_SHOW_BANK", LogicalOpcode::SMSG_SHOW_BANK},
+    {"CMSG_BUY_BANK_SLOT", LogicalOpcode::CMSG_BUY_BANK_SLOT},
+    {"SMSG_BUY_BANK_SLOT_RESULT", LogicalOpcode::SMSG_BUY_BANK_SLOT_RESULT},
+    {"CMSG_AUTOBANK_ITEM", LogicalOpcode::CMSG_AUTOBANK_ITEM},
+    {"CMSG_AUTOSTORE_BANK_ITEM", LogicalOpcode::CMSG_AUTOSTORE_BANK_ITEM},
+    // Guild Bank
+    {"CMSG_GUILD_BANKER_ACTIVATE", LogicalOpcode::CMSG_GUILD_BANKER_ACTIVATE},
+    {"CMSG_GUILD_BANK_QUERY_TAB", LogicalOpcode::CMSG_GUILD_BANK_QUERY_TAB},
+    {"SMSG_GUILD_BANK_LIST", LogicalOpcode::SMSG_GUILD_BANK_LIST},
+    {"CMSG_GUILD_BANK_SWAP_ITEMS", LogicalOpcode::CMSG_GUILD_BANK_SWAP_ITEMS},
+    {"CMSG_GUILD_BANK_BUY_TAB", LogicalOpcode::CMSG_GUILD_BANK_BUY_TAB},
+    {"CMSG_GUILD_BANK_UPDATE_TAB", LogicalOpcode::CMSG_GUILD_BANK_UPDATE_TAB},
+    {"CMSG_GUILD_BANK_DEPOSIT_MONEY", LogicalOpcode::CMSG_GUILD_BANK_DEPOSIT_MONEY},
+    {"CMSG_GUILD_BANK_WITHDRAW_MONEY", LogicalOpcode::CMSG_GUILD_BANK_WITHDRAW_MONEY},
+    // Auction House
+    {"MSG_AUCTION_HELLO", LogicalOpcode::MSG_AUCTION_HELLO},
+    {"CMSG_AUCTION_SELL_ITEM", LogicalOpcode::CMSG_AUCTION_SELL_ITEM},
+    {"CMSG_AUCTION_REMOVE_ITEM", LogicalOpcode::CMSG_AUCTION_REMOVE_ITEM},
+    {"CMSG_AUCTION_LIST_ITEMS", LogicalOpcode::CMSG_AUCTION_LIST_ITEMS},
+    {"CMSG_AUCTION_LIST_OWNER_ITEMS", LogicalOpcode::CMSG_AUCTION_LIST_OWNER_ITEMS},
+    {"CMSG_AUCTION_PLACE_BID", LogicalOpcode::CMSG_AUCTION_PLACE_BID},
+    {"SMSG_AUCTION_COMMAND_RESULT", LogicalOpcode::SMSG_AUCTION_COMMAND_RESULT},
+    {"SMSG_AUCTION_LIST_RESULT", LogicalOpcode::SMSG_AUCTION_LIST_RESULT},
+    {"SMSG_AUCTION_OWNER_LIST_RESULT", LogicalOpcode::SMSG_AUCTION_OWNER_LIST_RESULT},
+    {"SMSG_AUCTION_BIDDER_LIST_RESULT", LogicalOpcode::SMSG_AUCTION_BIDDER_LIST_RESULT},
+    {"SMSG_AUCTION_OWNER_NOTIFICATION", LogicalOpcode::SMSG_AUCTION_OWNER_NOTIFICATION},
+    {"SMSG_AUCTION_BIDDER_NOTIFICATION", LogicalOpcode::SMSG_AUCTION_BIDDER_NOTIFICATION},
+    {"CMSG_AUCTION_LIST_BIDDER_ITEMS", LogicalOpcode::CMSG_AUCTION_LIST_BIDDER_ITEMS},
 };
 // clang-format on
 
@@ -615,6 +645,36 @@ void OpcodeTable::loadWotlkDefaults() {
         {LogicalOpcode::CMSG_MAIL_MARK_AS_READ, 0x247},
         {LogicalOpcode::SMSG_RECEIVED_MAIL, 0x285},
         {LogicalOpcode::MSG_QUERY_NEXT_MAIL_TIME, 0x284},
+        // Bank
+        {LogicalOpcode::CMSG_BANKER_ACTIVATE, 0x1B7},
+        {LogicalOpcode::SMSG_SHOW_BANK, 0x1B8},
+        {LogicalOpcode::CMSG_BUY_BANK_SLOT, 0x1B9},
+        {LogicalOpcode::SMSG_BUY_BANK_SLOT_RESULT, 0x1BA},
+        {LogicalOpcode::CMSG_AUTOBANK_ITEM, 0x283},
+        {LogicalOpcode::CMSG_AUTOSTORE_BANK_ITEM, 0x282},
+        // Guild Bank
+        {LogicalOpcode::CMSG_GUILD_BANKER_ACTIVATE, 0x3E6},
+        {LogicalOpcode::CMSG_GUILD_BANK_QUERY_TAB, 0x3E7},
+        {LogicalOpcode::SMSG_GUILD_BANK_LIST, 0x3E8},
+        {LogicalOpcode::CMSG_GUILD_BANK_SWAP_ITEMS, 0x3E9},
+        {LogicalOpcode::CMSG_GUILD_BANK_BUY_TAB, 0x3EA},
+        {LogicalOpcode::CMSG_GUILD_BANK_UPDATE_TAB, 0x3EB},
+        {LogicalOpcode::CMSG_GUILD_BANK_DEPOSIT_MONEY, 0x3EC},
+        {LogicalOpcode::CMSG_GUILD_BANK_WITHDRAW_MONEY, 0x3ED},
+        // Auction House
+        {LogicalOpcode::MSG_AUCTION_HELLO, 0x255},
+        {LogicalOpcode::CMSG_AUCTION_SELL_ITEM, 0x256},
+        {LogicalOpcode::CMSG_AUCTION_REMOVE_ITEM, 0x257},
+        {LogicalOpcode::CMSG_AUCTION_LIST_ITEMS, 0x258},
+        {LogicalOpcode::CMSG_AUCTION_LIST_OWNER_ITEMS, 0x259},
+        {LogicalOpcode::CMSG_AUCTION_PLACE_BID, 0x25A},
+        {LogicalOpcode::SMSG_AUCTION_COMMAND_RESULT, 0x25B},
+        {LogicalOpcode::SMSG_AUCTION_LIST_RESULT, 0x25C},
+        {LogicalOpcode::SMSG_AUCTION_OWNER_LIST_RESULT, 0x25D},
+        {LogicalOpcode::SMSG_AUCTION_BIDDER_LIST_RESULT, 0x265},
+        {LogicalOpcode::SMSG_AUCTION_OWNER_NOTIFICATION, 0x25E},
+        {LogicalOpcode::SMSG_AUCTION_BIDDER_NOTIFICATION, 0x260},
+        {LogicalOpcode::CMSG_AUCTION_LIST_BIDDER_ITEMS, 0x264},
     };
 
     logicalToWire_.clear();

@@ -673,9 +673,10 @@ bool ClassicPacketParsers::parseGossipMessage(network::Packet& packet, GossipMes
         opt.id = packet.readUInt32();
         opt.icon = packet.readUInt8();
         opt.isCoded = (packet.readUInt8() != 0);
-        opt.boxMoney = packet.readUInt32();
+        // Classic/Vanilla: NO boxMoney or boxText fields (commented out in mangoszero)
+        opt.boxMoney = 0;
         opt.text = packet.readString();
-        opt.boxText = packet.readString();
+        opt.boxText = "";
         data.options.push_back(opt);
     }
 

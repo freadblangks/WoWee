@@ -68,6 +68,46 @@ bool Inventory::setBagSlot(int bagIndex, int slotIndex, const ItemDef& item) {
     return true;
 }
 
+const ItemSlot& Inventory::getBankSlot(int index) const {
+    if (index < 0 || index >= BANK_SLOTS) return EMPTY_SLOT;
+    return bankSlots_[index];
+}
+
+bool Inventory::setBankSlot(int index, const ItemDef& item) {
+    if (index < 0 || index >= BANK_SLOTS) return false;
+    bankSlots_[index].item = item;
+    return true;
+}
+
+bool Inventory::clearBankSlot(int index) {
+    if (index < 0 || index >= BANK_SLOTS) return false;
+    bankSlots_[index].item = ItemDef{};
+    return true;
+}
+
+const ItemSlot& Inventory::getBankBagSlot(int bagIndex, int slotIndex) const {
+    if (bagIndex < 0 || bagIndex >= BANK_BAG_SLOTS) return EMPTY_SLOT;
+    if (slotIndex < 0 || slotIndex >= bankBags_[bagIndex].size) return EMPTY_SLOT;
+    return bankBags_[bagIndex].slots[slotIndex];
+}
+
+bool Inventory::setBankBagSlot(int bagIndex, int slotIndex, const ItemDef& item) {
+    if (bagIndex < 0 || bagIndex >= BANK_BAG_SLOTS) return false;
+    if (slotIndex < 0 || slotIndex >= bankBags_[bagIndex].size) return false;
+    bankBags_[bagIndex].slots[slotIndex].item = item;
+    return true;
+}
+
+int Inventory::getBankBagSize(int bagIndex) const {
+    if (bagIndex < 0 || bagIndex >= BANK_BAG_SLOTS) return 0;
+    return bankBags_[bagIndex].size;
+}
+
+void Inventory::setBankBagSize(int bagIndex, int size) {
+    if (bagIndex < 0 || bagIndex >= BANK_BAG_SLOTS) return;
+    bankBags_[bagIndex].size = std::min(size, MAX_BAG_SIZE);
+}
+
 int Inventory::findFreeBackpackSlot() const {
     for (int i = 0; i < BACKPACK_SLOTS; i++) {
         if (backpack[i].empty()) return i;

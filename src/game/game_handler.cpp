@@ -296,6 +296,11 @@ void GameHandler::update(float deltaTime) {
         clearTarget();
     }
 
+    if (auctionSearchDelayTimer_ > 0.0f) {
+        auctionSearchDelayTimer_ -= deltaTime;
+        if (auctionSearchDelayTimer_ < 0.0f) auctionSearchDelayTimer_ = 0.0f;
+    }
+
     if (pendingMoneyDeltaTimer_ > 0.0f) {
         pendingMoneyDeltaTimer_ -= deltaTime;
         if (pendingMoneyDeltaTimer_ <= 0.0f) {
@@ -1524,6 +1529,36 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         case Opcode::MSG_QUERY_NEXT_MAIL_TIME:
             handleQueryNextMailTime(packet);
+            break;
+
+        // ---- Bank ----
+        case Opcode::SMSG_SHOW_BANK:
+            handleShowBank(packet);
+            break;
+        case Opcode::SMSG_BUY_BANK_SLOT_RESULT:
+            handleBuyBankSlotResult(packet);
+            break;
+
+        // ---- Guild Bank ----
+        case Opcode::SMSG_GUILD_BANK_LIST:
+            handleGuildBankList(packet);
+            break;
+
+        // ---- Auction House ----
+        case Opcode::MSG_AUCTION_HELLO:
+            handleAuctionHello(packet);
+            break;
+        case Opcode::SMSG_AUCTION_LIST_RESULT:
+            handleAuctionListResult(packet);
+            break;
+        case Opcode::SMSG_AUCTION_OWNER_LIST_RESULT:
+            handleAuctionOwnerListResult(packet);
+            break;
+        case Opcode::SMSG_AUCTION_BIDDER_LIST_RESULT:
+            handleAuctionBidderListResult(packet);
+            break;
+        case Opcode::SMSG_AUCTION_COMMAND_RESULT:
+            handleAuctionCommandResult(packet);
             break;
 
         default:
@@ -5776,6 +5811,34 @@ bool GameHandler::applyInventoryFields(const std::map<uint16_t, uint32_t>& field
                 slotsChanged = true;
             }
         }
+
+        // Bank slots: 28 slots × 2 fields = 56 fields starting at PLAYER_FIELD_BANK_SLOT_1
+        int bankBase = static_cast<int>(fieldIndex(UF::PLAYER_FIELD_BANK_SLOT_1));
+        if (bankBase != 0xFFFF && key >= static_cast<uint16_t>(bankBase) &&
+            key <= static_cast<uint16_t>(bankBase) + (game::Inventory::BANK_SLOTS * 2 - 1)) {
+            int slotIndex = (key - bankBase) / 2;
+            bool isLow = ((key - bankBase) % 2 == 0);
+            if (slotIndex < static_cast<int>(bankSlotGuids_.size())) {
+                uint64_t& guid = bankSlotGuids_[slotIndex];
+                if (isLow) guid = (guid & 0xFFFFFFFF00000000ULL) | val;
+                else guid = (guid & 0x00000000FFFFFFFFULL) | (uint64_t(val) << 32);
+                slotsChanged = true;
+            }
+        }
+
+        // Bank bag slots: 7 slots × 2 fields = 14 fields starting at PLAYER_FIELD_BANKBAG_SLOT_1
+        int bankBagBase = static_cast<int>(fieldIndex(UF::PLAYER_FIELD_BANKBAG_SLOT_1));
+        if (bankBagBase != 0xFFFF && key >= static_cast<uint16_t>(bankBagBase) &&
+            key <= static_cast<uint16_t>(bankBagBase) + (game::Inventory::BANK_BAG_SLOTS * 2 - 1)) {
+            int slotIndex = (key - bankBagBase) / 2;
+            bool isLow = ((key - bankBagBase) % 2 == 0);
+            if (slotIndex < static_cast<int>(bankBagSlotGuids_.size())) {
+                uint64_t& guid = bankBagSlotGuids_[slotIndex];
+                if (isLow) guid = (guid & 0xFFFFFFFF00000000ULL) | val;
+                else guid = (guid & 0x00000000FFFFFFFFULL) | (uint64_t(val) << 32);
+                slotsChanged = true;
+            }
+        }
     }
 
     return slotsChanged;
@@ -5950,6 +6013,105 @@ void GameHandler::rebuildOnlineInventory() {
             }
 
             inventory.setBagSlot(bagIdx, s, def);
+        }
+    }
+
+    // Bank slots (28 main slots)
+    for (int i = 0; i < 28; i++) {
+        uint64_t guid = bankSlotGuids_[i];
+        if (guid == 0) { inventory.clearBankSlot(i); continue; }
+
+        auto itemIt = onlineItems_.find(guid);
+        if (itemIt == onlineItems_.end()) continue;
+
+        ItemDef def;
+        def.itemId = itemIt->second.entry;
+        def.stackCount = itemIt->second.stackCount;
+        def.maxStack = 1;
+
+        auto infoIt = itemInfoCache_.find(itemIt->second.entry);
+        if (infoIt != itemInfoCache_.end()) {
+            def.name = infoIt->second.name;
+            def.quality = static_cast<ItemQuality>(infoIt->second.quality);
+            def.inventoryType = infoIt->second.inventoryType;
+            def.maxStack = std::max(1, infoIt->second.maxStack);
+            def.displayInfoId = infoIt->second.displayInfoId;
+            def.subclassName = infoIt->second.subclassName;
+            def.armor = infoIt->second.armor;
+            def.stamina = infoIt->second.stamina;
+            def.strength = infoIt->second.strength;
+            def.agility = infoIt->second.agility;
+            def.intellect = infoIt->second.intellect;
+            def.spirit = infoIt->second.spirit;
+            def.sellPrice = infoIt->second.sellPrice;
+            def.bagSlots = infoIt->second.containerSlots;
+        } else {
+            def.name = "Item " + std::to_string(def.itemId);
+            queryItemInfo(def.itemId, guid);
+        }
+
+        inventory.setBankSlot(i, def);
+    }
+
+    // Bank bag contents (7 bank bag slots)
+    for (int bagIdx = 0; bagIdx < 7; bagIdx++) {
+        uint64_t bagGuid = bankBagSlotGuids_[bagIdx];
+        if (bagGuid == 0) { inventory.setBankBagSize(bagIdx, 0); continue; }
+
+        int numSlots = 0;
+        auto contIt = containerContents_.find(bagGuid);
+        if (contIt != containerContents_.end()) {
+            numSlots = static_cast<int>(contIt->second.numSlots);
+        }
+        if (numSlots <= 0) {
+            auto bagItemIt = onlineItems_.find(bagGuid);
+            if (bagItemIt != onlineItems_.end()) {
+                auto bagInfoIt = itemInfoCache_.find(bagItemIt->second.entry);
+                if (bagInfoIt != itemInfoCache_.end()) {
+                    numSlots = bagInfoIt->second.containerSlots;
+                }
+            }
+        }
+        if (numSlots <= 0) continue;
+
+        inventory.setBankBagSize(bagIdx, numSlots);
+
+        if (contIt == containerContents_.end()) continue;
+        const auto& container = contIt->second;
+        for (int s = 0; s < numSlots && s < 36; s++) {
+            uint64_t itemGuid = container.slotGuids[s];
+            if (itemGuid == 0) continue;
+
+            auto itemIt = onlineItems_.find(itemGuid);
+            if (itemIt == onlineItems_.end()) continue;
+
+            ItemDef def;
+            def.itemId = itemIt->second.entry;
+            def.stackCount = itemIt->second.stackCount;
+            def.maxStack = 1;
+
+            auto infoIt = itemInfoCache_.find(itemIt->second.entry);
+            if (infoIt != itemInfoCache_.end()) {
+                def.name = infoIt->second.name;
+                def.quality = static_cast<ItemQuality>(infoIt->second.quality);
+                def.inventoryType = infoIt->second.inventoryType;
+                def.maxStack = std::max(1, infoIt->second.maxStack);
+                def.displayInfoId = infoIt->second.displayInfoId;
+                def.subclassName = infoIt->second.subclassName;
+                def.armor = infoIt->second.armor;
+                def.stamina = infoIt->second.stamina;
+                def.strength = infoIt->second.strength;
+                def.agility = infoIt->second.agility;
+                def.intellect = infoIt->second.intellect;
+                def.spirit = infoIt->second.spirit;
+                def.sellPrice = infoIt->second.sellPrice;
+                def.bagSlots = infoIt->second.containerSlots;
+            } else {
+                def.name = "Item " + std::to_string(def.itemId);
+                queryItemInfo(def.itemId, itemGuid);
+            }
+
+            inventory.setBankBagSlot(bagIdx, s, def);
         }
     }
 
@@ -7450,17 +7612,46 @@ void GameHandler::interactWithGameObject(uint64_t guid) {
 
 void GameHandler::selectGossipOption(uint32_t optionId) {
     if (state != WorldState::IN_WORLD || !socket || !gossipWindowOpen) return;
+    LOG_INFO("selectGossipOption: optionId=", optionId,
+             " npcGuid=0x", std::hex, currentGossip.npcGuid, std::dec,
+             " menuId=", currentGossip.menuId,
+             " numOptions=", currentGossip.options.size());
     auto packet = GossipSelectOptionPacket::build(currentGossip.npcGuid, currentGossip.menuId, optionId);
     socket->send(packet);
 
-    // If this is an innkeeper "make this inn your home" option, send binder activate.
     for (const auto& opt : currentGossip.options) {
         if (opt.id != optionId) continue;
+        LOG_INFO("  matched option: id=", opt.id, " icon=", (int)opt.icon, " text='", opt.text, "'");
+
+        // Icon-based NPC interaction fallbacks
+        // Some servers need the specific activate packet in addition to gossip select
+        if (opt.icon == 6) {
+            // GOSSIP_ICON_MONEY_BAG = banker
+            auto pkt = BankerActivatePacket::build(currentGossip.npcGuid);
+            socket->send(pkt);
+            LOG_INFO("Sent CMSG_BANKER_ACTIVATE for npc=0x", std::hex, currentGossip.npcGuid, std::dec);
+        }
+
+        // Text-based NPC type detection for servers using placeholder strings
         std::string text = opt.text;
-        std::transform(text.begin(), text.end(), text.begin(),
+        std::string textLower = text;
+        std::transform(textLower.begin(), textLower.end(), textLower.begin(),
                        [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
-        if (text.find("make this inn your home") != std::string::npos ||
-            text.find("set your home") != std::string::npos) {
+
+        if (text == "GOSSIP_OPTION_AUCTIONEER" || textLower.find("auction") != std::string::npos) {
+            auto pkt = AuctionHelloPacket::build(currentGossip.npcGuid);
+            socket->send(pkt);
+            LOG_INFO("Sent MSG_AUCTION_HELLO for npc=0x", std::hex, currentGossip.npcGuid, std::dec);
+        }
+
+        if (text == "GOSSIP_OPTION_BANKER" || textLower.find("deposit box") != std::string::npos) {
+            auto pkt = BankerActivatePacket::build(currentGossip.npcGuid);
+            socket->send(pkt);
+            LOG_INFO("Sent CMSG_BANKER_ACTIVATE for npc=0x", std::hex, currentGossip.npcGuid, std::dec);
+        }
+
+        if (textLower.find("make this inn your home") != std::string::npos ||
+            textLower.find("set your home") != std::string::npos) {
             auto bindPkt = BinderActivatePacket::build(currentGossip.npcGuid);
             socket->send(bindPkt);
             LOG_INFO("Sent CMSG_BINDER_ACTIVATE for npc=0x", std::hex, currentGossip.npcGuid, std::dec);
@@ -9947,6 +10138,306 @@ glm::vec3 GameHandler::getComposedWorldPosition() {
     }
     // Not on transport, return normal movement position
     return glm::vec3(movementInfo.x, movementInfo.y, movementInfo.z);
+}
+
+// ============================================================
+// Bank System
+// ============================================================
+
+void GameHandler::openBank(uint64_t guid) {
+    if (!isConnected()) return;
+    auto pkt = BankerActivatePacket::build(guid);
+    socket->send(pkt);
+}
+
+void GameHandler::closeBank() {
+    bankOpen_ = false;
+    bankerGuid_ = 0;
+}
+
+void GameHandler::buyBankSlot() {
+    if (!isConnected() || !bankOpen_) return;
+    auto pkt = BuyBankSlotPacket::build(bankerGuid_);
+    socket->send(pkt);
+}
+
+void GameHandler::depositItem(uint8_t srcBag, uint8_t srcSlot) {
+    if (!isConnected() || !bankOpen_) return;
+    auto pkt = AutoBankItemPacket::build(srcBag, srcSlot);
+    socket->send(pkt);
+}
+
+void GameHandler::withdrawItem(uint8_t srcBag, uint8_t srcSlot) {
+    if (!isConnected() || !bankOpen_) return;
+    auto pkt = AutoStoreBankItemPacket::build(srcBag, srcSlot);
+    socket->send(pkt);
+}
+
+void GameHandler::handleShowBank(network::Packet& packet) {
+    if (packet.getSize() - packet.getReadPos() < 8) return;
+    bankerGuid_ = packet.readUInt64();
+    bankOpen_ = true;
+    gossipWindowOpen = false;  // Close gossip when bank opens
+    // Bank items are already tracked via update fields (bank slot GUIDs)
+    // Trigger rebuild to populate bank slots in inventory
+    rebuildOnlineInventory();
+    LOG_INFO("SMSG_SHOW_BANK: banker=0x", std::hex, bankerGuid_, std::dec);
+}
+
+void GameHandler::handleBuyBankSlotResult(network::Packet& packet) {
+    if (packet.getSize() - packet.getReadPos() < 4) return;
+    uint32_t result = packet.readUInt32();
+    if (result == 0) {
+        addSystemChatMessage("Bank slot purchased.");
+        inventory.setPurchasedBankBagSlots(inventory.getPurchasedBankBagSlots() + 1);
+    } else {
+        addSystemChatMessage("Cannot purchase bank slot.");
+    }
+}
+
+// ============================================================
+// Guild Bank System
+// ============================================================
+
+void GameHandler::openGuildBank(uint64_t guid) {
+    if (!isConnected()) return;
+    auto pkt = GuildBankerActivatePacket::build(guid);
+    socket->send(pkt);
+}
+
+void GameHandler::closeGuildBank() {
+    guildBankOpen_ = false;
+    guildBankerGuid_ = 0;
+}
+
+void GameHandler::queryGuildBankTab(uint8_t tabId) {
+    if (!isConnected() || !guildBankOpen_) return;
+    guildBankActiveTab_ = tabId;
+    auto pkt = GuildBankQueryTabPacket::build(guildBankerGuid_, tabId, true);
+    socket->send(pkt);
+}
+
+void GameHandler::buyGuildBankTab() {
+    if (!isConnected() || !guildBankOpen_) return;
+    uint8_t nextTab = static_cast<uint8_t>(guildBankData_.tabs.size());
+    auto pkt = GuildBankBuyTabPacket::build(guildBankerGuid_, nextTab);
+    socket->send(pkt);
+}
+
+void GameHandler::depositGuildBankMoney(uint32_t amount) {
+    if (!isConnected() || !guildBankOpen_) return;
+    auto pkt = GuildBankDepositMoneyPacket::build(guildBankerGuid_, amount);
+    socket->send(pkt);
+}
+
+void GameHandler::withdrawGuildBankMoney(uint32_t amount) {
+    if (!isConnected() || !guildBankOpen_) return;
+    auto pkt = GuildBankWithdrawMoneyPacket::build(guildBankerGuid_, amount);
+    socket->send(pkt);
+}
+
+void GameHandler::guildBankWithdrawItem(uint8_t tabId, uint8_t bankSlot, uint8_t destBag, uint8_t destSlot) {
+    if (!isConnected() || !guildBankOpen_) return;
+    auto pkt = GuildBankSwapItemsPacket::buildBankToInventory(guildBankerGuid_, tabId, bankSlot, destBag, destSlot);
+    socket->send(pkt);
+}
+
+void GameHandler::guildBankDepositItem(uint8_t tabId, uint8_t bankSlot, uint8_t srcBag, uint8_t srcSlot) {
+    if (!isConnected() || !guildBankOpen_) return;
+    auto pkt = GuildBankSwapItemsPacket::buildInventoryToBank(guildBankerGuid_, tabId, bankSlot, srcBag, srcSlot);
+    socket->send(pkt);
+}
+
+void GameHandler::handleGuildBankList(network::Packet& packet) {
+    GuildBankData data;
+    if (!GuildBankListParser::parse(packet, data)) {
+        LOG_WARNING("Failed to parse SMSG_GUILD_BANK_LIST");
+        return;
+    }
+    guildBankData_ = data;
+    guildBankOpen_ = true;
+    guildBankActiveTab_ = data.tabId;
+
+    // Ensure item info for all guild bank items
+    for (const auto& item : data.tabItems) {
+        if (item.itemEntry != 0) ensureItemInfo(item.itemEntry);
+    }
+
+    LOG_INFO("SMSG_GUILD_BANK_LIST: tab=", (int)data.tabId,
+             " items=", data.tabItems.size(),
+             " tabs=", data.tabs.size(),
+             " money=", data.money);
+}
+
+// ============================================================
+// Auction House System
+// ============================================================
+
+void GameHandler::openAuctionHouse(uint64_t guid) {
+    if (!isConnected()) return;
+    auto pkt = AuctionHelloPacket::build(guid);
+    socket->send(pkt);
+}
+
+void GameHandler::closeAuctionHouse() {
+    auctionOpen_ = false;
+    auctioneerGuid_ = 0;
+}
+
+void GameHandler::auctionSearch(const std::string& name, uint8_t levelMin, uint8_t levelMax,
+                                 uint32_t quality, uint32_t itemClass, uint32_t itemSubClass,
+                                 uint32_t invTypeMask, uint8_t usableOnly, uint32_t offset)
+{
+    if (!isConnected() || !auctionOpen_) return;
+    if (auctionSearchDelayTimer_ > 0.0f) {
+        addSystemChatMessage("Please wait before searching again.");
+        return;
+    }
+    pendingAuctionTarget_ = AuctionResultTarget::BROWSE;
+    auto pkt = AuctionListItemsPacket::build(auctioneerGuid_, offset, name,
+                                              levelMin, levelMax, invTypeMask,
+                                              itemClass, itemSubClass, quality, usableOnly, 0);
+    socket->send(pkt);
+}
+
+void GameHandler::auctionSellItem(uint64_t itemGuid, uint32_t stackCount,
+                                    uint32_t bid, uint32_t buyout, uint32_t duration)
+{
+    if (!isConnected() || !auctionOpen_) return;
+    auto pkt = AuctionSellItemPacket::build(auctioneerGuid_, itemGuid, stackCount, bid, buyout, duration);
+    socket->send(pkt);
+}
+
+void GameHandler::auctionPlaceBid(uint32_t auctionId, uint32_t amount) {
+    if (!isConnected() || !auctionOpen_) return;
+    auto pkt = AuctionPlaceBidPacket::build(auctioneerGuid_, auctionId, amount);
+    socket->send(pkt);
+}
+
+void GameHandler::auctionBuyout(uint32_t auctionId, uint32_t buyoutPrice) {
+    auctionPlaceBid(auctionId, buyoutPrice);
+}
+
+void GameHandler::auctionCancelItem(uint32_t auctionId) {
+    if (!isConnected() || !auctionOpen_) return;
+    auto pkt = AuctionRemoveItemPacket::build(auctioneerGuid_, auctionId);
+    socket->send(pkt);
+}
+
+void GameHandler::auctionListOwnerItems(uint32_t offset) {
+    if (!isConnected() || !auctionOpen_) return;
+    pendingAuctionTarget_ = AuctionResultTarget::OWNER;
+    auto pkt = AuctionListOwnerItemsPacket::build(auctioneerGuid_, offset);
+    socket->send(pkt);
+}
+
+void GameHandler::auctionListBidderItems(uint32_t offset) {
+    if (!isConnected() || !auctionOpen_) return;
+    pendingAuctionTarget_ = AuctionResultTarget::BIDDER;
+    auto pkt = AuctionListBidderItemsPacket::build(auctioneerGuid_, offset);
+    socket->send(pkt);
+}
+
+void GameHandler::handleAuctionHello(network::Packet& packet) {
+    size_t pktSize = packet.getSize();
+    size_t readPos = packet.getReadPos();
+    LOG_INFO("handleAuctionHello: packetSize=", pktSize, " readPos=", readPos);
+    // Hex dump first 20 bytes for debugging
+    const auto& rawData = packet.getData();
+    std::string hex;
+    size_t dumpLen = std::min<size_t>(rawData.size(), 20);
+    for (size_t i = 0; i < dumpLen; ++i) {
+        char b[4]; snprintf(b, sizeof(b), "%02x ", rawData[i]);
+        hex += b;
+    }
+    LOG_INFO("  hex dump: ", hex);
+    AuctionHelloData data;
+    if (!AuctionHelloParser::parse(packet, data)) {
+        LOG_WARNING("Failed to parse MSG_AUCTION_HELLO response, size=", pktSize, " readPos=", readPos);
+        return;
+    }
+    auctioneerGuid_ = data.auctioneerGuid;
+    auctionHouseId_ = data.auctionHouseId;
+    auctionOpen_ = true;
+    gossipWindowOpen = false;  // Close gossip when auction house opens
+    auctionActiveTab_ = 0;
+    auctionBrowseResults_ = AuctionListResult{};
+    auctionOwnerResults_ = AuctionListResult{};
+    auctionBidderResults_ = AuctionListResult{};
+    LOG_INFO("MSG_AUCTION_HELLO: auctioneer=0x", std::hex, data.auctioneerGuid, std::dec,
+             " house=", data.auctionHouseId, " enabled=", (int)data.enabled);
+}
+
+void GameHandler::handleAuctionListResult(network::Packet& packet) {
+    AuctionListResult result;
+    if (!AuctionListResultParser::parse(packet, result)) {
+        LOG_WARNING("Failed to parse SMSG_AUCTION_LIST_RESULT");
+        return;
+    }
+
+    auctionBrowseResults_ = result;
+    auctionSearchDelayTimer_ = result.searchDelay / 1000.0f;
+
+    // Ensure item info for all auction items
+    for (const auto& entry : result.auctions) {
+        if (entry.itemEntry != 0) ensureItemInfo(entry.itemEntry);
+    }
+
+    LOG_INFO("SMSG_AUCTION_LIST_RESULT: ", result.auctions.size(), " items, total=", result.totalCount);
+}
+
+void GameHandler::handleAuctionOwnerListResult(network::Packet& packet) {
+    AuctionListResult result;
+    if (!AuctionListResultParser::parse(packet, result)) {
+        LOG_WARNING("Failed to parse SMSG_AUCTION_OWNER_LIST_RESULT");
+        return;
+    }
+    auctionOwnerResults_ = result;
+    for (const auto& entry : result.auctions) {
+        if (entry.itemEntry != 0) ensureItemInfo(entry.itemEntry);
+    }
+    LOG_INFO("SMSG_AUCTION_OWNER_LIST_RESULT: ", result.auctions.size(), " items");
+}
+
+void GameHandler::handleAuctionBidderListResult(network::Packet& packet) {
+    AuctionListResult result;
+    if (!AuctionListResultParser::parse(packet, result)) {
+        LOG_WARNING("Failed to parse SMSG_AUCTION_BIDDER_LIST_RESULT");
+        return;
+    }
+    auctionBidderResults_ = result;
+    for (const auto& entry : result.auctions) {
+        if (entry.itemEntry != 0) ensureItemInfo(entry.itemEntry);
+    }
+    LOG_INFO("SMSG_AUCTION_BIDDER_LIST_RESULT: ", result.auctions.size(), " items");
+}
+
+void GameHandler::handleAuctionCommandResult(network::Packet& packet) {
+    AuctionCommandResult result;
+    if (!AuctionCommandResultParser::parse(packet, result)) {
+        LOG_WARNING("Failed to parse SMSG_AUCTION_COMMAND_RESULT");
+        return;
+    }
+
+    const char* actions[] = {"Create", "Cancel", "Bid", "Buyout"};
+    const char* actionName = (result.action < 4) ? actions[result.action] : "Unknown";
+
+    if (result.errorCode == 0) {
+        std::string msg = std::string("Auction ") + actionName + " successful.";
+        addSystemChatMessage(msg);
+        // Refresh appropriate list
+        if (result.action == 0) auctionListOwnerItems();
+        else if (result.action == 1) auctionListOwnerItems();
+    } else {
+        const char* errors[] = {"OK", "Inventory", "Not enough money", "Item not found",
+                                "Higher bid", "Increment", "Not enough items",
+                                "DB error", "Restricted account"};
+        const char* errName = (result.errorCode < 9) ? errors[result.errorCode] : "Unknown";
+        std::string msg = std::string("Auction ") + actionName + " failed: " + errName;
+        addSystemChatMessage(msg);
+    }
+    LOG_INFO("SMSG_AUCTION_COMMAND_RESULT: action=", actionName,
+             " error=", result.errorCode);
 }
 
 } // namespace game

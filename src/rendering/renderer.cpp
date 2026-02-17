@@ -948,6 +948,8 @@ void Renderer::updateCharacterAnimation() {
     constexpr uint32_t ANIM_SWIM_IDLE  = 41;  // Treading water (SwimIdle)
     constexpr uint32_t ANIM_SWIM       = 42;  // Swimming forward (Swim)
     constexpr uint32_t ANIM_MOUNT      = 91;  // Seated on mount
+    constexpr uint32_t ANIM_FLY_IDLE   = 158; // Flying mount idle/hover
+    constexpr uint32_t ANIM_FLY_FORWARD = 159; // Flying mount forward
 
     CharAnimState newState = charAnimState;
 
@@ -1018,6 +1020,25 @@ void Renderer::updateCharacterAnimation() {
             uint32_t curMountAnim = 0;
             float curMountTime = 0, curMountDur = 0;
             bool haveMountState = characterRenderer->getAnimationState(mountInstanceId_, curMountAnim, curMountTime, curMountDur);
+
+            // Taxi flight: use flying animations instead of ground movement
+            if (taxiFlight_) {
+                // Prefer FlyForward, fall back to FlyIdle, then ANIM_RUN
+                if (characterRenderer->hasAnimation(mountInstanceId_, ANIM_FLY_FORWARD)) {
+                    mountAnimId = ANIM_FLY_FORWARD;
+                } else if (characterRenderer->hasAnimation(mountInstanceId_, ANIM_FLY_IDLE)) {
+                    mountAnimId = ANIM_FLY_IDLE;
+                } else {
+                    mountAnimId = ANIM_RUN;
+                }
+
+                if (!haveMountState || curMountAnim != mountAnimId) {
+                    characterRenderer->playAnimation(mountInstanceId_, mountAnimId, true);
+                }
+
+                // Skip all ground mount logic (jumps, fidgets, etc.)
+                goto taxi_mount_done;
+            }
 
             // Check for jump trigger - use cached per-mount animation IDs
             if (cameraController->isJumpKeyPressed() && grounded && mountAction_ == MountAction::None) {
@@ -1180,6 +1201,7 @@ void Renderer::updateCharacterAnimation() {
                 characterRenderer->playAnimation(mountInstanceId_, mountAnimId, loop);
             }
 
+            taxi_mount_done:
             // Rider bob: sinusoidal motion synced to mount's run animation (only used in fallback positioning)
             mountBob = 0.0f;
             if (moving && haveMountState && curMountDur > 1.0f) {

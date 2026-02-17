@@ -4693,6 +4693,13 @@ void Application::processPendingMount() {
         }
         const auto* md = charRenderer->getModelData(modelId);
         if (md) {
+            LOG_INFO("Mount model textures: ", md->textures.size(), " slots, skin1='", dispData.skin1,
+                     "' skin2='", dispData.skin2, "' skin3='", dispData.skin3, "'");
+            for (size_t ti = 0; ti < md->textures.size(); ti++) {
+                LOG_INFO("  tex[", ti, "] type=", md->textures[ti].type,
+                         " filename='", md->textures[ti].filename, "'");
+            }
+
             int replaced = 0;
             for (size_t ti = 0; ti < md->textures.size(); ti++) {
                 const auto& tex = md->textures[ti];
@@ -4708,48 +4715,91 @@ void Application::processPendingMount() {
                     GLuint skinTex = charRenderer->loadTexture(texPath);
                     if (skinTex != 0) {
                         charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), skinTex);
+                        LOG_INFO("  Applied skin texture slot ", ti, ": ", texPath);
                         replaced++;
+                    } else {
+                        LOG_WARNING("  Failed to load skin texture slot ", ti, ": ", texPath);
                     }
                 }
             }
-            // Some mounts (gryphon/wyvern) use empty model textures; force skin1 onto slot 0.
-            if (replaced == 0 && !dispData.skin1.empty() && !md->textures.empty()) {
-                std::string texPath = modelDir + dispData.skin1 + ".blp";
-                GLuint skinTex = charRenderer->loadTexture(texPath);
-                if (skinTex != 0) {
-                    charRenderer->setModelTexture(modelId, 0, skinTex);
-                    LOG_INFO("Forced mount skin1 texture on slot 0: ", texPath);
-                    replaced++;
-                }
-            } else if (replaced == 0 && !md->textures.empty() && !md->textures[0].filename.empty()) {
-                // Last-resort: use the model's first texture filename if it exists.
-                GLuint texId = charRenderer->loadTexture(md->textures[0].filename);
-                if (texId != 0) {
-                    charRenderer->setModelTexture(modelId, 0, texId);
-                    LOG_INFO("Forced mount model texture on slot 0: ", md->textures[0].filename);
-                    replaced++;
+
+            // Force skin textures onto type-0 (hardcoded) slots that have no filename
+            if (replaced == 0) {
+                for (size_t ti = 0; ti < md->textures.size(); ti++) {
+                    const auto& tex = md->textures[ti];
+                    if (tex.type == 0 && tex.filename.empty()) {
+                        // Empty hardcoded slot — try skin1 then skin2
+                        std::string texPath;
+                        if (!dispData.skin1.empty() && replaced == 0) {
+                            texPath = modelDir + dispData.skin1 + ".blp";
+                        } else if (!dispData.skin2.empty()) {
+                            texPath = modelDir + dispData.skin2 + ".blp";
+                        }
+                        if (!texPath.empty()) {
+                            GLuint skinTex = charRenderer->loadTexture(texPath);
+                            if (skinTex != 0) {
+                                charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), skinTex);
+                                LOG_INFO("  Forced skin on empty hardcoded slot ", ti, ": ", texPath);
+                                replaced++;
+                            }
+                        }
+                    }
                 }
             }
 
-            // Final taxi mount fallback for gryphon/wyvern models when display tables are sparse.
+            // If still no textures, try hardcoded model texture filenames
+            if (replaced == 0) {
+                for (size_t ti = 0; ti < md->textures.size(); ti++) {
+                    if (!md->textures[ti].filename.empty()) {
+                        GLuint texId = charRenderer->loadTexture(md->textures[ti].filename);
+                        if (texId != 0) {
+                            charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), texId);
+                            LOG_INFO("  Used model embedded texture slot ", ti, ": ", md->textures[ti].filename);
+                            replaced++;
+                        }
+                    }
+                }
+            }
+
+            // Final fallback for gryphon/wyvern: try well-known skin texture names
             if (replaced == 0 && !md->textures.empty()) {
                 std::string lowerMountPath = m2Path;
                 std::transform(lowerMountPath.begin(), lowerMountPath.end(), lowerMountPath.begin(),
                                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-                if (lowerMountPath.find("creature\\gryphon\\gryphon.m2") != std::string::npos) {
-                    GLuint texId = charRenderer->loadTexture("Creature\\Gryphon\\Gryphon.blp");
-                    if (texId != 0) {
-                        charRenderer->setModelTexture(modelId, 0, texId);
-                        LOG_INFO("Forced canonical gryphon texture on slot 0");
+                if (lowerMountPath.find("gryphon") != std::string::npos) {
+                    const char* gryphonSkins[] = {
+                        "Creature\\Gryphon\\Gryphon_Skin.blp",
+                        "Creature\\Gryphon\\Gryphon_Skin01.blp",
+                        "Creature\\Gryphon\\GRYPHON_SKIN01.BLP",
+                        nullptr
+                    };
+                    for (const char** p = gryphonSkins; *p; ++p) {
+                        GLuint texId = charRenderer->loadTexture(*p);
+                        if (texId != 0) {
+                            charRenderer->setModelTexture(modelId, 0, texId);
+                            LOG_INFO("  Forced gryphon skin fallback: ", *p);
+                            replaced++;
+                            break;
+                        }
                     }
-                } else if (lowerMountPath.find("creature\\wyvern\\wyvern.m2") != std::string::npos) {
-                    GLuint texId = charRenderer->loadTexture("Creature\\Wyvern\\Wyvern.blp");
-                    if (texId != 0) {
-                        charRenderer->setModelTexture(modelId, 0, texId);
-                        LOG_INFO("Forced canonical wyvern texture on slot 0");
+                } else if (lowerMountPath.find("wyvern") != std::string::npos) {
+                    const char* wyvernSkins[] = {
+                        "Creature\\Wyvern\\Wyvern_Skin.blp",
+                        "Creature\\Wyvern\\Wyvern_Skin01.blp",
+                        nullptr
+                    };
+                    for (const char** p = wyvernSkins; *p; ++p) {
+                        GLuint texId = charRenderer->loadTexture(*p);
+                        if (texId != 0) {
+                            charRenderer->setModelTexture(modelId, 0, texId);
+                            LOG_INFO("  Forced wyvern skin fallback: ", *p);
+                            replaced++;
+                            break;
+                        }
                     }
                 }
             }
+            LOG_INFO("Mount texture setup: ", replaced, " textures applied");
         }
     }
 
@@ -4790,7 +4840,15 @@ void Application::processPendingMount() {
     }
 
     renderer->setMounted(instanceId, mountDisplayId, heightOffset, m2Path);
-    charRenderer->playAnimation(instanceId, 0, true);
+
+    // For taxi mounts, start with flying animation; for ground mounts, start with stand
+    bool isTaxi = gameHandler && gameHandler->isOnTaxiFlight();
+    uint32_t startAnim = 0; // ANIM_STAND
+    if (isTaxi) {
+        if (charRenderer->hasAnimation(instanceId, 159)) startAnim = 159; // FlyForward
+        else if (charRenderer->hasAnimation(instanceId, 158)) startAnim = 158; // FlyIdle
+    }
+    charRenderer->playAnimation(instanceId, startAnim, true);
 
     LOG_INFO("processPendingMount: DONE displayId=", mountDisplayId, " model=", m2Path, " heightOffset=", heightOffset);
 }

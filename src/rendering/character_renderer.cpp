@@ -33,6 +33,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <cstdlib>
+#include <fstream>
 #include <limits>
 
 namespace wowee {
@@ -431,21 +432,22 @@ static void blitOverlay(std::vector<uint8_t>& composite, int compW, int compH,
     }
 }
 
-// Nearest-neighbor 2x scale blit of overlay onto composite at (dstX, dstY)
-static void blitOverlayScaled2x(std::vector<uint8_t>& composite, int compW, int compH,
-                                 const pipeline::BLPImage& overlay, int dstX, int dstY) {
+// Nearest-neighbor NxN scale blit of overlay onto composite at (dstX, dstY)
+static void blitOverlayScaledN(std::vector<uint8_t>& composite, int compW, int compH,
+                                const pipeline::BLPImage& overlay, int dstX, int dstY, int scale) {
+    if (scale < 1) scale = 1;
     for (int sy = 0; sy < overlay.height; sy++) {
         for (int sx = 0; sx < overlay.width; sx++) {
             size_t srcIdx = (static_cast<size_t>(sy) * overlay.width + sx) * 4;
             uint8_t srcA = overlay.data[srcIdx + 3];
             if (srcA == 0) continue;
 
-            // Write to 2x2 block of destination pixels
-            for (int dy2 = 0; dy2 < 2; dy2++) {
-                int dy = dstY + sy * 2 + dy2;
+            // Write to scale×scale block of destination pixels
+            for (int dy2 = 0; dy2 < scale; dy2++) {
+                int dy = dstY + sy * scale + dy2;
                 if (dy < 0 || dy >= compH) continue;
-                for (int dx2 = 0; dx2 < 2; dx2++) {
-                    int dx = dstX + sx * 2 + dx2;
+                for (int dx2 = 0; dx2 < scale; dx2++) {
+                    int dx = dstX + sx * scale + dx2;
                     if (dx < 0 || dx >= compW) continue;
 
                     size_t dstIdx = (static_cast<size_t>(dy) * compW + dx) * 4;
@@ -466,6 +468,12 @@ static void blitOverlayScaled2x(std::vector<uint8_t>& composite, int compW, int 
             }
         }
     }
+}
+
+// Legacy 2x wrapper
+static void blitOverlayScaled2x(std::vector<uint8_t>& composite, int compW, int compH,
+                                 const pipeline::BLPImage& overlay, int dstX, int dstY) {
+    blitOverlayScaledN(composite, compW, compH, overlay, dstX, dstY, 2);
 }
 
 GLuint CharacterRenderer::compositeTextures(const std::vector<std::string>& layerPaths) {
@@ -502,13 +510,22 @@ GLuint CharacterRenderer::compositeTextures(const std::vector<std::string>& laye
     // Pelvis Lower    128  160  128  64
     // Foot            128  224  128  32
 
+    // Scale factor: base texture may be larger than the 256x256 reference atlas
+    int coordScale = width / 256;
+    if (coordScale < 1) coordScale = 1;
+
+    // Atlas region sizes at 256x256 base (w, h) for known regions
+    struct AtlasRegion { int x, y, w, h; };
+    static const AtlasRegion faceLowerRegion256 = {0, 192, 128, 64};
+    static const AtlasRegion faceUpperRegion256 = {0, 160, 128, 32};
+
     // Alpha-blend each overlay onto the composite
     for (size_t layer = 1; layer < layerPaths.size(); layer++) {
         if (layerPaths[layer].empty()) continue;
 
         auto overlay = assetManager->loadTexture(layerPaths[layer]);
         if (!overlay.isValid()) {
-            core::Logger::getInstance().warning("Composite: failed to load overlay: ", layerPaths[layer]);
+            core::Logger::getInstance().warning("Composite: FAILED to load overlay: ", layerPaths[layer]);
             continue;
         }
 
@@ -521,39 +538,82 @@ GLuint CharacterRenderer::compositeTextures(const std::vector<std::string>& laye
         } else {
             // Determine region by filename keywords
             // Coordinates scale with base texture size (256x256 is reference)
-            float s = width / 256.0f;
             int dstX = 0, dstY = 0;
+            int expectedW256 = 0, expectedH256 = 0; // Expected size at 256-base
             std::string pathLower = layerPaths[layer];
             for (auto& c : pathLower) c = std::tolower(c);
 
             if (pathLower.find("faceupper") != std::string::npos) {
-                dstX = 0; dstY = static_cast<int>(160 * s);
+                dstX = faceUpperRegion256.x; dstY = faceUpperRegion256.y;
+                expectedW256 = faceUpperRegion256.w; expectedH256 = faceUpperRegion256.h;
             } else if (pathLower.find("facelower") != std::string::npos) {
-                dstX = 0; dstY = static_cast<int>(192 * s);
+                dstX = faceLowerRegion256.x; dstY = faceLowerRegion256.y;
+                expectedW256 = faceLowerRegion256.w; expectedH256 = faceLowerRegion256.h;
             } else if (pathLower.find("pelvis") != std::string::npos) {
-                dstX = static_cast<int>(128 * s);
-                dstY = static_cast<int>(96 * s);
+                dstX = 128; dstY = 96;
+                expectedW256 = 128; expectedH256 = 64;
             } else if (pathLower.find("torso") != std::string::npos) {
-                dstX = static_cast<int>(128 * s);
-                dstY = 0;
+                dstX = 128; dstY = 0;
+                expectedW256 = 128; expectedH256 = 64;
             } else if (pathLower.find("armupper") != std::string::npos) {
                 dstX = 0; dstY = 0;
+                expectedW256 = 128; expectedH256 = 64;
             } else if (pathLower.find("armlower") != std::string::npos) {
-                dstX = 0; dstY = static_cast<int>(64 * s);
+                dstX = 0; dstY = 64;
+                expectedW256 = 128; expectedH256 = 64;
             } else if (pathLower.find("hand") != std::string::npos) {
-                dstX = 0; dstY = static_cast<int>(128 * s);
+                dstX = 0; dstY = 128;
+                expectedW256 = 128; expectedH256 = 32;
             } else if (pathLower.find("foot") != std::string::npos || pathLower.find("feet") != std::string::npos) {
-                dstX = static_cast<int>(128 * s); dstY = static_cast<int>(224 * s);
+                dstX = 128; dstY = 224;
+                expectedW256 = 128; expectedH256 = 32;
             } else if (pathLower.find("legupper") != std::string::npos || pathLower.find("leg") != std::string::npos) {
-                dstX = static_cast<int>(128 * s); dstY = static_cast<int>(160 * s);
+                dstX = 128; dstY = 160;
+                expectedW256 = 128; expectedH256 = 64;
             } else {
                 // Unknown — center placement as fallback
                 dstX = (width - overlay.width) / 2;
                 dstY = (height - overlay.height) / 2;
+                core::Logger::getInstance().info("Composite: UNKNOWN region for '",
+                    layerPaths[layer], "', centering at (", dstX, ",", dstY, ")");
+                blitOverlay(composite, width, height, overlay, dstX, dstY);
+                continue;
             }
 
-            core::Logger::getInstance().info("Composite: placing '", layerPaths[layer], "' at (", dstX, ",", dstY, ") on ", width, "x", height);
-            blitOverlay(composite, width, height, overlay, dstX, dstY);
+            // Scale coordinates from 256-base to actual canvas
+            dstX *= coordScale;
+            dstY *= coordScale;
+
+            // If overlay is 256-base sized but canvas is larger, scale the overlay up
+            int expectedW = expectedW256 * coordScale;
+            int expectedH = expectedH256 * coordScale;
+            bool needsScale = (coordScale > 1 &&
+                               overlay.width == expectedW256 && overlay.height == expectedH256);
+
+            core::Logger::getInstance().info("Composite: placing '", layerPaths[layer],
+                "' (", overlay.width, "x", overlay.height,
+                ") at (", dstX, ",", dstY, ") on ", width, "x", height,
+                " expected=", expectedW, "x", expectedH,
+                needsScale ? " [SCALING]" : "");
+
+            if (needsScale) {
+                blitOverlayScaledN(composite, width, height, overlay, dstX, dstY, coordScale);
+            } else {
+                blitOverlay(composite, width, height, overlay, dstX, dstY);
+            }
+        }
+    }
+
+    // Debug: dump composite to /tmp for visual inspection
+    {
+        std::string dumpPath = "/tmp/wowee_composite_debug_" +
+            std::to_string(width) + "x" + std::to_string(height) + ".raw";
+        std::ofstream dump(dumpPath, std::ios::binary);
+        if (dump) {
+            dump.write(reinterpret_cast<const char*>(composite.data()),
+                       static_cast<std::streamsize>(composite.size()));
+            core::Logger::getInstance().info("Composite debug dump: ", dumpPath,
+                " (", width, "x", height, ", ", composite.size(), " bytes)");
         }
     }
 

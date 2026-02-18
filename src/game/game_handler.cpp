@@ -1239,6 +1239,19 @@ void GameHandler::handlePacket(network::Packet& packet) {
         }
         case Opcode::MSG_RAID_TARGET_UPDATE:
             break;
+        case Opcode::SMSG_WEATHER: {
+            // Format: uint32 weatherType, float intensity, uint8 isAbrupt
+            if (packet.getSize() - packet.getReadPos() >= 9) {
+                uint32_t wType = packet.readUInt32();
+                float wIntensity = packet.readFloat();
+                /*uint8_t isAbrupt =*/ packet.readUInt8();
+                weatherType_ = wType;
+                weatherIntensity_ = wIntensity;
+                const char* typeName = (wType == 1) ? "Rain" : (wType == 2) ? "Snow" : (wType == 3) ? "Storm" : "Clear";
+                LOG_INFO("Weather changed: type=", wType, " (", typeName, "), intensity=", wIntensity);
+            }
+            break;
+        }
         case Opcode::SMSG_GAMEOBJECT_QUERY_RESPONSE:
             handleGameObjectQueryResponse(packet);
             break;

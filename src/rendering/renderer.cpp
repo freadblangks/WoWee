@@ -1838,15 +1838,23 @@ void Renderer::update(float deltaTime) {
     // Update lighting system
     auto light1 = std::chrono::high_resolution_clock::now();
     if (lightingManager) {
-        // TODO: Get actual map ID from game state (0 = Eastern Kingdoms for now)
-        // TODO: Get actual game time from server (use -1 for local time fallback)
-        // TODO: Get weather/underwater state from game state
-        uint32_t mapId = 0;  // Eastern Kingdoms
-        float gameTime = -1.0f;  // Use local time for now
-        bool isRaining = false;  // TODO: Get from weather system
-        bool isUnderwater = false;  // TODO: Get from player state
+        const auto* gh = core::Application::getInstance().getGameHandler();
+        uint32_t mapId    = gh ? gh->getCurrentMapId() : 0;
+        float gameTime    = gh ? gh->getGameTime() : -1.0f;
+        bool isRaining    = gh ? gh->isRaining() : false;
+        bool isUnderwater = cameraController ? cameraController->isSwimming() : false;
 
         lightingManager->update(characterPosition, mapId, gameTime, isRaining, isUnderwater);
+
+        // Sync weather visual renderer with game state
+        if (weather && gh) {
+            uint32_t wType = gh->getWeatherType();
+            float wInt = gh->getWeatherIntensity();
+            if (wType == 1)      weather->setWeatherType(Weather::Type::RAIN);
+            else if (wType == 2) weather->setWeatherType(Weather::Type::SNOW);
+            else                 weather->setWeatherType(Weather::Type::NONE);
+            weather->setIntensity(wInt);
+        }
     }
     auto light2 = std::chrono::high_resolution_clock::now();
     lightTime += std::chrono::duration<float, std::milli>(light2 - light1).count();

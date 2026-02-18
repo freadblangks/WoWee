@@ -358,6 +358,9 @@ enum class LogicalOpcode : uint16_t {
     SMSG_ARENA_ERROR,
     MSG_INSPECT_ARENA_TEAMS,
 
+    // ---- Weather ----
+    SMSG_WEATHER,
+
     // ---- Emotes ----
     CMSG_EMOTE,
     SMSG_EMOTE,

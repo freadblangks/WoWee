@@ -507,6 +507,13 @@ public:
     float getGameTime() const { return gameTime_; }
     float getTimeSpeed() const { return timeSpeed_; }
 
+    // Weather state (updated by SMSG_WEATHER)
+    // weatherType: 0=clear, 1=rain, 2=snow, 3=storm/fog
+    uint32_t getWeatherType() const { return weatherType_; }
+    float getWeatherIntensity() const { return weatherIntensity_; }
+    bool isRaining() const { return weatherType_ == 1 && weatherIntensity_ > 0.05f; }
+    bool isSnowing() const { return weatherType_ == 2 && weatherIntensity_ > 0.05f; }
+
     // Player skills
     const std::map<uint32_t, PlayerSkill>& getPlayerSkills() const { return playerSkills_; }
     const std::string& getSkillName(uint32_t skillId) const;
@@ -1537,6 +1544,10 @@ private:
     float gameTime_ = 0.0f;       // Server game time in seconds
     float timeSpeed_ = 0.0166f;   // Time scale (default: 1 game day = 1 real hour)
     void handleLoginSetTimeSpeed(network::Packet& packet);
+
+    // ---- Weather state (SMSG_WEATHER) ----
+    uint32_t weatherType_ = 0;       // 0=clear, 1=rain, 2=snow, 3=storm
+    float weatherIntensity_ = 0.0f;  // 0.0 to 1.0
 
     // ---- Player skills ----
     std::map<uint32_t, PlayerSkill> playerSkills_;

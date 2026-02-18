@@ -338,8 +338,10 @@ void GameHandler::update(float deltaTime) {
         it->timer -= deltaTime;
         if (it->timer <= 0.0f) {
             if (it->remainingRetries > 0 && state == WorldState::IN_WORLD && socket) {
-                auto packet = LootPacket::build(it->guid);
-                socket->send(packet);
+                auto usePacket = GameObjectUsePacket::build(it->guid);
+                socket->send(usePacket);
+                auto lootPacket = LootPacket::build(it->guid);
+                socket->send(lootPacket);
                 --it->remainingRetries;
                 it->timer = 0.20f;
             }
@@ -8113,10 +8115,10 @@ void GameHandler::interactWithGameObject(uint64_t guid) {
         }
     }
     if (shouldSendLoot) {
-        LOG_INFO("GameObject interaction: sent CMSG_LOOT for guid=0x", std::hex, guid, std::dec,
+        LOG_INFO("GameObject interaction: sent CMSG_GAMEOBJECT_USE + CMSG_LOOT for guid=0x", std::hex, guid, std::dec,
                  " mailbox=", (isMailbox ? 1 : 0));
         lootTarget(guid);
-        pendingGameObjectLootRetries_.push_back(PendingLootRetry{guid, 0.20f, 1});
+        pendingGameObjectLootRetries_.push_back(PendingLootRetry{guid, 0.20f, 2});
     }
 }
 

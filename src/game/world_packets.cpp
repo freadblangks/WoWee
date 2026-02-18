@@ -3080,6 +3080,12 @@ bool ListInventoryParser::parse(network::Packet& packet, ListInventoryData& data
         return true;
     }
 
+    // Auto-detect whether server sends 7 fields (28 bytes/item) or 8 fields (32 bytes/item).
+    // Some servers omit the extendedCost field entirely; reading 8 fields on a 7-field packet
+    // misaligns every item after the first and produces garbage prices.
+    size_t remaining = packet.getSize() - packet.getReadPos();
+    bool hasExtendedCost = (remaining >= static_cast<size_t>(itemCount) * 32);
+
     data.items.reserve(itemCount);
     for (uint8_t i = 0; i < itemCount; ++i) {
         VendorItem item;
@@ -3090,11 +3096,11 @@ bool ListInventoryParser::parse(network::Packet& packet, ListInventoryData& data
         item.buyPrice = packet.readUInt32();
         item.durability = packet.readUInt32();
         item.stackCount = packet.readUInt32();
-        item.extendedCost = packet.readUInt32();
+        item.extendedCost = hasExtendedCost ? packet.readUInt32() : 0;
         data.items.push_back(item);
     }
 
-    LOG_INFO("Vendor inventory: ", (int)itemCount, " items");
+    LOG_INFO("Vendor inventory: ", (int)itemCount, " items (extendedCost: ", hasExtendedCost ? "yes" : "no", ")");
     return true;
 }
 

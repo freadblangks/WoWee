@@ -4813,7 +4813,8 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
                     }
 
                     ImGui::TableSetColumnIndex(1);
-                    if (item.extendedCost != 0 && item.buyPrice == 0) {
+                    if (item.buyPrice == 0 && item.extendedCost != 0) {
+                        // Token-only item (no gold cost)
                         ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "[Tokens]");
                     } else {
                         uint32_t g = item.buyPrice / 10000;
@@ -4823,10 +4824,6 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
                         if (!canAfford) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
                         ImGui::Text("%ug %us %uc", g, s, c);
                         if (!canAfford) ImGui::PopStyleColor();
-                        if (item.extendedCost != 0) {
-                            ImGui::SameLine();
-                            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "[+Tokens]");
-                        }
                     }
 
                     ImGui::TableSetColumnIndex(2);

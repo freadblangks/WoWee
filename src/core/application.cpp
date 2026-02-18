@@ -2537,7 +2537,7 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
     // Set camera position
     if (renderer->getCameraController()) {
         renderer->getCameraController()->setOnlineMode(true);
-        renderer->getCameraController()->setDefaultSpawn(spawnRender, 0.0f, 15.0f);
+        renderer->getCameraController()->setDefaultSpawn(spawnRender, 0.0f, -15.0f);
         renderer->getCameraController()->reset();
         renderer->getCameraController()->startIntroPan(2.8f, 140.0f);
     }

@@ -34,6 +34,9 @@ struct ItemDef {
     uint32_t stackCount = 1;
     uint32_t maxStack = 1;
     uint32_t bagSlots = 0;
+    float damageMin = 0.0f;
+    float damageMax = 0.0f;
+    uint32_t delayMs = 0;
     // Stats
     int32_t armor = 0;
     int32_t stamina = 0;

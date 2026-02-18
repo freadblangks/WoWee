@@ -6145,6 +6145,9 @@ void GameHandler::rebuildOnlineInventory() {
             def.maxStack = std::max(1, infoIt->second.maxStack);
             def.displayInfoId = infoIt->second.displayInfoId;
             def.subclassName = infoIt->second.subclassName;
+            def.damageMin = infoIt->second.damageMin;
+            def.damageMax = infoIt->second.damageMax;
+            def.delayMs = infoIt->second.delayMs;
             def.armor = infoIt->second.armor;
             def.stamina = infoIt->second.stamina;
             def.strength = infoIt->second.strength;
@@ -6180,6 +6183,9 @@ void GameHandler::rebuildOnlineInventory() {
             def.maxStack = std::max(1, infoIt->second.maxStack);
             def.displayInfoId = infoIt->second.displayInfoId;
             def.subclassName = infoIt->second.subclassName;
+            def.damageMin = infoIt->second.damageMin;
+            def.damageMax = infoIt->second.damageMax;
+            def.delayMs = infoIt->second.delayMs;
             def.armor = infoIt->second.armor;
             def.stamina = infoIt->second.stamina;
             def.strength = infoIt->second.strength;
@@ -6250,6 +6256,9 @@ void GameHandler::rebuildOnlineInventory() {
                 def.maxStack = std::max(1, infoIt->second.maxStack);
                 def.displayInfoId = infoIt->second.displayInfoId;
                 def.subclassName = infoIt->second.subclassName;
+                def.damageMin = infoIt->second.damageMin;
+                def.damageMax = infoIt->second.damageMax;
+                def.delayMs = infoIt->second.delayMs;
                 def.armor = infoIt->second.armor;
                 def.stamina = infoIt->second.stamina;
                 def.strength = infoIt->second.strength;
@@ -6287,6 +6296,9 @@ void GameHandler::rebuildOnlineInventory() {
             def.maxStack = std::max(1, infoIt->second.maxStack);
             def.displayInfoId = infoIt->second.displayInfoId;
             def.subclassName = infoIt->second.subclassName;
+            def.damageMin = infoIt->second.damageMin;
+            def.damageMax = infoIt->second.damageMax;
+            def.delayMs = infoIt->second.delayMs;
             def.armor = infoIt->second.armor;
             def.stamina = infoIt->second.stamina;
             def.strength = infoIt->second.strength;
@@ -6348,6 +6360,9 @@ void GameHandler::rebuildOnlineInventory() {
                 def.maxStack = std::max(1, infoIt->second.maxStack);
                 def.displayInfoId = infoIt->second.displayInfoId;
                 def.subclassName = infoIt->second.subclassName;
+                def.damageMin = infoIt->second.damageMin;
+                def.damageMax = infoIt->second.damageMax;
+                def.delayMs = infoIt->second.delayMs;
                 def.armor = infoIt->second.armor;
                 def.stamina = infoIt->second.stamina;
                 def.strength = infoIt->second.strength;

@@ -1471,6 +1471,16 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item) {
         }
     }
 
+    if (item.damageMax > 0.0f) {
+        ImGui::Text("%.0f - %.0f Damage", item.damageMin, item.damageMax);
+        if (item.delayMs > 0) {
+            float speed = static_cast<float>(item.delayMs) / 1000.0f;
+            float dps = ((item.damageMin + item.damageMax) * 0.5f) / speed;
+            ImGui::Text("Speed %.2f", speed);
+            ImGui::Text("%.1f damage per second", dps);
+        }
+    }
+
     // Armor
     if (item.armor > 0) {
         ImGui::Text("%d Armor", item.armor);

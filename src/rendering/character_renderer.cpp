@@ -1706,15 +1706,21 @@ void CharacterRenderer::moveInstanceTo(uint32_t instanceId, const glm::vec3& des
     // Don't move dead instances (corpses shouldn't slide around)
     if (inst.isDead) return;
 
-    auto pickMoveAnim = [&]() -> uint32_t {
-        // Prefer run when available to avoid "gliding with attack pose" on chase.
-        if (hasAnimation(instanceId, 5)) return 5; // Run
-        if (hasAnimation(instanceId, 4)) return 4; // Walk
+    auto pickMoveAnim = [&](bool preferRun) -> uint32_t {
+        // Choose movement anim from estimated speed; fall back if missing.
+        if (preferRun) {
+            if (hasAnimation(instanceId, 5)) return 5; // Run
+            if (hasAnimation(instanceId, 4)) return 4; // Walk
+        } else {
+            if (hasAnimation(instanceId, 4)) return 4; // Walk
+            if (hasAnimation(instanceId, 5)) return 5; // Run
+        }
         return 0;
     };
 
     float planarDist = glm::length(glm::vec2(destination.x - inst.position.x,
                                              destination.y - inst.position.y));
+    bool synthesizedDuration = false;
     if (durationSeconds <= 0.0f) {
         if (planarDist < 0.01f) {
             // Stop at current location.
@@ -1728,6 +1734,7 @@ void CharacterRenderer::moveInstanceTo(uint32_t instanceId, const glm::vec3& des
         // Some cores send movement-only deltas without spline duration.
         // Synthesize a tiny duration so movement anim/rotation still updates.
         durationSeconds = std::clamp(planarDist / 7.0f, 0.05f, 0.20f);
+        synthesizedDuration = true;
     }
 
     inst.moveStart = inst.position;
@@ -1744,7 +1751,10 @@ void CharacterRenderer::moveInstanceTo(uint32_t instanceId, const glm::vec3& des
     }
 
     // Play movement animation while moving.
-    uint32_t moveAnim = pickMoveAnim();
+    // Prefer run only when speed is clearly above normal walk pace.
+    float moveSpeed = planarDist / std::max(durationSeconds, 0.001f);
+    bool preferRun = (!synthesizedDuration && moveSpeed >= 4.5f);
+    uint32_t moveAnim = pickMoveAnim(preferRun);
     if (moveAnim != 0 && inst.currentAnimationId != moveAnim) {
         playAnimation(instanceId, moveAnim, true);
     }

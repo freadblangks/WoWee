@@ -2194,21 +2194,27 @@ bool MonsterMoveParser::parse(network::Packet& packet, MonsterMoveData& data) {
     if (packet.getReadPos() + 4 > packet.getSize()) return false;
     data.splineFlags = packet.readUInt32();
 
-    // Check for animation flag (0x00000100)
-    if (data.splineFlags & 0x00000100) {
-        if (packet.getReadPos() + 8 > packet.getSize()) return false;
-        packet.readUInt32(); // animId
-        packet.readUInt32(); // effectStartTime
+    // WotLK 3.3.5a SplineFlags (from TrinityCore/MaNGOS MoveSplineFlag.h):
+    //   Animation    = 0x00400000
+    //   Parabolic    = 0x00000800
+    //   Catmullrom   = 0x00080000  \  either means uncompressed (absolute) waypoints
+    //   Flying       = 0x00002000  /
+
+    // [if Animation] uint8 animationType + int32 effectStartTime (5 bytes)
+    if (data.splineFlags & 0x00400000) {
+        if (packet.getReadPos() + 5 > packet.getSize()) return false;
+        packet.readUInt8();  // animationType
+        packet.readUInt32(); // effectStartTime (int32, read as uint32 same size)
     }
 
     // uint32 duration
     if (packet.getReadPos() + 4 > packet.getSize()) return false;
     data.duration = packet.readUInt32();
 
-    // Check for parabolic flag (0x00000200)
-    if (data.splineFlags & 0x00000200) {
+    // [if Parabolic] float verticalAcceleration + int32 effectStartTime (8 bytes)
+    if (data.splineFlags & 0x00000800) {
         if (packet.getReadPos() + 8 > packet.getSize()) return false;
-        packet.readFloat(); // vertAccel
+        packet.readFloat(); // verticalAcceleration
         packet.readUInt32(); // effectStartTime
     }
 
@@ -2218,10 +2224,9 @@ bool MonsterMoveParser::parse(network::Packet& packet, MonsterMoveData& data) {
 
     if (pointCount == 0) return true;
 
-    // Read destination point(s)
-    // If UncompressedPath flag (0x00040000): all points are full float x,y,z
-    // Otherwise: first is packed destination, rest are packed deltas
-    bool uncompressed = (data.splineFlags & 0x00040000) != 0;
+    // Catmullrom or Flying → all waypoints stored as absolute float3 (uncompressed).
+    // Otherwise: first float3 is final destination, remaining are packed deltas.
+    bool uncompressed = (data.splineFlags & (0x00080000 | 0x00002000)) != 0;
 
     if (uncompressed) {
         // Read last point as destination

@@ -8190,6 +8190,14 @@ void GameHandler::handleLootResponse(network::Packet& packet) {
             currentLoot.gold = 0;
         }
     }
+
+    // Auto-loot items when enabled
+    if (autoLoot_ && state == WorldState::IN_WORLD && socket) {
+        for (const auto& item : currentLoot.items) {
+            auto pkt = AutostoreLootItemPacket::build(item.slotIndex);
+            socket->send(pkt);
+        }
+    }
 }
 
 void GameHandler::handleLootReleaseResponse(network::Packet& packet) {

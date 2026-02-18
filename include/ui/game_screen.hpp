@@ -97,6 +97,7 @@ private:
     bool pendingMinimapRotate = false;
     bool pendingMinimapSquare = false;
     bool pendingSeparateBags = true;
+    bool pendingAutoLoot = false;
     bool pendingUseOriginalSoundtrack = true;
 
     // UI element transparency (0.0 = fully transparent, 1.0 = fully opaque)

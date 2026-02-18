@@ -216,6 +216,9 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         }
     }
 
+    // Apply auto-loot setting to GameHandler every frame (cheap bool sync)
+    gameHandler.setAutoLoot(pendingAutoLoot);
+
     // Sync chat auto-join settings to GameHandler
     gameHandler.chatAutoJoin.general = chatAutoJoinGeneral_;
     gameHandler.chatAutoJoin.trade = chatAutoJoinTrade_;
@@ -5724,6 +5727,15 @@ void GameScreen::renderSettingsWindow() {
                 }
 
                 ImGui::Spacing();
+                ImGui::Text("Loot");
+                ImGui::Separator();
+                if (ImGui::Checkbox("Auto Loot", &pendingAutoLoot)) {
+                    saveSettings();  // per-frame sync applies pendingAutoLoot to gameHandler
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Automatically pick up all items when looting");
+
+                ImGui::Spacing();
                 ImGui::Text("Bags");
                 ImGui::Separator();
                 if (ImGui::Checkbox("Separate Bag Windows", &pendingSeparateBags)) {
@@ -6304,6 +6316,9 @@ void GameScreen::saveSettings() {
     out << "mount_volume=" << pendingMountVolume << "\n";
     out << "activity_volume=" << pendingActivityVolume << "\n";
 
+    // Gameplay
+    out << "auto_loot=" << (pendingAutoLoot ? 1 : 0) << "\n";
+
     // Controls
     out << "mouse_sensitivity=" << pendingMouseSensitivity << "\n";
     out << "invert_mouse=" << (pendingInvertMouse ? 1 : 0) << "\n";
@@ -6373,6 +6388,8 @@ void GameScreen::loadSettings() {
             else if (key == "npc_voice_volume") pendingNpcVoiceVolume = std::clamp(std::stoi(val), 0, 100);
             else if (key == "mount_volume") pendingMountVolume = std::clamp(std::stoi(val), 0, 100);
             else if (key == "activity_volume") pendingActivityVolume = std::clamp(std::stoi(val), 0, 100);
+            // Gameplay
+            else if (key == "auto_loot") pendingAutoLoot = (std::stoi(val) != 0);
             // Controls
             else if (key == "mouse_sensitivity") pendingMouseSensitivity = std::clamp(std::stof(val), 0.05f, 1.0f);
             else if (key == "invert_mouse") pendingInvertMouse = (std::stoi(val) != 0);

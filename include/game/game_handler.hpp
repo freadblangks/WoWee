@@ -660,6 +660,8 @@ public:
     void activateSpiritHealer(uint64_t npcGuid);
     bool isLootWindowOpen() const { return lootWindowOpen; }
     const LootResponseData& getCurrentLoot() const { return currentLoot; }
+    void setAutoLoot(bool enabled) { autoLoot_ = enabled; }
+    bool isAutoLoot() const { return autoLoot_; }
 
     // NPC Gossip
     void interactWithNpc(uint64_t guid);
@@ -1354,6 +1356,7 @@ private:
 
     // ---- Phase 5: Loot ----
     bool lootWindowOpen = false;
+    bool autoLoot_ = false;
     LootResponseData currentLoot;
     struct LocalLootState {
         LootResponseData data;

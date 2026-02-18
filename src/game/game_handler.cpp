@@ -1219,7 +1219,24 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
             break;
         }
-        case Opcode::SMSG_BUY_FAILED:
+        case Opcode::SMSG_BUY_FAILED: {
+            // vendorGuid(8) + itemId(4) + errorCode(1)
+            if (packet.getSize() - packet.getReadPos() >= 13) {
+                /*uint64_t vendorGuid =*/ packet.readUInt64();
+                /*uint32_t itemId    =*/ packet.readUInt32();
+                uint8_t errCode = packet.readUInt8();
+                const char* msg = "Purchase failed.";
+                switch (errCode) {
+                    case 2: msg = "You don't have enough money."; break;
+                    case 4: msg = "Seller is too far away."; break;
+                    case 5: msg = "That item is sold out."; break;
+                    case 6: msg = "You can't carry any more items."; break;
+                    default: break;
+                }
+                addSystemChatMessage(msg);
+            }
+            break;
+        }
         case Opcode::MSG_RAID_TARGET_UPDATE:
             break;
         case Opcode::SMSG_GAMEOBJECT_QUERY_RESPONSE:

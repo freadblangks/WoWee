@@ -3056,8 +3056,8 @@ network::Packet ListInventoryPacket::build(uint64_t npcGuid) {
 network::Packet BuyItemPacket::build(uint64_t vendorGuid, uint32_t itemId, uint32_t slot, uint32_t count) {
     network::Packet packet(wireOpcode(Opcode::CMSG_BUY_ITEM));
     packet.writeUInt64(vendorGuid);
-    packet.writeUInt32(itemId);
-    packet.writeUInt32(slot);
+    packet.writeUInt32(slot);    // vendor slot (1-based position in vendor list)
+    packet.writeUInt32(itemId);  // item entry
     packet.writeUInt32(count);
     packet.writeUInt8(0);  // bag slot (0 = find any available bag slot)
     return packet;

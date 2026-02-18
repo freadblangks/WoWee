@@ -4813,13 +4813,21 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
                     }
 
                     ImGui::TableSetColumnIndex(1);
-                    uint32_t g = item.buyPrice / 10000;
-                    uint32_t s = (item.buyPrice / 100) % 100;
-                    uint32_t c = item.buyPrice % 100;
-                    bool canAfford = money >= item.buyPrice;
-                    if (!canAfford) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
-                    ImGui::Text("%ug %us %uc", g, s, c);
-                    if (!canAfford) ImGui::PopStyleColor();
+                    if (item.extendedCost != 0 && item.buyPrice == 0) {
+                        ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "[Tokens]");
+                    } else {
+                        uint32_t g = item.buyPrice / 10000;
+                        uint32_t s = (item.buyPrice / 100) % 100;
+                        uint32_t c = item.buyPrice % 100;
+                        bool canAfford = money >= item.buyPrice;
+                        if (!canAfford) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+                        ImGui::Text("%ug %us %uc", g, s, c);
+                        if (!canAfford) ImGui::PopStyleColor();
+                        if (item.extendedCost != 0) {
+                            ImGui::SameLine();
+                            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "[+Tokens]");
+                        }
+                    }
 
                     ImGui::TableSetColumnIndex(2);
                     if (item.maxCount < 0) {
@@ -5144,15 +5152,6 @@ void GameScreen::renderEscapeMenu() {
             showEscapeMenu = false;
         }
 
-        ImGui::Spacing();
-        if (ImGui::Button("Test: Level Up", ImVec2(-1, 0))) {
-            uint32_t lvl = 1;
-            if (auto* gh = core::Application::getInstance().getGameHandler()) {
-                lvl = gh->getPlayerLevel();
-            }
-            triggerDing(lvl > 0 ? lvl : 1);
-            showEscapeMenu = false;
-        }
         ImGui::Spacing();
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f, 10.0f));
         if (ImGui::Button("Back to Game", ImVec2(-1, 0))) {

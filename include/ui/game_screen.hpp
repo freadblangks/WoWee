@@ -276,6 +276,15 @@ private:
     // Left-click targeting: distinguish click from camera drag
     glm::vec2 leftClickPressPos_ = glm::vec2(0.0f);
     bool leftClickWasPress_ = false;
+
+    // Level-up ding animation
+    static constexpr float DING_DURATION = 3.0f;
+    float dingTimer_ = 0.0f;
+    uint32_t dingLevel_ = 0;
+    void renderDingEffect();
+
+public:
+    void triggerDing(uint32_t newLevel);
 };
 
 } // namespace ui

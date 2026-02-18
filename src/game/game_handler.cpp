@@ -3886,6 +3886,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                 LOG_INFO("Next level XP updated: ", val);
                             }
                             else if (key == ufPlayerLevel) {
+                                uint32_t oldLevel = serverPlayerLevel_;
                                 serverPlayerLevel_ = val;
                                 LOG_INFO("Level updated: ", val);
                                 for (auto& ch : characters) {
@@ -3893,6 +3894,9 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                         ch.level = val;
                                         break;
                                     }
+                                }
+                                if (val > oldLevel && oldLevel > 0 && levelUpCallback_) {
+                                    levelUpCallback_(val);
                                 }
                             }
                             else if (key == ufCoinage) {

@@ -706,6 +706,10 @@ public:
     }
     const std::unordered_map<uint64_t, QuestGiverStatus>& getNpcQuestStatuses() const { return npcQuestStatus_; }
 
+    // Level-up callback — fires when the player gains a level (newLevel > 1)
+    using LevelUpCallback = std::function<void(uint32_t newLevel)>;
+    void setLevelUpCallback(LevelUpCallback cb) { levelUpCallback_ = std::move(cb); }
+
     // Mount state
     using MountCallback = std::function<void(uint32_t mountDisplayId)>;  // 0 = dismount
     void setMountCallback(MountCallback cb) { mountCallback_ = std::move(cb); }
@@ -1558,6 +1562,7 @@ private:
     NpcGreetingCallback npcGreetingCallback_;
     NpcFarewellCallback npcFarewellCallback_;
     NpcVendorCallback npcVendorCallback_;
+    LevelUpCallback levelUpCallback_;
     MountCallback mountCallback_;
     TaxiPrecacheCallback taxiPrecacheCallback_;
     TaxiOrientationCallback taxiOrientationCallback_;

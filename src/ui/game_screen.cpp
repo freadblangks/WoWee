@@ -281,6 +281,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderChatBubbles(gameHandler);
     renderEscapeMenu();
     renderSettingsWindow();
+    renderDingEffect();
 
     // World map (M key toggle handled inside)
     renderWorldMap(gameHandler);
@@ -5105,6 +5106,15 @@ void GameScreen::renderEscapeMenu() {
         }
 
         ImGui::Spacing();
+        if (ImGui::Button("Test: Level Up", ImVec2(-1, 0))) {
+            uint32_t lvl = 1;
+            if (auto* gh = core::Application::getInstance().getGameHandler()) {
+                lvl = gh->getPlayerLevel();
+            }
+            triggerDing(lvl > 0 ? lvl : 1);
+            showEscapeMenu = false;
+        }
+        ImGui::Spacing();
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f, 10.0f));
         if (ImGui::Button("Back to Game", ImVec2(-1, 0))) {
             showEscapeMenu = false;
@@ -7149,6 +7159,92 @@ void GameScreen::renderAuctionHouseWindow(game::GameHandler& gameHandler) {
     ImGui::End();
 
     if (!open) gameHandler.closeAuctionHouse();
+}
+
+// ============================================================
+// Level-Up Ding Animation
+// ============================================================
+
+void GameScreen::triggerDing(uint32_t newLevel) {
+    dingTimer_ = DING_DURATION;
+    dingLevel_ = newLevel;
+
+    auto* renderer = core::Application::getInstance().getRenderer();
+    if (renderer) {
+        if (auto* sfx = renderer->getUiSoundManager()) {
+            sfx->playLevelUp();
+        }
+        renderer->playEmote("cheer");
+    }
+}
+
+void GameScreen::renderDingEffect() {
+    if (dingTimer_ <= 0.0f) return;
+
+    float dt = ImGui::GetIO().DeltaTime;
+    dingTimer_ -= dt;
+    if (dingTimer_ < 0.0f) dingTimer_ = 0.0f;
+
+    float progress = 1.0f - (dingTimer_ / DING_DURATION);   // 0→1 over duration
+    float alpha    = dingTimer_ < 0.8f ? (dingTimer_ / 0.8f) : 1.0f;  // fade out last 0.8s
+
+    ImGuiIO& io = ImGui::GetIO();
+    float cx = io.DisplaySize.x * 0.5f;
+    float cy = io.DisplaySize.y * 0.5f;
+    float maxR = std::min(cx, cy) * 1.1f;
+
+    ImDrawList* draw = ImGui::GetForegroundDrawList();
+
+    // 3 expanding golden rings staggered by 0.12s of phase
+    for (int r = 0; r < 3; r++) {
+        float phase = progress - r * 0.12f;
+        if (phase <= 0.0f || phase >= 1.0f) continue;
+        float ringAlpha = (1.0f - phase) * alpha * 0.9f;
+        float radius    = phase * maxR;
+        float thickness = 10.0f * (1.0f - phase) + 2.0f;
+        draw->AddCircle(ImVec2(cx, cy), radius,
+                        IM_COL32(255, 215, 0, (int)(ringAlpha * 255)),
+                        96, thickness);
+    }
+
+    // Inner golden glow disk (very transparent)
+    if (progress < 0.5f) {
+        float glowAlpha = (1.0f - progress * 2.0f) * alpha * 0.15f;
+        draw->AddCircleFilled(ImVec2(cx, cy), progress * maxR * 0.6f,
+                              IM_COL32(255, 215, 0, (int)(glowAlpha * 255)));
+    }
+
+    // "LEVEL X!" text — visible for first 2.2s
+    if (dingTimer_ > 0.8f) {
+        ImFont* font = ImGui::GetFont();
+        float baseSize = ImGui::GetFontSize();
+        float fontSize = baseSize * 2.8f;
+
+        char buf[32];
+        snprintf(buf, sizeof(buf), "LEVEL %u!", dingLevel_);
+
+        ImVec2 sz = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, buf);
+        float tx = cx - sz.x * 0.5f;
+        float ty = cy - sz.y * 0.5f - 20.0f;
+
+        // Drop shadow
+        draw->AddText(font, fontSize, ImVec2(tx + 3, ty + 3),
+                      IM_COL32(0, 0, 0, (int)(alpha * 200)), buf);
+        // Gold text
+        draw->AddText(font, fontSize, ImVec2(tx, ty),
+                      IM_COL32(255, 215, 0, (int)(alpha * 255)), buf);
+
+        // "DING!" subtitle
+        const char* ding = "DING!";
+        float dingSize = baseSize * 1.8f;
+        ImVec2 dingSz = font->CalcTextSizeA(dingSize, FLT_MAX, 0.0f, ding);
+        float dx = cx - dingSz.x * 0.5f;
+        float dy = ty + sz.y + 6.0f;
+        draw->AddText(font, dingSize, ImVec2(dx + 2, dy + 2),
+                      IM_COL32(0, 0, 0, (int)(alpha * 180)), ding);
+        draw->AddText(font, dingSize, ImVec2(dx, dy),
+                      IM_COL32(255, 255, 150, (int)(alpha * 255)), ding);
+    }
 }
 
 }} // namespace wowee::ui

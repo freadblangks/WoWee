@@ -1280,6 +1280,13 @@ void Application::setupUICallbacks() {
         despawnOnlineGameObject(guid);
     });
 
+    // Level-up callback — play sound, cheer emote, and trigger UI ding overlay
+    gameHandler->setLevelUpCallback([this](uint32_t newLevel) {
+        if (uiManager) {
+            uiManager->getGameScreen().triggerDing(newLevel);
+        }
+    });
+
     // Mount callback (online mode) - defer heavy model load to next frame
     gameHandler->setMountCallback([this](uint32_t mountDisplayId) {
         if (mountDisplayId == 0) {

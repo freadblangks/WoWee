@@ -23,11 +23,16 @@ public:
     std::string getRandomMusic(uint32_t zoneId);
     std::vector<std::string> getAllMusicPaths() const;
 
+    // When false, file: (original soundtrack) tracks are excluded from the pool
+    void setUseOriginalSoundtrack(bool use) { useOriginalSoundtrack_ = use; }
+    bool getUseOriginalSoundtrack() const { return useOriginalSoundtrack_; }
+
 private:
     // tile key = tileX * 100 + tileY
     std::unordered_map<int, uint32_t> tileToZone;
     std::unordered_map<uint32_t, ZoneInfo> zones;
     std::string lastPlayedMusic_;
+    bool useOriginalSoundtrack_ = true;
 };
 
 } // namespace game

@@ -97,12 +97,17 @@ private:
     bool pendingMinimapRotate = false;
     bool pendingMinimapSquare = false;
     bool pendingSeparateBags = true;
+    bool pendingUseOriginalSoundtrack = true;
 
     // UI element transparency (0.0 = fully transparent, 1.0 = fully opaque)
     float uiOpacity_ = 0.65f;
     bool minimapRotate_ = false;
     bool minimapSquare_ = false;
     bool minimapSettingsApplied_ = false;
+
+    // Mute state: mute bypasses master volume without touching slider values
+    bool soundMuted_ = false;
+    float preMuteVolume_ = 1.0f;  // AudioEngine master volume before muting
 
     /**
      * Render player info window

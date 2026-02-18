@@ -436,20 +436,32 @@ std::string ZoneManager::getRandomMusic(uint32_t zoneId) {
         return "";
     }
 
-    const auto& paths = it->second.musicPaths;
-    if (paths.size() == 1) {
-        lastPlayedMusic_ = paths[0];
-        return paths[0];
+    // Build filtered pool: exclude file: (original soundtrack) tracks if disabled
+    const auto& all = it->second.musicPaths;
+    std::vector<const std::string*> pool;
+    pool.reserve(all.size());
+    for (const auto& p : all) {
+        if (!useOriginalSoundtrack_ && p.rfind("file:", 0) == 0) continue;
+        pool.push_back(&p);
+    }
+    // Fall back to full list if filtering left nothing
+    if (pool.empty()) {
+        for (const auto& p : all) pool.push_back(&p);
+    }
+
+    if (pool.size() == 1) {
+        lastPlayedMusic_ = *pool[0];
+        return lastPlayedMusic_;
     }
 
     // Avoid playing the same track back-to-back
-    std::string pick;
+    const std::string* pick = pool[0];
     for (int attempts = 0; attempts < 5; ++attempts) {
-        pick = paths[std::rand() % paths.size()];
-        if (pick != lastPlayedMusic_) break;
+        pick = pool[std::rand() % pool.size()];
+        if (*pick != lastPlayedMusic_) break;
     }
-    lastPlayedMusic_ = pick;
-    return pick;
+    lastPlayedMusic_ = *pick;
+    return lastPlayedMusic_;
 }
 
 std::vector<std::string> ZoneManager::getAllMusicPaths() const {

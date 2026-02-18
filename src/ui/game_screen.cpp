@@ -9,7 +9,9 @@
 #include "rendering/character_renderer.hpp"
 #include "rendering/camera.hpp"
 #include "rendering/camera_controller.hpp"
+#include "audio/audio_engine.hpp"
 #include "audio/music_manager.hpp"
+#include "game/zone_manager.hpp"
 #include "audio/footstep_manager.hpp"
 #include "audio/activity_sound_manager.hpp"
 #include "audio/mount_sound_manager.hpp"
@@ -190,7 +192,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     float prevAlpha = ImGui::GetStyle().Alpha;
     ImGui::GetStyle().Alpha = uiOpacity_;
 
-    // Apply initial minimap settings when renderer becomes available
+    // Apply initial settings when renderer becomes available
     if (!minimapSettingsApplied_) {
         auto* renderer = core::Application::getInstance().getRenderer();
         if (renderer) {
@@ -200,6 +202,16 @@ void GameScreen::render(game::GameHandler& gameHandler) {
                 minimap->setRotateWithCamera(false);
                 minimap->setSquareShape(minimapSquare_);
                 minimapSettingsApplied_ = true;
+            }
+            if (auto* zm = renderer->getZoneManager()) {
+                zm->setUseOriginalSoundtrack(pendingUseOriginalSoundtrack);
+            }
+            // Restore mute state: save actual master volume first, then apply mute
+            if (soundMuted_) {
+                float actual = audio::AudioEngine::instance().getMasterVolume();
+                preMuteVolume_ = (actual > 0.0f) ? actual
+                    : static_cast<float>(pendingMasterVolume) / 100.0f;
+                audio::AudioEngine::instance().setMasterVolume(0.0f);
             }
         }
     }
@@ -5416,6 +5428,9 @@ void GameScreen::renderSettingsWindow() {
                 minimap->setRotateWithCamera(minimapRotate_);
                 minimap->setSquareShape(minimapSquare_);
             }
+            if (auto* zm = renderer->getZoneManager()) {
+                pendingUseOriginalSoundtrack = zm->getUseOriginalSoundtrack();
+            }
         }
         settingsInit = true;
     }
@@ -5534,6 +5549,18 @@ void GameScreen::renderSettingsWindow() {
                 if (ImGui::SliderInt("##MasterVolume", &pendingMasterVolume, 0, 100, "%d%%")) {
                     applyAudioSettings();
                 }
+                ImGui::Separator();
+
+                if (ImGui::Checkbox("Original Soundtrack", &pendingUseOriginalSoundtrack)) {
+                    if (renderer) {
+                        if (auto* zm = renderer->getZoneManager()) {
+                            zm->setUseOriginalSoundtrack(pendingUseOriginalSoundtrack);
+                        }
+                    }
+                    saveSettings();
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Include original music tracks in zone music rotation");
                 ImGui::Separator();
 
                 ImGui::Text("Music");
@@ -5976,15 +6003,33 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
             IM_COL32(0, 0, 0, 255), marker);
     }
 
-    // Add zoom buttons at the bottom edge of the minimap
-    ImGui::SetNextWindowPos(ImVec2(centerX - 30, centerY + mapRadius - 30), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(60, 24), ImGuiCond_Always);
+    // Add zoom + mute buttons at the bottom edge of the minimap
+    ImGui::SetNextWindowPos(ImVec2(centerX - 45, centerY + mapRadius - 30), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(90, 24), ImGuiCond_Always);
     ImGuiWindowFlags zoomFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                                   ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
                                   ImGuiWindowFlags_NoBackground;
     if (ImGui::Begin("##MinimapZoom", nullptr, zoomFlags)) {
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(2, 0));
+
+        // Mute toggle button: red tint when muted
+        if (soundMuted_) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.15f, 0.15f, 0.9f));
+        if (ImGui::SmallButton(soundMuted_ ? "[M]" : " M ")) {
+            soundMuted_ = !soundMuted_;
+            auto& engine = audio::AudioEngine::instance();
+            if (soundMuted_) {
+                preMuteVolume_ = engine.getMasterVolume();
+                engine.setMasterVolume(0.0f);
+            } else {
+                engine.setMasterVolume(preMuteVolume_);
+            }
+            saveSettings();
+        }
+        if (soundMuted_) ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(soundMuted_ ? "Unmute" : "Mute");
+
+        ImGui::SameLine();
         if (ImGui::SmallButton("-")) {
             if (minimap) minimap->zoomOut();
         }
@@ -6245,6 +6290,8 @@ void GameScreen::saveSettings() {
     out << "separate_bags=" << (pendingSeparateBags ? 1 : 0) << "\n";
 
     // Audio
+    out << "sound_muted=" << (soundMuted_ ? 1 : 0) << "\n";
+    out << "use_original_soundtrack=" << (pendingUseOriginalSoundtrack ? 1 : 0) << "\n";
     out << "master_volume=" << pendingMasterVolume << "\n";
     out << "music_volume=" << pendingMusicVolume << "\n";
     out << "ambient_volume=" << pendingAmbientVolume << "\n";
@@ -6307,6 +6354,14 @@ void GameScreen::loadSettings() {
                 inventoryScreen.setSeparateBags(pendingSeparateBags);
             }
             // Audio
+            else if (key == "sound_muted") {
+                soundMuted_ = (std::stoi(val) != 0);
+                if (soundMuted_) {
+                    // Apply mute on load; preMuteVolume_ will be set when AudioEngine is available
+                    audio::AudioEngine::instance().setMasterVolume(0.0f);
+                }
+            }
+            else if (key == "use_original_soundtrack") pendingUseOriginalSoundtrack = (std::stoi(val) != 0);
             else if (key == "master_volume") pendingMasterVolume = std::clamp(std::stoi(val), 0, 100);
             else if (key == "music_volume") pendingMusicVolume = std::clamp(std::stoi(val), 0, 100);
             else if (key == "ambient_volume") pendingAmbientVolume = std::clamp(std::stoi(val), 0, 100);

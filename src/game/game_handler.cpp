@@ -3436,6 +3436,10 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         unit->setHostile(isHostileFaction(unit->getFactionTemplate()));
                     }
                 // Trigger creature spawn callback for units/players with displayId
+                    if (block.objectType == ObjectType::UNIT && unit->getDisplayId() == 0) {
+                        LOG_INFO("[Spawn] UNIT guid=0x", std::hex, block.guid, std::dec,
+                                 " has displayId=0 — no spawn (entry=", unit->getEntry(), ")");
+                    }
                     if ((block.objectType == ObjectType::UNIT || block.objectType == ObjectType::PLAYER) && unit->getDisplayId() != 0) {
                         if (block.objectType == ObjectType::PLAYER && block.guid == playerGuid) {
                             // Skip local player — spawned separately via spawnPlayerCharacter()
@@ -3451,6 +3455,9 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                 }
                             }
                         } else if (creatureSpawnCallback_) {
+                            LOG_INFO("[Spawn] UNIT guid=0x", std::hex, block.guid, std::dec,
+                                     " displayId=", unit->getDisplayId(), " at (",
+                                     unit->getX(), ",", unit->getY(), ",", unit->getZ(), ")");
                             creatureSpawnCallback_(block.guid, unit->getDisplayId(),
                                 unit->getX(), unit->getY(), unit->getZ(), unit->getOrientation());
                         }

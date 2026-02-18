@@ -300,7 +300,8 @@ std::shared_ptr<DBCFile> AssetManager::loadDBC(const std::string& name) {
                 }
                 LOG_INFO("Binary DBC fallback succeeded: ", name);
             } else {
-                LOG_WARNING("No binary DBC fallback available for: ", name);
+                LOG_ERROR("No binary DBC fallback available for: ", name, " — discarding garbled CSV");
+                return nullptr;
             }
         }
     }

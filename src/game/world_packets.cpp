@@ -2931,50 +2931,35 @@ bool QuestRequestItemsParser::parse(network::Packet& packet, QuestRequestItemsDa
     data.title = packet.readString();
     data.completionText = packet.readString();
 
-    LOG_INFO("QRI raw: packetSize=", packet.getSize(),
-             " posAfterStrings=", packet.getReadPos(),
-             " remaining=", packet.getSize() - packet.getReadPos());
-
-    if (packet.getReadPos() + 20 > packet.getSize()) {
+    if (packet.getReadPos() + 9 > packet.getSize()) {
         LOG_INFO("Quest request items (short): id=", data.questId, " title='", data.title, "'");
         return true;
     }
 
-    // Log each skipped field so we can verify the offset count
-    uint32_t f1 = packet.readUInt32();
-    uint32_t f2 = packet.readUInt32();
-    uint32_t f3 = packet.readUInt32();
-    uint32_t f4 = packet.readUInt32();
-    uint32_t f5 = packet.readUInt32();
-    LOG_INFO("QRI fields: f1=", f1, " f2=", f2, " f3=", f3, " f4=", f4, " f5=", f5,
-             " (emoteDelay/emote/autoClose/flags/suggestedPlayers)");
+    // emoteDelay (uint32) + emoteId (uint32) + autoFinish (uint8) = 9 bytes
+    // (same format in vanilla 1.12 and WotLK 3.3.5a)
+    /*uint32_t emoteDelay =*/ packet.readUInt32();
+    /*uint32_t emoteId    =*/ packet.readUInt32();
+    /*uint8_t  autoFinish =*/ packet.readUInt8();
 
     if (packet.getReadPos() + 4 > packet.getSize()) return true;
     data.requiredMoney = packet.readUInt32();
-    LOG_INFO("QRI requiredMoney=", data.requiredMoney);
 
     if (packet.getReadPos() + 4 > packet.getSize()) return true;
     uint32_t requiredItemCount = packet.readUInt32();
-    LOG_INFO("QRI requiredItemCount=", requiredItemCount,
-             " posBeforeItems=", packet.getReadPos());
 
     for (uint32_t i = 0; i < requiredItemCount && requiredItemCount < 20; ++i) {
         if (packet.getReadPos() + 12 > packet.getSize()) break;
-        uint32_t raw0 = packet.readUInt32();
-        uint32_t raw1 = packet.readUInt32();
-        uint32_t raw2 = packet.readUInt32();
-        LOG_INFO("QRI item[", i, "]: raw0=", raw0, " raw1=", raw1, " raw2=", raw2);
         QuestRewardItem item;
-        item.itemId = raw0;
-        item.count = raw1;
-        item.displayInfoId = raw2;
+        item.itemId = packet.readUInt32();
+        item.count = packet.readUInt32();
+        item.displayInfoId = packet.readUInt32();
         if (item.itemId > 0)
             data.requiredItems.push_back(item);
     }
 
     if (packet.getReadPos() + 4 > packet.getSize()) return true;
     data.completableFlags = packet.readUInt32();
-    LOG_INFO("QRI completableFlags=", data.completableFlags);
 
     LOG_INFO("Quest request items: id=", data.questId, " title='", data.title,
              "' items=", data.requiredItems.size(), " completable=", data.isCompletable());

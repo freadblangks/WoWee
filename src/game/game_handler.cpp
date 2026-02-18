@@ -8,6 +8,7 @@
 #include "game/update_field_table.hpp"
 #include "rendering/renderer.hpp"
 #include "audio/spell_sound_manager.hpp"
+#include "audio/ui_sound_manager.hpp"
 #include "pipeline/dbc_layout.hpp"
 #include "network/world_socket.hpp"
 #include "network/packet.hpp"
@@ -71,6 +72,29 @@ bool isAuthCharPipelineOpcode(LogicalOpcode op) {
         default:
             return false;
     }
+}
+
+std::string formatCopperAmount(uint32_t amount) {
+    uint32_t gold = amount / 10000;
+    uint32_t silver = (amount / 100) % 100;
+    uint32_t copper = amount % 100;
+
+    std::ostringstream oss;
+    bool wrote = false;
+    if (gold > 0) {
+        oss << gold << "g";
+        wrote = true;
+    }
+    if (silver > 0) {
+        if (wrote) oss << " ";
+        oss << silver << "s";
+        wrote = true;
+    }
+    if (copper > 0 || !wrote) {
+        if (wrote) oss << " ";
+        oss << copper << "c";
+    }
+    return oss.str();
 }
 } // namespace
 
@@ -1162,10 +1186,32 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // Format: uint32 money + uint8 soleLooter
             if (packet.getSize() - packet.getReadPos() >= 4) {
                 uint32_t amount = packet.readUInt32();
+                if (packet.getSize() - packet.getReadPos() >= 1) {
+                    /*uint8_t soleLooter =*/ packet.readUInt8();
+                }
                 playerMoneyCopper_ += amount;
                 pendingMoneyDelta_ = amount;
                 pendingMoneyDeltaTimer_ = 2.0f;
                 LOG_INFO("Looted ", amount, " copper (total: ", playerMoneyCopper_, ")");
+                bool alreadyAnnounced = false;
+                auto it = localLootState_.find(currentLoot.lootGuid);
+                if (it != localLootState_.end()) {
+                    alreadyAnnounced = it->second.moneyTaken;
+                    it->second.moneyTaken = true;
+                }
+                if (!alreadyAnnounced) {
+                    addSystemChatMessage("Looted: " + formatCopperAmount(amount));
+                    auto* renderer = core::Application::getInstance().getRenderer();
+                    if (renderer) {
+                        if (auto* sfx = renderer->getUiSoundManager()) {
+                            if (amount >= 10000) {
+                                sfx->playLootCoinLarge();
+                            } else {
+                                sfx->playLootCoinSmall();
+                            }
+                        }
+                    }
+                }
             }
             break;
         }
@@ -3420,6 +3466,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                 if (block.objectType == ObjectType::UNIT || block.objectType == ObjectType::PLAYER) {
                     auto unit = std::static_pointer_cast<Unit>(entity);
                     constexpr uint32_t UNIT_DYNFLAG_DEAD = 0x0008;
+                    bool unitInitiallyDead = false;
                     const uint16_t ufHealth = fieldIndex(UF::UNIT_FIELD_HEALTH);
                     const uint16_t ufPower = fieldIndex(UF::UNIT_FIELD_POWER1);
                     const uint16_t ufMaxHealth = fieldIndex(UF::UNIT_FIELD_MAXHEALTH);
@@ -3434,6 +3481,9 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     for (const auto& [key, val] : block.fields) {
                         if (key == ufHealth) {
                             unit->setHealth(val);
+                            if (block.objectType == ObjectType::UNIT && val == 0) {
+                                unitInitiallyDead = true;
+                            }
                             if (block.guid == playerGuid && val == 0) {
                                 playerDead_ = true;
                                 LOG_INFO("Player logged in dead");
@@ -3443,7 +3493,13 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         else if (key == ufMaxPower) { unit->setMaxPower(val); }
                         else if (key == ufFaction) { unit->setFactionTemplate(val); }
                         else if (key == ufFlags) { unit->setUnitFlags(val); }
-                        else if (key == ufDynFlags) { unit->setDynamicFlags(val); }
+                        else if (key == ufDynFlags) {
+                            unit->setDynamicFlags(val);
+                            if (block.objectType == ObjectType::UNIT &&
+                                (val & UNIT_DYNFLAG_DEAD) != 0) {
+                                unitInitiallyDead = true;
+                            }
+                        }
                         else if (key == ufLevel) { unit->setLevel(val); }
                         else if (key == ufDisplayId) { unit->setDisplayId(val); }
                         else if (key == ufMountDisplayId) {
@@ -3535,6 +3591,9 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                      unit->getX(), ",", unit->getY(), ",", unit->getZ(), ")");
                             creatureSpawnCallback_(block.guid, unit->getDisplayId(),
                                 unit->getX(), unit->getY(), unit->getZ(), unit->getOrientation());
+                            if (unitInitiallyDead && npcDeathCallback_) {
+                                npcDeathCallback_(block.guid);
+                            }
                         }
                         // Query quest giver status for NPCs with questgiver flag (0x02)
                         if (block.objectType == ObjectType::UNIT && (unit->getNpcFlags() & 0x02) && socket) {
@@ -3787,6 +3846,8 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         constexpr uint32_t UNIT_DYNFLAG_DEAD = 0x0008;
                         uint32_t oldDisplayId = unit->getDisplayId();
                         bool displayIdChanged = false;
+                        bool npcDeathNotified = false;
+                        bool npcRespawnNotified = false;
                         const uint16_t ufHealth = fieldIndex(UF::UNIT_FIELD_HEALTH);
                         const uint16_t ufPower = fieldIndex(UF::UNIT_FIELD_POWER1);
                         const uint16_t ufMaxHealth = fieldIndex(UF::UNIT_FIELD_MAXHEALTH);
@@ -3815,6 +3876,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                     }
                                     if (entity->getType() == ObjectType::UNIT && npcDeathCallback_) {
                                         npcDeathCallback_(block.guid);
+                                        npcDeathNotified = true;
                                     }
                                 } else if (oldHealth == 0 && val > 0) {
                                     if (block.guid == playerGuid) {
@@ -3827,6 +3889,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                     }
                                     if (entity->getType() == ObjectType::UNIT && npcRespawnCallback_) {
                                         npcRespawnCallback_(block.guid);
+                                        npcRespawnNotified = true;
                                     }
                                 }
                             } else if (key == ufPower) { unit->setPower(val); }
@@ -3847,6 +3910,20 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                         playerDead_ = false;
                                         releasedSpirit_ = false;
                                         LOG_INFO("Player resurrected (dynamic flags)");
+                                    }
+                                } else if (entity->getType() == ObjectType::UNIT) {
+                                    bool wasDead = (oldDyn & UNIT_DYNFLAG_DEAD) != 0;
+                                    bool nowDead = (val & UNIT_DYNFLAG_DEAD) != 0;
+                                    if (!wasDead && nowDead) {
+                                        if (!npcDeathNotified && npcDeathCallback_) {
+                                            npcDeathCallback_(block.guid);
+                                            npcDeathNotified = true;
+                                        }
+                                    } else if (wasDead && !nowDead) {
+                                        if (!npcRespawnNotified && npcRespawnCallback_) {
+                                            npcRespawnCallback_(block.guid);
+                                            npcRespawnNotified = true;
+                                        }
                                     }
                                 }
                             } else if (key == ufLevel) { unit->setLevel(val); }
@@ -8384,6 +8461,7 @@ void GameHandler::unstuckGy() {
 void GameHandler::handleLootResponse(network::Packet& packet) {
     if (!LootResponseParser::parse(packet, currentLoot)) return;
     lootWindowOpen = true;
+    localLootState_[currentLoot.lootGuid] = LocalLootState{currentLoot, false};
 
     // Query item info so loot window can show names instead of IDs
     for (const auto& item : currentLoot.items) {
@@ -8391,6 +8469,27 @@ void GameHandler::handleLootResponse(network::Packet& packet) {
     }
 
     if (currentLoot.gold > 0) {
+        // Some servers don't send SMSG_LOOT_MONEY_NOTIFY consistently.
+        // Announce money immediately on loot response as a fallback.
+        auto it = localLootState_.find(currentLoot.lootGuid);
+        bool alreadyAnnounced = (it != localLootState_.end() && it->second.moneyTaken);
+        if (!alreadyAnnounced) {
+            addSystemChatMessage("Looted: " + formatCopperAmount(currentLoot.gold));
+            auto* renderer = core::Application::getInstance().getRenderer();
+            if (renderer) {
+                if (auto* sfx = renderer->getUiSoundManager()) {
+                    if (currentLoot.gold >= 10000) {
+                        sfx->playLootCoinLarge();
+                    } else {
+                        sfx->playLootCoinSmall();
+                    }
+                }
+            }
+            if (it != localLootState_.end()) {
+                it->second.moneyTaken = true;
+            }
+        }
+
         if (state == WorldState::IN_WORLD && socket) {
             // Auto-loot gold by sending CMSG_LOOT_MONEY (server handles the rest)
             auto pkt = LootMoneyPacket::build();
@@ -8410,6 +8509,7 @@ void GameHandler::handleLootResponse(network::Packet& packet) {
 
 void GameHandler::handleLootReleaseResponse(network::Packet& packet) {
     (void)packet;
+    localLootState_.erase(currentLoot.lootGuid);
     lootWindowOpen = false;
     currentLoot = LootResponseData{};
 }
@@ -8418,6 +8518,18 @@ void GameHandler::handleLootRemoved(network::Packet& packet) {
     uint8_t slotIndex = packet.readUInt8();
     for (auto it = currentLoot.items.begin(); it != currentLoot.items.end(); ++it) {
         if (it->slotIndex == slotIndex) {
+            std::string itemName = "item #" + std::to_string(it->itemId);
+            if (const ItemQueryResponseData* info = getItemInfo(it->itemId)) {
+                if (!info->name.empty()) {
+                    itemName = info->name;
+                }
+            }
+            std::ostringstream msg;
+            msg << "Looted: " << itemName;
+            if (it->count > 1) {
+                msg << " x" << it->count;
+            }
+            addSystemChatMessage(msg.str());
             currentLoot.items.erase(it);
             break;
         }

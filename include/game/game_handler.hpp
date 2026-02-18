@@ -1377,6 +1377,12 @@ private:
         bool moneyTaken = false;
     };
     std::unordered_map<uint64_t, LocalLootState> localLootState_;
+    struct PendingLootRetry {
+        uint64_t guid = 0;
+        float timer = 0.0f;
+        uint8_t remainingRetries = 0;
+    };
+    std::vector<PendingLootRetry> pendingGameObjectLootRetries_;
     uint64_t pendingLootMoneyGuid_ = 0;
     uint32_t pendingLootMoneyAmount_ = 0;
     float pendingLootMoneyNotifyTimer_ = 0.0f;

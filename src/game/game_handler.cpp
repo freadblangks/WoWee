@@ -334,6 +334,23 @@ void GameHandler::update(float deltaTime) {
         }
     }
 
+    for (auto it = pendingGameObjectLootRetries_.begin(); it != pendingGameObjectLootRetries_.end();) {
+        it->timer -= deltaTime;
+        if (it->timer <= 0.0f) {
+            if (it->remainingRetries > 0 && state == WorldState::IN_WORLD && socket) {
+                auto packet = LootPacket::build(it->guid);
+                socket->send(packet);
+                --it->remainingRetries;
+                it->timer = 0.20f;
+            }
+        }
+        if (it->remainingRetries == 0) {
+            it = pendingGameObjectLootRetries_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
     if (pendingLootMoneyNotifyTimer_ > 0.0f) {
         pendingLootMoneyNotifyTimer_ -= deltaTime;
         if (pendingLootMoneyNotifyTimer_ <= 0.0f) {
@@ -8078,18 +8095,14 @@ void GameHandler::interactWithGameObject(uint64_t guid) {
     // For mailbox GameObjects (type 19), open mail UI and request mail list.
     // In Vanilla/Classic there is no SMSG_SHOW_MAILBOX — the server just sends
     // animation/sound and expects the client to request the mail list.
-    bool shouldSendLoot = (entity == nullptr);
+    bool isMailbox = false;
+    bool shouldSendLoot = true;
     if (entity && entity->getType() == ObjectType::GAMEOBJECT) {
         auto go = std::static_pointer_cast<GameObject>(entity);
         auto* info = getCachedGameObjectInfo(go->getEntry());
-        if (info && (info->type == 3 || info->type == 25)) {
-            // Lootable objects (e.g., chests/fishing holes) on some cores require
-            // explicit CMSG_LOOT in addition to CMSG_GAMEOBJECT_USE.
-            shouldSendLoot = true;
-        }
-        // Keep chest/fishing loot usable when GO info cache is missing or delayed.
-        if (!info) shouldSendLoot = true;
         if (info && info->type == 19) {
+            isMailbox = true;
+            shouldSendLoot = false;
             LOG_INFO("Mailbox interaction: opening mail UI and requesting mail list");
             mailboxGuid_ = guid;
             mailboxOpen_ = true;
@@ -8100,7 +8113,10 @@ void GameHandler::interactWithGameObject(uint64_t guid) {
         }
     }
     if (shouldSendLoot) {
+        LOG_INFO("GameObject interaction: sent CMSG_LOOT for guid=0x", std::hex, guid, std::dec,
+                 " mailbox=", (isMailbox ? 1 : 0));
         lootTarget(guid);
+        pendingGameObjectLootRetries_.push_back(PendingLootRetry{guid, 0.20f, 1});
     }
 }
 

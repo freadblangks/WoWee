@@ -334,6 +334,48 @@ void GameHandler::update(float deltaTime) {
         }
     }
 
+    if (pendingLootMoneyNotifyTimer_ > 0.0f) {
+        pendingLootMoneyNotifyTimer_ -= deltaTime;
+        if (pendingLootMoneyNotifyTimer_ <= 0.0f) {
+            pendingLootMoneyNotifyTimer_ = 0.0f;
+            bool alreadyAnnounced = false;
+            if (pendingLootMoneyGuid_ != 0) {
+                auto it = localLootState_.find(pendingLootMoneyGuid_);
+                if (it != localLootState_.end()) {
+                    alreadyAnnounced = it->second.moneyTaken;
+                    it->second.moneyTaken = true;
+                }
+            }
+            if (!alreadyAnnounced && pendingLootMoneyAmount_ > 0) {
+                addSystemChatMessage("Looted: " + formatCopperAmount(pendingLootMoneyAmount_));
+                auto* renderer = core::Application::getInstance().getRenderer();
+                if (renderer) {
+                    if (auto* sfx = renderer->getUiSoundManager()) {
+                        if (pendingLootMoneyAmount_ >= 10000) {
+                            sfx->playLootCoinLarge();
+                        } else {
+                            sfx->playLootCoinSmall();
+                        }
+                    }
+                }
+                if (pendingLootMoneyGuid_ != 0) {
+                    recentLootMoneyAnnounceCooldowns_[pendingLootMoneyGuid_] = 1.5f;
+                }
+            }
+            pendingLootMoneyGuid_ = 0;
+            pendingLootMoneyAmount_ = 0;
+        }
+    }
+
+    for (auto it = recentLootMoneyAnnounceCooldowns_.begin(); it != recentLootMoneyAnnounceCooldowns_.end();) {
+        it->second -= deltaTime;
+        if (it->second <= 0.0f) {
+            it = recentLootMoneyAnnounceCooldowns_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
     // Auto-inspect throttling (fallback for player equipment visuals).
     if (inspectRateLimit_ > 0.0f) {
         inspectRateLimit_ = std::max(0.0f, inspectRateLimit_ - deltaTime);
@@ -1198,8 +1240,12 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 pendingMoneyDelta_ = amount;
                 pendingMoneyDeltaTimer_ = 2.0f;
                 LOG_INFO("Looted ", amount, " copper (total: ", playerMoneyCopper_, ")");
+                uint64_t notifyGuid = pendingLootMoneyGuid_ != 0 ? pendingLootMoneyGuid_ : currentLoot.lootGuid;
+                pendingLootMoneyGuid_ = 0;
+                pendingLootMoneyAmount_ = 0;
+                pendingLootMoneyNotifyTimer_ = 0.0f;
                 bool alreadyAnnounced = false;
-                auto it = localLootState_.find(currentLoot.lootGuid);
+                auto it = localLootState_.find(notifyGuid);
                 if (it != localLootState_.end()) {
                     alreadyAnnounced = it->second.moneyTaken;
                     it->second.moneyTaken = true;
@@ -1215,6 +1261,9 @@ void GameHandler::handlePacket(network::Packet& packet) {
                                 sfx->playLootCoinSmall();
                             }
                         }
+                    }
+                    if (notifyGuid != 0) {
+                        recentLootMoneyAnnounceCooldowns_[notifyGuid] = 1.5f;
                     }
                 }
             }
@@ -8029,14 +8078,17 @@ void GameHandler::interactWithGameObject(uint64_t guid) {
     // For mailbox GameObjects (type 19), open mail UI and request mail list.
     // In Vanilla/Classic there is no SMSG_SHOW_MAILBOX — the server just sends
     // animation/sound and expects the client to request the mail list.
+    bool shouldSendLoot = (entity == nullptr);
     if (entity && entity->getType() == ObjectType::GAMEOBJECT) {
         auto go = std::static_pointer_cast<GameObject>(entity);
         auto* info = getCachedGameObjectInfo(go->getEntry());
         if (info && (info->type == 3 || info->type == 25)) {
             // Lootable objects (e.g., chests/fishing holes) on some cores require
             // explicit CMSG_LOOT in addition to CMSG_GAMEOBJECT_USE.
-            lootTarget(guid);
+            shouldSendLoot = true;
         }
+        // Keep chest/fishing loot usable when GO info cache is missing or delayed.
+        if (!info) shouldSendLoot = true;
         if (info && info->type == 19) {
             LOG_INFO("Mailbox interaction: opening mail UI and requesting mail list");
             mailboxGuid_ = guid;
@@ -8046,6 +8098,9 @@ void GameHandler::interactWithGameObject(uint64_t guid) {
             showMailCompose_ = false;
             refreshMailList();
         }
+    }
+    if (shouldSendLoot) {
+        lootTarget(guid);
     }
 }
 
@@ -8529,6 +8584,14 @@ void GameHandler::handleLootResponse(network::Packet& packet) {
     if (currentLoot.gold > 0) {
         if (state == WorldState::IN_WORLD && socket) {
             // Auto-loot gold by sending CMSG_LOOT_MONEY (server handles the rest)
+            bool suppressFallback = false;
+            auto cooldownIt = recentLootMoneyAnnounceCooldowns_.find(currentLoot.lootGuid);
+            if (cooldownIt != recentLootMoneyAnnounceCooldowns_.end() && cooldownIt->second > 0.0f) {
+                suppressFallback = true;
+            }
+            pendingLootMoneyGuid_ = suppressFallback ? 0 : currentLoot.lootGuid;
+            pendingLootMoneyAmount_ = suppressFallback ? 0 : currentLoot.gold;
+            pendingLootMoneyNotifyTimer_ = suppressFallback ? 0.0f : 0.4f;
             auto pkt = LootMoneyPacket::build();
             socket->send(pkt);
             currentLoot.gold = 0;

@@ -6,6 +6,7 @@
 #include "game/warden_module.hpp"
 #include "game/opcodes.hpp"
 #include "game/update_field_table.hpp"
+#include "game/expansion_profile.hpp"
 #include "rendering/renderer.hpp"
 #include "audio/spell_sound_manager.hpp"
 #include "audio/ui_sound_manager.hpp"
@@ -72,6 +73,15 @@ bool isAuthCharPipelineOpcode(LogicalOpcode op) {
         default:
             return false;
     }
+}
+
+bool isActiveExpansion(const char* expansionId) {
+    auto& app = core::Application::getInstance();
+    auto* registry = app.getExpansionRegistry();
+    if (!registry) return false;
+    auto* profile = registry->getActive();
+    if (!profile) return false;
+    return profile->id == expansionId;
 }
 
 std::string formatCopperAmount(uint32_t amount) {
@@ -8098,7 +8108,8 @@ void GameHandler::interactWithGameObject(uint64_t guid) {
     // In Vanilla/Classic there is no SMSG_SHOW_MAILBOX — the server just sends
     // animation/sound and expects the client to request the mail list.
     bool isMailbox = false;
-    bool shouldSendLoot = true;
+    bool turtleMode = isActiveExpansion("turtle");
+    bool shouldSendLoot = (entity == nullptr);
     if (entity && entity->getType() == ObjectType::GAMEOBJECT) {
         auto go = std::static_pointer_cast<GameObject>(entity);
         auto* info = getCachedGameObjectInfo(go->getEntry());
@@ -8112,13 +8123,29 @@ void GameHandler::interactWithGameObject(uint64_t guid) {
             selectedMailIndex_ = -1;
             showMailCompose_ = false;
             refreshMailList();
+        } else {
+            // Keep non-Turtle behavior constrained to known lootable GO types.
+            if (!turtleMode) {
+                if (info && (info->type == 3 || info->type == 25)) {
+                    shouldSendLoot = true;
+                } else if (info) {
+                    shouldSendLoot = false;
+                } else {
+                    shouldSendLoot = true;
+                }
+            } else {
+                // Turtle compatibility: aggressively pair use+loot for chest-like objects.
+                shouldSendLoot = true;
+            }
         }
     }
     if (shouldSendLoot) {
         LOG_INFO("GameObject interaction: sent CMSG_GAMEOBJECT_USE + CMSG_LOOT for guid=0x", std::hex, guid, std::dec,
-                 " mailbox=", (isMailbox ? 1 : 0));
+                 " mailbox=", (isMailbox ? 1 : 0), " turtle=", (turtleMode ? 1 : 0));
         lootTarget(guid);
-        pendingGameObjectLootRetries_.push_back(PendingLootRetry{guid, 0.20f, 2});
+        if (turtleMode) {
+            pendingGameObjectLootRetries_.push_back(PendingLootRetry{guid, 0.20f, 2});
+        }
     }
 }
 

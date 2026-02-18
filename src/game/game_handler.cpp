@@ -8032,6 +8032,11 @@ void GameHandler::interactWithGameObject(uint64_t guid) {
     if (entity && entity->getType() == ObjectType::GAMEOBJECT) {
         auto go = std::static_pointer_cast<GameObject>(entity);
         auto* info = getCachedGameObjectInfo(go->getEntry());
+        if (info && (info->type == 3 || info->type == 25)) {
+            // Lootable objects (e.g., chests/fishing holes) on some cores require
+            // explicit CMSG_LOOT in addition to CMSG_GAMEOBJECT_USE.
+            lootTarget(guid);
+        }
         if (info && info->type == 19) {
             LOG_INFO("Mailbox interaction: opening mail UI and requesting mail list");
             mailboxGuid_ = guid;

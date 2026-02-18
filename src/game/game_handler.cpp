@@ -8087,17 +8087,27 @@ void GameHandler::interactWithNpc(uint64_t guid) {
 
 void GameHandler::interactWithGameObject(uint64_t guid) {
     if (state != WorldState::IN_WORLD || !socket) return;
+    bool turtleMode = isActiveExpansion("turtle");
 
     // Rate-limit to prevent spamming the server
     static uint64_t lastInteractGuid = 0;
     static std::chrono::steady_clock::time_point lastInteractTime{};
     auto now = std::chrono::steady_clock::now();
+    int64_t minRepeatMs = turtleMode ? 250 : 1000;
     if (guid == lastInteractGuid &&
-        std::chrono::duration_cast<std::chrono::milliseconds>(now - lastInteractTime).count() < 1000) {
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - lastInteractTime).count() < minRepeatMs) {
         return; // Ignore repeated clicks within 1 second
     }
     lastInteractGuid = guid;
     lastInteractTime = now;
+
+    // Ensure chest interaction isn't blocked by our own auto-attack state.
+    if (autoAttacking) {
+        stopAutoAttack();
+    }
+    if (targetGuid != guid) {
+        setTarget(guid);
+    }
 
     auto entity = entityManager.getEntity(guid);
 
@@ -8108,7 +8118,6 @@ void GameHandler::interactWithGameObject(uint64_t guid) {
     // In Vanilla/Classic there is no SMSG_SHOW_MAILBOX — the server just sends
     // animation/sound and expects the client to request the mail list.
     bool isMailbox = false;
-    bool turtleMode = isActiveExpansion("turtle");
     bool shouldSendLoot = (entity == nullptr);
     if (entity && entity->getType() == ObjectType::GAMEOBJECT) {
         auto go = std::static_pointer_cast<GameObject>(entity);

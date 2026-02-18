@@ -612,8 +612,8 @@ void GameHandler::update(float deltaTime) {
                 continue;
             }
 
-            // Distance cull other entities
-            glm::vec3 entityPos(entity->getX(), entity->getY(), entity->getZ());
+            // Distance cull other entities (use latest position to avoid culling by stale origin)
+            glm::vec3 entityPos(entity->getLatestX(), entity->getLatestY(), entity->getLatestZ());
             float distSq = glm::dot(entityPos - playerPos, entityPos - playerPos);
             if (distSq < updateRadiusSq) {
                 entity->updateMovement(deltaTime);
@@ -664,7 +664,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
     // Translate wire opcode to logical opcode via expansion table
     auto logicalOp = opcodeTable_.fromWire(opcode);
     if (!logicalOp) {
-        LOG_DEBUG("Unknown wire opcode 0x", std::hex, opcode, std::dec, " - ignoring");
+        LOG_WARNING("Unhandled world opcode: 0x", std::hex, opcode, std::dec);
         return;
     }
 
@@ -859,6 +859,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
         // ---- Creature Movement ----
         case Opcode::SMSG_MONSTER_MOVE:
             handleMonsterMove(packet);
+            break;
+
+        case Opcode::SMSG_COMPRESSED_MOVES:
+            handleCompressedMoves(packet);
             break;
 
         case Opcode::SMSG_MONSTER_MOVE_TRANSPORT:
@@ -4063,6 +4067,16 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         gameObjectMoveCallback_(block.guid, entity->getX(), entity->getY(),
                                                 entity->getZ(), entity->getOrientation());
                     }
+                    // Fire move callback for non-player units (creatures).
+                    // SMSG_MONSTER_MOVE handles smooth interpolated movement, but many
+                    // servers (especially vanilla/Turtle WoW) communicate NPC positions
+                    // via MOVEMENT blocks instead. Use duration=0 for an instant snap.
+                    if (block.guid != playerGuid &&
+                        entity->getType() == ObjectType::UNIT &&
+                        transportGuids_.count(block.guid) == 0 &&
+                        creatureMoveCallback_) {
+                        creatureMoveCallback_(block.guid, pos.x, pos.y, pos.z, 0);
+                    }
                 } else {
                     LOG_WARNING("MOVEMENT update for unknown entity: 0x", std::hex, block.guid, std::dec);
                 }
@@ -6821,66 +6835,178 @@ void GameHandler::handleOtherPlayerMovement(network::Packet& packet) {
     }
 }
 
+void GameHandler::handleCompressedMoves(network::Packet& packet) {
+    // Vanilla/Classic SMSG_COMPRESSED_MOVES: raw concatenated sub-packets, NOT zlib.
+    // Evidence: observed 1-byte "00" packets which are not valid zlib streams.
+    // Each sub-packet: uint8 size (of opcode[2]+payload), uint16 opcode, uint8[] payload.
+    // size=0 → invalid/empty, signals end of batch.
+    const auto& data = packet.getData();
+    size_t dataLen = data.size();
+
+    // Wire opcodes for sub-packet routing
+    uint16_t monsterMoveWire          = wireOpcode(Opcode::SMSG_MONSTER_MOVE);
+    uint16_t monsterMoveTransportWire = wireOpcode(Opcode::SMSG_MONSTER_MOVE_TRANSPORT);
+
+    // Track unhandled sub-opcodes once per compressed packet (avoid log spam)
+    std::unordered_set<uint16_t> unhandledSeen;
+
+    size_t pos = 0;
+    while (pos < dataLen) {
+        if (pos + 1 > dataLen) break;
+        uint8_t subSize = data[pos];
+        if (subSize < 2) break;  // size=0 or 1 → empty/end-of-batch sentinel
+        if (pos + 1 + subSize > dataLen) {
+            LOG_WARNING("SMSG_COMPRESSED_MOVES: sub-packet overruns buffer at pos=", pos);
+            break;
+        }
+        uint16_t subOpcode = static_cast<uint16_t>(data[pos + 1]) |
+                             (static_cast<uint16_t>(data[pos + 2]) << 8);
+        size_t payloadLen = subSize - 2;
+        size_t payloadStart = pos + 3;
+
+        std::vector<uint8_t> subPayload(data.begin() + payloadStart,
+                                        data.begin() + payloadStart + payloadLen);
+        network::Packet subPacket(subOpcode, subPayload);
+
+        if (subOpcode == monsterMoveWire) {
+            handleMonsterMove(subPacket);
+        } else if (subOpcode == monsterMoveTransportWire) {
+            handleMonsterMoveTransport(subPacket);
+        } else {
+            if (unhandledSeen.insert(subOpcode).second) {
+                LOG_INFO("SMSG_COMPRESSED_MOVES: unhandled sub-opcode 0x",
+                         std::hex, subOpcode, std::dec, " payloadLen=", payloadLen);
+            }
+        }
+
+        pos = payloadStart + payloadLen;
+    }
+}
+
 void GameHandler::handleMonsterMove(network::Packet& packet) {
     MonsterMoveData data;
-    if (!MonsterMoveParser::parse(packet, data)) {
+    // Turtle WoW (1.17+) compresses each SMSG_MONSTER_MOVE individually:
+    // format: uint32 decompressedSize + zlib data (zlib magic = 0x78 ??)
+    const auto& rawData = packet.getData();
+    bool isCompressed = rawData.size() >= 6 &&
+                        rawData[4] == 0x78 &&
+                        (rawData[5] == 0x01 || rawData[5] == 0x9C ||
+                         rawData[5] == 0xDA || rawData[5] == 0x5E);
+    if (isCompressed) {
+        uint32_t decompSize = static_cast<uint32_t>(rawData[0]) |
+                              (static_cast<uint32_t>(rawData[1]) << 8) |
+                              (static_cast<uint32_t>(rawData[2]) << 16) |
+                              (static_cast<uint32_t>(rawData[3]) << 24);
+        if (decompSize == 0 || decompSize > 65536) {
+            LOG_WARNING("SMSG_MONSTER_MOVE: bad decompSize=", decompSize);
+            return;
+        }
+        std::vector<uint8_t> decompressed(decompSize);
+        uLongf destLen = decompSize;
+        int ret = uncompress(decompressed.data(), &destLen,
+                             rawData.data() + 4, rawData.size() - 4);
+        if (ret != Z_OK) {
+            LOG_WARNING("SMSG_MONSTER_MOVE: zlib error ", ret);
+            return;
+        }
+        decompressed.resize(destLen);
+        // Dump ALL bytes for format diagnosis (remove once confirmed)
+        static int dumpCount = 0;
+        if (dumpCount < 10) {
+            ++dumpCount;
+            std::string hex;
+            for (size_t i = 0; i < destLen; ++i) {
+                char buf[4]; snprintf(buf, sizeof(buf), "%02X ", decompressed[i]); hex += buf;
+            }
+            LOG_INFO("MonsterMove decomp[", destLen, "]: ", hex);
+        }
+        // Some Turtle WoW compressed move payloads include an inner
+        // sub-packet wrapper: uint8 size + uint16 opcode + payload.
+        // Do not key this on expansion opcode mappings; strip by structure.
+        std::vector<uint8_t> parseBytes = decompressed;
+        if (destLen >= 3) {
+            uint8_t subSize = decompressed[0];
+            size_t wrappedLen = static_cast<size_t>(subSize) + 1; // size byte + subSize bytes
+            uint16_t innerOpcode = static_cast<uint16_t>(decompressed[1]) |
+                                   (static_cast<uint16_t>(decompressed[2]) << 8);
+            uint16_t monsterMoveWire = wireOpcode(Opcode::SMSG_MONSTER_MOVE);
+            bool looksLikeMonsterMoveWrapper =
+                (innerOpcode == 0x00DD) || (innerOpcode == monsterMoveWire);
+            // Strict case: one exact wrapped sub-packet in this decompressed blob.
+            if (subSize >= 2 && wrappedLen == destLen && looksLikeMonsterMoveWrapper) {
+                size_t payloadStart = 3;
+                size_t payloadLen = static_cast<size_t>(subSize) - 2;
+                parseBytes.assign(decompressed.begin() + payloadStart,
+                                  decompressed.begin() + payloadStart + payloadLen);
+            }
+        }
+
+        network::Packet decompPacket(packet.getOpcode(), parseBytes);
+        if (!MonsterMoveParser::parseVanilla(decompPacket, data)) {
+            LOG_WARNING("Failed to parse vanilla SMSG_MONSTER_MOVE (decompressed ",
+                        destLen, " bytes, parseBytes ", parseBytes.size(), " bytes)");
+            return;
+        }
+    } else if (!MonsterMoveParser::parse(packet, data)) {
         LOG_WARNING("Failed to parse SMSG_MONSTER_MOVE");
         return;
     }
 
     // Update entity position in entity manager
     auto entity = entityManager.getEntity(data.guid);
-    if (entity) {
-        if (data.hasDest) {
-            // Convert destination from server to canonical coords
-            glm::vec3 destCanonical = core::coords::serverToCanonical(
-                glm::vec3(data.destX, data.destY, data.destZ));
+    if (!entity) {
+        return;
+    }
 
-            // Calculate facing angle
-            float orientation = entity->getOrientation();
-            if (data.moveType == 4) {
-                // FacingAngle - server specifies exact angle
-                orientation = core::coords::serverToCanonicalYaw(data.facingAngle);
-            } else if (data.moveType == 3) {
-                // FacingTarget - face toward the target entity
-                auto target = entityManager.getEntity(data.facingTarget);
-                if (target) {
-                    float dx = target->getX() - entity->getX();
-                    float dy = target->getY() - entity->getY();
-                    if (std::abs(dx) > 0.01f || std::abs(dy) > 0.01f) {
-                        orientation = std::atan2(dy, dx);
-                    }
-                }
-            } else {
-                // Normal move - face toward destination
-                float dx = destCanonical.x - entity->getX();
-                float dy = destCanonical.y - entity->getY();
+    if (data.hasDest) {
+        // Convert destination from server to canonical coords
+        glm::vec3 destCanonical = core::coords::serverToCanonical(
+            glm::vec3(data.destX, data.destY, data.destZ));
+
+        // Calculate facing angle
+        float orientation = entity->getOrientation();
+        if (data.moveType == 4) {
+            // FacingAngle - server specifies exact angle
+            orientation = core::coords::serverToCanonicalYaw(data.facingAngle);
+        } else if (data.moveType == 3) {
+            // FacingTarget - face toward the target entity
+            auto target = entityManager.getEntity(data.facingTarget);
+            if (target) {
+                float dx = target->getX() - entity->getX();
+                float dy = target->getY() - entity->getY();
                 if (std::abs(dx) > 0.01f || std::abs(dy) > 0.01f) {
                     orientation = std::atan2(dy, dx);
                 }
             }
-
-            // Interpolate entity position alongside renderer (so targeting matches visual)
-            entity->startMoveTo(destCanonical.x, destCanonical.y, destCanonical.z,
-                                orientation, data.duration / 1000.0f);
-
-            // Notify renderer to smoothly move the creature
-            if (creatureMoveCallback_) {
-                creatureMoveCallback_(data.guid,
-                    destCanonical.x, destCanonical.y, destCanonical.z,
-                    data.duration);
+        } else {
+            // Normal move - face toward destination
+            float dx = destCanonical.x - entity->getX();
+            float dy = destCanonical.y - entity->getY();
+            if (std::abs(dx) > 0.01f || std::abs(dy) > 0.01f) {
+                orientation = std::atan2(dy, dx);
             }
-        } else if (data.moveType == 1) {
-            // Stop at current position
-            glm::vec3 posCanonical = core::coords::serverToCanonical(
-                glm::vec3(data.x, data.y, data.z));
-            entity->setPosition(posCanonical.x, posCanonical.y, posCanonical.z,
-                                entity->getOrientation());
+        }
 
-            if (creatureMoveCallback_) {
-                creatureMoveCallback_(data.guid,
-                    posCanonical.x, posCanonical.y, posCanonical.z, 0);
-            }
+        // Interpolate entity position alongside renderer (so targeting matches visual)
+        entity->startMoveTo(destCanonical.x, destCanonical.y, destCanonical.z,
+                            orientation, data.duration / 1000.0f);
+
+        // Notify renderer to smoothly move the creature
+        if (creatureMoveCallback_) {
+            creatureMoveCallback_(data.guid,
+                destCanonical.x, destCanonical.y, destCanonical.z,
+                data.duration);
+        }
+    } else if (data.moveType == 1) {
+        // Stop at current position
+        glm::vec3 posCanonical = core::coords::serverToCanonical(
+            glm::vec3(data.x, data.y, data.z));
+        entity->setPosition(posCanonical.x, posCanonical.y, posCanonical.z,
+                            entity->getOrientation());
+
+        if (creatureMoveCallback_) {
+            creatureMoveCallback_(data.guid,
+                posCanonical.x, posCanonical.y, posCanonical.z, 0);
         }
     }
 }

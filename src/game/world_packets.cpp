@@ -2256,6 +2256,101 @@ bool MonsterMoveParser::parse(network::Packet& packet, MonsterMoveData& data) {
     return true;
 }
 
+bool MonsterMoveParser::parseVanilla(network::Packet& packet, MonsterMoveData& data) {
+    data.guid = UpdateObjectParser::readPackedGuid(packet);
+    if (data.guid == 0) return false;
+
+    if (packet.getReadPos() + 12 > packet.getSize()) return false;
+    data.x = packet.readFloat();
+    data.y = packet.readFloat();
+    data.z = packet.readFloat();
+
+    // Turtle WoW movement payload uses a spline-style layout after XYZ:
+    //   uint32 splineIdOrTick
+    //   uint8  moveType
+    //   [if moveType 2/3/4] facing payload
+    //   uint32 splineFlags
+    //   [if Animation] uint8 + uint32
+    //   uint32 duration
+    //   [if Parabolic] float + uint32
+    //   uint32 pointCount
+    //   float[3] dest
+    //   uint32 packedPoints[pointCount-1]
+    if (packet.getReadPos() + 4 > packet.getSize()) return false;
+    /*uint32_t splineIdOrTick =*/ packet.readUInt32();
+
+    if (packet.getReadPos() >= packet.getSize()) return false;
+    data.moveType = packet.readUInt8();
+
+    if (data.moveType == 1) {
+        data.destX = data.x;
+        data.destY = data.y;
+        data.destZ = data.z;
+        data.hasDest = false;
+        return true;
+    }
+
+    if (data.moveType == 2) {
+        if (packet.getReadPos() + 12 > packet.getSize()) return false;
+        packet.readFloat(); packet.readFloat(); packet.readFloat();
+    } else if (data.moveType == 3) {
+        if (packet.getReadPos() + 8 > packet.getSize()) return false;
+        data.facingTarget = packet.readUInt64();
+    } else if (data.moveType == 4) {
+        if (packet.getReadPos() + 4 > packet.getSize()) return false;
+        data.facingAngle = packet.readFloat();
+    }
+
+    if (packet.getReadPos() + 4 > packet.getSize()) return false;
+    data.splineFlags = packet.readUInt32();
+
+    // Animation flag (same bit as WotLK MoveSplineFlag::Animation)
+    if (data.splineFlags & 0x00400000) {
+        if (packet.getReadPos() + 5 > packet.getSize()) return false;
+        packet.readUInt8();
+        packet.readUInt32();
+    }
+
+    if (packet.getReadPos() + 4 > packet.getSize()) return false;
+    data.duration = packet.readUInt32();
+
+    // Parabolic flag (same bit as WotLK MoveSplineFlag::Parabolic)
+    if (data.splineFlags & 0x00000800) {
+        if (packet.getReadPos() + 8 > packet.getSize()) return false;
+        packet.readFloat();
+        packet.readUInt32();
+    }
+
+    if (packet.getReadPos() + 4 > packet.getSize()) return false;
+    uint32_t pointCount = packet.readUInt32();
+
+    if (pointCount == 0) return true;
+    if (pointCount > 16384) return false; // sanity
+
+    // First float[3] is destination.
+    if (packet.getReadPos() + 12 > packet.getSize()) return true;
+    data.destX = packet.readFloat();
+    data.destY = packet.readFloat();
+    data.destZ = packet.readFloat();
+    data.hasDest = true;
+
+    // Remaining waypoints are packed as uint32 deltas.
+    if (pointCount > 1) {
+        size_t skipBytes = static_cast<size_t>(pointCount - 1) * 4;
+        size_t newPos = packet.getReadPos() + skipBytes;
+        if (newPos <= packet.getSize()) {
+            packet.setReadPos(newPos);
+        }
+    }
+
+    LOG_DEBUG("MonsterMove(turtle): guid=0x", std::hex, data.guid, std::dec,
+              " type=", (int)data.moveType, " dur=", data.duration, "ms",
+              " dest=(", data.destX, ",", data.destY, ",", data.destZ, ")");
+
+    return true;
+}
+
+
 // ============================================================
 // Phase 2: Combat Core
 // ============================================================

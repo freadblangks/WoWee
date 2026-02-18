@@ -1075,7 +1075,7 @@ void CharacterRenderer::update(float deltaTime, const glm::vec3& cameraPos) {
                 inst.position = inst.moveEnd;
                 inst.isMoving = false;
                 // Return to idle when movement completes
-                if (inst.currentAnimationId == 4) {
+                if (inst.currentAnimationId == 4 || inst.currentAnimationId == 5) {
                     playAnimation(id, 0, true);
                 }
             } else {
@@ -1706,15 +1706,28 @@ void CharacterRenderer::moveInstanceTo(uint32_t instanceId, const glm::vec3& des
     // Don't move dead instances (corpses shouldn't slide around)
     if (inst.isDead) return;
 
+    auto pickMoveAnim = [&]() -> uint32_t {
+        // Prefer run when available to avoid "gliding with attack pose" on chase.
+        if (hasAnimation(instanceId, 5)) return 5; // Run
+        if (hasAnimation(instanceId, 4)) return 4; // Walk
+        return 0;
+    };
+
+    float planarDist = glm::length(glm::vec2(destination.x - inst.position.x,
+                                             destination.y - inst.position.y));
     if (durationSeconds <= 0.0f) {
-        // Instant move (stop)
-        inst.position = destination;
-        inst.isMoving = false;
-        // Return to idle animation if currently walking
-        if (inst.currentAnimationId == 4) {
-            playAnimation(instanceId, 0, true);
+        if (planarDist < 0.01f) {
+            // Stop at current location.
+            inst.position = destination;
+            inst.isMoving = false;
+            if (inst.currentAnimationId == 4 || inst.currentAnimationId == 5) {
+                playAnimation(instanceId, 0, true);
+            }
+            return;
         }
-        return;
+        // Some cores send movement-only deltas without spline duration.
+        // Synthesize a tiny duration so movement anim/rotation still updates.
+        durationSeconds = std::clamp(planarDist / 7.0f, 0.05f, 0.20f);
     }
 
     inst.moveStart = inst.position;
@@ -1730,9 +1743,10 @@ void CharacterRenderer::moveInstanceTo(uint32_t instanceId, const glm::vec3& des
         inst.rotation.z = angle;
     }
 
-    // Play walk animation (ID 4) while moving
-    if (inst.currentAnimationId == 0) {
-        playAnimation(instanceId, 4, true);
+    // Play movement animation while moving.
+    uint32_t moveAnim = pickMoveAnim();
+    if (moveAnim != 0 && inst.currentAnimationId != moveAnim) {
+        playAnimation(instanceId, moveAnim, true);
     }
 }
 

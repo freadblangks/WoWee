@@ -635,6 +635,11 @@ void GameHandler::update(float deltaTime) {
                 entity->updateMovement(deltaTime);
                 continue;
             }
+            // Keep selected/engaged target interpolation exact for UI targeting circle.
+            if (guid == targetGuid || guid == autoAttackTarget) {
+                entity->updateMovement(deltaTime);
+                continue;
+            }
 
             // Distance cull other entities (use latest position to avoid culling by stale origin)
             glm::vec3 entityPos(entity->getLatestX(), entity->getLatestY(), entity->getLatestZ());

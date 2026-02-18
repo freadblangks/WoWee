@@ -392,7 +392,8 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         if (gameHandler.hasTarget()) {
             auto target = gameHandler.getTarget();
             if (target) {
-                targetGLPos = core::coords::canonicalToRender(glm::vec3(target->getX(), target->getY(), target->getZ()));
+                targetGLPos = core::coords::canonicalToRender(
+                    glm::vec3(target->getLatestX(), target->getLatestY(), target->getLatestZ()));
                 renderer->setTargetPosition(&targetGLPos);
 
                 // Selection circle color: WoW-canonical level-based colors

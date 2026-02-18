@@ -2950,9 +2950,9 @@ bool QuestRequestItemsParser::parse(network::Packet& packet, QuestRequestItemsDa
     for (uint32_t i = 0; i < requiredItemCount; ++i) {
         if (packet.getReadPos() + 12 > packet.getSize()) break;
         QuestRewardItem item;
-        item.itemId = packet.readUInt32();
-        item.count = packet.readUInt32();
         item.displayInfoId = packet.readUInt32();
+        item.count = packet.readUInt32();
+        item.itemId = packet.readUInt32();
         if (item.itemId > 0)
             data.requiredItems.push_back(item);
     }

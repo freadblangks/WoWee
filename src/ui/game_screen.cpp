@@ -6061,7 +6061,7 @@ std::string GameScreen::replaceGenderPlaceholders(const std::string& text, game:
         std::string replacement;
 
         switch (code) {
-            case 'n': replacement = playerName; break;
+            case 'n': case 'N': replacement = playerName; break;
             case 'p': replacement = pronouns.subject; break;
             case 'o': replacement = pronouns.object; break;
             case 's': replacement = pronouns.possessive; break;

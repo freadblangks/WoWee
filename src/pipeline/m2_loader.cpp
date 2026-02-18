@@ -965,6 +965,37 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
         model.textureLookup = readArray<uint16_t>(m2Data, header.ofsTexLookup, header.nTexLookup);
     }
 
+    // Parse color animation alpha values (M2Color: vec3 color track + fixed16 alpha track).
+    // Each M2Color is two M2TrackDisk headers (20+20 = 40 bytes).
+    // We only need the alpha track (at offset 20) — controls per-batch opacity.
+    if (header.nColors > 0 && header.ofsColors > 0 && header.nColors < 4096) {
+        static constexpr uint32_t M2COLOR_SIZE = 40; // 20-byte color track + 20-byte alpha track
+        model.colorAlphas.reserve(header.nColors);
+        for (uint32_t ci = 0; ci < header.nColors; ci++) {
+            uint32_t alphaTrackOfs = header.ofsColors + ci * M2COLOR_SIZE + 20; // skip vec3 track
+            if (alphaTrackOfs + sizeof(M2TrackDisk) > m2Data.size()) {
+                model.colorAlphas.push_back(1.0f);
+                continue;
+            }
+            M2TrackDisk td = readValue<M2TrackDisk>(m2Data, alphaTrackOfs);
+            float alpha = 1.0f;
+            if (td.nKeys > 0 && td.ofsKeys > 0 && td.nKeys < 4096) {
+                for (uint32_t si = 0; si < td.nKeys; si++) {
+                    uint32_t hdOfs = td.ofsKeys + si * 8;
+                    if (hdOfs + 8 > m2Data.size()) break;
+                    uint32_t count  = readValue<uint32_t>(m2Data, hdOfs);
+                    uint32_t offset = readValue<uint32_t>(m2Data, hdOfs + 4);
+                    if (count == 0 || offset == 0) continue;
+                    if (offset + sizeof(uint16_t) > m2Data.size()) continue;
+                    uint16_t rawVal = readValue<uint16_t>(m2Data, offset);
+                    alpha = std::min(1.0f, rawVal / 32767.0f);
+                    break;
+                }
+            }
+            model.colorAlphas.push_back(alpha);
+        }
+    }
+
     // Read bone lookup table (vertex bone indices reference this to get actual bone index)
     if (header.nBoneLookupTable > 0 && header.ofsBoneLookupTable > 0) {
         model.boneLookupTable = readArray<uint16_t>(m2Data, header.ofsBoneLookupTable, header.nBoneLookupTable);
@@ -1021,8 +1052,41 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
     }
 
     // Read texture transform lookup (nTransLookup)
+    // Note: ofsTransLookup holds the transparency track lookup table (indexed by batch.transparencyIndex).
     if (header.nTransLookup > 0 && header.ofsTransLookup > 0) {
         model.textureTransformLookup = readArray<uint16_t>(m2Data, header.ofsTransLookup, header.nTransLookup);
+    }
+
+    // Parse transparency tracks (M2Track<fixed16>) — controls per-batch opacity.
+    // fixed16 = uint16_t / 32767.0f, range 0 (transparent) to 1 (opaque).
+    // We extract the "at-rest" value from the first available keyframe.
+    if (header.nTransparency > 0 && header.ofsTransparency > 0 &&
+        header.nTransparency < 4096) {
+        model.textureWeights.reserve(header.nTransparency);
+        for (uint32_t ti = 0; ti < header.nTransparency; ti++) {
+            uint32_t trackOfs = header.ofsTransparency + ti * sizeof(M2TrackDisk);
+            if (trackOfs + sizeof(M2TrackDisk) > m2Data.size()) {
+                model.textureWeights.push_back(1.0f);
+                continue;
+            }
+            M2TrackDisk td = readValue<M2TrackDisk>(m2Data, trackOfs);
+            float opacity = 1.0f;
+            // Scan sub-arrays until we find one with keyframe data
+            if (td.nKeys > 0 && td.ofsKeys > 0 && td.nKeys < 4096) {
+                for (uint32_t si = 0; si < td.nKeys; si++) {
+                    uint32_t hdOfs = td.ofsKeys + si * 8;
+                    if (hdOfs + 8 > m2Data.size()) break;
+                    uint32_t count  = readValue<uint32_t>(m2Data, hdOfs);
+                    uint32_t offset = readValue<uint32_t>(m2Data, hdOfs + 4);
+                    if (count == 0 || offset == 0) continue;
+                    if (offset + sizeof(uint16_t) > m2Data.size()) continue;
+                    uint16_t rawVal = readValue<uint16_t>(m2Data, offset);
+                    opacity = std::min(1.0f, rawVal / 32767.0f);
+                    break;
+                }
+            }
+            model.textureWeights.push_back(opacity);
+        }
     }
 
     // Read attachment points (vanilla uses 48-byte struct, WotLK uses 40-byte)

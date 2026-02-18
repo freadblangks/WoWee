@@ -196,6 +196,16 @@ struct M2Model {
     std::vector<M2TextureTransform> textureTransforms;
     std::vector<uint16_t> textureTransformLookup;
 
+    // Texture weights (per-batch opacity, from M2Track<fixed16>)
+    // Each entry is the "at-rest" opacity value (0=transparent, 1=opaque).
+    // batch.transparencyIndex → textureTransformLookup[idx] → textureWeights[trackIdx]
+    std::vector<float> textureWeights;
+
+    // Color animation alpha values (from M2Color.alpha M2Track<fixed16>)
+    // One entry per color animation slot; batch.colorIndex indexes directly into this.
+    // Value 0=transparent, 1=opaque. Independent from textureWeights.
+    std::vector<float> colorAlphas;
+
     // Attachment points (for weapon/effect anchoring)
     std::vector<M2Attachment> attachments;
     std::vector<uint16_t> attachmentLookup; // attachment ID → index

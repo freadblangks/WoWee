@@ -36,6 +36,9 @@ struct M2ModelGPU {
         uint16_t blendMode = 0;   // 0=Opaque, 1=AlphaKey, 2=Alpha, 3=Add, etc.
         uint16_t materialFlags = 0; // M2 material flags (0x01=Unlit, 0x04=TwoSided, 0x10=NoDepthWrite)
         uint16_t submeshLevel = 0; // LOD level: 0=base, 1=LOD1, 2=LOD2, 3=LOD3
+        uint8_t textureUnit = 0;  // UV set index (0=texCoords[0], 1=texCoords[1])
+        uint8_t texFlags = 0;     // M2Texture.flags (bit0=WrapS, bit1=WrapT)
+        float batchOpacity = 1.0f; // Resolved texture weight opacity (0=transparent, skip batch)
         glm::vec3 center = glm::vec3(0.0f); // Center of batch geometry (model space)
         float glowSize = 1.0f;              // Approx radius of batch geometry
     };
@@ -355,7 +358,7 @@ private:
     uint32_t nextInstanceId = 1;
     uint32_t lastDrawCallCount = 0;
 
-    GLuint loadTexture(const std::string& path);
+    GLuint loadTexture(const std::string& path, uint32_t texFlags = 0);
     struct TextureCacheEntry {
         GLuint id = 0;
         size_t approxBytes = 0;

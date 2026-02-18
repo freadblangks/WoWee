@@ -274,6 +274,7 @@ bool M2Renderer::initialize(pipeline::AssetManager* assets) {
         layout (location = 2) in vec2 aTexCoord;
         layout (location = 3) in vec4 aBoneWeights;
         layout (location = 4) in vec4 aBoneIndicesF;
+        layout (location = 5) in vec2 aTexCoord2;
 
         uniform mat4 uModel;
         uniform mat4 uView;
@@ -281,6 +282,7 @@ bool M2Renderer::initialize(pipeline::AssetManager* assets) {
         uniform bool uUseBones;
         uniform mat4 uBones[128];
         uniform vec2 uUVOffset;
+        uniform int uTexCoordSet;  // 0 = UV set 0, 1 = UV set 1
         out vec3 FragPos;
         out vec3 Normal;
         out vec2 TexCoord;
@@ -302,7 +304,7 @@ bool M2Renderer::initialize(pipeline::AssetManager* assets) {
             vec4 worldPos = uModel * vec4(pos, 1.0);
             FragPos = worldPos.xyz;
             Normal = mat3(uModel) * norm;
-            TexCoord = aTexCoord + uUVOffset;
+            TexCoord = (uTexCoordSet == 1 ? aTexCoord2 : aTexCoord) + uUVOffset;
 
             gl_Position = uProjection * uView * worldPos;
         }
@@ -1017,8 +1019,8 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
     }
 
     // Create VBO with interleaved vertex data
-    // Format: position (3), normal (3), texcoord (2), boneWeights (4), boneIndices (4 as float)
-    const size_t floatsPerVertex = 16;
+    // Format: position (3), normal (3), texcoord0 (2), texcoord1 (2), boneWeights (4), boneIndices (4 as float)
+    const size_t floatsPerVertex = 18;
     std::vector<float> vertexData;
     vertexData.reserve(model.vertices.size() * floatsPerVertex);
 
@@ -1031,6 +1033,8 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
         vertexData.push_back(v.normal.z);
         vertexData.push_back(v.texCoords[0].x);
         vertexData.push_back(v.texCoords[0].y);
+        vertexData.push_back(v.texCoords[1].x);
+        vertexData.push_back(v.texCoords[1].y);
         // Bone weights (normalized 0-1)
         float w0 = v.boneWeights[0] / 255.0f;
         float w1 = v.boneWeights[1] / 255.0f;
@@ -1069,40 +1073,49 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, (void*)(3 * sizeof(float)));
 
-    // TexCoord
+    // TexCoord0
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride, (void*)(6 * sizeof(float)));
 
+    // TexCoord1
+    glEnableVertexAttribArray(5);
+    glVertexAttribPointer(5, 2, GL_FLOAT, GL_FALSE, stride, (void*)(8 * sizeof(float)));
+
     // Bone Weights
     glEnableVertexAttribArray(3);
-    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, stride, (void*)(8 * sizeof(float)));
+    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, stride, (void*)(10 * sizeof(float)));
 
     // Bone Indices (as integer attribute)
     glEnableVertexAttribArray(4);
-    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, stride, (void*)(12 * sizeof(float)));
+    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, stride, (void*)(14 * sizeof(float)));
 
     glBindVertexArray(0);
 
-    // Load ALL textures from the model into a local vector
+    // Load ALL textures from the model into a local vector.
+    // textureLoadFailed[i] is true if texture[i] had a named path that failed to load.
+    // Such batches are hidden (batchOpacity=0) rather than rendered white.
     std::vector<GLuint> allTextures;
+    std::vector<bool> textureLoadFailed;
     if (assetManager) {
         for (size_t ti = 0; ti < model.textures.size(); ti++) {
             const auto& tex = model.textures[ti];
             if (!tex.filename.empty()) {
-                GLuint texId = loadTexture(tex.filename);
-                if (texId == whiteTexture) {
+                GLuint texId = loadTexture(tex.filename, tex.flags);
+                bool failed = (texId == whiteTexture);
+                if (failed) {
                     LOG_WARNING("M2 model ", model.name, " texture[", ti, "] failed to load: ", tex.filename);
                 }
                 if (isInvisibleTrap) {
-                    LOG_INFO("  InvisibleTrap texture[", ti, "]: ", tex.filename, " -> ", (texId == whiteTexture ? "WHITE" : "OK"));
+                    LOG_INFO("  InvisibleTrap texture[", ti, "]: ", tex.filename, " -> ", (failed ? "WHITE" : "OK"));
                 }
                 allTextures.push_back(texId);
+                textureLoadFailed.push_back(failed);
             } else {
-                LOG_WARNING("M2 model ", model.name, " texture[", ti, "] has empty filename (using white fallback)");
                 if (isInvisibleTrap) {
                     LOG_INFO("  InvisibleTrap texture[", ti, "]: EMPTY (using white fallback)");
                 }
                 allTextures.push_back(whiteTexture);
+                textureLoadFailed.push_back(false);  // Empty filename = intentional white (type!=0)
             }
         }
     }
@@ -1146,16 +1159,38 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
 
             // Resolve texture: batch.textureIndex → textureLookup → allTextures
             GLuint tex = whiteTexture;
+            bool texFailed = false;
             if (batch.textureIndex < model.textureLookup.size()) {
                 uint16_t texIdx = model.textureLookup[batch.textureIndex];
                 if (texIdx < allTextures.size()) {
                     tex = allTextures[texIdx];
+                    texFailed = (texIdx < textureLoadFailed.size()) && textureLoadFailed[texIdx];
+                }
+                if (texIdx < model.textures.size()) {
+                    bgpu.texFlags = static_cast<uint8_t>(model.textures[texIdx].flags & 0x3);
                 }
             } else if (!allTextures.empty()) {
                 tex = allTextures[0];
+                texFailed = !textureLoadFailed.empty() && textureLoadFailed[0];
             }
             bgpu.texture = tex;
             bgpu.hasAlpha = (tex != 0 && tex != whiteTexture);
+            bgpu.textureUnit = static_cast<uint8_t>(batch.textureUnit & 0x1);
+
+            // Resolve opacity: texture weight track × color animation alpha
+            // Batches whose texture failed to load are hidden (avoid white shell artifacts)
+            bgpu.batchOpacity = texFailed ? 0.0f : 1.0f;
+            // Texture weight track (via transparency lookup)
+            if (batch.transparencyIndex < model.textureTransformLookup.size()) {
+                uint16_t trackIdx = model.textureTransformLookup[batch.transparencyIndex];
+                if (trackIdx < model.textureWeights.size()) {
+                    bgpu.batchOpacity *= model.textureWeights[trackIdx];
+                }
+            }
+            // Color animation alpha (M2Color.alpha, indexed directly by colorIndex)
+            if (batch.colorIndex < model.colorAlphas.size()) {
+                bgpu.batchOpacity *= model.colorAlphas[batch.colorIndex];
+            }
 
             // Compute batch center and radius for glow sprite positioning
             if (bgpu.blendMode >= 3 && batch.indexCount > 0) {
@@ -1216,6 +1251,7 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
 
     LOG_DEBUG("Loaded M2 model: ", model.name, " (", models[modelId].vertexCount, " vertices, ",
               models[modelId].indexCount / 3, " triangles, ", models[modelId].batches.size(), " batches)");
+
 
     return true;
 }
@@ -1807,6 +1843,7 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
     static uint8_t lastBlendMode = 255;  // Invalid initial value
     static bool depthMaskState = true;   // Track current depth mask state
     static glm::vec2 lastUVOffset = glm::vec2(-999.0f);  // Track UV offset state
+    static int lastTexCoordSet = -1;     // Track active UV set (0 or 1)
 
     // Reset state tracking at start of frame to handle shader rebinds
     lastBoundTexture = 0;
@@ -1818,6 +1855,7 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
     lastBlendMode = 255;
     depthMaskState = true;
     lastUVOffset = glm::vec2(-999.0f);
+    lastTexCoordSet = -1;
 
     // Set texture unit once per frame instead of per-batch
     glActiveTexture(GL_TEXTURE0);
@@ -1911,6 +1949,9 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
 
             // Skip batches that don't match target LOD level
             if (batch.submeshLevel != targetLOD) continue;
+
+            // Skip batches with zero opacity from texture weight tracks (should be invisible)
+            if (batch.batchOpacity < 0.01f) continue;
 
             // Additive/mod batches (glow halos, light effects): collect as glow sprites
             // instead of rendering the mesh geometry which appears as flat orange disks.
@@ -2020,6 +2061,13 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
             if (hasTexture && batch.texture != lastBoundTexture) {
                 glBindTexture(GL_TEXTURE_2D, batch.texture);
                 lastBoundTexture = batch.texture;
+            }
+
+            // UV set selector (textureUnit: 0=UV0, 1=UV1)
+            int texCoordSet = static_cast<int>(batch.textureUnit);
+            if (texCoordSet != lastTexCoordSet) {
+                shader->setUniform("uTexCoordSet", texCoordSet);
+                lastTexCoordSet = texCoordSet;
             }
 
             glDrawElements(GL_TRIANGLES, batch.indexCount, GL_UNSIGNED_SHORT,
@@ -2760,7 +2808,7 @@ void M2Renderer::cleanupUnusedModels() {
     }
 }
 
-GLuint M2Renderer::loadTexture(const std::string& path) {
+GLuint M2Renderer::loadTexture(const std::string& path, uint32_t texFlags) {
     auto normalizeKey = [](std::string key) {
         std::replace(key.begin(), key.end(), '/', '\\');
         std::transform(key.begin(), key.end(), key.begin(),
@@ -2804,8 +2852,9 @@ GLuint M2Renderer::loadTexture(const std::string& path) {
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    // M2Texture flags: bit 0 = WrapS (1=repeat, 0=clamp), bit 1 = WrapT
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, (texFlags & 0x1) ? GL_REPEAT : GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, (texFlags & 0x2) ? GL_REPEAT : GL_CLAMP_TO_EDGE);
     glGenerateMipmap(GL_TEXTURE_2D);
     applyAnisotropicFiltering();
 

@@ -4787,9 +4787,10 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
                     ImVec4(1.0f, 0.5f, 0.0f, 1.0f),   // 5 Legendary (orange)
                 };
 
-                for (const auto& item : vendor.items) {
+                for (int vi = 0; vi < static_cast<int>(vendor.items.size()); ++vi) {
+                    const auto& item = vendor.items[vi];
                     ImGui::TableNextRow();
-                    ImGui::PushID(static_cast<int>(item.slot));
+                    ImGui::PushID(vi);
 
                     ImGui::TableSetColumnIndex(0);
                     auto* info = gameHandler.getItemInfo(item.itemId);

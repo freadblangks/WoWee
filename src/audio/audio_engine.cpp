@@ -3,6 +3,7 @@
 #include "core/logger.hpp"
 #include "pipeline/asset_manager.hpp"
 
+
 #include "../../extern/miniaudio.h"
 
 #include <cstring>
@@ -285,10 +286,16 @@ bool AudioEngine::playSound2D(const std::vector<uint8_t>& wavData, float volume,
 }
 
 bool AudioEngine::playSound2D(const std::string& mpqPath, float volume, float pitch) {
-    // TODO: Load from AssetManager
-    // For now, return false (not implemented)
-    LOG_WARNING("AudioEngine::playSound2D from MPQ path not yet implemented");
-    return false;
+    if (!assetManager_) {
+        LOG_WARNING("AudioEngine::playSound2D(path): no AssetManager set");
+        return false;
+    }
+    auto data = assetManager_->readFile(mpqPath);
+    if (data.empty()) {
+        LOG_WARNING("AudioEngine::playSound2D: failed to load '", mpqPath, "'");
+        return false;
+    }
+    return playSound2D(data, volume, pitch);
 }
 
 bool AudioEngine::playSound3D(const std::vector<uint8_t>& wavData, const glm::vec3& position,
@@ -367,8 +374,16 @@ bool AudioEngine::playSound3D(const std::vector<uint8_t>& wavData, const glm::ve
 
 bool AudioEngine::playSound3D(const std::string& mpqPath, const glm::vec3& position,
                               float volume, float pitch, float maxDistance) {
-    // TODO: Implement 3D positional audio
-    return playSound2D(mpqPath, volume, pitch);
+    if (!assetManager_) {
+        LOG_WARNING("AudioEngine::playSound3D(path): no AssetManager set");
+        return false;
+    }
+    auto data = assetManager_->readFile(mpqPath);
+    if (data.empty()) {
+        LOG_WARNING("AudioEngine::playSound3D: failed to load '", mpqPath, "'");
+        return false;
+    }
+    return playSound3D(data, position, volume, pitch, maxDistance);
 }
 
 bool AudioEngine::playMusic(const std::vector<uint8_t>& musicData, float volume, bool loop) {

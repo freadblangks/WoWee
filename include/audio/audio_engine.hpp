@@ -11,6 +11,7 @@ struct ma_engine;
 struct ma_sound;
 
 namespace wowee {
+namespace pipeline { class AssetManager; }
 namespace audio {
 
 /**
@@ -31,6 +32,9 @@ public:
     // Master volume (0.0 = silent, 1.0 = full)
     void setMasterVolume(float volume);
     float getMasterVolume() const { return masterVolume_; }
+
+    // Asset manager (enables sound loading by MPQ path)
+    void setAssetManager(pipeline::AssetManager* am) { assetManager_ = am; }
 
     // 3D listener position (for positional audio)
     void setListenerPosition(const glm::vec3& position);
@@ -80,6 +84,8 @@ private:
     glm::vec3 listenerPosition_{0.0f, 0.0f, 0.0f};
     glm::vec3 listenerForward_{0.0f, 0.0f, -1.0f};
     glm::vec3 listenerUp_{0.0f, 1.0f, 0.0f};
+
+    pipeline::AssetManager* assetManager_ = nullptr;
 
     // miniaudio engine (opaque pointer)
     ma_engine* engine_ = nullptr;

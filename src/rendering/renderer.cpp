@@ -3016,6 +3016,7 @@ bool Renderer::loadTestTerrain(pipeline::AssetManager* assetManager, const std::
 
     // Initialize music manager with asset manager
     if (musicManager && assetManager && !cachedAssetManager) {
+        audio::AudioEngine::instance().setAssetManager(assetManager);
         musicManager->initialize(assetManager);
         if (footstepManager) {
             footstepManager->initialize(assetManager);

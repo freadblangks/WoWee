@@ -648,6 +648,47 @@ void GameHandler::handlePacket(network::Packet& packet) {
     }
 
     uint16_t opcode = packet.getOpcode();
+
+    // Vanilla compatibility aliases:
+    // - 0x006B: SMSG_WEATHER (some vanilla-family servers)
+    // - 0x0103: SMSG_PLAY_MUSIC (some vanilla-family servers)
+    //
+    // We gate these by payload shape so expansion-native mappings remain intact.
+    if (opcode == 0x006B) {
+        // Expected weather payload: uint32 weatherType, float intensity, uint8 abrupt
+        if (packet.getSize() - packet.getReadPos() >= 9) {
+            uint32_t wType = packet.readUInt32();
+            float wIntensity = packet.readFloat();
+            uint8_t abrupt = packet.readUInt8();
+            bool plausibleWeather =
+                (wType <= 3) &&
+                std::isfinite(wIntensity) &&
+                (wIntensity >= 0.0f && wIntensity <= 1.5f) &&
+                (abrupt <= 1);
+            if (plausibleWeather) {
+                weatherType_ = wType;
+                weatherIntensity_ = wIntensity;
+                const char* typeName =
+                    (wType == 1) ? "Rain" :
+                    (wType == 2) ? "Snow" :
+                    (wType == 3) ? "Storm" : "Clear";
+                LOG_INFO("Weather changed (0x006B alias): type=", wType,
+                         " (", typeName, "), intensity=", wIntensity,
+                         ", abrupt=", static_cast<int>(abrupt));
+                return;
+            }
+            // Not weather-shaped: rewind and fall through to normal opcode table handling.
+            packet.setReadPos(0);
+        }
+    } else if (opcode == 0x0103) {
+        // Expected play-music payload: uint32 sound/music id
+        if (packet.getSize() - packet.getReadPos() == 4) {
+            uint32_t soundId = packet.readUInt32();
+            LOG_INFO("SMSG_PLAY_MUSIC (0x0103 alias): soundId=", soundId);
+            return;
+        }
+    }
+
     auto preLogicalOp = opcodeTable_.fromWire(opcode);
     if (wardenGateSeen_ && (!preLogicalOp || *preLogicalOp != Opcode::SMSG_WARDEN_DATA)) {
         ++wardenPacketsAfterGate_;

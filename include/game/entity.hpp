@@ -66,6 +66,8 @@ public:
     float getY() const { return y; }
     float getZ() const { return z; }
     float getOrientation() const { return orientation; }
+    // Update orientation only, without disrupting an in-progress movement interpolation.
+    void setOrientation(float o) { orientation = o; }
 
     void setPosition(float px, float py, float pz, float o) {
         x = px;

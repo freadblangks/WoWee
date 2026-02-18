@@ -5688,26 +5688,33 @@ void GameHandler::declineResurrect() {
 }
 
 void GameHandler::tabTarget(float playerX, float playerY, float playerZ) {
-    // Rebuild cycle list if stale
+    // Helper: returns true if the entity is a living hostile that can be tab-targeted.
+    auto isValidTabTarget = [&](const std::shared_ptr<Entity>& e) -> bool {
+        if (!e) return false;
+        auto* unit = dynamic_cast<Unit*>(e.get());
+        if (!unit) return false;           // Not a unit (shouldn't happen after type filter)
+        if (unit->getHealth() == 0) return false;  // Dead / corpse
+        if (!unit->isHostile()) return false;       // Friendly
+        return true;
+    };
+
+    // Rebuild cycle list if stale (entity added/removed since last tab press).
     if (tabCycleStale) {
         tabCycleList.clear();
         tabCycleIndex = -1;
 
-        struct EntityDist {
-            uint64_t guid;
-            float distance;
-        };
+        struct EntityDist { uint64_t guid; float distance; };
         std::vector<EntityDist> sortable;
 
         for (const auto& [guid, entity] : entityManager.getEntities()) {
             auto t = entity->getType();
             if (t != ObjectType::UNIT && t != ObjectType::PLAYER) continue;
-            if (guid == playerGuid) continue;  // Don't tab-target self
+            if (guid == playerGuid) continue;
+            if (!isValidTabTarget(entity)) continue;  // Skip dead / non-hostile
             float dx = entity->getX() - playerX;
             float dy = entity->getY() - playerY;
             float dz = entity->getZ() - playerZ;
-            float dist = std::sqrt(dx*dx + dy*dy + dz*dz);
-            sortable.push_back({guid, dist});
+            sortable.push_back({guid, std::sqrt(dx*dx + dy*dy + dz*dz)});
         }
 
         std::sort(sortable.begin(), sortable.end(),
@@ -5724,8 +5731,22 @@ void GameHandler::tabTarget(float playerX, float playerY, float playerZ) {
         return;
     }
 
-    tabCycleIndex = (tabCycleIndex + 1) % static_cast<int>(tabCycleList.size());
-    setTarget(tabCycleList[tabCycleIndex]);
+    // Advance through the cycle, skipping any entry that has since died or
+    // turned friendly (e.g. NPC killed between two tab presses).
+    int tries = static_cast<int>(tabCycleList.size());
+    while (tries-- > 0) {
+        tabCycleIndex = (tabCycleIndex + 1) % static_cast<int>(tabCycleList.size());
+        uint64_t guid = tabCycleList[tabCycleIndex];
+        auto entity = entityManager.getEntity(guid);
+        if (isValidTabTarget(entity)) {
+            setTarget(guid);
+            return;
+        }
+    }
+
+    // All cached entries are stale — clear target and force a fresh rebuild next time.
+    tabCycleStale = true;
+    clearTarget();
 }
 
 void GameHandler::addLocalChatMessage(const MessageChatData& msg) {
@@ -6763,6 +6784,20 @@ void GameHandler::handleAttackStart(network::Packet& packet) {
             }
         }
     }
+
+    // Force both participants to face each other at combat start.
+    // Uses atan2(-dy, dx): canonical orientation convention where the West/Y
+    // component is negated (renderYaw = orientation + 90°, model-forward = render+X).
+    auto attackerEnt = entityManager.getEntity(data.attackerGuid);
+    auto victimEnt   = entityManager.getEntity(data.victimGuid);
+    if (attackerEnt && victimEnt) {
+        float dx = victimEnt->getX() - attackerEnt->getX();
+        float dy = victimEnt->getY() - attackerEnt->getY();
+        if (std::abs(dx) > 0.01f || std::abs(dy) > 0.01f) {
+            attackerEnt->setOrientation(std::atan2(-dy,  dx));   // attacker → victim
+            victimEnt->setOrientation  (std::atan2( dy, -dx));   // victim   → attacker
+        }
+    }
 }
 
 void GameHandler::handleAttackStop(network::Packet& packet) {
@@ -7217,21 +7252,45 @@ void GameHandler::handleMonsterMove(network::Packet& packet) {
             // FacingAngle - server specifies exact angle
             orientation = core::coords::serverToCanonicalYaw(data.facingAngle);
         } else if (data.moveType == 3) {
-            // FacingTarget - face toward the target entity
+            // FacingTarget - face toward the target entity.
+            // Canonical orientation uses atan2(-dy, dx): the West/Y component
+            // must be negated because renderYaw = orientation + 90° and
+            // model-forward = render +X, so the sign convention flips.
             auto target = entityManager.getEntity(data.facingTarget);
             if (target) {
                 float dx = target->getX() - entity->getX();
                 float dy = target->getY() - entity->getY();
                 if (std::abs(dx) > 0.01f || std::abs(dy) > 0.01f) {
-                    orientation = std::atan2(dy, dx);
+                    orientation = std::atan2(-dy, dx);
                 }
             }
         } else {
-            // Normal move - face toward destination
+            // Normal move - face toward destination.
             float dx = destCanonical.x - entity->getX();
             float dy = destCanonical.y - entity->getY();
             if (std::abs(dx) > 0.01f || std::abs(dy) > 0.01f) {
-                orientation = std::atan2(dy, dx);
+                orientation = std::atan2(-dy, dx);
+            }
+        }
+
+        // Anti-backward-glide: if the computed orientation is more than 90° away from
+        // the actual travel direction, snap to the travel direction.  FacingTarget
+        // (moveType 3) is deliberately different from travel dir, so skip it there.
+        if (data.moveType != 3) {
+            glm::vec3 startCanonical = core::coords::serverToCanonical(
+                glm::vec3(data.x, data.y, data.z));
+            float travelDx = destCanonical.x - startCanonical.x;
+            float travelDy = destCanonical.y - startCanonical.y;
+            float travelLen = std::sqrt(travelDx * travelDx + travelDy * travelDy);
+            if (travelLen > 0.5f) {
+                float travelAngle = std::atan2(-travelDy, travelDx);
+                float diff = orientation - travelAngle;
+                // Normalise diff to [-π, π]
+                while (diff >  static_cast<float>(M_PI)) diff -= 2.0f * static_cast<float>(M_PI);
+                while (diff < -static_cast<float>(M_PI)) diff += 2.0f * static_cast<float>(M_PI);
+                if (std::abs(diff) > static_cast<float>(M_PI) * 0.5f) {
+                    orientation = travelAngle;
+                }
             }
         }
 
@@ -9269,6 +9328,42 @@ void GameHandler::handleNewWorld(network::Packet& packet) {
     LOG_INFO("SMSG_NEW_WORLD: mapId=", mapId,
              " pos=(", serverX, ", ", serverY, ", ", serverZ, ")",
              " orient=", orientation);
+
+    // Detect same-map spirit healer resurrection: the server uses SMSG_NEW_WORLD
+    // to reposition the player at the graveyard on the same map.  A full world
+    // reload is not needed and causes terrain to vanish, making the player fall
+    // forever.  Just reposition and send the ack.
+    const bool isSameMap       = (mapId == currentMapId_);
+    const bool isResurrection  = resurrectPending_;
+    if (isSameMap && isResurrection) {
+        LOG_INFO("SMSG_NEW_WORLD same-map resurrection — skipping world reload");
+
+        glm::vec3 canonical = core::coords::serverToCanonical(glm::vec3(serverX, serverY, serverZ));
+        movementInfo.x = canonical.x;
+        movementInfo.y = canonical.y;
+        movementInfo.z = canonical.z;
+        movementInfo.orientation = core::coords::serverToCanonicalYaw(orientation);
+        movementInfo.flags  = 0;
+        movementInfo.flags2 = 0;
+
+        resurrectPending_       = false;
+        resurrectRequestPending_ = false;
+        releasedSpirit_         = false;
+        playerDead_             = false;
+        repopPending_           = false;
+        pendingSpiritHealerGuid_ = 0;
+        resurrectCasterGuid_    = 0;
+        hostileAttackers_.clear();
+        stopAutoAttack();
+        tabCycleStale = true;
+
+        if (socket) {
+            network::Packet ack(wireOpcode(Opcode::MSG_MOVE_WORLDPORT_ACK));
+            socket->send(ack);
+            LOG_INFO("Sent MSG_MOVE_WORLDPORT_ACK (resurrection)");
+        }
+        return;
+    }
 
     currentMapId_ = mapId;
 

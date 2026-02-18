@@ -1154,5 +1154,69 @@ uint8_t ClassicPacketParsers::readQuestGiverStatus(network::Packet& packet) {
     }
 }
 
+// ============================================================================
+// Classic CMSG_QUESTGIVER_QUERY_QUEST — Vanilla 1.12 format
+// WotLK appends a trailing unk1 byte; Vanilla servers don't expect it and
+// some reject or misparse the 13-byte packet, preventing quest details from
+// being sent back.  Classic format: guid(8) + questId(4) = 12 bytes.
+// ============================================================================
+network::Packet ClassicPacketParsers::buildQueryQuestPacket(uint64_t npcGuid, uint32_t questId) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_QUESTGIVER_QUERY_QUEST));
+    packet.writeUInt64(npcGuid);
+    packet.writeUInt32(questId);
+    // No trailing unk byte (WotLK-only field)
+    return packet;
+}
+
+// ============================================================================
+// Classic SMSG_QUESTGIVER_QUEST_DETAILS — Vanilla 1.12 format
+// WotLK inserts an informUnit GUID (8 bytes) between npcGuid and questId.
+// Vanilla has: npcGuid(8) + questId(4) + title + details + objectives + ...
+// ============================================================================
+bool ClassicPacketParsers::parseQuestDetails(network::Packet& packet, QuestDetailsData& data) {
+    if (packet.getSize() < 16) return false;
+
+    data.npcGuid = packet.readUInt64();
+    // Vanilla: questId follows immediately — no informUnit GUID
+    data.questId = packet.readUInt32();
+    data.title      = packet.readString();
+    data.details    = packet.readString();
+    data.objectives = packet.readString();
+
+    if (packet.getReadPos() + 5 > packet.getSize()) {
+        LOG_INFO("Quest details classic (short): id=", data.questId, " title='", data.title, "'");
+        return !data.title.empty() || data.questId != 0;
+    }
+
+    /*activateAccept*/ packet.readUInt8();
+    data.suggestedPlayers = packet.readUInt32();
+
+    // Choice reward items: variable count + 3 uint32s each
+    if (packet.getReadPos() + 4 <= packet.getSize()) {
+        uint32_t choiceCount = packet.readUInt32();
+        for (uint32_t i = 0; i < choiceCount && packet.getReadPos() + 12 <= packet.getSize(); ++i) {
+            packet.readUInt32(); // itemId
+            packet.readUInt32(); // count
+            packet.readUInt32(); // displayInfo
+        }
+    }
+
+    // Fixed reward items: variable count + 3 uint32s each
+    if (packet.getReadPos() + 4 <= packet.getSize()) {
+        uint32_t rewardCount = packet.readUInt32();
+        for (uint32_t i = 0; i < rewardCount && packet.getReadPos() + 12 <= packet.getSize(); ++i) {
+            packet.readUInt32(); // itemId
+            packet.readUInt32(); // count
+            packet.readUInt32(); // displayInfo
+        }
+    }
+
+    if (packet.getReadPos() + 4 <= packet.getSize())
+        data.rewardMoney = packet.readUInt32();
+
+    LOG_INFO("Quest details classic: id=", data.questId, " title='", data.title, "'");
+    return true;
+}
+
 } // namespace game
 } // namespace wowee

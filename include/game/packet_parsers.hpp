@@ -148,6 +148,24 @@ public:
         return GossipMessageParser::parse(packet, data);
     }
 
+    // --- Quest details ---
+
+    /** Build CMSG_QUESTGIVER_QUERY_QUEST.
+     *  WotLK appends a trailing unk1 byte; Vanilla/Classic do not. */
+    virtual network::Packet buildQueryQuestPacket(uint64_t npcGuid, uint32_t questId) {
+        return QuestgiverQueryQuestPacket::build(npcGuid, questId);  // includes unk1
+    }
+
+    /** Parse SMSG_QUESTGIVER_QUEST_DETAILS.
+     *  WotLK has an extra informUnit GUID before questId; Vanilla/Classic do not. */
+    virtual bool parseQuestDetails(network::Packet& packet, QuestDetailsData& data) {
+        return QuestDetailsParser::parse(packet, data);  // WotLK auto-detect
+    }
+
+    /** Stride of PLAYER_QUEST_LOG fields in update-object blocks.
+     *  WotLK: 5 fields per slot, Classic/Vanilla: 3. */
+    virtual uint8_t questLogStride() const { return 5; }
+
     // --- Quest Giver Status ---
 
     /** Read quest giver status from packet.
@@ -304,6 +322,9 @@ public:
     network::Packet buildItemQuery(uint32_t entry, uint64_t guid) override;
     bool parseItemQueryResponse(network::Packet& packet, ItemQueryResponseData& data) override;
     uint8_t readQuestGiverStatus(network::Packet& packet) override;
+    network::Packet buildQueryQuestPacket(uint64_t npcGuid, uint32_t questId) override;
+    bool parseQuestDetails(network::Packet& packet, QuestDetailsData& data) override;
+    uint8_t questLogStride() const override { return 3; }
 };
 
 /**

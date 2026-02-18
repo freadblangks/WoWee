@@ -3858,7 +3858,8 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     const uint16_t ufPlayerLevel = fieldIndex(UF::UNIT_FIELD_LEVEL);
                     const uint16_t ufCoinage = fieldIndex(UF::PLAYER_FIELD_COINAGE);
                     const uint16_t ufQuestStart = fieldIndex(UF::PLAYER_QUEST_LOG_START);
-                    const uint16_t ufQuestEnd = ufQuestStart + 25 * 5; // 25 quest slots, stride 5
+                    const uint8_t qStride = packetParsers_ ? packetParsers_->questLogStride() : 5;
+                    const uint16_t ufQuestEnd = ufQuestStart + 25 * qStride; // 25 quest slots
                     for (const auto& [key, val] : block.fields) {
                         if (key == ufPlayerXp) { playerXp_ = val; }
                         else if (key == ufPlayerNextXp) { playerNextLevelXp_ = val; }
@@ -3872,8 +3873,8 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             playerMoneyCopper_ = val;
                             LOG_INFO("Money set from update fields: ", val, " copper");
                         }
-                        // Parse quest log fields (stride 5, 25 slots)
-                        else if (key >= ufQuestStart && key < ufQuestEnd && (key - ufQuestStart) % 5 == 0) {
+                        // Parse quest log fields (stride varies by expansion: 5=WotLK, 3=Classic)
+                        else if (key >= ufQuestStart && key < ufQuestEnd && (key - ufQuestStart) % qStride == 0) {
                             uint32_t questId = val;
                             if (questId != 0) {
                                 // Check if quest is already in log
@@ -8306,7 +8307,9 @@ void GameHandler::selectGossipQuest(uint32_t questId) {
 
 void GameHandler::handleQuestDetails(network::Packet& packet) {
     QuestDetailsData data;
-    if (!QuestDetailsParser::parse(packet, data)) {
+    bool ok = packetParsers_ ? packetParsers_->parseQuestDetails(packet, data)
+                              : QuestDetailsParser::parse(packet, data);
+    if (!ok) {
         LOG_WARNING("Failed to parse SMSG_QUESTGIVER_QUEST_DETAILS");
         return;
     }

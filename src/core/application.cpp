@@ -823,6 +823,35 @@ void Application::update(float deltaTime) {
                 }
             }
 
+            // Keep creature render instances aligned with authoritative entity positions.
+            // This prevents desync where target circles move with server entities but
+            // creature models remain at stale spawn positions.
+            if (renderer && gameHandler && renderer->getCharacterRenderer()) {
+                auto* charRenderer = renderer->getCharacterRenderer();
+                glm::vec3 playerPos(0.0f);
+                bool havePlayerPos = false;
+                if (auto playerEntity = gameHandler->getEntityManager().getEntity(gameHandler->getPlayerGuid())) {
+                    playerPos = glm::vec3(playerEntity->getX(), playerEntity->getY(), playerEntity->getZ());
+                    havePlayerPos = true;
+                }
+                const float syncRadiusSq = 320.0f * 320.0f;
+                for (const auto& [guid, instanceId] : creatureInstances_) {
+                    auto entity = gameHandler->getEntityManager().getEntity(guid);
+                    if (!entity || entity->getType() != game::ObjectType::UNIT) continue;
+
+                    glm::vec3 canonical(entity->getX(), entity->getY(), entity->getZ());
+                    if (havePlayerPos) {
+                        glm::vec3 d = canonical - playerPos;
+                        if (glm::dot(d, d) > syncRadiusSq) continue;
+                    }
+
+                    glm::vec3 renderPos = core::coords::canonicalToRender(canonical);
+                    charRenderer->setInstancePosition(instanceId, renderPos);
+                    float renderYaw = entity->getOrientation() + glm::radians(90.0f);
+                    charRenderer->setInstanceRotation(instanceId, glm::vec3(0.0f, 0.0f, renderYaw));
+                }
+            }
+
             // Movement heartbeat is sent from GameHandler::update() to avoid
             // duplicate packets from multiple update loops.
 

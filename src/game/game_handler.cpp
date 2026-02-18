@@ -3471,6 +3471,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                 if (block.objectType == ObjectType::UNIT || block.objectType == ObjectType::PLAYER) {
                     auto unit = std::static_pointer_cast<Unit>(entity);
                     constexpr uint32_t UNIT_DYNFLAG_DEAD = 0x0008;
+                    constexpr uint32_t UNIT_DYNFLAG_LOOTABLE = 0x0001;
                     bool unitInitiallyDead = false;
                     const uint16_t ufHealth = fieldIndex(UF::UNIT_FIELD_HEALTH);
                     const uint16_t ufPower = fieldIndex(UF::UNIT_FIELD_POWER1);
@@ -3501,7 +3502,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         else if (key == ufDynFlags) {
                             unit->setDynamicFlags(val);
                             if (block.objectType == ObjectType::UNIT &&
-                                (val & UNIT_DYNFLAG_DEAD) != 0) {
+                                ((val & UNIT_DYNFLAG_DEAD) != 0 || (val & UNIT_DYNFLAG_LOOTABLE) != 0)) {
                                 unitInitiallyDead = true;
                             }
                         }
@@ -3849,6 +3850,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     if (entity->getType() == ObjectType::UNIT || entity->getType() == ObjectType::PLAYER) {
                         auto unit = std::static_pointer_cast<Unit>(entity);
                         constexpr uint32_t UNIT_DYNFLAG_DEAD = 0x0008;
+                        constexpr uint32_t UNIT_DYNFLAG_LOOTABLE = 0x0001;
                         uint32_t oldDisplayId = unit->getDisplayId();
                         bool displayIdChanged = false;
                         bool npcDeathNotified = false;
@@ -3997,6 +3999,12 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             } else if (creatureSpawnCallback_) {
                                 creatureSpawnCallback_(block.guid, unit->getDisplayId(),
                                     unit->getX(), unit->getY(), unit->getZ(), unit->getOrientation());
+                                bool isDeadNow = (unit->getHealth() == 0) ||
+                                    ((unit->getDynamicFlags() & (UNIT_DYNFLAG_DEAD | UNIT_DYNFLAG_LOOTABLE)) != 0);
+                                if (isDeadNow && !npcDeathNotified && npcDeathCallback_) {
+                                    npcDeathCallback_(block.guid);
+                                    npcDeathNotified = true;
+                                }
                             }
                             if (entity->getType() == ObjectType::UNIT && (unit->getNpcFlags() & 0x02) && socket) {
                                 network::Packet qsPkt(wireOpcode(Opcode::CMSG_QUESTGIVER_STATUS_QUERY));
@@ -8490,27 +8498,6 @@ void GameHandler::handleLootResponse(network::Packet& packet) {
     }
 
     if (currentLoot.gold > 0) {
-        // Some servers don't send SMSG_LOOT_MONEY_NOTIFY consistently.
-        // Announce money immediately on loot response as a fallback.
-        auto it = localLootState_.find(currentLoot.lootGuid);
-        bool alreadyAnnounced = (it != localLootState_.end() && it->second.moneyTaken);
-        if (!alreadyAnnounced) {
-            addSystemChatMessage("Looted: " + formatCopperAmount(currentLoot.gold));
-            auto* renderer = core::Application::getInstance().getRenderer();
-            if (renderer) {
-                if (auto* sfx = renderer->getUiSoundManager()) {
-                    if (currentLoot.gold >= 10000) {
-                        sfx->playLootCoinLarge();
-                    } else {
-                        sfx->playLootCoinSmall();
-                    }
-                }
-            }
-            if (it != localLootState_.end()) {
-                it->second.moneyTaken = true;
-            }
-        }
-
         if (state == WorldState::IN_WORLD && socket) {
             // Auto-loot gold by sending CMSG_LOOT_MONEY (server handles the rest)
             auto pkt = LootMoneyPacket::build();

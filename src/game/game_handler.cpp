@@ -1583,37 +1583,54 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
 
             uint32_t questId = packet.readUInt32();
-            uint32_t questMethod = packet.readUInt32();  // Quest method/type
+            uint32_t questMethod = packet.readUInt32();
 
             LOG_INFO("  questId=", questId, " questMethod=", questMethod);
 
-            // Parse quest title (after method comes level, flags, type, etc., then title string)
-            // Skip intermediate fields to get to title
-            if (packet.getReadPos() + 16 < packet.getSize()) {
-                packet.readUInt32(); // quest level
-                packet.readUInt32(); // min level
-                packet.readUInt32(); // sort ID (zone)
-                packet.readUInt32(); // quest type/info
-                packet.readUInt32(); // suggested players
-                packet.readUInt32(); // reputation objective faction
-                packet.readUInt32(); // reputation objective value
-                packet.readUInt32(); // required opposite faction
-                packet.readUInt32(); // next quest in chain
-                packet.readUInt32(); // XP ID
-                packet.readUInt32(); // reward or required money
-                packet.readUInt32(); // reward money max level
-                packet.readUInt32(); // reward spell
-                packet.readUInt32(); // reward spell cast
-                packet.readUInt32(); // reward honor
-                packet.readUInt32(); // reward honor multiplier
-                packet.readUInt32(); // source item ID
-                packet.readUInt32(); // quest flags
-                // ... there are many more fields before title, let's try to read title string
-                if (packet.getReadPos() + 1 < packet.getSize()) {
-                    std::string title = packet.readString();
-                    LOG_INFO("  Quest title: ", title);
+            // SMSG_QUEST_QUERY_RESPONSE layout varies by expansion.
+            //
+            // Classic/Turtle (1.12.x) after questId+questMethod:
+            //   16 header uint32s (questLevel, zoneOrSort, type, suggestedPlayers,
+            //                      repFaction, repValue, nextChain, xpId,
+            //                      rewMoney, rewMoneyMax, rewSpell, rewSpellCast,
+            //                      rewHonor, rewHonorMult, srcItemId, questFlags)
+            //    8 reward items    (4 slots × 2: itemId + count)
+            //   12 choice items    (6 slots × 2: itemId + count)
+            //    4 POI uint32s     (mapId, x, y, opt)
+            //   = 40 uint32s before title string
+            //
+            // WotLK (3.3.5) after questId+questMethod:
+            //   21 header uint32s (adds minLevel, questInfoId, 2nd repFaction/Value, questFlags2)
+            //   12 reward items   (4 slots × 3: itemId + count + displayId)
+            //   18 choice items   (6 slots × 3: itemId + count + displayId)
+            //    4 POI uint32s
+            //   = 55 uint32s before title string
+            //
+            // Read all numeric fields, then look for the title string.
+            // Using packetParsers_->questLogStride() as expansion discriminator:
+            //   stride==3 → Classic layout (40 skips)
+            //   stride==5 → WotLK layout  (55 skips)
+            const bool isClassicLayout = packetParsers_ && packetParsers_->questLogStride() == 3;
+            const int skipCount = isClassicLayout ? 40 : 55;
 
-                    // Update quest log entry with title
+            for (int i = 0; i < skipCount; ++i) {
+                packet.readUInt32();
+            }
+
+            if (packet.getReadPos() < packet.getSize()) {
+                std::string title = packet.readString();
+                LOG_INFO("  Quest title: '", title, "'");
+
+                // Only update if we got a non-empty, printable title (guards against
+                // landing in the middle of binary reward data on wrong layouts).
+                bool validTitle = !title.empty();
+                if (validTitle) {
+                    for (char c : title) {
+                        if ((unsigned char)c < 0x20 && c != '\t') { validTitle = false; break; }
+                    }
+                }
+
+                if (validTitle) {
                     for (auto& q : questLog_) {
                         if (q.questId == questId) {
                             q.title = title;
@@ -1621,6 +1638,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
                             break;
                         }
                     }
+                } else {
+                    LOG_INFO("  Skipping non-printable title (wrong layout?) for quest ", questId);
                 }
             }
 
@@ -4184,6 +4203,42 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                     repopPending_ = false;
                                     resurrectPending_ = false;
                                     LOG_INFO("Player resurrected (PLAYER_FLAGS ghost cleared)");
+                                }
+                            }
+                        }
+                        // Scan quest log fields in VALUES updates too (server may re-send them
+                        // after quest accept, abandon, or same-map repositions).
+                        {
+                            const uint16_t ufQuestStart = fieldIndex(UF::PLAYER_QUEST_LOG_START);
+                            const uint8_t qStride = packetParsers_ ? packetParsers_->questLogStride() : 5;
+                            const uint16_t ufQuestEnd = ufQuestStart + 25 * qStride;
+                            for (const auto& [key, val] : block.fields) {
+                                if (key >= ufQuestStart && key < ufQuestEnd &&
+                                    (key - ufQuestStart) % qStride == 0) {
+                                    uint32_t qId = val;
+                                    if (qId != 0) {
+                                        bool found = false;
+                                        for (auto& q : questLog_) {
+                                            if (q.questId == qId) { found = true; break; }
+                                        }
+                                        if (!found) {
+                                            QuestLogEntry entry;
+                                            entry.questId = qId;
+                                            entry.complete = false;
+                                            entry.title = "Quest #" + std::to_string(qId);
+                                            questLog_.push_back(entry);
+                                            LOG_INFO("Quest found in VALUES update: ", qId);
+                                            if (socket) {
+                                                network::Packet qPkt(wireOpcode(Opcode::CMSG_QUEST_QUERY));
+                                                qPkt.writeUInt32(qId);
+                                                socket->send(qPkt);
+                                            }
+                                        }
+                                    } else {
+                                        // Quest slot cleared — remove from log if present
+                                        uint16_t slot = (key - ufQuestStart) / qStride;
+                                        (void)slot; // slot index available if needed
+                                    }
                                 }
                             }
                         }

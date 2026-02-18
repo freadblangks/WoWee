@@ -105,6 +105,7 @@ private:
     bool minimapRotate_ = false;
     bool minimapSquare_ = false;
     bool minimapSettingsApplied_ = false;
+    bool volumeSettingsApplied_ = false;  // True once saved volume settings applied to audio managers
 
     // Mute state: mute bypasses master volume without touching slider values
     bool soundMuted_ = false;

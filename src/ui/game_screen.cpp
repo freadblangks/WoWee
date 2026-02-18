@@ -216,6 +216,45 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         }
     }
 
+    // Apply saved volume settings once when audio managers first become available
+    if (!volumeSettingsApplied_) {
+        auto* renderer = core::Application::getInstance().getRenderer();
+        if (renderer && renderer->getUiSoundManager()) {
+            float masterScale = static_cast<float>(pendingMasterVolume) / 100.0f;
+            if (auto* music = renderer->getMusicManager()) {
+                music->setVolume(static_cast<int>(pendingMusicVolume * masterScale));
+            }
+            if (auto* ambient = renderer->getAmbientSoundManager()) {
+                ambient->setVolumeScale(pendingAmbientVolume / 100.0f * masterScale);
+            }
+            if (auto* ui = renderer->getUiSoundManager()) {
+                ui->setVolumeScale(pendingUiVolume / 100.0f * masterScale);
+            }
+            if (auto* combat = renderer->getCombatSoundManager()) {
+                combat->setVolumeScale(pendingCombatVolume / 100.0f * masterScale);
+            }
+            if (auto* spell = renderer->getSpellSoundManager()) {
+                spell->setVolumeScale(pendingSpellVolume / 100.0f * masterScale);
+            }
+            if (auto* movement = renderer->getMovementSoundManager()) {
+                movement->setVolumeScale(pendingMovementVolume / 100.0f * masterScale);
+            }
+            if (auto* footstep = renderer->getFootstepManager()) {
+                footstep->setVolumeScale(pendingFootstepVolume / 100.0f * masterScale);
+            }
+            if (auto* npcVoice = renderer->getNpcVoiceManager()) {
+                npcVoice->setVolumeScale(pendingNpcVoiceVolume / 100.0f * masterScale);
+            }
+            if (auto* mount = renderer->getMountSoundManager()) {
+                mount->setVolumeScale(pendingMountVolume / 100.0f * masterScale);
+            }
+            if (auto* activity = renderer->getActivitySoundManager()) {
+                activity->setVolumeScale(pendingActivityVolume / 100.0f * masterScale);
+            }
+            volumeSettingsApplied_ = true;
+        }
+    }
+
     // Apply auto-loot setting to GameHandler every frame (cheap bool sync)
     gameHandler.setAutoLoot(pendingAutoLoot);
 
@@ -5388,37 +5427,7 @@ void GameScreen::renderSettingsWindow() {
         pendingVsync = window->isVsyncEnabled();
         pendingShadows = renderer ? renderer->areShadowsEnabled() : true;
         if (renderer) {
-            // Load volumes from all audio managers
-            if (auto* music = renderer->getMusicManager()) {
-                pendingMusicVolume = music->getVolume();
-            }
-            if (auto* ambient = renderer->getAmbientSoundManager()) {
-                pendingAmbientVolume = static_cast<int>(ambient->getVolumeScale() * 100.0f + 0.5f);
-            }
-            if (auto* ui = renderer->getUiSoundManager()) {
-                pendingUiVolume = static_cast<int>(ui->getVolumeScale() * 100.0f + 0.5f);
-            }
-            if (auto* combat = renderer->getCombatSoundManager()) {
-                pendingCombatVolume = static_cast<int>(combat->getVolumeScale() * 100.0f + 0.5f);
-            }
-            if (auto* spell = renderer->getSpellSoundManager()) {
-                pendingSpellVolume = static_cast<int>(spell->getVolumeScale() * 100.0f + 0.5f);
-            }
-            if (auto* movement = renderer->getMovementSoundManager()) {
-                pendingMovementVolume = static_cast<int>(movement->getVolumeScale() * 100.0f + 0.5f);
-            }
-            if (auto* footstep = renderer->getFootstepManager()) {
-                pendingFootstepVolume = static_cast<int>(footstep->getVolumeScale() * 100.0f + 0.5f);
-            }
-            if (auto* npcVoice = renderer->getNpcVoiceManager()) {
-                pendingNpcVoiceVolume = static_cast<int>(npcVoice->getVolumeScale() * 100.0f + 0.5f);
-            }
-            if (auto* mount = renderer->getMountSoundManager()) {
-                pendingMountVolume = static_cast<int>(mount->getVolumeScale() * 100.0f + 0.5f);
-            }
-            if (auto* activity = renderer->getActivitySoundManager()) {
-                pendingActivityVolume = static_cast<int>(activity->getVolumeScale() * 100.0f + 0.5f);
-            }
+            // Read non-volume settings from actual state (volumes come from saved settings)
             if (auto* cameraController = renderer->getCameraController()) {
                 pendingMouseSensitivity = cameraController->getMouseSensitivity();
                 pendingInvertMouse = cameraController->isInvertMouse();

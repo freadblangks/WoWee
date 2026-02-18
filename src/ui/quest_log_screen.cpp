@@ -160,6 +160,21 @@ void QuestLogScreen::render(game::GameHandler& gameHandler) {
                     ImGui::TextWrapped("%s", processedObjectives.c_str());
                 }
 
+                if (!sel.killCounts.empty() || !sel.itemCounts.empty()) {
+                    ImGui::Separator();
+                    ImGui::TextColored(ImVec4(0.8f, 0.9f, 1.0f, 1.0f), "Tracked Progress");
+                    for (const auto& [entry, progress] : sel.killCounts) {
+                        ImGui::BulletText("Kill %u: %u/%u", entry, progress.first, progress.second);
+                    }
+                    for (const auto& [itemId, count] : sel.itemCounts) {
+                        std::string itemLabel = "Item " + std::to_string(itemId);
+                        if (const auto* info = gameHandler.getItemInfo(itemId)) {
+                            if (!info->name.empty()) itemLabel = info->name;
+                        }
+                        ImGui::BulletText("%s: %u", itemLabel.c_str(), count);
+                    }
+                }
+
                 // Abandon button
                 if (!sel.complete) {
                     ImGui::Separator();

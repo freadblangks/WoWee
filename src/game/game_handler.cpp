@@ -1456,6 +1456,30 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
             break;
         }
+        case Opcode::SMSG_QUESTUPDATE_ADD_ITEM: {
+            // Quest item count update: itemId + count
+            if (packet.getSize() - packet.getReadPos() >= 8) {
+                uint32_t itemId = packet.readUInt32();
+                uint32_t count = packet.readUInt32();
+                queryItemInfo(itemId, 0);
+
+                std::string itemLabel = "item #" + std::to_string(itemId);
+                if (const ItemQueryResponseData* info = getItemInfo(itemId)) {
+                    if (!info->name.empty()) itemLabel = info->name;
+                }
+
+                bool updatedAny = false;
+                for (auto& quest : questLog_) {
+                    if (quest.complete) continue;
+                    quest.itemCounts[itemId] = count;
+                    updatedAny = true;
+                }
+                addSystemChatMessage("Quest item: " + itemLabel + " (" + std::to_string(count) + ")");
+                LOG_INFO("Quest item update: itemId=", itemId, " count=", count,
+                         " trackedQuestsUpdated=", updatedAny);
+            }
+            break;
+        }
         case Opcode::SMSG_QUESTUPDATE_COMPLETE: {
             // Quest objectives completed - mark as ready to turn in
             uint32_t questId = packet.readUInt32();

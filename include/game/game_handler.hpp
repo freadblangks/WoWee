@@ -702,6 +702,8 @@ public:
         bool complete = false;
         // Objective kill counts: objectiveIndex -> (current, required)
         std::unordered_map<uint32_t, std::pair<uint32_t, uint32_t>> killCounts;
+        // Quest item progress: itemId -> current count
+        std::unordered_map<uint32_t, uint32_t> itemCounts;
     };
     const std::vector<QuestLogEntry>& getQuestLog() const { return questLog_; }
     void abandonQuest(uint32_t questId);

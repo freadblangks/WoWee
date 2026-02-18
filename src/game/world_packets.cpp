@@ -2861,6 +2861,12 @@ network::Packet LootReleasePacket::build(uint64_t lootGuid) {
 }
 
 bool LootResponseParser::parse(network::Packet& packet, LootResponseData& data) {
+    data = LootResponseData{};
+    if (packet.getSize() - packet.getReadPos() < 14) {
+        LOG_WARNING("LootResponseParser: packet too short");
+        return false;
+    }
+
     data.lootGuid = packet.readUInt64();
     data.lootType = packet.readUInt8();
     data.gold = packet.readUInt32();
@@ -2868,6 +2874,10 @@ bool LootResponseParser::parse(network::Packet& packet, LootResponseData& data) 
 
     data.items.reserve(itemCount);
     for (uint8_t i = 0; i < itemCount; ++i) {
+        if (packet.getSize() - packet.getReadPos() < 22) {
+            LOG_WARNING("LootResponseParser: truncated regular item list");
+            return false;
+        }
         LootItem item;
         item.slotIndex = packet.readUInt8();
         item.itemId = packet.readUInt32();
@@ -2879,7 +2889,30 @@ bool LootResponseParser::parse(network::Packet& packet, LootResponseData& data) 
         data.items.push_back(item);
     }
 
-    LOG_INFO("Loot response: ", (int)itemCount, " items, ", data.gold, " copper");
+    uint8_t questItemCount = 0;
+    if (packet.getSize() - packet.getReadPos() >= 1) {
+        questItemCount = packet.readUInt8();
+        data.items.reserve(data.items.size() + questItemCount);
+        for (uint8_t i = 0; i < questItemCount; ++i) {
+            if (packet.getSize() - packet.getReadPos() < 22) {
+                LOG_WARNING("LootResponseParser: truncated quest item list");
+                return false;
+            }
+            LootItem item;
+            item.slotIndex = packet.readUInt8();
+            item.itemId = packet.readUInt32();
+            item.count = packet.readUInt32();
+            item.displayInfoId = packet.readUInt32();
+            item.randomSuffix = packet.readUInt32();
+            item.randomPropertyId = packet.readUInt32();
+            item.lootSlotType = packet.readUInt8();
+            item.isQuestItem = true;
+            data.items.push_back(item);
+        }
+    }
+
+    LOG_INFO("Loot response: ", (int)itemCount, " regular + ", (int)questItemCount,
+             " quest items, ", data.gold, " copper");
     return true;
 }
 

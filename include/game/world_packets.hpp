@@ -1762,6 +1762,7 @@ struct LootItem {
     uint32_t randomSuffix = 0;
     uint32_t randomPropertyId = 0;
     uint8_t lootSlotType = 0;
+    bool isQuestItem = false;
 };
 
 /** SMSG_LOOT_RESPONSE data */

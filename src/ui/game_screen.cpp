@@ -713,6 +713,15 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
                     ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "%s", slotName);
             }
         }
+        if (info->damageMax > 0.0f) {
+            ImGui::Text("%.0f - %.0f Damage", info->damageMin, info->damageMax);
+            if (info->delayMs > 0) {
+                float speed = static_cast<float>(info->delayMs) / 1000.0f;
+                float dps = ((info->damageMin + info->damageMax) * 0.5f) / speed;
+                ImGui::Text("Speed %.2f", speed);
+                ImGui::Text("%.1f damage per second", dps);
+            }
+        }
         if (info->armor > 0) ImGui::Text("%d Armor", info->armor);
         ImVec4 green(0.0f, 1.0f, 0.0f, 1.0f);
         auto renderStat = [&](int32_t val, const char* name) {
@@ -4801,6 +4810,15 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
                         if (ImGui::IsItemHovered()) {
                             ImGui::BeginTooltip();
                             ImGui::TextColored(qualityColors[q], "%s", info->name.c_str());
+                            if (info->damageMax > 0.0f) {
+                                ImGui::Text("%.0f - %.0f Damage", info->damageMin, info->damageMax);
+                                if (info->delayMs > 0) {
+                                    float speed = static_cast<float>(info->delayMs) / 1000.0f;
+                                    float dps = ((info->damageMin + info->damageMax) * 0.5f) / speed;
+                                    ImGui::Text("Speed %.2f", speed);
+                                    ImGui::Text("%.1f damage per second", dps);
+                                }
+                            }
                             if (info->armor > 0) ImGui::Text("Armor: %d", info->armor);
                             if (info->stamina > 0) ImGui::Text("+%d Stamina", info->stamina);
                             if (info->strength > 0) ImGui::Text("+%d Strength", info->strength);

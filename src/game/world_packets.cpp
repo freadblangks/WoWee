@@ -2069,6 +2069,8 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
 
     uint32_t itemClass = packet.readUInt32();
     uint32_t subClass = packet.readUInt32();
+    data.itemClass = itemClass;
+    data.subClass = subClass;
     packet.readUInt32(); // SoundOverrideSubclass
 
     data.subclassName = getItemSubclassName(itemClass, subClass);
@@ -2125,13 +2127,31 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
     packet.readUInt32(); // ScalingStatValue
 
     // 5 damage types
+    bool haveWeaponDamage = false;
     for (int i = 0; i < 5; i++) {
-        packet.readFloat();   // DamageMin
-        packet.readFloat();   // DamageMax
-        packet.readUInt32();  // DamageType
+        float dmgMin = packet.readFloat();
+        float dmgMax = packet.readFloat();
+        uint32_t damageType = packet.readUInt32();
+        if (!haveWeaponDamage && dmgMax > 0.0f) {
+            // Prefer physical damage when available, otherwise first non-zero entry.
+            if (damageType == 0 || data.damageMax <= 0.0f) {
+                data.damageMin = dmgMin;
+                data.damageMax = dmgMax;
+                haveWeaponDamage = (damageType == 0);
+            }
+        }
     }
 
     data.armor = static_cast<int32_t>(packet.readUInt32());
+    if (packet.getSize() - packet.getReadPos() >= 28) {
+        packet.readUInt32(); // HolyRes
+        packet.readUInt32(); // FireRes
+        packet.readUInt32(); // NatureRes
+        packet.readUInt32(); // FrostRes
+        packet.readUInt32(); // ShadowRes
+        packet.readUInt32(); // ArcaneRes
+        data.delayMs = packet.readUInt32();
+    }
 
     data.valid = !data.name.empty();
     LOG_DEBUG("Item query response: ", data.name, " (quality=", data.quality,

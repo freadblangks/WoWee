@@ -1408,11 +1408,16 @@ public:
 struct ItemQueryResponseData {
     uint32_t entry = 0;
     std::string name;
+    uint32_t itemClass = 0;
+    uint32_t subClass = 0;
     uint32_t displayInfoId = 0;
     uint32_t quality = 0;
     uint32_t inventoryType = 0;
     int32_t maxStack = 1;
     uint32_t containerSlots = 0;
+    float damageMin = 0.0f;
+    float damageMax = 0.0f;
+    uint32_t delayMs = 0;
     int32_t armor = 0;
     int32_t stamina = 0;
     int32_t strength = 0;

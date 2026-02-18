@@ -8236,7 +8236,8 @@ void GameHandler::closeVendor() {
 
 void GameHandler::buyItem(uint64_t vendorGuid, uint32_t itemId, uint32_t slot, uint32_t count) {
     if (state != WorldState::IN_WORLD || !socket) return;
-    auto packet = BuyItemPacket::build(vendorGuid, itemId, slot, count);
+    (void)slot;
+    auto packet = BuyItemPacket::build(vendorGuid, itemId, count);
     socket->send(packet);
 }
 

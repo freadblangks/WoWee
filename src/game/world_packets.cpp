@@ -3153,13 +3153,11 @@ network::Packet ListInventoryPacket::build(uint64_t npcGuid) {
     return packet;
 }
 
-network::Packet BuyItemPacket::build(uint64_t vendorGuid, uint32_t itemId, uint32_t slot, uint32_t count) {
+network::Packet BuyItemPacket::build(uint64_t vendorGuid, uint32_t itemId, uint32_t count) {
     network::Packet packet(wireOpcode(Opcode::CMSG_BUY_ITEM));
     packet.writeUInt64(vendorGuid);
     packet.writeUInt32(itemId);  // item entry
-    packet.writeUInt32(slot);    // vendor slot (1-based position in vendor list)
     packet.writeUInt32(count);
-    packet.writeUInt8(0);  // bag slot (0 = find any available bag slot)
     return packet;
 }
 
@@ -3172,6 +3170,12 @@ network::Packet SellItemPacket::build(uint64_t vendorGuid, uint64_t itemGuid, ui
 }
 
 bool ListInventoryParser::parse(network::Packet& packet, ListInventoryData& data) {
+    data = ListInventoryData{};
+    if (packet.getSize() - packet.getReadPos() < 9) {
+        LOG_WARNING("ListInventoryParser: packet too short");
+        return false;
+    }
+
     data.vendorGuid = packet.readUInt64();
     uint8_t itemCount = packet.readUInt8();
 
@@ -3184,10 +3188,25 @@ bool ListInventoryParser::parse(network::Packet& packet, ListInventoryData& data
     // Some servers omit the extendedCost field entirely; reading 8 fields on a 7-field packet
     // misaligns every item after the first and produces garbage prices.
     size_t remaining = packet.getSize() - packet.getReadPos();
-    bool hasExtendedCost = (remaining >= static_cast<size_t>(itemCount) * 32);
+    const size_t bytesPerItemNoExt = 28;
+    const size_t bytesPerItemWithExt = 32;
+    bool hasExtendedCost = false;
+    if (remaining < static_cast<size_t>(itemCount) * bytesPerItemNoExt) {
+        LOG_WARNING("ListInventoryParser: truncated packet (items=", (int)itemCount,
+                    ", remaining=", remaining, ")");
+        return false;
+    }
+    if (remaining >= static_cast<size_t>(itemCount) * bytesPerItemWithExt) {
+        hasExtendedCost = true;
+    }
 
     data.items.reserve(itemCount);
     for (uint8_t i = 0; i < itemCount; ++i) {
+        const size_t perItemBytes = hasExtendedCost ? bytesPerItemWithExt : bytesPerItemNoExt;
+        if (packet.getSize() - packet.getReadPos() < perItemBytes) {
+            LOG_WARNING("ListInventoryParser: item ", (int)i, " truncated");
+            return false;
+        }
         VendorItem item;
         item.slot = packet.readUInt32();
         item.itemId = packet.readUInt32();

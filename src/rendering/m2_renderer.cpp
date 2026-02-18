@@ -1175,22 +1175,15 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
             }
             bgpu.texture = tex;
             bgpu.hasAlpha = (tex != 0 && tex != whiteTexture);
-            bgpu.textureUnit = static_cast<uint8_t>(batch.textureUnit & 0x1);
+            // textureCoordIndex is an index into a texture coord combo table, not directly
+            // a UV set selector. Most batches have index=0 (UV set 0). We always use UV set 0
+            // since we don't have the full combo table — dual-UV effects are rare edge cases.
+            bgpu.textureUnit = 0;
 
-            // Resolve opacity: texture weight track × color animation alpha
-            // Batches whose texture failed to load are hidden (avoid white shell artifacts)
+            // Batch is hidden only when its named texture failed to load (avoids white shell artifacts).
+            // Do NOT bake transparency/color animation tracks here — they animate over time and
+            // baking the first keyframe value causes legitimate meshes to become invisible.
             bgpu.batchOpacity = texFailed ? 0.0f : 1.0f;
-            // Texture weight track (via transparency lookup)
-            if (batch.transparencyIndex < model.textureTransformLookup.size()) {
-                uint16_t trackIdx = model.textureTransformLookup[batch.transparencyIndex];
-                if (trackIdx < model.textureWeights.size()) {
-                    bgpu.batchOpacity *= model.textureWeights[trackIdx];
-                }
-            }
-            // Color animation alpha (M2Color.alpha, indexed directly by colorIndex)
-            if (batch.colorIndex < model.colorAlphas.size()) {
-                bgpu.batchOpacity *= model.colorAlphas[batch.colorIndex];
-            }
 
             // Compute batch center and radius for glow sprite positioning
             if (bgpu.blendMode >= 3 && batch.indexCount > 0) {

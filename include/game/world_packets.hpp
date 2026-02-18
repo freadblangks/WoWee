@@ -1450,7 +1450,11 @@ struct MonsterMoveData {
 
 class MonsterMoveParser {
 public:
+    // WotLK 3.3.5a format: PackedGUID + uint8 unk + float[3] + uint32 splineId + uint8 moveType + ...
     static bool parse(network::Packet& packet, MonsterMoveData& data);
+    // Vanilla 1.12 format: PackedGUID + float[3] + uint32 timeInMs + uint8 moveType + ...
+    // Used for Classic/TBC/Turtle WoW servers (no splineId, timeInMs before moveType)
+    static bool parseVanilla(network::Packet& packet, MonsterMoveData& data);
 };
 
 /** SMSG_ATTACKSTART data */

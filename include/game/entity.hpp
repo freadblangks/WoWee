@@ -105,6 +105,13 @@ public:
 
     bool isEntityMoving() const { return isMoving_; }
 
+    // Returns the latest server-authoritative position: destination if moving, current if not.
+    // Unlike getX/Y/Z (which only update via updateMovement), this always reflects the
+    // last known server position regardless of distance culling.
+    float getLatestX() const { return isMoving_ ? moveEndX_ : x; }
+    float getLatestY() const { return isMoving_ ? moveEndY_ : y; }
+    float getLatestZ() const { return isMoving_ ? moveEndZ_ : z; }
+
     // Object type
     ObjectType getType() const { return type; }
     void setType(ObjectType t) { type = t; }

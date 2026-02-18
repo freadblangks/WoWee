@@ -126,6 +126,7 @@ static const OpcodeNameEntry kOpcodeNames[] = {
     {"CMSG_BINDER_ACTIVATE", LogicalOpcode::CMSG_BINDER_ACTIVATE},
     {"SMSG_LOG_XPGAIN", LogicalOpcode::SMSG_LOG_XPGAIN},
     {"SMSG_MONSTER_MOVE", LogicalOpcode::SMSG_MONSTER_MOVE},
+    {"SMSG_COMPRESSED_MOVES", LogicalOpcode::SMSG_COMPRESSED_MOVES},
     {"CMSG_ATTACKSWING", LogicalOpcode::CMSG_ATTACKSWING},
     {"CMSG_ATTACKSTOP", LogicalOpcode::CMSG_ATTACKSTOP},
     {"SMSG_ATTACKSTART", LogicalOpcode::SMSG_ATTACKSTART},

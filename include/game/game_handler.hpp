@@ -1049,6 +1049,7 @@ private:
 
     // ---- Creature movement handler ----
     void handleMonsterMove(network::Packet& packet);
+    void handleCompressedMoves(network::Packet& packet);
     void handleMonsterMoveTransport(network::Packet& packet);
 
     // ---- Other player movement (MSG_MOVE_* from server) ----

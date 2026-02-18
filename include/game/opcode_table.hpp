@@ -157,6 +157,7 @@ enum class LogicalOpcode : uint16_t {
 
     // ---- Creature Movement ----
     SMSG_MONSTER_MOVE,
+    SMSG_COMPRESSED_MOVES,   // Vanilla/Classic batch movement packet (0x6B)
 
     // ---- Phase 2: Combat Core ----
     CMSG_ATTACKSWING,

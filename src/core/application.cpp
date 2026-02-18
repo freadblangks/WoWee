@@ -3419,6 +3419,20 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
         }
     }
 
+    // Use the entity's latest server-authoritative position rather than the stale spawn
+    // position. Movement packets (SMSG_MONSTER_MOVE) can arrive while a creature is still
+    // queued in pendingCreatureSpawns_ and get silently dropped. getLatestX/Y/Z returns
+    // the movement destination if the entity is mid-move, which is always up-to-date
+    // regardless of distance culling (unlike getX/Y/Z which requires updateMovement).
+    if (gameHandler) {
+        if (auto entity = gameHandler->getEntityManager().getEntity(guid)) {
+            x = entity->getLatestX();
+            y = entity->getLatestY();
+            z = entity->getLatestZ();
+            orientation = entity->getOrientation();
+        }
+    }
+
     // Convert canonical → render coordinates
     glm::vec3 renderPos = core::coords::canonicalToRender(glm::vec3(x, y, z));
 

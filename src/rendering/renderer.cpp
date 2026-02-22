@@ -3183,8 +3183,15 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
         glm::vec3 minimapCenter = camera->getPosition();
         if (cameraController && cameraController->isThirdPerson())
             minimapCenter = characterPosition;
+        float minimapPlayerOrientation = 0.0f;
+        bool hasMinimapPlayerOrientation = false;
+        if (gameHandler) {
+            minimapPlayerOrientation = gameHandler->getMovementInfo().orientation;
+            hasMinimapPlayerOrientation = true;
+        }
         minimap->render(currentCmd, *camera, minimapCenter,
-                        window->getWidth(), window->getHeight());
+                        window->getWidth(), window->getHeight(),
+                        minimapPlayerOrientation, hasMinimapPlayerOrientation);
     }
 
     auto renderEnd = std::chrono::steady_clock::now();

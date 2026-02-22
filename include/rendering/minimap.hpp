@@ -35,7 +35,8 @@ public:
 
     /// Display quad — call INSIDE the main render pass.
     void render(VkCommandBuffer cmd, const Camera& playerCamera,
-                const glm::vec3& centerWorldPos, int screenWidth, int screenHeight);
+                const glm::vec3& centerWorldPos, int screenWidth, int screenHeight,
+                float playerOrientation = 0.0f, bool hasPlayerOrientation = false);
 
     void setEnabled(bool enabled) { this->enabled = enabled; }
     bool isEnabled() const { return enabled; }

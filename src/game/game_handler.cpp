@@ -93,6 +93,13 @@ bool isClassicLikeExpansion() {
     return isActiveExpansion("classic") || isActiveExpansion("turtle");
 }
 
+bool envFlagEnabled(const char* key, bool defaultValue = false) {
+    const char* raw = std::getenv(key);
+    if (!raw || !*raw) return defaultValue;
+    return !(raw[0] == '0' || raw[0] == 'f' || raw[0] == 'F' ||
+             raw[0] == 'n' || raw[0] == 'N');
+}
+
 std::string formatCopperAmount(uint32_t amount) {
     uint32_t gold = amount / 10000;
     uint32_t silver = (amount / 100) % 100;
@@ -4621,6 +4628,7 @@ void GameHandler::setOrientation(float orientation) {
 }
 
 void GameHandler::handleUpdateObject(network::Packet& packet) {
+    static const bool kVerboseUpdateObject = envFlagEnabled("WOWEE_LOG_UPDATE_OBJECT_VERBOSE", false);
     UpdateObjectData data;
     if (!packetParsers_->parseUpdateObject(packet, data)) {
         LOG_WARNING("Failed to parse SMSG_UPDATE_OBJECT");
@@ -5119,91 +5127,20 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
 
                 // Extract XP / inventory slot / skill fields for player entity
                 if (block.guid == playerGuid && block.objectType == ObjectType::PLAYER) {
-                    // Store baseline snapshot on first update
-                    static bool baselineStored = false;
-                    static std::map<uint16_t, uint32_t> baselineFields;
-
-                    if (!baselineStored) {
-                        baselineFields = block.fields;
-                        baselineStored = true;
-                        LOG_INFO("===== BASELINE PLAYER FIELDS STORED =====");
-                        LOG_INFO("  Total fields: ", block.fields.size());
-                    }
-
-                    // Diff against baseline to find changes
-                    std::vector<uint16_t> changedIndices;
-                    std::vector<uint16_t> newIndices;
-                    std::vector<uint16_t> removedIndices;
-
-                    for (const auto& [idx, val] : block.fields) {
-                        auto it = baselineFields.find(idx);
-                        if (it == baselineFields.end()) {
-                            newIndices.push_back(idx);
-                        } else if (it->second != val) {
-                            changedIndices.push_back(idx);
-                        }
-                    }
-
-                    for (const auto& [idx, val] : baselineFields) {
-                        if (block.fields.find(idx) == block.fields.end()) {
-                            removedIndices.push_back(idx);
-                        }
-                    }
-
                     // Auto-detect coinage index using the previous snapshot vs this full snapshot.
                     maybeDetectCoinageIndex(lastPlayerFields_, block.fields);
 
                     lastPlayerFields_ = block.fields;
                     detectInventorySlotBases(block.fields);
 
-                    // Debug: Show field changes
-                    LOG_INFO("Player update with ", block.fields.size(), " fields");
-
-                    if (!changedIndices.empty() || !newIndices.empty() || !removedIndices.empty()) {
-                        LOG_INFO("  ===== FIELD CHANGES DETECTED =====");
-                        if (!changedIndices.empty()) {
-                            LOG_INFO("  Changed fields (", changedIndices.size(), "):");
-                            std::sort(changedIndices.begin(), changedIndices.end());
-                            for (size_t i = 0; i < std::min(size_t(30), changedIndices.size()); ++i) {
-                                uint16_t idx = changedIndices[i];
-                                uint32_t oldVal = baselineFields[idx];
-                                uint32_t newVal = block.fields.at(idx);
-                                LOG_INFO("    [", idx, "]: ", oldVal, " -> ", newVal,
-                                         " (0x", std::hex, oldVal, " -> 0x", newVal, std::dec, ")");
-                            }
-                            if (changedIndices.size() > 30) {
-                                LOG_INFO("    ... (", changedIndices.size() - 30, " more)");
-                            }
+                    if (kVerboseUpdateObject) {
+                        uint16_t maxField = 0;
+                        for (const auto& [key, _val] : block.fields) {
+                            if (key > maxField) maxField = key;
                         }
-                        if (!newIndices.empty()) {
-                            LOG_INFO("  New fields (", newIndices.size(), "):");
-                            std::sort(newIndices.begin(), newIndices.end());
-                            for (size_t i = 0; i < std::min(size_t(20), newIndices.size()); ++i) {
-                                uint16_t idx = newIndices[i];
-                                uint32_t val = block.fields.at(idx);
-                                LOG_INFO("    [", idx, "]: ", val, " (0x", std::hex, val, std::dec, ")");
-                            }
-                            if (newIndices.size() > 20) {
-                                LOG_INFO("    ... (", newIndices.size() - 20, " more)");
-                            }
-                        }
-                        if (!removedIndices.empty()) {
-                            LOG_INFO("  Removed fields (", removedIndices.size(), "):");
-                            std::sort(removedIndices.begin(), removedIndices.end());
-                            for (size_t i = 0; i < std::min(size_t(20), removedIndices.size()); ++i) {
-                                uint16_t idx = removedIndices[i];
-                                uint32_t val = baselineFields.at(idx);
-                                LOG_INFO("    [", idx, "]: was ", val, " (0x", std::hex, val, std::dec, ")");
-                            }
-                        }
+                        LOG_INFO("Player update with ", block.fields.size(),
+                                 " fields (max index=", maxField, ")");
                     }
-
-                    uint16_t maxField = 0;
-                    for (const auto& [key, val] : block.fields) {
-                        if (key > maxField) maxField = key;
-                    }
-
-                    LOG_INFO("  Highest field index: ", maxField);
 
                     bool slotsChanged = false;
                     const uint16_t ufPlayerXp = fieldIndex(UF::PLAYER_XP);
@@ -5222,11 +5159,11 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         }
                         else if (key == ufCoinage) {
                             playerMoneyCopper_ = val;
-                            LOG_INFO("Money set from update fields: ", val, " copper");
+                            LOG_DEBUG("Money set from update fields: ", val, " copper");
                         }
                         else if (ufArmor != 0xFFFF && key == ufArmor) {
                             playerArmorRating_ = static_cast<int32_t>(val);
-                            LOG_INFO("Armor rating from update fields: ", playerArmorRating_);
+                            LOG_DEBUG("Armor rating from update fields: ", playerArmorRating_);
                         }
                         // Do not synthesize quest-log entries from raw update-field slots.
                         // Slot layouts differ on some classic-family realms and can produce
@@ -5502,15 +5439,15 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         for (const auto& [key, val] : block.fields) {
                             if (key == ufPlayerXp) {
                                 playerXp_ = val;
-                                LOG_INFO("XP updated: ", val);
+                                LOG_DEBUG("XP updated: ", val);
                             }
                             else if (key == ufPlayerNextXp) {
                                 playerNextLevelXp_ = val;
-                                LOG_INFO("Next level XP updated: ", val);
+                                LOG_DEBUG("Next level XP updated: ", val);
                             }
                             else if (key == ufPlayerLevel) {
                                 serverPlayerLevel_ = val;
-                                LOG_INFO("Level updated: ", val);
+                                LOG_DEBUG("Level updated: ", val);
                                 for (auto& ch : characters) {
                                     if (ch.guid == playerGuid) {
                                         ch.level = val;
@@ -5520,7 +5457,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             }
                             else if (key == ufCoinage) {
                                 playerMoneyCopper_ = val;
-                                LOG_INFO("Money updated via VALUES: ", val, " copper");
+                                LOG_DEBUG("Money updated via VALUES: ", val, " copper");
                             }
                             else if (ufArmor != 0xFFFF && key == ufArmor) {
                                 playerArmorRating_ = static_cast<int32_t>(val);

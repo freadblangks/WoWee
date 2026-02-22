@@ -472,7 +472,8 @@ void Minimap::compositePass(VkCommandBuffer cmd, const glm::vec3& centerWorldPos
 
 void Minimap::render(VkCommandBuffer cmd, const Camera& playerCamera,
                      const glm::vec3& centerWorldPos,
-                     int screenWidth, int screenHeight) {
+                     int screenWidth, int screenHeight,
+                     float playerOrientation, bool hasPlayerOrientation) {
     if (!enabled || !hasCachedFrame || !displayPipeline) return;
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, displayPipeline);
@@ -511,8 +512,15 @@ void Minimap::render(VkCommandBuffer cmd, const Camera& playerCamera,
 
     float arrowRotation = 0.0f;
     if (!rotateWithCamera) {
-        glm::vec3 fwd = playerCamera.getForward();
-        arrowRotation = std::atan2(-fwd.x, fwd.y);
+        // Prefer authoritative player orientation for north-up minimap arrow.
+        // Canonical yaw already matches minimap rotation convention:
+        // 0=north, +pi/2=east.
+        if (hasPlayerOrientation) {
+            arrowRotation = playerOrientation;
+        } else {
+            glm::vec3 fwd = playerCamera.getForward();
+            arrowRotation = std::atan2(-fwd.x, fwd.y);
+        }
     }
 
     MinimapDisplayPush push{};

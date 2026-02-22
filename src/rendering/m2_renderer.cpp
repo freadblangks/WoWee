@@ -2301,7 +2301,8 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                 effectiveBlendMode = 3;
             }
             if (model.isGroundDetail) {
-                effectiveBlendMode = 2;
+                // Treat foliage cards as cutout so they depth-sort correctly.
+                effectiveBlendMode = 1;
             }
 
             VkPipeline desiredPipeline;
@@ -2329,9 +2330,9 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     if (batch.colorKeyBlack) {
                         mat->colorKeyThreshold = (effectiveBlendMode == 4 || effectiveBlendMode == 5) ? 0.7f : 0.08f;
                     }
-                    // Ground detail: override alphaTest and unlit
+                    // Ground detail: force cutout shading for stable two-sided foliage.
                     if (model.isGroundDetail) {
-                        mat->alphaTest = 0;
+                        mat->alphaTest = 1;
                         mat->unlit = 0;
                     }
                 }

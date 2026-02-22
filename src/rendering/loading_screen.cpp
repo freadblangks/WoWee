@@ -338,9 +338,14 @@ void LoadingScreen::render() {
             rpInfo.renderArea.offset = {0, 0};
             rpInfo.renderArea.extent = vkCtx->getSwapchainExtent();
 
-            VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
-            rpInfo.clearValueCount = 1;
-            rpInfo.pClearValues = &clearColor;
+            // Render pass has 2 attachments (color + depth) or 3 with MSAA
+            VkClearValue clearValues[3]{};
+            clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+            clearValues[1].depthStencil = {1.0f, 0};
+            clearValues[2].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+            bool msaaOn = vkCtx->getMsaaSamples() > VK_SAMPLE_COUNT_1_BIT;
+            rpInfo.clearValueCount = msaaOn ? 3 : 2;
+            rpInfo.pClearValues = clearValues;
 
             vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
             ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);

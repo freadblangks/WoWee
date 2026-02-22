@@ -2,11 +2,11 @@
 #include "core/input.hpp"
 #include "core/application.hpp"
 #include "core/logger.hpp"
+#include "rendering/vk_context.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/blp_loader.hpp"
 #include "pipeline/dbc_layout.hpp"
 #include <algorithm>
-#include <GL/glew.h>
 
 namespace wowee { namespace ui {
 
@@ -260,7 +260,7 @@ void TalentScreen::renderTalent(game::GameHandler& gameHandler,
 
     // Get spell icon
     uint32_t spellId = talent.rankSpells[0];
-    GLuint iconTex = 0;
+    VkDescriptorSet iconTex = VK_NULL_HANDLE;
     if (spellId != 0) {
         auto it = spellIconIds.find(spellId);
         if (it != spellIconIds.end()) {
@@ -491,47 +491,41 @@ void TalentScreen::loadSpellIconDBC(pipeline::AssetManager* assetManager) {
     LOG_INFO("Talent screen: Loaded ", spellIconPaths.size(), " spell icon paths from SpellIcon.dbc");
 }
 
-GLuint TalentScreen::getSpellIcon(uint32_t iconId, pipeline::AssetManager* assetManager) {
-    if (iconId == 0 || !assetManager) return 0;
+VkDescriptorSet TalentScreen::getSpellIcon(uint32_t iconId, pipeline::AssetManager* assetManager) {
+    if (iconId == 0 || !assetManager) return VK_NULL_HANDLE;
 
-    // Check cache
     auto cit = spellIconCache.find(iconId);
     if (cit != spellIconCache.end()) return cit->second;
 
-    // Look up icon path
     auto pit = spellIconPaths.find(iconId);
     if (pit == spellIconPaths.end()) {
-        spellIconCache[iconId] = 0;
-        return 0;
+        spellIconCache[iconId] = VK_NULL_HANDLE;
+        return VK_NULL_HANDLE;
     }
 
-    // Load BLP file
     std::string iconPath = pit->second + ".blp";
     auto blpData = assetManager->readFile(iconPath);
     if (blpData.empty()) {
-        spellIconCache[iconId] = 0;
-        return 0;
+        spellIconCache[iconId] = VK_NULL_HANDLE;
+        return VK_NULL_HANDLE;
     }
 
-    // Decode BLP
     auto image = pipeline::BLPLoader::load(blpData);
     if (!image.isValid()) {
-        spellIconCache[iconId] = 0;
-        return 0;
+        spellIconCache[iconId] = VK_NULL_HANDLE;
+        return VK_NULL_HANDLE;
     }
 
-    // Create OpenGL texture
-    GLuint texId = 0;
-    glGenTextures(1, &texId);
-    glBindTexture(GL_TEXTURE_2D, texId);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, image.width, image.height, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, image.data.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    auto* window = core::Application::getInstance().getWindow();
+    auto* vkCtx = window ? window->getVkContext() : nullptr;
+    if (!vkCtx) {
+        spellIconCache[iconId] = VK_NULL_HANDLE;
+        return VK_NULL_HANDLE;
+    }
 
-    spellIconCache[iconId] = texId;
-    return texId;
+    VkDescriptorSet ds = vkCtx->uploadImGuiTexture(image.data.data(), image.width, image.height);
+    spellIconCache[iconId] = ds;
+    return ds;
 }
 
 }} // namespace wowee::ui

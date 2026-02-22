@@ -1,6 +1,7 @@
 #include "ui/spellbook_screen.hpp"
 #include "core/input.hpp"
 #include "core/application.hpp"
+#include "rendering/vk_context.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/dbc_loader.hpp"
 #include "pipeline/blp_loader.hpp"
@@ -201,44 +202,41 @@ void SpellbookScreen::categorizeSpells(const std::unordered_set<uint32_t>& known
     lastKnownSpellCount = knownSpells.size();
 }
 
-GLuint SpellbookScreen::getSpellIcon(uint32_t iconId, pipeline::AssetManager* assetManager) {
-    if (iconId == 0 || !assetManager) return 0;
+VkDescriptorSet SpellbookScreen::getSpellIcon(uint32_t iconId, pipeline::AssetManager* assetManager) {
+    if (iconId == 0 || !assetManager) return VK_NULL_HANDLE;
 
     auto cit = spellIconCache.find(iconId);
     if (cit != spellIconCache.end()) return cit->second;
 
     auto pit = spellIconPaths.find(iconId);
     if (pit == spellIconPaths.end()) {
-        spellIconCache[iconId] = 0;
-        return 0;
+        spellIconCache[iconId] = VK_NULL_HANDLE;
+        return VK_NULL_HANDLE;
     }
 
     std::string iconPath = pit->second + ".blp";
     auto blpData = assetManager->readFile(iconPath);
     if (blpData.empty()) {
-        spellIconCache[iconId] = 0;
-        return 0;
+        spellIconCache[iconId] = VK_NULL_HANDLE;
+        return VK_NULL_HANDLE;
     }
 
     auto image = pipeline::BLPLoader::load(blpData);
     if (!image.isValid()) {
-        spellIconCache[iconId] = 0;
-        return 0;
+        spellIconCache[iconId] = VK_NULL_HANDLE;
+        return VK_NULL_HANDLE;
     }
 
-    GLuint texId = 0;
-    glGenTextures(1, &texId);
-    glBindTexture(GL_TEXTURE_2D, texId);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, image.width, image.height, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, image.data.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    auto* window = core::Application::getInstance().getWindow();
+    auto* vkCtx = window ? window->getVkContext() : nullptr;
+    if (!vkCtx) {
+        spellIconCache[iconId] = VK_NULL_HANDLE;
+        return VK_NULL_HANDLE;
+    }
 
-    spellIconCache[iconId] = texId;
-    return texId;
+    VkDescriptorSet ds = vkCtx->uploadImGuiTexture(image.data.data(), image.width, image.height);
+    spellIconCache[iconId] = ds;
+    return ds;
 }
 
 const SpellInfo* SpellbookScreen::getSpellInfo(uint32_t spellId) const {
@@ -320,7 +318,7 @@ void SpellbookScreen::render(game::GameHandler& gameHandler, pipeline::AssetMana
                         bool isPassive = info->isPassive();
                         bool isDim = isPassive || onCooldown;
 
-                        GLuint iconTex = getSpellIcon(info->iconId, assetManager);
+                        VkDescriptorSet iconTex = getSpellIcon(info->iconId, assetManager);
 
                         // Selectable consumes clicks properly (prevents window drag)
                         ImGui::Selectable("##row", false,

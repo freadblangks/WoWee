@@ -1,6 +1,7 @@
 #include "ui/inventory_screen.hpp"
 #include "game/game_handler.hpp"
 #include "core/application.hpp"
+#include "rendering/vk_context.hpp"
 #include "core/input.hpp"
 #include "rendering/character_preview.hpp"
 #include "rendering/character_renderer.hpp"
@@ -72,10 +73,7 @@ const game::ItemSlot* findComparableEquipped(const game::Inventory& inventory, u
 } // namespace
 
 InventoryScreen::~InventoryScreen() {
-    // Clean up icon textures
-    for (auto& [id, tex] : iconCache_) {
-        if (tex) glDeleteTextures(1, &tex);
-    }
+    // Vulkan textures are owned by VkContext and cleaned up on shutdown
     iconCache_.clear();
 }
 
@@ -95,8 +93,8 @@ ImVec4 InventoryScreen::getQualityColor(game::ItemQuality quality) {
 // Item Icon Loading
 // ============================================================
 
-GLuint InventoryScreen::getItemIcon(uint32_t displayInfoId) {
-    if (displayInfoId == 0 || !assetManager_) return 0;
+VkDescriptorSet InventoryScreen::getItemIcon(uint32_t displayInfoId) {
+    if (displayInfoId == 0 || !assetManager_) return VK_NULL_HANDLE;
 
     auto it = iconCache_.find(displayInfoId);
     if (it != iconCache_.end()) return it->second;
@@ -104,50 +102,48 @@ GLuint InventoryScreen::getItemIcon(uint32_t displayInfoId) {
     // Load ItemDisplayInfo.dbc
     auto displayInfoDbc = assetManager_->loadDBC("ItemDisplayInfo.dbc");
     if (!displayInfoDbc) {
-        iconCache_[displayInfoId] = 0;
-        return 0;
+        iconCache_[displayInfoId] = VK_NULL_HANDLE;
+        return VK_NULL_HANDLE;
     }
 
     int32_t recIdx = displayInfoDbc->findRecordById(displayInfoId);
     if (recIdx < 0) {
-        iconCache_[displayInfoId] = 0;
-        return 0;
+        iconCache_[displayInfoId] = VK_NULL_HANDLE;
+        return VK_NULL_HANDLE;
     }
 
     // Field 5 = inventoryIcon_1
     const auto* dispL = pipeline::getActiveDBCLayout() ? pipeline::getActiveDBCLayout()->getLayout("ItemDisplayInfo") : nullptr;
     std::string iconName = displayInfoDbc->getString(static_cast<uint32_t>(recIdx), dispL ? (*dispL)["InventoryIcon"] : 5);
     if (iconName.empty()) {
-        iconCache_[displayInfoId] = 0;
-        return 0;
+        iconCache_[displayInfoId] = VK_NULL_HANDLE;
+        return VK_NULL_HANDLE;
     }
 
     std::string iconPath = "Interface\\Icons\\" + iconName + ".blp";
     auto blpData = assetManager_->readFile(iconPath);
     if (blpData.empty()) {
-        iconCache_[displayInfoId] = 0;
-        return 0;
+        iconCache_[displayInfoId] = VK_NULL_HANDLE;
+        return VK_NULL_HANDLE;
     }
 
     auto image = pipeline::BLPLoader::load(blpData);
     if (!image.isValid()) {
-        iconCache_[displayInfoId] = 0;
-        return 0;
+        iconCache_[displayInfoId] = VK_NULL_HANDLE;
+        return VK_NULL_HANDLE;
     }
 
-    GLuint texId = 0;
-    glGenTextures(1, &texId);
-    glBindTexture(GL_TEXTURE_2D, texId);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, image.width, image.height, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, image.data.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    // Upload to Vulkan via VkContext
+    auto* window = core::Application::getInstance().getWindow();
+    auto* vkCtx = window ? window->getVkContext() : nullptr;
+    if (!vkCtx) {
+        iconCache_[displayInfoId] = VK_NULL_HANDLE;
+        return VK_NULL_HANDLE;
+    }
 
-    iconCache_[displayInfoId] = texId;
-    return texId;
+    VkDescriptorSet ds = vkCtx->uploadImGuiTexture(image.data.data(), image.width, image.height);
+    iconCache_[displayInfoId] = ds;
+    return ds;
 }
 
 // ============================================================
@@ -507,7 +503,7 @@ void InventoryScreen::renderHeldItem() {
     ImU32 borderCol = ImGui::ColorConvertFloat4ToU32(qColor);
 
     // Try to show icon
-    GLuint iconTex = getItemIcon(heldItem.displayInfoId);
+    VkDescriptorSet iconTex = getItemIcon(heldItem.displayInfoId);
     if (iconTex) {
         drawList->AddImage((ImTextureID)(uintptr_t)iconTex, pos,
                            ImVec2(pos.x + size, pos.y + size));
@@ -1351,7 +1347,7 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
         }
 
         // Try to show icon
-        GLuint iconTex = getItemIcon(item.displayInfoId);
+        VkDescriptorSet iconTex = getItemIcon(item.displayInfoId);
         if (iconTex) {
             drawList->AddImage((ImTextureID)(uintptr_t)iconTex, pos,
                                ImVec2(pos.x + size, pos.y + size));
@@ -1559,7 +1555,7 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
         if (const game::ItemSlot* eq = findComparableEquipped(*inventory, item.inventoryType)) {
             ImGui::Separator();
             ImGui::TextDisabled("Equipped:");
-            GLuint eqIcon = getItemIcon(eq->item.displayInfoId);
+            VkDescriptorSet eqIcon = getItemIcon(eq->item.displayInfoId);
             if (eqIcon) {
                 ImGui::Image((ImTextureID)(uintptr_t)eqIcon, ImVec2(18.0f, 18.0f));
                 ImGui::SameLine();

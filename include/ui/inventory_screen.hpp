@@ -3,7 +3,7 @@
 #include "game/inventory.hpp"
 #include "game/character.hpp"
 #include "game/world_packets.hpp"
-#include <GL/glew.h>
+#include <vulkan/vulkan.h>
 #include <imgui.h>
 #include <array>
 #include <functional>
@@ -93,9 +93,9 @@ private:
     pipeline::AssetManager* assetManager_ = nullptr;
 
     // Item icon cache: displayInfoId -> GL texture
-    std::unordered_map<uint32_t, GLuint> iconCache_;
+    std::unordered_map<uint32_t, VkDescriptorSet> iconCache_;
 public:
-    GLuint getItemIcon(uint32_t displayInfoId);
+    VkDescriptorSet getItemIcon(uint32_t displayInfoId);
 private:
 
     // Character model preview

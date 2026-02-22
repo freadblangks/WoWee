@@ -76,6 +76,12 @@ public:
     void setMsaaSamples(VkSampleCountFlagBits samples);
     VkSampleCountFlagBits getMaxUsableSampleCount() const;
 
+    // UI texture upload: creates a Vulkan texture from RGBA data and returns
+    // a VkDescriptorSet suitable for use as ImTextureID.
+    // The caller does NOT need to free the result — resources are tracked and
+    // cleaned up when the VkContext is destroyed.
+    VkDescriptorSet uploadImGuiTexture(const uint8_t* rgba, int width, int height);
+
 private:
     bool createInstance(SDL_Window* window);
     bool createSurface(SDL_Window* window);
@@ -143,6 +149,17 @@ private:
     // ImGui resources
     VkRenderPass imguiRenderPass = VK_NULL_HANDLE;
     VkDescriptorPool imguiDescriptorPool = VK_NULL_HANDLE;
+
+    // Shared sampler for UI textures (created on first uploadImGuiTexture call)
+    VkSampler uiTextureSampler_ = VK_NULL_HANDLE;
+
+    // Tracked UI textures for cleanup
+    struct UiTexture {
+        VkImage image;
+        VkDeviceMemory memory;
+        VkImageView view;
+    };
+    std::vector<UiTexture> uiTextures_;
 
 #ifndef NDEBUG
     bool enableValidation = true;

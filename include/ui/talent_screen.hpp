@@ -2,7 +2,7 @@
 
 #include "game/game_handler.hpp"
 #include <imgui.h>
-#include <GL/glew.h>
+#include <vulkan/vulkan.h>
 #include <unordered_map>
 #include <string>
 
@@ -25,7 +25,7 @@ private:
 
     void loadSpellDBC(pipeline::AssetManager* assetManager);
     void loadSpellIconDBC(pipeline::AssetManager* assetManager);
-    GLuint getSpellIcon(uint32_t iconId, pipeline::AssetManager* assetManager);
+    VkDescriptorSet getSpellIcon(uint32_t iconId, pipeline::AssetManager* assetManager);
 
     bool open = false;
     bool nKeyWasDown = false;
@@ -35,7 +35,7 @@ private:
     bool iconDbcLoaded = false;
     std::unordered_map<uint32_t, uint32_t> spellIconIds;  // spellId -> iconId
     std::unordered_map<uint32_t, std::string> spellIconPaths;  // iconId -> path
-    std::unordered_map<uint32_t, GLuint> spellIconCache;  // iconId -> texture
+    std::unordered_map<uint32_t, VkDescriptorSet> spellIconCache;  // iconId -> texture
     std::unordered_map<uint32_t, std::string> spellTooltips;  // spellId -> description
 };
 

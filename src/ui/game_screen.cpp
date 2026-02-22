@@ -1,5 +1,6 @@
 #include "ui/game_screen.hpp"
 #include "rendering/character_preview.hpp"
+#include "rendering/vk_context.hpp"
 #include "core/application.hpp"
 #include "core/coordinates.hpp"
 #include "core/spawn_presets.hpp"
@@ -854,7 +855,7 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
             if (const auto* eq = findComparableEquipped(static_cast<uint8_t>(info->inventoryType))) {
                 ImGui::Separator();
                 ImGui::TextDisabled("Equipped:");
-                GLuint eqIcon = inventoryScreen.getItemIcon(eq->item.displayInfoId);
+                VkDescriptorSet eqIcon = inventoryScreen.getItemIcon(eq->item.displayInfoId);
                 if (eqIcon) {
                     ImGui::Image((ImTextureID)(uintptr_t)eqIcon, ImVec2(18.0f, 18.0f));
                     ImGui::SameLine();
@@ -3217,8 +3218,8 @@ void GameScreen::renderWorldMap(game::GameHandler& gameHandler) {
 // Action Bar (Phase 3)
 // ============================================================
 
-GLuint GameScreen::getSpellIcon(uint32_t spellId, pipeline::AssetManager* am) {
-    if (spellId == 0 || !am) return 0;
+VkDescriptorSet GameScreen::getSpellIcon(uint32_t spellId, pipeline::AssetManager* am) {
+    if (spellId == 0 || !am) return VK_NULL_HANDLE;
 
     // Check cache first
     auto cit = spellIconCache_.find(spellId);
@@ -3276,43 +3277,41 @@ GLuint GameScreen::getSpellIcon(uint32_t spellId, pipeline::AssetManager* am) {
     // Look up spellId -> SpellIconID -> icon path
     auto iit = spellIconIds_.find(spellId);
     if (iit == spellIconIds_.end()) {
-        spellIconCache_[spellId] = 0;
-        return 0;
+        spellIconCache_[spellId] = VK_NULL_HANDLE;
+        return VK_NULL_HANDLE;
     }
 
     auto pit = spellIconPaths_.find(iit->second);
     if (pit == spellIconPaths_.end()) {
-        spellIconCache_[spellId] = 0;
-        return 0;
+        spellIconCache_[spellId] = VK_NULL_HANDLE;
+        return VK_NULL_HANDLE;
     }
 
     // Path from DBC has no extension — append .blp
     std::string iconPath = pit->second + ".blp";
     auto blpData = am->readFile(iconPath);
     if (blpData.empty()) {
-        spellIconCache_[spellId] = 0;
-        return 0;
+        spellIconCache_[spellId] = VK_NULL_HANDLE;
+        return VK_NULL_HANDLE;
     }
 
     auto image = pipeline::BLPLoader::load(blpData);
     if (!image.isValid()) {
-        spellIconCache_[spellId] = 0;
-        return 0;
+        spellIconCache_[spellId] = VK_NULL_HANDLE;
+        return VK_NULL_HANDLE;
     }
 
-    GLuint texId = 0;
-    glGenTextures(1, &texId);
-    glBindTexture(GL_TEXTURE_2D, texId);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, image.width, image.height, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, image.data.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    // Upload to Vulkan via VkContext
+    auto* window = core::Application::getInstance().getWindow();
+    auto* vkCtx = window ? window->getVkContext() : nullptr;
+    if (!vkCtx) {
+        spellIconCache_[spellId] = VK_NULL_HANDLE;
+        return VK_NULL_HANDLE;
+    }
 
-    spellIconCache_[spellId] = texId;
-    return texId;
+    VkDescriptorSet ds = vkCtx->uploadImGuiTexture(image.data.data(), image.width, image.height);
+    spellIconCache_[spellId] = ds;
+    return ds;
 }
 
 void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
@@ -3362,7 +3361,7 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
             };
 
             // Try to get icon texture for this slot
-            GLuint iconTex = 0;
+            VkDescriptorSet iconTex = VK_NULL_HANDLE;
             const game::ItemDef* barItemDef = nullptr;
             uint32_t itemDisplayInfoId = 0;
             std::string itemNameFromQuery;
@@ -3655,22 +3654,17 @@ void GameScreen::renderBagBar(game::GameHandler& gameHandler) {
             if (!blpData.empty()) {
                 auto image = pipeline::BLPLoader::load(blpData);
                 if (image.isValid()) {
-                    glGenTextures(1, &backpackIconTexture_);
-                    glBindTexture(GL_TEXTURE_2D, backpackIconTexture_);
-                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, image.width, image.height, 0,
-                                 GL_RGBA, GL_UNSIGNED_BYTE, image.data.data());
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-                    glBindTexture(GL_TEXTURE_2D, 0);
+                    auto* w = core::Application::getInstance().getWindow();
+                    auto* vkCtx = w ? w->getVkContext() : nullptr;
+                    if (vkCtx)
+                        backpackIconTexture_ = vkCtx->uploadImGuiTexture(image.data.data(), image.width, image.height);
                 }
             }
         }
 
         // Track bag slot screen rects for drop detection
         ImVec2 bagSlotMins[4], bagSlotMaxs[4];
-        GLuint bagIcons[4] = {};
+        VkDescriptorSet bagIcons[4] = {};
 
         // Slots 1-4: Bag slots (leftmost)
         for (int i = 0; i < 4; ++i) {
@@ -3680,7 +3674,7 @@ void GameScreen::renderBagBar(game::GameHandler& gameHandler) {
             game::EquipSlot bagSlot = static_cast<game::EquipSlot>(static_cast<int>(game::EquipSlot::BAG1) + i);
             const auto& bagItem = inv.getEquipSlot(bagSlot);
 
-            GLuint bagIcon = 0;
+            VkDescriptorSet bagIcon = VK_NULL_HANDLE;
             if (!bagItem.empty() && bagItem.item.displayInfoId != 0) {
                 bagIcon = inventoryScreen.getItemIcon(bagItem.item.displayInfoId);
             }
@@ -3844,7 +3838,7 @@ void GameScreen::renderBagBar(game::GameHandler& gameHandler) {
         auto pickedEquip = static_cast<game::EquipSlot>(
             static_cast<int>(game::EquipSlot::BAG1) + bagBarPickedSlot_);
         const auto& pickedItem = inv2.getEquipSlot(pickedEquip);
-        GLuint pickedIcon = 0;
+        VkDescriptorSet pickedIcon = VK_NULL_HANDLE;
         if (!pickedItem.empty() && pickedItem.item.displayInfoId != 0) {
             pickedIcon = inventoryScreen.getItemIcon(pickedItem.item.displayInfoId);
         }
@@ -4429,7 +4423,7 @@ void GameScreen::renderBuffBar(game::GameHandler& gameHandler) {
             ImVec4 borderColor = isBuff ? ImVec4(0.2f, 0.8f, 0.2f, 0.9f) : ImVec4(0.8f, 0.2f, 0.2f, 0.9f);
 
             // Try to get spell icon
-            GLuint iconTex = 0;
+            VkDescriptorSet iconTex = VK_NULL_HANDLE;
             if (assetMgr) {
                 iconTex = getSpellIcon(aura.spellId, assetMgr);
             }
@@ -4534,7 +4528,7 @@ void GameScreen::renderLootWindow(game::GameHandler& gameHandler) {
             // Get item icon
             uint32_t displayId = item.displayInfoId;
             if (displayId == 0 && info) displayId = info->displayInfoId;
-            GLuint iconTex = inventoryScreen.getItemIcon(displayId);
+            VkDescriptorSet iconTex = inventoryScreen.getItemIcon(displayId);
 
             ImVec2 cursor = ImGui::GetCursorScreenPos();
             float rowH = std::max(iconSize, ImGui::GetTextLineHeight() * 2.0f);
@@ -4963,7 +4957,7 @@ void GameScreen::renderQuestOfferRewardWindow(game::GameHandler& gameHandler) {
                 bool selected = (selectedChoice == static_cast<int>(i));
 
                 // Get item icon if we have displayInfoId
-                uint32_t iconTex = 0;
+                VkDescriptorSet iconTex = VK_NULL_HANDLE;
                 if (info && info->valid && info->displayInfoId != 0) {
                     iconTex = inventoryScreen.getItemIcon(info->displayInfoId);
                 }

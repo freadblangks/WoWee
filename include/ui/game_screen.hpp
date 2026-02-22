@@ -8,7 +8,7 @@
 #include "ui/quest_log_screen.hpp"
 #include "ui/spellbook_screen.hpp"
 #include "ui/talent_screen.hpp"
-#include <GL/glew.h>
+#include <vulkan/vulkan.h>
 #include <imgui.h>
 #include <string>
 #include <unordered_map>
@@ -217,21 +217,21 @@ private:
     // WorldMap is now owned by Renderer (accessed via renderer->getWorldMap())
 
     // Spell icon cache: spellId -> GL texture ID
-    std::unordered_map<uint32_t, GLuint> spellIconCache_;
+    std::unordered_map<uint32_t, VkDescriptorSet> spellIconCache_;
     // SpellIconID -> icon path (from SpellIcon.dbc)
     std::unordered_map<uint32_t, std::string> spellIconPaths_;
     // SpellID -> SpellIconID (from Spell.dbc field 133)
     std::unordered_map<uint32_t, uint32_t> spellIconIds_;
     bool spellIconDbLoaded_ = false;
-    GLuint getSpellIcon(uint32_t spellId, pipeline::AssetManager* am);
+    VkDescriptorSet getSpellIcon(uint32_t spellId, pipeline::AssetManager* am);
 
     // Action bar drag state (-1 = not dragging)
     int actionBarDragSlot_ = -1;
-    GLuint actionBarDragIcon_ = 0;
+    VkDescriptorSet actionBarDragIcon_ = VK_NULL_HANDLE;
 
     // Bag bar state
-    GLuint backpackIconTexture_ = 0;
-    GLuint emptyBagSlotTexture_ = 0;
+    VkDescriptorSet backpackIconTexture_ = VK_NULL_HANDLE;
+    VkDescriptorSet emptyBagSlotTexture_ = VK_NULL_HANDLE;
     int bagBarPickedSlot_ = -1;   // Visual drag in progress (-1 = none)
     int bagBarDragSource_ = -1;   // Mouse pressed on this slot, waiting for drag or click (-1 = none)
 

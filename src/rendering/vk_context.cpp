@@ -3,6 +3,7 @@
 #include "core/logger.hpp"
 #include <VkBootstrap.h>
 #include <SDL2/SDL_vulkan.h>
+#include <imgui_impl_vulkan.h>
 #include <algorithm>
 #include <cstring>
 
@@ -639,6 +640,18 @@ bool VkContext::createImGuiResources() {
 }
 
 void VkContext::destroyImGuiResources() {
+    // Destroy uploaded UI textures
+    for (auto& tex : uiTextures_) {
+        if (tex.view) vkDestroyImageView(device, tex.view, nullptr);
+        if (tex.image) vkDestroyImage(device, tex.image, nullptr);
+        if (tex.memory) vkFreeMemory(device, tex.memory, nullptr);
+    }
+    uiTextures_.clear();
+    if (uiTextureSampler_) {
+        vkDestroySampler(device, uiTextureSampler_, nullptr);
+        uiTextureSampler_ = VK_NULL_HANDLE;
+    }
+
     if (imguiDescriptorPool) {
         vkDestroyDescriptorPool(device, imguiDescriptorPool, nullptr);
         imguiDescriptorPool = VK_NULL_HANDLE;
@@ -650,6 +663,167 @@ void VkContext::destroyImGuiResources() {
         vkDestroyRenderPass(device, imguiRenderPass, nullptr);
         imguiRenderPass = VK_NULL_HANDLE;
     }
+}
+
+static uint32_t findMemType(VkPhysicalDevice physDev, uint32_t typeFilter, VkMemoryPropertyFlags props) {
+    VkPhysicalDeviceMemoryProperties memProps;
+    vkGetPhysicalDeviceMemoryProperties(physDev, &memProps);
+    for (uint32_t i = 0; i < memProps.memoryTypeCount; i++) {
+        if ((typeFilter & (1 << i)) && (memProps.memoryTypes[i].propertyFlags & props) == props)
+            return i;
+    }
+    return 0;
+}
+
+VkDescriptorSet VkContext::uploadImGuiTexture(const uint8_t* rgba, int width, int height) {
+    if (!device || !physicalDevice || width <= 0 || height <= 0 || !rgba)
+        return VK_NULL_HANDLE;
+
+    VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * 4;
+
+    // Create shared sampler on first call
+    if (!uiTextureSampler_) {
+        VkSamplerCreateInfo si{};
+        si.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        si.magFilter = VK_FILTER_LINEAR;
+        si.minFilter = VK_FILTER_LINEAR;
+        si.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        si.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        if (vkCreateSampler(device, &si, nullptr, &uiTextureSampler_) != VK_SUCCESS) {
+            LOG_ERROR("Failed to create UI texture sampler");
+            return VK_NULL_HANDLE;
+        }
+    }
+
+    // Staging buffer
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingMemory;
+    {
+        VkBufferCreateInfo bufInfo{};
+        bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufInfo.size = imageSize;
+        bufInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        if (vkCreateBuffer(device, &bufInfo, nullptr, &stagingBuffer) != VK_SUCCESS)
+            return VK_NULL_HANDLE;
+
+        VkMemoryRequirements memReqs;
+        vkGetBufferMemoryRequirements(device, stagingBuffer, &memReqs);
+
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memReqs.size;
+        allocInfo.memoryTypeIndex = findMemType(physicalDevice, memReqs.memoryTypeBits,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        if (vkAllocateMemory(device, &allocInfo, nullptr, &stagingMemory) != VK_SUCCESS) {
+            vkDestroyBuffer(device, stagingBuffer, nullptr);
+            return VK_NULL_HANDLE;
+        }
+        vkBindBufferMemory(device, stagingBuffer, stagingMemory, 0);
+
+        void* mapped;
+        vkMapMemory(device, stagingMemory, 0, imageSize, 0, &mapped);
+        memcpy(mapped, rgba, imageSize);
+        vkUnmapMemory(device, stagingMemory);
+    }
+
+    // Create image
+    VkImage image;
+    VkDeviceMemory imageMemory;
+    {
+        VkImageCreateInfo imgInfo{};
+        imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imgInfo.imageType = VK_IMAGE_TYPE_2D;
+        imgInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+        imgInfo.extent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1};
+        imgInfo.mipLevels = 1;
+        imgInfo.arrayLayers = 1;
+        imgInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        imgInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        imgInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        imgInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        imgInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        if (vkCreateImage(device, &imgInfo, nullptr, &image) != VK_SUCCESS) {
+            vkDestroyBuffer(device, stagingBuffer, nullptr);
+            vkFreeMemory(device, stagingMemory, nullptr);
+            return VK_NULL_HANDLE;
+        }
+
+        VkMemoryRequirements memReqs;
+        vkGetImageMemoryRequirements(device, image, &memReqs);
+
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memReqs.size;
+        allocInfo.memoryTypeIndex = findMemType(physicalDevice, memReqs.memoryTypeBits,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        if (vkAllocateMemory(device, &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
+            vkDestroyImage(device, image, nullptr);
+            vkDestroyBuffer(device, stagingBuffer, nullptr);
+            vkFreeMemory(device, stagingMemory, nullptr);
+            return VK_NULL_HANDLE;
+        }
+        vkBindImageMemory(device, image, imageMemory, 0);
+    }
+
+    // Upload via immediate submit
+    immediateSubmit([&](VkCommandBuffer cmd) {
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = image;
+        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+        VkBufferImageCopy region{};
+        region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        region.imageExtent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1};
+        vkCmdCopyBufferToImage(cmd, stagingBuffer, image,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+    });
+
+    // Cleanup staging
+    vkDestroyBuffer(device, stagingBuffer, nullptr);
+    vkFreeMemory(device, stagingMemory, nullptr);
+
+    // Create image view
+    VkImageView imageView;
+    {
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image = image;
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+        viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        if (vkCreateImageView(device, &viewInfo, nullptr, &imageView) != VK_SUCCESS) {
+            vkDestroyImage(device, image, nullptr);
+            vkFreeMemory(device, imageMemory, nullptr);
+            return VK_NULL_HANDLE;
+        }
+    }
+
+    // Register with ImGui
+    VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(uiTextureSampler_, imageView,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    // Track for cleanup
+    uiTextures_.push_back({image, imageMemory, imageView});
+
+    return ds;
 }
 
 bool VkContext::recreateSwapchain(int width, int height) {

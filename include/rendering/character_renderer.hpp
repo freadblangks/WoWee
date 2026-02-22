@@ -58,7 +58,8 @@ public:
     void update(float deltaTime, const glm::vec3& cameraPos = glm::vec3(0.0f));
 
     void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera);
-    void renderShadow(VkCommandBuffer cmd, VkDescriptorSet perFrameSet);
+    bool initializeShadow(VkRenderPass shadowRenderPass);
+    void renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMatrix);
 
     void setInstancePosition(uint32_t instanceId, const glm::vec3& position);
     void setInstanceRotation(uint32_t instanceId, const glm::vec3& rotation);
@@ -261,6 +262,15 @@ private:
 
     // Maximum bones supported
     static constexpr int MAX_BONES = 240;
+
+    // Shadow pipeline resources
+    VkPipeline shadowPipeline_ = VK_NULL_HANDLE;
+    VkPipelineLayout shadowPipelineLayout_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout shadowParamsLayout_ = VK_NULL_HANDLE;
+    VkDescriptorPool shadowParamsPool_ = VK_NULL_HANDLE;
+    VkDescriptorSet shadowParamsSet_ = VK_NULL_HANDLE;
+    VkBuffer shadowParamsUBO_ = VK_NULL_HANDLE;
+    VmaAllocation shadowParamsAlloc_ = VK_NULL_HANDLE;
 };
 
 } // namespace rendering

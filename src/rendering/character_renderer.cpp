@@ -299,6 +299,13 @@ void CharacterRenderer::shutdown() {
     if (materialSetLayout_) { vkDestroyDescriptorSetLayout(device, materialSetLayout_, nullptr); materialSetLayout_ = VK_NULL_HANDLE; }
     if (boneSetLayout_) { vkDestroyDescriptorSetLayout(device, boneSetLayout_, nullptr); boneSetLayout_ = VK_NULL_HANDLE; }
 
+    // Shadow resources
+    if (shadowPipeline_) { vkDestroyPipeline(device, shadowPipeline_, nullptr); shadowPipeline_ = VK_NULL_HANDLE; }
+    if (shadowPipelineLayout_) { vkDestroyPipelineLayout(device, shadowPipelineLayout_, nullptr); shadowPipelineLayout_ = VK_NULL_HANDLE; }
+    if (shadowParamsPool_) { vkDestroyDescriptorPool(device, shadowParamsPool_, nullptr); shadowParamsPool_ = VK_NULL_HANDLE; }
+    if (shadowParamsLayout_) { vkDestroyDescriptorSetLayout(device, shadowParamsLayout_, nullptr); shadowParamsLayout_ = VK_NULL_HANDLE; }
+    if (shadowParamsUBO_) { vmaDestroyBuffer(alloc, shadowParamsUBO_, shadowParamsAlloc_); shadowParamsUBO_ = VK_NULL_HANDLE; shadowParamsAlloc_ = VK_NULL_HANDLE; }
+
     vkCtx_ = nullptr;
 }
 
@@ -1791,10 +1798,262 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
     }
 }
 
-void CharacterRenderer::renderShadow(VkCommandBuffer cmd, VkDescriptorSet perFrameSet) {
-    // Phase 6 stub -- shadow rendering will be implemented with shadow pipeline
-    (void)cmd;
-    (void)perFrameSet;
+bool CharacterRenderer::initializeShadow(VkRenderPass shadowRenderPass) {
+    if (!vkCtx_ || shadowRenderPass == VK_NULL_HANDLE) return false;
+    VkDevice device = vkCtx_->getDevice();
+
+    // ShadowCharParams UBO (matches character_shadow.frag.glsl set=1 binding=1)
+    struct ShadowCharParams {
+        int32_t alphaTest = 0;
+        int32_t colorKeyBlack = 0;
+    };
+
+    // Create ShadowCharParams UBO
+    VkBufferCreateInfo bufCI{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bufCI.size = sizeof(ShadowCharParams);
+    bufCI.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    VmaAllocationCreateInfo allocCI{};
+    allocCI.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    allocCI.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    VmaAllocationInfo allocInfo{};
+    if (vmaCreateBuffer(vkCtx_->getAllocator(), &bufCI, &allocCI,
+            &shadowParamsUBO_, &shadowParamsAlloc_, &allocInfo) != VK_SUCCESS) {
+        LOG_ERROR("CharacterRenderer: failed to create shadow params UBO");
+        return false;
+    }
+    ShadowCharParams defaultParams{};
+    std::memcpy(allocInfo.pMappedData, &defaultParams, sizeof(defaultParams));
+
+    // Descriptor set layout for set 1: binding 0 = sampler2D, binding 1 = ShadowCharParams UBO
+    VkDescriptorSetLayoutBinding layoutBindings[2]{};
+    layoutBindings[0].binding = 0;
+    layoutBindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    layoutBindings[0].descriptorCount = 1;
+    layoutBindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    layoutBindings[1].binding = 1;
+    layoutBindings[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    layoutBindings[1].descriptorCount = 1;
+    layoutBindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    VkDescriptorSetLayoutCreateInfo layoutCI{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+    layoutCI.bindingCount = 2;
+    layoutCI.pBindings = layoutBindings;
+    if (vkCreateDescriptorSetLayout(device, &layoutCI, nullptr, &shadowParamsLayout_) != VK_SUCCESS) {
+        LOG_ERROR("CharacterRenderer: failed to create shadow params layout");
+        return false;
+    }
+
+    // Descriptor pool (1 set)
+    VkDescriptorPoolSize poolSizes[2]{};
+    poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[0].descriptorCount = 1;
+    poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSizes[1].descriptorCount = 1;
+    VkDescriptorPoolCreateInfo poolCI{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+    poolCI.maxSets = 1;
+    poolCI.poolSizeCount = 2;
+    poolCI.pPoolSizes = poolSizes;
+    if (vkCreateDescriptorPool(device, &poolCI, nullptr, &shadowParamsPool_) != VK_SUCCESS) {
+        LOG_ERROR("CharacterRenderer: failed to create shadow params pool");
+        return false;
+    }
+
+    // Allocate descriptor set
+    VkDescriptorSetAllocateInfo setAlloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    setAlloc.descriptorPool = shadowParamsPool_;
+    setAlloc.descriptorSetCount = 1;
+    setAlloc.pSetLayouts = &shadowParamsLayout_;
+    if (vkAllocateDescriptorSets(device, &setAlloc, &shadowParamsSet_) != VK_SUCCESS) {
+        LOG_ERROR("CharacterRenderer: failed to allocate shadow params set");
+        return false;
+    }
+
+    // Write descriptors (white dummy texture + ShadowCharParams UBO)
+    VkDescriptorImageInfo imgInfo{};
+    imgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    imgInfo.imageView = whiteTexture_->getImageView();
+    imgInfo.sampler = whiteTexture_->getSampler();
+    VkDescriptorBufferInfo bufInfo{};
+    bufInfo.buffer = shadowParamsUBO_;
+    bufInfo.offset = 0;
+    bufInfo.range = sizeof(ShadowCharParams);
+    VkWriteDescriptorSet writes[2]{};
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = shadowParamsSet_;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorCount = 1;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[0].pImageInfo = &imgInfo;
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = shadowParamsSet_;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorCount = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[1].pBufferInfo = &bufInfo;
+    vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+
+    // Pipeline layout: set 0 = perFrameLayout_ (dummy), set 1 = shadowParamsLayout_, set 2 = boneSetLayout_
+    // Push constant: 128 bytes (lightSpaceMatrix + model), VERTEX stage
+    VkDescriptorSetLayout setLayouts[] = {perFrameLayout_, shadowParamsLayout_, boneSetLayout_};
+    VkPushConstantRange pc{};
+    pc.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pc.offset = 0;
+    pc.size = 128;
+    VkPipelineLayoutCreateInfo plCI{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    plCI.setLayoutCount = 3;
+    plCI.pSetLayouts = setLayouts;
+    plCI.pushConstantRangeCount = 1;
+    plCI.pPushConstantRanges = &pc;
+    if (vkCreatePipelineLayout(device, &plCI, nullptr, &shadowPipelineLayout_) != VK_SUCCESS) {
+        LOG_ERROR("CharacterRenderer: failed to create shadow pipeline layout");
+        return false;
+    }
+
+    // Load character shadow shaders
+    VkShaderModule vertShader, fragShader;
+    if (!vertShader.loadFromFile(device, "assets/shaders/character_shadow.vert.spv")) {
+        LOG_ERROR("CharacterRenderer: failed to load character_shadow.vert.spv");
+        return false;
+    }
+    if (!fragShader.loadFromFile(device, "assets/shaders/character_shadow.frag.spv")) {
+        LOG_ERROR("CharacterRenderer: failed to load character_shadow.frag.spv");
+        vertShader.destroy();
+        return false;
+    }
+
+    // Character vertex format (M2Vertex): stride = 48 bytes
+    // loc 0: vec3 aPos          (R32G32B32_SFLOAT, offset 0)
+    // loc 1: vec4 aBoneWeights  (R8G8B8A8_UNORM,   offset 12)
+    // loc 2: ivec4 aBoneIndices (R8G8B8A8_UINT,    offset 16)
+    // loc 3: vec2 aTexCoord     (R32G32_SFLOAT,    offset 32)
+    VkVertexInputBindingDescription vertBind{};
+    vertBind.binding = 0;
+    vertBind.stride = static_cast<uint32_t>(sizeof(pipeline::M2Vertex));
+    vertBind.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    std::vector<VkVertexInputAttributeDescription> vertAttrs = {
+        {0, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<uint32_t>(offsetof(pipeline::M2Vertex, position))},
+        {1, 0, VK_FORMAT_R8G8B8A8_UNORM,   static_cast<uint32_t>(offsetof(pipeline::M2Vertex, boneWeights))},
+        {2, 0, VK_FORMAT_R8G8B8A8_UINT,    static_cast<uint32_t>(offsetof(pipeline::M2Vertex, boneIndices))},
+        {3, 0, VK_FORMAT_R32G32_SFLOAT,    static_cast<uint32_t>(offsetof(pipeline::M2Vertex, texCoords))},
+    };
+
+    shadowPipeline_ = PipelineBuilder()
+        .setShaders(vertShader.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                    fragShader.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+        .setVertexInput({vertBind}, vertAttrs)
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT)
+        .setDepthTest(true, true, VK_COMPARE_OP_LESS_OR_EQUAL)
+        .setDepthBias(2.0f, 4.0f)
+        .setNoColorAttachment()
+        .setLayout(shadowPipelineLayout_)
+        .setRenderPass(shadowRenderPass)
+        .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
+        .build(device);
+
+    vertShader.destroy();
+    fragShader.destroy();
+
+    if (!shadowPipeline_) {
+        LOG_ERROR("CharacterRenderer: failed to create shadow pipeline");
+        return false;
+    }
+    LOG_INFO("CharacterRenderer shadow pipeline initialized");
+    return true;
+}
+
+void CharacterRenderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMatrix) {
+    if (!shadowPipeline_ || !shadowParamsSet_) return;
+    if (instances.empty() || models.empty()) return;
+
+    uint32_t frameIndex = vkCtx_->getCurrentFrame();
+    VkDevice device = vkCtx_->getDevice();
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline_);
+    // Bind shadow params set at set 1
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipelineLayout_,
+        1, 1, &shadowParamsSet_, 0, nullptr);
+
+    struct ShadowPush { glm::mat4 lightSpaceMatrix; glm::mat4 model; };
+
+    for (auto& pair : instances) {
+        auto& inst = pair.second;
+        if (!inst.visible) continue;
+
+        auto modelIt = models.find(inst.modelId);
+        if (modelIt == models.end()) continue;
+        const M2ModelGPU& gpuModel = modelIt->second;
+        if (!gpuModel.vertexBuffer) continue;
+
+        glm::mat4 modelMat = inst.hasOverrideModelMatrix
+            ? inst.overrideModelMatrix
+            : getModelMatrix(inst);
+
+        // Ensure bone SSBO is allocated and upload bone matrices
+        int numBones = std::min(static_cast<int>(inst.boneMatrices.size()), MAX_BONES);
+        if (numBones > 0) {
+            if (!inst.boneBuffer[frameIndex]) {
+                VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+                bci.size = MAX_BONES * sizeof(glm::mat4);
+                bci.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+                VmaAllocationCreateInfo aci{};
+                aci.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+                aci.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+                VmaAllocationInfo ai{};
+                vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci,
+                    &inst.boneBuffer[frameIndex], &inst.boneAlloc[frameIndex], &ai);
+                inst.boneMapped[frameIndex] = ai.pMappedData;
+
+                VkDescriptorSetAllocateInfo dsAI{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+                dsAI.descriptorPool = boneDescPool_;
+                dsAI.descriptorSetCount = 1;
+                dsAI.pSetLayouts = &boneSetLayout_;
+                vkAllocateDescriptorSets(device, &dsAI, &inst.boneSet[frameIndex]);
+
+                if (inst.boneSet[frameIndex]) {
+                    VkDescriptorBufferInfo bInfo{};
+                    bInfo.buffer = inst.boneBuffer[frameIndex];
+                    bInfo.offset = 0;
+                    bInfo.range = bci.size;
+                    VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+                    w.dstSet = inst.boneSet[frameIndex];
+                    w.dstBinding = 0;
+                    w.descriptorCount = 1;
+                    w.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                    w.pBufferInfo = &bInfo;
+                    vkUpdateDescriptorSets(device, 1, &w, 0, nullptr);
+                }
+            }
+            if (inst.boneMapped[frameIndex]) {
+                memcpy(inst.boneMapped[frameIndex], inst.boneMatrices.data(),
+                       numBones * sizeof(glm::mat4));
+            }
+        }
+
+        if (!inst.boneSet[frameIndex]) continue;
+
+        // Bind bone SSBO at set 2
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipelineLayout_,
+            2, 1, &inst.boneSet[frameIndex], 0, nullptr);
+
+        ShadowPush push{lightSpaceMatrix, modelMat};
+        vkCmdPushConstants(cmd, shadowPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, 128, &push);
+
+        VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &gpuModel.vertexBuffer, &offset);
+        vkCmdBindIndexBuffer(cmd, gpuModel.indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+
+        bool applyGeosetFilter = !inst.activeGeosets.empty();
+        for (const auto& batch : gpuModel.data.batches) {
+            uint16_t blendMode = 0;
+            if (batch.materialIndex < gpuModel.data.materials.size()) {
+                blendMode = gpuModel.data.materials[batch.materialIndex].blendMode;
+            }
+            if (blendMode >= 2) continue; // skip transparent
+            if (applyGeosetFilter &&
+                inst.activeGeosets.find(batch.submeshId) == inst.activeGeosets.end()) continue;
+            vkCmdDrawIndexed(cmd, batch.indexCount, 1, batch.indexStart, 0, 0);
+        }
+    }
 }
 
 glm::mat4 CharacterRenderer::getModelMatrix(const CharacterInstance& instance) const {

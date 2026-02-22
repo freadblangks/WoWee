@@ -3321,7 +3321,7 @@ bool Renderer::loadTestTerrain(pipeline::AssetManager* assetManager, const std::
         wmoRenderer->initialize(vkCtx, perFrameSetLayout, assetManager);
     }
 
-    // Initialize shadow pipelines (Phase 7)
+    // Initialize shadow pipelines (Phase 7/8)
     if (wmoRenderer && shadowRenderPass != VK_NULL_HANDLE) {
         wmoRenderer->initializeShadow(shadowRenderPass);
     }
@@ -3331,6 +3331,9 @@ bool Renderer::loadTestTerrain(pipeline::AssetManager* assetManager, const std::
     if (!characterRenderer) {
         characterRenderer = std::make_unique<CharacterRenderer>();
         characterRenderer->initialize(vkCtx, perFrameSetLayout, assetManager);
+    }
+    if (characterRenderer && shadowRenderPass != VK_NULL_HANDLE) {
+        characterRenderer->initializeShadow(shadowRenderPass);
     }
 
     // Create and initialize terrain manager
@@ -3774,12 +3777,15 @@ void Renderer::renderShadowPass() {
     VkRect2D sc{{0, 0}, {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE}};
     vkCmdSetScissor(currentCmd, 0, 1, &sc);
 
-    // Phase 7: render shadow casters
+    // Phase 7/8: render shadow casters
     if (wmoRenderer) {
         wmoRenderer->renderShadow(currentCmd, lightSpaceMatrix);
     }
     if (m2Renderer) {
         m2Renderer->renderShadow(currentCmd, lightSpaceMatrix);
+    }
+    if (characterRenderer) {
+        characterRenderer->renderShadow(currentCmd, lightSpaceMatrix);
     }
 
     vkCmdEndRenderPass(currentCmd);

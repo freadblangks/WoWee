@@ -1,5 +1,6 @@
 #include "ui/character_screen.hpp"
 #include "rendering/character_preview.hpp"
+#include "rendering/renderer.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "core/application.hpp"
 #include "core/logger.hpp"
@@ -250,6 +251,9 @@ void CharacterScreen::render(game::GameHandler& gameHandler) {
                 if (!previewInitialized_) {
                     LOG_WARNING("CharacterScreen: failed to init CharacterPreview");
                     preview_.reset();
+                } else {
+                    auto* renderer = core::Application::getInstance().getRenderer();
+                    if (renderer) renderer->registerPreview(preview_.get());
                 }
             }
             if (preview_) {
@@ -280,9 +284,10 @@ void CharacterScreen::render(game::GameHandler& gameHandler) {
                     previewEquipHash_ = equipHash;
                 }
 
-                // Drive preview animation and render to its FBO.
+                // Drive preview animation and request composite for next beginFrame.
                 preview_->update(ImGui::GetIO().DeltaTime);
                 preview_->render();
+                preview_->requestComposite();
             }
         }
 
@@ -290,7 +295,7 @@ void CharacterScreen::render(game::GameHandler& gameHandler) {
         ImGui::BeginChild("CharDetails", ImVec2(detailPanelW, listH), true);
 
         // 3D preview portrait
-        if (preview_ && preview_->getTextureId() != 0) {
+        if (preview_ && preview_->getTextureId()) {
             float imgW = ImGui::GetContentRegionAvail().x;
             float imgH = imgW * (static_cast<float>(preview_->getHeight()) /
                                  static_cast<float>(preview_->getWidth()));
@@ -301,14 +306,9 @@ void CharacterScreen::render(game::GameHandler& gameHandler) {
                 imgW = imgH * (static_cast<float>(preview_->getWidth()) /
                                static_cast<float>(preview_->getHeight()));
             }
-            // TODO: Vulkan offscreen preview render target
-            if (preview_->getTextureId()) {
-                ImGui::Image(
-                    static_cast<ImTextureID>(0),
-                    ImVec2(imgW, imgH),
-                    ImVec2(0.0f, 1.0f),
-                    ImVec2(1.0f, 0.0f));
-            }
+            ImGui::Image(
+                reinterpret_cast<ImTextureID>(preview_->getTextureId()),
+                ImVec2(imgW, imgH));
 
             if (ImGui::IsItemHovered() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
                 preview_->rotate(ImGui::GetIO().MouseDelta.x * 0.2f);

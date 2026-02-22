@@ -412,32 +412,37 @@ void PerformanceHUD::render(const Renderer* renderer, const Camera* camera) {
     if (showControls) {
         ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "CONTROLS");
         ImGui::Separator();
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "F1: Toggle HUD");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "F2: Wireframe");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "F3: Single tile");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "F4: Culling");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "F5: Stats");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "F6: Multi-tile");
+
+        ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.5f, 1.0f), "Movement");
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "WASD: Move/Strafe");
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Q/E: Turn left/right");
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Space: Jump");
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "X: Sit/Stand");
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "~: Auto-run");
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Z: Sheathe weapons");
+
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.5f, 1.0f), "UI Panels");
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "B: Bags/Inventory");
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "C: Character sheet");
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "L: Quest log");
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "N: Talents");
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "P: Spellbook");
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "M: World map");
+
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.5f, 1.0f), "Combat & Chat");
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "1-0,-,=: Action bar");
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Tab: Target cycle");
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Enter: Chat");
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "/: Chat command");
+
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.5f, 1.0f), "Debug");
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "F1: Toggle this HUD");
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "F4: Toggle shadows");
         ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "F7: Level-up FX");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "F8: Water");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "F9: Time");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "F10: Sun/Moon");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "F11: Stars");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "F12: Fog");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "+/-: Change time");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "C: Clouds");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "[/]: Density");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "L: Lens Flare");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), ",/.: Intensity");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "M: Moon Cycle");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), ";/': Moon Phase");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "W: Weather");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "</>: Wx Intensity");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "K: Spawn Character");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "J: Remove Chars");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "O: Spawn Test WMO");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Shift+O: Real WMO");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "P: Clear WMOs");
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Esc: Settings/Close");
     }
 
     ImGui::End();

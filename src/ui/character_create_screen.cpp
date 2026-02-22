@@ -1,5 +1,7 @@
 #include "ui/character_create_screen.hpp"
 #include "rendering/character_preview.hpp"
+#include "rendering/renderer.hpp"
+#include "core/application.hpp"
 #include "game/game_handler.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/dbc_layout.hpp"
@@ -128,7 +130,10 @@ void CharacterCreateScreen::initializePreview(pipeline::AssetManager* am) {
     assetManager_ = am;
     if (!preview_) {
         preview_ = std::make_unique<rendering::CharacterPreview>();
-        preview_->initialize(am);
+        if (preview_->initialize(am)) {
+            auto* renderer = core::Application::getInstance().getRenderer();
+            if (renderer) renderer->registerPreview(preview_.get());
+        }
     }
     // Force model reload
     prevRaceIndex_ = -1;
@@ -332,6 +337,7 @@ void CharacterCreateScreen::render(game::GameHandler& /*gameHandler*/) {
     if (preview_) {
         updatePreviewIfNeeded();
         preview_->render();
+        preview_->requestComposite();
     }
 
     ImVec2 displaySize = ImGui::GetIO().DisplaySize;
@@ -363,13 +369,10 @@ void CharacterCreateScreen::render(game::GameHandler& /*gameHandler*/) {
                                static_cast<float>(preview_->getHeight()));
             }
 
-            // TODO: Vulkan offscreen preview render target
             if (preview_->getTextureId()) {
                 ImGui::Image(
-                    static_cast<ImTextureID>(0),
-                    ImVec2(imgW, imgH),
-                    ImVec2(0.0f, 1.0f),
-                    ImVec2(1.0f, 0.0f));
+                    reinterpret_cast<ImTextureID>(preview_->getTextureId()),
+                    ImVec2(imgW, imgH));
             }
 
             // Mouse drag rotation on the preview image

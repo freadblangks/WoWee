@@ -5,6 +5,7 @@
 #include "core/input.hpp"
 #include "rendering/character_preview.hpp"
 #include "rendering/character_renderer.hpp"
+#include "rendering/renderer.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/dbc_loader.hpp"
 #include "pipeline/blp_loader.hpp"
@@ -175,6 +176,8 @@ void InventoryScreen::initPreview() {
             charPreview_.reset();
             return;
         }
+        auto* renderer = core::Application::getInstance().getRenderer();
+        if (renderer) renderer->registerPreview(charPreview_.get());
     }
 
     charPreview_->loadCharacter(playerRace_, playerGender_,
@@ -925,6 +928,7 @@ void InventoryScreen::renderCharacterScreen(game::GameHandler& gameHandler) {
     if (charPreview_ && previewInitialized_) {
         charPreview_->update(ImGui::GetIO().DeltaTime);
         charPreview_->render();
+        charPreview_->requestComposite();
     }
 
     ImGui::SetNextWindowPos(ImVec2(20.0f, 80.0f), ImGuiCond_FirstUseEver);
@@ -1120,9 +1124,8 @@ void InventoryScreen::renderEquipmentPanel(game::Inventory& inventory) {
         // Background for preview area
         drawList->AddRectFilled(pMin, pMax, IM_COL32(13, 13, 25, 255));
         drawList->AddImage(
-            (ImTextureID)(uintptr_t)charPreview_->getTextureId(),
-            pMin, pMax,
-            ImVec2(0, 1), ImVec2(1, 0));  // flip Y for GL
+            reinterpret_cast<ImTextureID>(charPreview_->getTextureId()),
+            pMin, pMax);
         drawList->AddRect(pMin, pMax, IM_COL32(60, 60, 80, 200));
 
         // Drag-to-rotate: detect mouse drag over the preview image

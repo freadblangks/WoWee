@@ -1,7 +1,9 @@
 #include "rendering/character_preview.hpp"
 #include "rendering/character_renderer.hpp"
+#include "rendering/vk_render_target.hpp"
 #include "rendering/vk_texture.hpp"
 #include "rendering/vk_context.hpp"
+#include "rendering/vk_frame_data.hpp"
 #include "rendering/camera.hpp"
 #include "rendering/renderer.hpp"
 #include "pipeline/asset_manager.hpp"
@@ -10,9 +12,12 @@
 #include "pipeline/dbc_layout.hpp"
 #include "core/logger.hpp"
 #include "core/application.hpp"
+#include <imgui.h>
+#include <backends/imgui_impl_vulkan.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 #include <unordered_set>
+#include <cstring>
 
 namespace wowee {
 namespace rendering {
@@ -26,11 +31,34 @@ CharacterPreview::~CharacterPreview() {
 bool CharacterPreview::initialize(pipeline::AssetManager* am) {
     assetManager_ = am;
 
-    charRenderer_ = std::make_unique<CharacterRenderer>();
+    // If already initialized with valid resources, reuse them.
+    // This avoids destroying GPU resources that may still be referenced by
+    // an in-flight command buffer (compositePass recorded earlier this frame).
+    if (renderTarget_ && renderTarget_->isValid() && charRenderer_ && camera_) {
+        // Mark model as not loaded — loadCharacter() will handle instance cleanup
+        modelLoaded_ = false;
+        return true;
+    }
+
     auto* appRenderer = core::Application::getInstance().getRenderer();
-    VkContext* vkCtx = appRenderer ? appRenderer->getVkContext() : nullptr;
+    vkCtx_ = appRenderer ? appRenderer->getVkContext() : nullptr;
     VkDescriptorSetLayout perFrameLayout = appRenderer ? appRenderer->getPerFrameSetLayout() : VK_NULL_HANDLE;
-    if (!charRenderer_->initialize(vkCtx, perFrameLayout, am)) {
+
+    if (!vkCtx_ || perFrameLayout == VK_NULL_HANDLE) {
+        LOG_ERROR("CharacterPreview: no VkContext or perFrameLayout available");
+        return false;
+    }
+
+    // Create off-screen render target first (need its render pass for pipeline creation)
+    createFBO();
+    if (!renderTarget_ || !renderTarget_->isValid()) {
+        LOG_ERROR("CharacterPreview: failed to create off-screen render target");
+        return false;
+    }
+
+    // Initialize CharacterRenderer with our off-screen render pass
+    charRenderer_ = std::make_unique<CharacterRenderer>();
+    if (!charRenderer_->initialize(vkCtx_, perFrameLayout, am, renderTarget_->getRenderPass())) {
         LOG_ERROR("CharacterPreview: failed to initialize CharacterRenderer");
         return false;
     }
@@ -45,35 +73,187 @@ bool CharacterPreview::initialize(pipeline::AssetManager* am) {
     camera_->setFov(30.0f);
     camera_->setAspectRatio(static_cast<float>(fboWidth_) / static_cast<float>(fboHeight_));
     // Pull camera back far enough to see full body + head with margin
-    // Human ~2 units tall, Tauren ~2.5. At distance 4.5 with FOV 30:
-    // vertical visible = 2 * 4.5 * tan(15°) ≈ 2.41 units
     camera_->setPosition(glm::vec3(0.0f, 4.5f, 0.9f));
     camera_->setRotation(270.0f, 0.0f);
-
-    // TODO: create Vulkan offscreen render target
-    // createFBO();
 
     LOG_INFO("CharacterPreview initialized (", fboWidth_, "x", fboHeight_, ")");
     return true;
 }
 
 void CharacterPreview::shutdown() {
-    // destroyFBO(); // TODO: Vulkan offscreen cleanup
+    // Unregister from renderer before destroying resources
+    auto* appRenderer = core::Application::getInstance().getRenderer();
+    if (appRenderer) appRenderer->unregisterPreview(this);
+
     if (charRenderer_) {
         charRenderer_->shutdown();
         charRenderer_.reset();
     }
     camera_.reset();
+    destroyFBO();
     modelLoaded_ = false;
+    compositeRendered_ = false;
     instanceId_ = 0;
 }
 
 void CharacterPreview::createFBO() {
-    // TODO: Create Vulkan offscreen render target for character preview
+    if (!vkCtx_) return;
+    VkDevice device = vkCtx_->getDevice();
+    VmaAllocator allocator = vkCtx_->getAllocator();
+
+    // 1. Create off-screen render target with depth
+    renderTarget_ = std::make_unique<VkRenderTarget>();
+    if (!renderTarget_->create(*vkCtx_, fboWidth_, fboHeight_, VK_FORMAT_R8G8B8A8_UNORM, true)) {
+        LOG_ERROR("CharacterPreview: failed to create render target");
+        renderTarget_.reset();
+        return;
+    }
+
+    // 1b. Transition the color image from UNDEFINED to SHADER_READ_ONLY_OPTIMAL
+    // so that ImGui::Image doesn't sample an image in UNDEFINED layout before
+    // the first compositePass runs.
+    {
+        VkCommandBuffer cmd = vkCtx_->beginSingleTimeCommands();
+        VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = renderTarget_->getColorImage();
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier.subresourceRange.baseMipLevel = 0;
+        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount = 1;
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(cmd,
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            0, 0, nullptr, 0, nullptr, 1, &barrier);
+        vkCtx_->endSingleTimeCommands(cmd);
+    }
+
+    // 2. Create 1x1 dummy white texture (shadow map placeholder)
+    {
+        uint8_t white[] = {255, 255, 255, 255};
+        dummyWhiteTex_ = std::make_unique<VkTexture>();
+        dummyWhiteTex_->upload(*vkCtx_, white, 1, 1, VK_FORMAT_R8G8B8A8_UNORM, false);
+        dummyWhiteTex_->createSampler(device, VK_FILTER_NEAREST, VK_FILTER_NEAREST,
+                                       VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+    }
+
+    // 3. Create descriptor pool for per-frame sets (2 UBO + 2 sampler)
+    {
+        VkDescriptorPoolSize sizes[2]{};
+        sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        sizes[0].descriptorCount = MAX_FRAMES;
+        sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        sizes[1].descriptorCount = MAX_FRAMES;
+
+        VkDescriptorPoolCreateInfo ci{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+        ci.maxSets = MAX_FRAMES;
+        ci.poolSizeCount = 2;
+        ci.pPoolSizes = sizes;
+        if (vkCreateDescriptorPool(device, &ci, nullptr, &previewDescPool_) != VK_SUCCESS) {
+            LOG_ERROR("CharacterPreview: failed to create descriptor pool");
+            return;
+        }
+    }
+
+    // 4. Create per-frame UBOs and descriptor sets
+    auto* appRenderer = core::Application::getInstance().getRenderer();
+    VkDescriptorSetLayout perFrameLayout = appRenderer->getPerFrameSetLayout();
+
+    for (uint32_t i = 0; i < MAX_FRAMES; i++) {
+        // Create mapped UBO
+        VkBufferCreateInfo bufInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+        bufInfo.size = sizeof(GPUPerFrameData);
+        bufInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+
+        VmaAllocationCreateInfo allocInfo{};
+        allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+        allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+        VmaAllocationInfo mapInfo{};
+        if (vmaCreateBuffer(allocator, &bufInfo, &allocInfo,
+                &previewUBO_[i], &previewUBOAlloc_[i], &mapInfo) != VK_SUCCESS) {
+            LOG_ERROR("CharacterPreview: failed to create UBO ", i);
+            return;
+        }
+        previewUBOMapped_[i] = mapInfo.pMappedData;
+
+        // Allocate descriptor set
+        VkDescriptorSetAllocateInfo setAlloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        setAlloc.descriptorPool = previewDescPool_;
+        setAlloc.descriptorSetCount = 1;
+        setAlloc.pSetLayouts = &perFrameLayout;
+        if (vkAllocateDescriptorSets(device, &setAlloc, &previewPerFrameSet_[i]) != VK_SUCCESS) {
+            LOG_ERROR("CharacterPreview: failed to allocate descriptor set ", i);
+            return;
+        }
+
+        // Write UBO binding (0) and shadow sampler binding (1) using dummy white texture
+        VkDescriptorBufferInfo descBuf{};
+        descBuf.buffer = previewUBO_[i];
+        descBuf.offset = 0;
+        descBuf.range = sizeof(GPUPerFrameData);
+
+        VkDescriptorImageInfo shadowImg = dummyWhiteTex_->descriptorInfo();
+
+        VkWriteDescriptorSet writes[2]{};
+        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[0].dstSet = previewPerFrameSet_[i];
+        writes[0].dstBinding = 0;
+        writes[0].descriptorCount = 1;
+        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writes[0].pBufferInfo = &descBuf;
+        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[1].dstSet = previewPerFrameSet_[i];
+        writes[1].dstBinding = 1;
+        writes[1].descriptorCount = 1;
+        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[1].pImageInfo = &shadowImg;
+
+        vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+    }
+
+    // 5. Register the color attachment as an ImGui texture
+    imguiTextureId_ = ImGui_ImplVulkan_AddTexture(
+        renderTarget_->getSampler(),
+        renderTarget_->getColorImageView(),
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    LOG_INFO("CharacterPreview: off-screen FBO created (", fboWidth_, "x", fboHeight_, ")");
 }
 
 void CharacterPreview::destroyFBO() {
-    // TODO: Destroy Vulkan offscreen render target
+    if (!vkCtx_) return;
+    VkDevice device = vkCtx_->getDevice();
+    VmaAllocator allocator = vkCtx_->getAllocator();
+
+    if (imguiTextureId_) {
+        ImGui_ImplVulkan_RemoveTexture(imguiTextureId_);
+        imguiTextureId_ = VK_NULL_HANDLE;
+    }
+
+    for (uint32_t i = 0; i < MAX_FRAMES; i++) {
+        if (previewUBO_[i]) {
+            vmaDestroyBuffer(allocator, previewUBO_[i], previewUBOAlloc_[i]);
+            previewUBO_[i] = VK_NULL_HANDLE;
+        }
+    }
+
+    if (previewDescPool_) {
+        vkDestroyDescriptorPool(device, previewDescPool_, nullptr);
+        previewDescPool_ = VK_NULL_HANDLE;
+    }
+
+    dummyWhiteTex_.reset();
+
+    if (renderTarget_) {
+        renderTarget_->destroy(device, allocator);
+        renderTarget_.reset();
+    }
 }
 
 bool CharacterPreview::loadCharacter(game::Race race, game::Gender gender,
@@ -84,8 +264,11 @@ bool CharacterPreview::loadCharacter(game::Race race, game::Gender gender,
         return false;
     }
 
-    // Remove existing instance
+    // Remove existing instance.
+    // Must wait for GPU to finish — compositePass() may have recorded draw commands
+    // referencing this instance's bone buffers earlier in the current frame.
     if (instanceId_ > 0) {
+        if (vkCtx_) vkDeviceWaitIdle(vkCtx_->getDevice());
         charRenderer_->removeInstance(instanceId_);
         instanceId_ = 0;
         modelLoaded_ = false;
@@ -592,14 +775,48 @@ void CharacterPreview::update(float deltaTime) {
 }
 
 void CharacterPreview::render() {
-    if (!charRenderer_ || !camera_ || !modelLoaded_) {
+    // No-op — actual rendering happens in compositePass() called from Renderer::beginFrame()
+}
+
+void CharacterPreview::compositePass(VkCommandBuffer cmd, uint32_t frameIndex) {
+    // Only composite when a UI screen actually requested it this frame
+    if (!compositeRequested_) return;
+    compositeRequested_ = false;
+
+    if (!charRenderer_ || !camera_ || !modelLoaded_ || !renderTarget_ || !renderTarget_->isValid()) {
         return;
     }
 
-    // TODO: Vulkan offscreen rendering for character preview
-    // Need a VkRenderTarget, begin a render pass into it, then:
-    //   charRenderer_->render(cmd, perFrameSet, *camera_);
-    // For now, the preview is non-functional until Vulkan offscreen is wired up.
+    uint32_t fi = frameIndex % MAX_FRAMES;
+
+    // Update per-frame UBO with preview camera matrices and studio lighting
+    GPUPerFrameData ubo{};
+    ubo.view = camera_->getViewMatrix();
+    ubo.projection = camera_->getProjectionMatrix();
+    ubo.lightSpaceMatrix = glm::mat4(1.0f);
+    // Studio lighting: key light from upper-right-front
+    ubo.lightDir = glm::vec4(glm::normalize(glm::vec3(0.5f, -0.7f, 0.5f)), 0.0f);
+    ubo.lightColor = glm::vec4(1.0f, 0.95f, 0.9f, 0.0f);
+    ubo.ambientColor = glm::vec4(0.35f, 0.35f, 0.4f, 0.0f);
+    ubo.viewPos = glm::vec4(camera_->getPosition(), 0.0f);
+    // No fog in preview
+    ubo.fogColor = glm::vec4(0.05f, 0.05f, 0.1f, 0.0f);
+    ubo.fogParams = glm::vec4(9999.0f, 10000.0f, 0.0f, 0.0f);
+    // Shadows disabled
+    ubo.shadowParams = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
+
+    std::memcpy(previewUBOMapped_[fi], &ubo, sizeof(GPUPerFrameData));
+
+    // Begin off-screen render pass
+    VkClearColorValue clearColor = {{0.05f, 0.05f, 0.1f, 1.0f}};
+    renderTarget_->beginPass(cmd, clearColor);
+
+    // Render the character model
+    charRenderer_->render(cmd, previewPerFrameSet_[fi], *camera_);
+
+    renderTarget_->endPass(cmd);
+
+    compositeRendered_ = true;
 }
 
 void CharacterPreview::rotate(float yawDelta) {

@@ -19,6 +19,7 @@
 #include "rendering/charge_effect.hpp"
 #include "rendering/levelup_effect.hpp"
 #include "rendering/character_renderer.hpp"
+#include "rendering/character_preview.hpp"
 #include "rendering/wmo_renderer.hpp"
 #include "rendering/m2_renderer.hpp"
 #include "rendering/minimap.hpp"
@@ -723,6 +724,21 @@ void Renderer::shutdown() {
     LOG_INFO("Renderer shutdown");
 }
 
+void Renderer::registerPreview(CharacterPreview* preview) {
+    if (!preview) return;
+    auto it = std::find(activePreviews_.begin(), activePreviews_.end(), preview);
+    if (it == activePreviews_.end()) {
+        activePreviews_.push_back(preview);
+    }
+}
+
+void Renderer::unregisterPreview(CharacterPreview* preview) {
+    auto it = std::find(activePreviews_.begin(), activePreviews_.end(), preview);
+    if (it != activePreviews_.end()) {
+        activePreviews_.erase(it);
+    }
+}
+
 void Renderer::setMsaaSamples(VkSampleCountFlagBits samples) {
     if (!vkCtx) return;
 
@@ -838,6 +854,13 @@ void Renderer::beginFrame() {
     // World map composite (renders zone tiles into 1024x768 render target)
     if (worldMap) {
         worldMap->compositePass(currentCmd);
+    }
+
+    // Character preview composite passes
+    for (auto* preview : activePreviews_) {
+        if (preview && preview->isModelLoaded()) {
+            preview->compositePass(currentCmd, vkCtx->getCurrentFrame());
+        }
     }
 
     // Shadow pre-pass (before main render pass)
@@ -3006,6 +3029,15 @@ void Renderer::renderOverlay(const glm::vec4& color) {
 
 void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
     (void)world;
+
+    {
+        static int rwLogCounter = 0;
+        if (++rwLogCounter % 300 == 1) {
+            LOG_INFO("Renderer::renderWorld frame=", rwLogCounter,
+                     " cmd=", (void*)currentCmd,
+                     " charRenderer=", (void*)characterRenderer.get());
+        }
+    }
 
     auto renderStart = std::chrono::steady_clock::now();
     lastTerrainRenderMs = 0.0;

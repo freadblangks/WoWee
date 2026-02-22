@@ -43,6 +43,7 @@ class M2Renderer;
 class Minimap;
 class WorldMap;
 class QuestMarkerRenderer;
+class CharacterPreview;
 class Shader;
 
 class Renderer {
@@ -239,6 +240,10 @@ private:
     int shadowPostMoveFrames_ = 0; // transition marker for movement->idle shadow recenter
 
 public:
+    // Character preview registration (for off-screen composite pass)
+    void registerPreview(CharacterPreview* preview);
+    void unregisterPreview(CharacterPreview* preview);
+
     void setShadowsEnabled(bool enabled) { shadowsEnabled = enabled; }
     bool areShadowsEnabled() const { return shadowsEnabled; }
     void setMsaaSamples(VkSampleCountFlagBits samples);
@@ -383,6 +388,9 @@ private:
     bool createPerFrameResources();
     void destroyPerFrameResources();
     void updatePerFrameUBO();
+
+    // Active character previews for off-screen rendering
+    std::vector<CharacterPreview*> activePreviews_;
 
     bool terrainEnabled = true;
     bool terrainLoaded = false;

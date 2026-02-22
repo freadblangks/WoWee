@@ -42,12 +42,15 @@ glm::vec3 Camera::getUp() const {
 
 Ray Camera::screenToWorldRay(float screenX, float screenY, float screenW, float screenH) const {
     float ndcX = (2.0f * screenX / screenW) - 1.0f;
-    float ndcY = 1.0f - (2.0f * screenY / screenH);
+    // Vulkan Y-flip is baked into projectionMatrix, so NDC Y maps directly:
+    // screen top (y=0) → NDC -1, screen bottom (y=H) → NDC +1
+    float ndcY = (2.0f * screenY / screenH) - 1.0f;
 
     glm::mat4 invVP = glm::inverse(projectionMatrix * viewMatrix);
 
-    glm::vec4 nearPt = invVP * glm::vec4(ndcX, ndcY, -1.0f, 1.0f);
-    glm::vec4 farPt  = invVP * glm::vec4(ndcX, ndcY,  1.0f, 1.0f);
+    // Vulkan / GLM_FORCE_DEPTH_ZERO_TO_ONE: NDC z ∈ [0, 1]
+    glm::vec4 nearPt = invVP * glm::vec4(ndcX, ndcY, 0.0f, 1.0f);
+    glm::vec4 farPt  = invVP * glm::vec4(ndcX, ndcY, 1.0f, 1.0f);
     nearPt /= nearPt.w;
     farPt  /= farPt.w;
 

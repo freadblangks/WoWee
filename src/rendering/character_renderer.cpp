@@ -86,12 +86,14 @@ CharacterRenderer::~CharacterRenderer() {
 }
 
 bool CharacterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout,
-                                    pipeline::AssetManager* am) {
+                                    pipeline::AssetManager* am,
+                                    VkRenderPass renderPassOverride) {
     core::Logger::getInstance().info("Initializing character renderer (Vulkan)...");
 
     vkCtx_ = ctx;
     assetManager = am;
     perFrameLayout_ = perFrameLayout;
+    renderPassOverride_ = renderPassOverride;
 
     VkDevice device = vkCtx_->getDevice();
 
@@ -182,7 +184,8 @@ bool CharacterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFram
         return false;
     }
 
-    VkRenderPass mainPass = vkCtx_->getImGuiRenderPass();
+    VkRenderPass mainPass = renderPassOverride_ ? renderPassOverride_ : vkCtx_->getImGuiRenderPass();
+    VkSampleCountFlagBits samples = renderPassOverride_ ? VK_SAMPLE_COUNT_1_BIT : vkCtx_->getMsaaSamples();
 
     // --- Vertex input ---
     // M2Vertex: vec3 pos(12) + uint8[4] boneWeights(4) + uint8[4] boneIndices(4) +
@@ -210,7 +213,7 @@ bool CharacterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFram
             .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
             .setDepthTest(true, depthWrite, VK_COMPARE_OP_LESS_OR_EQUAL)
             .setColorBlendAttachment(blendState)
-            .setMultisample(vkCtx_->getMsaaSamples())
+            .setMultisample(samples)
             .setLayout(pipelineLayout_)
             .setRenderPass(mainPass)
             .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
@@ -251,6 +254,9 @@ bool CharacterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFram
 
 void CharacterRenderer::shutdown() {
     if (!vkCtx_) return;
+
+    LOG_INFO("CharacterRenderer::shutdown instances=", instances.size(),
+             " models=", models.size(), " override=", (void*)renderPassOverride_);
 
     vkDeviceWaitIdle(vkCtx_->getDevice());
     VkDevice device = vkCtx_->getDevice();
@@ -1321,6 +1327,13 @@ glm::mat4 CharacterRenderer::getBoneTransform(const pipeline::M2Bone& bone, floa
 // --- Rendering ---
 
 void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera) {
+    // Periodic instance count log (every ~10s at 30fps)
+    if (!renderPassOverride_) {
+        renderLogCounter_++;
+        if (renderLogCounter_ % 300 == 1) {
+            LOG_INFO("CharRenderer[WORLD]::render instances=", instances.size());
+        }
+    }
     if (instances.empty() || !opaquePipeline_) {
         return;
     }
@@ -2196,6 +2209,9 @@ void CharacterRenderer::clearTextureSlotOverride(uint32_t instanceId, uint16_t t
 void CharacterRenderer::setInstanceVisible(uint32_t instanceId, bool visible) {
     auto it = instances.find(instanceId);
     if (it != instances.end()) {
+        if (it->second.visible != visible) {
+            LOG_INFO("CharacterRenderer::setInstanceVisible id=", instanceId, " visible=", visible);
+        }
         it->second.visible = visible;
 
         // Also hide/show attached weapons (for first-person mode)
@@ -2211,6 +2227,11 @@ void CharacterRenderer::setInstanceVisible(uint32_t instanceId, bool visible) {
 void CharacterRenderer::removeInstance(uint32_t instanceId) {
     auto it = instances.find(instanceId);
     if (it == instances.end()) return;
+
+    LOG_INFO("CharacterRenderer::removeInstance id=", instanceId,
+             " pos=(", it->second.position.x, ",", it->second.position.y, ",", it->second.position.z, ")",
+             " remaining=", instances.size() - 1,
+             " override=", (void*)renderPassOverride_);
 
     // Remove child attachments first (helmets/weapons), otherwise they leak as
     // orphan render instances when the parent creature despawns.
@@ -2585,7 +2606,8 @@ void CharacterRenderer::recreatePipelines() {
         return;
     }
 
-    VkRenderPass mainPass = vkCtx_->getImGuiRenderPass();
+    VkRenderPass mainPass = renderPassOverride_ ? renderPassOverride_ : vkCtx_->getImGuiRenderPass();
+    VkSampleCountFlagBits samples = renderPassOverride_ ? VK_SAMPLE_COUNT_1_BIT : vkCtx_->getMsaaSamples();
 
     // --- Vertex input ---
     VkVertexInputBindingDescription charBinding{};
@@ -2610,12 +2632,16 @@ void CharacterRenderer::recreatePipelines() {
             .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
             .setDepthTest(true, depthWrite, VK_COMPARE_OP_LESS_OR_EQUAL)
             .setColorBlendAttachment(blendState)
-            .setMultisample(vkCtx_->getMsaaSamples())
+            .setMultisample(samples)
             .setLayout(pipelineLayout_)
             .setRenderPass(mainPass)
             .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
             .build(device);
     };
+
+    LOG_INFO("CharacterRenderer::recreatePipelines: renderPass=", (void*)mainPass,
+             " samples=", static_cast<int>(samples),
+             " pipelineLayout=", (void*)pipelineLayout_);
 
     opaquePipeline_ = buildCharPipeline(PipelineBuilder::blendDisabled(), true);
     alphaTestPipeline_ = buildCharPipeline(PipelineBuilder::blendAlpha(), true);
@@ -2625,7 +2651,16 @@ void CharacterRenderer::recreatePipelines() {
     charVert.destroy();
     charFrag.destroy();
 
-    core::Logger::getInstance().info("CharacterRenderer: pipelines recreated");
+    if (!opaquePipeline_ || !alphaTestPipeline_ || !alphaPipeline_ || !additivePipeline_) {
+        LOG_ERROR("CharacterRenderer::recreatePipelines FAILED: opaque=", (void*)opaquePipeline_,
+                  " alphaTest=", (void*)alphaTestPipeline_,
+                  " alpha=", (void*)alphaPipeline_,
+                  " additive=", (void*)additivePipeline_,
+                  " renderPass=", (void*)mainPass, " samples=", static_cast<int>(samples));
+    } else {
+        LOG_INFO("CharacterRenderer: pipelines recreated successfully (samples=",
+                 static_cast<int>(samples), ")");
+    }
 }
 
 } // namespace rendering

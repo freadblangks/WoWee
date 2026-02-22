@@ -42,7 +42,8 @@ public:
     CharacterRenderer();
     ~CharacterRenderer();
 
-    bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout, pipeline::AssetManager* am);
+    bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout, pipeline::AssetManager* am,
+                    VkRenderPass renderPassOverride = VK_NULL_HANDLE);
     void shutdown();
 
     void setAssetManager(pipeline::AssetManager* am) { assetManager = am; }
@@ -219,7 +220,9 @@ public:
 
 private:
     VkContext* vkCtx_ = nullptr;
+    VkRenderPass renderPassOverride_ = VK_NULL_HANDLE;
     pipeline::AssetManager* assetManager = nullptr;
+    int renderLogCounter_ = 0; // per-instance debug counter
 
     // Vulkan pipelines (one per blend mode)
     VkPipeline opaquePipeline_ = VK_NULL_HANDLE;

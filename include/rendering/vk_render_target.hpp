@@ -25,9 +25,10 @@ public:
     /**
      * Create the render target with given dimensions and format.
      * Creates: color image, image view, sampler, render pass, framebuffer.
+     * When withDepth is true, also creates a D32_SFLOAT depth attachment.
      */
     bool create(VkContext& ctx, uint32_t width, uint32_t height,
-                VkFormat format = VK_FORMAT_R8G8B8A8_UNORM);
+                VkFormat format = VK_FORMAT_R8G8B8A8_UNORM, bool withDepth = false);
 
     /**
      * Destroy all Vulkan resources.
@@ -48,6 +49,7 @@ public:
     void endPass(VkCommandBuffer cmd);
 
     // Accessors
+    VkImage getColorImage() const { return colorImage_.image; }
     VkImageView getColorImageView() const { return colorImage_.imageView; }
     VkSampler getSampler() const { return sampler_; }
     VkRenderPass getRenderPass() const { return renderPass_; }
@@ -62,6 +64,8 @@ public:
 
 private:
     AllocatedImage colorImage_{};
+    AllocatedImage depthImage_{};
+    bool hasDepth_ = false;
     VkSampler sampler_ = VK_NULL_HANDLE;
     VkRenderPass renderPass_ = VK_NULL_HANDLE;
     VkFramebuffer framebuffer_ = VK_NULL_HANDLE;

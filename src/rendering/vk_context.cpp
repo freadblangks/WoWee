@@ -1041,8 +1041,18 @@ bool VkContext::recreateSwapchain(int width, int height) {
 VkCommandBuffer VkContext::beginFrame(uint32_t& imageIndex) {
     auto& frame = frames[currentFrame];
 
-    // Wait for this frame's fence
-    vkWaitForFences(device, 1, &frame.inFlightFence, VK_TRUE, UINT64_MAX);
+    // Wait for this frame's fence (with timeout to detect GPU hangs)
+    static int beginFrameCounter = 0;
+    beginFrameCounter++;
+    VkResult fenceResult = vkWaitForFences(device, 1, &frame.inFlightFence, VK_TRUE, 5000000000ULL); // 5 second timeout
+    if (fenceResult == VK_TIMEOUT) {
+        LOG_ERROR("beginFrame[", beginFrameCounter, "] FENCE TIMEOUT (5s) on frame slot ", currentFrame, " — GPU hang detected!");
+        return VK_NULL_HANDLE;
+    }
+    if (fenceResult != VK_SUCCESS) {
+        LOG_ERROR("beginFrame[", beginFrameCounter, "] fence wait failed: ", (int)fenceResult);
+        return VK_NULL_HANDLE;
+    }
 
     // Acquire next swapchain image
     VkResult result = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX,
@@ -1070,7 +1080,13 @@ VkCommandBuffer VkContext::beginFrame(uint32_t& imageIndex) {
 }
 
 void VkContext::endFrame(VkCommandBuffer cmd, uint32_t imageIndex) {
-    vkEndCommandBuffer(cmd);
+    static int endFrameCounter = 0;
+    endFrameCounter++;
+
+    VkResult endResult = vkEndCommandBuffer(cmd);
+    if (endResult != VK_SUCCESS) {
+        LOG_ERROR("endFrame[", endFrameCounter, "] vkEndCommandBuffer FAILED: ", (int)endResult);
+    }
 
     auto& frame = frames[currentFrame];
 
@@ -1086,8 +1102,9 @@ void VkContext::endFrame(VkCommandBuffer cmd, uint32_t imageIndex) {
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &frame.renderFinishedSemaphore;
 
-    if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, frame.inFlightFence) != VK_SUCCESS) {
-        LOG_ERROR("Failed to submit draw command buffer");
+    VkResult submitResult = vkQueueSubmit(graphicsQueue, 1, &submitInfo, frame.inFlightFence);
+    if (submitResult != VK_SUCCESS) {
+        LOG_ERROR("endFrame[", endFrameCounter, "] vkQueueSubmit FAILED: ", (int)submitResult);
     }
 
     VkPresentInfoKHR presentInfo{};

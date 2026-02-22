@@ -5,45 +5,56 @@ namespace wowee {
 namespace rendering {
 
 void Frustum::extractFromMatrix(const glm::mat4& vp) {
-    // Extract planes from view-projection matrix
-    // Based on Gribb & Hartmann method (Fast Extraction of Viewing Frustum Planes)
+    // Extract frustum planes from view-projection matrix.
+    // Vulkan clip-space conventions (GLM_FORCE_DEPTH_ZERO_TO_ONE + Y-flip):
+    //   x_clip ∈ [-w, w],  y_clip ∈ [-w, w] (Y flipped in proj),  z_clip ∈ [0, w]
+    //
+    // Gribb & Hartmann method adapted for Vulkan depth [0,1].
+    // Left/Right/Top/Bottom use the standard row4 ± row1/row2 formulas
+    // (the Y-flip swaps the TOP/BOTTOM row2 sign, but the extracted half-spaces
+    //  are still correct — they just get each other's label.  We swap the
+    //  assignments so the enum names match the geometric meaning.)
 
-    // Left plane: row4 + row1
+    // Left plane: row4 + row1  (x_clip >= -w_clip)
     planes[LEFT].normal.x = vp[0][3] + vp[0][0];
     planes[LEFT].normal.y = vp[1][3] + vp[1][0];
     planes[LEFT].normal.z = vp[2][3] + vp[2][0];
     planes[LEFT].distance = vp[3][3] + vp[3][0];
     normalizePlane(planes[LEFT]);
 
-    // Right plane: row4 - row1
+    // Right plane: row4 - row1  (x_clip <= w_clip)
     planes[RIGHT].normal.x = vp[0][3] - vp[0][0];
     planes[RIGHT].normal.y = vp[1][3] - vp[1][0];
     planes[RIGHT].normal.z = vp[2][3] - vp[2][0];
     planes[RIGHT].distance = vp[3][3] - vp[3][0];
     normalizePlane(planes[RIGHT]);
 
-    // Bottom plane: row4 + row2
-    planes[BOTTOM].normal.x = vp[0][3] + vp[0][1];
-    planes[BOTTOM].normal.y = vp[1][3] + vp[1][1];
-    planes[BOTTOM].normal.z = vp[2][3] + vp[2][1];
-    planes[BOTTOM].distance = vp[3][3] + vp[3][1];
-    normalizePlane(planes[BOTTOM]);
+    // With the Vulkan Y-flip (proj[1][1] negated), row4+row2 extracts
+    // what is geometrically the TOP plane and row4-row2 extracts BOTTOM.
+    // Swap the assignments so enum labels match geometry.
 
-    // Top plane: row4 - row2
-    planes[TOP].normal.x = vp[0][3] - vp[0][1];
-    planes[TOP].normal.y = vp[1][3] - vp[1][1];
-    planes[TOP].normal.z = vp[2][3] - vp[2][1];
-    planes[TOP].distance = vp[3][3] - vp[3][1];
+    // Top plane (geometric): row4 - row2 after Y-flip
+    planes[TOP].normal.x = vp[0][3] + vp[0][1];
+    planes[TOP].normal.y = vp[1][3] + vp[1][1];
+    planes[TOP].normal.z = vp[2][3] + vp[2][1];
+    planes[TOP].distance = vp[3][3] + vp[3][1];
     normalizePlane(planes[TOP]);
 
-    // Near plane: row4 + row3
-    planes[NEAR].normal.x = vp[0][3] + vp[0][2];
-    planes[NEAR].normal.y = vp[1][3] + vp[1][2];
-    planes[NEAR].normal.z = vp[2][3] + vp[2][2];
-    planes[NEAR].distance = vp[3][3] + vp[3][2];
+    // Bottom plane (geometric): row4 + row2 after Y-flip
+    planes[BOTTOM].normal.x = vp[0][3] - vp[0][1];
+    planes[BOTTOM].normal.y = vp[1][3] - vp[1][1];
+    planes[BOTTOM].normal.z = vp[2][3] - vp[2][1];
+    planes[BOTTOM].distance = vp[3][3] - vp[3][1];
+    normalizePlane(planes[BOTTOM]);
+
+    // Near plane: row3  (z_clip >= 0 in Vulkan depth [0,1])
+    planes[NEAR].normal.x = vp[0][2];
+    planes[NEAR].normal.y = vp[1][2];
+    planes[NEAR].normal.z = vp[2][2];
+    planes[NEAR].distance = vp[3][2];
     normalizePlane(planes[NEAR]);
 
-    // Far plane: row4 - row3
+    // Far plane: row4 - row3  (z_clip <= w_clip)
     planes[FAR].normal.x = vp[0][3] - vp[0][2];
     planes[FAR].normal.y = vp[1][3] - vp[1][2];
     planes[FAR].normal.z = vp[2][3] - vp[2][2];

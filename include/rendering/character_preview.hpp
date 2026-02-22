@@ -2,6 +2,7 @@
 
 #include "game/character.hpp"
 #include <vulkan/vulkan.h>
+#include <vk_mem_alloc.h>
 #include <memory>
 #include <cstdint>
 #include <string>
@@ -15,6 +16,7 @@ class CharacterRenderer;
 class Camera;
 class VkContext;
 class VkTexture;
+class VkRenderTarget;
 
 class CharacterPreview {
 public:
@@ -36,8 +38,15 @@ public:
     void render();
     void rotate(float yawDelta);
 
-    // TODO: Vulkan offscreen render target for preview
-    VkTexture* getTextureId() const { return nullptr; }
+    // Off-screen composite pass — call from Renderer::beginFrame() before main render pass
+    void compositePass(VkCommandBuffer cmd, uint32_t frameIndex);
+
+    // Mark that the preview needs compositing this frame (call from UI each frame)
+    void requestComposite() { compositeRequested_ = true; }
+
+    // Returns the ImGui texture handle. Returns VK_NULL_HANDLE until the first
+    // compositePass has run (image is in UNDEFINED layout before that).
+    VkDescriptorSet getTextureId() const { return compositeRendered_ ? imguiTextureId_ : VK_NULL_HANDLE; }
     int getWidth() const { return fboWidth_; }
     int getHeight() const { return fboHeight_; }
 
@@ -51,17 +60,35 @@ private:
     void destroyFBO();
 
     pipeline::AssetManager* assetManager_ = nullptr;
+    VkContext* vkCtx_ = nullptr;
     std::unique_ptr<CharacterRenderer> charRenderer_;
     std::unique_ptr<Camera> camera_;
 
-    // TODO: Vulkan offscreen render target
-    // VkRenderTarget* renderTarget_ = nullptr;
+    // Off-screen render target (color + depth)
+    std::unique_ptr<VkRenderTarget> renderTarget_;
+
+    // Per-frame UBO for preview camera/lighting (double-buffered)
+    static constexpr uint32_t MAX_FRAMES = 2;
+    VkDescriptorPool previewDescPool_ = VK_NULL_HANDLE;
+    VkBuffer previewUBO_[MAX_FRAMES] = {};
+    VmaAllocation previewUBOAlloc_[MAX_FRAMES] = {};
+    void* previewUBOMapped_[MAX_FRAMES] = {};
+    VkDescriptorSet previewPerFrameSet_[MAX_FRAMES] = {};
+
+    // Dummy 1x1 white texture for shadow map placeholder
+    std::unique_ptr<VkTexture> dummyWhiteTex_;
+
+    // ImGui texture handle for displaying the preview (VkDescriptorSet in Vulkan backend)
+    VkDescriptorSet imguiTextureId_ = VK_NULL_HANDLE;
+
     static constexpr int fboWidth_ = 400;
     static constexpr int fboHeight_ = 500;
 
     static constexpr uint32_t PREVIEW_MODEL_ID = 9999;
     uint32_t instanceId_ = 0;
     bool modelLoaded_ = false;
+    bool compositeRequested_ = false;
+    bool compositeRendered_ = false;  // True after first successful compositePass
     float modelYaw_ = 180.0f;
 
     // Cached info from loadCharacter() for later recompositing.

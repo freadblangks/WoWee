@@ -336,8 +336,9 @@ void Application::run() {
         totalSwapMs += std::chrono::duration<double, std::milli>(t4 - t3).count();
 
         if (++frameCount >= 60) {
-            printf("[Frame] Update: %.1f ms, Render: %.1f ms, Swap: %.1f ms\n",
-                   totalUpdateMs / 60.0, totalRenderMs / 60.0, totalSwapMs / 60.0);
+            LOG_INFO("[Frame] Update: ", totalUpdateMs / 60.0,
+                     "ms Render: ", totalRenderMs / 60.0,
+                     "ms Swap: ", totalSwapMs / 60.0, "ms");
             frameCount = 0;
             totalUpdateMs = totalRenderMs = totalSwapMs = 0;
         }
@@ -358,9 +359,12 @@ void Application::shutdown() {
         }
     }
 
-    // Stop renderer first: terrain streaming workers may still be reading via
-    // AssetManager during shutdown, so renderer/terrain teardown must complete
-    // before AssetManager is destroyed.
+    // Explicitly shut down the renderer before destroying it — this ensures
+    // all sub-renderers free their VMA allocations in the correct order,
+    // before VkContext::shutdown() calls vmaDestroyAllocator().
+    if (renderer) {
+        renderer->shutdown();
+    }
     renderer.reset();
 
     world.reset();

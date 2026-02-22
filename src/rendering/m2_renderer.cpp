@@ -2073,7 +2073,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
         }
         if (model.isGroundDetail) {
             // Keep clutter local so distant grass doesn't overdraw the scene.
-            effectiveMaxDistSq *= 0.45f;
+            effectiveMaxDistSq *= 0.75f;
         }
         // Removed aggressive small-object distance caps to prevent city pop-out
         // Small props (barrels, lanterns, etc.) now use same distance as larger objects
@@ -2360,7 +2360,9 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     }
                     // Cutout path for foliage/cards.
                     if (forceCutout) {
-                        mat->alphaTest = foliageCutout ? 2 : 1;
+                        // Ground clutter uses a softer dedicated cutout mode so thin
+                        // grass cards are not over-discarded.
+                        mat->alphaTest = model.isGroundDetail ? 3 : (foliageCutout ? 2 : 1);
                         if (model.isGroundDetail) {
                             mat->unlit = 0;
                         }

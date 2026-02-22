@@ -3596,12 +3596,14 @@ glm::mat4 Renderer::computeLightSpaceMatrix() {
     constexpr float kShadowNearPlane = 1.0f;
     constexpr float kShadowFarPlane = 600.0f;
 
-    // Use active lighting direction so shadow projection matches sun/celestial.
+    // Use active lighting direction so shadow projection matches main shading.
+    // Fragment shaders derive lighting with `ldir = normalize(-lightDir.xyz)`,
+    // therefore shadow rays must use -directionalDir to stay aligned.
     glm::vec3 sunDir = glm::normalize(glm::vec3(-0.3f, -0.7f, -0.6f));
     if (lightingManager) {
         const auto& lighting = lightingManager->getLightingParams();
         if (glm::length(lighting.directionalDir) > 0.001f) {
-            sunDir = glm::normalize(lighting.directionalDir);
+            sunDir = glm::normalize(-lighting.directionalDir);
         }
     }
     // Shadow camera expects light rays pointing downward in render space (Z up).

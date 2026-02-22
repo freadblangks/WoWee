@@ -42,6 +42,9 @@ void main() {
     if (alphaTest == 2) {
         // Vegetation cutout: lower threshold to preserve leaf coverage at grazing angles.
         alphaCutoff = 0.33;
+    } else if (alphaTest == 3) {
+        // Ground detail clutter (grass/small cards) needs softer clipping.
+        alphaCutoff = 0.20;
     } else if (alphaTest != 0) {
         alphaCutoff = 0.35;
     }
@@ -112,7 +115,7 @@ void main() {
     }
     // Foliage cutout should stay opaque after alpha discard to avoid
     // view-angle translucency artifacts.
-    if (alphaTest == 2) {
+    if (alphaTest == 2 || alphaTest == 3) {
         outAlpha = 1.0 * fadeAlpha;
     }
     outColor = vec4(result, outAlpha);

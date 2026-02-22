@@ -1088,8 +1088,9 @@ bool UpdateObjectParser::parseUpdateFields(network::Packet& packet, UpdateBlock&
     LOG_DEBUG("    maskBlockCount = ", (int)blockCount);
     LOG_DEBUG("    fieldsCapacity (blocks * 32) = ", fieldsCapacity);
 
-    // Read update mask
-    std::vector<uint32_t> updateMask(blockCount);
+    // Read update mask into a reused scratch buffer to avoid per-block allocations.
+    static thread_local std::vector<uint32_t> updateMask;
+    updateMask.resize(blockCount);
     for (int i = 0; i < blockCount; ++i) {
         updateMask[i] = packet.readUInt32();
     }
@@ -1098,22 +1099,29 @@ bool UpdateObjectParser::parseUpdateFields(network::Packet& packet, UpdateBlock&
     uint16_t highestSetBit = 0;
     uint32_t valuesReadCount = 0;
 
-    // Read field values for each bit set in mask
+    // Read only set bits in each mask block (faster than scanning all 32 bits).
     for (int blockIdx = 0; blockIdx < blockCount; ++blockIdx) {
         uint32_t mask = updateMask[blockIdx];
-
-        for (int bit = 0; bit < 32; ++bit) {
-            if (mask & (1 << bit)) {
-                uint16_t fieldIndex = blockIdx * 32 + bit;
-                if (fieldIndex > highestSetBit) {
-                    highestSetBit = fieldIndex;
-                }
-                uint32_t value = packet.readUInt32();
-                block.fields[fieldIndex] = value;
-                valuesReadCount++;
-
-                LOG_DEBUG("    Field[", fieldIndex, "] = 0x", std::hex, value, std::dec);
+        while (mask != 0) {
+            const uint16_t fieldIndex =
+#if defined(__GNUC__) || defined(__clang__)
+                static_cast<uint16_t>(blockIdx * 32 + __builtin_ctz(mask));
+#else
+                static_cast<uint16_t>(blockIdx * 32 + [] (uint32_t v) -> uint16_t {
+                    uint16_t b = 0;
+                    while ((v & 1u) == 0u) { v >>= 1u; ++b; }
+                    return b;
+                }(mask));
+#endif
+            if (fieldIndex > highestSetBit) {
+                highestSetBit = fieldIndex;
             }
+            uint32_t value = packet.readUInt32();
+            block.fields[fieldIndex] = value;
+            valuesReadCount++;
+
+            LOG_DEBUG("    Field[", fieldIndex, "] = 0x", std::hex, value, std::dec);
+            mask &= (mask - 1u);
         }
     }
 

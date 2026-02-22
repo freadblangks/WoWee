@@ -84,7 +84,7 @@ void main() {
         vec3 proj = lsPos.xyz / lsPos.w;
         proj.xy = proj.xy * 0.5 + 0.5;
         if (proj.x >= 0.0 && proj.x <= 1.0 && proj.y >= 0.0 && proj.y <= 1.0 && proj.z <= 1.0) {
-            float bias = 0.002;
+            float bias = 0.0002;
             shadow = texture(uShadowMap, vec3(proj.xy, proj.z - bias));
             shadow = mix(1.0, shadow, shadowParams.y);
         }

@@ -233,6 +233,7 @@ private:
     VkSampler shadowSampler = VK_NULL_HANDLE;
     VkRenderPass shadowRenderPass = VK_NULL_HANDLE;
     VkFramebuffer shadowFramebuffer = VK_NULL_HANDLE;
+    VkImageLayout shadowDepthLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
     glm::mat4 lightSpaceMatrix = glm::mat4(1.0f);
     glm::vec3 shadowCenter = glm::vec3(0.0f);
     bool shadowCenterInitialized = false;

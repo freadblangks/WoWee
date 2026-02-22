@@ -2603,9 +2603,11 @@ bool M2Renderer::initializeShadow(VkRenderPass shadowRenderPass) {
                     fragShader.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
         .setVertexInput({vertBind}, vertAttrs)
         .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
-        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT)
+        // Foliage/leaf cards are effectively two-sided; front-face culling can
+        // drop them from the shadow map depending on light/view orientation.
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
         .setDepthTest(true, true, VK_COMPARE_OP_LESS_OR_EQUAL)
-        .setDepthBias(2.0f, 4.0f)
+        .setDepthBias(0.05f, 0.20f)
         .setNoColorAttachment()
         .setLayout(shadowPipelineLayout_)
         .setRenderPass(shadowRenderPass)
@@ -2655,9 +2657,10 @@ void M2Renderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMa
         vkCmdPushConstants(cmd, shadowPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT,
                            0, 128, &push);
 
-        // Draw only opaque batches
+        // Draw all batches in shadow pass.
+        // Blend-mode filtering was excluding many valid world casters after
+        // Vulkan material path changes (trees/buildings losing shadows).
         for (const auto& batch : model.batches) {
-            if (batch.blendMode >= 2) continue;  // skip transparent
             if (batch.submeshLevel > 0) continue; // skip LOD submeshes
             vkCmdDrawIndexed(cmd, batch.indexCount, 1, batch.indexStart, 0, 0);
         }

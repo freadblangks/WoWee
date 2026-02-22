@@ -1486,9 +1486,9 @@ bool WMORenderer::initializeShadow(VkRenderPass shadowRenderPass) {
                     fragShader.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
         .setVertexInput({vertBind}, vertAttrs)
         .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
-        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
         .setDepthTest(true, true, VK_COMPARE_OP_LESS_OR_EQUAL)
-        .setDepthBias(2.0f, 4.0f)
+        .setDepthBias(0.05f, 0.20f)
         .setNoColorAttachment()
         .setLayout(shadowPipelineLayout_)
         .setRenderPass(shadowRenderPass)
@@ -1535,9 +1535,10 @@ void WMORenderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceM
             vkCmdBindVertexBuffers(cmd, 0, 1, &group.vertexBuffer, &offset);
             vkCmdBindIndexBuffer(cmd, group.indexBuffer, 0, VK_INDEX_TYPE_UINT16);
 
-            // Draw only opaque batches (skip transparent)
+            // Draw all batches in shadow pass.
+            // WMO transparency classification is not reliable enough for caster
+            // selection here and was dropping major world casters.
             for (const auto& mb : group.mergedBatches) {
-                if (mb.isTransparent) continue;
                 for (const auto& dr : mb.draws) {
                     vkCmdDrawIndexed(cmd, dr.indexCount, 1, dr.firstIndex, 0, 0);
                 }

@@ -288,6 +288,7 @@ bool Renderer::createPerFrameResources() {
         LOG_ERROR("Failed to create shadow depth image");
         return false;
     }
+    shadowDepthLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
 
     // --- Create shadow depth image view ---
     VkImageViewCreateInfo viewCI{};
@@ -304,15 +305,15 @@ bool Renderer::createPerFrameResources() {
     // --- Create shadow sampler ---
     VkSamplerCreateInfo sampCI{};
     sampCI.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    sampCI.magFilter = VK_FILTER_LINEAR;
-    sampCI.minFilter = VK_FILTER_LINEAR;
+    sampCI.magFilter = VK_FILTER_NEAREST;
+    sampCI.minFilter = VK_FILTER_NEAREST;
     sampCI.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
     sampCI.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
     sampCI.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
     sampCI.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
     sampCI.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
     sampCI.compareEnable = VK_TRUE;
-    sampCI.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    sampCI.compareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;
     if (vkCreateSampler(device, &sampCI, nullptr, &shadowSampler) != VK_SUCCESS) {
         LOG_ERROR("Failed to create shadow sampler");
         return false;
@@ -326,7 +327,7 @@ bool Renderer::createPerFrameResources() {
     depthAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     depthAtt.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     depthAtt.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAtt.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthAtt.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     depthAtt.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
     VkAttachmentReference depthRef{};
@@ -501,6 +502,7 @@ void Renderer::destroyPerFrameResources() {
     if (shadowDepthView) { vkDestroyImageView(device, shadowDepthView, nullptr); shadowDepthView = VK_NULL_HANDLE; }
     if (shadowDepthImage) { vmaDestroyImage(vkCtx->getAllocator(), shadowDepthImage, shadowDepthAlloc); shadowDepthImage = VK_NULL_HANDLE; shadowDepthAlloc = VK_NULL_HANDLE; }
     if (shadowSampler) { vkDestroySampler(device, shadowSampler, nullptr); shadowSampler = VK_NULL_HANDLE; }
+    shadowDepthLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
 }
 
 void Renderer::updatePerFrameUBO() {
@@ -3699,19 +3701,25 @@ void Renderer::renderShadowPass() {
         ubo->shadowParams = glm::vec4(shadowsEnabled ? 1.0f : 0.0f, 0.8f, 0.0f, 0.0f);
     }
 
-    // Barrier 1: UNDEFINED → DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+    // Barrier 1: transition shadow map into writable depth layout.
     VkImageMemoryBarrier b1{};
     b1.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    b1.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    b1.oldLayout = shadowDepthLayout_;
     b1.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     b1.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     b1.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    b1.srcAccessMask = 0;
-    b1.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    b1.srcAccessMask = (shadowDepthLayout_ == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+        ? VK_ACCESS_SHADER_READ_BIT
+        : 0;
+    b1.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                       VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     b1.image = shadowDepthImage;
     b1.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+    VkPipelineStageFlags srcStage = (shadowDepthLayout_ == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+        ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+        : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
     vkCmdPipelineBarrier(currentCmd,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+        srcStage, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
         0, 0, nullptr, 0, nullptr, 1, &b1);
 
     // Begin shadow render pass
@@ -3758,6 +3766,7 @@ void Renderer::renderShadowPass() {
     vkCmdPipelineBarrier(currentCmd,
         VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
         0, 0, nullptr, 0, nullptr, 1, &b2);
+    shadowDepthLayout_ = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }
 
 } // namespace rendering

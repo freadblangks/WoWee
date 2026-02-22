@@ -58,6 +58,15 @@
 namespace wowee {
 namespace core {
 
+namespace {
+bool envFlagEnabled(const char* key, bool defaultValue = false) {
+    const char* raw = std::getenv(key);
+    if (!raw || !*raw) return defaultValue;
+    return !(raw[0] == '0' || raw[0] == 'f' || raw[0] == 'F' ||
+             raw[0] == 'n' || raw[0] == 'N');
+}
+} // namespace
+
 
 const char* Application::mapIdToName(uint32_t mapId) {
     switch (mapId) {
@@ -221,6 +230,10 @@ bool Application::initialize() {
 
 void Application::run() {
     LOG_INFO("Starting main loop");
+    const bool frameProfileEnabled = envFlagEnabled("WOWEE_FRAME_PROFILE", false);
+    if (frameProfileEnabled) {
+        LOG_INFO("Frame timing profile enabled (WOWEE_FRAME_PROFILE=1)");
+    }
 
     auto lastTime = std::chrono::high_resolution_clock::now();
 
@@ -362,9 +375,11 @@ void Application::run() {
         totalSwapMs += std::chrono::duration<double, std::milli>(t4 - t3).count();
 
         if (++frameCount >= 60) {
-            LOG_INFO("[Frame] Update: ", totalUpdateMs / 60.0,
-                     "ms Render: ", totalRenderMs / 60.0,
-                     "ms Swap: ", totalSwapMs / 60.0, "ms");
+            if (frameProfileEnabled && core::Logger::getInstance().shouldLog(core::LogLevel::DEBUG)) {
+                LOG_DEBUG("[Frame] Update: ", totalUpdateMs / 60.0,
+                          "ms Render: ", totalRenderMs / 60.0,
+                          "ms Swap: ", totalSwapMs / 60.0, "ms");
+            }
             frameCount = 0;
             totalUpdateMs = totalRenderMs = totalSwapMs = 0;
         }

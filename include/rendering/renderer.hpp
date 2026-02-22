@@ -295,6 +295,12 @@ private:
     float selCircleRadius = 1.5f;
     bool selCircleVisible = false;
 
+    // Fullscreen color overlay (underwater tint)
+    VkPipeline overlayPipeline = VK_NULL_HANDLE;
+    VkPipelineLayout overlayPipelineLayout = VK_NULL_HANDLE;
+    void initOverlayPipeline();
+    void renderOverlay(const glm::vec4& color);
+
     // Footstep event tracking (animation-driven)
     uint32_t footstepLastAnimationId = 0;
     float footstepLastNormTime = 0.0f;

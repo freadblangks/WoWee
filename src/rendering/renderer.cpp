@@ -51,7 +51,6 @@
 #include "audio/combat_sound_manager.hpp"
 #include "audio/spell_sound_manager.hpp"
 #include "audio/movement_sound_manager.hpp"
-#include <GL/glew.h> // TODO: Remove in Phase 7 (unconverted sub-renderers still reference GL types)
 #include "rendering/vk_context.hpp"
 #include "rendering/vk_frame_data.hpp"
 #include "rendering/vk_shader.hpp"
@@ -708,6 +707,8 @@ void Renderer::shutdown() {
         if (selCirclePipelineLayout) { vkDestroyPipelineLayout(device, selCirclePipelineLayout, nullptr); selCirclePipelineLayout = VK_NULL_HANDLE; }
         if (selCircleVertBuf) { vmaDestroyBuffer(vkCtx->getAllocator(), selCircleVertBuf, selCircleVertAlloc); selCircleVertBuf = VK_NULL_HANDLE; selCircleVertAlloc = VK_NULL_HANDLE; }
         if (selCircleIdxBuf) { vmaDestroyBuffer(vkCtx->getAllocator(), selCircleIdxBuf, selCircleIdxAlloc); selCircleIdxBuf = VK_NULL_HANDLE; selCircleIdxAlloc = VK_NULL_HANDLE; }
+        if (overlayPipeline) { vkDestroyPipeline(device, overlayPipeline, nullptr); overlayPipeline = VK_NULL_HANDLE; }
+        if (overlayPipelineLayout) { vkDestroyPipelineLayout(device, overlayPipelineLayout, nullptr); overlayPipelineLayout = VK_NULL_HANDLE; }
     }
 
     destroyPerFrameResources();
@@ -2857,8 +2858,63 @@ void Renderer::renderSelectionCircle(const glm::mat4& view, const glm::mat4& pro
     vkCmdDrawIndexed(currentCmd, static_cast<uint32_t>(selCircleVertCount), 1, 0, 0, 0);
 }
 
+// ──────────────────────────────────────────────────────────────
+// Fullscreen overlay pipeline (underwater tint, etc.)
+// ──────────────────────────────────────────────────────────────
+
+void Renderer::initOverlayPipeline() {
+    if (!vkCtx) return;
+    VkDevice device = vkCtx->getDevice();
+
+    // Push constant: vec4 color (16 bytes), visible to both stages
+    VkPushConstantRange pc{};
+    pc.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    pc.offset = 0;
+    pc.size = 16;
+
+    VkPipelineLayoutCreateInfo plCI{};
+    plCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    plCI.pushConstantRangeCount = 1;
+    plCI.pPushConstantRanges = &pc;
+    vkCreatePipelineLayout(device, &plCI, nullptr, &overlayPipelineLayout);
+
+    VkShaderModule vertMod, fragMod;
+    if (!vertMod.loadFromFile(device, "assets/shaders/postprocess.vert.spv") ||
+        !fragMod.loadFromFile(device, "assets/shaders/overlay.frag.spv")) {
+        LOG_ERROR("Renderer: failed to load overlay shaders");
+        vertMod.destroy(); fragMod.destroy();
+        return;
+    }
+
+    overlayPipeline = PipelineBuilder()
+        .setShaders(vertMod.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                    fragMod.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+        .setVertexInput({}, {})                             // fullscreen triangle, no VBOs
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+        .setNoDepthTest()
+        .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+        .setLayout(overlayPipelineLayout)
+        .setRenderPass(vkCtx->getImGuiRenderPass())
+        .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
+        .build(device);
+
+    vertMod.destroy(); fragMod.destroy();
+
+    if (overlayPipeline) LOG_INFO("Renderer: overlay pipeline initialized");
+}
+
+void Renderer::renderOverlay(const glm::vec4& color) {
+    if (!overlayPipeline) initOverlayPipeline();
+    if (!overlayPipeline || currentCmd == VK_NULL_HANDLE) return;
+    vkCmdBindPipeline(currentCmd, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipeline);
+    vkCmdPushConstants(currentCmd, overlayPipelineLayout,
+                       VK_SHADER_STAGE_FRAGMENT_BIT, 0, 16, &color[0]);
+    vkCmdDraw(currentCmd, 3, 1, 0, 0); // fullscreen triangle
+}
+
 void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
-    (void)world;  // Used later in Phases 4-5
+    (void)world;
 
     auto renderStart = std::chrono::steady_clock::now();
     lastTerrainRenderMs = 0.0;
@@ -2867,6 +2923,8 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
 
     uint32_t frameIdx = vkCtx->getCurrentFrame();
     VkDescriptorSet perFrameSet = perFrameDescSets[frameIdx];
+    const glm::mat4& view = camera ? camera->getViewMatrix() : glm::mat4(1.0f);
+    const glm::mat4& projection = camera ? camera->getProjectionMatrix() : glm::mat4(1.0f);
 
     // Get time of day for sky-related rendering
     float timeOfDay = (skySystem && skySystem->getSkybox()) ? skySystem->getSkybox()->getTimeOfDay() : 12.0f;
@@ -2896,46 +2954,95 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
         skySystem->render(currentCmd, perFrameSet, *camera, skyParams);
     }
 
-    // Terrain rendering
+    // Terrain (opaque pass)
     if (terrainRenderer && camera && terrainEnabled) {
+        auto terrainStart = std::chrono::steady_clock::now();
         terrainRenderer->render(currentCmd, perFrameSet, *camera);
+        lastTerrainRenderMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - terrainStart).count();
     }
 
-    // Water rendering (after terrain, transparent)
+    // WMO buildings (opaque, drawn before characters so selection circle sits on top)
+    if (wmoRenderer && camera) {
+        auto wmoStart = std::chrono::steady_clock::now();
+        wmoRenderer->render(currentCmd, perFrameSet, *camera);
+        lastWMORenderMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - wmoStart).count();
+    }
+
+    // Selection circle (drawn after WMO, before characters)
+    renderSelectionCircle(view, projection);
+
+    // Characters (after selection circle so units draw over the ring)
+    if (characterRenderer && camera) {
+        characterRenderer->render(currentCmd, perFrameSet, *camera);
+    }
+
+    // M2 doodads, creatures, glow sprites, particles
+    if (m2Renderer && camera) {
+        if (cameraController) {
+            m2Renderer->setInsideInterior(cameraController->isInsideWMO());
+            m2Renderer->setOnTaxi(cameraController->isOnTaxi());
+        }
+        auto m2Start = std::chrono::steady_clock::now();
+        m2Renderer->render(currentCmd, perFrameSet, *camera);
+        m2Renderer->renderSmokeParticles(currentCmd, perFrameSet);
+        m2Renderer->renderM2Particles(currentCmd, perFrameSet);
+        lastM2RenderMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - m2Start).count();
+    }
+
+    // Water (transparent, after all opaques)
     if (waterRenderer && camera) {
         waterRenderer->render(currentCmd, perFrameSet, *camera, globalTime);
     }
 
-    // Render weather particles (after terrain/water, before characters)
+    // Weather particles
     if (weather && camera) {
         weather->render(currentCmd, perFrameSet);
     }
 
-    // Render swim effects (ripples and bubbles)
+    // Swim effects (ripples, bubbles)
     if (swimEffects && camera) {
         swimEffects->render(currentCmd, perFrameSet);
     }
 
-    // Render mount dust effects
+    // Mount dust
     if (mountDust && camera) {
         mountDust->render(currentCmd, perFrameSet);
     }
 
-    // Render charge effect (red haze + dust)
+    // Charge effect
     if (chargeEffect && camera) {
         chargeEffect->render(currentCmd, perFrameSet);
     }
 
-    // TODO Phase 5: WMO rendering
-    // TODO Phase 5: Character rendering
-    // TODO Phase 5: M2 rendering
-
-    // Render quest markers (billboards above NPCs)
+    // Quest markers (billboards above NPCs)
     if (questMarkerRenderer && camera) {
         questMarkerRenderer->render(currentCmd, perFrameSet, *camera);
     }
 
-    // Minimap display overlay (screen-space quad with composite texture)
+    // Underwater tint overlay — detect camera position relative to water surface
+    if (overlayPipeline && cameraController && cameraController->isSwimming()
+            && waterRenderer && camera) {
+        glm::vec3 camPos = camera->getPosition();
+        auto waterH = waterRenderer->getWaterHeightAt(camPos.x, camPos.y);
+        constexpr float UNDERWATER_EPS = 1.10f;
+        constexpr float MAX_DEPTH = 12.0f;
+        if (waterH && camPos.z < (*waterH - UNDERWATER_EPS)
+                   && (*waterH - camPos.z) <= MAX_DEPTH) {
+            // Check for canal (liquid type 5, 13, 17) vs open water
+            bool canal = false;
+            if (auto lt = waterRenderer->getWaterTypeAt(camPos.x, camPos.y))
+                canal = (*lt == 5 || *lt == 13 || *lt == 17);
+            glm::vec4 tint = canal
+                ? glm::vec4(0.01f, 0.05f, 0.11f, 0.50f)
+                : glm::vec4(0.02f, 0.08f, 0.15f, 0.30f);
+            renderOverlay(tint);
+        }
+    }
+
+    // Minimap overlay
     if (minimap && minimap->isEnabled() && camera && window) {
         glm::vec3 minimapCenter = camera->getPosition();
         if (cameraController && cameraController->isThirdPerson())
@@ -2944,323 +3051,9 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
                         window->getWidth(), window->getHeight());
     }
 
-    // TODO Phase 6: Post-process pipeline, shadow mapping, underwater overlay
-
     auto renderEnd = std::chrono::steady_clock::now();
     lastRenderMs = std::chrono::duration<double, std::milli>(renderEnd - renderStart).count();
 
-    // ===== STUBBED GL RENDERING (dead code — reference for Phases 4-6) =====
-#if 0
-    auto renderStart = std::chrono::steady_clock::now();
-    lastTerrainRenderMs = 0.0;
-    lastWMORenderMs = 0.0;
-    lastM2RenderMs = 0.0;
-
-    // Shadow pass (before main scene) — update every frame to avoid temporal popping.
-    if (shadowsEnabled && shadowFBO && shadowShaderProgram && terrainLoaded) {
-        renderShadowPass();
-    } else {
-        // Clear shadow maps when disabled
-        if (terrainRenderer) terrainRenderer->clearShadowMap();
-        if (wmoRenderer) wmoRenderer->clearShadowMap();
-        if (m2Renderer) m2Renderer->clearShadowMap();
-        if (characterRenderer) characterRenderer->clearShadowMap();
-    }
-
-    // Bind HDR scene framebuffer for world rendering
-    glBindFramebuffer(GL_FRAMEBUFFER, sceneFBO);
-    glViewport(0, 0, fbWidth, fbHeight);
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    (void)world;  // Unused for now
-
-    // Get time of day for sky-related rendering
-    float timeOfDay = skybox ? skybox->getTimeOfDay() : 12.0f;
-    bool underwater = false;
-    bool canalUnderwater = false;
-
-    // Render sky system (unified coordinator for skybox, stars, celestial, clouds, lens flare)
-    if (skySystem && camera) {
-        // Populate SkyParams from lighting manager
-        rendering::SkyParams skyParams;
-        skyParams.timeOfDay = timeOfDay;
-        skyParams.gameTime = gameHandler ? gameHandler->getGameTime() : -1.0f;
-
-        if (lightingManager) {
-            const auto& lighting = lightingManager->getLightingParams();
-            skyParams.directionalDir = lighting.directionalDir;
-            skyParams.sunColor = lighting.diffuseColor;
-            skyParams.skyTopColor = lighting.skyTopColor;
-            skyParams.skyMiddleColor = lighting.skyMiddleColor;
-            skyParams.skyBand1Color = lighting.skyBand1Color;
-            skyParams.skyBand2Color = lighting.skyBand2Color;
-            skyParams.cloudDensity = lighting.cloudDensity;
-            skyParams.fogDensity = lighting.fogDensity;
-            skyParams.horizonGlow = lighting.horizonGlow;
-        }
-
-        // TODO: Set skyboxModelId from LightSkybox.dbc (future)
-        skyParams.skyboxModelId = 0;
-        skyParams.skyboxHasStars = false;  // Gradient skybox has no baked stars
-
-        skySystem->render(currentCmd, perFrameDescSets[vkCtx->getCurrentFrame()], *camera, skyParams);
-    } else {
-        // Fallback: render individual components (backwards compatibility)
-        if (skybox && camera) {
-            skybox->render(currentCmd, perFrameDescSets[vkCtx->getCurrentFrame()], timeOfDay);
-        }
-
-        // Get lighting parameters for celestial rendering
-        const glm::vec3* sunDir = nullptr;
-        const glm::vec3* sunColor = nullptr;
-        float cloudDensity = 0.0f;
-        float fogDensity = 0.0f;
-        if (lightingManager) {
-            const auto& lighting = lightingManager->getLightingParams();
-            sunDir = &lighting.directionalDir;
-            sunColor = &lighting.diffuseColor;
-            cloudDensity = lighting.cloudDensity;
-            fogDensity = lighting.fogDensity;
-        }
-
-        if (starField && camera) {
-            starField->render(currentCmd, perFrameDescSets[vkCtx->getCurrentFrame()], timeOfDay, cloudDensity, fogDensity);
-        }
-
-        if (celestial && camera) {
-            celestial->render(currentCmd, perFrameDescSets[vkCtx->getCurrentFrame()], timeOfDay, sunDir, sunColor);
-        }
-
-        if (clouds && camera) {
-            clouds->render(currentCmd, perFrameDescSets[vkCtx->getCurrentFrame()], timeOfDay);
-        }
-
-        if (lensFlare && camera && celestial) {
-            glm::vec3 sunPosition;
-            if (sunDir) {
-                const float sunDistance = 800.0f;
-                sunPosition = -*sunDir * sunDistance;
-            } else {
-                sunPosition = celestial->getSunPosition(timeOfDay);
-            }
-            lensFlare->render(*camera, sunPosition, timeOfDay);
-        }
-    }
-
-    // Apply lighting and fog to all renderers
-    if (lightingManager) {
-        const auto& lighting = lightingManager->getLightingParams();
-
-        float lightDir[3] = {lighting.directionalDir.x, lighting.directionalDir.y, lighting.directionalDir.z};
-        float lightColor[3] = {lighting.diffuseColor.r, lighting.diffuseColor.g, lighting.diffuseColor.b};
-        float ambientColor[3] = {lighting.ambientColor.r, lighting.ambientColor.g, lighting.ambientColor.b};
-        float fogColorArray[3] = {lighting.fogColor.r, lighting.fogColor.g, lighting.fogColor.b};
-
-        if (wmoRenderer) {
-            wmoRenderer->setLighting(lightDir, lightColor, ambientColor);
-            wmoRenderer->setFog(glm::vec3(fogColorArray[0], fogColorArray[1], fogColorArray[2]),
-                                lighting.fogStart, lighting.fogEnd);
-        }
-        if (m2Renderer) {
-            m2Renderer->setLighting(lightDir, lightColor, ambientColor);
-            m2Renderer->setFog(glm::vec3(fogColorArray[0], fogColorArray[1], fogColorArray[2]),
-                               lighting.fogStart, lighting.fogEnd);
-        }
-        if (characterRenderer) {
-            characterRenderer->setLighting(lightDir, lightColor, ambientColor);
-            characterRenderer->setFog(glm::vec3(fogColorArray[0], fogColorArray[1], fogColorArray[2]),
-                                      lighting.fogStart, lighting.fogEnd);
-        }
-    } else if (skybox) {
-        // Fallback to skybox-based fog if no lighting manager
-        glm::vec3 horizonColor = skybox->getHorizonColor(timeOfDay);
-        if (wmoRenderer) wmoRenderer->setFog(horizonColor, 100.0f, 600.0f);
-        if (m2Renderer) m2Renderer->setFog(horizonColor, 100.0f, 600.0f);
-        if (characterRenderer) characterRenderer->setFog(horizonColor, 100.0f, 600.0f);
-    }
-
-    // Render terrain if loaded and enabled
-    if (terrainEnabled && terrainLoaded && terrainRenderer && camera) {
-        // Check if camera/character is underwater for fog override
-        if (cameraController && cameraController->isSwimming() && waterRenderer && camera) {
-            glm::vec3 camPos = camera->getPosition();
-            auto waterH = waterRenderer->getWaterHeightAt(camPos.x, camPos.y);
-            constexpr float MAX_UNDERWATER_DEPTH = 12.0f;
-            // Require camera to be meaningfully below the surface before
-            // underwater fog/tint kicks in (avoids "wrong plane" near surface).
-            constexpr float UNDERWATER_ENTER_EPS = 1.10f;
-            if (waterH &&
-                camPos.z < (*waterH - UNDERWATER_ENTER_EPS) &&
-                (*waterH - camPos.z) <= MAX_UNDERWATER_DEPTH) {
-                underwater = true;
-            }
-        }
-
-        if (underwater) {
-            glm::vec3 camPos = camera->getPosition();
-            std::optional<uint16_t> liquidType = waterRenderer ? waterRenderer->getWaterTypeAt(camPos.x, camPos.y) : std::nullopt;
-            if (!liquidType && cameraController) {
-                const glm::vec3* followTarget = cameraController->getFollowTarget();
-                if (followTarget && waterRenderer) {
-                    liquidType = waterRenderer->getWaterTypeAt(followTarget->x, followTarget->y);
-                }
-            }
-            canalUnderwater = liquidType && (*liquidType == 5 || *liquidType == 13 || *liquidType == 17);
-        }
-
-        // Apply lighting from lighting manager
-        if (lightingManager) {
-            const auto& lighting = lightingManager->getLightingParams();
-
-            // Set lighting (direction, color, ambient)
-            float lightDir[3] = {lighting.directionalDir.x, lighting.directionalDir.y, lighting.directionalDir.z};
-            float lightColor[3] = {lighting.diffuseColor.r, lighting.diffuseColor.g, lighting.diffuseColor.b};
-            float ambientColor[3] = {lighting.ambientColor.r, lighting.ambientColor.g, lighting.ambientColor.b};
-            terrainRenderer->setLighting(lightDir, lightColor, ambientColor);
-
-            // Set fog
-            float fogColor[3] = {lighting.fogColor.r, lighting.fogColor.g, lighting.fogColor.b};
-            terrainRenderer->setFog(fogColor, lighting.fogStart, lighting.fogEnd);
-        } else if (skybox) {
-            // Fallback to skybox-based fog if no lighting manager
-            glm::vec3 horizonColor = skybox->getHorizonColor(timeOfDay);
-            float fogColorArray[3] = {horizonColor.r, horizonColor.g, horizonColor.b};
-            terrainRenderer->setFog(fogColorArray, 400.0f, 1200.0f);
-        }
-
-        auto terrainStart = std::chrono::steady_clock::now();
-        terrainRenderer->render(*camera);
-        auto terrainEnd = std::chrono::steady_clock::now();
-        lastTerrainRenderMs = std::chrono::duration<double, std::milli>(terrainEnd - terrainStart).count();
-
-    }
-
-    // Render weather particles (after terrain/water, before characters)
-    if (weather && camera) {
-        weather->render(currentCmd, perFrameDescSets[vkCtx->getCurrentFrame()]);
-    }
-
-    // Render swim effects (ripples and bubbles)
-    if (swimEffects && camera) {
-        swimEffects->render(currentCmd, perFrameDescSets[vkCtx->getCurrentFrame()]);
-    }
-
-    // Render mount dust effects
-    if (mountDust && camera) {
-        mountDust->render(currentCmd, perFrameDescSets[vkCtx->getCurrentFrame()]);
-    }
-
-    // Render charge effect (red haze + dust)
-    if (chargeEffect && camera) {
-        chargeEffect->render(currentCmd, perFrameDescSets[vkCtx->getCurrentFrame()]);
-    }
-
-    // Compute view/projection once for all sub-renderers
-    const glm::mat4& view = camera ? camera->getViewMatrix() : glm::mat4(1.0f);
-    const glm::mat4& projection = camera ? camera->getProjectionMatrix() : glm::mat4(1.0f);
-
-    // Render WMO buildings first so selection circle can be drawn above WMO depth.
-    if (wmoRenderer && camera) {
-        auto wmoStart = std::chrono::steady_clock::now();
-        wmoRenderer->render(currentCmd, perFrameDescSets[vkCtx->getCurrentFrame()], *camera);
-        auto wmoEnd = std::chrono::steady_clock::now();
-        lastWMORenderMs = std::chrono::duration<double, std::milli>(wmoEnd - wmoStart).count();
-    }
-
-    // Render selection circle after WMO so interiors/shafts do not hide it.
-    // It remains before character/M2 passes so units still draw over the ring.
-    renderSelectionCircle(view, projection);
-
-    // Render characters (after selection circle)
-    if (characterRenderer && camera) {
-        characterRenderer->render(currentCmd, perFrameDescSets[vkCtx->getCurrentFrame()], *camera);
-    }
-
-    // Render M2 doodads (trees, rocks, etc.)
-    if (m2Renderer && camera) {
-        // Dim M2 lighting when player is inside a WMO
-        if (cameraController) {
-            m2Renderer->setInsideInterior(cameraController->isInsideWMO());
-            m2Renderer->setOnTaxi(cameraController->isOnTaxi());
-        }
-        auto m2Start = std::chrono::steady_clock::now();
-        uint32_t frame = vkCtx->getCurrentFrame();
-        VkDescriptorSet pfSet = perFrameDescSets[frame];
-        m2Renderer->render(currentCmd, pfSet, *camera);
-        m2Renderer->renderSmokeParticles(currentCmd, pfSet);
-        m2Renderer->renderM2Particles(currentCmd, pfSet);
-        auto m2End = std::chrono::steady_clock::now();
-        lastM2RenderMs = std::chrono::duration<double, std::milli>(m2End - m2Start).count();
-    }
-
-    // Render water after opaque terrain/WMO/M2 so transparent surfaces remain visible.
-    if (waterRenderer && camera) {
-        static float time = 0.0f;
-        time += 0.016f;  // Approximate frame time
-        waterRenderer->render(*camera, time);
-    }
-
-    // Render quest markers (billboards above NPCs)
-    if (questMarkerRenderer && camera) {
-        questMarkerRenderer->render(*camera);
-    }
-
-    // Full-screen underwater tint so WMO/M2/characters also feel submerged.
-    if (false && underwater && underwaterOverlayShader && underwaterOverlayVAO) {
-        glDisable(GL_DEPTH_TEST);
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        underwaterOverlayShader->use();
-        if (canalUnderwater) {
-            underwaterOverlayShader->setUniform("uTint", glm::vec4(0.01f, 0.05f, 0.11f, 0.50f));
-        } else {
-            underwaterOverlayShader->setUniform("uTint", glm::vec4(0.02f, 0.08f, 0.15f, 0.30f));
-        }
-        glBindVertexArray(underwaterOverlayVAO);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        glBindVertexArray(0);
-        glDisable(GL_BLEND);
-        glEnable(GL_DEPTH_TEST);
-    }
-
-    // --- Resolve MSAA → non-MSAA texture ---
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, sceneFBO);
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, resolveFBO);
-    glBlitFramebuffer(0, 0, fbWidth, fbHeight, 0, 0, fbWidth, fbHeight,
-                      GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
-
-    // --- Post-process: tonemap via fullscreen quad ---
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glViewport(0, 0, window->getWidth(), window->getHeight());
-    glDisable(GL_DEPTH_TEST);
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    if (postProcessShader && screenQuadVAO) {
-        postProcessShader->use();
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, resolveColorTex);
-        postProcessShader->setUniform("uScene", 0);
-        glBindVertexArray(screenQuadVAO);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        glBindVertexArray(0);
-        postProcessShader->unuse();
-    }
-
-    // Render minimap overlay (after post-process so it's not overwritten)
-    if (minimap && camera && window) {
-        glm::vec3 minimapCenter = camera->getPosition();
-        if (cameraController && cameraController->isThirdPerson()) {
-            minimapCenter = characterPosition;
-        }
-        minimap->render(*camera, minimapCenter, window->getWidth(), window->getHeight());
-    }
-
-    glEnable(GL_DEPTH_TEST);
-
-    auto renderEnd = std::chrono::steady_clock::now();
-    lastRenderMs = std::chrono::duration<double, std::milli>(renderEnd - renderStart).count();
-#endif // Stubbed GL rendering
 }
 
 // initPostProcess(), resizePostProcess(), shutdownPostProcess() removed —

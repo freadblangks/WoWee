@@ -64,7 +64,7 @@ size_t approxTextureBytesWithMips(int w, int h) {
 
 // Descriptor pool sizing
 static constexpr uint32_t MAX_MATERIAL_SETS = 4096;
-static constexpr uint32_t MAX_BONE_SETS = 1024;
+static constexpr uint32_t MAX_BONE_SETS = 8192;
 
 // CharMaterial UBO layout (matches character.frag.glsl set=1 binding=1)
 struct CharMaterialUBO {
@@ -132,7 +132,9 @@ bool CharacterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFram
     }
 
     // --- Descriptor pools ---
-    {
+    // Material descriptors are transient and allocated every draw; keep per-frame
+    // pools so we can reset safely each frame slot without exhausting descriptors.
+    for (int i = 0; i < 2; i++) {
         VkDescriptorPoolSize sizes[] = {
             {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_MATERIAL_SETS},
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, MAX_MATERIAL_SETS},
@@ -142,7 +144,7 @@ bool CharacterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFram
         ci.poolSizeCount = 2;
         ci.pPoolSizes = sizes;
         ci.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-        vkCreateDescriptorPool(device, &ci, nullptr, &materialDescPool_);
+        vkCreateDescriptorPool(device, &ci, nullptr, &materialDescPools_[i]);
     }
     {
         VkDescriptorPoolSize sizes[] = {
@@ -300,8 +302,23 @@ void CharacterRenderer::shutdown() {
 
     if (pipelineLayout_) { vkDestroyPipelineLayout(device, pipelineLayout_, nullptr); pipelineLayout_ = VK_NULL_HANDLE; }
 
+    // Release any deferred transient material UBOs.
+    for (int i = 0; i < 2; i++) {
+        for (const auto& b : transientMaterialUbos_[i]) {
+            if (b.first) {
+                vmaDestroyBuffer(alloc, b.first, b.second);
+            }
+        }
+        transientMaterialUbos_[i].clear();
+    }
+
     // Destroy descriptor pools and layouts
-    if (materialDescPool_) { vkDestroyDescriptorPool(device, materialDescPool_, nullptr); materialDescPool_ = VK_NULL_HANDLE; }
+    for (int i = 0; i < 2; i++) {
+        if (materialDescPools_[i]) {
+            vkDestroyDescriptorPool(device, materialDescPools_[i], nullptr);
+            materialDescPools_[i] = VK_NULL_HANDLE;
+        }
+    }
     if (boneDescPool_) { vkDestroyDescriptorPool(device, boneDescPool_, nullptr); boneDescPool_ = VK_NULL_HANDLE; }
     if (materialSetLayout_) { vkDestroyDescriptorSetLayout(device, materialSetLayout_, nullptr); materialSetLayout_ = VK_NULL_HANDLE; }
     if (boneSetLayout_) { vkDestroyDescriptorSetLayout(device, boneSetLayout_, nullptr); boneSetLayout_ = VK_NULL_HANDLE; }
@@ -326,13 +343,18 @@ void CharacterRenderer::destroyModelGPU(M2ModelGPU& gpuModel) {
 void CharacterRenderer::destroyInstanceBones(CharacterInstance& inst) {
     if (!vkCtx_) return;
     VmaAllocator alloc = vkCtx_->getAllocator();
+    VkDevice device = vkCtx_->getDevice();
     for (int i = 0; i < 2; i++) {
+        if (inst.boneSet[i] != VK_NULL_HANDLE && boneDescPool_ != VK_NULL_HANDLE) {
+            vkFreeDescriptorSets(device, boneDescPool_, 1, &inst.boneSet[i]);
+            inst.boneSet[i] = VK_NULL_HANDLE;
+        }
         if (inst.boneBuffer[i]) {
             vmaDestroyBuffer(alloc, inst.boneBuffer[i], inst.boneAlloc[i]);
             inst.boneBuffer[i] = VK_NULL_HANDLE;
+            inst.boneAlloc[i] = VK_NULL_HANDLE;
             inst.boneMapped[i] = nullptr;
         }
-        // boneSet freed when pool is reset/destroyed
     }
 }
 
@@ -503,6 +525,16 @@ VkTexture* CharacterRenderer::compositeTextures(const std::vector<std::string>& 
         return whiteTexture_.get();
     }
 
+    // Composite key is deterministic from layer set; if we've already built it,
+    // reuse the existing GPU texture to keep live instance pointers valid.
+    std::string cacheKey = "__composite__";
+    for (const auto& lp : layerPaths) { cacheKey += '|'; cacheKey += lp; }
+    auto cachedComposite = textureCache.find(cacheKey);
+    if (cachedComposite != textureCache.end()) {
+        cachedComposite->second.lastUse = ++textureCacheCounter_;
+        return cachedComposite->second.texture.get();
+    }
+
     // Load base layer
     auto base = assetManager->loadTexture(layerPaths[0]);
     if (!base.isValid()) {
@@ -647,17 +679,16 @@ VkTexture* CharacterRenderer::compositeTextures(const std::vector<std::string>& 
 
     VkTexture* texPtr = tex.get();
 
-    // Store in texture cache with a generated key
-    std::string cacheKey = "__composite__";
-    for (const auto& lp : layerPaths) { cacheKey += '|'; cacheKey += lp; }
-
+    // Store in texture cache with deterministic key.
+    // Keep the first allocation for a key to avoid invalidating raw pointers
+    // held by active render instances.
     TextureCacheEntry e;
     e.texture = std::move(tex);
     e.approxBytes = approxTextureBytesWithMips(width, height);
     e.lastUse = ++textureCacheCounter_;
     e.hasAlpha = false;
     e.colorKeyBlack = false;
-    textureCache[cacheKey] = std::move(e);
+    textureCache.emplace(cacheKey, std::move(e));
 
     core::Logger::getInstance().info("Composite texture created: ", width, "x", height, " from ", layerPaths.size(), " layers");
     return texPtr;
@@ -686,6 +717,17 @@ VkTexture* CharacterRenderer::compositeWithRegions(const std::string& basePath,
     auto cacheIt = compositeCache_.find(cacheKey);
     if (cacheIt != compositeCache_.end() && cacheIt->second != nullptr) {
         return cacheIt->second;
+    }
+
+    // If the lookup map was cleared, recover from the texture cache without
+    // regenerating/replacing the underlying GPU texture.
+    std::string storageKey = "__compositeRegions__" + cacheKey;
+    auto cachedComposite = textureCache.find(storageKey);
+    if (cachedComposite != textureCache.end()) {
+        cachedComposite->second.lastUse = ++textureCacheCounter_;
+        VkTexture* texPtr = cachedComposite->second.texture.get();
+        compositeCache_[cacheKey] = texPtr;
+        return texPtr;
     }
 
     // Region index -> pixel coordinates on the 256x256 base atlas
@@ -859,15 +901,22 @@ VkTexture* CharacterRenderer::compositeWithRegions(const std::string& basePath,
 
     VkTexture* texPtr = tex.get();
 
-    // Store in texture cache
-    std::string storageKey = "__compositeRegions__" + cacheKey;
+    // Store in texture cache.
+    // Use emplace to avoid replacing an existing texture for this key; replacing
+    // would invalidate pointers currently bound to active instances.
     TextureCacheEntry entry;
     entry.texture = std::move(tex);
     entry.approxBytes = approxTextureBytesWithMips(width, height);
     entry.lastUse = ++textureCacheCounter_;
     entry.hasAlpha = false;
     entry.colorKeyBlack = false;
-    textureCache[storageKey] = std::move(entry);
+    auto ins = textureCache.emplace(storageKey, std::move(entry));
+    if (!ins.second) {
+        // Existing texture already owns this key; keep pointer stable.
+        ins.first->second.lastUse = ++textureCacheCounter_;
+        compositeCache_[cacheKey] = ins.first->second.texture.get();
+        return ins.first->second.texture.get();
+    }
 
     core::Logger::getInstance().debug("compositeWithRegions: created ", width, "x", height,
         " texture with ", regionLayers.size(), " equipment regions");
@@ -1339,6 +1388,23 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
     }
 
     uint32_t frameIndex = vkCtx_->getCurrentFrame();
+    uint32_t frameSlot = frameIndex % 2u;
+
+    // Reset transient material allocations once per frame slot.
+    // beginFrame() waits on this slot's fence before recording.
+    if (lastMaterialPoolResetFrame_ != frameIndex) {
+        VmaAllocator alloc = vkCtx_->getAllocator();
+        for (const auto& b : transientMaterialUbos_[frameSlot]) {
+            if (b.first) {
+                vmaDestroyBuffer(alloc, b.first, b.second);
+            }
+        }
+        transientMaterialUbos_[frameSlot].clear();
+        if (materialDescPools_[frameSlot]) {
+            vkResetDescriptorPool(vkCtx_->getDevice(), materialDescPools_[frameSlot], 0);
+        }
+        lastMaterialPoolResetFrame_ = frameIndex;
+    }
 
     // Bind per-frame descriptor set (set 0) -- shared across all draws
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -1394,7 +1460,18 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                 ai.descriptorPool = boneDescPool_;
                 ai.descriptorSetCount = 1;
                 ai.pSetLayouts = &boneSetLayout_;
-                vkAllocateDescriptorSets(vkCtx_->getDevice(), &ai, &instMut.boneSet[frameIndex]);
+                VkResult dsRes = vkAllocateDescriptorSets(vkCtx_->getDevice(), &ai, &instMut.boneSet[frameIndex]);
+                if (dsRes != VK_SUCCESS) {
+                    LOG_ERROR("CharacterRenderer: bone descriptor allocation failed (instance=",
+                              instMut.id, ", frame=", frameIndex, ", vk=", static_cast<int>(dsRes), ")");
+                    if (instMut.boneBuffer[frameIndex]) {
+                        vmaDestroyBuffer(vkCtx_->getAllocator(),
+                                         instMut.boneBuffer[frameIndex], instMut.boneAlloc[frameIndex]);
+                        instMut.boneBuffer[frameIndex] = VK_NULL_HANDLE;
+                        instMut.boneAlloc[frameIndex] = VK_NULL_HANDLE;
+                        instMut.boneMapped[frameIndex] = nullptr;
+                    }
+                }
 
                 if (instMut.boneSet[frameIndex]) {
                     VkDescriptorBufferInfo bufInfo{};
@@ -1665,7 +1742,7 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                 VkDescriptorSet materialSet = VK_NULL_HANDLE;
                 {
                     VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-                    ai.descriptorPool = materialDescPool_;
+                    ai.descriptorPool = materialDescPools_[frameSlot];
                     ai.descriptorSetCount = 1;
                     ai.pSetLayouts = &materialSetLayout_;
                     if (vkAllocateDescriptorSets(vkCtx_->getDevice(), &ai, &materialSet) != VK_SUCCESS) {
@@ -1731,11 +1808,7 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
 
                 vkCmdDrawIndexed(cmd, batch.indexCount, 1, batch.indexStart, 0, 0);
 
-                // Queue the ephemeral UBO for deferred deletion (will be cleaned up after frame completes)
-                // For now, we leak these tiny UBOs -- they are freed when the descriptor pool is reset/destroyed.
-                // A proper solution would use a per-frame linear allocator.
-                // TODO: Use a per-frame staging buffer to avoid per-batch VMA allocations
-                vmaDestroyBuffer(vkCtx_->getAllocator(), matUBO, matUBOAlloc);
+                transientMaterialUbos_[frameSlot].emplace_back(matUBO, matUBOAlloc);
             }
         } else {
             // Draw entire model with first texture
@@ -1746,7 +1819,7 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
             VkDescriptorSet materialSet = VK_NULL_HANDLE;
             {
                 VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-                ai.descriptorPool = materialDescPool_;
+                ai.descriptorPool = materialDescPools_[frameSlot];
                 ai.descriptorSetCount = 1;
                 ai.pSetLayouts = &materialSetLayout_;
                 if (vkAllocateDescriptorSets(vkCtx_->getDevice(), &ai, &materialSet) != VK_SUCCESS) {
@@ -1807,7 +1880,7 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
 
             vkCmdDrawIndexed(cmd, gpuModel.indexCount, 1, 0, 0, 0);
 
-            vmaDestroyBuffer(vkCtx_->getAllocator(), matUBO, matUBOAlloc);
+            transientMaterialUbos_[frameSlot].emplace_back(matUBO, matUBOAlloc);
         }
     }
 }
@@ -2021,7 +2094,18 @@ void CharacterRenderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& light
                 dsAI.descriptorPool = boneDescPool_;
                 dsAI.descriptorSetCount = 1;
                 dsAI.pSetLayouts = &boneSetLayout_;
-                vkAllocateDescriptorSets(device, &dsAI, &inst.boneSet[frameIndex]);
+                VkResult dsRes = vkAllocateDescriptorSets(device, &dsAI, &inst.boneSet[frameIndex]);
+                if (dsRes != VK_SUCCESS) {
+                    LOG_ERROR("CharacterRenderer[shadow]: bone descriptor allocation failed (instance=",
+                              inst.id, ", frame=", frameIndex, ", vk=", static_cast<int>(dsRes), ")");
+                    if (inst.boneBuffer[frameIndex]) {
+                        vmaDestroyBuffer(vkCtx_->getAllocator(),
+                                         inst.boneBuffer[frameIndex], inst.boneAlloc[frameIndex]);
+                        inst.boneBuffer[frameIndex] = VK_NULL_HANDLE;
+                        inst.boneAlloc[frameIndex] = VK_NULL_HANDLE;
+                        inst.boneMapped[frameIndex] = nullptr;
+                    }
+                }
 
                 if (inst.boneSet[frameIndex]) {
                     VkDescriptorBufferInfo bInfo{};

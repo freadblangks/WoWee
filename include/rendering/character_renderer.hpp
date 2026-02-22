@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <string>
+#include <utility>
 
 namespace wowee {
 namespace pipeline { class AssetManager; }
@@ -237,8 +238,10 @@ private:
     VkDescriptorSetLayout boneSetLayout_ = VK_NULL_HANDLE;  // set 2
 
     // Descriptor pool
-    VkDescriptorPool materialDescPool_ = VK_NULL_HANDLE;
+    VkDescriptorPool materialDescPools_[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
     VkDescriptorPool boneDescPool_ = VK_NULL_HANDLE;
+    uint32_t lastMaterialPoolResetFrame_ = 0xFFFFFFFFu;
+    std::vector<std::pair<VkBuffer, VmaAllocation>> transientMaterialUbos_[2];
 
     // Texture cache
     struct TextureCacheEntry {

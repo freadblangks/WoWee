@@ -2568,7 +2568,6 @@ void CharacterRenderer::dumpAnimations(uint32_t instanceId) const {
 void CharacterRenderer::recreatePipelines() {
     if (!vkCtx_) return;
     VkDevice device = vkCtx_->getDevice();
-    vkDeviceWaitIdle(device);
 
     // Destroy old main-pass pipelines (NOT shadow, NOT pipeline layout)
     if (opaquePipeline_)    { vkDestroyPipeline(device, opaquePipeline_, nullptr); opaquePipeline_ = VK_NULL_HANDLE; }

@@ -384,8 +384,13 @@ bool VkContext::createMsaaColorImage() {
     allocInfo.preferredFlags = VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT;
 
     if (vmaCreateImage(allocator, &imgInfo, &allocInfo, &msaaColorImage_, &msaaColorAllocation_, nullptr) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create MSAA color image");
-        return false;
+        // Retry without TRANSIENT (some drivers reject it at high sample counts)
+        imgInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        allocInfo.preferredFlags = 0;
+        if (vmaCreateImage(allocator, &imgInfo, &allocInfo, &msaaColorImage_, &msaaColorAllocation_, nullptr) != VK_SUCCESS) {
+            LOG_ERROR("Failed to create MSAA color image");
+            return false;
+        }
     }
 
     VkImageViewCreateInfo viewInfo{};

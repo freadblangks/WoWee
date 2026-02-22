@@ -726,16 +726,25 @@ void Renderer::shutdown() {
 void Renderer::setMsaaSamples(VkSampleCountFlagBits samples) {
     if (!vkCtx) return;
 
+    // Clamp to device maximum
+    VkSampleCountFlagBits maxSamples = vkCtx->getMaxUsableSampleCount();
+    if (samples > maxSamples) samples = maxSamples;
+
     VkSampleCountFlagBits current = vkCtx->getMsaaSamples();
     if (samples == current) return;
 
     LOG_INFO("Changing MSAA from ", static_cast<int>(current), "x to ", static_cast<int>(samples), "x");
 
+    // Single GPU wait — all subsequent operations are CPU-side object creation
     vkDeviceWaitIdle(vkCtx->getDevice());
 
     // Set new MSAA and recreate swapchain (render pass, depth, MSAA image, framebuffers)
     vkCtx->setMsaaSamples(samples);
-    vkCtx->recreateSwapchain(window->getWidth(), window->getHeight());
+    if (!vkCtx->recreateSwapchain(window->getWidth(), window->getHeight())) {
+        LOG_ERROR("MSAA change failed — reverting to 1x");
+        vkCtx->setMsaaSamples(VK_SAMPLE_COUNT_1_BIT);
+        vkCtx->recreateSwapchain(window->getWidth(), window->getHeight());
+    }
 
     // Recreate all sub-renderer pipelines (they embed sample count from render pass)
     if (terrainRenderer) terrainRenderer->recreatePipelines();
@@ -758,7 +767,6 @@ void Renderer::setMsaaSamples(VkSampleCountFlagBits samples) {
         if (auto* lf = skySystem->getLensFlare()) lf->recreatePipelines();
     }
 
-    // Lightning is standalone (not instantiated in Renderer, no action needed)
     // Selection circle + overlay use lazy init, just destroy them
     VkDevice device = vkCtx->getDevice();
     if (selCirclePipeline) { vkDestroyPipeline(device, selCirclePipeline, nullptr); selCirclePipeline = VK_NULL_HANDLE; }

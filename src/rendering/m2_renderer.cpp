@@ -3683,7 +3683,6 @@ float M2Renderer::raycastBoundingBoxes(const glm::vec3& origin, const glm::vec3&
 void M2Renderer::recreatePipelines() {
     if (!vkCtx_) return;
     VkDevice device = vkCtx_->getDevice();
-    vkDeviceWaitIdle(device);
 
     // Destroy old main-pass pipelines (NOT shadow, NOT pipeline layouts)
     if (opaquePipeline_)            { vkDestroyPipeline(device, opaquePipeline_, nullptr); opaquePipeline_ = VK_NULL_HANDLE; }

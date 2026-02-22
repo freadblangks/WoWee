@@ -140,6 +140,7 @@ void WorldSocket::disconnect() {
     encryptionEnabled = false;
     useVanillaCrypt = false;
     receiveBuffer.clear();
+    receiveReadOffset_ = 0;
     parsedPacketsScratch_.clear();
     headerBytesDecrypted = 0;
     LOG_INFO("Disconnected from world server");
@@ -151,13 +152,15 @@ bool WorldSocket::isConnected() const {
 
 void WorldSocket::send(const Packet& packet) {
     if (!connected) return;
+    static const bool kLogCharCreatePayload = envFlagEnabled("WOWEE_NET_LOG_CHAR_CREATE", false);
+    static const bool kLogSwapItemPackets = envFlagEnabled("WOWEE_NET_LOG_SWAP_ITEM", false);
 
     const auto& data = packet.getData();
     uint16_t opcode = packet.getOpcode();
     uint16_t payloadLen = static_cast<uint16_t>(data.size());
 
     // Debug: parse and log character-create payload fields (helps diagnose appearance issues).
-    if (opcode == 0x036) { // CMSG_CHAR_CREATE
+    if (kLogCharCreatePayload && opcode == 0x036) { // CMSG_CHAR_CREATE
         size_t pos = 0;
         std::string name;
         while (pos < data.size()) {
@@ -204,7 +207,7 @@ void WorldSocket::send(const Packet& packet) {
         }
     }
 
-    if (opcode == 0x10C || opcode == 0x10D) { // CMSG_SWAP_ITEM / CMSG_SWAP_INV_ITEM
+    if (kLogSwapItemPackets && (opcode == 0x10C || opcode == 0x10D)) { // CMSG_SWAP_ITEM / CMSG_SWAP_INV_ITEM
         std::string hex;
         for (size_t i = 0; i < data.size(); i++) {
             char buf[4];
@@ -278,6 +281,23 @@ void WorldSocket::send(const Packet& packet) {
 
 void WorldSocket::update() {
     if (!connected) return;
+    auto bufferedBytes = [&]() -> size_t {
+        return (receiveBuffer.size() >= receiveReadOffset_)
+            ? (receiveBuffer.size() - receiveReadOffset_)
+            : 0;
+    };
+    auto compactReceiveBuffer = [&]() {
+        if (receiveReadOffset_ == 0) return;
+        if (receiveReadOffset_ >= receiveBuffer.size()) {
+            receiveBuffer.clear();
+            receiveReadOffset_ = 0;
+            return;
+        }
+        const size_t remaining = receiveBuffer.size() - receiveReadOffset_;
+        std::memmove(receiveBuffer.data(), receiveBuffer.data() + receiveReadOffset_, remaining);
+        receiveBuffer.resize(remaining);
+        receiveReadOffset_ = 0;
+    };
 
     // Drain the socket. Some servers send an auth response and immediately close; a single recv()
     // may read the response, and a subsequent recv() can return 0 (FIN). If we disconnect right
@@ -296,14 +316,19 @@ void WorldSocket::update() {
             size_t receivedSize = static_cast<size_t>(received);
             bytesReadThisTick += receivedSize;
             if (useFastRecvAppend_) {
-                size_t oldSize = receiveBuffer.size();
-                if (oldSize > kMaxReceiveBufferBytes || receivedSize > (kMaxReceiveBufferBytes - oldSize)) {
-                    LOG_ERROR("World socket receive buffer would overflow (old=", oldSize,
+                size_t liveBytes = bufferedBytes();
+                if (liveBytes > kMaxReceiveBufferBytes || receivedSize > (kMaxReceiveBufferBytes - liveBytes)) {
+                    compactReceiveBuffer();
+                    liveBytes = bufferedBytes();
+                }
+                if (liveBytes > kMaxReceiveBufferBytes || receivedSize > (kMaxReceiveBufferBytes - liveBytes)) {
+                    LOG_ERROR("World socket receive buffer would overflow (buffered=", liveBytes,
                               " incoming=", receivedSize, " max=", kMaxReceiveBufferBytes,
                               "). Disconnecting to recover framing.");
                     disconnect();
                     return;
                 }
+                const size_t oldSize = receiveBuffer.size();
                 const size_t needed = oldSize + receivedSize;
                 if (receiveBuffer.capacity() < needed) {
                     size_t newCap = receiveBuffer.capacity() ? receiveBuffer.capacity() : 64 * 1024;
@@ -322,8 +347,8 @@ void WorldSocket::update() {
             } else {
                 receiveBuffer.insert(receiveBuffer.end(), buffer, buffer + received);
             }
-            if (receiveBuffer.size() > kMaxReceiveBufferBytes) {
-                LOG_ERROR("World socket receive buffer overflow (", receiveBuffer.size(),
+            if (bufferedBytes() > kMaxReceiveBufferBytes) {
+                LOG_ERROR("World socket receive buffer overflow (", bufferedBytes(),
                           " bytes). Disconnecting to recover framing.");
                 disconnect();
                 return;
@@ -350,26 +375,26 @@ void WorldSocket::update() {
         const bool debugLog = core::Logger::getInstance().shouldLog(core::LogLevel::DEBUG);
         if (debugLog) {
             LOG_DEBUG("World socket read ", bytesReadThisTick, " bytes in ", readOps,
-                      " recv call(s), buffered=", receiveBuffer.size());
+                      " recv call(s), buffered=", bufferedBytes());
         }
         // Hex dump received bytes for auth debugging (debug-only to avoid per-frame string work)
         if (debugLog && bytesReadThisTick <= 128) {
             std::string hex;
-            for (size_t i = 0; i < receiveBuffer.size(); ++i) {
+            for (size_t i = receiveReadOffset_; i < receiveBuffer.size(); ++i) {
                 char buf[4]; snprintf(buf, sizeof(buf), "%02x ", receiveBuffer[i]); hex += buf;
             }
             LOG_DEBUG("World socket raw bytes: ", hex);
         }
         tryParsePackets();
-        if (debugLog && connected && !receiveBuffer.empty()) {
-            LOG_DEBUG("World socket parse left ", receiveBuffer.size(),
+        if (debugLog && connected && bufferedBytes() > 0) {
+            LOG_DEBUG("World socket parse left ", bufferedBytes(),
                      " bytes buffered (awaiting complete packet)");
         }
     }
 
     if (sawClose) {
         LOG_INFO("World server connection closed (receivedAny=", receivedAny,
-                 " buffered=", receiveBuffer.size(), ")");
+                 " buffered=", bufferedBytes(), ")");
         disconnect();
         return;
     }
@@ -378,7 +403,7 @@ void WorldSocket::update() {
 void WorldSocket::tryParsePackets() {
     // World server packets have 4-byte incoming header: size(2) + opcode(2)
     int parsedThisTick = 0;
-    size_t parseOffset = 0;
+    size_t parseOffset = receiveReadOffset_;
     size_t localHeaderBytesDecrypted = headerBytesDecrypted;
     std::vector<Packet> parsedPacketsLocal;
     std::vector<Packet>* parsedPackets = &parsedPacketsLocal;
@@ -496,8 +521,18 @@ void WorldSocket::tryParsePackets() {
         ++parsedThisTick;
     }
 
-    if (parseOffset > 0) {
-        receiveBuffer.erase(receiveBuffer.begin(), receiveBuffer.begin() + parseOffset);
+    if (parseOffset > receiveReadOffset_) {
+        receiveReadOffset_ = parseOffset;
+        // Compact lazily to avoid front-erase memmove every update.
+        if (receiveReadOffset_ >= receiveBuffer.size()) {
+            receiveBuffer.clear();
+            receiveReadOffset_ = 0;
+        } else if (receiveReadOffset_ >= 64 * 1024 || receiveReadOffset_ * 2 >= receiveBuffer.size()) {
+            const size_t remaining = receiveBuffer.size() - receiveReadOffset_;
+            std::memmove(receiveBuffer.data(), receiveBuffer.data() + receiveReadOffset_, remaining);
+            receiveBuffer.resize(remaining);
+            receiveReadOffset_ = 0;
+        }
     }
     headerBytesDecrypted = localHeaderBytesDecrypted;
 
@@ -508,9 +543,12 @@ void WorldSocket::tryParsePackets() {
         }
     }
 
-    if (parsedThisTick >= kMaxParsedPacketsPerUpdate && receiveBuffer.size() >= 4) {
+    const size_t buffered = (receiveBuffer.size() >= receiveReadOffset_)
+        ? (receiveBuffer.size() - receiveReadOffset_)
+        : 0;
+    if (parsedThisTick >= kMaxParsedPacketsPerUpdate && buffered >= 4) {
         LOG_DEBUG("World socket parse budget reached (", parsedThisTick,
-                 " packets); deferring remaining buffered data=", receiveBuffer.size(), " bytes");
+                 " packets); deferring remaining buffered data=", buffered, " bytes");
     }
 }
 

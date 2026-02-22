@@ -91,6 +91,7 @@ private:
 
     // Receive buffer
     std::vector<uint8_t> receiveBuffer;
+    size_t receiveReadOffset_ = 0;
     // Optional reused packet queue (feature-gated) to reduce per-update allocations.
     std::vector<Packet> parsedPacketsScratch_;
 

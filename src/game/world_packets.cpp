@@ -1117,7 +1117,8 @@ bool UpdateObjectParser::parseUpdateFields(network::Packet& packet, UpdateBlock&
                 highestSetBit = fieldIndex;
             }
             uint32_t value = packet.readUInt32();
-            block.fields[fieldIndex] = value;
+            // fieldIndex is monotonically increasing here, so end() is a good insertion hint.
+            block.fields.emplace_hint(block.fields.end(), fieldIndex, value);
             valuesReadCount++;
 
             LOG_DEBUG("    Field[", fieldIndex, "] = 0x", std::hex, value, std::dec);
@@ -1256,7 +1257,7 @@ bool UpdateObjectParser::parse(network::Packet& packet, UpdateObjectData& data) 
             return false;
         }
 
-        data.blocks.push_back(block);
+        data.blocks.emplace_back(std::move(block));
     }
 
 

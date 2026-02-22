@@ -4750,48 +4750,46 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
 
     // Process out-of-range objects first
     for (uint64_t guid : data.outOfRangeGuids) {
-        if (entityManager.hasEntity(guid)) {
-            const bool isKnownTransport = transportGuids_.count(guid) > 0;
-            if (isKnownTransport) {
-                // Keep transports alive across out-of-range flapping.
-                // Boats/zeppelins are global movers and removing them here can make
-                // them disappear until a later movement snapshot happens to recreate them.
-                const bool playerAboardNow = (playerTransportGuid_ == guid);
-                const bool stickyAboard = (playerTransportStickyGuid_ == guid && playerTransportStickyTimer_ > 0.0f);
-                const bool movementSaysAboard = (movementInfo.transportGuid == guid);
-                LOG_INFO("Preserving transport on out-of-range: 0x",
-                         std::hex, guid, std::dec,
-                         " now=", playerAboardNow,
-                         " sticky=", stickyAboard,
-                         " movement=", movementSaysAboard);
-                continue;
-            }
+        auto entity = entityManager.getEntity(guid);
+        if (!entity) continue;
 
-            LOG_DEBUG("Entity went out of range: 0x", std::hex, guid, std::dec);
-            // Trigger despawn callbacks before removing entity
-            auto entity = entityManager.getEntity(guid);
-            if (entity) {
-                if (entity->getType() == ObjectType::UNIT && creatureDespawnCallback_) {
-                    creatureDespawnCallback_(guid);
-                } else if (entity->getType() == ObjectType::PLAYER && playerDespawnCallback_) {
-                    playerDespawnCallback_(guid);
-                    otherPlayerVisibleItemEntries_.erase(guid);
-                    otherPlayerVisibleDirty_.erase(guid);
-                    otherPlayerMoveTimeMs_.erase(guid);
-                    inspectedPlayerItemEntries_.erase(guid);
-                    pendingAutoInspect_.erase(guid);
-                } else if (entity->getType() == ObjectType::GAMEOBJECT && gameObjectDespawnCallback_) {
-                    gameObjectDespawnCallback_(guid);
-                }
-            }
-            transportGuids_.erase(guid);
-            serverUpdatedTransportGuids_.erase(guid);
-            clearTransportAttachment(guid);
-            if (playerTransportGuid_ == guid) {
-                clearPlayerTransport();
-            }
-            entityManager.removeEntity(guid);
+        const bool isKnownTransport = transportGuids_.count(guid) > 0;
+        if (isKnownTransport) {
+            // Keep transports alive across out-of-range flapping.
+            // Boats/zeppelins are global movers and removing them here can make
+            // them disappear until a later movement snapshot happens to recreate them.
+            const bool playerAboardNow = (playerTransportGuid_ == guid);
+            const bool stickyAboard = (playerTransportStickyGuid_ == guid && playerTransportStickyTimer_ > 0.0f);
+            const bool movementSaysAboard = (movementInfo.transportGuid == guid);
+            LOG_INFO("Preserving transport on out-of-range: 0x",
+                     std::hex, guid, std::dec,
+                     " now=", playerAboardNow,
+                     " sticky=", stickyAboard,
+                     " movement=", movementSaysAboard);
+            continue;
         }
+
+        LOG_DEBUG("Entity went out of range: 0x", std::hex, guid, std::dec);
+        // Trigger despawn callbacks before removing entity
+        if (entity->getType() == ObjectType::UNIT && creatureDespawnCallback_) {
+            creatureDespawnCallback_(guid);
+        } else if (entity->getType() == ObjectType::PLAYER && playerDespawnCallback_) {
+            playerDespawnCallback_(guid);
+            otherPlayerVisibleItemEntries_.erase(guid);
+            otherPlayerVisibleDirty_.erase(guid);
+            otherPlayerMoveTimeMs_.erase(guid);
+            inspectedPlayerItemEntries_.erase(guid);
+            pendingAutoInspect_.erase(guid);
+        } else if (entity->getType() == ObjectType::GAMEOBJECT && gameObjectDespawnCallback_) {
+            gameObjectDespawnCallback_(guid);
+        }
+        transportGuids_.erase(guid);
+        serverUpdatedTransportGuids_.erase(guid);
+        clearTransportAttachment(guid);
+        if (playerTransportGuid_ == guid) {
+            clearPlayerTransport();
+        }
+        entityManager.removeEntity(guid);
     }
 
     // Process update blocks
@@ -5466,7 +5464,12 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     }
                     // Update XP / inventory slot / skill fields for player entity
                     if (block.guid == playerGuid) {
-                        std::map<uint16_t, uint32_t> oldFieldsSnapshot = lastPlayerFields_;
+                        const bool needCoinageDetectSnapshot =
+                            (pendingMoneyDelta_ != 0 && pendingMoneyDeltaTimer_ > 0.0f);
+                        std::map<uint16_t, uint32_t> oldFieldsSnapshot;
+                        if (needCoinageDetectSnapshot) {
+                            oldFieldsSnapshot = lastPlayerFields_;
+                        }
                         if (block.hasMovement && block.runSpeed > 0.1f && block.runSpeed < 100.0f) {
                             serverRunSpeed_ = block.runSpeed;
                             // Some server dismount paths update run speed without updating mount display field.
@@ -5480,10 +5483,13 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                 }
                             }
                         }
+                        auto mergeHint = lastPlayerFields_.end();
                         for (const auto& [key, val] : block.fields) {
-                            lastPlayerFields_[key] = val;
+                            mergeHint = lastPlayerFields_.insert_or_assign(mergeHint, key, val);
                         }
-                        maybeDetectCoinageIndex(oldFieldsSnapshot, lastPlayerFields_);
+                        if (needCoinageDetectSnapshot) {
+                            maybeDetectCoinageIndex(oldFieldsSnapshot, lastPlayerFields_);
+                        }
                         maybeDetectVisibleItemLayout();
                         detectInventorySlotBases(block.fields);
                         bool slotsChanged = false;
@@ -5545,17 +5551,33 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
 
                     // Update item stack count for online items
                     if (entity->getType() == ObjectType::ITEM || entity->getType() == ObjectType::CONTAINER) {
+                        bool inventoryChanged = false;
+                        const uint16_t itemStackField = fieldIndex(UF::ITEM_FIELD_STACK_COUNT);
+                        const uint16_t containerNumSlotsField = fieldIndex(UF::CONTAINER_FIELD_NUM_SLOTS);
+                        const uint16_t containerSlot1Field = fieldIndex(UF::CONTAINER_FIELD_SLOT_1);
                         for (const auto& [key, val] : block.fields) {
-                            if (key == fieldIndex(UF::ITEM_FIELD_STACK_COUNT)) {
+                            if (key == itemStackField) {
                                 auto it = onlineItems_.find(block.guid);
-                                if (it != onlineItems_.end()) it->second.stackCount = val;
+                                if (it != onlineItems_.end() && it->second.stackCount != val) {
+                                    it->second.stackCount = val;
+                                    inventoryChanged = true;
+                                }
                             }
                         }
                         // Update container slot GUIDs on bag content changes
                         if (entity->getType() == ObjectType::CONTAINER) {
+                            for (const auto& [key, _] : block.fields) {
+                                if ((containerNumSlotsField != 0xFFFF && key == containerNumSlotsField) ||
+                                    (containerSlot1Field != 0xFFFF && key >= containerSlot1Field && key < containerSlot1Field + 72)) {
+                                    inventoryChanged = true;
+                                    break;
+                                }
+                            }
                             extractContainerFields(block.guid, block.fields);
                         }
-                        rebuildOnlineInventory();
+                        if (inventoryChanged) {
+                            rebuildOnlineInventory();
+                        }
                     }
                     if (block.hasMovement && entity->getType() == ObjectType::GAMEOBJECT) {
                         if (transportGuids_.count(block.guid) && transportMoveCallback_) {

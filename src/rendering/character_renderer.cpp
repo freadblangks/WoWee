@@ -56,6 +56,15 @@ size_t envSizeMBOrDefault(const char* name, size_t defMb) {
     return static_cast<size_t>(mb);
 }
 
+size_t envSizeOrDefault(const char* name, size_t defValue) {
+    const char* v = std::getenv(name);
+    if (!v || !*v) return defValue;
+    char* end = nullptr;
+    unsigned long long n = std::strtoull(v, &end, 10);
+    if (end == v || n == 0) return defValue;
+    return static_cast<size_t>(n);
+}
+
 size_t approxTextureBytesWithMips(int w, int h) {
     if (w <= 0 || h <= 0) return 0;
     size_t base = static_cast<size_t>(w) * static_cast<size_t>(h) * 4ull;
@@ -95,7 +104,13 @@ bool CharacterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFram
     assetManager = am;
     perFrameLayout_ = perFrameLayout;
     renderPassOverride_ = renderPassOverride;
-    numAnimThreads_ = std::max(1u, std::min(8u, std::thread::hardware_concurrency()));
+    const unsigned hc = std::thread::hardware_concurrency();
+    const size_t availableCores = (hc > 1u) ? static_cast<size_t>(hc - 1u) : 1ull;
+    // Character updates run alongside M2/WMO work; default to a smaller share.
+    const size_t defaultAnimThreads = std::max<size_t>(1, availableCores / 4);
+    numAnimThreads_ = static_cast<uint32_t>(std::max<size_t>(
+        1, envSizeOrDefault("WOWEE_CHAR_ANIM_THREADS", defaultAnimThreads)));
+    core::Logger::getInstance().info("Character anim threads: ", numAnimThreads_);
 
     VkDevice device = vkCtx_->getDevice();
 
@@ -250,7 +265,8 @@ bool CharacterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFram
     }
 
     // Diagnostics-only: cache lifetime is currently tied to renderer lifetime.
-    textureCacheBudgetBytes_ = envSizeMBOrDefault("WOWEE_CHARACTER_TEX_CACHE_MB", 512) * 1024ull * 1024ull;
+    textureCacheBudgetBytes_ = envSizeMBOrDefault("WOWEE_CHARACTER_TEX_CACHE_MB", 1024) * 1024ull * 1024ull;
+    LOG_INFO("Character texture cache budget: ", textureCacheBudgetBytes_ / (1024 * 1024), " MB");
 
     core::Logger::getInstance().info("Character renderer initialized (Vulkan)");
     return true;
@@ -403,8 +419,29 @@ VkTexture* CharacterRenderer::loadTexture(const std::string& path) {
 
     auto blpImage = assetManager->loadTexture(key);
     if (!blpImage.isValid()) {
+        static constexpr size_t kMaxFailedTextureCache = 200000;
         core::Logger::getInstance().warning("Failed to load texture: ", path);
-        failedTextureCache_.insert(key);
+        if (failedTextureCache_.size() < kMaxFailedTextureCache) {
+            failedTextureCache_.insert(key);
+        }
+        return whiteTexture_.get();
+    }
+
+    size_t approxBytes = approxTextureBytesWithMips(blpImage.width, blpImage.height);
+    if (textureCacheBytes_ + approxBytes > textureCacheBudgetBytes_) {
+        static constexpr size_t kMaxFailedTextureCache = 200000;
+        if (failedTextureCache_.size() < kMaxFailedTextureCache) {
+            // Budget is saturated; avoid repeatedly decoding/uploading this texture.
+            failedTextureCache_.insert(key);
+        }
+        if (textureBudgetRejectWarnings_ < 8 || (textureBudgetRejectWarnings_ % 120) == 0) {
+            core::Logger::getInstance().warning(
+                "Character texture cache full (",
+                textureCacheBytes_ / (1024 * 1024), " MB / ",
+                textureCacheBudgetBytes_ / (1024 * 1024), " MB), rejecting texture: ",
+                path);
+        }
+        ++textureBudgetRejectWarnings_;
         return whiteTexture_.get();
     }
 
@@ -426,7 +463,7 @@ VkTexture* CharacterRenderer::loadTexture(const std::string& path) {
 
     TextureCacheEntry e;
     e.texture = std::move(tex);
-    e.approxBytes = approxTextureBytesWithMips(blpImage.width, blpImage.height);
+    e.approxBytes = approxBytes;
     e.lastUse = ++textureCacheCounter_;
     e.hasAlpha = hasAlpha;
     e.colorKeyBlack = colorKeyBlackHint;
@@ -435,12 +472,6 @@ VkTexture* CharacterRenderer::loadTexture(const std::string& path) {
     textureColorKeyBlackByPtr_[texPtr] = colorKeyBlackHint;
     textureCache[key] = std::move(e);
 
-    if (textureCacheBytes_ > textureCacheBudgetBytes_) {
-        core::Logger::getInstance().warning(
-            "Character texture cache over budget: ",
-            textureCacheBytes_ / (1024 * 1024), " MB > ",
-            textureCacheBudgetBytes_ / (1024 * 1024), " MB (textures=", textureCache.size(), ")");
-    }
     core::Logger::getInstance().debug("Loaded character texture: ", path, " (", blpImage.width, "x", blpImage.height, ")");
     return texPtr;
 }
@@ -1144,29 +1175,40 @@ void CharacterRenderer::update(float deltaTime, const glm::vec3& cameraPos) {
 
     // Thread animation updates in chunks to avoid spawning one task per instance.
     if (updatedCount >= 8 && numAnimThreads_ > 1) {
-        const size_t numThreads = std::min(static_cast<size_t>(numAnimThreads_), updatedCount);
-        const size_t chunkSize = updatedCount / numThreads;
-        const size_t remainder = updatedCount % numThreads;
+        static const size_t minAnimWorkPerThread = std::max<size_t>(
+            16, envSizeOrDefault("WOWEE_CHAR_ANIM_WORK_PER_THREAD", 64));
+        const size_t maxUsefulThreads = std::max<size_t>(
+            1, (updatedCount + minAnimWorkPerThread - 1) / minAnimWorkPerThread);
+        const size_t numThreads = std::min(static_cast<size_t>(numAnimThreads_), maxUsefulThreads);
 
-        animFutures_.clear();
-        if (animFutures_.capacity() < numThreads) {
-            animFutures_.reserve(numThreads);
-        }
+        if (numThreads <= 1) {
+            for (auto& instRef : toUpdate) {
+                updateAnimation(instRef.get(), deltaTime);
+            }
+        } else {
+            const size_t chunkSize = updatedCount / numThreads;
+            const size_t remainder = updatedCount % numThreads;
 
-        size_t start = 0;
-        for (size_t t = 0; t < numThreads; t++) {
-            size_t end = start + chunkSize + (t < remainder ? 1 : 0);
-            animFutures_.push_back(std::async(std::launch::async,
-                [this, &toUpdate, start, end, deltaTime]() {
-                    for (size_t i = start; i < end; i++) {
-                        updateAnimation(toUpdate[i].get(), deltaTime);
-                    }
-                }));
-            start = end;
-        }
+            animFutures_.clear();
+            if (animFutures_.capacity() < numThreads) {
+                animFutures_.reserve(numThreads);
+            }
 
-        for (auto& f : animFutures_) {
-            f.get();
+            size_t start = 0;
+            for (size_t t = 0; t < numThreads; t++) {
+                size_t end = start + chunkSize + (t < remainder ? 1 : 0);
+                animFutures_.push_back(std::async(std::launch::async,
+                    [this, &toUpdate, start, end, deltaTime]() {
+                        for (size_t i = start; i < end; i++) {
+                            updateAnimation(toUpdate[i].get(), deltaTime);
+                        }
+                    }));
+                start = end;
+            }
+
+            for (auto& f : animFutures_) {
+                f.get();
+            }
         }
     } else {
         // Sequential for small counts (avoid thread overhead)

@@ -69,7 +69,7 @@ WorldSocket::WorldSocket() {
     net::ensureInit();
     // Always reserve baseline receive capacity (safe, behavior-preserving).
     receiveBuffer.reserve(64 * 1024);
-    useFastRecvAppend_ = envFlagEnabled("WOWEE_NET_FAST_RECV_APPEND", false);
+    useFastRecvAppend_ = envFlagEnabled("WOWEE_NET_FAST_RECV_APPEND", true);
     useParseScratchQueue_ = envFlagEnabled("WOWEE_NET_PARSE_SCRATCH", false);
     if (useParseScratchQueue_) {
         LOG_WARNING("WOWEE_NET_PARSE_SCRATCH is temporarily disabled (known unstable); forcing off");
@@ -304,8 +304,21 @@ void WorldSocket::update() {
                     disconnect();
                     return;
                 }
-                receiveBuffer.resize(oldSize + receivedSize);
-                std::memcpy(receiveBuffer.data() + oldSize, buffer, receivedSize);
+                const size_t needed = oldSize + receivedSize;
+                if (receiveBuffer.capacity() < needed) {
+                    size_t newCap = receiveBuffer.capacity() ? receiveBuffer.capacity() : 64 * 1024;
+                    while (newCap < needed && newCap < kMaxReceiveBufferBytes) {
+                        newCap = std::min(kMaxReceiveBufferBytes, newCap * 2);
+                    }
+                    if (newCap < needed) {
+                        LOG_ERROR("World socket receive buffer capacity growth failed (needed=", needed,
+                                  " max=", kMaxReceiveBufferBytes, "). Disconnecting to recover framing.");
+                        disconnect();
+                        return;
+                    }
+                    receiveBuffer.reserve(newCap);
+                }
+                receiveBuffer.insert(receiveBuffer.end(), buffer, buffer + receivedSize);
             } else {
                 receiveBuffer.insert(receiveBuffer.end(), buffer, buffer + received);
             }
@@ -334,10 +347,13 @@ void WorldSocket::update() {
     }
 
     if (receivedAny) {
-        LOG_DEBUG("World socket read ", bytesReadThisTick, " bytes in ", readOps,
-                 " recv call(s), buffered=", receiveBuffer.size());
-        // Hex dump received bytes for auth debugging
-        if (bytesReadThisTick <= 128) {
+        const bool debugLog = core::Logger::getInstance().shouldLog(core::LogLevel::DEBUG);
+        if (debugLog) {
+            LOG_DEBUG("World socket read ", bytesReadThisTick, " bytes in ", readOps,
+                      " recv call(s), buffered=", receiveBuffer.size());
+        }
+        // Hex dump received bytes for auth debugging (debug-only to avoid per-frame string work)
+        if (debugLog && bytesReadThisTick <= 128) {
             std::string hex;
             for (size_t i = 0; i < receiveBuffer.size(); ++i) {
                 char buf[4]; snprintf(buf, sizeof(buf), "%02x ", receiveBuffer[i]); hex += buf;
@@ -345,7 +361,7 @@ void WorldSocket::update() {
             LOG_DEBUG("World socket raw bytes: ", hex);
         }
         tryParsePackets();
-        if (connected && !receiveBuffer.empty()) {
+        if (debugLog && connected && !receiveBuffer.empty()) {
             LOG_DEBUG("World socket parse left ", receiveBuffer.size(),
                      " bytes buffered (awaiting complete packet)");
         }

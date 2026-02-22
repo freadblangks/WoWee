@@ -29,6 +29,19 @@ size_t parseEnvSizeMB(const char* name) {
     }
     return static_cast<size_t>(mb);
 }
+
+size_t parseEnvCount(const char* name, size_t defValue) {
+    const char* v = std::getenv(name);
+    if (!v || !*v) {
+        return defValue;
+    }
+    char* end = nullptr;
+    unsigned long long n = std::strtoull(v, &end, 10);
+    if (end == v || n == 0) {
+        return defValue;
+    }
+    return static_cast<size_t>(n);
+}
 } // namespace
 
 AssetManager::AssetManager() = default;
@@ -148,7 +161,8 @@ BLPImage AssetManager::loadTexture(const std::string& path) {
     if (blpData.empty()) {
         static std::unordered_set<std::string> loggedMissingTextures;
         static bool missingTextureLogSuppressed = false;
-        static constexpr size_t kMaxMissingTextureLogKeys = 20000;
+        static const size_t kMaxMissingTextureLogKeys =
+            parseEnvCount("WOWEE_TEXTURE_MISS_LOG_KEYS", 400);
         if (loggedMissingTextures.size() < kMaxMissingTextureLogKeys &&
             loggedMissingTextures.insert(normalizedPath).second) {
             LOG_WARNING("Texture not found: ", normalizedPath);
@@ -164,7 +178,8 @@ BLPImage AssetManager::loadTexture(const std::string& path) {
     if (!image.isValid()) {
         static std::unordered_set<std::string> loggedDecodeFails;
         static bool decodeFailLogSuppressed = false;
-        static constexpr size_t kMaxDecodeFailLogKeys = 8000;
+        static const size_t kMaxDecodeFailLogKeys =
+            parseEnvCount("WOWEE_TEXTURE_DECODE_LOG_KEYS", 200);
         if (loggedDecodeFails.size() < kMaxDecodeFailLogKeys &&
             loggedDecodeFails.insert(normalizedPath).second) {
             LOG_ERROR("Failed to load texture: ", normalizedPath);

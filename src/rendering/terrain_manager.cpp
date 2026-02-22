@@ -18,6 +18,7 @@
 #include <glm/gtx/euler_angles.hpp>
 #include <cmath>
 #include <cctype>
+#include <cstdlib>
 #include <functional>
 #include <unordered_set>
 
@@ -25,6 +26,26 @@ namespace wowee {
 namespace rendering {
 
 namespace {
+
+int computeTerrainWorkerCount() {
+    const char* raw = std::getenv("WOWEE_TERRAIN_WORKERS");
+    if (raw && *raw) {
+        char* end = nullptr;
+        unsigned long long forced = std::strtoull(raw, &end, 10);
+        if (end != raw && forced > 0) {
+            return static_cast<int>(forced);
+        }
+    }
+
+    unsigned hc = std::thread::hardware_concurrency();
+    if (hc > 0) {
+        // Terrain streaming should leave CPU room for render/update threads.
+        const unsigned availableCores = (hc > 1u) ? (hc - 1u) : 1u;
+        const unsigned targetWorkers = std::max(2u, availableCores / 2u);
+        return static_cast<int>(targetWorkers);
+    }
+    return 2;  // Fallback
+}
 
 bool decodeLayerAlpha(const pipeline::MapChunk& chunk, size_t layerIdx, std::vector<uint8_t>& outAlpha) {
     if (layerIdx >= chunk.layers.size()) return false;
@@ -128,15 +149,9 @@ bool TerrainManager::initialize(pipeline::AssetManager* assets, TerrainRenderer*
     LOG_INFO("Terrain tile cache budget: ", tileCacheBudgetBytes_ / (1024 * 1024), " MB (dynamic)");
 
     // Start background worker pool (dynamic: scales with available cores)
-    // Use 75% of logical cores for decompression, leaving headroom for render/OS
+    // Keep defaults moderate; env override can increase if streaming is bottlenecked.
     workerRunning.store(true);
-    unsigned hc = std::thread::hardware_concurrency();
-    if (hc > 0) {
-        unsigned targetWorkers = std::max(6u, (hc * 3) / 4);  // 75% of cores, minimum 6
-        workerCount = static_cast<int>(targetWorkers);
-    } else {
-        workerCount = 6;  // Fallback
-    }
+    workerCount = computeTerrainWorkerCount();
     workerThreads.reserve(workerCount);
     for (int i = 0; i < workerCount; i++) {
         workerThreads.emplace_back(&TerrainManager::workerLoop, this);
@@ -926,12 +941,10 @@ void TerrainManager::processReadyTiles() {
 
         if (pending) {
             TileCoord coord = pending->coord;
-            auto tileStart = std::chrono::high_resolution_clock::now();
 
             finalizeTile(pending);
 
-            auto tileEnd = std::chrono::high_resolution_clock::now();
-            float tileTimeMs = std::chrono::duration<float, std::milli>(tileEnd - tileStart).count();
+            auto now = std::chrono::high_resolution_clock::now();
 
             {
                 std::lock_guard<std::mutex> lock(queueMutex);
@@ -940,7 +953,7 @@ void TerrainManager::processReadyTiles() {
             processed++;
 
             // Check if we've exceeded time budget
-            float elapsedMs = std::chrono::duration<float, std::milli>(tileEnd - startTime).count();
+            float elapsedMs = std::chrono::duration<float, std::milli>(now - startTime).count();
             if (elapsedMs >= timeBudgetMs) {
                 if (processed > 1) {
                     LOG_DEBUG("Processed ", processed, " tiles in ", elapsedMs, "ms (budget: ", timeBudgetMs, "ms)");
@@ -1183,13 +1196,7 @@ void TerrainManager::unloadAll() {
     // Restart worker threads so streaming can resume (dynamic: scales with available cores)
     // Use 75% of logical cores for decompression, leaving headroom for render/OS
     workerRunning.store(true);
-    unsigned hc = std::thread::hardware_concurrency();
-    if (hc > 0) {
-        unsigned targetWorkers = std::max(6u, (hc * 3) / 4);  // 75% of cores, minimum 6
-        workerCount = static_cast<int>(targetWorkers);
-    } else {
-        workerCount = 6;  // Fallback
-    }
+    workerCount = computeTerrainWorkerCount();
     workerThreads.reserve(workerCount);
     for (int i = 0; i < workerCount; i++) {
         workerThreads.emplace_back(&TerrainManager::workerLoop, this);

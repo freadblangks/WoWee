@@ -639,7 +639,7 @@ private:
         uint32_t portalCulled = 0;
         uint32_t distanceCulled = 0;
     };
-    std::vector<std::future<std::vector<InstanceDrawList>>> cullFutures_;
+    std::vector<std::future<void>> cullFutures_;
 
     // Collision query profiling (per frame).
     mutable double queryTimeMs = 0.0;

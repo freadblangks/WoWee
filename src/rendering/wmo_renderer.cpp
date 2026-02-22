@@ -37,6 +37,15 @@ size_t envSizeMBOrDefault(const char* name, size_t defMb) {
     if (end == raw || mb == 0) return defMb;
     return static_cast<size_t>(mb);
 }
+
+size_t envSizeOrDefault(const char* name, size_t defValue) {
+    const char* raw = std::getenv(name);
+    if (!raw || !*raw) return defValue;
+    char* end = nullptr;
+    unsigned long long v = std::strtoull(raw, &end, 10);
+    if (end == raw || v == 0) return defValue;
+    return static_cast<size_t>(v);
+}
 } // namespace
 
 static void transformAABB(const glm::mat4& modelMatrix,
@@ -65,7 +74,13 @@ bool WMORenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayou
         return false;
     }
 
-    numCullThreads_ = std::min(4u, std::max(1u, std::thread::hardware_concurrency() - 1));
+    const unsigned hc = std::thread::hardware_concurrency();
+    const size_t availableCores = (hc > 1u) ? static_cast<size_t>(hc - 1u) : 1ull;
+    // WMO culling is lighter than animation; keep defaults conservative to reduce spikes.
+    const size_t defaultCullThreads = std::max<size_t>(1, availableCores / 4);
+    numCullThreads_ = static_cast<uint32_t>(std::max<size_t>(
+        1, envSizeOrDefault("WOWEE_WMO_CULL_THREADS", defaultCullThreads)));
+    core::Logger::getInstance().info("WMO cull threads: ", numCullThreads_);
 
     VkDevice device = vkCtx_->getDevice();
 
@@ -1208,35 +1223,44 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
     std::vector<InstanceDrawList> drawLists;
     drawLists.reserve(visibleInstances.size());
 
-    if (visibleInstances.size() >= 4 && numCullThreads_ > 1) {
-        const size_t numThreads = std::min(static_cast<size_t>(numCullThreads_),
-                                           visibleInstances.size());
-        const size_t chunkSize = visibleInstances.size() / numThreads;
-        const size_t remainder = visibleInstances.size() % numThreads;
+    static const size_t minParallelCullInstances = std::max<size_t>(
+        4, envSizeOrDefault("WOWEE_WMO_CULL_MT_MIN", 128));
+    if (visibleInstances.size() >= minParallelCullInstances && numCullThreads_ > 1) {
+        static const size_t minCullWorkPerThread = std::max<size_t>(
+            16, envSizeOrDefault("WOWEE_WMO_CULL_WORK_PER_THREAD", 64));
+        const size_t maxUsefulThreads = std::max<size_t>(
+            1, (visibleInstances.size() + minCullWorkPerThread - 1) / minCullWorkPerThread);
+        const size_t numThreads = std::min(static_cast<size_t>(numCullThreads_), maxUsefulThreads);
+        if (numThreads <= 1) {
+            for (size_t idx : visibleInstances) {
+                drawLists.push_back(cullInstance(idx));
+            }
+        } else {
+            const size_t chunkSize = visibleInstances.size() / numThreads;
+            const size_t remainder = visibleInstances.size() % numThreads;
 
-        cullFutures_.clear();
-        if (cullFutures_.capacity() < numThreads) {
-            cullFutures_.reserve(numThreads);
-        }
+            drawLists.resize(visibleInstances.size());
 
-        size_t start = 0;
-        for (size_t t = 0; t < numThreads; ++t) {
-            size_t end = start + chunkSize + (t < remainder ? 1 : 0);
-            cullFutures_.push_back(std::async(std::launch::async,
-                [&, start, end]() {
-                    std::vector<InstanceDrawList> chunk;
-                    chunk.reserve(end - start);
-                    for (size_t j = start; j < end; ++j)
-                        chunk.push_back(cullInstance(visibleInstances[j]));
-                    return chunk;
-                }));
-            start = end;
-        }
+            cullFutures_.clear();
+            if (cullFutures_.capacity() < numThreads) {
+                cullFutures_.reserve(numThreads);
+            }
 
-        for (auto& f : cullFutures_) {
-            auto chunk = f.get();
-            for (auto& dl : chunk)
-                drawLists.push_back(std::move(dl));
+            size_t start = 0;
+            for (size_t t = 0; t < numThreads; ++t) {
+                const size_t end = start + chunkSize + (t < remainder ? 1 : 0);
+                cullFutures_.push_back(std::async(std::launch::async,
+                    [&, start, end]() {
+                        for (size_t j = start; j < end; ++j) {
+                            drawLists[j] = cullInstance(visibleInstances[j]);
+                        }
+                    }));
+                start = end;
+            }
+
+            for (auto& f : cullFutures_) {
+                f.get();
+            }
         }
     } else {
         for (size_t idx : visibleInstances)
@@ -1901,16 +1925,7 @@ VkTexture* WMORenderer::loadTexture(const std::string& path) {
         }
     }
 
-    std::vector<std::string> attemptedCandidates;
-    attemptedCandidates.reserve(uniqueCandidates.size());
-    for (const auto& c : uniqueCandidates) {
-        if (!failedTextureCache_.count(c)) {
-            attemptedCandidates.push_back(c);
-        }
-    }
-    if (attemptedCandidates.empty()) {
-        return whiteTexture_.get();
-    }
+    const auto& attemptedCandidates = uniqueCandidates;
 
     // Try loading all candidates until one succeeds
     pipeline::BLPImage blp;
@@ -1923,12 +1938,6 @@ VkTexture* WMORenderer::loadTexture(const std::string& path) {
         }
     }
     if (!blp.isValid()) {
-        static constexpr size_t kMaxFailedTextureCache = 200000;
-        for (const auto& c : attemptedCandidates) {
-            if (failedTextureCache_.size() < kMaxFailedTextureCache) {
-                failedTextureCache_.insert(c);
-            }
-        }
         if (loggedTextureLoadFails_.insert(key).second) {
             core::Logger::getInstance().warning("WMO: Failed to load texture: ", path);
         }
@@ -1943,16 +1952,6 @@ VkTexture* WMORenderer::loadTexture(const std::string& path) {
     size_t base = static_cast<size_t>(blp.width) * static_cast<size_t>(blp.height) * 4ull;
     size_t approxBytes = base + (base / 3);
     if (textureCacheBytes_ + approxBytes > textureCacheBudgetBytes_) {
-        static constexpr size_t kMaxFailedTextureCache = 200000;
-        if (failedTextureCache_.size() < kMaxFailedTextureCache) {
-            // Cache budget-rejected keys too; once saturated, repeated attempts
-            // cause pointless decode churn and transient allocations.
-            if (!resolvedKey.empty()) {
-                failedTextureCache_.insert(resolvedKey);
-            } else {
-                failedTextureCache_.insert(key);
-            }
-        }
         if (textureBudgetRejectWarnings_ < 8 || (textureBudgetRejectWarnings_ % 120) == 0) {
             core::Logger::getInstance().warning(
                 "WMO texture cache full (", textureCacheBytes_ / (1024 * 1024),

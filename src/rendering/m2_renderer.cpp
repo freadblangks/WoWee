@@ -49,6 +49,15 @@ size_t envSizeMBOrDefault(const char* name, size_t defMb) {
     return static_cast<size_t>(mb);
 }
 
+size_t envSizeOrDefault(const char* name, size_t defValue) {
+    const char* raw = std::getenv(name);
+    if (!raw || !*raw) return defValue;
+    char* end = nullptr;
+    unsigned long long v = std::strtoull(raw, &end, 10);
+    if (end == raw || v == 0) return defValue;
+    return static_cast<size_t>(v);
+}
+
 static constexpr uint32_t kParticleFlagRandomized = 0x40;
 static constexpr uint32_t kParticleFlagTiled = 0x80;
 
@@ -299,7 +308,12 @@ bool M2Renderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout
     vkCtx_ = ctx;
     assetManager = assets;
 
-    numAnimThreads_ = std::min(4u, std::max(1u, std::thread::hardware_concurrency() - 1));
+    const unsigned hc = std::thread::hardware_concurrency();
+    const size_t availableCores = (hc > 1u) ? static_cast<size_t>(hc - 1u) : 1ull;
+    // Keep headroom for other frame tasks: M2 gets about half of non-main cores by default.
+    const size_t defaultAnimThreads = std::max<size_t>(1, availableCores / 2);
+    numAnimThreads_ = static_cast<uint32_t>(std::max<size_t>(
+        1, envSizeOrDefault("WOWEE_M2_ANIM_THREADS", defaultAnimThreads)));
     LOG_INFO("Initializing M2 renderer (Vulkan, ", numAnimThreads_, " anim threads)...");
 
     VkDevice device = vkCtx_->getDevice();
@@ -1915,7 +1929,9 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
     // Phase 2: Compute bone matrices (expensive, parallel if enough work)
     const size_t animCount = boneWorkIndices_.size();
     if (animCount > 0) {
-        if (animCount < 6 || numAnimThreads_ <= 1) {
+        static const size_t minParallelAnimInstances = std::max<size_t>(
+            8, envSizeOrDefault("WOWEE_M2_ANIM_MT_MIN", 96));
+        if (animCount < minParallelAnimInstances || numAnimThreads_ <= 1) {
             // Sequential — not enough work to justify thread overhead
             for (size_t i : boneWorkIndices_) {
                 if (i >= instances.size()) continue;
@@ -1926,35 +1942,49 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
             }
         } else {
             // Parallel — dispatch across worker threads
-            const size_t numThreads = std::min(static_cast<size_t>(numAnimThreads_), animCount);
-            const size_t chunkSize = animCount / numThreads;
-            const size_t remainder = animCount % numThreads;
+            static const size_t minAnimWorkPerThread = std::max<size_t>(
+                16, envSizeOrDefault("WOWEE_M2_ANIM_WORK_PER_THREAD", 64));
+            const size_t maxUsefulThreads = std::max<size_t>(
+                1, (animCount + minAnimWorkPerThread - 1) / minAnimWorkPerThread);
+            const size_t numThreads = std::min(static_cast<size_t>(numAnimThreads_), maxUsefulThreads);
+            if (numThreads <= 1) {
+                for (size_t i : boneWorkIndices_) {
+                    if (i >= instances.size()) continue;
+                    auto& inst = instances[i];
+                    auto mdlIt = models.find(inst.modelId);
+                    if (mdlIt == models.end()) continue;
+                    computeBoneMatrices(mdlIt->second, inst);
+                }
+            } else {
+                const size_t chunkSize = animCount / numThreads;
+                const size_t remainder = animCount % numThreads;
 
-            // Reuse persistent futures vector to avoid allocation
-            animFutures_.clear();
-            if (animFutures_.capacity() < numThreads) {
-                animFutures_.reserve(numThreads);
-            }
+                // Reuse persistent futures vector to avoid allocation
+                animFutures_.clear();
+                if (animFutures_.capacity() < numThreads) {
+                    animFutures_.reserve(numThreads);
+                }
 
-            size_t start = 0;
-            for (size_t t = 0; t < numThreads; ++t) {
-                size_t end = start + chunkSize + (t < remainder ? 1 : 0);
-                animFutures_.push_back(std::async(std::launch::async,
-                    [this, start, end]() {
-                        for (size_t j = start; j < end; ++j) {
-                            size_t idx = boneWorkIndices_[j];
-                            if (idx >= instances.size()) continue;
-                            auto& inst = instances[idx];
-                            auto mdlIt = models.find(inst.modelId);
-                            if (mdlIt == models.end()) continue;
-                            computeBoneMatrices(mdlIt->second, inst);
-                        }
-                    }));
-                start = end;
-            }
+                size_t start = 0;
+                for (size_t t = 0; t < numThreads; ++t) {
+                    size_t end = start + chunkSize + (t < remainder ? 1 : 0);
+                    animFutures_.push_back(std::async(std::launch::async,
+                        [this, start, end]() {
+                            for (size_t j = start; j < end; ++j) {
+                                size_t idx = boneWorkIndices_[j];
+                                if (idx >= instances.size()) continue;
+                                auto& inst = instances[idx];
+                                auto mdlIt = models.find(inst.modelId);
+                                if (mdlIt == models.end()) continue;
+                                computeBoneMatrices(mdlIt->second, inst);
+                            }
+                        }));
+                    start = end;
+                }
 
-            for (auto& f : animFutures_) {
-                f.get();
+                for (auto& f : animFutures_) {
+                    f.get();
+                }
             }
         }
     }

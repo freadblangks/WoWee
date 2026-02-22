@@ -89,3 +89,4 @@ ingest/
 
 # Local texture dumps / extracted art should never be committed
 assets/textures/
+node_modules/

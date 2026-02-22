@@ -18,6 +18,8 @@ void Camera::updateViewMatrix() {
 
 void Camera::updateProjectionMatrix() {
     projectionMatrix = glm::perspective(glm::radians(fov), aspectRatio, nearPlane, farPlane);
+    // Vulkan clip-space has Y pointing down; flip the projection's Y axis.
+    projectionMatrix[1][1] *= -1.0f;
 }
 
 glm::vec3 Camera::getForward() const {

@@ -5505,6 +5505,7 @@ void Application::spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_t 
 
     glm::vec3 renderPos = core::coords::canonicalToRender(glm::vec3(x, y, z));
     const float renderYawWmo = orientation;
+    const float renderYawM2go = orientation + glm::radians(180.0f);
 
     bool loadedAsWmo = false;
     if (isWmo) {
@@ -5670,7 +5671,7 @@ void Application::spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_t 
         }
 
         uint32_t instanceId = m2Renderer->createInstance(modelId, renderPos,
-            glm::vec3(0.0f, 0.0f, renderYawWmo), 1.0f);
+            glm::vec3(0.0f, 0.0f, renderYawM2go), 1.0f);
         if (instanceId == 0) {
             LOG_WARNING("Failed to create gameobject instance for guid 0x", std::hex, guid, std::dec);
             return;

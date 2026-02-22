@@ -730,6 +730,17 @@ void Renderer::setMsaaSamples(VkSampleCountFlagBits samples) {
     VkSampleCountFlagBits maxSamples = vkCtx->getMaxUsableSampleCount();
     if (samples > maxSamples) samples = maxSamples;
 
+    if (samples == vkCtx->getMsaaSamples()) return;
+
+    // Defer to between frames — cannot destroy render pass/framebuffers mid-frame
+    pendingMsaaSamples_ = samples;
+    msaaChangePending_ = true;
+}
+
+void Renderer::applyMsaaChange() {
+    VkSampleCountFlagBits samples = pendingMsaaSamples_;
+    msaaChangePending_ = false;
+
     VkSampleCountFlagBits current = vkCtx->getMsaaSamples();
     if (samples == current) return;
 
@@ -793,6 +804,11 @@ void Renderer::setMsaaSamples(VkSampleCountFlagBits samples) {
 
 void Renderer::beginFrame() {
     if (!vkCtx) return;
+
+    // Apply deferred MSAA change between frames (before any rendering state is used)
+    if (msaaChangePending_) {
+        applyMsaaChange();
+    }
 
     // Handle swapchain recreation if needed
     if (vkCtx->isSwapchainDirty()) {

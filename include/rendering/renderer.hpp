@@ -244,6 +244,9 @@ public:
     void setMsaaSamples(VkSampleCountFlagBits samples);
 
 private:
+    void applyMsaaChange();
+    VkSampleCountFlagBits pendingMsaaSamples_ = VK_SAMPLE_COUNT_1_BIT;
+    bool msaaChangePending_ = false;
     void renderShadowPass();
     glm::mat4 computeLightSpaceMatrix();
 

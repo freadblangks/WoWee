@@ -446,7 +446,7 @@ void Minimap::render(VkCommandBuffer cmd, const Camera& playerCamera,
     float pixelW = static_cast<float>(mapSize) / screenWidth;
     float pixelH = static_cast<float>(mapSize) / screenHeight;
     float x = 1.0f - pixelW - margin / screenWidth;
-    float y = 1.0f - pixelH - margin / screenHeight;
+    float y = margin / screenHeight;  // top edge in Vulkan (y=0 is top)
 
     // Compute player's UV in the composite texture
     constexpr float TILE_SIZE = core::coords::TILE_SIZE;

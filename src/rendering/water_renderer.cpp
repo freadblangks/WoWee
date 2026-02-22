@@ -125,6 +125,7 @@ bool WaterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLay
         .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
         .setDepthTest(true, false, VK_COMPARE_OP_LESS_OR_EQUAL)  // depth test yes, write no
         .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+        .setMultisample(vkCtx->getMsaaSamples())
         .setLayout(pipelineLayout)
         .setRenderPass(mainPass)
         .setDynamicStates({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR })
@@ -140,6 +141,60 @@ bool WaterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLay
 
     LOG_INFO("Water renderer initialized (Vulkan)");
     return true;
+}
+
+void WaterRenderer::recreatePipelines() {
+    if (!vkCtx) return;
+    VkDevice device = vkCtx->getDevice();
+
+    // Destroy old pipeline (keep layout)
+    if (waterPipeline) { vkDestroyPipeline(device, waterPipeline, nullptr); waterPipeline = VK_NULL_HANDLE; }
+
+    // Load shaders
+    VkShaderModule vertShader, fragShader;
+    if (!vertShader.loadFromFile(device, "assets/shaders/water.vert.spv")) {
+        LOG_ERROR("WaterRenderer::recreatePipelines: failed to load vertex shader");
+        return;
+    }
+    if (!fragShader.loadFromFile(device, "assets/shaders/water.frag.spv")) {
+        LOG_ERROR("WaterRenderer::recreatePipelines: failed to load fragment shader");
+        vertShader.destroy();
+        return;
+    }
+
+    // Vertex input (same as initialize)
+    VkVertexInputBindingDescription vertBinding{};
+    vertBinding.binding = 0;
+    vertBinding.stride = 8 * sizeof(float);
+    vertBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::vector<VkVertexInputAttributeDescription> vertAttribs = {
+        { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 },
+        { 1, 0, VK_FORMAT_R32G32_SFLOAT, 6 * sizeof(float) },
+    };
+
+    VkRenderPass mainPass = vkCtx->getImGuiRenderPass();
+
+    waterPipeline = PipelineBuilder()
+        .setShaders(vertShader.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                    fragShader.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+        .setVertexInput({ vertBinding }, vertAttribs)
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+        .setDepthTest(true, false, VK_COMPARE_OP_LESS_OR_EQUAL)
+        .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+        .setMultisample(vkCtx->getMsaaSamples())
+        .setLayout(pipelineLayout)
+        .setRenderPass(mainPass)
+        .setDynamicStates({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR })
+        .build(device);
+
+    vertShader.destroy();
+    fragShader.destroy();
+
+    if (!waterPipeline) {
+        LOG_ERROR("WaterRenderer::recreatePipelines: failed to create pipeline");
+    }
 }
 
 void WaterRenderer::shutdown() {

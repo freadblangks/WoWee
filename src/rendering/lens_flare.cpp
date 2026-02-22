@@ -105,6 +105,7 @@ bool LensFlare::initialize(VkContext* ctx, VkDescriptorSetLayout /*perFrameLayou
         .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
         .setNoDepthTest()
         .setColorBlendAttachment(PipelineBuilder::blendAdditive())
+        .setMultisample(vkCtx->getMsaaSamples())
         .setLayout(pipelineLayout)
         .setRenderPass(vkCtx->getImGuiRenderPass())
         .setDynamicStates(dynamicStates)
@@ -144,6 +145,63 @@ void LensFlare::shutdown() {
     }
 
     vkCtx = nullptr;
+}
+
+void LensFlare::recreatePipelines() {
+    if (!vkCtx) return;
+    VkDevice device = vkCtx->getDevice();
+
+    // Destroy old pipeline (NOT layout)
+    if (pipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device, pipeline, nullptr);
+        pipeline = VK_NULL_HANDLE;
+    }
+
+    VkShaderModule vertModule;
+    vertModule.loadFromFile(device, "assets/shaders/lens_flare.vert.spv");
+    VkShaderModule fragModule;
+    fragModule.loadFromFile(device, "assets/shaders/lens_flare.frag.spv");
+
+    VkPipelineShaderStageCreateInfo vertStage = vertModule.stageInfo(VK_SHADER_STAGE_VERTEX_BIT);
+    VkPipelineShaderStageCreateInfo fragStage = fragModule.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT);
+
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = 4 * sizeof(float);
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription posAttr{};
+    posAttr.location = 0;
+    posAttr.binding = 0;
+    posAttr.format = VK_FORMAT_R32G32_SFLOAT;
+    posAttr.offset = 0;
+
+    VkVertexInputAttributeDescription uvAttr{};
+    uvAttr.location = 1;
+    uvAttr.binding = 0;
+    uvAttr.format = VK_FORMAT_R32G32_SFLOAT;
+    uvAttr.offset = 2 * sizeof(float);
+
+    std::vector<VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    pipeline = PipelineBuilder()
+        .setShaders(vertStage, fragStage)
+        .setVertexInput({binding}, {posAttr, uvAttr})
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+        .setNoDepthTest()
+        .setColorBlendAttachment(PipelineBuilder::blendAdditive())
+        .setMultisample(vkCtx->getMsaaSamples())
+        .setLayout(pipelineLayout)
+        .setRenderPass(vkCtx->getImGuiRenderPass())
+        .setDynamicStates(dynamicStates)
+        .build(device);
+
+    vertModule.destroy();
+    fragModule.destroy();
 }
 
 void LensFlare::generateFlareElements() {

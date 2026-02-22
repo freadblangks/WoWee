@@ -154,6 +154,7 @@ bool WMORenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayou
         .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
         .setDepthTest(true, true, VK_COMPARE_OP_LESS_OR_EQUAL)
         .setColorBlendAttachment(PipelineBuilder::blendDisabled())
+        .setMultisample(vkCtx_->getMsaaSamples())
         .setLayout(pipelineLayout_)
         .setRenderPass(mainPass)
         .setDynamicStates({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR })
@@ -175,6 +176,7 @@ bool WMORenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayou
         .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
         .setDepthTest(true, false, VK_COMPARE_OP_LESS_OR_EQUAL)
         .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+        .setMultisample(vkCtx_->getMsaaSamples())
         .setLayout(pipelineLayout_)
         .setRenderPass(mainPass)
         .setDynamicStates({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR })
@@ -193,6 +195,7 @@ bool WMORenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayou
         .setRasterization(VK_POLYGON_MODE_LINE, VK_CULL_MODE_NONE)
         .setDepthTest(true, true, VK_COMPARE_OP_LESS_OR_EQUAL)
         .setColorBlendAttachment(PipelineBuilder::blendDisabled())
+        .setMultisample(vkCtx_->getMsaaSamples())
         .setLayout(pipelineLayout_)
         .setRenderPass(mainPass)
         .setDynamicStates({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR })
@@ -2877,6 +2880,97 @@ float WMORenderer::raycastBoundingBoxes(const glm::vec3& origin, const glm::vec3
 }
 
 // Occlusion queries stubbed out in Vulkan (were disabled by default anyway)
+
+void WMORenderer::recreatePipelines() {
+    if (!vkCtx_) return;
+    VkDevice device = vkCtx_->getDevice();
+    vkDeviceWaitIdle(device);
+
+    // Destroy old main-pass pipelines (NOT shadow, NOT pipeline layout)
+    if (opaquePipeline_)      { vkDestroyPipeline(device, opaquePipeline_, nullptr); opaquePipeline_ = VK_NULL_HANDLE; }
+    if (transparentPipeline_) { vkDestroyPipeline(device, transparentPipeline_, nullptr); transparentPipeline_ = VK_NULL_HANDLE; }
+    if (wireframePipeline_)   { vkDestroyPipeline(device, wireframePipeline_, nullptr); wireframePipeline_ = VK_NULL_HANDLE; }
+
+    // --- Load shaders ---
+    VkShaderModule vertShader, fragShader;
+    if (!vertShader.loadFromFile(device, "assets/shaders/wmo.vert.spv") ||
+        !fragShader.loadFromFile(device, "assets/shaders/wmo.frag.spv")) {
+        core::Logger::getInstance().error("WMORenderer::recreatePipelines: failed to load shaders");
+        return;
+    }
+
+    // --- Vertex input ---
+    struct WMOVertexData {
+        glm::vec3 position;
+        glm::vec3 normal;
+        glm::vec2 texCoord;
+        glm::vec4 color;
+    };
+
+    VkVertexInputBindingDescription vertexBinding{};
+    vertexBinding.binding = 0;
+    vertexBinding.stride = sizeof(WMOVertexData);
+    vertexBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::vector<VkVertexInputAttributeDescription> vertexAttribs(4);
+    vertexAttribs[0] = { 0, 0, VK_FORMAT_R32G32B32_SFLOAT,
+        static_cast<uint32_t>(offsetof(WMOVertexData, position)) };
+    vertexAttribs[1] = { 1, 0, VK_FORMAT_R32G32B32_SFLOAT,
+        static_cast<uint32_t>(offsetof(WMOVertexData, normal)) };
+    vertexAttribs[2] = { 2, 0, VK_FORMAT_R32G32_SFLOAT,
+        static_cast<uint32_t>(offsetof(WMOVertexData, texCoord)) };
+    vertexAttribs[3] = { 3, 0, VK_FORMAT_R32G32B32A32_SFLOAT,
+        static_cast<uint32_t>(offsetof(WMOVertexData, color)) };
+
+    VkRenderPass mainPass = vkCtx_->getImGuiRenderPass();
+
+    opaquePipeline_ = PipelineBuilder()
+        .setShaders(vertShader.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                    fragShader.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+        .setVertexInput({ vertexBinding }, vertexAttribs)
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+        .setDepthTest(true, true, VK_COMPARE_OP_LESS_OR_EQUAL)
+        .setColorBlendAttachment(PipelineBuilder::blendDisabled())
+        .setMultisample(vkCtx_->getMsaaSamples())
+        .setLayout(pipelineLayout_)
+        .setRenderPass(mainPass)
+        .setDynamicStates({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR })
+        .build(device);
+
+    transparentPipeline_ = PipelineBuilder()
+        .setShaders(vertShader.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                    fragShader.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+        .setVertexInput({ vertexBinding }, vertexAttribs)
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+        .setDepthTest(true, false, VK_COMPARE_OP_LESS_OR_EQUAL)
+        .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+        .setMultisample(vkCtx_->getMsaaSamples())
+        .setLayout(pipelineLayout_)
+        .setRenderPass(mainPass)
+        .setDynamicStates({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR })
+        .build(device);
+
+    wireframePipeline_ = PipelineBuilder()
+        .setShaders(vertShader.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                    fragShader.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+        .setVertexInput({ vertexBinding }, vertexAttribs)
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_LINE, VK_CULL_MODE_NONE)
+        .setDepthTest(true, true, VK_COMPARE_OP_LESS_OR_EQUAL)
+        .setColorBlendAttachment(PipelineBuilder::blendDisabled())
+        .setMultisample(vkCtx_->getMsaaSamples())
+        .setLayout(pipelineLayout_)
+        .setRenderPass(mainPass)
+        .setDynamicStates({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR })
+        .build(device);
+
+    vertShader.destroy();
+    fragShader.destroy();
+
+    core::Logger::getInstance().info("WMORenderer: pipelines recreated");
+}
 
 } // namespace rendering
 } // namespace wowee

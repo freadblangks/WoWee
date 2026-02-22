@@ -79,6 +79,8 @@ public:
     void removeTile(int tileX, int tileY);
     void clear();
 
+    void recreatePipelines();
+
     void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera, float time);
 
     void setEnabled(bool enabled) { renderingEnabled = enabled; }

@@ -156,6 +156,7 @@ public:
     /**
      * Get number of loaded models
      */
+    void recreatePipelines();
     bool isInitialized() const { return initialized_; }
     uint32_t getModelCount() const { return loadedModels.size(); }
 

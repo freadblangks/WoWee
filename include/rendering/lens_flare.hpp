@@ -39,6 +39,8 @@ public:
      */
     void shutdown();
 
+    void recreatePipelines();
+
     /**
      * @brief Render lens flare effect
      * @param cmd Command buffer to record into

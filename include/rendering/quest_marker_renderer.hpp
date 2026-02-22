@@ -27,6 +27,7 @@ public:
 
     bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout, pipeline::AssetManager* assetManager);
     void shutdown();
+    void recreatePipelines();
 
     /**
      * Add or update a quest marker at a position

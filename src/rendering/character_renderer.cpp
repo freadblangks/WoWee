@@ -210,6 +210,7 @@ bool CharacterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFram
             .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
             .setDepthTest(true, depthWrite, VK_COMPARE_OP_LESS_OR_EQUAL)
             .setColorBlendAttachment(blendState)
+            .setMultisample(vkCtx_->getMsaaSamples())
             .setLayout(pipelineLayout_)
             .setRenderPass(mainPass)
             .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
@@ -2562,6 +2563,70 @@ void CharacterRenderer::dumpAnimations(uint32_t instanceId) const {
             " flags=0x", std::hex, seq.flags, std::dec);
     }
     core::Logger::getInstance().info("=== End animation dump ===");
+}
+
+void CharacterRenderer::recreatePipelines() {
+    if (!vkCtx_) return;
+    VkDevice device = vkCtx_->getDevice();
+    vkDeviceWaitIdle(device);
+
+    // Destroy old main-pass pipelines (NOT shadow, NOT pipeline layout)
+    if (opaquePipeline_)    { vkDestroyPipeline(device, opaquePipeline_, nullptr); opaquePipeline_ = VK_NULL_HANDLE; }
+    if (alphaTestPipeline_) { vkDestroyPipeline(device, alphaTestPipeline_, nullptr); alphaTestPipeline_ = VK_NULL_HANDLE; }
+    if (alphaPipeline_)     { vkDestroyPipeline(device, alphaPipeline_, nullptr); alphaPipeline_ = VK_NULL_HANDLE; }
+    if (additivePipeline_)  { vkDestroyPipeline(device, additivePipeline_, nullptr); additivePipeline_ = VK_NULL_HANDLE; }
+
+    // --- Load shaders ---
+    rendering::VkShaderModule charVert, charFrag;
+    charVert.loadFromFile(device, "assets/shaders/character.vert.spv");
+    charFrag.loadFromFile(device, "assets/shaders/character.frag.spv");
+
+    if (!charVert.isValid() || !charFrag.isValid()) {
+        LOG_ERROR("CharacterRenderer::recreatePipelines: missing required shaders");
+        return;
+    }
+
+    VkRenderPass mainPass = vkCtx_->getImGuiRenderPass();
+
+    // --- Vertex input ---
+    VkVertexInputBindingDescription charBinding{};
+    charBinding.binding = 0;
+    charBinding.stride = sizeof(pipeline::M2Vertex);
+    charBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::vector<VkVertexInputAttributeDescription> charAttrs = {
+        {0, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<uint32_t>(offsetof(pipeline::M2Vertex, position))},
+        {1, 0, VK_FORMAT_R8G8B8A8_UNORM,   static_cast<uint32_t>(offsetof(pipeline::M2Vertex, boneWeights))},
+        {2, 0, VK_FORMAT_R8G8B8A8_UINT,     static_cast<uint32_t>(offsetof(pipeline::M2Vertex, boneIndices))},
+        {3, 0, VK_FORMAT_R32G32B32_SFLOAT,  static_cast<uint32_t>(offsetof(pipeline::M2Vertex, normal))},
+        {4, 0, VK_FORMAT_R32G32_SFLOAT,     static_cast<uint32_t>(offsetof(pipeline::M2Vertex, texCoords))},
+    };
+
+    auto buildCharPipeline = [&](VkPipelineColorBlendAttachmentState blendState, bool depthWrite) -> VkPipeline {
+        return PipelineBuilder()
+            .setShaders(charVert.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                        charFrag.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+            .setVertexInput({charBinding}, charAttrs)
+            .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+            .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+            .setDepthTest(true, depthWrite, VK_COMPARE_OP_LESS_OR_EQUAL)
+            .setColorBlendAttachment(blendState)
+            .setMultisample(vkCtx_->getMsaaSamples())
+            .setLayout(pipelineLayout_)
+            .setRenderPass(mainPass)
+            .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
+            .build(device);
+    };
+
+    opaquePipeline_ = buildCharPipeline(PipelineBuilder::blendDisabled(), true);
+    alphaTestPipeline_ = buildCharPipeline(PipelineBuilder::blendAlpha(), true);
+    alphaPipeline_ = buildCharPipeline(PipelineBuilder::blendAlpha(), false);
+    additivePipeline_ = buildCharPipeline(PipelineBuilder::blendAdditive(), false);
+
+    charVert.destroy();
+    charFrag.destroy();
+
+    core::Logger::getInstance().info("CharacterRenderer: pipelines recreated");
 }
 
 } // namespace rendering

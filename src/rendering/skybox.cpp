@@ -66,6 +66,7 @@ bool Skybox::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout) {
         .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
         .setDepthTest(true, false, VK_COMPARE_OP_LESS_OR_EQUAL)  // depth test on, write off, LEQUAL for far plane
         .setColorBlendAttachment(PipelineBuilder::blendDisabled())
+        .setMultisample(vkCtx->getMsaaSamples())
         .setLayout(pipelineLayout)
         .setRenderPass(vkCtx->getImGuiRenderPass())
         .setDynamicStates(dynamicStates)
@@ -82,6 +83,53 @@ bool Skybox::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout) {
 
     LOG_INFO("Skybox initialized");
     return true;
+}
+
+void Skybox::recreatePipelines() {
+    if (!vkCtx) return;
+    VkDevice device = vkCtx->getDevice();
+
+    if (pipeline != VK_NULL_HANDLE) { vkDestroyPipeline(device, pipeline, nullptr); pipeline = VK_NULL_HANDLE; }
+
+    VkShaderModule vertModule;
+    if (!vertModule.loadFromFile(device, "assets/shaders/skybox.vert.spv")) {
+        LOG_ERROR("Skybox::recreatePipelines: failed to load vertex shader");
+        return;
+    }
+    VkShaderModule fragModule;
+    if (!fragModule.loadFromFile(device, "assets/shaders/skybox.frag.spv")) {
+        LOG_ERROR("Skybox::recreatePipelines: failed to load fragment shader");
+        vertModule.destroy();
+        return;
+    }
+
+    VkPipelineShaderStageCreateInfo vertStage = vertModule.stageInfo(VK_SHADER_STAGE_VERTEX_BIT);
+    VkPipelineShaderStageCreateInfo fragStage = fragModule.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT);
+
+    std::vector<VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    pipeline = PipelineBuilder()
+        .setShaders(vertStage, fragStage)
+        .setVertexInput({}, {})
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+        .setDepthTest(true, false, VK_COMPARE_OP_LESS_OR_EQUAL)
+        .setColorBlendAttachment(PipelineBuilder::blendDisabled())
+        .setMultisample(vkCtx->getMsaaSamples())
+        .setLayout(pipelineLayout)
+        .setRenderPass(vkCtx->getImGuiRenderPass())
+        .setDynamicStates(dynamicStates)
+        .build(device);
+
+    vertModule.destroy();
+    fragModule.destroy();
+
+    if (pipeline == VK_NULL_HANDLE) {
+        LOG_ERROR("Skybox::recreatePipelines: failed to create pipeline");
+    }
 }
 
 void Skybox::shutdown() {

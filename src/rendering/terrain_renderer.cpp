@@ -138,6 +138,7 @@ bool TerrainRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameL
         .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
         .setDepthTest(true, true, VK_COMPARE_OP_LESS_OR_EQUAL)
         .setColorBlendAttachment(PipelineBuilder::blendDisabled())
+        .setMultisample(vkCtx->getMsaaSamples())
         .setLayout(pipelineLayout)
         .setRenderPass(mainPass)
         .setDynamicStates({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR })
@@ -159,6 +160,7 @@ bool TerrainRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameL
         .setRasterization(VK_POLYGON_MODE_LINE, VK_CULL_MODE_NONE)
         .setDepthTest(true, true, VK_COMPARE_OP_LESS_OR_EQUAL)
         .setColorBlendAttachment(PipelineBuilder::blendDisabled())
+        .setMultisample(vkCtx->getMsaaSamples())
         .setLayout(pipelineLayout)
         .setRenderPass(mainPass)
         .setDynamicStates({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR })
@@ -186,6 +188,86 @@ bool TerrainRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameL
 
     LOG_INFO("Terrain renderer initialized (Vulkan)");
     return true;
+}
+
+void TerrainRenderer::recreatePipelines() {
+    if (!vkCtx) return;
+    VkDevice device = vkCtx->getDevice();
+
+    // Destroy old pipelines (keep layouts)
+    if (pipeline) { vkDestroyPipeline(device, pipeline, nullptr); pipeline = VK_NULL_HANDLE; }
+    if (wireframePipeline) { vkDestroyPipeline(device, wireframePipeline, nullptr); wireframePipeline = VK_NULL_HANDLE; }
+
+    // Load shaders
+    VkShaderModule vertShader, fragShader;
+    if (!vertShader.loadFromFile(device, "assets/shaders/terrain.vert.spv")) {
+        LOG_ERROR("TerrainRenderer::recreatePipelines: failed to load vertex shader");
+        return;
+    }
+    if (!fragShader.loadFromFile(device, "assets/shaders/terrain.frag.spv")) {
+        LOG_ERROR("TerrainRenderer::recreatePipelines: failed to load fragment shader");
+        vertShader.destroy();
+        return;
+    }
+
+    // Vertex input (same as initialize)
+    VkVertexInputBindingDescription vertexBinding{};
+    vertexBinding.binding = 0;
+    vertexBinding.stride = sizeof(pipeline::TerrainVertex);
+    vertexBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::vector<VkVertexInputAttributeDescription> vertexAttribs(4);
+    vertexAttribs[0] = { 0, 0, VK_FORMAT_R32G32B32_SFLOAT,
+        static_cast<uint32_t>(offsetof(pipeline::TerrainVertex, position)) };
+    vertexAttribs[1] = { 1, 0, VK_FORMAT_R32G32B32_SFLOAT,
+        static_cast<uint32_t>(offsetof(pipeline::TerrainVertex, normal)) };
+    vertexAttribs[2] = { 2, 0, VK_FORMAT_R32G32_SFLOAT,
+        static_cast<uint32_t>(offsetof(pipeline::TerrainVertex, texCoord)) };
+    vertexAttribs[3] = { 3, 0, VK_FORMAT_R32G32_SFLOAT,
+        static_cast<uint32_t>(offsetof(pipeline::TerrainVertex, layerUV)) };
+
+    VkRenderPass mainPass = vkCtx->getImGuiRenderPass();
+
+    // Rebuild fill pipeline
+    pipeline = PipelineBuilder()
+        .setShaders(vertShader.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                    fragShader.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+        .setVertexInput({ vertexBinding }, vertexAttribs)
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+        .setDepthTest(true, true, VK_COMPARE_OP_LESS_OR_EQUAL)
+        .setColorBlendAttachment(PipelineBuilder::blendDisabled())
+        .setMultisample(vkCtx->getMsaaSamples())
+        .setLayout(pipelineLayout)
+        .setRenderPass(mainPass)
+        .setDynamicStates({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR })
+        .build(device);
+
+    if (!pipeline) {
+        LOG_ERROR("TerrainRenderer::recreatePipelines: failed to create fill pipeline");
+    }
+
+    // Rebuild wireframe pipeline
+    wireframePipeline = PipelineBuilder()
+        .setShaders(vertShader.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                    fragShader.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+        .setVertexInput({ vertexBinding }, vertexAttribs)
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_LINE, VK_CULL_MODE_NONE)
+        .setDepthTest(true, true, VK_COMPARE_OP_LESS_OR_EQUAL)
+        .setColorBlendAttachment(PipelineBuilder::blendDisabled())
+        .setMultisample(vkCtx->getMsaaSamples())
+        .setLayout(pipelineLayout)
+        .setRenderPass(mainPass)
+        .setDynamicStates({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR })
+        .build(device);
+
+    if (!wireframePipeline) {
+        LOG_WARNING("TerrainRenderer::recreatePipelines: wireframe pipeline not available");
+    }
+
+    vertShader.destroy();
+    fragShader.destroy();
 }
 
 void TerrainRenderer::shutdown() {
@@ -482,7 +564,39 @@ void TerrainRenderer::writeMaterialDescriptors(VkDescriptorSet set, const Terrai
 }
 
 void TerrainRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera) {
-    if (chunks.empty() || !pipeline) return;
+    if (chunks.empty() || !pipeline) {
+        static int emptyLog = 0;
+        if (++emptyLog <= 3)
+            LOG_WARNING("TerrainRenderer::render: chunks=", chunks.size(), " pipeline=", (pipeline != VK_NULL_HANDLE));
+        return;
+    }
+
+    // One-time diagnostic: log chunk nearest to camera
+    static bool loggedDiag = false;
+    if (!loggedDiag && !chunks.empty()) {
+        loggedDiag = true;
+        glm::vec3 cam = camera.getPosition();
+        // Find chunk nearest to camera
+        const TerrainChunkGPU* nearest = nullptr;
+        float nearestDist = 1e30f;
+        for (const auto& ch : chunks) {
+            float dx = ch.boundingSphereCenter.x - cam.x;
+            float dy = ch.boundingSphereCenter.y - cam.y;
+            float dz = ch.boundingSphereCenter.z - cam.z;
+            float d = dx*dx + dy*dy + dz*dz;
+            if (d < nearestDist) { nearestDist = d; nearest = &ch; }
+        }
+        if (nearest) {
+            float d2d = std::sqrt((nearest->boundingSphereCenter.x-cam.x)*(nearest->boundingSphereCenter.x-cam.x) +
+                                  (nearest->boundingSphereCenter.y-cam.y)*(nearest->boundingSphereCenter.y-cam.y));
+            LOG_INFO("Terrain diag: chunks=", chunks.size(),
+                     " cam=(", cam.x, ",", cam.y, ",", cam.z, ")",
+                     " nearest_center=(", nearest->boundingSphereCenter.x, ",", nearest->boundingSphereCenter.y, ",", nearest->boundingSphereCenter.z, ")",
+                     " dist2d=", d2d, " dist3d=", std::sqrt(nearestDist),
+                     " radius=", nearest->boundingSphereRadius,
+                     " matSet=", (nearest->materialSet != VK_NULL_HANDLE ? "ok" : "NULL"));
+        }
+    }
 
     VkPipeline activePipeline = (wireframe && wireframePipeline) ? wireframePipeline : pipeline;
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, activePipeline);
@@ -506,6 +620,13 @@ void TerrainRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, c
 
     renderedChunks = 0;
     culledChunks = 0;
+
+    // Periodic culling summary (every ~5s at 60fps)
+    static int renderCallCount = 0;
+    if (++renderCallCount % 300 == 1) {
+        glm::vec3 cam = camera.getPosition();
+        LOG_INFO("Terrain render call: total=", chunks.size(), " cam=(", cam.x, ",", cam.y, ",", cam.z, ")");
+    }
 
     for (const auto& chunk : chunks) {
         if (!chunk.isValid() || !chunk.materialSet) continue;
@@ -532,6 +653,11 @@ void TerrainRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, c
 
         vkCmdDrawIndexed(cmd, chunk.indexCount, 1, 0, 0, 0);
         renderedChunks++;
+    }
+
+    // Log culling result periodically
+    if (renderCallCount % 300 == 1) {
+        LOG_INFO("Terrain culling: rendered=", renderedChunks, " culled=", culledChunks);
     }
 }
 
@@ -589,6 +715,13 @@ void TerrainRenderer::destroyChunkGPU(TerrainChunkGPU& chunk) {
         chunk.paramsUBO = VK_NULL_HANDLE;
     }
     chunk.materialSet = VK_NULL_HANDLE;
+
+    // Destroy owned alpha textures (VkTexture::~VkTexture is a no-op, must call destroy() explicitly)
+    VkDevice device = vkCtx->getDevice();
+    for (auto& tex : chunk.ownedAlphaTextures) {
+        if (tex) tex->destroy(device, allocator);
+    }
+    chunk.ownedAlphaTextures.clear();
 }
 
 int TerrainRenderer::getTriangleCount() const {

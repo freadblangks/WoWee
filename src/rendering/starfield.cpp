@@ -88,6 +88,7 @@ bool StarField::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout)
         .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
         .setDepthTest(true, false, VK_COMPARE_OP_LESS_OR_EQUAL)  // depth test, no write (stars behind sky)
         .setColorBlendAttachment(PipelineBuilder::blendAdditive())
+        .setMultisample(vkCtx->getMsaaSamples())
         .setLayout(pipelineLayout)
         .setRenderPass(vkCtx->getImGuiRenderPass())
         .build(device);
@@ -106,6 +107,71 @@ bool StarField::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout)
 
     LOG_INFO("Star field initialized: ", starCount, " stars");
     return true;
+}
+
+void StarField::recreatePipelines() {
+    if (!vkCtx) return;
+    VkDevice device = vkCtx->getDevice();
+
+    if (pipeline != VK_NULL_HANDLE) { vkDestroyPipeline(device, pipeline, nullptr); pipeline = VK_NULL_HANDLE; }
+
+    VkShaderModule vertModule;
+    if (!vertModule.loadFromFile(device, "assets/shaders/starfield.vert.spv")) {
+        LOG_ERROR("StarField::recreatePipelines: failed to load vertex shader");
+        return;
+    }
+    VkShaderModule fragModule;
+    if (!fragModule.loadFromFile(device, "assets/shaders/starfield.frag.spv")) {
+        LOG_ERROR("StarField::recreatePipelines: failed to load fragment shader");
+        vertModule.destroy();
+        return;
+    }
+
+    VkPipelineShaderStageCreateInfo vertStage = vertModule.stageInfo(VK_SHADER_STAGE_VERTEX_BIT);
+    VkPipelineShaderStageCreateInfo fragStage = fragModule.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT);
+
+    // Vertex input (same as initialize)
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = 5 * sizeof(float);
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription posAttr{};
+    posAttr.location = 0;
+    posAttr.binding = 0;
+    posAttr.format = VK_FORMAT_R32G32B32_SFLOAT;
+    posAttr.offset = 0;
+
+    VkVertexInputAttributeDescription brightnessAttr{};
+    brightnessAttr.location = 1;
+    brightnessAttr.binding = 0;
+    brightnessAttr.format = VK_FORMAT_R32_SFLOAT;
+    brightnessAttr.offset = 3 * sizeof(float);
+
+    VkVertexInputAttributeDescription twinkleAttr{};
+    twinkleAttr.location = 2;
+    twinkleAttr.binding = 0;
+    twinkleAttr.format = VK_FORMAT_R32_SFLOAT;
+    twinkleAttr.offset = 4 * sizeof(float);
+
+    pipeline = PipelineBuilder()
+        .setShaders(vertStage, fragStage)
+        .setVertexInput({binding}, {posAttr, brightnessAttr, twinkleAttr})
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_POINT_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+        .setDepthTest(true, false, VK_COMPARE_OP_LESS_OR_EQUAL)
+        .setColorBlendAttachment(PipelineBuilder::blendAdditive())
+        .setMultisample(vkCtx->getMsaaSamples())
+        .setLayout(pipelineLayout)
+        .setRenderPass(vkCtx->getImGuiRenderPass())
+        .build(device);
+
+    vertModule.destroy();
+    fragModule.destroy();
+
+    if (pipeline == VK_NULL_HANDLE) {
+        LOG_ERROR("StarField::recreatePipelines: failed to create pipeline");
+    }
 }
 
 void StarField::shutdown() {

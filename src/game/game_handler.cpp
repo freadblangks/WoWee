@@ -722,6 +722,15 @@ void GameHandler::update(float deltaTime) {
                                       ? 0.25f
                                       : (classicLikeCombatSync ? 0.05f : moveHeartbeatInterval_);
         if (timeSinceLastMoveHeartbeat_ >= heartbeatInterval) {
+            // Debug: log heartbeat position periodically
+            static int hbCount = 0;
+            if (++hbCount <= 5 || hbCount % 60 == 0) {
+                glm::vec3 serverPos = core::coords::canonicalToServer(
+                    glm::vec3(movementInfo.x, movementInfo.y, movementInfo.z));
+                LOG_INFO("Heartbeat #", hbCount, " canonical=(",
+                         movementInfo.x, ",", movementInfo.y, ",", movementInfo.z,
+                         ") server=(", serverPos.x, ",", serverPos.y, ",", serverPos.z, ")");
+            }
             sendMovement(Opcode::MSG_MOVE_HEARTBEAT);
             timeSinceLastMoveHeartbeat_ = 0.0f;
         }

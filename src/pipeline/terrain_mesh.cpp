@@ -1,4 +1,5 @@
 #include "pipeline/terrain_mesh.hpp"
+#include "core/coordinates.hpp"
 #include "core/logger.hpp"
 #include <cmath>
 
@@ -40,6 +41,7 @@ TerrainMesh TerrainMeshGenerator::generate(const ADTTerrain& terrain) {
 
     mesh.validChunkCount = validCount;
 
+
     return mesh;
 }
 
@@ -49,10 +51,24 @@ ChunkMesh TerrainMeshGenerator::generateChunkMesh(const MapChunk& chunk, int chu
     mesh.chunkX = chunkX;
     mesh.chunkY = chunkY;
 
-    // World position from chunk data
-    mesh.worldX = chunk.position[0];
-    mesh.worldY = chunk.position[1];
-    mesh.worldZ = chunk.position[2];
+    // Compute render-space XY from tile/chunk indices (MCNK position fields are unreliable).
+    // tileX increases southward (renderY axis), tileY increases eastward (renderX axis).
+    // NW corner of tile: renderX = (32-tileY)*TILE_SIZE, renderY = (32-tileX)*TILE_SIZE
+    // Each chunk step goes east (–renderX) or south (–renderY).
+    const float tileNW_renderX = (32.0f - static_cast<float>(tileY)) * core::coords::TILE_SIZE;
+    const float tileNW_renderY = (32.0f - static_cast<float>(tileX)) * core::coords::TILE_SIZE;
+    mesh.worldX = tileNW_renderX - static_cast<float>(chunkY) * CHUNK_SIZE;  // iy controls renderX (east-west)
+    mesh.worldY = tileNW_renderY - static_cast<float>(chunkX) * CHUNK_SIZE;  // ix controls renderY (north-south)
+    mesh.worldZ = chunk.position[2];  // height base (wowZ) from MCNK offset 112
+
+    // Debug: log chunk positions for first tile
+    static int posLogCount = 0;
+    if (posLogCount < 5) {
+        posLogCount++;
+        LOG_INFO("Terrain chunk: tile(", tileX, ",", tileY, ") ix=", chunkX, " iy=", chunkY,
+                 " worldXY=(", mesh.worldX, ",", mesh.worldY, ",", mesh.worldZ, ")",
+                 " mcnk=(", chunk.position[0], ",", chunk.position[1], ",", chunk.position[2], ")");
+    }
 
     // Generate vertices from heightmap (pass chunk grid indices and tile coords)
     mesh.vertices = generateVertices(chunk, chunkX, chunkY, tileX, tileY);
@@ -167,19 +183,21 @@ ChunkMesh TerrainMeshGenerator::generateChunkMesh(const MapChunk& chunk, int chu
     return mesh;
 }
 
-std::vector<TerrainVertex> TerrainMeshGenerator::generateVertices(const MapChunk& chunk, [[maybe_unused]] int chunkX, [[maybe_unused]] int chunkY, [[maybe_unused]] int tileX, [[maybe_unused]] int tileY) {
+std::vector<TerrainVertex> TerrainMeshGenerator::generateVertices(const MapChunk& chunk, int chunkX, int chunkY, int tileX, int tileY) {
     std::vector<TerrainVertex> vertices;
     vertices.reserve(145);  // 145 vertices total
 
     const HeightMap& heightMap = chunk.heightMap;
 
     // WoW terrain uses 145 heights stored in a 9x17 row-major grid layout
-    const float unitSize = CHUNK_SIZE / 8.0f;  // 66.67 units per vertex step
+    const float unitSize = CHUNK_SIZE / 8.0f;  // 33.333/8 units per vertex step
 
-    // chunk.position contains world coordinates for this chunk's origin
-    // Both X and Y are at world scale (no scaling needed)
-    float chunkBaseX = chunk.position[0];
-    float chunkBaseY = chunk.position[1];
+    // Compute render-space base from tile/chunk indices (same formula as generateChunkMesh).
+    const float tileNW_renderX = (32.0f - static_cast<float>(tileY)) * core::coords::TILE_SIZE;
+    const float tileNW_renderY = (32.0f - static_cast<float>(tileX)) * core::coords::TILE_SIZE;
+    float chunkBaseX = tileNW_renderX - static_cast<float>(chunkY) * CHUNK_SIZE;  // iy controls renderX (east-west)
+    float chunkBaseY = tileNW_renderY - static_cast<float>(chunkX) * CHUNK_SIZE;  // ix controls renderY (north-south)
+    float chunkBaseZ = chunk.position[2];  // height base (wowZ) from MCNK offset 112
 
     for (int index = 0; index < 145; index++) {
         int y = index / 17;  // Row (0-8)
@@ -196,11 +214,12 @@ std::vector<TerrainVertex> TerrainMeshGenerator::generateVertices(const MapChunk
 
         TerrainVertex vertex;
 
-        // Position - match wowee.js coordinate layout (swap X/Y and negate)
-        // wowee.js: X = -(y * unitSize), Y = -(x * unitSize)
-        vertex.position[0] = chunkBaseX - (offsetY * unitSize);
-        vertex.position[1] = chunkBaseY - (offsetX * unitSize);
-        vertex.position[2] = chunk.position[2] + heightMap.heights[index];
+        // Position in render space:
+        //   MCVT rows (offsetY) go west→east = renderX decreasing
+        //   MCVT columns (offsetX) go north→south = renderY decreasing
+        vertex.position[0] = chunkBaseX - (offsetY * unitSize);  // renderX (row = west→east)
+        vertex.position[1] = chunkBaseY - (offsetX * unitSize);  // renderY (col = north→south)
+        vertex.position[2] = chunkBaseZ + heightMap.heights[index];  // renderZ
 
         // Normal
         if (index * 3 + 2 < static_cast<int>(chunk.normals.size())) {

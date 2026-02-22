@@ -3,10 +3,13 @@
 #include "core/application.hpp"
 #include "core/logger.hpp"
 #include "rendering/renderer.hpp"
+#include "rendering/vk_context.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "audio/music_manager.hpp"
 #include "game/expansion_profile.hpp"
 #include <imgui.h>
+#include <imgui_impl_vulkan.h>
+#include "stb_image.h"
 #include <filesystem>
 #include <sstream>
 #include <fstream>
@@ -159,39 +162,34 @@ void AuthScreen::render(auth::AuthHandler& authHandler) {
         loginInfoLoaded = true;
     }
 
-    if (!videoInitAttempted) {
-        videoInitAttempted = true;
-        std::string videoPath = "assets/startscreen.mp4";
-        if (!std::filesystem::exists(videoPath)) {
-            videoPath = (std::filesystem::current_path() / "assets/startscreen.mp4").string();
-        }
-        backgroundVideo.open(videoPath);
+    if (!bgInitAttempted) {
+        bgInitAttempted = true;
+        loadBackgroundImage();
     }
-    backgroundVideo.update(ImGui::GetIO().DeltaTime);
-    if (backgroundVideo.isReady()) {
+    if (bgDescriptorSet) {
         ImVec2 screen = ImGui::GetIO().DisplaySize;
         float screenW = screen.x;
         float screenH = screen.y;
-        float videoW = static_cast<float>(backgroundVideo.getWidth());
-        float videoH = static_cast<float>(backgroundVideo.getHeight());
-        if (videoW > 0.0f && videoH > 0.0f) {
+        float imgW = static_cast<float>(bgWidth);
+        float imgH = static_cast<float>(bgHeight);
+        if (imgW > 0.0f && imgH > 0.0f) {
             float screenAspect = screenW / screenH;
-            float videoAspect = videoW / videoH;
+            float imgAspect = imgW / imgH;
             ImVec2 uv0(0.0f, 0.0f);
             ImVec2 uv1(1.0f, 1.0f);
-            if (videoAspect > screenAspect) {
-                float scale = screenAspect / videoAspect;
+            if (imgAspect > screenAspect) {
+                float scale = screenAspect / imgAspect;
                 float crop = (1.0f - scale) * 0.5f;
                 uv0.x = crop;
                 uv1.x = 1.0f - crop;
-            } else if (videoAspect < screenAspect) {
-                float scale = videoAspect / screenAspect;
+            } else if (imgAspect < screenAspect) {
+                float scale = imgAspect / screenAspect;
                 float crop = (1.0f - scale) * 0.5f;
                 uv0.y = crop;
                 uv1.y = 1.0f - crop;
             }
             ImDrawList* bg = ImGui::GetBackgroundDrawList();
-            bg->AddImage(static_cast<ImTextureID>(static_cast<uintptr_t>(backgroundVideo.getTextureId())),
+            bg->AddImage(reinterpret_cast<ImTextureID>(bgDescriptorSet),
                          ImVec2(0, 0), ImVec2(screenW, screenH), uv0, uv1);
         }
     }
@@ -761,6 +759,166 @@ void AuthScreen::loadLoginInfo() {
     }
 
     LOG_INFO("Login info loaded from ", path);
+}
+
+static uint32_t findMemType(VkPhysicalDevice pd, uint32_t filter, VkMemoryPropertyFlags props) {
+    VkPhysicalDeviceMemoryProperties mp;
+    vkGetPhysicalDeviceMemoryProperties(pd, &mp);
+    for (uint32_t i = 0; i < mp.memoryTypeCount; i++) {
+        if ((filter & (1 << i)) && (mp.memoryTypes[i].propertyFlags & props) == props) return i;
+    }
+    return 0;
+}
+
+bool AuthScreen::loadBackgroundImage() {
+    auto& app = core::Application::getInstance();
+    auto* renderer = app.getRenderer();
+    if (!renderer) return false;
+    bgVkCtx = renderer->getVkContext();
+    if (!bgVkCtx) return false;
+
+    std::string imgPath = "assets/krayonsignin.png";
+    if (!std::filesystem::exists(imgPath))
+        imgPath = (std::filesystem::current_path() / imgPath).string();
+
+    int channels;
+    stbi_set_flip_vertically_on_load(false);
+    unsigned char* data = stbi_load(imgPath.c_str(), &bgWidth, &bgHeight, &channels, 4);
+    if (!data) {
+        LOG_WARNING("Auth screen: failed to load background image: ", imgPath);
+        return false;
+    }
+
+    VkDevice device = bgVkCtx->getDevice();
+    VkPhysicalDevice physDevice = bgVkCtx->getPhysicalDevice();
+    VkDeviceSize imageSize = static_cast<VkDeviceSize>(bgWidth) * bgHeight * 4;
+
+    // Staging buffer
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingMemory;
+    {
+        VkBufferCreateInfo bufInfo{};
+        bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufInfo.size = imageSize;
+        bufInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        vkCreateBuffer(device, &bufInfo, nullptr, &stagingBuffer);
+
+        VkMemoryRequirements memReqs;
+        vkGetBufferMemoryRequirements(device, stagingBuffer, &memReqs);
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memReqs.size;
+        allocInfo.memoryTypeIndex = findMemType(physDevice, memReqs.memoryTypeBits,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        vkAllocateMemory(device, &allocInfo, nullptr, &stagingMemory);
+        vkBindBufferMemory(device, stagingBuffer, stagingMemory, 0);
+
+        void* mapped;
+        vkMapMemory(device, stagingMemory, 0, imageSize, 0, &mapped);
+        memcpy(mapped, data, imageSize);
+        vkUnmapMemory(device, stagingMemory);
+    }
+    stbi_image_free(data);
+
+    // Create VkImage
+    {
+        VkImageCreateInfo imgInfo{};
+        imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imgInfo.imageType = VK_IMAGE_TYPE_2D;
+        imgInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+        imgInfo.extent = {static_cast<uint32_t>(bgWidth), static_cast<uint32_t>(bgHeight), 1};
+        imgInfo.mipLevels = 1;
+        imgInfo.arrayLayers = 1;
+        imgInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        imgInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        imgInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        imgInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        imgInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        vkCreateImage(device, &imgInfo, nullptr, &bgImage);
+
+        VkMemoryRequirements memReqs;
+        vkGetImageMemoryRequirements(device, bgImage, &memReqs);
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memReqs.size;
+        allocInfo.memoryTypeIndex = findMemType(physDevice, memReqs.memoryTypeBits,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        vkAllocateMemory(device, &allocInfo, nullptr, &bgMemory);
+        vkBindImageMemory(device, bgImage, bgMemory, 0);
+    }
+
+    // Transfer
+    bgVkCtx->immediateSubmit([&](VkCommandBuffer cmd) {
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = bgImage;
+        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+        VkBufferImageCopy region{};
+        region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        region.imageExtent = {static_cast<uint32_t>(bgWidth), static_cast<uint32_t>(bgHeight), 1};
+        vkCmdCopyBufferToImage(cmd, stagingBuffer, bgImage,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+    });
+
+    vkDestroyBuffer(device, stagingBuffer, nullptr);
+    vkFreeMemory(device, stagingMemory, nullptr);
+
+    // Image view
+    {
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image = bgImage;
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+        viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        vkCreateImageView(device, &viewInfo, nullptr, &bgImageView);
+    }
+
+    // Sampler
+    {
+        VkSamplerCreateInfo samplerInfo{};
+        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        samplerInfo.magFilter = VK_FILTER_LINEAR;
+        samplerInfo.minFilter = VK_FILTER_LINEAR;
+        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        vkCreateSampler(device, &samplerInfo, nullptr, &bgSampler);
+    }
+
+    bgDescriptorSet = ImGui_ImplVulkan_AddTexture(bgSampler, bgImageView,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    LOG_INFO("Auth screen background loaded: ", bgWidth, "x", bgHeight);
+    return true;
+}
+
+void AuthScreen::destroyBackgroundImage() {
+    if (!bgVkCtx) return;
+    VkDevice device = bgVkCtx->getDevice();
+    vkDeviceWaitIdle(device);
+    if (bgDescriptorSet) { ImGui_ImplVulkan_RemoveTexture(bgDescriptorSet); bgDescriptorSet = VK_NULL_HANDLE; }
+    if (bgSampler) { vkDestroySampler(device, bgSampler, nullptr); bgSampler = VK_NULL_HANDLE; }
+    if (bgImageView) { vkDestroyImageView(device, bgImageView, nullptr); bgImageView = VK_NULL_HANDLE; }
+    if (bgImage) { vkDestroyImage(device, bgImage, nullptr); bgImage = VK_NULL_HANDLE; }
+    if (bgMemory) { vkFreeMemory(device, bgMemory, nullptr); bgMemory = VK_NULL_HANDLE; }
 }
 
 }} // namespace wowee::ui

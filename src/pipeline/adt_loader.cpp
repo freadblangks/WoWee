@@ -328,10 +328,14 @@ void ADTLoader::parseMCNK(const uint8_t* data, size_t size, int chunkIndex, ADTT
                  " holes=0x", std::hex, chunk.holes, std::dec);
     }
 
-    // Position (stored at offset 0x68 = 104 in MCNK header)
-    chunk.position[0] = readFloat(data, 104);  // X
-    chunk.position[1] = readFloat(data, 108);  // Y
-    chunk.position[2] = readFloat(data, 112);  // Z
+    // MCNK position is in canonical WoW coordinates (NOT ADT placement space):
+    //   offset 104: wowY (west axis, horizontal — unused, XY computed from tile indices)
+    //   offset 108: wowX (north axis, horizontal — unused, XY computed from tile indices)
+    //   offset 112: wowZ = HEIGHT BASE (MCVT heights are relative to this)
+    chunk.position[0] = readFloat(data, 104);  // wowY (unused)
+    chunk.position[1] = readFloat(data, 108);  // wowX (unused)
+    chunk.position[2] = readFloat(data, 112);  // wowZ = height base
+
 
     // Parse sub-chunks using offsets from MCNK header
     // WoW ADT sub-chunks may have their own 8-byte headers (magic+size)
@@ -409,7 +413,11 @@ void ADTLoader::parseMCVT(const uint8_t* data, size_t size, MapChunk& chunk) {
     // Log height range for first chunk only
     static bool logged = false;
     if (!logged) {
-        LOG_DEBUG("MCVT height range: [", minHeight, ", ", maxHeight, "]");
+        LOG_INFO("MCVT height range: [", minHeight, ", ", maxHeight, "]",
+                 " (heights[0]=", chunk.heightMap.heights[0],
+                 " heights[8]=", chunk.heightMap.heights[8],
+                 " heights[136]=", chunk.heightMap.heights[136],
+                 " heights[144]=", chunk.heightMap.heights[144], ")");
         logged = true;
     }
 }

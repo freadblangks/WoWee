@@ -261,6 +261,21 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         }
     }
 
+    // Apply saved MSAA setting once when renderer is available
+    if (!msaaSettingsApplied_ && pendingAntiAliasing > 0) {
+        auto* renderer = core::Application::getInstance().getRenderer();
+        if (renderer) {
+            static const VkSampleCountFlagBits aaSamples[] = {
+                VK_SAMPLE_COUNT_1_BIT, VK_SAMPLE_COUNT_2_BIT,
+                VK_SAMPLE_COUNT_4_BIT, VK_SAMPLE_COUNT_8_BIT
+            };
+            renderer->setMsaaSamples(aaSamples[pendingAntiAliasing]);
+            msaaSettingsApplied_ = true;
+        }
+    } else {
+        msaaSettingsApplied_ = true;
+    }
+
     // Apply auto-loot setting to GameHandler every frame (cheap bool sync)
     gameHandler.setAutoLoot(pendingAutoLoot);
 
@@ -5866,6 +5881,17 @@ void GameScreen::renderSettingsWindow() {
                     if (renderer) renderer->setShadowsEnabled(pendingShadows);
                     saveSettings();
                 }
+                {
+                    const char* aaLabels[] = { "Off", "2x MSAA", "4x MSAA", "8x MSAA" };
+                    if (ImGui::Combo("Anti-Aliasing", &pendingAntiAliasing, aaLabels, 4)) {
+                        static const VkSampleCountFlagBits aaSamples[] = {
+                            VK_SAMPLE_COUNT_1_BIT, VK_SAMPLE_COUNT_2_BIT,
+                            VK_SAMPLE_COUNT_4_BIT, VK_SAMPLE_COUNT_8_BIT
+                        };
+                        if (renderer) renderer->setMsaaSamples(aaSamples[pendingAntiAliasing]);
+                        saveSettings();
+                    }
+                }
                 if (ImGui::SliderInt("Ground Clutter Density", &pendingGroundClutterDensity, 0, 150, "%d%%")) {
                     if (renderer) {
                         if (auto* tm = renderer->getTerrainManager()) {
@@ -5896,11 +5922,13 @@ void GameScreen::renderSettingsWindow() {
                     pendingVsync = kDefaultVsync;
                     pendingShadows = kDefaultShadows;
                     pendingGroundClutterDensity = kDefaultGroundClutterDensity;
+                    pendingAntiAliasing = 0;
                     pendingResIndex = defaultResIndex;
                     window->setFullscreen(pendingFullscreen);
                     window->setVsync(pendingVsync);
                     window->applyResolution(kResolutions[pendingResIndex][0], kResolutions[pendingResIndex][1]);
                     if (renderer) renderer->setShadowsEnabled(pendingShadows);
+                    if (renderer) renderer->setMsaaSamples(VK_SAMPLE_COUNT_1_BIT);
                     if (renderer) {
                         if (auto* tm = renderer->getTerrainManager()) {
                             tm->setGroundClutterDensityScale(static_cast<float>(pendingGroundClutterDensity) / 100.0f);
@@ -6831,6 +6859,7 @@ void GameScreen::saveSettings() {
     // Gameplay
     out << "auto_loot=" << (pendingAutoLoot ? 1 : 0) << "\n";
     out << "ground_clutter_density=" << pendingGroundClutterDensity << "\n";
+    out << "antialiasing=" << pendingAntiAliasing << "\n";
 
     // Controls
     out << "mouse_sensitivity=" << pendingMouseSensitivity << "\n";
@@ -6908,6 +6937,7 @@ void GameScreen::loadSettings() {
             // Gameplay
             else if (key == "auto_loot") pendingAutoLoot = (std::stoi(val) != 0);
             else if (key == "ground_clutter_density") pendingGroundClutterDensity = std::clamp(std::stoi(val), 0, 150);
+            else if (key == "antialiasing") pendingAntiAliasing = std::clamp(std::stoi(val), 0, 3);
             // Controls
             else if (key == "mouse_sensitivity") pendingMouseSensitivity = std::clamp(std::stof(val), 0.05f, 1.0f);
             else if (key == "invert_mouse") pendingInvertMouse = (std::stoi(val) != 0);

@@ -281,6 +281,8 @@ public:
     double getQueryTimeMs() const { return queryTimeMs; }
     uint32_t getQueryCallCount() const { return queryCallCount; }
 
+    void recreatePipelines();
+
     // Stats
     bool isInitialized() const { return initialized_; }
     uint32_t getModelCount() const { return static_cast<uint32_t>(models.size()); }

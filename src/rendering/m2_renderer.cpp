@@ -468,6 +468,7 @@ bool M2Renderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout
             .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
             .setDepthTest(true, depthWrite, VK_COMPARE_OP_LESS_OR_EQUAL)
             .setColorBlendAttachment(blendState)
+            .setMultisample(vkCtx_->getMsaaSamples())
             .setLayout(pipelineLayout_)
             .setRenderPass(mainPass)
             .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
@@ -502,6 +503,7 @@ bool M2Renderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout
                 .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
                 .setDepthTest(true, false, VK_COMPARE_OP_LESS_OR_EQUAL)
                 .setColorBlendAttachment(blend)
+                .setMultisample(vkCtx_->getMsaaSamples())
                 .setLayout(particlePipelineLayout_)
                 .setRenderPass(mainPass)
                 .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
@@ -534,6 +536,7 @@ bool M2Renderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout
             .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
             .setDepthTest(true, false, VK_COMPARE_OP_LESS_OR_EQUAL)
             .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+            .setMultisample(vkCtx_->getMsaaSamples())
             .setLayout(smokePipelineLayout_)
             .setRenderPass(mainPass)
             .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
@@ -3675,6 +3678,145 @@ float M2Renderer::raycastBoundingBoxes(const glm::vec3& origin, const glm::vec3&
     }
 
     return closestHit;
+}
+
+void M2Renderer::recreatePipelines() {
+    if (!vkCtx_) return;
+    VkDevice device = vkCtx_->getDevice();
+    vkDeviceWaitIdle(device);
+
+    // Destroy old main-pass pipelines (NOT shadow, NOT pipeline layouts)
+    if (opaquePipeline_)            { vkDestroyPipeline(device, opaquePipeline_, nullptr); opaquePipeline_ = VK_NULL_HANDLE; }
+    if (alphaTestPipeline_)         { vkDestroyPipeline(device, alphaTestPipeline_, nullptr); alphaTestPipeline_ = VK_NULL_HANDLE; }
+    if (alphaPipeline_)             { vkDestroyPipeline(device, alphaPipeline_, nullptr); alphaPipeline_ = VK_NULL_HANDLE; }
+    if (additivePipeline_)          { vkDestroyPipeline(device, additivePipeline_, nullptr); additivePipeline_ = VK_NULL_HANDLE; }
+    if (particlePipeline_)          { vkDestroyPipeline(device, particlePipeline_, nullptr); particlePipeline_ = VK_NULL_HANDLE; }
+    if (particleAdditivePipeline_)  { vkDestroyPipeline(device, particleAdditivePipeline_, nullptr); particleAdditivePipeline_ = VK_NULL_HANDLE; }
+    if (smokePipeline_)             { vkDestroyPipeline(device, smokePipeline_, nullptr); smokePipeline_ = VK_NULL_HANDLE; }
+
+    // --- Load shaders ---
+    rendering::VkShaderModule m2Vert, m2Frag;
+    rendering::VkShaderModule particleVert, particleFrag;
+    rendering::VkShaderModule smokeVert, smokeFrag;
+
+    m2Vert.loadFromFile(device, "assets/shaders/m2.vert.spv");
+    m2Frag.loadFromFile(device, "assets/shaders/m2.frag.spv");
+    particleVert.loadFromFile(device, "assets/shaders/m2_particle.vert.spv");
+    particleFrag.loadFromFile(device, "assets/shaders/m2_particle.frag.spv");
+    smokeVert.loadFromFile(device, "assets/shaders/m2_smoke.vert.spv");
+    smokeFrag.loadFromFile(device, "assets/shaders/m2_smoke.frag.spv");
+
+    if (!m2Vert.isValid() || !m2Frag.isValid()) {
+        LOG_ERROR("M2Renderer::recreatePipelines: missing required shaders");
+        return;
+    }
+
+    VkRenderPass mainPass = vkCtx_->getImGuiRenderPass();
+
+    // --- M2 model vertex input ---
+    VkVertexInputBindingDescription m2Binding{};
+    m2Binding.binding = 0;
+    m2Binding.stride = 18 * sizeof(float);
+    m2Binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::vector<VkVertexInputAttributeDescription> m2Attrs = {
+        {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},                     // position
+        {1, 0, VK_FORMAT_R32G32B32_SFLOAT, 3 * sizeof(float)},     // normal
+        {2, 0, VK_FORMAT_R32G32_SFLOAT, 6 * sizeof(float)},        // texCoord0
+        {5, 0, VK_FORMAT_R32G32_SFLOAT, 8 * sizeof(float)},        // texCoord1
+        {3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 10 * sizeof(float)}, // boneWeights
+        {4, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 14 * sizeof(float)}, // boneIndices (float)
+    };
+
+    auto buildM2Pipeline = [&](VkPipelineColorBlendAttachmentState blendState, bool depthWrite) -> VkPipeline {
+        return PipelineBuilder()
+            .setShaders(m2Vert.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                        m2Frag.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+            .setVertexInput({m2Binding}, m2Attrs)
+            .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+            .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+            .setDepthTest(true, depthWrite, VK_COMPARE_OP_LESS_OR_EQUAL)
+            .setColorBlendAttachment(blendState)
+            .setMultisample(vkCtx_->getMsaaSamples())
+            .setLayout(pipelineLayout_)
+            .setRenderPass(mainPass)
+            .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
+            .build(device);
+    };
+
+    opaquePipeline_ = buildM2Pipeline(PipelineBuilder::blendDisabled(), true);
+    alphaTestPipeline_ = buildM2Pipeline(PipelineBuilder::blendAlpha(), true);
+    alphaPipeline_ = buildM2Pipeline(PipelineBuilder::blendAlpha(), false);
+    additivePipeline_ = buildM2Pipeline(PipelineBuilder::blendAdditive(), false);
+
+    // --- Particle pipelines ---
+    if (particleVert.isValid() && particleFrag.isValid()) {
+        VkVertexInputBindingDescription pBind{};
+        pBind.binding = 0;
+        pBind.stride = 9 * sizeof(float); // pos3 + color4 + size1 + tile1
+        pBind.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        std::vector<VkVertexInputAttributeDescription> pAttrs = {
+            {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},                    // position
+            {1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 3 * sizeof(float)}, // color
+            {2, 0, VK_FORMAT_R32_SFLOAT, 7 * sizeof(float)},          // size
+            {3, 0, VK_FORMAT_R32_SFLOAT, 8 * sizeof(float)},          // tile
+        };
+
+        auto buildParticlePipeline = [&](VkPipelineColorBlendAttachmentState blend) -> VkPipeline {
+            return PipelineBuilder()
+                .setShaders(particleVert.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                            particleFrag.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+                .setVertexInput({pBind}, pAttrs)
+                .setTopology(VK_PRIMITIVE_TOPOLOGY_POINT_LIST)
+                .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+                .setDepthTest(true, false, VK_COMPARE_OP_LESS_OR_EQUAL)
+                .setColorBlendAttachment(blend)
+                .setMultisample(vkCtx_->getMsaaSamples())
+                .setLayout(particlePipelineLayout_)
+                .setRenderPass(mainPass)
+                .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
+                .build(device);
+        };
+
+        particlePipeline_ = buildParticlePipeline(PipelineBuilder::blendAlpha());
+        particleAdditivePipeline_ = buildParticlePipeline(PipelineBuilder::blendAdditive());
+    }
+
+    // --- Smoke pipeline ---
+    if (smokeVert.isValid() && smokeFrag.isValid()) {
+        VkVertexInputBindingDescription sBind{};
+        sBind.binding = 0;
+        sBind.stride = 6 * sizeof(float); // pos3 + lifeRatio1 + size1 + isSpark1
+        sBind.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        std::vector<VkVertexInputAttributeDescription> sAttrs = {
+            {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},           // position
+            {1, 0, VK_FORMAT_R32_SFLOAT, 3 * sizeof(float)}, // lifeRatio
+            {2, 0, VK_FORMAT_R32_SFLOAT, 4 * sizeof(float)}, // size
+            {3, 0, VK_FORMAT_R32_SFLOAT, 5 * sizeof(float)}, // isSpark
+        };
+
+        smokePipeline_ = PipelineBuilder()
+            .setShaders(smokeVert.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                        smokeFrag.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+            .setVertexInput({sBind}, sAttrs)
+            .setTopology(VK_PRIMITIVE_TOPOLOGY_POINT_LIST)
+            .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+            .setDepthTest(true, false, VK_COMPARE_OP_LESS_OR_EQUAL)
+            .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+            .setMultisample(vkCtx_->getMsaaSamples())
+            .setLayout(smokePipelineLayout_)
+            .setRenderPass(mainPass)
+            .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
+            .build(device);
+    }
+
+    m2Vert.destroy(); m2Frag.destroy();
+    particleVert.destroy(); particleFrag.destroy();
+    smokeVert.destroy(); smokeFrag.destroy();
+
+    core::Logger::getInstance().info("M2Renderer: pipelines recreated");
 }
 
 } // namespace rendering

@@ -71,6 +71,11 @@ public:
 
     bool isSwapchainDirty() const { return swapchainDirty; }
 
+    // MSAA
+    VkSampleCountFlagBits getMsaaSamples() const { return msaaSamples_; }
+    void setMsaaSamples(VkSampleCountFlagBits samples);
+    VkSampleCountFlagBits getMaxUsableSampleCount() const;
+
 private:
     bool createInstance(SDL_Window* window);
     bool createSurface(SDL_Window* window);
@@ -125,6 +130,15 @@ private:
 
     bool createDepthBuffer();
     void destroyDepthBuffer();
+
+    // MSAA resources
+    VkSampleCountFlagBits msaaSamples_ = VK_SAMPLE_COUNT_1_BIT;
+    VkImage msaaColorImage_ = VK_NULL_HANDLE;
+    VkImageView msaaColorView_ = VK_NULL_HANDLE;
+    VmaAllocation msaaColorAllocation_ = VK_NULL_HANDLE;
+
+    bool createMsaaColorImage();
+    void destroyMsaaColorImage();
 
     // ImGui resources
     VkRenderPass imguiRenderPass = VK_NULL_HANDLE;

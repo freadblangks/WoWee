@@ -32,6 +32,7 @@ public:
      */
     bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout);
     void shutdown();
+    void recreatePipelines();
 
     /**
      * Render celestial bodies (sun and moons).

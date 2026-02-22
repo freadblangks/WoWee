@@ -18,6 +18,7 @@ public:
 
     bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout);
     void shutdown();
+    void recreatePipelines();
 
     // Spawn dust particles at mount feet when moving on ground
     void spawnDust(const glm::vec3& position, const glm::vec3& velocity, bool isMoving);

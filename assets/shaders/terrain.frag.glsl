@@ -55,18 +55,22 @@ float sampleAlpha(sampler2D tex, vec2 uv) {
 
 void main() {
     vec4 baseColor = texture(uBaseTexture, TexCoord);
-    float a1 = hasLayer1 != 0 ? sampleAlpha(uLayer1Alpha, LayerUV) : 0.0;
-    float a2 = hasLayer2 != 0 ? sampleAlpha(uLayer2Alpha, LayerUV) : 0.0;
-    float a3 = hasLayer3 != 0 ? sampleAlpha(uLayer3Alpha, LayerUV) : 0.0;
 
-    float w0 = 1.0, w1 = a1, w2 = a2, w3 = a3;
-    float sum = w0 + w1 + w2 + w3;
-    if (sum > 0.0) { w0 /= sum; w1 /= sum; w2 /= sum; w3 /= sum; }
-
-    vec4 finalColor = baseColor * w0;
-    if (hasLayer1 != 0) finalColor += texture(uLayer1Texture, TexCoord) * w1;
-    if (hasLayer2 != 0) finalColor += texture(uLayer2Texture, TexCoord) * w2;
-    if (hasLayer3 != 0) finalColor += texture(uLayer3Texture, TexCoord) * w3;
+    // WoW terrain: layers are blended sequentially, each on top of the previous result.
+    // Alpha=1 means the layer fully covers everything below; alpha=0 means invisible.
+    vec4 finalColor = baseColor;
+    if (hasLayer1 != 0) {
+        float a1 = sampleAlpha(uLayer1Alpha, LayerUV);
+        finalColor = mix(finalColor, texture(uLayer1Texture, TexCoord), a1);
+    }
+    if (hasLayer2 != 0) {
+        float a2 = sampleAlpha(uLayer2Alpha, LayerUV);
+        finalColor = mix(finalColor, texture(uLayer2Texture, TexCoord), a2);
+    }
+    if (hasLayer3 != 0) {
+        float a3 = sampleAlpha(uLayer3Alpha, LayerUV);
+        finalColor = mix(finalColor, texture(uLayer3Texture, TexCoord), a3);
+    }
 
     vec3 norm = normalize(Normal);
     vec3 lightDir2 = normalize(-lightDir.xyz);

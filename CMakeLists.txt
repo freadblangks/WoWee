@@ -522,9 +522,14 @@ if(NOT MSVC)
     target_compile_options(wowee PRIVATE $<$<CONFIG:Release>:-fvisibility=hidden -fvisibility-inlines-hidden>)
 endif()
 
-# Copy assets to build directory
-file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/assets
-     DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+# Copy assets to build directory (runs every build, not just configure)
+add_custom_target(copy_assets ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/assets
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets
+    COMMENT "Syncing assets to build directory"
+)
+add_dependencies(wowee copy_assets)
 
 # Install targets
 install(TARGETS wowee

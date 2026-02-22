@@ -241,6 +241,7 @@ private:
 public:
     void setShadowsEnabled(bool enabled) { shadowsEnabled = enabled; }
     bool areShadowsEnabled() const { return shadowsEnabled; }
+    void setMsaaSamples(VkSampleCountFlagBits samples);
 
 private:
     void renderShadowPass();

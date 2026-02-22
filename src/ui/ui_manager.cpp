@@ -77,7 +77,7 @@ bool UIManager::initialize(core::Window* win) {
     initInfo.MinImageCount = 2;
     initInfo.ImageCount = vkCtx->getSwapchainImageCount();
     initInfo.PipelineInfoMain.RenderPass = vkCtx->getImGuiRenderPass();
-    initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    initInfo.PipelineInfoMain.MSAASamples = vkCtx->getMsaaSamples();
 
     ImGui_ImplVulkan_Init(&initInfo);
 

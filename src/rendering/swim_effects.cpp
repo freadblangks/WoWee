@@ -93,6 +93,7 @@ bool SwimEffects::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayou
             .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
             .setDepthTest(true, false, VK_COMPARE_OP_LESS)
             .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+            .setMultisample(vkCtx->getMsaaSamples())
             .setLayout(ripplePipelineLayout)
             .setRenderPass(vkCtx->getImGuiRenderPass())
             .setDynamicStates(dynamicStates)
@@ -136,6 +137,7 @@ bool SwimEffects::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayou
             .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
             .setDepthTest(true, false, VK_COMPARE_OP_LESS)
             .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+            .setMultisample(vkCtx->getMsaaSamples())
             .setLayout(bubblePipelineLayout)
             .setRenderPass(vkCtx->getImGuiRenderPass())
             .setDynamicStates(dynamicStates)
@@ -223,6 +225,100 @@ void SwimEffects::shutdown() {
     vkCtx = nullptr;
     ripples.clear();
     bubbles.clear();
+}
+
+void SwimEffects::recreatePipelines() {
+    if (!vkCtx) return;
+    VkDevice device = vkCtx->getDevice();
+
+    // Destroy old pipelines (NOT layouts)
+    if (ripplePipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device, ripplePipeline, nullptr);
+        ripplePipeline = VK_NULL_HANDLE;
+    }
+    if (bubblePipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device, bubblePipeline, nullptr);
+        bubblePipeline = VK_NULL_HANDLE;
+    }
+
+    // Shared vertex input: pos(vec3) + size(float) + alpha(float) = 5 floats
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = 5 * sizeof(float);
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::vector<VkVertexInputAttributeDescription> attrs(3);
+    attrs[0].location = 0;
+    attrs[0].binding = 0;
+    attrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attrs[0].offset = 0;
+    attrs[1].location = 1;
+    attrs[1].binding = 0;
+    attrs[1].format = VK_FORMAT_R32_SFLOAT;
+    attrs[1].offset = 3 * sizeof(float);
+    attrs[2].location = 2;
+    attrs[2].binding = 0;
+    attrs[2].format = VK_FORMAT_R32_SFLOAT;
+    attrs[2].offset = 4 * sizeof(float);
+
+    std::vector<VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    // ---- Rebuild ripple pipeline ----
+    {
+        VkShaderModule vertModule;
+        vertModule.loadFromFile(device, "assets/shaders/swim_ripple.vert.spv");
+        VkShaderModule fragModule;
+        fragModule.loadFromFile(device, "assets/shaders/swim_ripple.frag.spv");
+
+        VkPipelineShaderStageCreateInfo vertStage = vertModule.stageInfo(VK_SHADER_STAGE_VERTEX_BIT);
+        VkPipelineShaderStageCreateInfo fragStage = fragModule.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT);
+
+        ripplePipeline = PipelineBuilder()
+            .setShaders(vertStage, fragStage)
+            .setVertexInput({binding}, attrs)
+            .setTopology(VK_PRIMITIVE_TOPOLOGY_POINT_LIST)
+            .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+            .setDepthTest(true, false, VK_COMPARE_OP_LESS)
+            .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+            .setMultisample(vkCtx->getMsaaSamples())
+            .setLayout(ripplePipelineLayout)
+            .setRenderPass(vkCtx->getImGuiRenderPass())
+            .setDynamicStates(dynamicStates)
+            .build(device);
+
+        vertModule.destroy();
+        fragModule.destroy();
+    }
+
+    // ---- Rebuild bubble pipeline ----
+    {
+        VkShaderModule vertModule;
+        vertModule.loadFromFile(device, "assets/shaders/swim_bubble.vert.spv");
+        VkShaderModule fragModule;
+        fragModule.loadFromFile(device, "assets/shaders/swim_bubble.frag.spv");
+
+        VkPipelineShaderStageCreateInfo vertStage = vertModule.stageInfo(VK_SHADER_STAGE_VERTEX_BIT);
+        VkPipelineShaderStageCreateInfo fragStage = fragModule.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT);
+
+        bubblePipeline = PipelineBuilder()
+            .setShaders(vertStage, fragStage)
+            .setVertexInput({binding}, attrs)
+            .setTopology(VK_PRIMITIVE_TOPOLOGY_POINT_LIST)
+            .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+            .setDepthTest(true, false, VK_COMPARE_OP_LESS)
+            .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+            .setMultisample(vkCtx->getMsaaSamples())
+            .setLayout(bubblePipelineLayout)
+            .setRenderPass(vkCtx->getImGuiRenderPass())
+            .setDynamicStates(dynamicStates)
+            .build(device);
+
+        vertModule.destroy();
+        fragModule.destroy();
+    }
 }
 
 void SwimEffects::spawnRipple(const glm::vec3& pos, const glm::vec3& moveDir, float waterH) {

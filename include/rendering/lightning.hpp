@@ -28,6 +28,7 @@ public:
 
     bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout);
     void shutdown();
+    void recreatePipelines();
 
     void update(float deltaTime, const Camera& camera);
     void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet);

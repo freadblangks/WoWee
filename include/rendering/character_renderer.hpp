@@ -58,6 +58,7 @@ public:
     void update(float deltaTime, const glm::vec3& cameraPos = glm::vec3(0.0f));
 
     void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera);
+    void recreatePipelines();
     bool initializeShadow(VkRenderPass shadowRenderPass);
     void renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMatrix);
 

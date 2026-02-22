@@ -23,6 +23,7 @@ public:
 
     bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout);
     void shutdown();
+    void recreatePipelines();
 
     /**
      * Render the star field

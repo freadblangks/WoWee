@@ -24,6 +24,7 @@ public:
 
     bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout);
     void shutdown();
+    void recreatePipelines();
 
     /// Try to load M2 spell models (Charge_Caster.m2, etc.)
     void tryLoadM2Models(M2Renderer* m2Renderer, pipeline::AssetManager* assets);

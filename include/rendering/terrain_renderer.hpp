@@ -104,6 +104,8 @@ public:
 
     void clear();
 
+    void recreatePipelines();
+
     void setWireframe(bool enabled) { wireframe = enabled; }
     void setFrustumCulling(bool enabled) { frustumCullingEnabled = enabled; }
     void setFogEnabled(bool enabled) { fogEnabled = enabled; }
@@ -139,7 +141,7 @@ private:
 
     // Descriptor pool for material sets
     VkDescriptorPool materialDescPool = VK_NULL_HANDLE;
-    static constexpr uint32_t MAX_MATERIAL_SETS = 8192;
+    static constexpr uint32_t MAX_MATERIAL_SETS = 16384;
 
     // Loaded terrain chunks
     std::vector<TerrainChunkGPU> chunks;

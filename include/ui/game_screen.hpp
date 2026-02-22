@@ -102,6 +102,7 @@ private:
     bool pendingAutoLoot = false;
     bool pendingUseOriginalSoundtrack = true;
     int pendingGroundClutterDensity = 100;
+    int pendingAntiAliasing = 0;  // 0=Off, 1=2x, 2=4x, 3=8x
 
     // UI element transparency (0.0 = fully transparent, 1.0 = fully opaque)
     float uiOpacity_ = 0.65f;
@@ -110,6 +111,7 @@ private:
     bool minimapNpcDots_ = false;
     bool minimapSettingsApplied_ = false;
     bool volumeSettingsApplied_ = false;  // True once saved volume settings applied to audio managers
+    bool msaaSettingsApplied_ = false;   // True once saved MSAA setting applied to renderer
 
     // Mute state: mute bypasses master volume without touching slider values
     bool soundMuted_ = false;

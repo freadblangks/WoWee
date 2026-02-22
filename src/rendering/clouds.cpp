@@ -79,6 +79,7 @@ bool Clouds::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout) {
         .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
         .setDepthTest(true, false, VK_COMPARE_OP_LESS_OR_EQUAL) // test on, write off (sky layer)
         .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+        .setMultisample(vkCtx_->getMsaaSamples())
         .setLayout(pipelineLayout_)
         .setRenderPass(vkCtx_->getImGuiRenderPass())
         .setDynamicStates(dynamicStates)
@@ -98,6 +99,65 @@ bool Clouds::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout) {
 
     LOG_INFO("Cloud system initialized: ", indexCount_ / 3, " triangles");
     return true;
+}
+
+void Clouds::recreatePipelines() {
+    if (!vkCtx_) return;
+    VkDevice device = vkCtx_->getDevice();
+
+    if (pipeline_ != VK_NULL_HANDLE) { vkDestroyPipeline(device, pipeline_, nullptr); pipeline_ = VK_NULL_HANDLE; }
+
+    VkShaderModule vertModule;
+    if (!vertModule.loadFromFile(device, "assets/shaders/clouds.vert.spv")) {
+        LOG_ERROR("Clouds::recreatePipelines: failed to load vertex shader");
+        return;
+    }
+    VkShaderModule fragModule;
+    if (!fragModule.loadFromFile(device, "assets/shaders/clouds.frag.spv")) {
+        LOG_ERROR("Clouds::recreatePipelines: failed to load fragment shader");
+        vertModule.destroy();
+        return;
+    }
+
+    VkPipelineShaderStageCreateInfo vertStage = vertModule.stageInfo(VK_SHADER_STAGE_VERTEX_BIT);
+    VkPipelineShaderStageCreateInfo fragStage = fragModule.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT);
+
+    // Vertex input (same as initialize)
+    VkVertexInputBindingDescription binding{};
+    binding.binding   = 0;
+    binding.stride    = sizeof(glm::vec3);
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription posAttr{};
+    posAttr.location = 0;
+    posAttr.binding  = 0;
+    posAttr.format   = VK_FORMAT_R32G32B32_SFLOAT;
+    posAttr.offset   = 0;
+
+    std::vector<VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    pipeline_ = PipelineBuilder()
+        .setShaders(vertStage, fragStage)
+        .setVertexInput({binding}, {posAttr})
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+        .setDepthTest(true, false, VK_COMPARE_OP_LESS_OR_EQUAL)
+        .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+        .setMultisample(vkCtx_->getMsaaSamples())
+        .setLayout(pipelineLayout_)
+        .setRenderPass(vkCtx_->getImGuiRenderPass())
+        .setDynamicStates(dynamicStates)
+        .build(device);
+
+    vertModule.destroy();
+    fragModule.destroy();
+
+    if (pipeline_ == VK_NULL_HANDLE) {
+        LOG_ERROR("Clouds::recreatePipelines: failed to create pipeline");
+    }
 }
 
 void Clouds::shutdown() {

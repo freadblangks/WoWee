@@ -1,10 +1,12 @@
 #pragma once
 
 #include "auth/auth_handler.hpp"
-#include "rendering/video_player.hpp"
+#include <vulkan/vulkan.h>
 #include <string>
 #include <vector>
 #include <functional>
+
+namespace wowee { namespace rendering { class VkContext; } }
 
 namespace wowee { namespace ui {
 
@@ -103,9 +105,18 @@ private:
     void upsertCurrentServerProfile(bool includePasswordHash);
     std::string currentExpansionId() const;
 
-    // Background video
-    bool videoInitAttempted = false;
-    rendering::VideoPlayer backgroundVideo;
+    // Background image (Vulkan)
+    bool bgInitAttempted = false;
+    bool loadBackgroundImage();
+    void destroyBackgroundImage();
+    rendering::VkContext* bgVkCtx = nullptr;
+    VkImage bgImage = VK_NULL_HANDLE;
+    VkDeviceMemory bgMemory = VK_NULL_HANDLE;
+    VkImageView bgImageView = VK_NULL_HANDLE;
+    VkSampler bgSampler = VK_NULL_HANDLE;
+    VkDescriptorSet bgDescriptorSet = VK_NULL_HANDLE;
+    int bgWidth = 0;
+    int bgHeight = 0;
 
     bool musicInitAttempted = false;
     bool musicPlaying = false;

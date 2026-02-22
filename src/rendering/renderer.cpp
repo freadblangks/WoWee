@@ -723,6 +723,66 @@ void Renderer::shutdown() {
     LOG_INFO("Renderer shutdown");
 }
 
+void Renderer::setMsaaSamples(VkSampleCountFlagBits samples) {
+    if (!vkCtx) return;
+
+    VkSampleCountFlagBits current = vkCtx->getMsaaSamples();
+    if (samples == current) return;
+
+    LOG_INFO("Changing MSAA from ", static_cast<int>(current), "x to ", static_cast<int>(samples), "x");
+
+    vkDeviceWaitIdle(vkCtx->getDevice());
+
+    // Set new MSAA and recreate swapchain (render pass, depth, MSAA image, framebuffers)
+    vkCtx->setMsaaSamples(samples);
+    vkCtx->recreateSwapchain(window->getWidth(), window->getHeight());
+
+    // Recreate all sub-renderer pipelines (they embed sample count from render pass)
+    if (terrainRenderer) terrainRenderer->recreatePipelines();
+    if (waterRenderer) waterRenderer->recreatePipelines();
+    if (wmoRenderer) wmoRenderer->recreatePipelines();
+    if (m2Renderer) m2Renderer->recreatePipelines();
+    if (characterRenderer) characterRenderer->recreatePipelines();
+    if (questMarkerRenderer) questMarkerRenderer->recreatePipelines();
+    if (weather) weather->recreatePipelines();
+    if (swimEffects) swimEffects->recreatePipelines();
+    if (mountDust) mountDust->recreatePipelines();
+    if (chargeEffect) chargeEffect->recreatePipelines();
+
+    // Sky system sub-renderers
+    if (skySystem) {
+        if (auto* sb = skySystem->getSkybox()) sb->recreatePipelines();
+        if (auto* sf = skySystem->getStarField()) sf->recreatePipelines();
+        if (auto* ce = skySystem->getCelestial()) ce->recreatePipelines();
+        if (auto* cl = skySystem->getClouds()) cl->recreatePipelines();
+        if (auto* lf = skySystem->getLensFlare()) lf->recreatePipelines();
+    }
+
+    // Lightning is standalone (not instantiated in Renderer, no action needed)
+    // Selection circle + overlay use lazy init, just destroy them
+    VkDevice device = vkCtx->getDevice();
+    if (selCirclePipeline) { vkDestroyPipeline(device, selCirclePipeline, nullptr); selCirclePipeline = VK_NULL_HANDLE; }
+    if (overlayPipeline) { vkDestroyPipeline(device, overlayPipeline, nullptr); overlayPipeline = VK_NULL_HANDLE; }
+
+    // Reinitialize ImGui Vulkan backend with new MSAA sample count
+    ImGui_ImplVulkan_Shutdown();
+    ImGui_ImplVulkan_InitInfo initInfo{};
+    initInfo.ApiVersion = VK_API_VERSION_1_1;
+    initInfo.Instance = vkCtx->getInstance();
+    initInfo.PhysicalDevice = vkCtx->getPhysicalDevice();
+    initInfo.Device = vkCtx->getDevice();
+    initInfo.QueueFamily = vkCtx->getGraphicsQueueFamily();
+    initInfo.Queue = vkCtx->getGraphicsQueue();
+    initInfo.DescriptorPool = vkCtx->getImGuiDescriptorPool();
+    initInfo.MinImageCount = 2;
+    initInfo.ImageCount = vkCtx->getSwapchainImageCount();
+    initInfo.PipelineInfoMain.RenderPass = vkCtx->getImGuiRenderPass();
+    initInfo.PipelineInfoMain.MSAASamples = vkCtx->getMsaaSamples();
+    ImGui_ImplVulkan_Init(&initInfo);
+
+    LOG_INFO("MSAA change complete");
+}
+
 void Renderer::beginFrame() {
     if (!vkCtx) return;
 
@@ -2784,6 +2844,7 @@ void Renderer::initSelectionCircle() {
         .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
         .setNoDepthTest()
         .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+        .setMultisample(vkCtx->getMsaaSamples())
         .setLayout(selCirclePipelineLayout)
         .setRenderPass(vkCtx->getImGuiRenderPass())
         .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
@@ -2894,6 +2955,7 @@ void Renderer::initOverlayPipeline() {
         .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
         .setNoDepthTest()
         .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+        .setMultisample(vkCtx->getMsaaSamples())
         .setLayout(overlayPipelineLayout)
         .setRenderPass(vkCtx->getImGuiRenderPass())
         .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})

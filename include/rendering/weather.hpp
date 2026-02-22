@@ -40,6 +40,7 @@ public:
      * @return true if initialization succeeded
      */
     bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout);
+    void recreatePipelines();
 
     /**
      * @brief Update weather particles

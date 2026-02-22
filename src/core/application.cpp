@@ -1722,7 +1722,7 @@ void Application::setupUICallbacks() {
             if (auto* mr = renderer->getM2Renderer()) {
                 glm::mat4 transform(1.0f);
                 transform = glm::translate(transform, renderPos);
-                transform = glm::rotate(transform, orientation - glm::radians(90.0f), glm::vec3(0, 0, 1));
+                transform = glm::rotate(transform, orientation + glm::radians(90.0f), glm::vec3(0, 0, 1));
                 mr->setInstanceTransform(info.instanceId, transform);
             }
         }
@@ -5452,9 +5452,8 @@ void Application::spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_t 
                 if (auto* mr = renderer->getM2Renderer()) {
                     glm::mat4 transform(1.0f);
                     transform = glm::translate(transform, renderPos);
-                    // M2 gameobjects use model-forward alignment like character M2s.
-                    // Apply -90deg in render space to match world-facing orientation.
-                    transform = glm::rotate(transform, orientation - glm::radians(90.0f), glm::vec3(0, 0, 1));
+                    // M2 gameobjects use the same canonical→render yaw as characters.
+                    transform = glm::rotate(transform, orientation + glm::radians(90.0f), glm::vec3(0, 0, 1));
                     mr->setInstanceTransform(info.instanceId, transform);
                 }
             }
@@ -5509,7 +5508,7 @@ void Application::spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_t 
 
     glm::vec3 renderPos = core::coords::canonicalToRender(glm::vec3(x, y, z));
     const float renderYawWmo = orientation;
-    const float renderYawM2 = orientation - glm::radians(90.0f);
+    const float renderYawM2 = orientation + glm::radians(90.0f);
 
     bool loadedAsWmo = false;
     if (isWmo) {

@@ -12,6 +12,7 @@ public:
     Packet() = default;
     explicit Packet(uint16_t opcode);
     Packet(uint16_t opcode, const std::vector<uint8_t>& data);
+    Packet(uint16_t opcode, std::vector<uint8_t>&& data);
 
     void writeUInt8(uint8_t value);
     void writeUInt16(uint16_t value);

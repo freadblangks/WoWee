@@ -1,5 +1,6 @@
 #include "network/packet.hpp"
 #include <cstring>
+#include <utility>
 
 namespace wowee {
 namespace network {
@@ -8,6 +9,9 @@ Packet::Packet(uint16_t opcode) : opcode(opcode) {}
 
 Packet::Packet(uint16_t opcode, const std::vector<uint8_t>& data)
     : opcode(opcode), data(data), readPos(0) {}
+
+Packet::Packet(uint16_t opcode, std::vector<uint8_t>&& data)
+    : opcode(opcode), data(std::move(data)), readPos(0) {}
 
 void Packet::writeUInt8(uint8_t value) {
     data.push_back(value);

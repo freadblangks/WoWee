@@ -16,6 +16,11 @@ Logger& Logger::getInstance() {
 void Logger::ensureFile() {
     if (fileReady) return;
     fileReady = true;
+    if (const char* logStdout = std::getenv("WOWEE_LOG_STDOUT")) {
+        if (logStdout[0] == '0') {
+            echoToStdout_ = false;
+        }
+    }
     if (const char* flushMs = std::getenv("WOWEE_LOG_FLUSH_MS")) {
         char* end = nullptr;
         unsigned long parsed = std::strtoul(flushMs, &end, 10);
@@ -67,7 +72,9 @@ void Logger::log(LogLevel level, const std::string& message) {
 
     line << "] " << message;
 
-    std::cout << line.str() << '\n';
+    if (echoToStdout_) {
+        std::cout << line.str() << '\n';
+    }
     if (fileStream.is_open()) {
         fileStream << line.str() << '\n';
         bool shouldFlush = (level >= LogLevel::WARNING);

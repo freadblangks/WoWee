@@ -325,27 +325,31 @@ void WorldSocket::update() {
 void WorldSocket::tryParsePackets() {
     // World server packets have 4-byte incoming header: size(2) + opcode(2)
     int parsedThisTick = 0;
-    while (receiveBuffer.size() >= 4 && parsedThisTick < kMaxParsedPacketsPerUpdate) {
+    size_t parseOffset = 0;
+    size_t localHeaderBytesDecrypted = headerBytesDecrypted;
+    std::vector<Packet> parsedPackets;
+    parsedPackets.reserve(32);
+    while ((receiveBuffer.size() - parseOffset) >= 4 && parsedThisTick < kMaxParsedPacketsPerUpdate) {
         uint8_t rawHeader[4] = {0, 0, 0, 0};
-        std::memcpy(rawHeader, receiveBuffer.data(), 4);
+        std::memcpy(rawHeader, receiveBuffer.data() + parseOffset, 4);
 
         // Decrypt header bytes in-place if encryption is enabled
         // Only decrypt bytes we haven't already decrypted
-        if (encryptionEnabled && headerBytesDecrypted < 4) {
-            size_t toDecrypt = 4 - headerBytesDecrypted;
+        if (encryptionEnabled && localHeaderBytesDecrypted < 4) {
+            size_t toDecrypt = 4 - localHeaderBytesDecrypted;
             if (useVanillaCrypt) {
-                vanillaCrypt.decrypt(receiveBuffer.data() + headerBytesDecrypted, toDecrypt);
+                vanillaCrypt.decrypt(receiveBuffer.data() + parseOffset + localHeaderBytesDecrypted, toDecrypt);
             } else {
-                decryptCipher.process(receiveBuffer.data() + headerBytesDecrypted, toDecrypt);
+                decryptCipher.process(receiveBuffer.data() + parseOffset + localHeaderBytesDecrypted, toDecrypt);
             }
-            headerBytesDecrypted = 4;
+            localHeaderBytesDecrypted = 4;
         }
 
         // Parse header (now decrypted in-place).
         // Size: 2 bytes big-endian. For world packets, this includes opcode bytes.
-        uint16_t size = (receiveBuffer[0] << 8) | receiveBuffer[1];
+        uint16_t size = (receiveBuffer[parseOffset + 0] << 8) | receiveBuffer[parseOffset + 1];
         // Opcode: 2 bytes little-endian.
-        uint16_t opcode = receiveBuffer[2] | (receiveBuffer[3] << 8);
+        uint16_t opcode = receiveBuffer[parseOffset + 2] | (receiveBuffer[parseOffset + 3] << 8);
         if (size < 2) {
             LOG_ERROR("World packet framing desync: invalid size=", size,
                       " rawHdr=", std::hex,
@@ -381,45 +385,50 @@ void WorldSocket::tryParsePackets() {
                      static_cast<int>(rawHeader[2]), " ",
                      static_cast<int>(rawHeader[3]),
                      " dec=",
-                     static_cast<int>(receiveBuffer[0]), " ",
-                     static_cast<int>(receiveBuffer[1]), " ",
-                     static_cast<int>(receiveBuffer[2]), " ",
-                     static_cast<int>(receiveBuffer[3]),
+                     static_cast<int>(receiveBuffer[parseOffset + 0]), " ",
+                     static_cast<int>(receiveBuffer[parseOffset + 1]), " ",
+                     static_cast<int>(receiveBuffer[parseOffset + 2]), " ",
+                     static_cast<int>(receiveBuffer[parseOffset + 3]),
                      std::dec,
                      " size=", size,
                      " payload=", payloadLen,
                      " opcode=0x", std::hex, opcode, std::dec,
-                     " buffered=", receiveBuffer.size());
+                     " buffered=", (receiveBuffer.size() - parseOffset));
             --headerTracePacketsLeft;
         }
         if (isLoginPipelineSmsg(opcode)) {
             LOG_INFO("WS RX LOGIN opcode=0x", std::hex, opcode, std::dec,
                      " size=", size, " payload=", payloadLen,
-                     " buffered=", receiveBuffer.size(),
+                     " buffered=", (receiveBuffer.size() - parseOffset),
                      " enc=", encryptionEnabled ? "yes" : "no");
         }
 
-        if (receiveBuffer.size() < totalSize) {
+        if ((receiveBuffer.size() - parseOffset) < totalSize) {
             // Not enough data yet - header stays decrypted in buffer
             break;
         }
 
         // Extract payload (skip header)
-        std::vector<uint8_t> packetData(receiveBuffer.begin() + 4,
-                                        receiveBuffer.begin() + totalSize);
+        std::vector<uint8_t> packetData(receiveBuffer.begin() + parseOffset + 4,
+                                        receiveBuffer.begin() + parseOffset + totalSize);
 
-        // Create packet with opcode and payload
-        Packet packet(opcode, packetData);
+        // Queue packet; callbacks run after buffer state is finalized.
+        parsedPackets.emplace_back(opcode, std::move(packetData));
+        parseOffset += totalSize;
+        localHeaderBytesDecrypted = 0;
+        ++parsedThisTick;
+    }
 
-        // Remove parsed data from buffer and reset header decryption counter
-        receiveBuffer.erase(receiveBuffer.begin(), receiveBuffer.begin() + totalSize);
-        headerBytesDecrypted = 0;
+    if (parseOffset > 0) {
+        receiveBuffer.erase(receiveBuffer.begin(), receiveBuffer.begin() + parseOffset);
+    }
+    headerBytesDecrypted = localHeaderBytesDecrypted;
 
-        // Call callback if set
-        if (packetCallback) {
+    if (packetCallback) {
+        for (const auto& packet : parsedPackets) {
+            if (!connected) break;
             packetCallback(packet);
         }
-        ++parsedThisTick;
     }
 
     if (parsedThisTick >= kMaxParsedPacketsPerUpdate && receiveBuffer.size() >= 4) {

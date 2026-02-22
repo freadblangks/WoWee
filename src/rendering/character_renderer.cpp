@@ -32,6 +32,7 @@
 #include <cmath>
 #include <filesystem>
 #include <future>
+#include <thread>
 #include <functional>
 #include <unordered_map>
 #include <unordered_set>
@@ -94,6 +95,7 @@ bool CharacterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFram
     assetManager = am;
     perFrameLayout_ = perFrameLayout;
     renderPassOverride_ = renderPassOverride;
+    numAnimThreads_ = std::max(1u, std::min(8u, std::thread::hardware_concurrency()));
 
     VkDevice device = vkCtx_->getDevice();
 
@@ -1138,21 +1140,32 @@ void CharacterRenderer::update(float deltaTime, const glm::vec3& cameraPos) {
         }
     }
 
-    int updatedCount = toUpdate.size();
+    const size_t updatedCount = toUpdate.size();
 
-    // Thread bone calculations if we have many characters (4+)
-    if (updatedCount >= 4) {
-        std::vector<std::future<void>> futures;
-        futures.reserve(updatedCount);
+    // Thread animation updates in chunks to avoid spawning one task per instance.
+    if (updatedCount >= 8 && numAnimThreads_ > 1) {
+        const size_t numThreads = std::min(static_cast<size_t>(numAnimThreads_), updatedCount);
+        const size_t chunkSize = updatedCount / numThreads;
+        const size_t remainder = updatedCount % numThreads;
 
-        for (auto& instRef : toUpdate) {
-            futures.push_back(std::async(std::launch::async, [this, &instRef, deltaTime]() {
-                updateAnimation(instRef.get(), deltaTime);
-            }));
+        animFutures_.clear();
+        if (animFutures_.capacity() < numThreads) {
+            animFutures_.reserve(numThreads);
         }
 
-        // Wait for all to complete
-        for (auto& f : futures) {
+        size_t start = 0;
+        for (size_t t = 0; t < numThreads; t++) {
+            size_t end = start + chunkSize + (t < remainder ? 1 : 0);
+            animFutures_.push_back(std::async(std::launch::async,
+                [this, &toUpdate, start, end, deltaTime]() {
+                    for (size_t i = start; i < end; i++) {
+                        updateAnimation(toUpdate[i].get(), deltaTime);
+                    }
+                }));
+            start = end;
+        }
+
+        for (auto& f : animFutures_) {
             f.get();
         }
     } else {
@@ -1197,7 +1210,11 @@ void CharacterRenderer::update(float deltaTime, const glm::vec3& cameraPos) {
 }
 
 void CharacterRenderer::updateAnimation(CharacterInstance& instance, float deltaTime) {
-    auto& model = models[instance.modelId].data;
+    auto modelIt = models.find(instance.modelId);
+    if (modelIt == models.end()) {
+        return;
+    }
+    const auto& model = modelIt->second.data;
 
     if (model.sequences.empty()) {
         return;

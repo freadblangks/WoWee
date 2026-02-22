@@ -5,6 +5,7 @@
 #include <sstream>
 #include <mutex>
 #include <fstream>
+#include <chrono>
 
 namespace wowee {
 namespace core {
@@ -73,6 +74,8 @@ private:
     std::mutex mutex;
     std::ofstream fileStream;
     bool fileReady = false;
+    std::chrono::steady_clock::time_point lastFlushTime_{};
+    uint32_t flushIntervalMs_ = 250;
     void ensureFile();
 };
 

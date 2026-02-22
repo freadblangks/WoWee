@@ -3,6 +3,7 @@
 #include <iomanip>
 #include <ctime>
 #include <filesystem>
+#include <cstdlib>
 
 namespace wowee {
 namespace core {
@@ -15,9 +16,17 @@ Logger& Logger::getInstance() {
 void Logger::ensureFile() {
     if (fileReady) return;
     fileReady = true;
+    if (const char* flushMs = std::getenv("WOWEE_LOG_FLUSH_MS")) {
+        char* end = nullptr;
+        unsigned long parsed = std::strtoul(flushMs, &end, 10);
+        if (end != flushMs && parsed <= 10000ul) {
+            flushIntervalMs_ = static_cast<uint32_t>(parsed);
+        }
+    }
     std::error_code ec;
     std::filesystem::create_directories("logs", ec);
     fileStream.open("logs/wowee.log", std::ios::out | std::ios::trunc);
+    lastFlushTime_ = std::chrono::steady_clock::now();
 }
 
 void Logger::log(LogLevel level, const std::string& message) {
@@ -61,7 +70,18 @@ void Logger::log(LogLevel level, const std::string& message) {
     std::cout << line.str() << '\n';
     if (fileStream.is_open()) {
         fileStream << line.str() << '\n';
-        fileStream.flush();
+        bool shouldFlush = (level >= LogLevel::WARNING);
+        if (!shouldFlush) {
+            auto nowSteady = std::chrono::steady_clock::now();
+            auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(nowSteady - lastFlushTime_).count();
+            shouldFlush = (elapsedMs >= static_cast<long long>(flushIntervalMs_));
+            if (shouldFlush) {
+                lastFlushTime_ = nowSteady;
+            }
+        }
+        if (shouldFlush) {
+            fileStream.flush();
+        }
     }
 }
 

@@ -10,6 +10,7 @@
 #include <unordered_set>
 #include <string>
 #include <utility>
+#include <future>
 
 namespace wowee {
 namespace pipeline { class AssetManager; }
@@ -269,6 +270,8 @@ private:
 
     // Maximum bones supported
     static constexpr int MAX_BONES = 240;
+    uint32_t numAnimThreads_ = 1;
+    std::vector<std::future<void>> animFutures_;
 
     // Shadow pipeline resources
     VkPipeline shadowPipeline_ = VK_NULL_HANDLE;

@@ -2,6 +2,9 @@
 #include "core/logger.hpp"
 #include <exception>
 #include <csignal>
+#include <cstdlib>
+#include <cctype>
+#include <string>
 #include <SDL2/SDL.h>
 #ifdef __linux__
 #include <X11/Xlib.h>
@@ -27,6 +30,19 @@ static void crashHandler(int sig) {
     std::raise(sig);
 }
 
+static wowee::core::LogLevel readLogLevelFromEnv() {
+    const char* raw = std::getenv("WOWEE_LOG_LEVEL");
+    if (!raw || !*raw) return wowee::core::LogLevel::WARNING;
+    std::string level(raw);
+    for (char& c : level) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (level == "debug") return wowee::core::LogLevel::DEBUG;
+    if (level == "info") return wowee::core::LogLevel::INFO;
+    if (level == "warn" || level == "warning") return wowee::core::LogLevel::WARNING;
+    if (level == "error") return wowee::core::LogLevel::ERROR;
+    if (level == "fatal") return wowee::core::LogLevel::FATAL;
+    return wowee::core::LogLevel::WARNING;
+}
+
 int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
 #ifdef __linux__
     g_emergencyDisplay = XOpenDisplay(nullptr);
@@ -37,7 +53,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
     std::signal(SIGTERM, crashHandler);
     std::signal(SIGINT,  crashHandler);
     try {
-        wowee::core::Logger::getInstance().setLogLevel(wowee::core::LogLevel::INFO);
+        wowee::core::Logger::getInstance().setLogLevel(readLogLevelFromEnv());
         LOG_INFO("=== Wowee Native Client ===");
         LOG_INFO("Starting application...");
 

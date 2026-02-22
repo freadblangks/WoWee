@@ -147,8 +147,15 @@ BLPImage AssetManager::loadTexture(const std::string& path) {
     std::vector<uint8_t> blpData = readFile(normalizedPath);
     if (blpData.empty()) {
         static std::unordered_set<std::string> loggedMissingTextures;
-        if (loggedMissingTextures.insert(normalizedPath).second) {
+        static bool missingTextureLogSuppressed = false;
+        static constexpr size_t kMaxMissingTextureLogKeys = 20000;
+        if (loggedMissingTextures.size() < kMaxMissingTextureLogKeys &&
+            loggedMissingTextures.insert(normalizedPath).second) {
             LOG_WARNING("Texture not found: ", normalizedPath);
+        } else if (!missingTextureLogSuppressed && loggedMissingTextures.size() >= kMaxMissingTextureLogKeys) {
+            LOG_WARNING("Texture-not-found warning key cache reached ", kMaxMissingTextureLogKeys,
+                        " entries; suppressing new unique texture-miss logs");
+            missingTextureLogSuppressed = true;
         }
         return BLPImage();
     }
@@ -156,8 +163,15 @@ BLPImage AssetManager::loadTexture(const std::string& path) {
     BLPImage image = BLPLoader::load(blpData);
     if (!image.isValid()) {
         static std::unordered_set<std::string> loggedDecodeFails;
-        if (loggedDecodeFails.insert(normalizedPath).second) {
+        static bool decodeFailLogSuppressed = false;
+        static constexpr size_t kMaxDecodeFailLogKeys = 8000;
+        if (loggedDecodeFails.size() < kMaxDecodeFailLogKeys &&
+            loggedDecodeFails.insert(normalizedPath).second) {
             LOG_ERROR("Failed to load texture: ", normalizedPath);
+        } else if (!decodeFailLogSuppressed && loggedDecodeFails.size() >= kMaxDecodeFailLogKeys) {
+            LOG_WARNING("Texture-decode warning key cache reached ", kMaxDecodeFailLogKeys,
+                        " entries; suppressing new unique decode-failure logs");
+            decodeFailLogSuppressed = true;
         }
         return BLPImage();
     }

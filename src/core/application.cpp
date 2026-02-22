@@ -320,15 +320,41 @@ void Application::run() {
         auto t1 = std::chrono::steady_clock::now();
 
         // Update application state
-        update(deltaTime);
+        try {
+            update(deltaTime);
+        } catch (const std::bad_alloc& e) {
+            LOG_ERROR("OOM during Application::update (state=", static_cast<int>(state),
+                      ", dt=", deltaTime, "): ", e.what());
+            throw;
+        } catch (const std::exception& e) {
+            LOG_ERROR("Exception during Application::update (state=", static_cast<int>(state),
+                      ", dt=", deltaTime, "): ", e.what());
+            throw;
+        }
         auto t2 = std::chrono::steady_clock::now();
 
         // Render
-        render();
+        try {
+            render();
+        } catch (const std::bad_alloc& e) {
+            LOG_ERROR("OOM during Application::render (state=", static_cast<int>(state), "): ", e.what());
+            throw;
+        } catch (const std::exception& e) {
+            LOG_ERROR("Exception during Application::render (state=", static_cast<int>(state), "): ", e.what());
+            throw;
+        }
         auto t3 = std::chrono::steady_clock::now();
 
         // Swap buffers
-        window->swapBuffers();
+        try {
+            window->swapBuffers();
+        } catch (const std::bad_alloc& e) {
+            LOG_ERROR("OOM during swapBuffers: ", e.what());
+            throw;
+        } catch (const std::exception& e) {
+            LOG_ERROR("Exception during swapBuffers: ", e.what());
+            throw;
+        }
         auto t4 = std::chrono::steady_clock::now();
 
         totalUpdateMs += std::chrono::duration<double, std::milli>(t2 - t1).count();
@@ -533,7 +559,10 @@ void Application::logoutToLogin() {
 }
 
 void Application::update(float deltaTime) {
+    const char* updateCheckpoint = "enter";
+    try {
     // Update based on current state
+    updateCheckpoint = "state switch";
     switch (state) {
         case AppState::AUTHENTICATION:
             if (authHandler) {
@@ -563,20 +592,40 @@ void Application::update(float deltaTime) {
             break;
 
         case AppState::IN_GAME: {
+            const char* inGameStep = "begin";
+            try {
+            auto runInGameStage = [&](const char* stageName, auto&& fn) {
+                try {
+                    fn();
+                } catch (const std::bad_alloc& e) {
+                    LOG_ERROR("OOM during IN_GAME update stage '", stageName, "': ", e.what());
+                    throw;
+                } catch (const std::exception& e) {
+                    LOG_ERROR("Exception during IN_GAME update stage '", stageName, "': ", e.what());
+                    throw;
+                }
+            };
             // Application update profiling
+            updateCheckpoint = "in_game: profile init";
             static int appProfileCounter = 0;
             static float ghTime = 0.0f, worldTime = 0.0f, spawnTime = 0.0f;
             static float creatureQTime = 0.0f, goQTime = 0.0f, mountTime = 0.0f;
             static float npcMgrTime = 0.0f, questMarkTime = 0.0f, syncTime = 0.0f;
 
             auto gh1 = std::chrono::high_resolution_clock::now();
-            if (gameHandler) {
-                gameHandler->update(deltaTime);
-            }
+            inGameStep = "gameHandler update";
+            updateCheckpoint = "in_game: gameHandler update";
+            runInGameStage("gameHandler->update", [&] {
+                if (gameHandler) {
+                    gameHandler->update(deltaTime);
+                }
+            });
             auto gh2 = std::chrono::high_resolution_clock::now();
             ghTime += std::chrono::duration<float, std::milli>(gh2 - gh1).count();
 
             // Always unsheath on combat engage.
+            inGameStep = "auto-unsheathe";
+            updateCheckpoint = "in_game: auto-unsheathe";
             if (gameHandler) {
                 const bool autoAttacking = gameHandler->isAutoAttacking();
                 if (autoAttacking && !wasAutoAttacking_ && weaponsSheathed_) {
@@ -587,6 +636,8 @@ void Application::update(float deltaTime) {
             }
 
             // Toggle weapon sheathe state with Z (ignored while UI captures keyboard).
+            inGameStep = "weapon-toggle input";
+            updateCheckpoint = "in_game: weapon-toggle input";
             {
                 const bool uiWantsKeyboard = ImGui::GetIO().WantCaptureKeyboard;
                 auto& input = Input::getInstance();
@@ -597,23 +648,33 @@ void Application::update(float deltaTime) {
             }
 
             auto w1 = std::chrono::high_resolution_clock::now();
-            if (world) {
-                world->update(deltaTime);
-            }
+            inGameStep = "world update";
+            updateCheckpoint = "in_game: world update";
+            runInGameStage("world->update", [&] {
+                if (world) {
+                    world->update(deltaTime);
+                }
+            });
             auto w2 = std::chrono::high_resolution_clock::now();
             worldTime += std::chrono::duration<float, std::milli>(w2 - w1).count();
 
             auto cq1 = std::chrono::high_resolution_clock::now();
-            processPlayerSpawnQueue();
-            // Process deferred online creature spawns (throttled)
-            processCreatureSpawnQueue();
-            // Process deferred equipment compositing (max 1 per frame to avoid stutter)
-            processDeferredEquipmentQueue();
+            inGameStep = "spawn/equipment queues";
+            updateCheckpoint = "in_game: spawn/equipment queues";
+            runInGameStage("spawn/equipment queues", [&] {
+                processPlayerSpawnQueue();
+                // Process deferred online creature spawns (throttled)
+                processCreatureSpawnQueue();
+                // Process deferred equipment compositing (max 1 per frame to avoid stutter)
+                processDeferredEquipmentQueue();
+            });
             auto cq2 = std::chrono::high_resolution_clock::now();
             creatureQTime += std::chrono::duration<float, std::milli>(cq2 - cq1).count();
 
             // Self-heal missing creature visuals: if a nearby UNIT exists in
             // entity state but has no render instance, queue a spawn retry.
+            inGameStep = "creature resync scan";
+            updateCheckpoint = "in_game: creature resync scan";
             if (gameHandler) {
                 static float creatureResyncTimer = 0.0f;
                 creatureResyncTimer += deltaTime;
@@ -659,13 +720,21 @@ void Application::update(float deltaTime) {
             }
 
             auto goq1 = std::chrono::high_resolution_clock::now();
-            processGameObjectSpawnQueue();
-            processPendingTransportDoodads();
+            inGameStep = "gameobject/transport queues";
+            updateCheckpoint = "in_game: gameobject/transport queues";
+            runInGameStage("gameobject/transport queues", [&] {
+                processGameObjectSpawnQueue();
+                processPendingTransportDoodads();
+            });
             auto goq2 = std::chrono::high_resolution_clock::now();
             goQTime += std::chrono::duration<float, std::milli>(goq2 - goq1).count();
 
             auto m1 = std::chrono::high_resolution_clock::now();
-            processPendingMount();
+            inGameStep = "pending mount";
+            updateCheckpoint = "in_game: pending mount";
+            runInGameStage("processPendingMount", [&] {
+                processPendingMount();
+            });
             auto m2 = std::chrono::high_resolution_clock::now();
             mountTime += std::chrono::duration<float, std::milli>(m2 - m1).count();
 
@@ -675,26 +744,33 @@ void Application::update(float deltaTime) {
 
             auto qm1 = std::chrono::high_resolution_clock::now();
             // Update 3D quest markers above NPCs
-            updateQuestMarkers();
+            inGameStep = "quest markers";
+            updateCheckpoint = "in_game: quest markers";
+            runInGameStage("updateQuestMarkers", [&] {
+                updateQuestMarkers();
+            });
             auto qm2 = std::chrono::high_resolution_clock::now();
             questMarkTime += std::chrono::duration<float, std::milli>(qm2 - qm1).count();
 
             auto sync1 = std::chrono::high_resolution_clock::now();
 
             // Sync server run speed to camera controller
-            if (renderer && gameHandler && renderer->getCameraController()) {
-                renderer->getCameraController()->setRunSpeedOverride(gameHandler->getServerRunSpeed());
-            }
+            inGameStep = "post-update sync";
+            updateCheckpoint = "in_game: post-update sync";
+            runInGameStage("post-update sync", [&] {
+                if (renderer && gameHandler && renderer->getCameraController()) {
+                    renderer->getCameraController()->setRunSpeedOverride(gameHandler->getServerRunSpeed());
+                }
 
-            bool onTaxi = gameHandler &&
-                          (gameHandler->isOnTaxiFlight() ||
-                           gameHandler->isTaxiMountActive() ||
-                           gameHandler->isTaxiActivationPending());
-            bool onTransportNow = gameHandler && gameHandler->isOnTransport();
-            if (worldEntryMovementGraceTimer_ > 0.0f) {
-                worldEntryMovementGraceTimer_ -= deltaTime;
-            }
-            if (renderer && renderer->getCameraController()) {
+                bool onTaxi = gameHandler &&
+                              (gameHandler->isOnTaxiFlight() ||
+                               gameHandler->isTaxiMountActive() ||
+                               gameHandler->isTaxiActivationPending());
+                bool onTransportNow = gameHandler && gameHandler->isOnTransport();
+                if (worldEntryMovementGraceTimer_ > 0.0f) {
+                    worldEntryMovementGraceTimer_ -= deltaTime;
+                }
+                if (renderer && renderer->getCameraController()) {
                 const bool externallyDrivenMotion = onTaxi || onTransportNow || chargeActive_;
                 // Keep physics frozen (externalFollow) during landing clamp when terrain
                 // hasn't loaded yet — prevents gravity from pulling player through void.
@@ -759,22 +835,22 @@ void Application::update(float deltaTime) {
                 } else if (!idleOrbit) {
                     idleYawned_ = false;
                 }
-            }
-            if (renderer) {
-                renderer->setTaxiFlight(onTaxi);
-            }
-            if (renderer && renderer->getTerrainManager()) {
+                }
+                if (renderer) {
+                    renderer->setTaxiFlight(onTaxi);
+                }
+                if (renderer && renderer->getTerrainManager()) {
                 renderer->getTerrainManager()->setStreamingEnabled(true);
                 // Keep taxi streaming responsive so flight paths don't outrun terrain/model uploads.
                 renderer->getTerrainManager()->setUpdateInterval(onTaxi ? 0.1f : 0.1f);
                 renderer->getTerrainManager()->setLoadRadius(onTaxi ? 3 : 4);
                 renderer->getTerrainManager()->setUnloadRadius(onTaxi ? 6 : 7);
                 renderer->getTerrainManager()->setTaxiStreamingMode(onTaxi);
-            }
-            lastTaxiFlight_ = onTaxi;
+                }
+                lastTaxiFlight_ = onTaxi;
 
-            // Sync character render position ↔ canonical WoW coords each frame
-            if (renderer && gameHandler) {
+                // Sync character render position ↔ canonical WoW coords each frame
+                if (renderer && gameHandler) {
                 bool onTransport = gameHandler->isOnTransport();
 
                 // Debug: Log transport state changes
@@ -922,11 +998,14 @@ void Application::update(float deltaTime) {
                         }
                     }
                 }
-            }
+                }
+            });
 
             // Keep creature render instances aligned with authoritative entity positions.
             // This prevents desync where target circles move with server entities but
             // creature models remain at stale spawn positions.
+            inGameStep = "creature render sync";
+            updateCheckpoint = "in_game: creature render sync";
             if (renderer && gameHandler && renderer->getCharacterRenderer()) {
                 auto* charRenderer = renderer->getCharacterRenderer();
                 static float npcWeaponRetryTimer = 0.0f;
@@ -1061,15 +1140,25 @@ void Application::update(float deltaTime) {
 
             // Log profiling every 60 frames
             if (++appProfileCounter >= 60) {
-                LOG_DEBUG("APP UPDATE PROFILE (60 frames): gameHandler=", ghTime / 60.0f,
-                         "ms world=", worldTime / 60.0f, "ms spawn=", spawnTime / 60.0f,
-                         "ms creatureQ=", creatureQTime / 60.0f, "ms goQ=", goQTime / 60.0f,
-                         "ms mount=", mountTime / 60.0f, "ms npcMgr=", npcMgrTime / 60.0f,
-                         "ms questMark=", questMarkTime / 60.0f, "ms sync=", syncTime / 60.0f, "ms");
+                updateCheckpoint = "in_game: profile log";
+                if (core::Logger::getInstance().shouldLog(core::LogLevel::DEBUG)) {
+                    LOG_DEBUG("APP UPDATE PROFILE (60 frames): gameHandler=", ghTime / 60.0f,
+                             "ms world=", worldTime / 60.0f, "ms spawn=", spawnTime / 60.0f,
+                             "ms creatureQ=", creatureQTime / 60.0f, "ms goQ=", goQTime / 60.0f,
+                             "ms mount=", mountTime / 60.0f, "ms npcMgr=", npcMgrTime / 60.0f,
+                             "ms questMark=", questMarkTime / 60.0f, "ms sync=", syncTime / 60.0f, "ms");
+                }
                 appProfileCounter = 0;
                 ghTime = worldTime = spawnTime = 0.0f;
                 creatureQTime = goQTime = mountTime = 0.0f;
                 npcMgrTime = questMarkTime = syncTime = 0.0f;
+            }
+            } catch (const std::bad_alloc& e) {
+                LOG_ERROR("OOM inside AppState::IN_GAME at step '", inGameStep, "': ", e.what());
+                throw;
+            } catch (const std::exception& e) {
+                LOG_ERROR("Exception inside AppState::IN_GAME at step '", inGameStep, "': ", e.what());
+                throw;
             }
             break;
         }
@@ -1083,26 +1172,54 @@ void Application::update(float deltaTime) {
     static int rendererProfileCounter = 0;
     static float rendererTime = 0.0f, uiTime = 0.0f;
 
+    updateCheckpoint = "renderer update";
     auto r1 = std::chrono::high_resolution_clock::now();
     if (renderer && state == AppState::IN_GAME) {
-        renderer->update(deltaTime);
+        try {
+            renderer->update(deltaTime);
+        } catch (const std::bad_alloc& e) {
+            LOG_ERROR("OOM during Application::update stage 'renderer->update': ", e.what());
+            throw;
+        } catch (const std::exception& e) {
+            LOG_ERROR("Exception during Application::update stage 'renderer->update': ", e.what());
+            throw;
+        }
     }
     auto r2 = std::chrono::high_resolution_clock::now();
     rendererTime += std::chrono::duration<float, std::milli>(r2 - r1).count();
 
     // Update UI
+    updateCheckpoint = "ui update";
     auto u1 = std::chrono::high_resolution_clock::now();
     if (uiManager) {
-        uiManager->update(deltaTime);
+        try {
+            uiManager->update(deltaTime);
+        } catch (const std::bad_alloc& e) {
+            LOG_ERROR("OOM during Application::update stage 'uiManager->update': ", e.what());
+            throw;
+        } catch (const std::exception& e) {
+            LOG_ERROR("Exception during Application::update stage 'uiManager->update': ", e.what());
+            throw;
+        }
     }
     auto u2 = std::chrono::high_resolution_clock::now();
     uiTime += std::chrono::duration<float, std::milli>(u2 - u1).count();
 
+    updateCheckpoint = "renderer/ui profile log";
     if (state == AppState::IN_GAME && ++rendererProfileCounter >= 60) {
-        LOG_DEBUG("RENDERER/UI PROFILE (60 frames): renderer=", rendererTime / 60.0f,
-                 "ms ui=", uiTime / 60.0f, "ms");
+        if (core::Logger::getInstance().shouldLog(core::LogLevel::DEBUG)) {
+            LOG_DEBUG("RENDERER/UI PROFILE (60 frames): renderer=", rendererTime / 60.0f,
+                     "ms ui=", uiTime / 60.0f, "ms");
+        }
         rendererProfileCounter = 0;
         rendererTime = uiTime = 0.0f;
+    }
+    } catch (const std::bad_alloc& e) {
+        LOG_ERROR("OOM in Application::update checkpoint '", updateCheckpoint, "': ", e.what());
+        throw;
+    } catch (const std::exception& e) {
+        LOG_ERROR("Exception in Application::update checkpoint '", updateCheckpoint, "': ", e.what());
+        throw;
     }
 }
 

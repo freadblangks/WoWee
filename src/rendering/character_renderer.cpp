@@ -250,7 +250,7 @@ bool CharacterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFram
     }
 
     // Diagnostics-only: cache lifetime is currently tied to renderer lifetime.
-    textureCacheBudgetBytes_ = envSizeMBOrDefault("WOWEE_CHARACTER_TEX_CACHE_MB", 2048) * 1024ull * 1024ull;
+    textureCacheBudgetBytes_ = envSizeMBOrDefault("WOWEE_CHARACTER_TEX_CACHE_MB", 512) * 1024ull * 1024ull;
 
     core::Logger::getInstance().info("Character renderer initialized (Vulkan)");
     return true;

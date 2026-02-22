@@ -1143,6 +1143,9 @@ void GameHandler::handlePacket(network::Packet& packet) {
     }
 
     uint16_t opcode = packet.getOpcode();
+    try {
+
+    const bool allowVanillaAliases = isClassicLikeExpansion() || isActiveExpansion("tbc");
 
     // Vanilla compatibility aliases:
     // - 0x006B: can be SMSG_COMPRESSED_MOVES on some vanilla-family servers
@@ -1150,7 +1153,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
     // - 0x0103: SMSG_PLAY_MUSIC (some vanilla-family servers)
     //
     // We gate these by payload shape so expansion-native mappings remain intact.
-    if (opcode == 0x006B) {
+    if (allowVanillaAliases && opcode == 0x006B) {
         // Try compressed movement batch first:
         // [u8 subSize][u16 subOpcode][subPayload...] ...
         // where subOpcode is typically SMSG_MONSTER_MOVE / SMSG_MONSTER_MOVE_TRANSPORT.
@@ -1198,7 +1201,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // Not weather-shaped: rewind and fall through to normal opcode table handling.
             packet.setReadPos(0);
         }
-    } else if (opcode == 0x0103) {
+    } else if (allowVanillaAliases && opcode == 0x0103) {
         // Expected play-music payload: uint32 sound/music id
         if (packet.getSize() - packet.getReadPos() == 4) {
             uint32_t soundId = packet.readUInt32();
@@ -2857,6 +2860,23 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 }
             }
             break;
+    }
+    } catch (const std::bad_alloc& e) {
+        LOG_ERROR("OOM while handling world opcode=0x", std::hex, opcode, std::dec,
+                  " state=", worldStateName(state),
+                  " size=", packet.getSize(),
+                  " readPos=", packet.getReadPos(),
+                  " what=", e.what());
+        if (socket && state == WorldState::IN_WORLD) {
+            disconnect();
+            fail("Out of memory while parsing world packet");
+        }
+    } catch (const std::exception& e) {
+        LOG_ERROR("Exception while handling world opcode=0x", std::hex, opcode, std::dec,
+                  " state=", worldStateName(state),
+                  " size=", packet.getSize(),
+                  " readPos=", packet.getReadPos(),
+                  " what=", e.what());
     }
 }
 
@@ -8659,10 +8679,30 @@ void GameHandler::handleCompressedMoves(network::Packet& packet) {
 
 void GameHandler::handleMonsterMove(network::Packet& packet) {
     MonsterMoveData data;
+    auto logMonsterMoveParseFailure = [&](const std::string& msg) {
+        static uint32_t failCount = 0;
+        ++failCount;
+        if (failCount <= 10 || (failCount % 100) == 0) {
+            LOG_WARNING(msg, " (occurrence=", failCount, ")");
+        }
+    };
+    auto stripWrappedSubpacket = [&](const std::vector<uint8_t>& bytes, std::vector<uint8_t>& stripped) -> bool {
+        if (bytes.size() < 3) return false;
+        uint8_t subSize = bytes[0];
+        if (subSize < 2) return false;
+        size_t wrappedLen = static_cast<size_t>(subSize) + 1; // size byte + body
+        if (wrappedLen != bytes.size()) return false;
+        size_t payloadLen = static_cast<size_t>(subSize) - 2; // opcode(2) stripped
+        if (3 + payloadLen > bytes.size()) return false;
+        stripped.assign(bytes.begin() + 3, bytes.begin() + 3 + payloadLen);
+        return true;
+    };
     // Turtle WoW (1.17+) compresses each SMSG_MONSTER_MOVE individually:
     // format: uint32 decompressedSize + zlib data (zlib magic = 0x78 ??)
     const auto& rawData = packet.getData();
-    bool isCompressed = rawData.size() >= 6 &&
+    const bool allowTurtleMoveCompression = isActiveExpansion("turtle");
+    bool isCompressed = allowTurtleMoveCompression &&
+                        rawData.size() >= 6 &&
                         rawData[4] == 0x78 &&
                         (rawData[5] == 0x01 || rawData[5] == 0x9C ||
                          rawData[5] == 0xDA || rawData[5] == 0x5E);
@@ -8694,36 +8734,42 @@ void GameHandler::handleMonsterMove(network::Packet& packet) {
             }
             LOG_INFO("MonsterMove decomp[", destLen, "]: ", hex);
         }
-        // Some Turtle WoW compressed move payloads include an inner
-        // sub-packet wrapper: uint8 size + uint16 opcode + payload.
-        // Do not key this on expansion opcode mappings; strip by structure.
-        std::vector<uint8_t> parseBytes = decompressed;
-        if (destLen >= 3) {
-            uint8_t subSize = decompressed[0];
-            size_t wrappedLen = static_cast<size_t>(subSize) + 1; // size byte + subSize bytes
-            uint16_t innerOpcode = static_cast<uint16_t>(decompressed[1]) |
-                                   (static_cast<uint16_t>(decompressed[2]) << 8);
-            uint16_t monsterMoveWire = wireOpcode(Opcode::SMSG_MONSTER_MOVE);
-            bool looksLikeMonsterMoveWrapper =
-                (innerOpcode == 0x00DD) || (innerOpcode == monsterMoveWire);
-            // Strict case: one exact wrapped sub-packet in this decompressed blob.
-            if (subSize >= 2 && wrappedLen == destLen && looksLikeMonsterMoveWrapper) {
-                size_t payloadStart = 3;
-                size_t payloadLen = static_cast<size_t>(subSize) - 2;
-                parseBytes.assign(decompressed.begin() + payloadStart,
-                                  decompressed.begin() + payloadStart + payloadLen);
-            }
-        }
+        std::vector<uint8_t> stripped;
+        bool hasWrappedForm = stripWrappedSubpacket(decompressed, stripped);
 
-        network::Packet decompPacket(packet.getOpcode(), parseBytes);
+        // Try unwrapped payload first (common form), then wrapped-subpacket fallback.
+        network::Packet decompPacket(packet.getOpcode(), decompressed);
         if (!packetParsers_->parseMonsterMove(decompPacket, data)) {
-            LOG_WARNING("Failed to parse vanilla SMSG_MONSTER_MOVE (decompressed ",
-                        destLen, " bytes, parseBytes ", parseBytes.size(), " bytes)");
-            return;
+            if (!hasWrappedForm) {
+                logMonsterMoveParseFailure("Failed to parse SMSG_MONSTER_MOVE (decompressed " +
+                                           std::to_string(destLen) + " bytes)");
+                return;
+            }
+            network::Packet wrappedPacket(packet.getOpcode(), stripped);
+            if (!packetParsers_->parseMonsterMove(wrappedPacket, data)) {
+                logMonsterMoveParseFailure("Failed to parse SMSG_MONSTER_MOVE (decompressed " +
+                                           std::to_string(destLen) + " bytes, wrapped payload " +
+                                           std::to_string(stripped.size()) + " bytes)");
+                return;
+            }
+            LOG_WARNING("SMSG_MONSTER_MOVE parsed via wrapped-subpacket fallback");
         }
     } else if (!packetParsers_->parseMonsterMove(packet, data)) {
-        LOG_WARNING("Failed to parse SMSG_MONSTER_MOVE");
-        return;
+        // Some realms occasionally embed an extra [size|opcode] wrapper even when the
+        // outer packet wasn't zlib-compressed. Retry with wrapper stripped by structure.
+        std::vector<uint8_t> stripped;
+        if (stripWrappedSubpacket(rawData, stripped)) {
+            network::Packet wrappedPacket(packet.getOpcode(), stripped);
+            if (packetParsers_->parseMonsterMove(wrappedPacket, data)) {
+                LOG_WARNING("SMSG_MONSTER_MOVE parsed via uncompressed wrapped-subpacket fallback");
+            } else {
+                logMonsterMoveParseFailure("Failed to parse SMSG_MONSTER_MOVE");
+                return;
+            }
+        } else {
+            logMonsterMoveParseFailure("Failed to parse SMSG_MONSTER_MOVE");
+            return;
+        }
     }
 
     // Update entity position in entity manager

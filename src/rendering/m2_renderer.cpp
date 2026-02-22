@@ -40,6 +40,15 @@ bool envFlagEnabled(const char* key, bool defaultValue) {
     return !(v == "0" || v == "false" || v == "off" || v == "no");
 }
 
+size_t envSizeMBOrDefault(const char* name, size_t defMb) {
+    const char* raw = std::getenv(name);
+    if (!raw || !*raw) return defMb;
+    char* end = nullptr;
+    unsigned long long mb = std::strtoull(raw, &end, 10);
+    if (end == raw || mb == 0) return defMb;
+    return static_cast<size_t>(mb);
+}
+
 static constexpr uint32_t kParticleFlagRandomized = 0x40;
 static constexpr uint32_t kParticleFlagTiled = 0x80;
 
@@ -601,6 +610,11 @@ bool M2Renderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout
         glowTexture_->upload(*vkCtx_, px.data(), SZ, SZ, VK_FORMAT_R8G8B8A8_UNORM);
         glowTexture_->createSampler(device, VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
     }
+    textureCacheBudgetBytes_ =
+        envSizeMBOrDefault("WOWEE_M2_TEX_CACHE_MB", 512) * 1024ull * 1024ull;
+    modelCacheLimit_ = envSizeMBOrDefault("WOWEE_M2_MODEL_LIMIT", 6000);
+    LOG_INFO("M2 texture cache budget: ", textureCacheBudgetBytes_ / (1024 * 1024), " MB");
+    LOG_INFO("M2 model cache limit: ", modelCacheLimit_);
 
     LOG_INFO("M2 renderer initialized (Vulkan)");
     initialized_ = true;
@@ -635,6 +649,9 @@ void M2Renderer::shutdown() {
     textureCacheCounter_ = 0;
     textureHasAlphaByPtr_.clear();
     textureColorKeyBlackByPtr_.clear();
+    failedTextureCache_.clear();
+    loggedTextureLoadFails_.clear();
+    textureBudgetRejectWarnings_ = 0;
     whiteTexture_.reset();
     glowTexture_.reset();
 
@@ -826,6 +843,14 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
     if (models.find(modelId) != models.end()) {
         // Already loaded
         return true;
+    }
+    if (models.size() >= modelCacheLimit_) {
+        if (modelLimitRejectWarnings_ < 8 || (modelLimitRejectWarnings_ % 120) == 0) {
+            LOG_WARNING("M2 model cache full (", models.size(), "/", modelCacheLimit_,
+                        "), skipping model load: id=", modelId, " name=", model.name);
+        }
+        ++modelLimitRejectWarnings_;
+        return false;
     }
 
     bool hasGeometry = !model.vertices.empty() && !model.indices.empty();
@@ -1134,10 +1159,15 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
                 VkTexture* texPtr = loadTexture(texPath, tex.flags);
                 bool failed = (texPtr == whiteTexture_.get());
                 if (failed) {
-                    static std::unordered_set<std::string> loggedModelTextureFails;
-                    std::string failKey = model.name + "|" + texKey;
-                    if (loggedModelTextureFails.insert(failKey).second) {
+                    static uint32_t loggedModelTextureFails = 0;
+                    static bool loggedModelTextureFailSuppressed = false;
+                    if (loggedModelTextureFails < 250) {
                         LOG_WARNING("M2 model ", model.name, " texture[", ti, "] failed to load: ", texPath);
+                        ++loggedModelTextureFails;
+                    } else if (!loggedModelTextureFailSuppressed) {
+                        LOG_WARNING("M2 model texture-failure warnings suppressed after ",
+                                    loggedModelTextureFails, " entries");
+                        loggedModelTextureFailSuppressed = true;
                     }
                 }
                 if (isInvisibleTrap) {
@@ -3155,6 +3185,9 @@ VkTexture* M2Renderer::loadTexture(const std::string& path, uint32_t texFlags) {
         it->second.lastUse = ++textureCacheCounter_;
         return it->second.texture.get();
     }
+    if (failedTextureCache_.count(key)) {
+        return whiteTexture_.get();
+    }
 
     auto containsToken = [](const std::string& haystack, const char* token) {
         return haystack.find(token) != std::string::npos;
@@ -3175,10 +3208,25 @@ VkTexture* M2Renderer::loadTexture(const std::string& path, uint32_t texFlags) {
     // Load BLP texture
     pipeline::BLPImage blp = assetManager->loadTexture(key);
     if (!blp.isValid()) {
-        static std::unordered_set<std::string> loggedTextureLoadFails;
-        if (loggedTextureLoadFails.insert(key).second) {
+        static constexpr size_t kMaxFailedTextureCache = 200000;
+        if (failedTextureCache_.size() < kMaxFailedTextureCache) {
+            failedTextureCache_.insert(key);
+        }
+        if (loggedTextureLoadFails_.insert(key).second) {
             LOG_WARNING("M2: Failed to load texture: ", path);
         }
+        return whiteTexture_.get();
+    }
+
+    size_t base = static_cast<size_t>(blp.width) * static_cast<size_t>(blp.height) * 4ull;
+    size_t approxBytes = base + (base / 3);
+    if (textureCacheBytes_ + approxBytes > textureCacheBudgetBytes_) {
+        if (textureBudgetRejectWarnings_ < 8 || (textureBudgetRejectWarnings_ % 120) == 0) {
+            LOG_WARNING("M2 texture cache full (", textureCacheBytes_ / (1024 * 1024),
+                        " MB / ", textureCacheBudgetBytes_ / (1024 * 1024),
+                        " MB), rejecting texture: ", path);
+        }
+        ++textureBudgetRejectWarnings_;
         return whiteTexture_.get();
     }
 
@@ -3204,8 +3252,7 @@ VkTexture* M2Renderer::loadTexture(const std::string& path, uint32_t texFlags) {
 
     TextureCacheEntry e;
     e.texture = std::move(tex);
-    size_t base = static_cast<size_t>(blp.width) * static_cast<size_t>(blp.height) * 4ull;
-    e.approxBytes = base + (base / 3);
+    e.approxBytes = approxBytes;
     e.hasAlpha = hasAlpha;
     e.colorKeyBlack = colorKeyBlackHint;
     e.lastUse = ++textureCacheCounter_;

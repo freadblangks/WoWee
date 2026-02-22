@@ -376,83 +376,125 @@ bool TbcPacketParsers::parseCharEnum(network::Packet& packet, CharEnumResponse& 
 // (WotLK removed this field)
 // ============================================================================
 bool TbcPacketParsers::parseUpdateObject(network::Packet& packet, UpdateObjectData& data) {
-    // Read block count
-    data.blockCount = packet.readUInt32();
+    constexpr uint32_t kMaxReasonableUpdateBlocks = 4096;
+    auto parseWithLayout = [&](bool withHasTransportByte, UpdateObjectData& out) -> bool {
+        out = UpdateObjectData{};
+        size_t start = packet.getReadPos();
+        if (packet.getSize() - start < 4) return false;
 
-    // TBC/Classic: has_transport byte (WotLK removed this)
-    /*uint8_t hasTransport =*/ packet.readUInt8();
-
-    LOG_DEBUG("[TBC] SMSG_UPDATE_OBJECT: objectCount=", data.blockCount);
-
-    // Check for out-of-range objects first
-    if (packet.getReadPos() + 1 <= packet.getSize()) {
-        uint8_t firstByte = packet.readUInt8();
-
-        if (firstByte == static_cast<uint8_t>(UpdateType::OUT_OF_RANGE_OBJECTS)) {
-            uint32_t count = packet.readUInt32();
-            for (uint32_t i = 0; i < count; ++i) {
-                uint64_t guid = UpdateObjectParser::readPackedGuid(packet);
-                data.outOfRangeGuids.push_back(guid);
-                LOG_DEBUG("    Out of range: 0x", std::hex, guid, std::dec);
-            }
-        } else {
-            packet.setReadPos(packet.getReadPos() - 1);
+        out.blockCount = packet.readUInt32();
+        if (out.blockCount > kMaxReasonableUpdateBlocks) {
+            packet.setReadPos(start);
+            return false;
         }
-    }
 
-    // Parse update blocks — dispatching movement via virtual parseMovementBlock()
-    data.blocks.reserve(data.blockCount);
-    for (uint32_t i = 0; i < data.blockCount; ++i) {
-        LOG_DEBUG("Parsing block ", i + 1, " / ", data.blockCount);
-        UpdateBlock block;
-
-        // Read update type
-        uint8_t updateTypeVal = packet.readUInt8();
-        block.updateType = static_cast<UpdateType>(updateTypeVal);
-        LOG_DEBUG("Update block: type=", (int)updateTypeVal);
-
-        bool ok = false;
-        switch (block.updateType) {
-            case UpdateType::VALUES: {
-                block.guid = UpdateObjectParser::readPackedGuid(packet);
-                ok = UpdateObjectParser::parseUpdateFields(packet, block);
-                break;
+        if (withHasTransportByte) {
+            if (packet.getReadPos() >= packet.getSize()) {
+                packet.setReadPos(start);
+                return false;
             }
-            case UpdateType::MOVEMENT: {
-                block.guid = UpdateObjectParser::readPackedGuid(packet);
-                ok = this->parseMovementBlock(packet, block);
-                break;
-            }
-            case UpdateType::CREATE_OBJECT:
-            case UpdateType::CREATE_OBJECT2: {
-                block.guid = UpdateObjectParser::readPackedGuid(packet);
-                uint8_t objectTypeVal = packet.readUInt8();
-                block.objectType = static_cast<ObjectType>(objectTypeVal);
-                ok = this->parseMovementBlock(packet, block);
-                if (ok) {
-                    ok = UpdateObjectParser::parseUpdateFields(packet, block);
+            /*uint8_t hasTransport =*/ packet.readUInt8();
+        }
+
+        if (packet.getReadPos() + 1 <= packet.getSize()) {
+            uint8_t firstByte = packet.readUInt8();
+            if (firstByte == static_cast<uint8_t>(UpdateType::OUT_OF_RANGE_OBJECTS)) {
+                if (packet.getReadPos() + 4 > packet.getSize()) {
+                    packet.setReadPos(start);
+                    return false;
                 }
-                break;
+                uint32_t count = packet.readUInt32();
+                if (count > kMaxReasonableUpdateBlocks) {
+                    packet.setReadPos(start);
+                    return false;
+                }
+                for (uint32_t i = 0; i < count; ++i) {
+                    if (packet.getReadPos() >= packet.getSize()) {
+                        packet.setReadPos(start);
+                        return false;
+                    }
+                    uint64_t guid = UpdateObjectParser::readPackedGuid(packet);
+                    out.outOfRangeGuids.push_back(guid);
+                }
+            } else {
+                packet.setReadPos(packet.getReadPos() - 1);
             }
-            case UpdateType::OUT_OF_RANGE_OBJECTS:
-            case UpdateType::NEAR_OBJECTS:
-                ok = true;
-                break;
-            default:
-                LOG_WARNING("Unknown update type: ", (int)updateTypeVal);
-                ok = false;
-                break;
         }
 
-        if (!ok) {
-            LOG_WARNING("Failed to parse update block ", i + 1, " of ", data.blockCount,
-                        " — keeping ", data.blocks.size(), " parsed blocks");
-            break;
+        out.blocks.reserve(out.blockCount);
+        for (uint32_t i = 0; i < out.blockCount; ++i) {
+            if (packet.getReadPos() >= packet.getSize()) {
+                packet.setReadPos(start);
+                return false;
+            }
+
+            UpdateBlock block;
+            uint8_t updateTypeVal = packet.readUInt8();
+            if (updateTypeVal > static_cast<uint8_t>(UpdateType::NEAR_OBJECTS)) {
+                packet.setReadPos(start);
+                return false;
+            }
+            block.updateType = static_cast<UpdateType>(updateTypeVal);
+
+            bool ok = false;
+            switch (block.updateType) {
+                case UpdateType::VALUES: {
+                    block.guid = UpdateObjectParser::readPackedGuid(packet);
+                    ok = UpdateObjectParser::parseUpdateFields(packet, block);
+                    break;
+                }
+                case UpdateType::MOVEMENT: {
+                    block.guid = UpdateObjectParser::readPackedGuid(packet);
+                    ok = this->parseMovementBlock(packet, block);
+                    break;
+                }
+                case UpdateType::CREATE_OBJECT:
+                case UpdateType::CREATE_OBJECT2: {
+                    block.guid = UpdateObjectParser::readPackedGuid(packet);
+                    if (packet.getReadPos() >= packet.getSize()) {
+                        ok = false;
+                        break;
+                    }
+                    uint8_t objectTypeVal = packet.readUInt8();
+                    block.objectType = static_cast<ObjectType>(objectTypeVal);
+                    ok = this->parseMovementBlock(packet, block);
+                    if (ok) ok = UpdateObjectParser::parseUpdateFields(packet, block);
+                    break;
+                }
+                case UpdateType::OUT_OF_RANGE_OBJECTS:
+                case UpdateType::NEAR_OBJECTS:
+                    ok = true;
+                    break;
+                default:
+                    ok = false;
+                    break;
+            }
+
+            if (!ok) {
+                packet.setReadPos(start);
+                return false;
+            }
+            out.blocks.push_back(block);
         }
-        data.blocks.push_back(block);
+        return true;
+    };
+
+    size_t startPos = packet.getReadPos();
+    UpdateObjectData parsed;
+    if (parseWithLayout(true, parsed)) {
+        data = std::move(parsed);
+        return true;
     }
 
-    return true;
+    packet.setReadPos(startPos);
+    if (parseWithLayout(false, parsed)) {
+        LOG_WARNING("[TBC] SMSG_UPDATE_OBJECT parsed without has_transport byte fallback");
+        data = std::move(parsed);
+        return true;
+    }
+
+    packet.setReadPos(startPos);
+    return false;
 }
 
 network::Packet TbcPacketParsers::buildAcceptQuestPacket(uint64_t npcGuid, uint32_t questId) {

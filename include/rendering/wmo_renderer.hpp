@@ -587,12 +587,17 @@ private:
     size_t textureCacheBytes_ = 0;
     uint64_t textureCacheCounter_ = 0;
     size_t textureCacheBudgetBytes_ = 2048ull * 1024 * 1024;  // Default, overridden at init
+    std::unordered_set<std::string> failedTextureCache_;
+    std::unordered_set<std::string> loggedTextureLoadFails_;
+    uint32_t textureBudgetRejectWarnings_ = 0;
 
     // Default white texture
     std::unique_ptr<VkTexture> whiteTexture_;
 
     // Loaded models (modelId -> ModelData)
     std::unordered_map<uint32_t, ModelData> loadedModels;
+    size_t modelCacheLimit_ = 4000;
+    uint32_t modelLimitRejectWarnings_ = 0;
 
     // Active instances
     std::vector<WMOInstance> instances;

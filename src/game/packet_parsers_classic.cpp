@@ -1192,6 +1192,24 @@ bool TurtlePacketParsers::parseMovementBlock(network::Packet& packet, UpdateBloc
     return true;
 }
 
+bool TurtlePacketParsers::parseMonsterMove(network::Packet& packet, MonsterMoveData& data) {
+    // Turtle realms can emit both vanilla-like and WotLK-like monster move bodies.
+    // Try the canonical Turtle/vanilla parser first, then fall back to WotLK layout.
+    size_t start = packet.getReadPos();
+    if (MonsterMoveParser::parseVanilla(packet, data)) {
+        return true;
+    }
+
+    packet.setReadPos(start);
+    if (MonsterMoveParser::parse(packet, data)) {
+        LOG_WARNING("[Turtle] SMSG_MONSTER_MOVE parsed via WotLK fallback layout");
+        return true;
+    }
+
+    packet.setReadPos(start);
+    return false;
+}
+
 // ============================================================================
 // Classic/Vanilla quest giver status
 //

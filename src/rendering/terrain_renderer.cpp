@@ -20,6 +20,17 @@
 namespace wowee {
 namespace rendering {
 
+namespace {
+size_t envSizeMBOrDefault(const char* name, size_t defMb) {
+    const char* raw = std::getenv(name);
+    if (!raw || !*raw) return defMb;
+    char* end = nullptr;
+    unsigned long long mb = std::strtoull(raw, &end, 10);
+    if (end == raw || mb == 0) return defMb;
+    return static_cast<size_t>(mb);
+}
+} // namespace
+
 // Matches set 1 binding 7 in terrain.frag.glsl
 struct TerrainParamsUBO {
     int32_t layerCount;
@@ -185,6 +196,9 @@ bool TerrainRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameL
     opaqueAlphaTexture->upload(*vkCtx, &opaqueAlpha, 1, 1, VK_FORMAT_R8_UNORM, false);
     opaqueAlphaTexture->createSampler(device, VK_FILTER_LINEAR, VK_FILTER_LINEAR,
                                        VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+    textureCacheBudgetBytes_ =
+        envSizeMBOrDefault("WOWEE_TERRAIN_TEX_CACHE_MB", 512) * 1024ull * 1024ull;
+    LOG_INFO("Terrain texture cache budget: ", textureCacheBudgetBytes_ / (1024 * 1024), " MB");
 
     LOG_INFO("Terrain renderer initialized (Vulkan)");
     return true;
@@ -287,6 +301,9 @@ void TerrainRenderer::shutdown() {
     textureCache.clear();
     textureCacheBytes_ = 0;
     textureCacheCounter_ = 0;
+    failedTextureCache_.clear();
+    loggedTextureLoadFails_.clear();
+    textureBudgetRejectWarnings_ = 0;
 
     if (whiteTexture) { whiteTexture->destroy(device, allocator); whiteTexture.reset(); }
     if (opaqueAlphaTexture) { opaqueAlphaTexture->destroy(device, allocator); opaqueAlphaTexture.reset(); }
@@ -425,10 +442,31 @@ VkTexture* TerrainRenderer::loadTexture(const std::string& path) {
         it->second.lastUse = ++textureCacheCounter_;
         return it->second.texture.get();
     }
+    if (failedTextureCache_.count(key)) {
+        return whiteTexture.get();
+    }
 
     pipeline::BLPImage blp = assetManager->loadTexture(key);
     if (!blp.isValid()) {
-        LOG_WARNING("Failed to load texture: ", path);
+        static constexpr size_t kMaxFailedTextureCache = 200000;
+        if (failedTextureCache_.size() < kMaxFailedTextureCache) {
+            failedTextureCache_.insert(key);
+        }
+        if (loggedTextureLoadFails_.insert(key).second) {
+            LOG_WARNING("Failed to load texture: ", path);
+        }
+        return whiteTexture.get();
+    }
+
+    size_t base = static_cast<size_t>(blp.width) * static_cast<size_t>(blp.height) * 4ull;
+    size_t approxBytes = base + (base / 3);
+    if (textureCacheBytes_ + approxBytes > textureCacheBudgetBytes_) {
+        if (textureBudgetRejectWarnings_ < 8 || (textureBudgetRejectWarnings_ % 120) == 0) {
+            LOG_WARNING("Terrain texture cache full (", textureCacheBytes_ / (1024 * 1024),
+                        " MB / ", textureCacheBudgetBytes_ / (1024 * 1024),
+                        " MB), rejecting texture: ", path);
+        }
+        ++textureBudgetRejectWarnings_;
         return whiteTexture.get();
     }
 
@@ -444,8 +482,7 @@ VkTexture* TerrainRenderer::loadTexture(const std::string& path) {
     VkTexture* raw = tex.get();
     TextureCacheEntry e;
     e.texture = std::move(tex);
-    size_t base = static_cast<size_t>(blp.width) * static_cast<size_t>(blp.height) * 4ull;
-    e.approxBytes = base + (base / 3);
+    e.approxBytes = approxBytes;
     e.lastUse = ++textureCacheCounter_;
     textureCacheBytes_ += e.approxBytes;
     textureCache[key] = std::move(e);

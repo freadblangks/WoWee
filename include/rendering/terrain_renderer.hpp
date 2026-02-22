@@ -8,6 +8,7 @@
 #include <glm/glm.hpp>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <string>
 
 namespace wowee {
@@ -156,6 +157,9 @@ private:
     size_t textureCacheBytes_ = 0;
     uint64_t textureCacheCounter_ = 0;
     size_t textureCacheBudgetBytes_ = 4096ull * 1024 * 1024;
+    std::unordered_set<std::string> failedTextureCache_;
+    std::unordered_set<std::string> loggedTextureLoadFails_;
+    uint32_t textureBudgetRejectWarnings_ = 0;
 
     // Fallback textures
     std::unique_ptr<VkTexture> whiteTexture;

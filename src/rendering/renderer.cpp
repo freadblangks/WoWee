@@ -2756,6 +2756,19 @@ void Renderer::update(float deltaTime) {
         performanceHUD->update(deltaTime);
     }
 
+    // Periodic cache hygiene: drop model GPU data no longer referenced by active instances.
+    static float modelCleanupTimer = 0.0f;
+    modelCleanupTimer += deltaTime;
+    if (modelCleanupTimer >= 5.0f) {
+        if (wmoRenderer) {
+            wmoRenderer->cleanupUnusedModels();
+        }
+        if (m2Renderer) {
+            m2Renderer->cleanupUnusedModels();
+        }
+        modelCleanupTimer = 0.0f;
+    }
+
     auto updateEnd = std::chrono::steady_clock::now();
     lastUpdateMs = std::chrono::duration<double, std::milli>(updateEnd - updateStart).count();
 

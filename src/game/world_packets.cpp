@@ -1131,9 +1131,16 @@ bool UpdateObjectParser::parseUpdateBlock(network::Packet& packet, UpdateBlock& 
 }
 
 bool UpdateObjectParser::parse(network::Packet& packet, UpdateObjectData& data) {
+    constexpr uint32_t kMaxReasonableUpdateBlocks = 4096;
+    constexpr uint32_t kMaxReasonableOutOfRangeGuids = 16384;
 
     // Read block count
     data.blockCount = packet.readUInt32();
+    if (data.blockCount > kMaxReasonableUpdateBlocks) {
+        LOG_ERROR("SMSG_UPDATE_OBJECT rejected: unreasonable blockCount=", data.blockCount,
+                  " packetSize=", packet.getSize());
+        return false;
+    }
 
     LOG_DEBUG("SMSG_UPDATE_OBJECT:");
     LOG_DEBUG("  objectCount = ", data.blockCount);
@@ -1146,6 +1153,11 @@ bool UpdateObjectParser::parse(network::Packet& packet, UpdateObjectData& data) 
         if (firstByte == static_cast<uint8_t>(UpdateType::OUT_OF_RANGE_OBJECTS)) {
             // Read out-of-range GUID count
             uint32_t count = packet.readUInt32();
+            if (count > kMaxReasonableOutOfRangeGuids) {
+                LOG_ERROR("SMSG_UPDATE_OBJECT rejected: unreasonable outOfRange count=", count,
+                          " packetSize=", packet.getSize());
+                return false;
+            }
 
             for (uint32_t i = 0; i < count; ++i) {
                 uint64_t guid = readPackedGuid(packet);

@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <future>
@@ -26,6 +27,17 @@
 
 namespace wowee {
 namespace rendering {
+
+namespace {
+size_t envSizeMBOrDefault(const char* name, size_t defMb) {
+    const char* raw = std::getenv(name);
+    if (!raw || !*raw) return defMb;
+    char* end = nullptr;
+    unsigned long long mb = std::strtoull(raw, &end, 10);
+    if (end == raw || mb == 0) return defMb;
+    return static_cast<size_t>(mb);
+}
+} // namespace
 
 static void transformAABB(const glm::mat4& modelMatrix,
                           const glm::vec3& localMin,
@@ -214,6 +226,12 @@ bool WMORenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayou
     whiteTexture_->upload(*vkCtx_, whitePixel, 1, 1, VK_FORMAT_R8G8B8A8_UNORM, false);
     whiteTexture_->createSampler(device, VK_FILTER_LINEAR, VK_FILTER_LINEAR,
                                   VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    textureCacheBudgetBytes_ =
+        envSizeMBOrDefault("WOWEE_WMO_TEX_CACHE_MB", 512) * 1024ull * 1024ull;
+    modelCacheLimit_ = envSizeMBOrDefault("WOWEE_WMO_MODEL_LIMIT", 4000);
+    core::Logger::getInstance().info("WMO texture cache budget: ",
+                                     textureCacheBudgetBytes_ / (1024 * 1024), " MB");
+    core::Logger::getInstance().info("WMO model cache limit: ", modelCacheLimit_);
 
     core::Logger::getInstance().info("WMO renderer initialized (Vulkan)");
     initialized_ = true;
@@ -251,6 +269,9 @@ void WMORenderer::shutdown() {
     textureCache.clear();
     textureCacheBytes_ = 0;
     textureCacheCounter_ = 0;
+    failedTextureCache_.clear();
+    loggedTextureLoadFails_.clear();
+    textureBudgetRejectWarnings_ = 0;
 
     // Free white texture
     if (whiteTexture_) { whiteTexture_->destroy(device, allocator); whiteTexture_.reset(); }
@@ -301,6 +322,14 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
                 }
             }
             static std::unordered_set<uint32_t> retryReloadedModels;
+            static bool retryReloadedModelsCapped = false;
+            if (retryReloadedModels.size() > 8192) {
+                retryReloadedModels.clear();
+                if (!retryReloadedModelsCapped) {
+                    core::Logger::getInstance().warning("WMO fallback-retry set exceeded 8192 entries; reset");
+                    retryReloadedModelsCapped = true;
+                }
+            }
             if (!hasResolvedTexture && retryReloadedModels.insert(id).second) {
                 core::Logger::getInstance().warning(
                     "WMO model ", id,
@@ -312,6 +341,15 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
         } else {
             return true;
         }
+    }
+    if (loadedModels.size() >= modelCacheLimit_) {
+        if (modelLimitRejectWarnings_ < 8 || (modelLimitRejectWarnings_ % 120) == 0) {
+            core::Logger::getInstance().warning("WMO model cache full (",
+                                                loadedModels.size(), "/", modelCacheLimit_,
+                                                "), skipping model load: id=", id);
+        }
+        ++modelLimitRejectWarnings_;
+        return false;
     }
 
     core::Logger::getInstance().debug("Loading WMO model ", id, " with ", model.groups.size(), " groups, ",
@@ -1863,10 +1901,21 @@ VkTexture* WMORenderer::loadTexture(const std::string& path) {
         }
     }
 
+    std::vector<std::string> attemptedCandidates;
+    attemptedCandidates.reserve(uniqueCandidates.size());
+    for (const auto& c : uniqueCandidates) {
+        if (!failedTextureCache_.count(c)) {
+            attemptedCandidates.push_back(c);
+        }
+    }
+    if (attemptedCandidates.empty()) {
+        return whiteTexture_.get();
+    }
+
     // Try loading all candidates until one succeeds
     pipeline::BLPImage blp;
     std::string resolvedKey;
-    for (const auto& c : uniqueCandidates) {
+    for (const auto& c : attemptedCandidates) {
         blp = assetManager->loadTexture(c);
         if (blp.isValid()) {
             resolvedKey = c;
@@ -1874,7 +1923,15 @@ VkTexture* WMORenderer::loadTexture(const std::string& path) {
         }
     }
     if (!blp.isValid()) {
-        core::Logger::getInstance().warning("WMO: Failed to load texture: ", path);
+        static constexpr size_t kMaxFailedTextureCache = 200000;
+        for (const auto& c : attemptedCandidates) {
+            if (failedTextureCache_.size() < kMaxFailedTextureCache) {
+                failedTextureCache_.insert(c);
+            }
+        }
+        if (loggedTextureLoadFails_.insert(key).second) {
+            core::Logger::getInstance().warning("WMO: Failed to load texture: ", path);
+        }
         // Do not cache failures as white. MPQ reads can fail transiently
         // during streaming/contention, and caching white here permanently
         // poisons the texture for this session.
@@ -1882,6 +1939,19 @@ VkTexture* WMORenderer::loadTexture(const std::string& path) {
     }
 
     core::Logger::getInstance().debug("WMO texture: ", path, " size=", blp.width, "x", blp.height);
+
+    size_t base = static_cast<size_t>(blp.width) * static_cast<size_t>(blp.height) * 4ull;
+    size_t approxBytes = base + (base / 3);
+    if (textureCacheBytes_ + approxBytes > textureCacheBudgetBytes_) {
+        if (textureBudgetRejectWarnings_ < 8 || (textureBudgetRejectWarnings_ % 120) == 0) {
+            core::Logger::getInstance().warning(
+                "WMO texture cache full (", textureCacheBytes_ / (1024 * 1024),
+                " MB / ", textureCacheBudgetBytes_ / (1024 * 1024),
+                " MB), rejecting texture: ", path);
+        }
+        ++textureBudgetRejectWarnings_;
+        return whiteTexture_.get();
+    }
 
     // Create Vulkan texture
     auto texture = std::make_unique<VkTexture>();
@@ -1896,8 +1966,7 @@ VkTexture* WMORenderer::loadTexture(const std::string& path) {
     // Cache it
     TextureCacheEntry e;
     VkTexture* rawPtr = texture.get();
-    size_t base = static_cast<size_t>(blp.width) * static_cast<size_t>(blp.height) * 4ull;
-    e.approxBytes = base + (base / 3);
+    e.approxBytes = approxBytes;
     e.lastUse = ++textureCacheCounter_;
     e.texture = std::move(texture);
     textureCacheBytes_ += e.approxBytes;

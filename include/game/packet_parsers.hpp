@@ -353,6 +353,7 @@ class TurtlePacketParsers : public ClassicPacketParsers {
 public:
     uint8_t movementFlags2Size() const override { return 0; }
     bool parseMovementBlock(network::Packet& packet, UpdateBlock& block) override;
+    bool parseMonsterMove(network::Packet& packet, MonsterMoveData& data) override;
 };
 
 /**

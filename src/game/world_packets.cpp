@@ -532,28 +532,45 @@ bool LoginVerifyWorldParser::parse(network::Packet& packet, LoginVerifyWorldData
 }
 
 bool AccountDataTimesParser::parse(network::Packet& packet, AccountDataTimesData& data) {
-    // SMSG_ACCOUNT_DATA_TIMES format (WoW 3.3.5a):
-    // uint32 serverTime (Unix timestamp)
-    // uint8 unknown (always 1?)
-    // uint32[8] accountDataTimes (timestamps for each data slot)
-
-    if (packet.getSize() < 37) {
-        LOG_ERROR("SMSG_ACCOUNT_DATA_TIMES packet too small: ", packet.getSize(), " bytes");
+    // Common layouts seen in the wild:
+    // - WotLK-like: uint32 serverTime, uint8 unk, uint32 mask, uint32[up to 8] slotTimes
+    // - Older/variant: uint32 serverTime, uint8 unk, uint32[up to 8] slotTimes
+    // Some servers only send a subset of slots.
+    if (packet.getSize() < 5) {
+        LOG_ERROR("SMSG_ACCOUNT_DATA_TIMES packet too small: ", packet.getSize(),
+                  " bytes (need at least 5)");
         return false;
     }
 
+    for (uint32_t& t : data.accountDataTimes) {
+        t = 0;
+    }
     data.serverTime = packet.readUInt32();
     data.unknown = packet.readUInt8();
+
+    size_t remaining = packet.getSize() - packet.getReadPos();
+    uint32_t mask = 0xFF;
+    if (remaining >= 4 && ((remaining - 4) % 4) == 0) {
+        // Treat first dword as slot mask when payload shape matches.
+        mask = packet.readUInt32();
+    }
+    remaining = packet.getSize() - packet.getReadPos();
+    size_t slotWords = std::min<size_t>(8, remaining / 4);
 
     LOG_DEBUG("Parsed SMSG_ACCOUNT_DATA_TIMES:");
     LOG_DEBUG("  Server time: ", data.serverTime);
     LOG_DEBUG("  Unknown: ", (int)data.unknown);
+    LOG_DEBUG("  Mask: 0x", std::hex, mask, std::dec, " slotsInPacket=", slotWords);
 
-    for (int i = 0; i < 8; ++i) {
+    for (size_t i = 0; i < slotWords; ++i) {
         data.accountDataTimes[i] = packet.readUInt32();
-        if (data.accountDataTimes[i] != 0) {
+        if (data.accountDataTimes[i] != 0 || ((mask & (1u << i)) != 0)) {
             LOG_DEBUG("  Data slot ", i, ": ", data.accountDataTimes[i]);
         }
+    }
+    if (packet.getReadPos() != packet.getSize()) {
+        LOG_DEBUG("  AccountDataTimes trailing bytes: ", packet.getSize() - packet.getReadPos());
+        packet.setReadPos(packet.getSize());
     }
 
     return true;

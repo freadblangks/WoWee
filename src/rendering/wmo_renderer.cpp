@@ -227,7 +227,7 @@ bool WMORenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayou
     whiteTexture_->createSampler(device, VK_FILTER_LINEAR, VK_FILTER_LINEAR,
                                   VK_SAMPLER_ADDRESS_MODE_REPEAT);
     textureCacheBudgetBytes_ =
-        envSizeMBOrDefault("WOWEE_WMO_TEX_CACHE_MB", 512) * 1024ull * 1024ull;
+        envSizeMBOrDefault("WOWEE_WMO_TEX_CACHE_MB", 1024) * 1024ull * 1024ull;
     modelCacheLimit_ = envSizeMBOrDefault("WOWEE_WMO_MODEL_LIMIT", 4000);
     core::Logger::getInstance().info("WMO texture cache budget: ",
                                      textureCacheBudgetBytes_ / (1024 * 1024), " MB");
@@ -1943,6 +1943,16 @@ VkTexture* WMORenderer::loadTexture(const std::string& path) {
     size_t base = static_cast<size_t>(blp.width) * static_cast<size_t>(blp.height) * 4ull;
     size_t approxBytes = base + (base / 3);
     if (textureCacheBytes_ + approxBytes > textureCacheBudgetBytes_) {
+        static constexpr size_t kMaxFailedTextureCache = 200000;
+        if (failedTextureCache_.size() < kMaxFailedTextureCache) {
+            // Cache budget-rejected keys too; once saturated, repeated attempts
+            // cause pointless decode churn and transient allocations.
+            if (!resolvedKey.empty()) {
+                failedTextureCache_.insert(resolvedKey);
+            } else {
+                failedTextureCache_.insert(key);
+            }
+        }
         if (textureBudgetRejectWarnings_ < 8 || (textureBudgetRejectWarnings_ % 120) == 0) {
             core::Logger::getInstance().warning(
                 "WMO texture cache full (", textureCacheBytes_ / (1024 * 1024),

@@ -91,6 +91,12 @@ private:
 
     // Receive buffer
     std::vector<uint8_t> receiveBuffer;
+    // Optional reused packet queue (feature-gated) to reduce per-update allocations.
+    std::vector<Packet> parsedPacketsScratch_;
+
+    // Runtime-gated network optimization toggles (default off).
+    bool useFastRecvAppend_ = false;
+    bool useParseScratchQueue_ = false;
 
     // Track how many header bytes have been decrypted (0-4)
     // This prevents re-decrypting the same header when waiting for more data

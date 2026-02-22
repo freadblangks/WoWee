@@ -565,18 +565,21 @@ void Application::update(float deltaTime) {
     updateCheckpoint = "state switch";
     switch (state) {
         case AppState::AUTHENTICATION:
+            updateCheckpoint = "auth: enter";
             if (authHandler) {
                 authHandler->update(deltaTime);
             }
             break;
 
         case AppState::REALM_SELECTION:
+            updateCheckpoint = "realm_selection: enter";
             if (authHandler) {
                 authHandler->update(deltaTime);
             }
             break;
 
         case AppState::CHARACTER_CREATION:
+            updateCheckpoint = "char_creation: enter";
             if (gameHandler) {
                 gameHandler->update(deltaTime);
             }
@@ -586,12 +589,14 @@ void Application::update(float deltaTime) {
             break;
 
         case AppState::CHARACTER_SELECTION:
+            updateCheckpoint = "char_selection: enter";
             if (gameHandler) {
                 gameHandler->update(deltaTime);
             }
             break;
 
         case AppState::IN_GAME: {
+            updateCheckpoint = "in_game: enter";
             const char* inGameStep = "begin";
             try {
             auto runInGameStage = [&](const char* stageName, auto&& fn) {

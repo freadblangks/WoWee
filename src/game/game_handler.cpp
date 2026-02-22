@@ -1965,11 +1965,22 @@ void GameHandler::handlePacket(network::Packet& packet) {
             worldStateZoneId_ = packet.readUInt32();
             uint16_t count = packet.readUInt16();
             size_t needed = static_cast<size_t>(count) * 8;
-            if (packet.getSize() - packet.getReadPos() < needed) {
-                LOG_WARNING("SMSG_INIT_WORLD_STATES truncated: expected ", needed,
-                            " bytes of state pairs, got ", packet.getSize() - packet.getReadPos());
-                packet.setReadPos(packet.getSize());
-                break;
+            size_t available = packet.getSize() - packet.getReadPos();
+            if (available < needed) {
+                // Be tolerant across expansion/private-core variants: if packet shape
+                // still looks like N*(key,val) dwords, parse what is present.
+                if ((available % 8) == 0) {
+                    uint16_t adjustedCount = static_cast<uint16_t>(available / 8);
+                    LOG_WARNING("SMSG_INIT_WORLD_STATES count mismatch: header=", count,
+                                " adjusted=", adjustedCount, " (available=", available, ")");
+                    count = adjustedCount;
+                    needed = available;
+                } else {
+                    LOG_WARNING("SMSG_INIT_WORLD_STATES truncated: expected ", needed,
+                                " bytes of state pairs, got ", available);
+                    packet.setReadPos(packet.getSize());
+                    break;
+                }
             }
             worldStates_.clear();
             worldStates_.reserve(count);

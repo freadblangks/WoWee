@@ -611,7 +611,7 @@ bool M2Renderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout
         glowTexture_->createSampler(device, VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
     }
     textureCacheBudgetBytes_ =
-        envSizeMBOrDefault("WOWEE_M2_TEX_CACHE_MB", 512) * 1024ull * 1024ull;
+        envSizeMBOrDefault("WOWEE_M2_TEX_CACHE_MB", 1024) * 1024ull * 1024ull;
     modelCacheLimit_ = envSizeMBOrDefault("WOWEE_M2_MODEL_LIMIT", 6000);
     LOG_INFO("M2 texture cache budget: ", textureCacheBudgetBytes_ / (1024 * 1024), " MB");
     LOG_INFO("M2 model cache limit: ", modelCacheLimit_);
@@ -3221,6 +3221,12 @@ VkTexture* M2Renderer::loadTexture(const std::string& path, uint32_t texFlags) {
     size_t base = static_cast<size_t>(blp.width) * static_cast<size_t>(blp.height) * 4ull;
     size_t approxBytes = base + (base / 3);
     if (textureCacheBytes_ + approxBytes > textureCacheBudgetBytes_) {
+        static constexpr size_t kMaxFailedTextureCache = 200000;
+        if (failedTextureCache_.size() < kMaxFailedTextureCache) {
+            // Cache budget-rejected keys too; without this we repeatedly decode/load
+            // the same textures every frame once budget is saturated.
+            failedTextureCache_.insert(key);
+        }
         if (textureBudgetRejectWarnings_ < 8 || (textureBudgetRejectWarnings_ % 120) == 0) {
             LOG_WARNING("M2 texture cache full (", textureCacheBytes_ / (1024 * 1024),
                         " MB / ", textureCacheBudgetBytes_ / (1024 * 1024),

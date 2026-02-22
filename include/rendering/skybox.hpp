@@ -13,8 +13,9 @@ class VkContext;
 /**
  * Skybox renderer
  *
- * Renders an atmospheric sky dome with gradient colors.
- * The sky uses a dome/sphere approach for realistic appearance.
+ * Renders an atmospheric sky gradient using a fullscreen triangle.
+ * No vertex buffer: 3 vertices cover the entire screen via gl_VertexIndex.
+ * World-space ray direction is reconstructed from the inverse view+projection.
  */
 class Skybox {
 public:
@@ -62,9 +63,6 @@ public:
     glm::vec3 getHorizonColor(float time) const;
 
 private:
-    void createSkyDome();
-    void destroySkyDome();
-
     glm::vec3 getSkyColor(float altitude, float time) const;
     glm::vec3 getZenithColor(float time) const;
 
@@ -72,13 +70,6 @@ private:
 
     VkPipeline pipeline = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-
-    VkBuffer vertexBuffer = VK_NULL_HANDLE;
-    VmaAllocation vertexAlloc = VK_NULL_HANDLE;
-    VkBuffer indexBuffer = VK_NULL_HANDLE;
-    VmaAllocation indexAlloc = VK_NULL_HANDLE;
-
-    int indexCount = 0;
 
     float timeOfDay = 12.0f;  // Default: noon
     float timeSpeed = 1.0f;   // 1.0 = 1 hour per real second

@@ -38,10 +38,10 @@ float fbm(vec2 p) {
 
 void main() {
     vec3 dir = normalize(vWorldDir);
-    float altitude = dir.y;
+    float altitude = dir.z;   // Z is up in the Z-up world coordinate system
     if (altitude < 0.0) discard;
 
-    vec2 uv = dir.xz / (altitude + 0.001);
+    vec2 uv = dir.xy / (altitude + 0.001);  // XY is the horizontal plane
     uv += push.windOffset;
 
     float cloud1 = fbm(uv * 0.8);

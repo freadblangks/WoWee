@@ -3,11 +3,9 @@
 #include "rendering/vk_shader.hpp"
 #include "rendering/vk_pipeline.hpp"
 #include "rendering/vk_frame_data.hpp"
-#include "rendering/vk_utils.hpp"
 #include "core/logger.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 #include <cmath>
-#include <vector>
 
 namespace wowee {
 namespace rendering {
@@ -54,18 +52,7 @@ bool Skybox::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout) {
         return false;
     }
 
-    // Vertex input: position only (vec3), stride = 3 * sizeof(float)
-    VkVertexInputBindingDescription binding{};
-    binding.binding = 0;
-    binding.stride = 3 * sizeof(float);
-    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-    VkVertexInputAttributeDescription posAttr{};
-    posAttr.location = 0;
-    posAttr.binding = 0;
-    posAttr.format = VK_FORMAT_R32G32B32_SFLOAT;
-    posAttr.offset = 0;
-
+    // Fullscreen triangle — no vertex buffer, no vertex input.
     // Dynamic viewport and scissor
     std::vector<VkDynamicState> dynamicStates = {
         VK_DYNAMIC_STATE_VIEWPORT,
@@ -74,7 +61,7 @@ bool Skybox::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout) {
 
     pipeline = PipelineBuilder()
         .setShaders(vertStage, fragStage)
-        .setVertexInput({binding}, {posAttr})
+        .setVertexInput({}, {})
         .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
         .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
         .setDepthTest(true, false, VK_COMPARE_OP_LESS_OR_EQUAL)  // depth test on, write off, LEQUAL for far plane
@@ -93,16 +80,11 @@ bool Skybox::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout) {
         return false;
     }
 
-    // Create sky dome mesh and upload to GPU
-    createSkyDome();
-
     LOG_INFO("Skybox initialized");
     return true;
 }
 
 void Skybox::shutdown() {
-    destroySkyDome();
-
     if (vkCtx) {
         VkDevice device = vkCtx->getDevice();
         if (pipeline != VK_NULL_HANDLE) {
@@ -149,15 +131,8 @@ void Skybox::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, float time
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
         0, sizeof(push), &push);
 
-    // Bind vertex buffer
-    VkDeviceSize offset = 0;
-    vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer, &offset);
-
-    // Bind index buffer
-    vkCmdBindIndexBuffer(cmd, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
-    // Draw
-    vkCmdDrawIndexed(cmd, static_cast<uint32_t>(indexCount), 1, 0, 0, 0);
+    // Draw fullscreen triangle — no vertex buffer needed
+    vkCmdDraw(cmd, 3, 1, 0, 0);
 }
 
 void Skybox::update(float deltaTime) {
@@ -177,90 +152,6 @@ void Skybox::setTimeOfDay(float time) {
     while (time >= 24.0f) time -= 24.0f;
 
     timeOfDay = time;
-}
-
-void Skybox::createSkyDome() {
-    // Create an extended dome that goes below horizon for better coverage
-    const int rings = 16;      // Vertical resolution
-    const int sectors = 32;    // Horizontal resolution
-    const float radius = 2000.0f;  // Large enough to cover view without looking curved
-
-    std::vector<float> vertices;
-    std::vector<uint32_t> indices;
-
-    // Generate vertices - extend slightly below horizon
-    const float minPhi = -M_PI / 12.0f;  // Start 15° below horizon
-    const float maxPhi = M_PI / 2.0f;     // End at zenith
-    for (int ring = 0; ring <= rings; ring++) {
-        float phi = minPhi + (maxPhi - minPhi) * (static_cast<float>(ring) / rings);
-        float y = radius * std::sin(phi);
-        float ringRadius = radius * std::cos(phi);
-
-        for (int sector = 0; sector <= sectors; sector++) {
-            float theta = (2.0f * M_PI) * (static_cast<float>(sector) / sectors);
-            float x = ringRadius * std::cos(theta);
-            float z = ringRadius * std::sin(theta);
-
-            // Position
-            vertices.push_back(x);
-            vertices.push_back(z);  // Z up in WoW coordinates
-            vertices.push_back(y);
-        }
-    }
-
-    // Generate indices
-    for (int ring = 0; ring < rings; ring++) {
-        for (int sector = 0; sector < sectors; sector++) {
-            int current = ring * (sectors + 1) + sector;
-            int next = current + sectors + 1;
-
-            // Two triangles per quad
-            indices.push_back(current);
-            indices.push_back(next);
-            indices.push_back(current + 1);
-
-            indices.push_back(current + 1);
-            indices.push_back(next);
-            indices.push_back(next + 1);
-        }
-    }
-
-    indexCount = static_cast<int>(indices.size());
-
-    // Upload vertex buffer to GPU via staging
-    AllocatedBuffer vbuf = uploadBuffer(*vkCtx,
-        vertices.data(),
-        vertices.size() * sizeof(float),
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-    vertexBuffer = vbuf.buffer;
-    vertexAlloc  = vbuf.allocation;
-
-    // Upload index buffer to GPU via staging
-    AllocatedBuffer ibuf = uploadBuffer(*vkCtx,
-        indices.data(),
-        indices.size() * sizeof(uint32_t),
-        VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-    indexBuffer = ibuf.buffer;
-    indexAlloc  = ibuf.allocation;
-
-    LOG_DEBUG("Sky dome created: ", (rings + 1) * (sectors + 1), " vertices, ", indexCount / 3, " triangles");
-}
-
-void Skybox::destroySkyDome() {
-    if (!vkCtx) return;
-
-    VmaAllocator allocator = vkCtx->getAllocator();
-
-    if (vertexBuffer != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator, vertexBuffer, vertexAlloc);
-        vertexBuffer = VK_NULL_HANDLE;
-        vertexAlloc  = VK_NULL_HANDLE;
-    }
-    if (indexBuffer != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator, indexBuffer, indexAlloc);
-        indexBuffer = VK_NULL_HANDLE;
-        indexAlloc  = VK_NULL_HANDLE;
-    }
 }
 
 glm::vec3 Skybox::getHorizonColor(float time) const {

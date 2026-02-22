@@ -202,17 +202,17 @@ void Clouds::generateMesh() {
     vertices_.clear();
     indices_.clear();
 
-    // Upper hemisphere
+    // Upper hemisphere — Z-up world: altitude goes into Z, horizontal spread in X/Y
     for (int ring = 0; ring <= RINGS; ++ring) {
         float phi        = (ring / static_cast<float>(RINGS)) * (static_cast<float>(M_PI) * 0.5f);
-        float y          = RADIUS * std::cos(phi);
+        float altZ       = RADIUS * std::cos(phi);   // altitude → world Z (up)
         float ringRadius = RADIUS * std::sin(phi);
 
         for (int seg = 0; seg <= SEGMENTS; ++seg) {
             float theta = (seg / static_cast<float>(SEGMENTS)) * (2.0f * static_cast<float>(M_PI));
             float x = ringRadius * std::cos(theta);
-            float z = ringRadius * std::sin(theta);
-            vertices_.push_back(glm::vec3(x, y, z));
+            float y = ringRadius * std::sin(theta);
+            vertices_.push_back(glm::vec3(x, y, altZ));
         }
     }
 

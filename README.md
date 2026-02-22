@@ -4,7 +4,7 @@
   <img src="assets/Wowee.png" alt="Wowee Logo" width="240" />
 </p>
 
-A native C++ World of Warcraft client with a custom OpenGL renderer.
+A native C++ World of Warcraft client with a custom Vulkan renderer.
 
 [![Sponsor](https://img.shields.io/github/sponsors/Kelsidavis?label=Sponsor&logo=GitHub)](https://github.com/sponsors/Kelsidavis)
 [![Discord](https://img.shields.io/discord/1?label=Discord&logo=discord)](https://discord.gg/SDqjA79B)
@@ -13,14 +13,14 @@ A native C++ World of Warcraft client with a custom OpenGL renderer.
 
 [![Watch the video](https://img.youtube.com/vi/J4NXegzqWSQ/maxresdefault.jpg)](https://youtu.be/J4NXegzqWSQ)
 
-Compatible with **Vanilla (Classic) 1.12 + TBC 2.4.3 + WotLK 3.3.5a**. All three expansions are broadly functional with roughly even support.
+Protocol Compatible with **Vanilla (Classic) 1.12 + TBC 2.4.3 + WotLK 3.3.5a**.
 
 > **Legal Disclaimer**: This is an educational/research project. It does not include any Blizzard Entertainment assets, data files, or proprietary code. World of Warcraft and all related assets are the property of Blizzard Entertainment, Inc. This project is not affiliated with or endorsed by Blizzard Entertainment. Users are responsible for supplying their own legally obtained game data files and for ensuring compliance with all applicable laws in their jurisdiction.
 
 ## Status & Direction (2026-02-18)
 
-- **Compatibility**: **Vanilla (Classic) 1.12 + TBC 2.4.3 + WotLK 3.3.5a** are all broadly supported via expansion profiles and per-expansion packet parsers (`src/game/packet_parsers_classic.cpp`, `src/game/packet_parsers_tbc.cpp`). All three expansions are roughly on par — no single one is significantly more complete than the others.
-- **Tested against**: AzerothCore, TrinityCore, and ChromieCraft.
+- **Compatibility**: **Vanilla (Classic) 1.12 + TBC 2.4.3 + WotLK 3.3.5a** are all supported via expansion profiles and per-expansion packet parsers (`src/game/packet_parsers_classic.cpp`, `src/game/packet_parsers_tbc.cpp`). All three expansions are roughly on par — no single one is significantly more complete than the others.
+- **Tested against**: AzerothCore, TrinityCore, and Mangos.
 - **Current focus**: protocol correctness across server variants, visual accuracy (M2/WMO edge cases, equipment textures), and multi-expansion coverage.
 - **Warden**: Full module execution via Unicorn Engine CPU emulation. Decrypts (RC4→RSA→zlib), parses and relocates the PE module, executes via x86 emulation with Windows API interception. Module cache at `~/.local/share/wowee/warden_cache/`.
 
@@ -28,18 +28,10 @@ Compatible with **Vanilla (Classic) 1.12 + TBC 2.4.3 + WotLK 3.3.5a**. All three
 
 ### Rendering Engine
 - **Terrain** -- Multi-tile streaming with async loading, texture splatting (4 layers), frustum culling
-- **Water** -- Animated surfaces, reflections, refractions, Fresnel effect
-- **Sky System** -- WoW-accurate DBC-driven lighting with skybox authority
-  - **Skybox** -- Camera-locked celestial sphere (M2 model support, gradient fallback)
-  - **Celestial Bodies** -- Sun (lighting-driven), White Lady + Blue Child (Azeroth's two moons)
-  - **Moon Phases** -- Game time-driven deterministic phases when server time is available (fallback: local cycling for development)
-  - **Stars** -- Baked into skybox assets (procedural fallback for development/debug only)
 - **Atmosphere** -- Procedural clouds (FBM noise), lens flare with chromatic aberration, cloud/fog star occlusion
-- **Weather** -- Rain and snow particle systems (2000 particles, camera-relative)
 - **Characters** -- Skeletal animation with GPU vertex skinning (256 bones), race-aware textures
 - **Buildings** -- WMO renderer with multi-material batches, frustum culling, 160-unit distance culling
 - **Particles** -- M2 particle emitters with WotLK struct parsing, billboarded glow effects
-- **Post-Processing** -- HDR, tonemapping, shadow mapping (2048x2048)
 
 ### Asset Pipeline
 - Extracted loose-file **`Data/`** tree indexed by **`manifest.json`** (fast lookup + caching)
@@ -72,21 +64,26 @@ Compatible with **Vanilla (Classic) 1.12 + TBC 2.4.3 + WotLK 3.3.5a**. All three
 
 ```bash
 # Ubuntu/Debian
-sudo apt install libsdl2-dev libglew-dev libglm-dev \
-                 libssl-dev cmake build-essential \
-                 libunicorn-dev \          # for Warden module execution
-                 libstorm-dev             # for asset_extract
+sudo apt install libsdl2-dev libglm-dev libssl-dev \
+                 libvulkan-dev vulkan-tools glslc \
+                 libavformat-dev libavcodec-dev libswscale-dev libavutil-dev \
+                 zlib1g-dev cmake build-essential libx11-dev \
+                 libunicorn-dev \          # optional: Warden module execution
+                 libstorm-dev              # optional: asset_extract tool
 
 # Fedora
-sudo dnf install SDL2-devel glew-devel glm-devel \
-                 openssl-devel cmake gcc-c++ \
-                 unicorn-devel \          # for Warden module execution
-                 StormLib-devel           # for asset_extract
+sudo dnf install SDL2-devel glm-devel openssl-devel \
+                 vulkan-devel vulkan-tools glslc \
+                 ffmpeg-devel zlib-devel cmake gcc-c++ libX11-devel \
+                 unicorn-devel \           # optional: Warden module execution
+                 StormLib-devel            # optional: asset_extract tool
 
 # Arch
-sudo pacman -S sdl2 glew glm openssl cmake base-devel \
-                 unicorn \               # for Warden module execution
-                 stormlib                # for asset_extract
+sudo pacman -S sdl2 glm openssl \
+               vulkan-devel vulkan-tools shaderc \
+               ffmpeg zlib cmake base-devel libx11 \
+               unicorn                    # optional: Warden module execution
+               # StormLib: install from AUR for asset_extract tool
 ```
 
 ### Container build
@@ -209,15 +206,12 @@ make -j$(nproc)
 
 ## Technical Details
 
-- **Graphics**: OpenGL 3.3 Core, GLSL 330, forward rendering with post-processing
-- **Performance**: 60 FPS (vsync), ~50k triangles/frame, ~30 draw calls, <10% GPU
 - **Platform**: Linux (primary), C++20, CMake 3.15+
-- **Dependencies**: SDL2, OpenGL/GLEW, GLM, OpenSSL, ImGui, FFmpeg, Unicorn Engine (StormLib for asset extraction tooling)
+- **Dependencies**: SDL2, Vulkan, GLM, OpenSSL, ImGui, FFmpeg, Unicorn Engine (StormLib for asset extraction tooling)
 - **Architecture**: Modular design with clear separation (core, rendering, networking, game logic, asset pipeline, UI, audio)
 - **Networking**: Non-blocking TCP, SRP6a authentication, RC4 encryption, WoW 3.3.5a protocol
 - **Asset Loading**: Extracted loose-file tree + `manifest.json` indexing, async terrain streaming, overlay layers
 - **Sky System**: WoW-accurate DBC-driven architecture
-  - **Skybox Authority**: Stars baked into M2 sky dome models (not procedurally generated)
   - **Lore-Accurate Moons**: White Lady (30-day cycle) + Blue Child (27-day cycle)
   - **Deterministic Phases**: Computed from server game time when available (fallback: local time/dev cycling)
   - **Camera-Locked**: Sky dome uses rotation-only transform (translation ignored)
@@ -239,8 +233,4 @@ This project does not include any Blizzard Entertainment proprietary data, asset
 
 ## Known Issues
 
-### Water Rendering
-- **Stormwind Canal Overflow**: Canal water surfaces extend spatially beyond their intended boundaries, causing water to appear in tunnels, buildings, and the park. This is due to oversized water mesh extents in the WoW data files.
-  - **Current Workaround**: Water heights are lowered by 1 unit in Stormwind (tiles 28-50, 28-52) for surfaces above 94 units, with a 20-unit exclusion zone around the moonwell (-8755.9, 1108.9, 96.1). This hides most problem water while keeping canals and the moonwell functional.
-  - **Limitation**: Some park water may still be visible. The workaround uses hardcoded coordinates and height thresholds rather than fixing the root cause.
-  - **Proper Fix**: Would require trimming water surface meshes to actual boundaries in ADT/WMO data, or implementing spatial clipping at render time.
+MANY issues this is actively under development

@@ -903,53 +903,99 @@ bool UpdateObjectParser::parseMovementBlock(network::Packet& packet, UpdateBlock
 
         // Spline data
         if (moveFlags & 0x08000000) { // MOVEMENTFLAG_SPLINE_ENABLED
+            auto bytesAvailable = [&](size_t n) -> bool { return packet.getReadPos() + n <= packet.getSize(); };
+            if (!bytesAvailable(4)) return false;
             uint32_t splineFlags = packet.readUInt32();
             LOG_DEBUG("  Spline: flags=0x", std::hex, splineFlags, std::dec);
 
             if (splineFlags & 0x00010000) { // SPLINEFLAG_FINAL_POINT
+                if (!bytesAvailable(12)) return false;
                 /*float finalX =*/ packet.readFloat();
                 /*float finalY =*/ packet.readFloat();
                 /*float finalZ =*/ packet.readFloat();
             } else if (splineFlags & 0x00020000) { // SPLINEFLAG_FINAL_TARGET
+                if (!bytesAvailable(8)) return false;
                 /*uint64_t finalTarget =*/ packet.readUInt64();
             } else if (splineFlags & 0x00040000) { // SPLINEFLAG_FINAL_ANGLE
+                if (!bytesAvailable(4)) return false;
                 /*float finalAngle =*/ packet.readFloat();
             }
 
+            // Legacy UPDATE_OBJECT spline layout used by many servers:
+            // timePassed, duration, splineId, durationMod, durationModNext,
+            // verticalAccel, effectStartTime, pointCount, points, splineMode, endPoint.
+            const size_t legacyStart = packet.getReadPos();
+            if (!bytesAvailable(12 + 8 + 8 + 4)) return false;
             /*uint32_t timePassed =*/ packet.readUInt32();
             /*uint32_t duration =*/ packet.readUInt32();
             /*uint32_t splineId =*/ packet.readUInt32();
-
             /*float durationMod =*/ packet.readFloat();
             /*float durationModNext =*/ packet.readFloat();
-
             /*float verticalAccel =*/ packet.readFloat();
             /*uint32_t effectStartTime =*/ packet.readUInt32();
-
             uint32_t pointCount = packet.readUInt32();
-            if (pointCount > 256) {
+
+            const size_t remainingAfterCount = packet.getSize() - packet.getReadPos();
+            const bool legacyCountLooksValid = (pointCount <= 256);
+            const size_t legacyPointsBytes = static_cast<size_t>(pointCount) * 12ull;
+            const bool legacyPayloadFits = (legacyPointsBytes + 13ull) <= remainingAfterCount;
+
+            if (legacyCountLooksValid && legacyPayloadFits) {
+                for (uint32_t i = 0; i < pointCount; i++) {
+                    /*float px =*/ packet.readFloat();
+                    /*float py =*/ packet.readFloat();
+                    /*float pz =*/ packet.readFloat();
+                }
+                /*uint8_t splineMode =*/ packet.readUInt8();
+                /*float endPointX =*/ packet.readFloat();
+                /*float endPointY =*/ packet.readFloat();
+                /*float endPointZ =*/ packet.readFloat();
+                LOG_DEBUG("  Spline pointCount=", pointCount);
+            }
+
+            // Legacy pointCount looks invalid; try compact WotLK layout as recovery.
+            // This keeps malformed/variant packets from desyncing the whole update block.
+            packet.setReadPos(legacyStart);
+            const size_t afterFinalFacingPos = packet.getReadPos();
+            if (splineFlags & 0x00400000) { // Animation
+                if (!bytesAvailable(5)) return false;
+                /*uint8_t animType =*/ packet.readUInt8();
+                /*uint32_t animStart =*/ packet.readUInt32();
+            }
+            if (!bytesAvailable(4)) return false;
+            /*uint32_t duration =*/ packet.readUInt32();
+            if (splineFlags & 0x00000800) { // Parabolic
+                if (!bytesAvailable(8)) return false;
+                /*float verticalAccel =*/ packet.readFloat();
+                /*uint32_t effectStartTime =*/ packet.readUInt32();
+            }
+            if (!bytesAvailable(4)) return false;
+            const uint32_t compactPointCount = packet.readUInt32();
+            if (compactPointCount > 16384) {
                 static uint32_t badSplineCount = 0;
                 ++badSplineCount;
                 if (badSplineCount <= 5 || (badSplineCount % 100) == 0) {
                     LOG_WARNING("  Spline pointCount=", pointCount,
-                                " exceeds maximum, capping at 0 (readPos=",
-                                packet.getReadPos(), "/", packet.getSize(),
-                                ", occurrence=", badSplineCount, ")");
+                                " invalid (legacy+compact) at readPos=",
+                                afterFinalFacingPos, "/", packet.getSize(),
+                                ", occurrence=", badSplineCount);
                 }
-                pointCount = 0;
-            } else {
-                LOG_DEBUG("  Spline pointCount=", pointCount);
+                return false;
             }
-            for (uint32_t i = 0; i < pointCount; i++) {
-                /*float px =*/ packet.readFloat();
-                /*float py =*/ packet.readFloat();
-                /*float pz =*/ packet.readFloat();
+            const bool uncompressed = (splineFlags & (0x00080000 | 0x00002000)) != 0;
+            size_t compactPayloadBytes = 0;
+            if (compactPointCount > 0) {
+                if (uncompressed) {
+                    compactPayloadBytes = static_cast<size_t>(compactPointCount) * 12ull;
+                } else {
+                    compactPayloadBytes = 12ull;
+                    if (compactPointCount > 1) {
+                        compactPayloadBytes += static_cast<size_t>(compactPointCount - 1) * 4ull;
+                    }
+                }
+                if (!bytesAvailable(compactPayloadBytes)) return false;
+                packet.setReadPos(packet.getReadPos() + compactPayloadBytes);
             }
-
-            /*uint8_t splineMode =*/ packet.readUInt8();
-            /*float endPointX =*/ packet.readFloat();
-            /*float endPointY =*/ packet.readFloat();
-            /*float endPointZ =*/ packet.readFloat();
         }
     }
     else if (updateFlags & UPDATEFLAG_POSITION) {

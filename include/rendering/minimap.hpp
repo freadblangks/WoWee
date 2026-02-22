@@ -25,6 +25,7 @@ public:
 
     bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout, int size = 200);
     void shutdown();
+    void recreatePipelines();
 
     void setAssetManager(pipeline::AssetManager* am) { assetManager = am; }
     void setMapName(const std::string& name);

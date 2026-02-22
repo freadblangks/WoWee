@@ -187,6 +187,7 @@ bool Minimap::initialize(VkContext* ctx, VkDescriptorSetLayout /*perFrameLayout*
             .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
             .setNoDepthTest()
             .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+            .setMultisample(vkCtx->getMsaaSamples())
             .setLayout(displayPipelineLayout)
             .setRenderPass(vkCtx->getImGuiRenderPass())
             .setDynamicStates({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR })
@@ -231,6 +232,48 @@ void Minimap::shutdown() {
     if (compositeTarget) { compositeTarget->destroy(device, alloc); compositeTarget.reset(); }
 
     vkCtx = nullptr;
+}
+
+void Minimap::recreatePipelines() {
+    if (!vkCtx || !displayPipelineLayout) return;
+    VkDevice device = vkCtx->getDevice();
+
+    if (displayPipeline) { vkDestroyPipeline(device, displayPipeline, nullptr); displayPipeline = VK_NULL_HANDLE; }
+
+    VkShaderModule vs, fs;
+    if (!vs.loadFromFile(device, "assets/shaders/minimap_display.vert.spv") ||
+        !fs.loadFromFile(device, "assets/shaders/minimap_display.frag.spv")) {
+        LOG_ERROR("Minimap: failed to reload display shaders for pipeline recreation");
+        return;
+    }
+
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = 4 * sizeof(float);
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::vector<VkVertexInputAttributeDescription> attrs(2);
+    attrs[0] = { 0, 0, VK_FORMAT_R32G32_SFLOAT, 0 };
+    attrs[1] = { 1, 0, VK_FORMAT_R32G32_SFLOAT, 2 * sizeof(float) };
+
+    displayPipeline = PipelineBuilder()
+        .setShaders(vs.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                    fs.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+        .setVertexInput({ binding }, attrs)
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+        .setNoDepthTest()
+        .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+        .setMultisample(vkCtx->getMsaaSamples())
+        .setLayout(displayPipelineLayout)
+        .setRenderPass(vkCtx->getImGuiRenderPass())
+        .setDynamicStates({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR })
+        .build(device);
+
+    vs.destroy();
+    fs.destroy();
+
+    LOG_INFO("Minimap: display pipeline recreated with MSAA ", static_cast<int>(vkCtx->getMsaaSamples()), "x");
 }
 
 void Minimap::setMapName(const std::string& name) {

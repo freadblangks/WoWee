@@ -70,6 +70,7 @@ public:
     const std::vector<VkFramebuffer>& getSwapchainFramebuffers() const { return swapchainFramebuffers; }
 
     bool isSwapchainDirty() const { return swapchainDirty; }
+    void markSwapchainDirty() { swapchainDirty = true; }
 
     // MSAA
     VkSampleCountFlagBits getMsaaSamples() const { return msaaSamples_; }

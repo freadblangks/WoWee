@@ -89,7 +89,7 @@ void Window::pollEvents() {
                 width = event.window.data1;
                 height = event.window.data2;
                 if (vkContext) {
-                    vkContext->recreateSwapchain(width, height);
+                    vkContext->markSwapchainDirty();
                 }
                 LOG_DEBUG("Window resized to ", width, "x", height);
             }
@@ -120,7 +120,7 @@ void Window::setFullscreen(bool enable) {
         height = windowedHeight;
     }
     if (vkContext) {
-        vkContext->recreateSwapchain(width, height);
+        vkContext->markSwapchainDirty();
     }
 }
 
@@ -145,7 +145,7 @@ void Window::applyResolution(int w, int h) {
     windowedWidth = w;
     windowedHeight = h;
     if (vkContext) {
-        vkContext->recreateSwapchain(width, height);
+        vkContext->markSwapchainDirty();
     }
 }
 

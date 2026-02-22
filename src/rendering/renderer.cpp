@@ -778,6 +778,8 @@ void Renderer::applyMsaaChange() {
         if (auto* lf = skySystem->getLensFlare()) lf->recreatePipelines();
     }
 
+    if (minimap) minimap->recreatePipelines();
+
     // Selection circle + overlay use lazy init, just destroy them
     VkDevice device = vkCtx->getDevice();
     if (selCirclePipeline) { vkDestroyPipeline(device, selCirclePipeline, nullptr); selCirclePipeline = VK_NULL_HANDLE; }

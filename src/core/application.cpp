@@ -3099,6 +3099,13 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
         LOG_INFO("Online world terrain loading initiated");
     }
 
+    // Character renderer is created inside loadTestTerrain(), so spawn the
+    // player model now that the renderer actually exists.
+    if (!playerCharacterSpawned) {
+        spawnPlayerCharacter();
+        loadEquippedWeapons();
+    }
+
     showProgress("Streaming terrain tiles...", 0.35f);
 
     // Wait for surrounding terrain tiles to stream in

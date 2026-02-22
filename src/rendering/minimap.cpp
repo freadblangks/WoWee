@@ -512,9 +512,8 @@ void Minimap::render(VkCommandBuffer cmd, const Camera& playerCamera,
 
     float arrowRotation = 0.0f;
     if (!rotateWithCamera) {
-        // Prefer authoritative player orientation for north-up minimap arrow.
-        // Canonical yaw already matches minimap rotation convention:
-        // 0=north, +pi/2=east.
+        // Prefer authoritative orientation if provided. This value is expected
+        // to already match minimap shader rotation convention.
         if (hasPlayerOrientation) {
             arrowRotation = playerOrientation;
         } else {

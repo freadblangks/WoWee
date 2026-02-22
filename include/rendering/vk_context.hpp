@@ -59,6 +59,7 @@ public:
     VkFormat getSwapchainFormat() const { return swapchainFormat; }
     VkExtent2D getSwapchainExtent() const { return swapchainExtent; }
     const std::vector<VkImageView>& getSwapchainImageViews() const { return swapchainImageViews; }
+    const std::vector<VkImage>& getSwapchainImages() const { return swapchainImages; }
     uint32_t getSwapchainImageCount() const { return static_cast<uint32_t>(swapchainImages.size()); }
 
     uint32_t getCurrentFrame() const { return currentFrame; }
@@ -76,6 +77,14 @@ public:
     VkSampleCountFlagBits getMsaaSamples() const { return msaaSamples_; }
     void setMsaaSamples(VkSampleCountFlagBits samples);
     VkSampleCountFlagBits getMaxUsableSampleCount() const;
+    VkImage getDepthImage() const { return depthImage; }
+    VkImage getDepthCopySourceImage() const {
+        return (depthResolveImage != VK_NULL_HANDLE) ? depthResolveImage : depthImage;
+    }
+    bool isDepthCopySourceMsaa() const {
+        return (depthResolveImage == VK_NULL_HANDLE) && (msaaSamples_ > VK_SAMPLE_COUNT_1_BIT);
+    }
+    VkFormat getDepthFormat() const { return depthFormat; }
 
     // UI texture upload: creates a Vulkan texture from RGBA data and returns
     // a VkDescriptorSet suitable for use as ImTextureID.
@@ -146,6 +155,15 @@ private:
 
     bool createMsaaColorImage();
     void destroyMsaaColorImage();
+    bool createDepthResolveImage();
+    void destroyDepthResolveImage();
+
+    // MSAA depth resolve support (for sampling/copying resolved depth)
+    bool depthResolveSupported_ = false;
+    VkResolveModeFlagBits depthResolveMode_ = VK_RESOLVE_MODE_NONE;
+    VkImage depthResolveImage = VK_NULL_HANDLE;
+    VkImageView depthResolveImageView = VK_NULL_HANDLE;
+    VmaAllocation depthResolveAllocation = VK_NULL_HANDLE;
 
     // ImGui resources
     VkRenderPass imguiRenderPass = VK_NULL_HANDLE;

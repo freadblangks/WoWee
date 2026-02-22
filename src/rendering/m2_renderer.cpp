@@ -2215,9 +2215,19 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
             if (!hasDesiredLOD) targetLOD = 0;
         }
 
-        std::string modelKeyLower = model.name;
-        std::transform(modelKeyLower.begin(), modelKeyLower.end(), modelKeyLower.begin(),
+            std::string modelKeyLower = model.name;
+            std::transform(modelKeyLower.begin(), modelKeyLower.end(), modelKeyLower.begin(),
                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        const bool foliageLikeModel =
+            (modelKeyLower.find("tree") != std::string::npos) ||
+            (modelKeyLower.find("bush") != std::string::npos) ||
+            (modelKeyLower.find("foliage") != std::string::npos) ||
+            (modelKeyLower.find("grass") != std::string::npos) ||
+            (modelKeyLower.find("plant") != std::string::npos) ||
+            (modelKeyLower.find("shrub") != std::string::npos) ||
+            (modelKeyLower.find("leaf") != std::string::npos) ||
+            (modelKeyLower.find("leaves") != std::string::npos) ||
+            (modelKeyLower.find("vine") != std::string::npos);
         for (const auto& batch : model.batches) {
             if (batch.indexCount == 0) continue;
             if (!model.isGroundDetail && batch.submeshLevel != targetLOD) continue;
@@ -2295,22 +2305,40 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                 }
             }
 
+            // Foliage/card-like batches render more stably as cutout (depth-write on)
+            // instead of alpha-blended sorting.
+            const bool foliageCutout =
+                foliageLikeModel &&
+                !model.isSpellEffect &&
+                batch.blendMode <= 3;
+            const bool forceCutout =
+                !model.isSpellEffect &&
+                (model.isGroundDetail ||
+                 foliageCutout ||
+                 batch.blendMode == 1 ||
+                 (batch.blendMode >= 2 && !batch.hasAlpha) ||
+                 batch.colorKeyBlack);
+
             // Select pipeline based on blend mode
             uint8_t effectiveBlendMode = batch.blendMode;
             if (model.isSpellEffect && (effectiveBlendMode == 4 || effectiveBlendMode == 5)) {
                 effectiveBlendMode = 3;
             }
-            if (model.isGroundDetail) {
-                // Treat foliage cards as cutout so they depth-sort correctly.
+            if (forceCutout) {
                 effectiveBlendMode = 1;
             }
 
             VkPipeline desiredPipeline;
-            switch (effectiveBlendMode) {
-                case 0: desiredPipeline = opaquePipeline_; break;
-                case 1: desiredPipeline = alphaTestPipeline_; break;
-                case 2: desiredPipeline = alphaPipeline_; break;
-                default: desiredPipeline = additivePipeline_; break;
+            if (forceCutout) {
+                // Use opaque pipeline + shader discard for stable foliage cards.
+                desiredPipeline = opaquePipeline_;
+            } else {
+                switch (effectiveBlendMode) {
+                    case 0: desiredPipeline = opaquePipeline_; break;
+                    case 1: desiredPipeline = alphaTestPipeline_; break;
+                    case 2: desiredPipeline = alphaPipeline_; break;
+                    default: desiredPipeline = additivePipeline_; break;
+                }
             }
             if (desiredPipeline != currentPipeline) {
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, desiredPipeline);
@@ -2330,10 +2358,12 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     if (batch.colorKeyBlack) {
                         mat->colorKeyThreshold = (effectiveBlendMode == 4 || effectiveBlendMode == 5) ? 0.7f : 0.08f;
                     }
-                    // Ground detail: force cutout shading for stable two-sided foliage.
-                    if (model.isGroundDetail) {
-                        mat->alphaTest = 1;
-                        mat->unlit = 0;
+                    // Cutout path for foliage/cards.
+                    if (forceCutout) {
+                        mat->alphaTest = foliageCutout ? 2 : 1;
+                        if (model.isGroundDetail) {
+                            mat->unlit = 0;
+                        }
                     }
                 }
             }

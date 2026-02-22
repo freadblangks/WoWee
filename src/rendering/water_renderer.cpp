@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <array>
 
 namespace wowee {
 namespace rendering {
@@ -78,18 +79,54 @@ bool WaterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLay
         return false;
     }
 
+    // --- Scene history descriptor set layout (set 2) ---
+    VkDescriptorSetLayoutBinding sceneColorBinding{};
+    sceneColorBinding.binding = 0;
+    sceneColorBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    sceneColorBinding.descriptorCount = 1;
+    sceneColorBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    VkDescriptorSetLayoutBinding sceneDepthBinding{};
+    sceneDepthBinding.binding = 1;
+    sceneDepthBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    sceneDepthBinding.descriptorCount = 1;
+    sceneDepthBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    sceneSetLayout = createDescriptorSetLayout(device, {sceneColorBinding, sceneDepthBinding});
+    if (!sceneSetLayout) {
+        LOG_ERROR("WaterRenderer: failed to create scene set layout");
+        return false;
+    }
+
+    VkDescriptorPoolSize scenePoolSize{};
+    scenePoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    scenePoolSize.descriptorCount = 2;
+    VkDescriptorPoolCreateInfo scenePoolInfo{};
+    scenePoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    scenePoolInfo.maxSets = 1;
+    scenePoolInfo.poolSizeCount = 1;
+    scenePoolInfo.pPoolSizes = &scenePoolSize;
+    if (vkCreateDescriptorPool(device, &scenePoolInfo, nullptr, &sceneDescPool) != VK_SUCCESS) {
+        LOG_ERROR("WaterRenderer: failed to create scene descriptor pool");
+        return false;
+    }
+
     // --- Pipeline layout ---
     VkPushConstantRange pushRange{};
     pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     pushRange.offset = 0;
     pushRange.size = sizeof(WaterPushConstants);
 
-    std::vector<VkDescriptorSetLayout> setLayouts = { perFrameLayout, materialSetLayout };
+    std::vector<VkDescriptorSetLayout> setLayouts = { perFrameLayout, materialSetLayout, sceneSetLayout };
     pipelineLayout = createPipelineLayout(device, setLayouts, { pushRange });
     if (!pipelineLayout) {
         LOG_ERROR("WaterRenderer: failed to create pipeline layout");
         return false;
     }
+
+    createSceneHistoryResources(vkCtx->getSwapchainExtent(),
+                                vkCtx->getSwapchainFormat(),
+                                vkCtx->getDepthFormat());
 
     // --- Shaders ---
     VkShaderModule vertShader, fragShader;
@@ -146,6 +183,10 @@ bool WaterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLay
 void WaterRenderer::recreatePipelines() {
     if (!vkCtx) return;
     VkDevice device = vkCtx->getDevice();
+
+    createSceneHistoryResources(vkCtx->getSwapchainExtent(),
+                                vkCtx->getSwapchainFormat(),
+                                vkCtx->getDepthFormat());
 
     // Destroy old pipeline (keep layout)
     if (waterPipeline) { vkDestroyPipeline(device, waterPipeline, nullptr); waterPipeline = VK_NULL_HANDLE; }
@@ -204,8 +245,11 @@ void WaterRenderer::shutdown() {
     VkDevice device = vkCtx->getDevice();
     vkDeviceWaitIdle(device);
 
+    destroySceneHistoryResources();
     if (waterPipeline) { vkDestroyPipeline(device, waterPipeline, nullptr); waterPipeline = VK_NULL_HANDLE; }
     if (pipelineLayout) { vkDestroyPipelineLayout(device, pipelineLayout, nullptr); pipelineLayout = VK_NULL_HANDLE; }
+    if (sceneDescPool) { vkDestroyDescriptorPool(device, sceneDescPool, nullptr); sceneDescPool = VK_NULL_HANDLE; }
+    if (sceneSetLayout) { vkDestroyDescriptorSetLayout(device, sceneSetLayout, nullptr); sceneSetLayout = VK_NULL_HANDLE; }
     if (materialDescPool) { vkDestroyDescriptorPool(device, materialDescPool, nullptr); materialDescPool = VK_NULL_HANDLE; }
     if (materialSetLayout) { vkDestroyDescriptorSetLayout(device, materialSetLayout, nullptr); materialSetLayout = VK_NULL_HANDLE; }
 
@@ -224,6 +268,150 @@ VkDescriptorSet WaterRenderer::allocateMaterialSet() {
         return VK_NULL_HANDLE;
     }
     return set;
+}
+
+void WaterRenderer::destroySceneHistoryResources() {
+    if (!vkCtx) return;
+    VkDevice device = vkCtx->getDevice();
+    if (sceneColorView) { vkDestroyImageView(device, sceneColorView, nullptr); sceneColorView = VK_NULL_HANDLE; }
+    if (sceneDepthView) { vkDestroyImageView(device, sceneDepthView, nullptr); sceneDepthView = VK_NULL_HANDLE; }
+    if (sceneColorImage) { vmaDestroyImage(vkCtx->getAllocator(), sceneColorImage, sceneColorAlloc); sceneColorImage = VK_NULL_HANDLE; sceneColorAlloc = VK_NULL_HANDLE; }
+    if (sceneDepthImage) { vmaDestroyImage(vkCtx->getAllocator(), sceneDepthImage, sceneDepthAlloc); sceneDepthImage = VK_NULL_HANDLE; sceneDepthAlloc = VK_NULL_HANDLE; }
+    if (sceneColorSampler) { vkDestroySampler(device, sceneColorSampler, nullptr); sceneColorSampler = VK_NULL_HANDLE; }
+    if (sceneDepthSampler) { vkDestroySampler(device, sceneDepthSampler, nullptr); sceneDepthSampler = VK_NULL_HANDLE; }
+    sceneSet = VK_NULL_HANDLE;
+    sceneHistoryExtent = {0, 0};
+    sceneHistoryReady = false;
+}
+
+void WaterRenderer::createSceneHistoryResources(VkExtent2D extent, VkFormat colorFormat, VkFormat depthFormat) {
+    if (!vkCtx || extent.width == 0 || extent.height == 0 || !sceneSetLayout || !sceneDescPool) return;
+    VkDevice device = vkCtx->getDevice();
+
+    destroySceneHistoryResources();
+    vkResetDescriptorPool(device, sceneDescPool, 0);
+    sceneHistoryExtent = extent;
+
+    VkImageCreateInfo colorImgInfo{};
+    colorImgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    colorImgInfo.imageType = VK_IMAGE_TYPE_2D;
+    colorImgInfo.format = colorFormat;
+    colorImgInfo.extent = {extent.width, extent.height, 1};
+    colorImgInfo.mipLevels = 1;
+    colorImgInfo.arrayLayers = 1;
+    colorImgInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorImgInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    colorImgInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    colorImgInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    VmaAllocationCreateInfo allocCI{};
+    allocCI.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+    if (vmaCreateImage(vkCtx->getAllocator(), &colorImgInfo, &allocCI, &sceneColorImage, &sceneColorAlloc, nullptr) != VK_SUCCESS) {
+        LOG_ERROR("WaterRenderer: failed to create scene color history image");
+        return;
+    }
+
+    VkImageCreateInfo depthImgInfo = colorImgInfo;
+    depthImgInfo.format = depthFormat;
+    if (vmaCreateImage(vkCtx->getAllocator(), &depthImgInfo, &allocCI, &sceneDepthImage, &sceneDepthAlloc, nullptr) != VK_SUCCESS) {
+        LOG_ERROR("WaterRenderer: failed to create scene depth history image");
+        return;
+    }
+
+    VkImageViewCreateInfo colorViewInfo{};
+    colorViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    colorViewInfo.image = sceneColorImage;
+    colorViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    colorViewInfo.format = colorFormat;
+    colorViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    colorViewInfo.subresourceRange.levelCount = 1;
+    colorViewInfo.subresourceRange.layerCount = 1;
+    if (vkCreateImageView(device, &colorViewInfo, nullptr, &sceneColorView) != VK_SUCCESS) {
+        LOG_ERROR("WaterRenderer: failed to create scene color history view");
+        return;
+    }
+
+    VkImageViewCreateInfo depthViewInfo = colorViewInfo;
+    depthViewInfo.image = sceneDepthImage;
+    depthViewInfo.format = depthFormat;
+    depthViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    if (vkCreateImageView(device, &depthViewInfo, nullptr, &sceneDepthView) != VK_SUCCESS) {
+        LOG_ERROR("WaterRenderer: failed to create scene depth history view");
+        return;
+    }
+
+    VkSamplerCreateInfo sampCI{};
+    sampCI.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    sampCI.magFilter = VK_FILTER_LINEAR;
+    sampCI.minFilter = VK_FILTER_LINEAR;
+    sampCI.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sampCI.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sampCI.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    if (vkCreateSampler(device, &sampCI, nullptr, &sceneColorSampler) != VK_SUCCESS) {
+        LOG_ERROR("WaterRenderer: failed to create scene color sampler");
+        return;
+    }
+    sampCI.magFilter = VK_FILTER_NEAREST;
+    sampCI.minFilter = VK_FILTER_NEAREST;
+    if (vkCreateSampler(device, &sampCI, nullptr, &sceneDepthSampler) != VK_SUCCESS) {
+        LOG_ERROR("WaterRenderer: failed to create scene depth sampler");
+        return;
+    }
+
+    VkDescriptorSetAllocateInfo ai{};
+    ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    ai.descriptorPool = sceneDescPool;
+    ai.descriptorSetCount = 1;
+    ai.pSetLayouts = &sceneSetLayout;
+    if (vkAllocateDescriptorSets(device, &ai, &sceneSet) != VK_SUCCESS) {
+        LOG_ERROR("WaterRenderer: failed to allocate scene descriptor set");
+        sceneSet = VK_NULL_HANDLE;
+        return;
+    }
+
+    VkDescriptorImageInfo colorInfo{};
+    colorInfo.sampler = sceneColorSampler;
+    colorInfo.imageView = sceneColorView;
+    colorInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    VkDescriptorImageInfo depthInfo{};
+    depthInfo.sampler = sceneDepthSampler;
+    depthInfo.imageView = sceneDepthView;
+    depthInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    std::array<VkWriteDescriptorSet, 2> writes{};
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = sceneSet;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorCount = 1;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[0].pImageInfo = &colorInfo;
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = sceneSet;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorCount = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[1].pImageInfo = &depthInfo;
+    vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+
+    // Initialize history images to shader-read layout so first frame samples are defined.
+    vkCtx->immediateSubmit([&](VkCommandBuffer cmd) {
+        VkImageMemoryBarrier barriers[2]{};
+        barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barriers[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barriers[0].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barriers[0].image = sceneColorImage;
+        barriers[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        barriers[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+        barriers[1] = barriers[0];
+        barriers[1].image = sceneDepthImage;
+        barriers[1].subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                             0, 0, nullptr, 0, nullptr, 2, barriers);
+    });
 }
 
 void WaterRenderer::updateMaterialUBO(WaterSurface& surface) {
@@ -497,11 +685,14 @@ void WaterRenderer::clear() {
 void WaterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                             const Camera& /*camera*/, float /*time*/) {
     if (!renderingEnabled || surfaces.empty() || !waterPipeline) return;
+    if (!sceneSet) return;
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, waterPipeline);
 
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout,
                              0, 1, &perFrameSet, 0, nullptr);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout,
+                             2, 1, &sceneSet, 0, nullptr);
 
     for (const auto& surface : surfaces) {
         if (surface.vertexBuffer == VK_NULL_HANDLE || surface.indexCount == 0) continue;
@@ -530,6 +721,103 @@ void WaterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
 
         vkCmdDrawIndexed(cmd, static_cast<uint32_t>(surface.indexCount), 1, 0, 0, 0);
     }
+}
+
+void WaterRenderer::captureSceneHistory(VkCommandBuffer cmd,
+                                        VkImage srcColorImage,
+                                        VkImage srcDepthImage,
+                                        VkExtent2D srcExtent,
+                                        bool srcDepthIsMsaa) {
+    if (!vkCtx || !cmd || !sceneColorImage || !sceneDepthImage || srcExtent.width == 0 || srcExtent.height == 0) {
+        return;
+    }
+
+    VkExtent2D copyExtent{
+        std::min(srcExtent.width, sceneHistoryExtent.width),
+        std::min(srcExtent.height, sceneHistoryExtent.height)
+    };
+    if (copyExtent.width == 0 || copyExtent.height == 0) return;
+
+    auto barrier2 = [&](VkImage image,
+                        VkImageAspectFlags aspect,
+                        VkImageLayout oldLayout,
+                        VkImageLayout newLayout,
+                        VkAccessFlags srcAccess,
+                        VkAccessFlags dstAccess,
+                        VkPipelineStageFlags srcStage,
+                        VkPipelineStageFlags dstStage) {
+        VkImageMemoryBarrier b{};
+        b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        b.oldLayout = oldLayout;
+        b.newLayout = newLayout;
+        b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.image = image;
+        b.subresourceRange.aspectMask = aspect;
+        b.subresourceRange.baseMipLevel = 0;
+        b.subresourceRange.levelCount = 1;
+        b.subresourceRange.baseArrayLayer = 0;
+        b.subresourceRange.layerCount = 1;
+        b.srcAccessMask = srcAccess;
+        b.dstAccessMask = dstAccess;
+        vkCmdPipelineBarrier(cmd, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &b);
+    };
+
+    // Color source: final render pass layout is PRESENT_SRC.
+    barrier2(srcColorImage, VK_IMAGE_ASPECT_COLOR_BIT,
+             VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+             0, VK_ACCESS_TRANSFER_READ_BIT,
+             VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+    barrier2(sceneColorImage, VK_IMAGE_ASPECT_COLOR_BIT,
+             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+             VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+    VkImageCopy colorCopy{};
+    colorCopy.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    colorCopy.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    colorCopy.extent = {copyExtent.width, copyExtent.height, 1};
+    vkCmdCopyImage(cmd, srcColorImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                   sceneColorImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &colorCopy);
+
+    barrier2(sceneColorImage, VK_IMAGE_ASPECT_COLOR_BIT,
+             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+             VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+             VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+    barrier2(srcColorImage, VK_IMAGE_ASPECT_COLOR_BIT,
+             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+             VK_ACCESS_TRANSFER_READ_BIT, 0,
+             VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+
+    // Depth source: only copy when source is single-sampled.
+    if (!srcDepthIsMsaa && srcDepthImage != VK_NULL_HANDLE) {
+        barrier2(srcDepthImage, VK_IMAGE_ASPECT_DEPTH_BIT,
+                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                 VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                 VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        barrier2(sceneDepthImage, VK_IMAGE_ASPECT_DEPTH_BIT,
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                 VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+        VkImageCopy depthCopy{};
+        depthCopy.srcSubresource = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1};
+        depthCopy.dstSubresource = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1};
+        depthCopy.extent = {copyExtent.width, copyExtent.height, 1};
+        vkCmdCopyImage(cmd, srcDepthImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                       sceneDepthImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &depthCopy);
+
+        barrier2(sceneDepthImage, VK_IMAGE_ASPECT_DEPTH_BIT,
+                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                 VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+                 VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+        barrier2(srcDepthImage, VK_IMAGE_ASPECT_DEPTH_BIT,
+                 VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                 VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                 VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT);
+    }
+
+    sceneHistoryReady = true;
 }
 
 // ==============================================================

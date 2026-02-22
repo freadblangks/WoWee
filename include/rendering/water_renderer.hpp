@@ -82,6 +82,11 @@ public:
     void recreatePipelines();
 
     void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera, float time);
+    void captureSceneHistory(VkCommandBuffer cmd,
+                             VkImage srcColorImage,
+                             VkImage srcDepthImage,
+                             VkExtent2D srcExtent,
+                             bool srcDepthIsMsaa);
 
     void setEnabled(bool enabled) { renderingEnabled = enabled; }
     bool isEnabled() const { return renderingEnabled; }
@@ -100,6 +105,8 @@ private:
 
     void updateMaterialUBO(WaterSurface& surface);
     VkDescriptorSet allocateMaterialSet();
+    void createSceneHistoryResources(VkExtent2D extent, VkFormat colorFormat, VkFormat depthFormat);
+    void destroySceneHistoryResources();
 
     VkContext* vkCtx = nullptr;
 
@@ -108,7 +115,21 @@ private:
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     VkDescriptorSetLayout materialSetLayout = VK_NULL_HANDLE;
     VkDescriptorPool materialDescPool = VK_NULL_HANDLE;
+    VkDescriptorSetLayout sceneSetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool sceneDescPool = VK_NULL_HANDLE;
+    VkDescriptorSet sceneSet = VK_NULL_HANDLE;
     static constexpr uint32_t MAX_WATER_SETS = 2048;
+
+    VkSampler sceneColorSampler = VK_NULL_HANDLE;
+    VkSampler sceneDepthSampler = VK_NULL_HANDLE;
+    VkImage sceneColorImage = VK_NULL_HANDLE;
+    VmaAllocation sceneColorAlloc = VK_NULL_HANDLE;
+    VkImageView sceneColorView = VK_NULL_HANDLE;
+    VkImage sceneDepthImage = VK_NULL_HANDLE;
+    VmaAllocation sceneDepthAlloc = VK_NULL_HANDLE;
+    VkImageView sceneDepthView = VK_NULL_HANDLE;
+    VkExtent2D sceneHistoryExtent = {0, 0};
+    bool sceneHistoryReady = false;
 
     std::vector<WaterSurface> surfaces;
     bool renderingEnabled = true;

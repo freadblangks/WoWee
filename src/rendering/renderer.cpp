@@ -912,6 +912,15 @@ void Renderer::endFrame() {
 
     vkCmdEndRenderPass(currentCmd);
 
+    if (waterRenderer && currentImageIndex < vkCtx->getSwapchainImages().size()) {
+        waterRenderer->captureSceneHistory(
+            currentCmd,
+            vkCtx->getSwapchainImages()[currentImageIndex],
+            vkCtx->getDepthCopySourceImage(),
+            vkCtx->getSwapchainExtent(),
+            vkCtx->isDepthCopySourceMsaa());
+    }
+
     // Submit and present
     vkCtx->endFrame(currentCmd, currentImageIndex);
     currentCmd = VK_NULL_HANDLE;
@@ -3185,7 +3194,14 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
             minimapCenter = characterPosition;
         float minimapPlayerOrientation = 0.0f;
         bool hasMinimapPlayerOrientation = false;
-        if (gameHandler) {
+        if (cameraController) {
+            // Use the same yaw that drives character model rendering so minimap
+            // orientation cannot drift by a different axis/sign convention.
+            float facingRad = glm::radians(characterYaw);
+            glm::vec3 facingFwd(std::cos(facingRad), std::sin(facingRad), 0.0f);
+            minimapPlayerOrientation = std::atan2(-facingFwd.x, facingFwd.y);
+            hasMinimapPlayerOrientation = true;
+        } else if (gameHandler) {
             minimapPlayerOrientation = gameHandler->getMovementInfo().orientation;
             hasMinimapPlayerOrientation = true;
         }

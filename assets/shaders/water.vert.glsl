@@ -27,6 +27,7 @@ layout(location = 0) out vec3 FragPos;
 layout(location = 1) out vec3 Normal;
 layout(location = 2) out vec2 TexCoord;
 layout(location = 3) out float WaveOffset;
+layout(location = 4) out vec2 ScreenUV;
 
 float hashGrid(vec2 p) {
     return fract(sin(dot(floor(p), vec2(127.1, 311.7))) * 43758.5453);
@@ -57,5 +58,8 @@ void main() {
 
     FragPos = worldPos.xyz;
     TexCoord = aTexCoord;
-    gl_Position = projection * view * worldPos;
+    vec4 clipPos = projection * view * worldPos;
+    gl_Position = clipPos;
+    vec2 ndc = clipPos.xy / max(clipPos.w, 1e-5);
+    ScreenUV = ndc * 0.5 + 0.5;
 }

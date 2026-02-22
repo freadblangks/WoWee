@@ -9,6 +9,7 @@
 #include <vector>
 #include <string>
 #include <optional>
+#include <future>
 
 namespace wowee {
 namespace pipeline {
@@ -633,6 +634,7 @@ private:
         uint32_t portalCulled = 0;
         uint32_t distanceCulled = 0;
     };
+    std::vector<std::future<std::vector<InstanceDrawList>>> cullFutures_;
 
     // Collision query profiling (per frame).
     mutable double queryTimeMs = 0.0;

@@ -1176,13 +1176,15 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
         const size_t chunkSize = visibleInstances.size() / numThreads;
         const size_t remainder = visibleInstances.size() % numThreads;
 
-        std::vector<std::future<std::vector<InstanceDrawList>>> futures;
-        futures.reserve(numThreads);
+        cullFutures_.clear();
+        if (cullFutures_.capacity() < numThreads) {
+            cullFutures_.reserve(numThreads);
+        }
 
         size_t start = 0;
         for (size_t t = 0; t < numThreads; ++t) {
             size_t end = start + chunkSize + (t < remainder ? 1 : 0);
-            futures.push_back(std::async(std::launch::async,
+            cullFutures_.push_back(std::async(std::launch::async,
                 [&, start, end]() {
                     std::vector<InstanceDrawList> chunk;
                     chunk.reserve(end - start);
@@ -1193,7 +1195,7 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
             start = end;
         }
 
-        for (auto& f : futures) {
+        for (auto& f : cullFutures_) {
             auto chunk = f.get();
             for (auto& dl : chunk)
                 drawLists.push_back(std::move(dl));

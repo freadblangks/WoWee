@@ -6,6 +6,7 @@
 #include <mutex>
 #include <fstream>
 #include <chrono>
+#include <atomic>
 
 namespace wowee {
 namespace core {
@@ -31,29 +32,35 @@ public:
 
     void log(LogLevel level, const std::string& message);
     void setLogLevel(LogLevel level);
+    bool shouldLog(LogLevel level) const;
 
     template<typename... Args>
     void debug(Args&&... args) {
+        if (!shouldLog(LogLevel::DEBUG)) return;
         log(LogLevel::DEBUG, format(std::forward<Args>(args)...));
     }
 
     template<typename... Args>
     void info(Args&&... args) {
+        if (!shouldLog(LogLevel::INFO)) return;
         log(LogLevel::INFO, format(std::forward<Args>(args)...));
     }
 
     template<typename... Args>
     void warning(Args&&... args) {
+        if (!shouldLog(LogLevel::WARNING)) return;
         log(LogLevel::WARNING, format(std::forward<Args>(args)...));
     }
 
     template<typename... Args>
     void error(Args&&... args) {
+        if (!shouldLog(LogLevel::ERROR)) return;
         log(LogLevel::ERROR, format(std::forward<Args>(args)...));
     }
 
     template<typename... Args>
     void fatal(Args&&... args) {
+        if (!shouldLog(LogLevel::FATAL)) return;
         log(LogLevel::FATAL, format(std::forward<Args>(args)...));
     }
 
@@ -70,7 +77,7 @@ private:
         return oss.str();
     }
 
-    LogLevel minLevel = LogLevel::INFO;  // Changed from DEBUG to reduce log spam
+    std::atomic<int> minLevel_{static_cast<int>(LogLevel::INFO)};
     std::mutex mutex;
     std::ofstream fileStream;
     bool fileReady = false;

@@ -35,7 +35,7 @@ void Logger::ensureFile() {
 }
 
 void Logger::log(LogLevel level, const std::string& message) {
-    if (level < minLevel) {
+    if (!shouldLog(level)) {
         return;
     }
 
@@ -93,7 +93,11 @@ void Logger::log(LogLevel level, const std::string& message) {
 }
 
 void Logger::setLogLevel(LogLevel level) {
-    minLevel = level;
+    minLevel_.store(static_cast<int>(level), std::memory_order_relaxed);
+}
+
+bool Logger::shouldLog(LogLevel level) const {
+    return static_cast<int>(level) >= minLevel_.load(std::memory_order_relaxed);
 }
 
 } // namespace core

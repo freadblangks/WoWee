@@ -1,29 +1,29 @@
 #pragma once
 
-#include <GL/glew.h>
+#include <vulkan/vulkan.h>
+#include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
-#include <memory>
 #include <vector>
 
 namespace wowee {
 namespace rendering {
 
 class Camera;
-class Shader;
+class VkContext;
 
 class MountDust {
 public:
     MountDust();
     ~MountDust();
 
-    bool initialize();
+    bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout);
     void shutdown();
 
     // Spawn dust particles at mount feet when moving on ground
     void spawnDust(const glm::vec3& position, const glm::vec3& velocity, bool isMoving);
 
     void update(float deltaTime);
-    void render(const Camera& camera);
+    void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet);
 
 private:
     struct Particle {
@@ -38,11 +38,18 @@ private:
     static constexpr int MAX_DUST_PARTICLES = 300;
     std::vector<Particle> particles;
 
-    GLuint vao = 0;
-    GLuint vbo = 0;
-    std::unique_ptr<Shader> shader;
-    std::vector<float> vertexData;
+    // Vulkan objects
+    VkContext* vkCtx = nullptr;
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 
+    // Dynamic mapped buffer for particle vertex data (updated every frame)
+    ::VkBuffer dynamicVB = VK_NULL_HANDLE;
+    VmaAllocation dynamicVBAlloc = VK_NULL_HANDLE;
+    VmaAllocationInfo dynamicVBAllocInfo{};
+    VkDeviceSize dynamicVBSize = 0;
+
+    std::vector<float> vertexData;
     float spawnAccum = 0.0f;
 };
 

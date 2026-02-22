@@ -363,11 +363,14 @@ void CharacterCreateScreen::render(game::GameHandler& /*gameHandler*/) {
                                static_cast<float>(preview_->getHeight()));
             }
 
-            ImGui::Image(
-                static_cast<ImTextureID>(preview_->getTextureId()),
-                ImVec2(imgW, imgH),
-                ImVec2(0.0f, 1.0f),  // UV top-left (flipped Y)
-                ImVec2(1.0f, 0.0f)); // UV bottom-right (flipped Y)
+            // TODO: Vulkan offscreen preview render target
+            if (preview_->getTextureId()) {
+                ImGui::Image(
+                    static_cast<ImTextureID>(0),
+                    ImVec2(imgW, imgH),
+                    ImVec2(0.0f, 1.0f),
+                    ImVec2(1.0f, 0.0f));
+            }
 
             // Mouse drag rotation on the preview image
             if (ImGui::IsItemHovered() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {

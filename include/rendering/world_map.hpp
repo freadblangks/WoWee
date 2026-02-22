@@ -1,9 +1,11 @@
 #pragma once
 
-#include <GL/glew.h>
+#include <vulkan/vulkan.h>
+#include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -11,7 +13,9 @@ namespace wowee {
 namespace pipeline { class AssetManager; }
 namespace rendering {
 
-class Shader;
+class VkContext;
+class VkTexture;
+class VkRenderTarget;
 
 struct WorldMapZone {
     uint32_t wmaID = 0;
@@ -22,8 +26,8 @@ struct WorldMapZone {
     uint32_t parentWorldMapID = 0;
     uint32_t exploreFlag = 0;
 
-    // Per-zone cached textures
-    GLuint tileTextures[12] = {};
+    // Per-zone cached textures (owned by WorldMap::zoneTextures)
+    VkTexture* tileTextures[12] = {};
     bool tilesLoaded = false;
 };
 
@@ -32,8 +36,15 @@ public:
     WorldMap();
     ~WorldMap();
 
-    void initialize(pipeline::AssetManager* assetManager);
+    bool initialize(VkContext* ctx, pipeline::AssetManager* assetManager);
+    void shutdown();
+
+    /// Off-screen composite pass — call BEFORE the main render pass begins.
+    void compositePass(VkCommandBuffer cmd);
+
+    /// ImGui overlay — call INSIDE the main render pass (during ImGui frame).
     void render(const glm::vec3& playerRenderPos, int screenWidth, int screenHeight);
+
     void setMapName(const std::string& name);
     void setServerExplorationMask(const std::vector<uint32_t>& masks, bool hasData);
     bool isOpen() const { return open; }
@@ -42,9 +53,6 @@ public:
 private:
     enum class ViewLevel { WORLD, CONTINENT, ZONE };
 
-    void createFBO();
-    void createTileShader();
-    void createQuad();
     void enterWorldView();
     void loadZonesFromDBC();
     int findBestContinentForPlayer(const glm::vec3& playerRenderPos) const;
@@ -53,15 +61,15 @@ private:
     bool getContinentProjectionBounds(int contIdx, float& left, float& right,
                                       float& top, float& bottom) const;
     void loadZoneTextures(int zoneIdx);
-    void compositeZone(int zoneIdx);
+    void requestComposite(int zoneIdx);
     void renderImGuiOverlay(const glm::vec3& playerRenderPos, int screenWidth, int screenHeight);
     void updateExploration(const glm::vec3& playerRenderPos);
     void zoomIn(const glm::vec3& playerRenderPos);
     void zoomOut();
-
-    // World pos → map UV using a specific zone's bounds
     glm::vec2 renderPosToMapUV(const glm::vec3& renderPos, int zoneIdx) const;
+    void destroyZoneTextures();
 
+    VkContext* vkCtx = nullptr;
     pipeline::AssetManager* assetManager = nullptr;
     bool initialized = false;
     bool open = false;
@@ -70,28 +78,45 @@ private:
 
     // All zones for current map
     std::vector<WorldMapZone> zones;
-    int continentIdx = -1;   // index of AreaID=0 entry in zones
-    int currentIdx = -1;     // currently displayed zone index
+    int continentIdx = -1;
+    int currentIdx = -1;
     ViewLevel viewLevel = ViewLevel::CONTINENT;
-    int compositedIdx = -1;  // which zone is currently composited in FBO
+    int compositedIdx = -1;
+    int pendingCompositeIdx = -1;
 
-    // FBO for composited map (4x3 tiles = 1024x768)
+    // FBO replacement (4x3 tiles = 1024x768)
     static constexpr int GRID_COLS = 4;
     static constexpr int GRID_ROWS = 3;
     static constexpr int TILE_PX = 256;
-    static constexpr int FBO_W = GRID_COLS * TILE_PX;  // 1024
-    static constexpr int FBO_H = GRID_ROWS * TILE_PX;  // 768
+    static constexpr int FBO_W = GRID_COLS * TILE_PX;
+    static constexpr int FBO_H = GRID_ROWS * TILE_PX;
 
-    GLuint fbo = 0;
-    GLuint fboTexture = 0;
-    std::unique_ptr<Shader> tileShader;
-    GLuint tileQuadVAO = 0;
-    GLuint tileQuadVBO = 0;
+    std::unique_ptr<VkRenderTarget> compositeTarget;
+
+    // Quad vertex buffer (pos2 + uv2)
+    ::VkBuffer quadVB = VK_NULL_HANDLE;
+    VmaAllocation quadVBAlloc = VK_NULL_HANDLE;
+
+    // Descriptor resources
+    VkDescriptorSetLayout samplerSetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool descPool = VK_NULL_HANDLE;
+    static constexpr uint32_t MAX_DESC_SETS = 32;
+
+    // Tile composite pipeline
+    VkPipeline tilePipeline = VK_NULL_HANDLE;
+    VkPipelineLayout tilePipelineLayout = VK_NULL_HANDLE;
+    VkDescriptorSet tileDescSets[2][12] = {};  // [frameInFlight][tileSlot]
+
+    // ImGui display descriptor set (points to composite render target)
+    VkDescriptorSet imguiDisplaySet = VK_NULL_HANDLE;
+
+    // Texture storage (owns all VkTexture objects for zone tiles)
+    std::vector<std::unique_ptr<VkTexture>> zoneTextures;
 
     // Exploration / fog of war
     std::vector<uint32_t> serverExplorationMask;
     bool hasServerExplorationMask = false;
-    std::unordered_set<int> exploredZones;  // zone indices the player has visited
+    std::unordered_set<int> exploredZones;
 };
 
 } // namespace rendering

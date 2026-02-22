@@ -44,7 +44,7 @@
 #include "pipeline/dbc_layout.hpp"
 
 #include <SDL2/SDL.h>
-#include <GL/glew.h>
+// GL/glew.h removed — Vulkan migration Phase 1
 #include <chrono>
 #include <cstdlib>
 #include <algorithm>
@@ -266,7 +266,7 @@ void Application::run() {
                     int newWidth = event.window.data1;
                     int newHeight = event.window.data2;
                     window->setSize(newWidth, newHeight);
-                    glViewport(0, 0, newWidth, newHeight);
+                    // Vulkan viewport set in command buffer, not globally
                     if (renderer && renderer->getCamera()) {
                         renderer->getCamera()->setAspectRatio(static_cast<float>(newWidth) / newHeight);
                     }
@@ -2337,7 +2337,7 @@ void Application::spawnPlayerCharacter() {
                             layers.push_back(up);
                         }
                         if (layers.size() > 1) {
-                            GLuint compositeTex = charRenderer->compositeTextures(layers);
+                            rendering::VkTexture* compositeTex = charRenderer->compositeTextures(layers);
                             if (compositeTex != 0) {
                                 for (size_t ti = 0; ti < model.textures.size(); ti++) {
                                     if (model.textures[ti].type == 1) {
@@ -2352,8 +2352,8 @@ void Application::spawnPlayerCharacter() {
                     }
                     // Override hair texture on GPU (type-6 slot) after model load
                     if (!hairTexturePath.empty()) {
-                        GLuint hairTex = charRenderer->loadTexture(hairTexturePath);
-                        if (hairTex != 0) {
+                        rendering::VkTexture* hairTex = charRenderer->loadTexture(hairTexturePath);
+                        if (hairTex) {
                             for (size_t ti = 0; ti < model.textures.size(); ti++) {
                                 if (model.textures[ti].type == 6) {
                                     charRenderer->setModelTexture(1, static_cast<uint32_t>(ti), hairTex);
@@ -2929,6 +2929,7 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
 
     // --- Loading screen for online mode ---
     rendering::LoadingScreen loadingScreen;
+    loadingScreen.setVkContext(window->getVkContext());
     bool loadingScreenOk = loadingScreen.initialize();
 
     auto showProgress = [&](const char* msg, float progress) {
@@ -2944,7 +2945,7 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
                 int w = event.window.data1;
                 int h = event.window.data2;
                 window->setSize(w, h);
-                glViewport(0, 0, w, h);
+                // Vulkan viewport set in command buffer
                 if (renderer && renderer->getCamera()) {
                     renderer->getCamera()->setAspectRatio(static_cast<float>(w) / h);
                 }
@@ -3131,7 +3132,7 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
                     int w = event.window.data1;
                     int h = event.window.data2;
                     window->setSize(w, h);
-                    glViewport(0, 0, w, h);
+                    // Vulkan viewport set in command buffer
                     if (renderer->getCamera()) {
                         renderer->getCamera()->setAspectRatio(static_cast<float>(w) / h);
                     }
@@ -3246,7 +3247,7 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
                     int w = event.window.data1;
                     int h = event.window.data2;
                     window->setSize(w, h);
-                    glViewport(0, 0, w, h);
+                    // Vulkan viewport set in command buffer
                     if (renderer && renderer->getCamera()) {
                         renderer->getCamera()->setAspectRatio(static_cast<float>(w) / h);
                     }
@@ -3933,7 +3934,7 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                     std::string bakePath = "Textures\\BakedNpcTextures\\" + extra.bakeName;
 
                     // Composite equipment textures over baked NPC texture, or just load baked texture
-                    GLuint finalTex = 0;
+                    rendering::VkTexture* finalTex = nullptr;
                     if (allowNpcRegionComposite && !npcRegionLayers.empty()) {
                         finalTex = charRenderer->compositeWithRegions(bakePath, {}, npcRegionLayers);
                         LOG_DEBUG("Composited NPC baked texture with ", npcRegionLayers.size(),
@@ -3942,7 +3943,7 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                         finalTex = charRenderer->loadTexture(bakePath);
                     }
 
-                    if (finalTex != 0 && modelData) {
+                    if (finalTex && modelData) {
                         for (size_t ti = 0; ti < modelData->textures.size(); ti++) {
                             uint32_t texType = modelData->textures[ti].type;
                             // Humanoid NPCs typically use creature-skin texture types (11-13).
@@ -4008,7 +4009,7 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                             if (!npcFaceUpper.empty()) skinLayers.push_back(npcFaceUpper);
                             for (const auto& uw : npcUnderwear) skinLayers.push_back(uw);
 
-                            GLuint npcSkinTex = 0;
+                            rendering::VkTexture* npcSkinTex = nullptr;
                             if (allowNpcRegionComposite && !npcRegionLayers.empty()) {
                                 npcSkinTex = charRenderer->compositeWithRegions(npcSkinPath,
                                     std::vector<std::string>(skinLayers.begin() + 1, skinLayers.end()),
@@ -4019,7 +4020,7 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                                 npcSkinTex = charRenderer->loadTexture(npcSkinPath);
                             }
 
-                            if (npcSkinTex != 0 && modelData) {
+                            if (npcSkinTex && modelData) {
                                 for (size_t ti = 0; ti < modelData->textures.size(); ti++) {
                                     uint32_t texType = modelData->textures[ti].type;
                                     if (texType == 1 || texType == 11 || texType == 12 || texType == 13) {
@@ -4058,8 +4059,8 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                     }
 
                     if (!hairTexPath.empty()) {
-                        GLuint hairTex = charRenderer->loadTexture(hairTexPath);
-                        if (hairTex != 0 && modelData) {
+                        rendering::VkTexture* hairTex = charRenderer->loadTexture(hairTexPath);
+                        if (hairTex && modelData) {
                             for (size_t ti = 0; ti < modelData->textures.size(); ti++) {
                                 if (modelData->textures[ti].type == 6) {
                                     charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), hairTex);
@@ -4136,8 +4137,8 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                 }
 
                 if (!skinPath.empty()) {
-                    GLuint skinTex = charRenderer->loadTexture(skinPath);
-                    if (skinTex != 0) {
+                    rendering::VkTexture* skinTex = charRenderer->loadTexture(skinPath);
+                    if (skinTex) {
                         charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), skinTex);
                         LOG_DEBUG("Applied creature skin texture: ", skinPath, " to slot ", ti);
                     }
@@ -4362,7 +4363,7 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
             uint16_t geosetPants = pickGeoset(1301, 13);  // Bare legs (group 13)
             uint16_t geosetCape = 0;       // Group 15 disabled unless cape is equipped
             uint16_t geosetTabard = 0;     // TODO: NPC tabard geosets currently flicker/apron; keep hidden for now
-            GLuint npcCapeTextureId = 0;
+            rendering::VkTexture* npcCapeTextureId = nullptr;
 
             // Load equipment geosets from ItemDisplayInfo.dbc
             // DBC columns: 7=GeosetGroup[0], 8=GeosetGroup[1], 9=GeosetGroup[2]
@@ -4467,10 +4468,10 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                                 addCapeCandidate(baseTex + "_U.blp");
                             }
                         }
-                        const GLuint whiteTex = charRenderer->loadTexture("");
+                        const rendering::VkTexture* whiteTex = charRenderer->loadTexture("");
                         for (const auto& candidate : capeCandidates) {
-                            GLuint tex = charRenderer->loadTexture(candidate);
-                            if (tex != 0 && tex != whiteTex) {
+                            rendering::VkTexture* tex = charRenderer->loadTexture(candidate);
+                            if (tex && tex != whiteTex) {
                                 npcCapeTextureId = tex;
                                 break;
                             }
@@ -4531,7 +4532,7 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
             }
             LOG_INFO("NPC geosets for instance ", instanceId, ": [", geosetList, "]");
             charRenderer->setActiveGeosets(instanceId, activeGeosets);
-            if (geosetCape != 0 && npcCapeTextureId != 0) {
+            if (geosetCape != 0 && npcCapeTextureId) {
                 charRenderer->setGroupTextureOverride(instanceId, 15, npcCapeTextureId);
                 if (const auto* md = charRenderer->getModelData(modelId)) {
                     for (size_t ti = 0; ti < md->textures.size(); ti++) {
@@ -5168,7 +5169,7 @@ void Application::spawnOnlinePlayer(uint64_t guid,
     }
 
     // Composite base skin + face + underwear overlays
-    GLuint compositeTex = 0;
+    rendering::VkTexture* compositeTex = nullptr;
     {
         std::vector<std::string> layers;
         layers.push_back(bodySkinPath);
@@ -5182,22 +5183,22 @@ void Application::spawnOnlinePlayer(uint64_t guid,
         }
     }
 
-    GLuint hairTex = 0;
+    rendering::VkTexture* hairTex = nullptr;
     if (!hairTexturePath.empty()) {
         hairTex = charRenderer->loadTexture(hairTexturePath);
     }
-    GLuint underwearTex = 0;
+    rendering::VkTexture* underwearTex = nullptr;
     if (!underwearPaths.empty()) underwearTex = charRenderer->loadTexture(underwearPaths[0]);
     else underwearTex = charRenderer->loadTexture(pelvisPath);
 
     const PlayerTextureSlots& slots = playerTextureSlotsByModelId_[modelId];
-    if (slots.skin >= 0 && compositeTex != 0) {
+    if (slots.skin >= 0 && compositeTex) {
         charRenderer->setTextureSlotOverride(instanceId, static_cast<uint16_t>(slots.skin), compositeTex);
     }
-    if (slots.hair >= 0 && hairTex != 0) {
+    if (slots.hair >= 0 && hairTex) {
         charRenderer->setTextureSlotOverride(instanceId, static_cast<uint16_t>(slots.hair), hairTex);
     }
-    if (slots.underwear >= 0 && underwearTex != 0) {
+    if (slots.underwear >= 0 && underwearTex) {
         charRenderer->setTextureSlotOverride(instanceId, static_cast<uint16_t>(slots.underwear), underwearTex);
     }
 
@@ -5409,8 +5410,8 @@ void Application::setOnlinePlayerEquipment(uint64_t guid,
     const PlayerTextureSlots& slots = slotsIt->second;
     if (slots.skin < 0) return;
 
-    GLuint newTex = charRenderer->compositeWithRegions(st.bodySkinPath, st.underwearPaths, regionLayers);
-    if (newTex != 0) {
+    rendering::VkTexture* newTex = charRenderer->compositeWithRegions(st.bodySkinPath, st.underwearPaths, regionLayers);
+    if (newTex) {
         charRenderer->setTextureSlotOverride(st.instanceId, static_cast<uint16_t>(slots.skin), newTex);
     }
 }
@@ -6038,8 +6039,8 @@ void Application::processPendingMount() {
                     texPath = modelDir + dispData.skin3 + ".blp";
                 }
                 if (!texPath.empty()) {
-                    GLuint skinTex = charRenderer->loadTexture(texPath);
-                    if (skinTex != 0) {
+                    rendering::VkTexture* skinTex = charRenderer->loadTexture(texPath);
+                    if (skinTex) {
                         charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), skinTex);
                         LOG_INFO("  Applied skin texture slot ", ti, ": ", texPath);
                         replaced++;
@@ -6062,8 +6063,8 @@ void Application::processPendingMount() {
                             texPath = modelDir + dispData.skin2 + ".blp";
                         }
                         if (!texPath.empty()) {
-                            GLuint skinTex = charRenderer->loadTexture(texPath);
-                            if (skinTex != 0) {
+                            rendering::VkTexture* skinTex = charRenderer->loadTexture(texPath);
+                            if (skinTex) {
                                 charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), skinTex);
                                 LOG_INFO("  Forced skin on empty hardcoded slot ", ti, ": ", texPath);
                                 replaced++;
@@ -6077,8 +6078,8 @@ void Application::processPendingMount() {
             if (replaced == 0) {
                 for (size_t ti = 0; ti < md->textures.size(); ti++) {
                     if (!md->textures[ti].filename.empty()) {
-                        GLuint texId = charRenderer->loadTexture(md->textures[ti].filename);
-                        if (texId != 0) {
+                        rendering::VkTexture* texId = charRenderer->loadTexture(md->textures[ti].filename);
+                        if (texId) {
                             charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), texId);
                             LOG_INFO("  Used model embedded texture slot ", ti, ": ", md->textures[ti].filename);
                             replaced++;
@@ -6100,8 +6101,8 @@ void Application::processPendingMount() {
                         nullptr
                     };
                     for (const char** p = gryphonSkins; *p; ++p) {
-                        GLuint texId = charRenderer->loadTexture(*p);
-                        if (texId != 0) {
+                        rendering::VkTexture* texId = charRenderer->loadTexture(*p);
+                        if (texId) {
                             charRenderer->setModelTexture(modelId, 0, texId);
                             LOG_INFO("  Forced gryphon skin fallback: ", *p);
                             replaced++;
@@ -6115,8 +6116,8 @@ void Application::processPendingMount() {
                         nullptr
                     };
                     for (const char** p = wyvernSkins; *p; ++p) {
-                        GLuint texId = charRenderer->loadTexture(*p);
-                        if (texId != 0) {
+                        rendering::VkTexture* texId = charRenderer->loadTexture(*p);
+                        if (texId) {
                             charRenderer->setModelTexture(modelId, 0, texId);
                             LOG_INFO("  Forced wyvern skin fallback: ", *p);
                             replaced++;

@@ -34,8 +34,13 @@ endif()
 
 # Find required packages
 find_package(SDL2 REQUIRED)
-find_package(OpenGL REQUIRED)
-find_package(GLEW REQUIRED)
+find_package(Vulkan REQUIRED)
+# GL/GLEW kept temporarily for unconverted sub-renderers during Vulkan migration.
+# These files compile against GL types but their code is never called — the Vulkan
+# path is the only active rendering backend. Remove in Phase 7 when all renderers
+# are converted and grep confirms zero GL references.
+find_package(OpenGL QUIET)
+find_package(GLEW QUIET)
 find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
 find_package(ZLIB REQUIRED)
@@ -77,13 +82,65 @@ if(NOT glm_FOUND)
     message(STATUS "GLM not found, will use system includes or download")
 endif()
 # GLM GTX extensions (quaternion, norm, etc.) require this flag on newer GLM versions
-add_compile_definitions(GLM_ENABLE_EXPERIMENTAL)
+add_compile_definitions(GLM_ENABLE_EXPERIMENTAL GLM_FORCE_DEPTH_ZERO_TO_ONE)
+
+# SPIR-V shader compilation via glslc
+find_program(GLSLC glslc HINTS ${Vulkan_GLSLC_EXECUTABLE} "$ENV{VULKAN_SDK}/bin")
+if(GLSLC)
+    message(STATUS "Found glslc: ${GLSLC}")
+else()
+    message(WARNING "glslc not found. Install the Vulkan SDK or vulkan-tools package.")
+    message(WARNING "Shaders will not be compiled to SPIR-V.")
+endif()
+
+# Function to compile GLSL shaders to SPIR-V
+function(compile_shaders TARGET_NAME)
+    set(SHADER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders)
+    set(SPV_DIR ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets/shaders)
+    file(MAKE_DIRECTORY ${SPV_DIR})
+
+    file(GLOB GLSL_SOURCES "${SHADER_DIR}/*.glsl")
+    set(SPV_OUTPUTS)
+
+    foreach(GLSL_FILE ${GLSL_SOURCES})
+        get_filename_component(FILE_NAME ${GLSL_FILE} NAME)
+        # e.g. skybox.vert.glsl -> skybox.vert.spv
+        string(REGEX REPLACE "\\.glsl$" ".spv" SPV_NAME ${FILE_NAME})
+        set(SPV_FILE ${SPV_DIR}/${SPV_NAME})
+
+        # Determine shader stage from filename
+        if(FILE_NAME MATCHES "\\.vert\\.glsl$")
+            set(SHADER_STAGE vertex)
+        elseif(FILE_NAME MATCHES "\\.frag\\.glsl$")
+            set(SHADER_STAGE fragment)
+        elseif(FILE_NAME MATCHES "\\.comp\\.glsl$")
+            set(SHADER_STAGE compute)
+        elseif(FILE_NAME MATCHES "\\.geom\\.glsl$")
+            set(SHADER_STAGE geometry)
+        else()
+            message(WARNING "Cannot determine shader stage for: ${FILE_NAME}")
+            continue()
+        endif()
+
+        add_custom_command(
+            OUTPUT ${SPV_FILE}
+            COMMAND ${GLSLC} -fshader-stage=${SHADER_STAGE} -O ${GLSL_FILE} -o ${SPV_FILE}
+            DEPENDS ${GLSL_FILE}
+            COMMENT "Compiling SPIR-V: ${FILE_NAME} -> ${SPV_NAME}"
+            VERBATIM
+        )
+        list(APPEND SPV_OUTPUTS ${SPV_FILE})
+    endforeach()
+
+    add_custom_target(${TARGET_NAME}_shaders ALL DEPENDS ${SPV_OUTPUTS})
+    add_dependencies(${TARGET_NAME} ${TARGET_NAME}_shaders)
+endfunction()
 
 # StormLib for MPQ extraction tool (not needed for main executable)
 find_library(STORMLIB_LIBRARY NAMES StormLib stormlib storm)
 find_path(STORMLIB_INCLUDE_DIR StormLib.h PATH_SUFFIXES StormLib)
 
-# Include ImGui as a static library (we'll add the sources)
+# Include ImGui as a static library (Vulkan backend)
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/extern/imgui)
 if(EXISTS ${IMGUI_DIR})
     add_library(imgui STATIC
@@ -93,17 +150,28 @@ if(EXISTS ${IMGUI_DIR})
         ${IMGUI_DIR}/imgui_widgets.cpp
         ${IMGUI_DIR}/imgui_demo.cpp
         ${IMGUI_DIR}/backends/imgui_impl_sdl2.cpp
-        ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp
+        ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp
     )
     target_include_directories(imgui PUBLIC
         ${IMGUI_DIR}
         ${IMGUI_DIR}/backends
     )
-    target_link_libraries(imgui PUBLIC SDL2::SDL2 OpenGL::GL ${CMAKE_DL_LIBS})
-    target_compile_definitions(imgui PUBLIC IMGUI_IMPL_OPENGL_LOADER_GLEW)
+    target_link_libraries(imgui PUBLIC SDL2::SDL2 Vulkan::Vulkan ${CMAKE_DL_LIBS})
 else()
     message(WARNING "ImGui not found in extern/imgui. Clone it with:")
     message(WARNING "  git clone https://github.com/ocornut/imgui.git extern/imgui")
+endif()
+
+# vk-bootstrap (Vulkan device/instance setup)
+set(VK_BOOTSTRAP_DIR ${CMAKE_CURRENT_SOURCE_DIR}/extern/vk-bootstrap)
+if(EXISTS ${VK_BOOTSTRAP_DIR})
+    add_library(vk-bootstrap STATIC
+        ${VK_BOOTSTRAP_DIR}/src/VkBootstrap.cpp
+    )
+    target_include_directories(vk-bootstrap PUBLIC ${VK_BOOTSTRAP_DIR}/src)
+    target_link_libraries(vk-bootstrap PUBLIC Vulkan::Vulkan)
+else()
+    message(FATAL_ERROR "vk-bootstrap not found in extern/vk-bootstrap")
 endif()
 
 # Source files
@@ -179,6 +247,15 @@ set(WOWEE_SOURCES
     src/pipeline/dbc_layout.cpp
 
     src/pipeline/terrain_mesh.cpp
+
+    # Rendering (Vulkan infrastructure)
+    src/rendering/vk_context.cpp
+    src/rendering/vk_utils.cpp
+    src/rendering/vk_shader.cpp
+    src/rendering/vk_texture.cpp
+    src/rendering/vk_buffer.cpp
+    src/rendering/vk_pipeline.cpp
+    src/rendering/vk_render_target.cpp
 
     # Rendering
     src/rendering/renderer.cpp
@@ -287,6 +364,13 @@ set(WOWEE_HEADERS
     include/pipeline/dbc_loader.hpp
     include/pipeline/terrain_mesh.hpp
 
+    include/rendering/vk_context.hpp
+    include/rendering/vk_utils.hpp
+    include/rendering/vk_shader.hpp
+    include/rendering/vk_texture.hpp
+    include/rendering/vk_buffer.hpp
+    include/rendering/vk_pipeline.hpp
+    include/rendering/vk_render_target.hpp
     include/rendering/renderer.hpp
     include/rendering/shader.hpp
     include/rendering/texture.hpp
@@ -343,25 +427,38 @@ if(TARGET opcodes-generate)
     add_dependencies(wowee opcodes-generate)
 endif()
 
+# Compile GLSL shaders to SPIR-V
+if(GLSLC)
+    compile_shaders(wowee)
+endif()
+
 # Include directories
 target_include_directories(wowee PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/extern
+    ${CMAKE_CURRENT_SOURCE_DIR}/extern/vk-bootstrap/src
     ${FFMPEG_INCLUDE_DIRS}
 )
 
 # Link libraries
 target_link_libraries(wowee PRIVATE
     SDL2::SDL2
-    OpenGL::GL
-    GLEW::GLEW
+    Vulkan::Vulkan
     OpenSSL::SSL
     OpenSSL::Crypto
     Threads::Threads
     ZLIB::ZLIB
     ${CMAKE_DL_LIBS}
 )
+
+# GL/GLEW linked temporarily for unconverted sub-renderers (removed in Phase 7)
+if(TARGET OpenGL::GL)
+    target_link_libraries(wowee PRIVATE OpenGL::GL)
+endif()
+if(TARGET GLEW::GLEW)
+    target_link_libraries(wowee PRIVATE GLEW::GLEW)
+endif()
 
 target_link_libraries(wowee PRIVATE ${FFMPEG_LIBRARIES})
 if (FFMPEG_LIBRARY_DIRS)
@@ -383,6 +480,11 @@ endif()
 # Link ImGui if available
 if(TARGET imgui)
     target_link_libraries(wowee PRIVATE imgui)
+endif()
+
+# Link vk-bootstrap
+if(TARGET vk-bootstrap)
+    target_link_libraries(wowee PRIVATE vk-bootstrap)
 endif()
 
 # Link Unicorn if available
@@ -628,7 +730,7 @@ chmod +x /usr/local/bin/wowee
     set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Wowee")
     set(CPACK_DEBIAN_PACKAGE_SECTION "games")
     set(CPACK_DEBIAN_PACKAGE_DEPENDS
-        "libsdl2-2.0-0, libglew2.2 | libglew2.1, libssl3, zlib1g")
+        "libsdl2-2.0-0, libvulkan1, libssl3, zlib1g")
     set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
         "${CMAKE_CURRENT_BINARY_DIR}/packaging/postinst;${CMAKE_CURRENT_BINARY_DIR}/packaging/prerm")
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")

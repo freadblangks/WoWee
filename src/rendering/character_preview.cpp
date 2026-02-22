@@ -1,12 +1,15 @@
 #include "rendering/character_preview.hpp"
 #include "rendering/character_renderer.hpp"
+#include "rendering/vk_texture.hpp"
+#include "rendering/vk_context.hpp"
 #include "rendering/camera.hpp"
+#include "rendering/renderer.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/m2_loader.hpp"
 #include "pipeline/dbc_loader.hpp"
 #include "pipeline/dbc_layout.hpp"
 #include "core/logger.hpp"
-#include <GL/glew.h>
+#include "core/application.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 #include <unordered_set>
@@ -24,11 +27,13 @@ bool CharacterPreview::initialize(pipeline::AssetManager* am) {
     assetManager_ = am;
 
     charRenderer_ = std::make_unique<CharacterRenderer>();
-    if (!charRenderer_->initialize()) {
+    auto* appRenderer = core::Application::getInstance().getRenderer();
+    VkContext* vkCtx = appRenderer ? appRenderer->getVkContext() : nullptr;
+    VkDescriptorSetLayout perFrameLayout = appRenderer ? appRenderer->getPerFrameSetLayout() : VK_NULL_HANDLE;
+    if (!charRenderer_->initialize(vkCtx, perFrameLayout, am)) {
         LOG_ERROR("CharacterPreview: failed to initialize CharacterRenderer");
         return false;
     }
-    charRenderer_->setAssetManager(am);
 
     // Disable fog and shadows for the preview
     charRenderer_->setFog(glm::vec3(0.05f, 0.05f, 0.1f), 9999.0f, 10000.0f);
@@ -45,14 +50,15 @@ bool CharacterPreview::initialize(pipeline::AssetManager* am) {
     camera_->setPosition(glm::vec3(0.0f, 4.5f, 0.9f));
     camera_->setRotation(270.0f, 0.0f);
 
-    createFBO();
+    // TODO: create Vulkan offscreen render target
+    // createFBO();
 
     LOG_INFO("CharacterPreview initialized (", fboWidth_, "x", fboHeight_, ")");
     return true;
 }
 
 void CharacterPreview::shutdown() {
-    destroyFBO();
+    // destroyFBO(); // TODO: Vulkan offscreen cleanup
     if (charRenderer_) {
         charRenderer_->shutdown();
         charRenderer_.reset();
@@ -63,37 +69,11 @@ void CharacterPreview::shutdown() {
 }
 
 void CharacterPreview::createFBO() {
-    // Create color texture
-    glGenTextures(1, &colorTexture_);
-    glBindTexture(GL_TEXTURE_2D, colorTexture_);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, fboWidth_, fboHeight_, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    // Create depth renderbuffer
-    glGenRenderbuffers(1, &depthRenderbuffer_);
-    glBindRenderbuffer(GL_RENDERBUFFER, depthRenderbuffer_);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, fboWidth_, fboHeight_);
-    glBindRenderbuffer(GL_RENDERBUFFER, 0);
-
-    // Create FBO
-    glGenFramebuffers(1, &fbo_);
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTexture_, 0);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthRenderbuffer_);
-
-    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-    if (status != GL_FRAMEBUFFER_COMPLETE) {
-        LOG_ERROR("CharacterPreview: FBO incomplete, status=", status);
-    }
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    // TODO: Create Vulkan offscreen render target for character preview
 }
 
 void CharacterPreview::destroyFBO() {
-    if (fbo_) { glDeleteFramebuffers(1, &fbo_); fbo_ = 0; }
-    if (colorTexture_) { glDeleteTextures(1, &colorTexture_); colorTexture_ = 0; }
-    if (depthRenderbuffer_) { glDeleteRenderbuffers(1, &depthRenderbuffer_); depthRenderbuffer_ = 0; }
+    // TODO: Destroy Vulkan offscreen render target
 }
 
 bool CharacterPreview::loadCharacter(game::Race race, game::Gender gender,
@@ -288,8 +268,8 @@ bool CharacterPreview::loadCharacter(game::Race race, game::Gender gender,
         for (const auto& up : underwearPaths) baseLayers_.push_back(up);
 
         if (layers.size() > 1) {
-            GLuint compositeTex = charRenderer_->compositeTextures(layers);
-            if (compositeTex != 0) {
+            VkTexture* compositeTex = charRenderer_->compositeTextures(layers);
+            if (compositeTex != nullptr) {
                 for (size_t ti = 0; ti < model.textures.size(); ti++) {
                     if (model.textures[ti].type == 1) {
                         charRenderer_->setModelTexture(PREVIEW_MODEL_ID, static_cast<uint32_t>(ti), compositeTex);
@@ -302,8 +282,8 @@ bool CharacterPreview::loadCharacter(game::Race race, game::Gender gender,
 
     // If hair scalp texture was found, ensure it's loaded for type-6 slot
     if (!hairScalpPath.empty()) {
-        GLuint hairTex = charRenderer_->loadTexture(hairScalpPath);
-        if (hairTex != 0) {
+        VkTexture* hairTex = charRenderer_->loadTexture(hairScalpPath);
+        if (hairTex != nullptr) {
             for (size_t ti = 0; ti < model.textures.size(); ti++) {
                 if (model.textures[ti].type == 6) {
                     charRenderer_->setModelTexture(PREVIEW_MODEL_ID, static_cast<uint32_t>(ti), hairTex);
@@ -511,8 +491,8 @@ bool CharacterPreview::applyEquipment(const std::vector<game::EquipmentItem>& eq
     }
 
     if (!regionLayers.empty()) {
-        GLuint newTex = charRenderer_->compositeWithRegions(bodySkinPath_, baseLayers_, regionLayers);
-        if (newTex != 0) {
+        VkTexture* newTex = charRenderer_->compositeWithRegions(bodySkinPath_, baseLayers_, regionLayers);
+        if (newTex != nullptr) {
             charRenderer_->setModelTexture(PREVIEW_MODEL_ID, skinTextureSlotIndex_, newTex);
         }
     }
@@ -575,10 +555,10 @@ bool CharacterPreview::applyEquipment(const std::vector<game::EquipmentItem>& eq
                         addCandidate(baseTex + "_U.blp");
                     }
                 }
-                const GLuint whiteTex = charRenderer_->loadTexture("");
+                VkTexture* whiteTex = charRenderer_->loadTexture("");
                 for (const auto& c : candidates) {
-                    GLuint capeTex = charRenderer_->loadTexture(c);
-                    if (capeTex != 0 && capeTex != whiteTex) {
+                    VkTexture* capeTex = charRenderer_->loadTexture(c);
+                    if (capeTex != nullptr && capeTex != whiteTex) {
                         charRenderer_->setGroupTextureOverride(instanceId_, 15, capeTex);
                         if (const auto* md = charRenderer_->getModelData(PREVIEW_MODEL_ID)) {
                             for (size_t ti = 0; ti < md->textures.size(); ti++) {
@@ -612,33 +592,14 @@ void CharacterPreview::update(float deltaTime) {
 }
 
 void CharacterPreview::render() {
-    if (!fbo_ || !charRenderer_ || !camera_ || !modelLoaded_) {
+    if (!charRenderer_ || !camera_ || !modelLoaded_) {
         return;
     }
 
-    // Save current viewport
-    GLint prevViewport[4];
-    glGetIntegerv(GL_VIEWPORT, prevViewport);
-
-    // Save current FBO binding
-    GLint prevFbo;
-    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo);
-
-    // Bind our FBO
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
-    glViewport(0, 0, fboWidth_, fboHeight_);
-
-    // Clear with dark blue background
-    glClearColor(0.05f, 0.05f, 0.1f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glEnable(GL_DEPTH_TEST);
-
-    // Render the character model
-    charRenderer_->render(*camera_, camera_->getViewMatrix(), camera_->getProjectionMatrix());
-
-    // Restore previous FBO and viewport
-    glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(prevFbo));
-    glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+    // TODO: Vulkan offscreen rendering for character preview
+    // Need a VkRenderTarget, begin a render pass into it, then:
+    //   charRenderer_->render(cmd, perFrameSet, *camera_);
+    // For now, the preview is non-functional until Vulkan offscreen is wired up.
 }
 
 void CharacterPreview::rotate(float yawDelta) {

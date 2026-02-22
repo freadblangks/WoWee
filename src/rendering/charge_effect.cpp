@@ -1,6 +1,10 @@
 #include "rendering/charge_effect.hpp"
 #include "rendering/camera.hpp"
-#include "rendering/shader.hpp"
+#include "rendering/vk_context.hpp"
+#include "rendering/vk_shader.hpp"
+#include "rendering/vk_pipeline.hpp"
+#include "rendering/vk_frame_data.hpp"
+#include "rendering/vk_utils.hpp"
 #include "rendering/m2_renderer.hpp"
 #include "pipeline/m2_loader.hpp"
 #include "pipeline/asset_manager.hpp"
@@ -8,6 +12,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <random>
 #include <cmath>
+#include <cstring>
 
 namespace wowee {
 namespace rendering {
@@ -26,130 +31,179 @@ static float randFloat(float lo, float hi) {
 ChargeEffect::ChargeEffect() = default;
 ChargeEffect::~ChargeEffect() { shutdown(); }
 
-bool ChargeEffect::initialize() {
-    // ---- Ribbon trail shader ----
-    ribbonShader_ = std::make_unique<Shader>();
+bool ChargeEffect::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout) {
+    vkCtx_ = ctx;
+    VkDevice device = vkCtx_->getDevice();
 
-    const char* ribbonVS = R"(
-        #version 330 core
-        layout (location = 0) in vec3 aPos;
-        layout (location = 1) in float aAlpha;
-        layout (location = 2) in float aHeat;
-        layout (location = 3) in float aHeight;
+    std::vector<VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
 
-        uniform mat4 uView;
-        uniform mat4 uProjection;
-
-        out float vAlpha;
-        out float vHeat;
-        out float vHeight;
-
-        void main() {
-            gl_Position = uProjection * uView * vec4(aPos, 1.0);
-            vAlpha = aAlpha;
-            vHeat = aHeat;
-            vHeight = aHeight;
+    // ---- Ribbon trail pipeline (TRIANGLE_STRIP) ----
+    {
+        VkShaderModule vertModule;
+        if (!vertModule.loadFromFile(device, "assets/shaders/charge_ribbon.vert.spv")) {
+            LOG_ERROR("Failed to load charge_ribbon vertex shader");
+            return false;
         }
-    )";
-
-    const char* ribbonFS = R"(
-        #version 330 core
-        in float vAlpha;
-        in float vHeat;
-        in float vHeight;
-        out vec4 FragColor;
-
-        void main() {
-            // Vertical gradient: top is red/opaque, bottom is transparent
-            vec3 topColor  = vec3(0.9, 0.15, 0.05);  // Deep red at top
-            vec3 midColor  = vec3(1.0, 0.5, 0.1);    // Orange in middle
-            vec3 color = mix(midColor, topColor, vHeight);
-            // Mix with heat (head vs tail along length)
-            vec3 hotColor = vec3(1.0, 0.6, 0.15);
-            color = mix(color, hotColor, vHeat * 0.4);
-
-            // Bottom fades to transparent, top is opaque
-            float vertAlpha = smoothstep(0.0, 0.4, vHeight);
-            FragColor = vec4(color, vAlpha * vertAlpha * 0.7);
+        VkShaderModule fragModule;
+        if (!fragModule.loadFromFile(device, "assets/shaders/charge_ribbon.frag.spv")) {
+            LOG_ERROR("Failed to load charge_ribbon fragment shader");
+            return false;
         }
-    )";
 
-    if (!ribbonShader_->loadFromSource(ribbonVS, ribbonFS)) {
-        LOG_ERROR("Failed to create charge ribbon shader");
-        return false;
+        VkPipelineShaderStageCreateInfo vertStage = vertModule.stageInfo(VK_SHADER_STAGE_VERTEX_BIT);
+        VkPipelineShaderStageCreateInfo fragStage = fragModule.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT);
+
+        ribbonPipelineLayout_ = createPipelineLayout(device, {perFrameLayout}, {});
+        if (ribbonPipelineLayout_ == VK_NULL_HANDLE) {
+            LOG_ERROR("Failed to create charge ribbon pipeline layout");
+            return false;
+        }
+
+        // Vertex input: pos(vec3) + alpha(float) + heat(float) + height(float) = 6 floats, stride = 24 bytes
+        VkVertexInputBindingDescription binding{};
+        binding.binding = 0;
+        binding.stride = 6 * sizeof(float);
+        binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        std::vector<VkVertexInputAttributeDescription> attrs(4);
+        // location 0: vec3 position
+        attrs[0].location = 0;
+        attrs[0].binding = 0;
+        attrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+        attrs[0].offset = 0;
+        // location 1: float alpha
+        attrs[1].location = 1;
+        attrs[1].binding = 0;
+        attrs[1].format = VK_FORMAT_R32_SFLOAT;
+        attrs[1].offset = 3 * sizeof(float);
+        // location 2: float heat
+        attrs[2].location = 2;
+        attrs[2].binding = 0;
+        attrs[2].format = VK_FORMAT_R32_SFLOAT;
+        attrs[2].offset = 4 * sizeof(float);
+        // location 3: float height
+        attrs[3].location = 3;
+        attrs[3].binding = 0;
+        attrs[3].format = VK_FORMAT_R32_SFLOAT;
+        attrs[3].offset = 5 * sizeof(float);
+
+        ribbonPipeline_ = PipelineBuilder()
+            .setShaders(vertStage, fragStage)
+            .setVertexInput({binding}, attrs)
+            .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP)
+            .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+            .setDepthTest(true, false, VK_COMPARE_OP_LESS)
+            .setColorBlendAttachment(PipelineBuilder::blendAdditive())  // Additive blend for fiery glow
+            .setLayout(ribbonPipelineLayout_)
+            .setRenderPass(vkCtx_->getImGuiRenderPass())
+            .setDynamicStates(dynamicStates)
+            .build(device);
+
+        vertModule.destroy();
+        fragModule.destroy();
+
+        if (ribbonPipeline_ == VK_NULL_HANDLE) {
+            LOG_ERROR("Failed to create charge ribbon pipeline");
+            return false;
+        }
     }
 
-    glGenVertexArrays(1, &ribbonVao_);
-    glGenBuffers(1, &ribbonVbo_);
-    glBindVertexArray(ribbonVao_);
-    glBindBuffer(GL_ARRAY_BUFFER, ribbonVbo_);
-    // pos(3) + alpha(1) + heat(1) + height(1) = 6 floats
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(4 * sizeof(float)));
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(5 * sizeof(float)));
-    glEnableVertexAttribArray(3);
-    glBindVertexArray(0);
+    // ---- Dust puff pipeline (POINT_LIST) ----
+    {
+        VkShaderModule vertModule;
+        if (!vertModule.loadFromFile(device, "assets/shaders/charge_dust.vert.spv")) {
+            LOG_ERROR("Failed to load charge_dust vertex shader");
+            return false;
+        }
+        VkShaderModule fragModule;
+        if (!fragModule.loadFromFile(device, "assets/shaders/charge_dust.frag.spv")) {
+            LOG_ERROR("Failed to load charge_dust fragment shader");
+            return false;
+        }
+
+        VkPipelineShaderStageCreateInfo vertStage = vertModule.stageInfo(VK_SHADER_STAGE_VERTEX_BIT);
+        VkPipelineShaderStageCreateInfo fragStage = fragModule.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT);
+
+        dustPipelineLayout_ = createPipelineLayout(device, {perFrameLayout}, {});
+        if (dustPipelineLayout_ == VK_NULL_HANDLE) {
+            LOG_ERROR("Failed to create charge dust pipeline layout");
+            return false;
+        }
+
+        // Vertex input: pos(vec3) + size(float) + alpha(float) = 5 floats, stride = 20 bytes
+        VkVertexInputBindingDescription binding{};
+        binding.binding = 0;
+        binding.stride = 5 * sizeof(float);
+        binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        std::vector<VkVertexInputAttributeDescription> attrs(3);
+        attrs[0].location = 0;
+        attrs[0].binding = 0;
+        attrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+        attrs[0].offset = 0;
+        attrs[1].location = 1;
+        attrs[1].binding = 0;
+        attrs[1].format = VK_FORMAT_R32_SFLOAT;
+        attrs[1].offset = 3 * sizeof(float);
+        attrs[2].location = 2;
+        attrs[2].binding = 0;
+        attrs[2].format = VK_FORMAT_R32_SFLOAT;
+        attrs[2].offset = 4 * sizeof(float);
+
+        dustPipeline_ = PipelineBuilder()
+            .setShaders(vertStage, fragStage)
+            .setVertexInput({binding}, attrs)
+            .setTopology(VK_PRIMITIVE_TOPOLOGY_POINT_LIST)
+            .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+            .setDepthTest(true, false, VK_COMPARE_OP_LESS)
+            .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+            .setLayout(dustPipelineLayout_)
+            .setRenderPass(vkCtx_->getImGuiRenderPass())
+            .setDynamicStates(dynamicStates)
+            .build(device);
+
+        vertModule.destroy();
+        fragModule.destroy();
+
+        if (dustPipeline_ == VK_NULL_HANDLE) {
+            LOG_ERROR("Failed to create charge dust pipeline");
+            return false;
+        }
+    }
+
+    // ---- Create dynamic mapped vertex buffers ----
+    // Ribbon: MAX_TRAIL_POINTS * 2 vertices * 6 floats each
+    ribbonDynamicVBSize_ = MAX_TRAIL_POINTS * 2 * 6 * sizeof(float);
+    {
+        AllocatedBuffer buf = createBuffer(vkCtx_->getAllocator(), ribbonDynamicVBSize_,
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+        ribbonDynamicVB_ = buf.buffer;
+        ribbonDynamicVBAlloc_ = buf.allocation;
+        ribbonDynamicVBAllocInfo_ = buf.info;
+        if (ribbonDynamicVB_ == VK_NULL_HANDLE) {
+            LOG_ERROR("Failed to create charge ribbon dynamic vertex buffer");
+            return false;
+        }
+    }
+
+    // Dust: MAX_DUST * 5 floats each
+    dustDynamicVBSize_ = MAX_DUST * 5 * sizeof(float);
+    {
+        AllocatedBuffer buf = createBuffer(vkCtx_->getAllocator(), dustDynamicVBSize_,
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+        dustDynamicVB_ = buf.buffer;
+        dustDynamicVBAlloc_ = buf.allocation;
+        dustDynamicVBAllocInfo_ = buf.info;
+        if (dustDynamicVB_ == VK_NULL_HANDLE) {
+            LOG_ERROR("Failed to create charge dust dynamic vertex buffer");
+            return false;
+        }
+    }
 
     ribbonVerts_.reserve(MAX_TRAIL_POINTS * 2 * 6);
-
-    // ---- Dust puff shader (small point sprites) ----
-    dustShader_ = std::make_unique<Shader>();
-
-    const char* dustVS = R"(
-        #version 330 core
-        layout (location = 0) in vec3 aPos;
-        layout (location = 1) in float aSize;
-        layout (location = 2) in float aAlpha;
-
-        uniform mat4 uView;
-        uniform mat4 uProjection;
-
-        out float vAlpha;
-
-        void main() {
-            gl_Position = uProjection * uView * vec4(aPos, 1.0);
-            gl_PointSize = aSize;
-            vAlpha = aAlpha;
-        }
-    )";
-
-    const char* dustFS = R"(
-        #version 330 core
-        in float vAlpha;
-        out vec4 FragColor;
-
-        void main() {
-            vec2 coord = gl_PointCoord - vec2(0.5);
-            float dist = length(coord);
-            if (dist > 0.5) discard;
-            float alpha = smoothstep(0.5, 0.0, dist) * vAlpha;
-            vec3 dustColor = vec3(0.65, 0.55, 0.40);
-            FragColor = vec4(dustColor, alpha * 0.45);
-        }
-    )";
-
-    if (!dustShader_->loadFromSource(dustVS, dustFS)) {
-        LOG_ERROR("Failed to create charge dust shader");
-        return false;
-    }
-
-    glGenVertexArrays(1, &dustVao_);
-    glGenBuffers(1, &dustVbo_);
-    glBindVertexArray(dustVao_);
-    glBindBuffer(GL_ARRAY_BUFFER, dustVbo_);
-    // pos(3) + size(1) + alpha(1) = 5 floats
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(4 * sizeof(float)));
-    glEnableVertexAttribArray(2);
-    glBindVertexArray(0);
-
     dustVerts_.reserve(MAX_DUST * 5);
     dustPuffs_.reserve(MAX_DUST);
 
@@ -157,16 +211,42 @@ bool ChargeEffect::initialize() {
 }
 
 void ChargeEffect::shutdown() {
-    if (ribbonVao_) glDeleteVertexArrays(1, &ribbonVao_);
-    if (ribbonVbo_) glDeleteBuffers(1, &ribbonVbo_);
-    ribbonVao_ = 0; ribbonVbo_ = 0;
-    if (dustVao_) glDeleteVertexArrays(1, &dustVao_);
-    if (dustVbo_) glDeleteBuffers(1, &dustVbo_);
-    dustVao_ = 0; dustVbo_ = 0;
+    if (vkCtx_) {
+        VkDevice device = vkCtx_->getDevice();
+        VmaAllocator allocator = vkCtx_->getAllocator();
+
+        if (ribbonPipeline_ != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device, ribbonPipeline_, nullptr);
+            ribbonPipeline_ = VK_NULL_HANDLE;
+        }
+        if (ribbonPipelineLayout_ != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device, ribbonPipelineLayout_, nullptr);
+            ribbonPipelineLayout_ = VK_NULL_HANDLE;
+        }
+        if (ribbonDynamicVB_ != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(allocator, ribbonDynamicVB_, ribbonDynamicVBAlloc_);
+            ribbonDynamicVB_ = VK_NULL_HANDLE;
+            ribbonDynamicVBAlloc_ = VK_NULL_HANDLE;
+        }
+
+        if (dustPipeline_ != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device, dustPipeline_, nullptr);
+            dustPipeline_ = VK_NULL_HANDLE;
+        }
+        if (dustPipelineLayout_ != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device, dustPipelineLayout_, nullptr);
+            dustPipelineLayout_ = VK_NULL_HANDLE;
+        }
+        if (dustDynamicVB_ != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(allocator, dustDynamicVB_, dustDynamicVBAlloc_);
+            dustDynamicVB_ = VK_NULL_HANDLE;
+            dustDynamicVBAlloc_ = VK_NULL_HANDLE;
+        }
+    }
+
+    vkCtx_ = nullptr;
     trail_.clear();
     dustPuffs_.clear();
-    ribbonShader_.reset();
-    dustShader_.reset();
 }
 
 void ChargeEffect::tryLoadM2Models(M2Renderer* m2Renderer, pipeline::AssetManager* assets) {
@@ -345,9 +425,11 @@ void ChargeEffect::update(float deltaTime) {
     }
 }
 
-void ChargeEffect::render(const Camera& camera) {
+void ChargeEffect::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet) {
+    VkDeviceSize offset = 0;
+
     // ---- Render ribbon trail as triangle strip ----
-    if (trail_.size() >= 2 && ribbonShader_) {
+    if (trail_.size() >= 2 && ribbonPipeline_ != VK_NULL_HANDLE) {
         ribbonVerts_.clear();
 
         int n = static_cast<int>(trail_.size());
@@ -385,28 +467,21 @@ void ChargeEffect::render(const Camera& camera) {
             ribbonVerts_.push_back(1.0f);  // height = top
         }
 
-        glBindBuffer(GL_ARRAY_BUFFER, ribbonVbo_);
-        glBufferData(GL_ARRAY_BUFFER, ribbonVerts_.size() * sizeof(float),
-                     ribbonVerts_.data(), GL_DYNAMIC_DRAW);
+        // Upload to mapped buffer
+        VkDeviceSize uploadSize = ribbonVerts_.size() * sizeof(float);
+        if (uploadSize > 0 && ribbonDynamicVBAllocInfo_.pMappedData) {
+            std::memcpy(ribbonDynamicVBAllocInfo_.pMappedData, ribbonVerts_.data(), uploadSize);
+        }
 
-        ribbonShader_->use();
-        ribbonShader_->setUniform("uView", camera.getViewMatrix());
-        ribbonShader_->setUniform("uProjection", camera.getProjectionMatrix());
-
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE);  // Additive blend for fiery glow
-        glDepthMask(GL_FALSE);
-
-        glBindVertexArray(ribbonVao_);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, static_cast<GLsizei>(n * 2));
-        glBindVertexArray(0);
-
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glDepthMask(GL_TRUE);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ribbonPipeline_);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ribbonPipelineLayout_,
+            0, 1, &perFrameSet, 0, nullptr);
+        vkCmdBindVertexBuffers(cmd, 0, 1, &ribbonDynamicVB_, &offset);
+        vkCmdDraw(cmd, static_cast<uint32_t>(n * 2), 1, 0, 0);
     }
 
     // ---- Render dust puffs ----
-    if (!dustPuffs_.empty() && dustShader_) {
+    if (!dustPuffs_.empty() && dustPipeline_ != VK_NULL_HANDLE) {
         dustVerts_.clear();
         for (const auto& d : dustPuffs_) {
             dustVerts_.push_back(d.position.x);
@@ -416,25 +491,17 @@ void ChargeEffect::render(const Camera& camera) {
             dustVerts_.push_back(d.alpha);
         }
 
-        glBindBuffer(GL_ARRAY_BUFFER, dustVbo_);
-        glBufferData(GL_ARRAY_BUFFER, dustVerts_.size() * sizeof(float),
-                     dustVerts_.data(), GL_DYNAMIC_DRAW);
+        // Upload to mapped buffer
+        VkDeviceSize uploadSize = dustVerts_.size() * sizeof(float);
+        if (uploadSize > 0 && dustDynamicVBAllocInfo_.pMappedData) {
+            std::memcpy(dustDynamicVBAllocInfo_.pMappedData, dustVerts_.data(), uploadSize);
+        }
 
-        dustShader_->use();
-        dustShader_->setUniform("uView", camera.getViewMatrix());
-        dustShader_->setUniform("uProjection", camera.getProjectionMatrix());
-
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glDepthMask(GL_FALSE);
-        glEnable(GL_PROGRAM_POINT_SIZE);
-
-        glBindVertexArray(dustVao_);
-        glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(dustPuffs_.size()));
-        glBindVertexArray(0);
-
-        glDepthMask(GL_TRUE);
-        glDisable(GL_PROGRAM_POINT_SIZE);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, dustPipeline_);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, dustPipelineLayout_,
+            0, 1, &perFrameSet, 0, nullptr);
+        vkCmdBindVertexBuffers(cmd, 0, 1, &dustDynamicVB_, &offset);
+        vkCmdDraw(cmd, static_cast<uint32_t>(dustPuffs_.size()), 1, 0, 0);
     }
 }
 

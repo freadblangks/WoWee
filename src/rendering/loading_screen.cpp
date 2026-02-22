@@ -1,8 +1,9 @@
 #include "rendering/loading_screen.hpp"
+#include "rendering/vk_context.hpp"
 #include "core/logger.hpp"
 #include <imgui.h>
 #include <imgui_internal.h>
-#include <imgui_impl_opengl3.h>
+#include <imgui_impl_vulkan.h>
 #include <imgui_impl_sdl2.h>
 #include <random>
 #include <chrono>
@@ -24,140 +25,37 @@ LoadingScreen::~LoadingScreen() {
 }
 
 bool LoadingScreen::initialize() {
-    LOG_INFO("Initializing loading screen");
-
-    // Background image shader (textured quad)
-    const char* vertexSrc = R"(
-        #version 330 core
-        layout (location = 0) in vec2 aPos;
-        layout (location = 1) in vec2 aTexCoord;
-        out vec2 TexCoord;
-        void main() {
-            gl_Position = vec4(aPos, 0.0, 1.0);
-            TexCoord = aTexCoord;
-        }
-    )";
-
-    const char* fragmentSrc = R"(
-        #version 330 core
-        in vec2 TexCoord;
-        out vec4 FragColor;
-        uniform sampler2D screenTexture;
-        void main() {
-            FragColor = texture(screenTexture, TexCoord);
-        }
-    )";
-
-    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vertexSrc, nullptr);
-    glCompileShader(vertexShader);
-
-    GLint success;
-    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        char infoLog[512];
-        glGetShaderInfoLog(vertexShader, 512, nullptr, infoLog);
-        LOG_ERROR("Loading screen vertex shader compilation failed: ", infoLog);
-        return false;
-    }
-
-    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentSrc, nullptr);
-    glCompileShader(fragmentShader);
-
-    glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        char infoLog[512];
-        glGetShaderInfoLog(fragmentShader, 512, nullptr, infoLog);
-        LOG_ERROR("Loading screen fragment shader compilation failed: ", infoLog);
-        return false;
-    }
-
-    shaderId = glCreateProgram();
-    glAttachShader(shaderId, vertexShader);
-    glAttachShader(shaderId, fragmentShader);
-    glLinkProgram(shaderId);
-
-    glGetProgramiv(shaderId, GL_LINK_STATUS, &success);
-    if (!success) {
-        char infoLog[512];
-        glGetProgramInfoLog(shaderId, 512, nullptr, infoLog);
-        LOG_ERROR("Loading screen shader linking failed: ", infoLog);
-        return false;
-    }
-
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-
-    // Simple solid-color shader for progress bar
-    const char* barVertSrc = R"(
-        #version 330 core
-        layout (location = 0) in vec2 aPos;
-        void main() {
-            gl_Position = vec4(aPos, 0.0, 1.0);
-        }
-    )";
-
-    const char* barFragSrc = R"(
-        #version 330 core
-        out vec4 FragColor;
-        uniform vec4 uColor;
-        void main() {
-            FragColor = uColor;
-        }
-    )";
-
-    GLuint bv = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(bv, 1, &barVertSrc, nullptr);
-    glCompileShader(bv);
-    GLuint bf = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(bf, 1, &barFragSrc, nullptr);
-    glCompileShader(bf);
-
-    barShaderId = glCreateProgram();
-    glAttachShader(barShaderId, bv);
-    glAttachShader(barShaderId, bf);
-    glLinkProgram(barShaderId);
-
-    glDeleteShader(bv);
-    glDeleteShader(bf);
-
-    createQuad();
-    createBarQuad();
+    LOG_INFO("Initializing loading screen (Vulkan/ImGui)");
     selectRandomImage();
-
     LOG_INFO("Loading screen initialized");
     return true;
 }
 
 void LoadingScreen::shutdown() {
-    if (textureId) {
-        glDeleteTextures(1, &textureId);
-        textureId = 0;
-    }
-    if (vao) {
-        glDeleteVertexArrays(1, &vao);
-        vao = 0;
-    }
-    if (vbo) {
-        glDeleteBuffers(1, &vbo);
-        vbo = 0;
-    }
-    if (shaderId) {
-        glDeleteProgram(shaderId);
-        shaderId = 0;
-    }
-    if (barVao) {
-        glDeleteVertexArrays(1, &barVao);
-        barVao = 0;
-    }
-    if (barVbo) {
-        glDeleteBuffers(1, &barVbo);
-        barVbo = 0;
-    }
-    if (barShaderId) {
-        glDeleteProgram(barShaderId);
-        barShaderId = 0;
+    if (vkCtx && bgImage) {
+        VkDevice device = vkCtx->getDevice();
+        vkDeviceWaitIdle(device);
+
+        if (bgDescriptorSet) {
+            // ImGui manages descriptor set lifetime
+            bgDescriptorSet = VK_NULL_HANDLE;
+        }
+        if (bgSampler) {
+            vkDestroySampler(device, bgSampler, nullptr);
+            bgSampler = VK_NULL_HANDLE;
+        }
+        if (bgImageView) {
+            vkDestroyImageView(device, bgImageView, nullptr);
+            bgImageView = VK_NULL_HANDLE;
+        }
+        if (bgImage) {
+            vkDestroyImage(device, bgImage, nullptr);
+            bgImage = VK_NULL_HANDLE;
+        }
+        if (bgMemory) {
+            vkFreeMemory(device, bgMemory, nullptr);
+            bgMemory = VK_NULL_HANDLE;
+        }
     }
 }
 
@@ -175,14 +73,36 @@ void LoadingScreen::selectRandomImage() {
     loadImage(imagePaths[currentImageIndex]);
 }
 
+static uint32_t findMemoryType(VkPhysicalDevice physDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+    VkPhysicalDeviceMemoryProperties memProperties;
+    vkGetPhysicalDeviceMemoryProperties(physDevice, &memProperties);
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+        if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+            return i;
+        }
+    }
+    return 0;
+}
+
 bool LoadingScreen::loadImage(const std::string& path) {
-    if (textureId) {
-        glDeleteTextures(1, &textureId);
-        textureId = 0;
+    if (!vkCtx) {
+        LOG_WARNING("No VkContext for loading screen image");
+        return false;
+    }
+
+    // Clean up old image
+    if (bgImage) {
+        VkDevice device = vkCtx->getDevice();
+        vkDeviceWaitIdle(device);
+        if (bgSampler) { vkDestroySampler(device, bgSampler, nullptr); bgSampler = VK_NULL_HANDLE; }
+        if (bgImageView) { vkDestroyImageView(device, bgImageView, nullptr); bgImageView = VK_NULL_HANDLE; }
+        if (bgImage) { vkDestroyImage(device, bgImage, nullptr); bgImage = VK_NULL_HANDLE; }
+        if (bgMemory) { vkFreeMemory(device, bgMemory, nullptr); bgMemory = VK_NULL_HANDLE; }
+        bgDescriptorSet = VK_NULL_HANDLE;
     }
 
     int channels;
-    stbi_set_flip_vertically_on_load(true);
+    stbi_set_flip_vertically_on_load(false); // ImGui expects top-down
     unsigned char* data = stbi_load(path.c_str(), &imageWidth, &imageHeight, &channels, 4);
 
     if (!data) {
@@ -192,215 +112,244 @@ bool LoadingScreen::loadImage(const std::string& path) {
 
     LOG_INFO("Loaded loading screen image: ", imageWidth, "x", imageHeight);
 
-    glGenTextures(1, &textureId);
-    glBindTexture(GL_TEXTURE_2D, textureId);
+    VkDevice device = vkCtx->getDevice();
+    VkPhysicalDevice physDevice = vkCtx->getPhysicalDevice();
+    VkDeviceSize imageSize = static_cast<VkDeviceSize>(imageWidth) * imageHeight * 4;
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    // Create staging buffer
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingMemory;
+    {
+        VkBufferCreateInfo bufInfo{};
+        bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufInfo.size = imageSize;
+        bufInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        vkCreateBuffer(device, &bufInfo, nullptr, &stagingBuffer);
 
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, imageWidth, imageHeight, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, data);
+        VkMemoryRequirements memReqs;
+        vkGetBufferMemoryRequirements(device, stagingBuffer, &memReqs);
+
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memReqs.size;
+        allocInfo.memoryTypeIndex = findMemoryType(physDevice, memReqs.memoryTypeBits,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        vkAllocateMemory(device, &allocInfo, nullptr, &stagingMemory);
+        vkBindBufferMemory(device, stagingBuffer, stagingMemory, 0);
+
+        void* mapped;
+        vkMapMemory(device, stagingMemory, 0, imageSize, 0, &mapped);
+        memcpy(mapped, data, imageSize);
+        vkUnmapMemory(device, stagingMemory);
+    }
 
     stbi_image_free(data);
-    glBindTexture(GL_TEXTURE_2D, 0);
+
+    // Create image
+    {
+        VkImageCreateInfo imgInfo{};
+        imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imgInfo.imageType = VK_IMAGE_TYPE_2D;
+        imgInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+        imgInfo.extent = {static_cast<uint32_t>(imageWidth), static_cast<uint32_t>(imageHeight), 1};
+        imgInfo.mipLevels = 1;
+        imgInfo.arrayLayers = 1;
+        imgInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        imgInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        imgInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        imgInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        imgInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        vkCreateImage(device, &imgInfo, nullptr, &bgImage);
+
+        VkMemoryRequirements memReqs;
+        vkGetImageMemoryRequirements(device, bgImage, &memReqs);
+
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memReqs.size;
+        allocInfo.memoryTypeIndex = findMemoryType(physDevice, memReqs.memoryTypeBits,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        vkAllocateMemory(device, &allocInfo, nullptr, &bgMemory);
+        vkBindImageMemory(device, bgImage, bgMemory, 0);
+    }
+
+    // Transfer: transition, copy, transition
+    vkCtx->immediateSubmit([&](VkCommandBuffer cmd) {
+        // Transition to transfer dst
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = bgImage;
+        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+        // Copy buffer to image
+        VkBufferImageCopy region{};
+        region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        region.imageExtent = {static_cast<uint32_t>(imageWidth), static_cast<uint32_t>(imageHeight), 1};
+        vkCmdCopyBufferToImage(cmd, stagingBuffer, bgImage,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+        // Transition to shader read
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+    });
+
+    // Cleanup staging
+    vkDestroyBuffer(device, stagingBuffer, nullptr);
+    vkFreeMemory(device, stagingMemory, nullptr);
+
+    // Create image view
+    {
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image = bgImage;
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+        viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        vkCreateImageView(device, &viewInfo, nullptr, &bgImageView);
+    }
+
+    // Create sampler
+    {
+        VkSamplerCreateInfo samplerInfo{};
+        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        samplerInfo.magFilter = VK_FILTER_LINEAR;
+        samplerInfo.minFilter = VK_FILTER_LINEAR;
+        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        vkCreateSampler(device, &samplerInfo, nullptr, &bgSampler);
+    }
+
+    // Register with ImGui as a texture
+    bgDescriptorSet = ImGui_ImplVulkan_AddTexture(bgSampler, bgImageView,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     return true;
 }
 
-void LoadingScreen::createQuad() {
-    float vertices[] = {
-        // Position    // TexCoord
-        -1.0f,  1.0f,  0.0f, 1.0f,
-        -1.0f, -1.0f,  0.0f, 0.0f,
-         1.0f, -1.0f,  1.0f, 0.0f,
-
-        -1.0f,  1.0f,  0.0f, 1.0f,
-         1.0f, -1.0f,  1.0f, 0.0f,
-         1.0f,  1.0f,  1.0f, 1.0f
-    };
-
-    glGenVertexArrays(1, &vao);
-    glGenBuffers(1, &vbo);
-
-    glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    glBindVertexArray(0);
-}
-
-void LoadingScreen::createBarQuad() {
-    // Dynamic quad — vertices updated each frame via glBufferSubData
-    glGenVertexArrays(1, &barVao);
-    glGenBuffers(1, &barVbo);
-
-    glBindVertexArray(barVao);
-    glBindBuffer(GL_ARRAY_BUFFER, barVbo);
-    glBufferData(GL_ARRAY_BUFFER, 12 * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
-
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-
-    glBindVertexArray(0);
-}
-
 void LoadingScreen::render() {
-    if (!vao || !shaderId) return;
+    // If a frame is already in progress (e.g. called from a UI callback),
+    // end it before starting our own
+    ImGuiContext* ctx = ImGui::GetCurrentContext();
+    if (ctx && ctx->FrameCount >= 0 && ctx->WithinFrameScope) {
+        ImGui::EndFrame();
+    }
 
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
+    ImGuiIO& io = ImGui::GetIO();
+    float screenW = io.DisplaySize.x;
+    float screenH = io.DisplaySize.y;
 
-    glDisable(GL_DEPTH_TEST);
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplSDL2_NewFrame();
+    ImGui::NewFrame();
+
+    // Invisible fullscreen window
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2(screenW, screenH));
+    ImGui::Begin("##LoadingScreen", nullptr,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground |
+        ImGuiWindowFlags_NoBringToFrontOnFocus);
 
     // Draw background image
-    if (textureId) {
-        glUseProgram(shaderId);
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, textureId);
-        glBindVertexArray(vao);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
-        glBindVertexArray(0);
+    if (bgDescriptorSet) {
+        ImGui::GetWindowDrawList()->AddImage(
+            reinterpret_cast<ImTextureID>(bgDescriptorSet),
+            ImVec2(0, 0), ImVec2(screenW, screenH));
     }
 
-    // Draw progress bar at bottom center
-    if (barVao && barShaderId) {
-        // Bar dimensions in NDC: centered, near bottom
-        const float barWidth = 0.6f;   // half-width in NDC (total 1.2 of 2.0 range = 60% of screen)
-        const float barHeight = 0.015f;
-        const float barY = -0.82f;     // near bottom
-
-        float left = -barWidth;
-        float right = -barWidth + 2.0f * barWidth * loadProgress;
-        float top = barY + barHeight;
-        float bottom = barY - barHeight;
-
-        // Background (dark)
-        {
-            float bgVerts[] = {
-                -barWidth, top,
-                -barWidth, bottom,
-                 barWidth, bottom,
-                -barWidth, top,
-                 barWidth, bottom,
-                 barWidth, top,
-            };
-            glUseProgram(barShaderId);
-            GLint colorLoc = glGetUniformLocation(barShaderId, "uColor");
-            glUniform4f(colorLoc, 0.1f, 0.1f, 0.1f, 0.8f);
-
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-            glBindVertexArray(barVao);
-            glBindBuffer(GL_ARRAY_BUFFER, barVbo);
-            glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(bgVerts), bgVerts);
-            glDrawArrays(GL_TRIANGLES, 0, 6);
-        }
-
-        // Filled portion (gold/amber like WoW)
-        if (loadProgress > 0.001f) {
-            float fillVerts[] = {
-                left, top,
-                left, bottom,
-                right, bottom,
-                left, top,
-                right, bottom,
-                right, top,
-            };
-            GLint colorLoc = glGetUniformLocation(barShaderId, "uColor");
-            glUniform4f(colorLoc, 0.78f, 0.61f, 0.13f, 1.0f);
-
-            glBindBuffer(GL_ARRAY_BUFFER, barVbo);
-            glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(fillVerts), fillVerts);
-            glDrawArrays(GL_TRIANGLES, 0, 6);
-        }
-
-        // Border (thin bright outline)
-        {
-            const float borderInset = 0.002f;
-            float borderLeft = -barWidth - borderInset;
-            float borderRight = barWidth + borderInset;
-            float borderTop = top + borderInset;
-            float borderBottom = bottom - borderInset;
-
-            // Draw 4 thin border edges as line strip
-            glUseProgram(barShaderId);
-            GLint colorLoc = glGetUniformLocation(barShaderId, "uColor");
-            glUniform4f(colorLoc, 0.55f, 0.43f, 0.1f, 1.0f);
-
-            float borderVerts[] = {
-                borderLeft, borderTop,
-                borderRight, borderTop,
-                borderRight, borderBottom,
-                borderLeft, borderBottom,
-                borderLeft, borderTop,
-            };
-            glBindBuffer(GL_ARRAY_BUFFER, barVbo);
-            glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(borderVerts), borderVerts);
-            glDrawArrays(GL_LINE_STRIP, 0, 5);
-        }
-
-        glBindVertexArray(0);
-        glDisable(GL_BLEND);
-    }
-
-    // Draw status text and percentage with ImGui overlay
+    // Progress bar
     {
-        // If a frame is already in progress (e.g. called from a UI callback),
-        // end it before starting our own
-        ImGuiContext* ctx = ImGui::GetCurrentContext();
-        if (ctx && ctx->FrameCount >= 0 && ctx->WithinFrameScope) {
-            ImGui::EndFrame();
+        const float barWidthFrac = 0.6f;
+        const float barHeight = 6.0f;
+        const float barY = screenH * 0.91f;
+        float barX = screenW * (0.5f - barWidthFrac * 0.5f);
+        float barW = screenW * barWidthFrac;
+
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+
+        // Background
+        drawList->AddRectFilled(
+            ImVec2(barX, barY),
+            ImVec2(barX + barW, barY + barHeight),
+            IM_COL32(25, 25, 25, 200), 2.0f);
+
+        // Fill (gold)
+        if (loadProgress > 0.001f) {
+            drawList->AddRectFilled(
+                ImVec2(barX, barY),
+                ImVec2(barX + barW * loadProgress, barY + barHeight),
+                IM_COL32(199, 156, 33, 255), 2.0f);
         }
 
-        ImGuiIO& io = ImGui::GetIO();
-        float screenW = io.DisplaySize.x;
-        float screenH = io.DisplaySize.y;
+        // Border
+        drawList->AddRect(
+            ImVec2(barX - 1, barY - 1),
+            ImVec2(barX + barW + 1, barY + barHeight + 1),
+            IM_COL32(140, 110, 25, 255), 2.0f);
+    }
 
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplSDL2_NewFrame();
-        ImGui::NewFrame();
-
-        // Invisible fullscreen window for text overlay
-        ImGui::SetNextWindowPos(ImVec2(0, 0));
-        ImGui::SetNextWindowSize(ImVec2(screenW, screenH));
-        ImGui::Begin("##LoadingOverlay", nullptr,
-            ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-            ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
-            ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground |
-            ImGuiWindowFlags_NoBringToFrontOnFocus);
-
-        // Percentage text centered above bar
+    // Percentage text above bar
+    {
         char pctBuf[32];
         snprintf(pctBuf, sizeof(pctBuf), "%d%%", static_cast<int>(loadProgress * 100.0f));
-
-        float barCenterY = screenH * (1.0f - ((-0.82f + 1.0f) / 2.0f)); // NDC -0.82 to screen Y
-        float textY = barCenterY - 30.0f;
+        float barCenterY = screenH * 0.91f;
+        float textY = barCenterY - 20.0f;
 
         ImVec2 pctSize = ImGui::CalcTextSize(pctBuf);
         ImGui::SetCursorPos(ImVec2((screenW - pctSize.x) * 0.5f, textY));
         ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "%s", pctBuf);
+    }
 
-        // Status text centered below bar
-        float statusY = barCenterY + 16.0f;
+    // Status text below bar
+    {
+        float statusY = screenH * 0.91f + 14.0f;
         ImVec2 statusSize = ImGui::CalcTextSize(statusText.c_str());
         ImGui::SetCursorPos(ImVec2((screenW - statusSize.x) * 0.5f, statusY));
         ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "%s", statusText.c_str());
-
-        ImGui::End();
-        ImGui::Render();
-
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     }
 
-    glEnable(GL_DEPTH_TEST);
+    ImGui::End();
+    ImGui::Render();
+
+    // Submit the frame to Vulkan (loading screen runs outside the main render loop)
+    if (vkCtx) {
+        uint32_t imageIndex = 0;
+        VkCommandBuffer cmd = vkCtx->beginFrame(imageIndex);
+        if (cmd != VK_NULL_HANDLE) {
+            // Begin render pass
+            VkRenderPassBeginInfo rpInfo{};
+            rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+            rpInfo.renderPass = vkCtx->getImGuiRenderPass();
+            rpInfo.framebuffer = vkCtx->getSwapchainFramebuffers()[imageIndex];
+            rpInfo.renderArea.offset = {0, 0};
+            rpInfo.renderArea.extent = vkCtx->getSwapchainExtent();
+
+            VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+            rpInfo.clearValueCount = 1;
+            rpInfo.pClearValues = &clearColor;
+
+            vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+            ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
+            vkCmdEndRenderPass(cmd);
+
+            vkCtx->endFrame(cmd, imageIndex);
+        }
+    }
 }
 
 } // namespace rendering

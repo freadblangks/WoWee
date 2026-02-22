@@ -1,7 +1,7 @@
 #pragma once
 
 #include "game/character.hpp"
-#include <GL/glew.h>
+#include <vulkan/vulkan.h>
 #include <memory>
 #include <cstdint>
 #include <string>
@@ -13,6 +13,8 @@ namespace rendering {
 
 class CharacterRenderer;
 class Camera;
+class VkContext;
+class VkTexture;
 
 class CharacterPreview {
 public:
@@ -34,7 +36,8 @@ public:
     void render();
     void rotate(float yawDelta);
 
-    GLuint getTextureId() const { return colorTexture_; }
+    // TODO: Vulkan offscreen render target for preview
+    VkTexture* getTextureId() const { return nullptr; }
     int getWidth() const { return fboWidth_; }
     int getHeight() const { return fboHeight_; }
 
@@ -51,9 +54,8 @@ private:
     std::unique_ptr<CharacterRenderer> charRenderer_;
     std::unique_ptr<Camera> camera_;
 
-    GLuint fbo_ = 0;
-    GLuint colorTexture_ = 0;
-    GLuint depthRenderbuffer_ = 0;
+    // TODO: Vulkan offscreen render target
+    // VkRenderTarget* renderTarget_ = nullptr;
     static constexpr int fboWidth_ = 400;
     static constexpr int fboHeight_ = 500;
 

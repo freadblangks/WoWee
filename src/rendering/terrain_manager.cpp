@@ -726,7 +726,7 @@ void TerrainManager::finalizeTile(const std::shared_ptr<PendingTile>& pending) {
     if (m2Renderer && assetManager) {
         // Always pass the latest asset manager. initialize() is idempotent and updates
         // the pointer even when the renderer was initialized earlier without assets.
-        m2Renderer->initialize(assetManager);
+        m2Renderer->initialize(nullptr, VK_NULL_HANDLE, assetManager);
 
         // Upload M2 models immediately (batching was causing hangs)
         // The 5ms time budget in processReadyTiles() limits the spike
@@ -768,7 +768,7 @@ void TerrainManager::finalizeTile(const std::shared_ptr<PendingTile>& pending) {
     // Upload WMO models to GPU and create instances
     if (wmoRenderer && assetManager) {
         // WMORenderer may be initialized before assets are ready; always re-pass assets.
-        wmoRenderer->initialize(assetManager);
+        wmoRenderer->initialize(nullptr, VK_NULL_HANDLE, assetManager);
 
         int loadedWMOs = 0;
         int loadedLiquids = 0;

@@ -2,11 +2,16 @@
 #include "rendering/camera.hpp"
 #include "rendering/camera_controller.hpp"
 #include "rendering/water_renderer.hpp"
-#include "rendering/shader.hpp"
+#include "rendering/vk_context.hpp"
+#include "rendering/vk_shader.hpp"
+#include "rendering/vk_pipeline.hpp"
+#include "rendering/vk_frame_data.hpp"
+#include "rendering/vk_utils.hpp"
 #include "core/logger.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 #include <random>
 #include <cmath>
+#include <cstring>
 
 namespace wowee {
 namespace rendering {
@@ -25,123 +30,152 @@ static float randFloat(float lo, float hi) {
 SwimEffects::SwimEffects() = default;
 SwimEffects::~SwimEffects() { shutdown(); }
 
-bool SwimEffects::initialize() {
+bool SwimEffects::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout) {
     LOG_INFO("Initializing swim effects");
 
-    // --- Ripple/splash shader (small white spray droplets) ---
-    rippleShader = std::make_unique<Shader>();
+    vkCtx = ctx;
+    VkDevice device = vkCtx->getDevice();
 
-    const char* rippleVS = R"(
-        #version 330 core
-        layout (location = 0) in vec3 aPos;
-        layout (location = 1) in float aSize;
-        layout (location = 2) in float aAlpha;
+    // ---- Vertex input: pos(vec3) + size(float) + alpha(float) = 5 floats, stride = 20 bytes ----
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = 5 * sizeof(float);
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-        uniform mat4 uView;
-        uniform mat4 uProjection;
+    std::vector<VkVertexInputAttributeDescription> attrs(3);
+    // location 0: vec3 position
+    attrs[0].location = 0;
+    attrs[0].binding = 0;
+    attrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attrs[0].offset = 0;
+    // location 1: float size
+    attrs[1].location = 1;
+    attrs[1].binding = 0;
+    attrs[1].format = VK_FORMAT_R32_SFLOAT;
+    attrs[1].offset = 3 * sizeof(float);
+    // location 2: float alpha
+    attrs[2].location = 2;
+    attrs[2].binding = 0;
+    attrs[2].format = VK_FORMAT_R32_SFLOAT;
+    attrs[2].offset = 4 * sizeof(float);
 
-        out float vAlpha;
+    std::vector<VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
 
-        void main() {
-            gl_Position = uProjection * uView * vec4(aPos, 1.0);
-            gl_PointSize = aSize;
-            vAlpha = aAlpha;
+    // ---- Ripple pipeline ----
+    {
+        VkShaderModule vertModule;
+        if (!vertModule.loadFromFile(device, "assets/shaders/swim_ripple.vert.spv")) {
+            LOG_ERROR("Failed to load swim_ripple vertex shader");
+            return false;
         }
-    )";
-
-    const char* rippleFS = R"(
-        #version 330 core
-        in float vAlpha;
-        out vec4 FragColor;
-
-        void main() {
-            vec2 coord = gl_PointCoord - vec2(0.5);
-            float dist = length(coord);
-            if (dist > 0.5) discard;
-            // Soft circular splash droplet
-            float alpha = smoothstep(0.5, 0.2, dist) * vAlpha;
-            FragColor = vec4(0.85, 0.92, 1.0, alpha);
+        VkShaderModule fragModule;
+        if (!fragModule.loadFromFile(device, "assets/shaders/swim_ripple.frag.spv")) {
+            LOG_ERROR("Failed to load swim_ripple fragment shader");
+            return false;
         }
-    )";
 
-    if (!rippleShader->loadFromSource(rippleVS, rippleFS)) {
-        LOG_ERROR("Failed to create ripple shader");
-        return false;
+        VkPipelineShaderStageCreateInfo vertStage = vertModule.stageInfo(VK_SHADER_STAGE_VERTEX_BIT);
+        VkPipelineShaderStageCreateInfo fragStage = fragModule.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT);
+
+        ripplePipelineLayout = createPipelineLayout(device, {perFrameLayout}, {});
+        if (ripplePipelineLayout == VK_NULL_HANDLE) {
+            LOG_ERROR("Failed to create ripple pipeline layout");
+            return false;
+        }
+
+        ripplePipeline = PipelineBuilder()
+            .setShaders(vertStage, fragStage)
+            .setVertexInput({binding}, attrs)
+            .setTopology(VK_PRIMITIVE_TOPOLOGY_POINT_LIST)
+            .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+            .setDepthTest(true, false, VK_COMPARE_OP_LESS)
+            .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+            .setLayout(ripplePipelineLayout)
+            .setRenderPass(vkCtx->getImGuiRenderPass())
+            .setDynamicStates(dynamicStates)
+            .build(device);
+
+        vertModule.destroy();
+        fragModule.destroy();
+
+        if (ripplePipeline == VK_NULL_HANDLE) {
+            LOG_ERROR("Failed to create ripple pipeline");
+            return false;
+        }
     }
 
-    // --- Bubble shader ---
-    bubbleShader = std::make_unique<Shader>();
-
-    const char* bubbleVS = R"(
-        #version 330 core
-        layout (location = 0) in vec3 aPos;
-        layout (location = 1) in float aSize;
-        layout (location = 2) in float aAlpha;
-
-        uniform mat4 uView;
-        uniform mat4 uProjection;
-
-        out float vAlpha;
-
-        void main() {
-            gl_Position = uProjection * uView * vec4(aPos, 1.0);
-            gl_PointSize = aSize;
-            vAlpha = aAlpha;
+    // ---- Bubble pipeline ----
+    {
+        VkShaderModule vertModule;
+        if (!vertModule.loadFromFile(device, "assets/shaders/swim_bubble.vert.spv")) {
+            LOG_ERROR("Failed to load swim_bubble vertex shader");
+            return false;
         }
-    )";
-
-    const char* bubbleFS = R"(
-        #version 330 core
-        in float vAlpha;
-        out vec4 FragColor;
-
-        void main() {
-            vec2 coord = gl_PointCoord - vec2(0.5);
-            float dist = length(coord);
-            if (dist > 0.5) discard;
-            // Bubble with highlight
-            float edge = smoothstep(0.5, 0.35, dist);
-            float hollow = smoothstep(0.25, 0.35, dist);
-            float bubble = edge * hollow;
-            // Specular highlight near top-left
-            float highlight = smoothstep(0.3, 0.0, length(coord - vec2(-0.12, -0.12)));
-            float alpha = (bubble * 0.6 + highlight * 0.4) * vAlpha;
-            vec3 color = vec3(0.7, 0.85, 1.0);
-            FragColor = vec4(color, alpha);
+        VkShaderModule fragModule;
+        if (!fragModule.loadFromFile(device, "assets/shaders/swim_bubble.frag.spv")) {
+            LOG_ERROR("Failed to load swim_bubble fragment shader");
+            return false;
         }
-    )";
 
-    if (!bubbleShader->loadFromSource(bubbleVS, bubbleFS)) {
-        LOG_ERROR("Failed to create bubble shader");
-        return false;
+        VkPipelineShaderStageCreateInfo vertStage = vertModule.stageInfo(VK_SHADER_STAGE_VERTEX_BIT);
+        VkPipelineShaderStageCreateInfo fragStage = fragModule.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT);
+
+        bubblePipelineLayout = createPipelineLayout(device, {perFrameLayout}, {});
+        if (bubblePipelineLayout == VK_NULL_HANDLE) {
+            LOG_ERROR("Failed to create bubble pipeline layout");
+            return false;
+        }
+
+        bubblePipeline = PipelineBuilder()
+            .setShaders(vertStage, fragStage)
+            .setVertexInput({binding}, attrs)
+            .setTopology(VK_PRIMITIVE_TOPOLOGY_POINT_LIST)
+            .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+            .setDepthTest(true, false, VK_COMPARE_OP_LESS)
+            .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+            .setLayout(bubblePipelineLayout)
+            .setRenderPass(vkCtx->getImGuiRenderPass())
+            .setDynamicStates(dynamicStates)
+            .build(device);
+
+        vertModule.destroy();
+        fragModule.destroy();
+
+        if (bubblePipeline == VK_NULL_HANDLE) {
+            LOG_ERROR("Failed to create bubble pipeline");
+            return false;
+        }
     }
 
-    // --- Ripple VAO/VBO ---
-    glGenVertexArrays(1, &rippleVAO);
-    glGenBuffers(1, &rippleVBO);
-    glBindVertexArray(rippleVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, rippleVBO);
-    // layout: vec3 pos, float size, float alpha  (stride = 5 floats)
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(4 * sizeof(float)));
-    glEnableVertexAttribArray(2);
-    glBindVertexArray(0);
+    // ---- Create dynamic mapped vertex buffers ----
+    rippleDynamicVBSize = MAX_RIPPLE_PARTICLES * 5 * sizeof(float);
+    {
+        AllocatedBuffer buf = createBuffer(vkCtx->getAllocator(), rippleDynamicVBSize,
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+        rippleDynamicVB = buf.buffer;
+        rippleDynamicVBAlloc = buf.allocation;
+        rippleDynamicVBAllocInfo = buf.info;
+        if (rippleDynamicVB == VK_NULL_HANDLE) {
+            LOG_ERROR("Failed to create ripple dynamic vertex buffer");
+            return false;
+        }
+    }
 
-    // --- Bubble VAO/VBO ---
-    glGenVertexArrays(1, &bubbleVAO);
-    glGenBuffers(1, &bubbleVBO);
-    glBindVertexArray(bubbleVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, bubbleVBO);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(4 * sizeof(float)));
-    glEnableVertexAttribArray(2);
-    glBindVertexArray(0);
+    bubbleDynamicVBSize = MAX_BUBBLE_PARTICLES * 5 * sizeof(float);
+    {
+        AllocatedBuffer buf = createBuffer(vkCtx->getAllocator(), bubbleDynamicVBSize,
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+        bubbleDynamicVB = buf.buffer;
+        bubbleDynamicVBAlloc = buf.allocation;
+        bubbleDynamicVBAllocInfo = buf.info;
+        if (bubbleDynamicVB == VK_NULL_HANDLE) {
+            LOG_ERROR("Failed to create bubble dynamic vertex buffer");
+            return false;
+        }
+    }
 
     ripples.reserve(MAX_RIPPLE_PARTICLES);
     bubbles.reserve(MAX_BUBBLE_PARTICLES);
@@ -153,12 +187,40 @@ bool SwimEffects::initialize() {
 }
 
 void SwimEffects::shutdown() {
-    if (rippleVAO) { glDeleteVertexArrays(1, &rippleVAO); rippleVAO = 0; }
-    if (rippleVBO) { glDeleteBuffers(1, &rippleVBO); rippleVBO = 0; }
-    if (bubbleVAO) { glDeleteVertexArrays(1, &bubbleVAO); bubbleVAO = 0; }
-    if (bubbleVBO) { glDeleteBuffers(1, &bubbleVBO); bubbleVBO = 0; }
-    rippleShader.reset();
-    bubbleShader.reset();
+    if (vkCtx) {
+        VkDevice device = vkCtx->getDevice();
+        VmaAllocator allocator = vkCtx->getAllocator();
+
+        if (ripplePipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device, ripplePipeline, nullptr);
+            ripplePipeline = VK_NULL_HANDLE;
+        }
+        if (ripplePipelineLayout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device, ripplePipelineLayout, nullptr);
+            ripplePipelineLayout = VK_NULL_HANDLE;
+        }
+        if (rippleDynamicVB != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(allocator, rippleDynamicVB, rippleDynamicVBAlloc);
+            rippleDynamicVB = VK_NULL_HANDLE;
+            rippleDynamicVBAlloc = VK_NULL_HANDLE;
+        }
+
+        if (bubblePipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device, bubblePipeline, nullptr);
+            bubblePipeline = VK_NULL_HANDLE;
+        }
+        if (bubblePipelineLayout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device, bubblePipelineLayout, nullptr);
+            bubblePipelineLayout = VK_NULL_HANDLE;
+        }
+        if (bubbleDynamicVB != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(allocator, bubbleDynamicVB, bubbleDynamicVBAlloc);
+            bubbleDynamicVB = VK_NULL_HANDLE;
+            bubbleDynamicVBAlloc = VK_NULL_HANDLE;
+        }
+    }
+
+    vkCtx = nullptr;
     ripples.clear();
     bubbles.clear();
 }
@@ -328,52 +390,38 @@ void SwimEffects::update(const Camera& camera, const CameraController& cc,
     }
 }
 
-void SwimEffects::render(const Camera& camera) {
+void SwimEffects::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet) {
     if (rippleVertexData.empty() && bubbleVertexData.empty()) return;
 
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glDepthMask(GL_FALSE);
-    glEnable(GL_PROGRAM_POINT_SIZE);
-
-    glm::mat4 view = camera.getViewMatrix();
-    glm::mat4 projection = camera.getProjectionMatrix();
+    VkDeviceSize offset = 0;
 
     // --- Render ripples (splash droplets above water surface) ---
-    if (!rippleVertexData.empty() && rippleShader) {
-        rippleShader->use();
-        rippleShader->setUniform("uView", view);
-        rippleShader->setUniform("uProjection", projection);
+    if (!rippleVertexData.empty() && ripplePipeline != VK_NULL_HANDLE) {
+        VkDeviceSize uploadSize = rippleVertexData.size() * sizeof(float);
+        if (rippleDynamicVBAllocInfo.pMappedData) {
+            std::memcpy(rippleDynamicVBAllocInfo.pMappedData, rippleVertexData.data(), uploadSize);
+        }
 
-        glBindVertexArray(rippleVAO);
-        glBindBuffer(GL_ARRAY_BUFFER, rippleVBO);
-        glBufferData(GL_ARRAY_BUFFER,
-                     rippleVertexData.size() * sizeof(float),
-                     rippleVertexData.data(),
-                     GL_DYNAMIC_DRAW);
-        glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(rippleVertexData.size() / 5));
-        glBindVertexArray(0);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ripplePipeline);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ripplePipelineLayout,
+            0, 1, &perFrameSet, 0, nullptr);
+        vkCmdBindVertexBuffers(cmd, 0, 1, &rippleDynamicVB, &offset);
+        vkCmdDraw(cmd, static_cast<uint32_t>(rippleVertexData.size() / 5), 1, 0, 0);
     }
 
     // --- Render bubbles ---
-    if (!bubbleVertexData.empty() && bubbleShader) {
-        bubbleShader->use();
-        bubbleShader->setUniform("uView", view);
-        bubbleShader->setUniform("uProjection", projection);
+    if (!bubbleVertexData.empty() && bubblePipeline != VK_NULL_HANDLE) {
+        VkDeviceSize uploadSize = bubbleVertexData.size() * sizeof(float);
+        if (bubbleDynamicVBAllocInfo.pMappedData) {
+            std::memcpy(bubbleDynamicVBAllocInfo.pMappedData, bubbleVertexData.data(), uploadSize);
+        }
 
-        glBindVertexArray(bubbleVAO);
-        glBindBuffer(GL_ARRAY_BUFFER, bubbleVBO);
-        glBufferData(GL_ARRAY_BUFFER,
-                     bubbleVertexData.size() * sizeof(float),
-                     bubbleVertexData.data(),
-                     GL_DYNAMIC_DRAW);
-        glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(bubbleVertexData.size() / 5));
-        glBindVertexArray(0);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, bubblePipeline);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, bubblePipelineLayout,
+            0, 1, &perFrameSet, 0, nullptr);
+        vkCmdBindVertexBuffers(cmd, 0, 1, &bubbleDynamicVB, &offset);
+        vkCmdDraw(cmd, static_cast<uint32_t>(bubbleVertexData.size() / 5), 1, 0, 0);
     }
-
-    glDisable(GL_BLEND);
-    glDepthMask(GL_TRUE);
-    glDisable(GL_PROGRAM_POINT_SIZE);
 }
 
 } // namespace rendering

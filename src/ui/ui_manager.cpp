@@ -4,9 +4,10 @@
 #include "core/logger.hpp"
 #include "auth/auth_handler.hpp"
 #include "game/game_handler.hpp"
+#include "rendering/vk_context.hpp"
 #include <imgui.h>
 #include <imgui_impl_sdl2.h>
-#include <imgui_impl_opengl3.h>
+#include <imgui_impl_vulkan.h>
 
 namespace wowee {
 namespace ui {
@@ -25,6 +26,12 @@ UIManager::~UIManager() = default;
 bool UIManager::initialize(core::Window* win) {
     window = win;
     LOG_INFO("Initializing UI manager");
+
+    auto* vkCtx = window->getVkContext();
+    if (!vkCtx) {
+        LOG_ERROR("No Vulkan context available for ImGui initialization");
+        return false;
+    }
 
     // Initialize ImGui
     IMGUI_CHECKVERSION();
@@ -56,19 +63,37 @@ bool UIManager::initialize(core::Window* win) {
     colors[ImGuiCol_HeaderHovered] = ImVec4(0.25f, 0.30f, 0.50f, 0.80f);
     colors[ImGuiCol_HeaderActive] = ImVec4(0.20f, 0.25f, 0.45f, 1.00f);
 
-    // Initialize ImGui for SDL2 and OpenGL3
-    ImGui_ImplSDL2_InitForOpenGL(window->getSDLWindow(), window->getGLContext());
-    ImGui_ImplOpenGL3_Init("#version 330 core");
+    // Initialize ImGui for SDL2 + Vulkan
+    ImGui_ImplSDL2_InitForVulkan(window->getSDLWindow());
+
+    ImGui_ImplVulkan_InitInfo initInfo{};
+    initInfo.ApiVersion = VK_API_VERSION_1_1;
+    initInfo.Instance = vkCtx->getInstance();
+    initInfo.PhysicalDevice = vkCtx->getPhysicalDevice();
+    initInfo.Device = vkCtx->getDevice();
+    initInfo.QueueFamily = vkCtx->getGraphicsQueueFamily();
+    initInfo.Queue = vkCtx->getGraphicsQueue();
+    initInfo.DescriptorPool = vkCtx->getImGuiDescriptorPool();
+    initInfo.MinImageCount = 2;
+    initInfo.ImageCount = vkCtx->getSwapchainImageCount();
+    initInfo.PipelineInfoMain.RenderPass = vkCtx->getImGuiRenderPass();
+    initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+
+    ImGui_ImplVulkan_Init(&initInfo);
 
     imguiInitialized = true;
 
-    LOG_INFO("UI manager initialized successfully");
+    LOG_INFO("UI manager initialized successfully (Vulkan)");
     return true;
 }
 
 void UIManager::shutdown() {
     if (imguiInitialized) {
-        ImGui_ImplOpenGL3_Shutdown();
+        auto* vkCtx = window ? window->getVkContext() : nullptr;
+        if (vkCtx) {
+            vkDeviceWaitIdle(vkCtx->getDevice());
+        }
+        ImGui_ImplVulkan_Shutdown();
         ImGui_ImplSDL2_Shutdown();
         ImGui::DestroyContext();
         imguiInitialized = false;
@@ -80,7 +105,7 @@ void UIManager::update([[maybe_unused]] float deltaTime) {
     if (!imguiInitialized) return;
 
     // Start ImGui frame
-    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
 }
@@ -126,7 +151,6 @@ void UIManager::render(core::AppState appState, auth::AuthHandler* authHandler, 
 
         case core::AppState::DISCONNECTED:
             authScreen->stopLoginMusic();
-            // Show disconnected message
             ImGui::SetNextWindowSize(ImVec2(400, 150), ImGuiCond_Always);
             ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f - 200,
                                            ImGui::GetIO().DisplaySize.y * 0.5f - 75),
@@ -141,9 +165,8 @@ void UIManager::render(core::AppState appState, auth::AuthHandler* authHandler, 
             break;
     }
 
-    // Render ImGui
+    // Finalize ImGui draw data (actual rendering happens in the command buffer)
     ImGui::Render();
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
 void UIManager::processEvent(const SDL_Event& event) {

@@ -1,7 +1,8 @@
 #pragma once
 
 #include "pipeline/m2_loader.hpp"
-#include <GL/glew.h>
+#include <vulkan/vulkan.h>
+#include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <memory>
 #include <vector>
@@ -14,9 +15,9 @@ namespace pipeline { class AssetManager; }
 namespace rendering {
 
 // Forward declarations
-class Shader;
-class Texture;
 class Camera;
+class VkContext;
+class VkTexture;
 
 // Weapon attached to a character instance at a bone attachment point
 struct WeaponAttachment {
@@ -33,7 +34,7 @@ struct WeaponAttachment {
  * Features:
  * - Skeletal animation with bone transformations
  * - Keyframe interpolation (linear position/scale, slerp rotation)
- * - Vertex skinning (GPU-accelerated)
+ * - Vertex skinning (GPU-accelerated via bone SSBO)
  * - Texture loading from BLP via AssetManager
  */
 class CharacterRenderer {
@@ -41,7 +42,7 @@ public:
     CharacterRenderer();
     ~CharacterRenderer();
 
-    bool initialize();
+    bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout, pipeline::AssetManager* am);
     void shutdown();
 
     void setAssetManager(pipeline::AssetManager* am) { assetManager = am; }
@@ -56,8 +57,8 @@ public:
 
     void update(float deltaTime, const glm::vec3& cameraPos = glm::vec3(0.0f));
 
-    void render(const Camera& camera, const glm::mat4& view, const glm::mat4& projection);
-    void renderShadow(const glm::mat4& lightSpaceMatrix);
+    void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera);
+    void renderShadow(VkCommandBuffer cmd, VkDescriptorSet perFrameSet);
 
     void setInstancePosition(uint32_t instanceId, const glm::vec3& position);
     void setInstanceRotation(uint32_t instanceId, const glm::vec3& rotation);
@@ -65,8 +66,8 @@ public:
     void startFadeIn(uint32_t instanceId, float durationSeconds);
     const pipeline::M2Model* getModelData(uint32_t modelId) const;
     void setActiveGeosets(uint32_t instanceId, const std::unordered_set<uint16_t>& geosets);
-    void setGroupTextureOverride(uint32_t instanceId, uint16_t geosetGroup, GLuint textureId);
-    void setTextureSlotOverride(uint32_t instanceId, uint16_t textureSlot, GLuint textureId);
+    void setGroupTextureOverride(uint32_t instanceId, uint16_t geosetGroup, VkTexture* texture);
+    void setTextureSlotOverride(uint32_t instanceId, uint16_t textureSlot, VkTexture* texture);
     void clearTextureSlotOverride(uint32_t instanceId, uint16_t textureSlot);
     void setInstanceVisible(uint32_t instanceId, bool visible);
     void removeInstance(uint32_t instanceId);
@@ -88,45 +89,32 @@ public:
     /** Detach a weapon from the given attachment point. */
     void detachWeapon(uint32_t charInstanceId, uint32_t attachmentId);
 
-    /** Get the world-space transform of an attachment point on an instance.
-     *  Used for mount seats, weapon positions, etc.
-     *  @param instanceId The character/mount instance
-     *  @param attachmentId The attachment point ID (0=Mount, 1=RightHand, 2=LeftHand, etc.)
-     *  @param outTransform The resulting world-space transform matrix
-     *  @return true if attachment found and matrix computed
-     */
+    /** Get the world-space transform of an attachment point on an instance. */
     bool getAttachmentTransform(uint32_t instanceId, uint32_t attachmentId, glm::mat4& outTransform);
 
     size_t getInstanceCount() const { return instances.size(); }
 
-    void setFog(const glm::vec3& color, float start, float end) {
-        fogColor = color; fogStart = start; fogEnd = end;
-    }
-
-    void setLighting(const float lightDirIn[3], const float lightColorIn[3],
-                     const float ambientColorIn[3]) {
-        lightDir = glm::vec3(lightDirIn[0], lightDirIn[1], lightDirIn[2]);
-        lightColor = glm::vec3(lightColorIn[0], lightColorIn[1], lightColorIn[2]);
-        ambientColor = glm::vec3(ambientColorIn[0], ambientColorIn[1], ambientColorIn[2]);
-    }
-
-    void setShadowMap(GLuint depthTex, const glm::mat4& lightSpace) {
-        shadowDepthTex = depthTex; lightSpaceMatrix = lightSpace; shadowEnabled = true;
-    }
-    void clearShadowMap() { shadowEnabled = false; }
+    // Fog/lighting/shadow are now in per-frame UBO — keep stubs for callers that haven't been updated
+    void setFog(const glm::vec3&, float, float) {}
+    void setLighting(const float[3], const float[3], const float[3]) {}
+    void setShadowMap(VkTexture*, const glm::mat4&) {}
+    void clearShadowMap() {}
 
 private:
     // GPU representation of M2 model
     struct M2ModelGPU {
-        uint32_t vao = 0;
-        uint32_t vbo = 0;
-        uint32_t ebo = 0;
+        VkBuffer vertexBuffer = VK_NULL_HANDLE;
+        VmaAllocation vertexAlloc = VK_NULL_HANDLE;
+        VkBuffer indexBuffer = VK_NULL_HANDLE;
+        VmaAllocation indexAlloc = VK_NULL_HANDLE;
+        uint32_t indexCount = 0;
+        uint32_t vertexCount = 0;
 
         pipeline::M2Model data;  // Original model data
         std::vector<glm::mat4> bindPose;  // Inverse bind pose matrices
 
         // Textures loaded from BLP (indexed by texture array position)
-        std::vector<GLuint> textureIds;
+        std::vector<VkTexture*> textureIds;
     };
 
     // Character instance
@@ -151,11 +139,11 @@ private:
         // Empty = render all (for non-character models)
         std::unordered_set<uint16_t> activeGeosets;
 
-        // Per-geoset-group texture overrides (group → GL texture ID)
-        std::unordered_map<uint16_t, GLuint> groupTextureOverrides;
+        // Per-geoset-group texture overrides (group → VkTexture*)
+        std::unordered_map<uint16_t, VkTexture*> groupTextureOverrides;
 
-        // Per-texture-slot overrides (slot → GL texture ID)
-        std::unordered_map<uint16_t, GLuint> textureSlotOverrides;
+        // Per-texture-slot overrides (slot → VkTexture*)
+        std::unordered_map<uint16_t, VkTexture*> textureSlotOverrides;
 
         // Weapon attachments (weapons parented to this instance's bones)
         std::vector<WeaponAttachment> weaponAttachments;
@@ -175,6 +163,12 @@ private:
         // Override model matrix (used for weapon instances positioned by parent bone)
         bool hasOverrideModelMatrix = false;
         glm::mat4 overrideModelMatrix{1.0f};
+
+        // Per-instance bone SSBO (double-buffered per frame)
+        VkBuffer boneBuffer[2] = {};
+        VmaAllocation boneAlloc[2] = {};
+        void* boneMapped[2] = {};
+        VkDescriptorSet boneSet[2] = {};
     };
 
     void setupModelBuffers(M2ModelGPU& gpuModel);
@@ -183,6 +177,8 @@ private:
     void calculateBoneMatrices(CharacterInstance& instance);
     glm::mat4 getBoneTransform(const pipeline::M2Bone& bone, float time, int sequenceIndex);
     glm::mat4 getModelMatrix(const CharacterInstance& instance) const;
+    void destroyModelGPU(M2ModelGPU& gpuModel);
+    void destroyInstanceBones(CharacterInstance& inst);
 
     // Keyframe interpolation helpers
     static int findKeyframeIndex(const std::vector<uint32_t>& timestamps, float time);
@@ -194,83 +190,76 @@ private:
 public:
     /**
      * Build a composited character skin texture by alpha-blending overlay
-     * layers (e.g. underwear) onto a base skin BLP. Each overlay is placed
-     * at the correct CharComponentTextureSections region based on its
-     * filename (pelvis, torso, etc.). Returns the resulting GL texture ID.
+     * layers onto a base skin BLP. Returns the resulting VkTexture*.
      */
-    GLuint compositeTextures(const std::vector<std::string>& layerPaths);
+    VkTexture* compositeTextures(const std::vector<std::string>& layerPaths);
 
     /**
      * Build a composited character skin with explicit region-based equipment overlays.
-     * @param basePath Body skin texture path
-     * @param baseLayers Underwear overlay paths (placed by filename keyword)
-     * @param regionLayers Pairs of (region_index, blp_path) for equipment textures
-     * @return GL texture ID of the composited result
      */
-    GLuint compositeWithRegions(const std::string& basePath,
+    VkTexture* compositeWithRegions(const std::string& basePath,
                                 const std::vector<std::string>& baseLayers,
                                 const std::vector<std::pair<int, std::string>>& regionLayers);
 
     /** Clear the composite texture cache (forces re-compositing on next call). */
     void clearCompositeCache();
 
-    /** Load a BLP texture from MPQ and return the GL texture ID (cached). */
-    GLuint loadTexture(const std::string& path);
-    GLuint getTransparentTexture() const { return transparentTexture; }
+    /** Load a BLP texture from MPQ and return VkTexture* (cached). */
+    VkTexture* loadTexture(const std::string& path);
+    VkTexture* getTransparentTexture() const { return transparentTexture_.get(); }
 
-    /** Replace a loaded model's texture at the given slot with a new GL texture. */
-    void setModelTexture(uint32_t modelId, uint32_t textureSlot, GLuint textureId);
+    /** Replace a loaded model's texture at the given slot. */
+    void setModelTexture(uint32_t modelId, uint32_t textureSlot, VkTexture* texture);
 
     /** Reset a model's texture slot back to white fallback. */
     void resetModelTexture(uint32_t modelId, uint32_t textureSlot);
 
 
 private:
-    std::unique_ptr<Shader> characterShader;
-    GLuint shadowCasterProgram = 0;
+    VkContext* vkCtx_ = nullptr;
     pipeline::AssetManager* assetManager = nullptr;
 
-    // Fog parameters
-    glm::vec3 fogColor = glm::vec3(0.5f, 0.6f, 0.7f);
-    float fogStart = 400.0f;
-    float fogEnd = 1200.0f;
+    // Vulkan pipelines (one per blend mode)
+    VkPipeline opaquePipeline_ = VK_NULL_HANDLE;
+    VkPipeline alphaTestPipeline_ = VK_NULL_HANDLE;
+    VkPipeline alphaPipeline_ = VK_NULL_HANDLE;
+    VkPipeline additivePipeline_ = VK_NULL_HANDLE;
+    VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
 
-    // Lighting parameters
-    glm::vec3 lightDir = glm::vec3(0.0f, -1.0f, 0.3f);
-    glm::vec3 lightColor = glm::vec3(1.5f, 1.4f, 1.3f);
-    glm::vec3 ambientColor = glm::vec3(0.4f, 0.4f, 0.45f);
+    // Descriptor set layouts
+    VkDescriptorSetLayout perFrameLayout_ = VK_NULL_HANDLE;  // set 0 (owned by Renderer)
+    VkDescriptorSetLayout materialSetLayout_ = VK_NULL_HANDLE;  // set 1
+    VkDescriptorSetLayout boneSetLayout_ = VK_NULL_HANDLE;  // set 2
 
-    // Shadow mapping
-    GLuint shadowDepthTex = 0;
-    glm::mat4 lightSpaceMatrix = glm::mat4(1.0f);
-    bool shadowEnabled = false;
+    // Descriptor pool
+    VkDescriptorPool materialDescPool_ = VK_NULL_HANDLE;
+    VkDescriptorPool boneDescPool_ = VK_NULL_HANDLE;
 
     // Texture cache
     struct TextureCacheEntry {
-        GLuint id = 0;
+        std::unique_ptr<VkTexture> texture;
         size_t approxBytes = 0;
         uint64_t lastUse = 0;
         bool hasAlpha = false;
         bool colorKeyBlack = false;
     };
     std::unordered_map<std::string, TextureCacheEntry> textureCache;
-    std::unordered_map<GLuint, bool> textureHasAlphaById_;
-    std::unordered_map<GLuint, bool> textureColorKeyBlackById_;
-    std::unordered_map<std::string, GLuint> compositeCache_;  // key → GPU texture for reuse
+    std::unordered_map<VkTexture*, bool> textureHasAlphaByPtr_;
+    std::unordered_map<VkTexture*, bool> textureColorKeyBlackByPtr_;
+    std::unordered_map<std::string, VkTexture*> compositeCache_;  // key → texture for reuse
     std::unordered_set<std::string> failedTextureCache_;  // negative cache for missing textures
     size_t textureCacheBytes_ = 0;
     uint64_t textureCacheCounter_ = 0;
-    size_t textureCacheBudgetBytes_ = 1024ull * 1024 * 1024;  // Default, overridden at init
-    GLuint whiteTexture = 0;
-    GLuint transparentTexture = 0;
+    size_t textureCacheBudgetBytes_ = 1024ull * 1024 * 1024;
+    std::unique_ptr<VkTexture> whiteTexture_;
+    std::unique_ptr<VkTexture> transparentTexture_;
 
     std::unordered_map<uint32_t, M2ModelGPU> models;
     std::unordered_map<uint32_t, CharacterInstance> instances;
 
     uint32_t nextInstanceId = 1;
 
-    // Maximum bones supported (GPU uniform limit)
-    // WoW character models can have 210+ bones; GPU reports 4096 components (~256 mat4)
+    // Maximum bones supported
     static constexpr int MAX_BONES = 240;
 };
 

@@ -1,6 +1,7 @@
 #pragma once
 
-#include <GL/glew.h>
+#include <vulkan/vulkan.h>
+#include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <memory>
 #include <unordered_map>
@@ -19,12 +20,13 @@ namespace pipeline {
 namespace rendering {
 
 class Camera;
-class Shader;
 class Frustum;
 class M2Renderer;
+class VkContext;
+class VkTexture;
 
 /**
- * WMO (World Model Object) Renderer
+ * WMO (World Model Object) Renderer (Vulkan)
  *
  * Renders buildings, dungeons, and large structures from WMO files.
  * Features:
@@ -32,7 +34,6 @@ class M2Renderer;
  * - Batched rendering per group
  * - Frustum culling
  * - Portal visibility (future)
- * - Dynamic lighting support (future)
  */
 class WMORenderer {
 public:
@@ -40,10 +41,13 @@ public:
     ~WMORenderer();
 
     /**
-     * Initialize renderer and create shaders
+     * Initialize renderer (Vulkan)
+     * @param ctx Vulkan context
+     * @param perFrameLayout Descriptor set layout for set 0 (per-frame UBO)
      * @param assetManager Asset manager for loading textures (optional)
      */
-    bool initialize(pipeline::AssetManager* assetManager = nullptr);
+    bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout,
+                    pipeline::AssetManager* assetManager = nullptr);
 
     /**
      * Cleanup GPU resources
@@ -132,12 +136,22 @@ public:
     void clearInstances();
 
     /**
-     * Render all WMO instances
-     * @param camera Camera for view/projection matrices
-     * @param view View matrix
-     * @param projection Projection matrix
+     * Render all WMO instances (Vulkan)
+     * @param cmd Command buffer to record into
+     * @param perFrameSet Per-frame descriptor set (set 0)
+     * @param camera Camera for frustum culling
      */
-    void render(const Camera& camera, const glm::mat4& view, const glm::mat4& projection);
+    void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera);
+
+    /**
+     * Initialize shadow pipeline (Phase 7)
+     */
+    bool initializeShadow(VkRenderPass shadowRenderPass);
+
+    /**
+     * Render depth-only for shadow casting
+     */
+    void renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMatrix);
 
     /**
      * Get number of loaded models
@@ -204,32 +218,22 @@ public:
     uint32_t getDistanceCulledGroups() const { return lastDistanceCulledGroups; }
 
     /**
-     * Enable/disable GPU occlusion query culling
+     * Enable/disable GPU occlusion query culling (stubbed in Vulkan)
      */
-    void setOcclusionCulling(bool enabled) { occlusionCulling = enabled; }
-    bool isOcclusionCullingEnabled() const { return occlusionCulling; }
+    void setOcclusionCulling(bool /*enabled*/) { /* stubbed */ }
+    bool isOcclusionCullingEnabled() const { return false; }
 
     /**
      * Get number of groups culled by occlusion queries last frame
      */
-    uint32_t getOcclusionCulledGroups() const { return lastOcclusionCulledGroups; }
+    uint32_t getOcclusionCulledGroups() const { return 0; }
 
-    void setFog(const glm::vec3& color, float start, float end) {
-        fogColor = color; fogStart = start; fogEnd = end;
-    }
-
-    void setLighting(const float lightDir[3], const float lightColor[3],
-                     const float ambientColor[3]);
-
-    void setShadowMap(GLuint depthTex, const glm::mat4& lightSpace) {
-        shadowDepthTex = depthTex; lightSpaceMatrix = lightSpace; shadowEnabled = true;
-    }
-    void clearShadowMap() { shadowEnabled = false; }
-
-    /**
-     * Render depth-only for shadow casting (reuses VAOs)
-     */
-    void renderShadow(const glm::mat4& lightView, const glm::mat4& lightProj, Shader& shadowShader);
+    // Lighting/fog/shadow are now in the per-frame UBO; these are no-ops for API compat
+    void setFog(const glm::vec3& /*color*/, float /*start*/, float /*end*/) {}
+    void setLighting(const float /*lightDir*/[3], const float /*lightColor*/[3],
+                     const float /*ambientColor*/[3]) {}
+    void setShadowMap(uint32_t /*depthTex*/, const glm::mat4& /*lightSpace*/) {}
+    void clearShadowMap() {}
 
     /**
      * Get floor height at a GL position via ray-triangle intersection.
@@ -297,13 +301,23 @@ public:
     void precomputeFloorCache();
 
 private:
+    // WMO material UBO — matches WMOMaterial in wmo.frag.glsl
+    struct WMOMaterialUBO {
+        int32_t hasTexture;
+        int32_t alphaTest;
+        int32_t unlit;
+        int32_t isInterior;
+        float specularIntensity;
+    };
+
     /**
      * WMO group GPU resources
      */
     struct GroupResources {
-        GLuint vao = 0;
-        GLuint vbo = 0;
-        GLuint ebo = 0;
+        ::VkBuffer vertexBuffer = VK_NULL_HANDLE;
+        VmaAllocation vertexAlloc = VK_NULL_HANDLE;
+        ::VkBuffer indexBuffer = VK_NULL_HANDLE;
+        VmaAllocation indexAlloc = VK_NULL_HANDLE;
         uint32_t indexCount = 0;
         uint32_t vertexCount = 0;
         glm::vec3 boundingBoxMin;
@@ -322,13 +336,17 @@ private:
 
         // Pre-merged batches for efficient rendering (computed at load time)
         struct MergedBatch {
-            GLuint texId;
-            bool hasTexture;
-            bool alphaTest;
+            VkTexture* texture = nullptr;   // from cache, NOT owned
+            VkDescriptorSet materialSet = VK_NULL_HANDLE;  // set 1
+            ::VkBuffer materialUBO = VK_NULL_HANDLE;
+            VmaAllocation materialUBOAlloc = VK_NULL_HANDLE;
+            bool hasTexture = false;
+            bool alphaTest = false;
             bool unlit = false;
-            uint32_t blendMode = 0;
-            std::vector<GLsizei> counts;
-            std::vector<const void*> offsets;
+            bool isTransparent = false;     // blendMode >= 2
+            // For multi-draw: store index ranges
+            struct DrawRange { uint32_t firstIndex; uint32_t indexCount; };
+            std::vector<DrawRange> draws;
         };
         std::vector<MergedBatch> mergedBatches;
 
@@ -401,7 +419,7 @@ private:
         std::vector<DoodadTemplate> doodadTemplates;
 
         // Texture handles for this model (indexed by texture path order)
-        std::vector<GLuint> textures;
+        std::vector<VkTexture*> textures;  // non-owning, from cache
 
         // Material texture indices (materialId -> texture index)
         std::vector<uint32_t> materialTextureIndices;
@@ -459,13 +477,6 @@ private:
     bool createGroupResources(const pipeline::WMOGroup& group, GroupResources& resources, uint32_t groupFlags = 0);
 
     /**
-     * Render a single group
-     */
-    void renderGroup(const GroupResources& group, const ModelData& model,
-                    const glm::mat4& modelMatrix,
-                    const glm::mat4& view, const glm::mat4& projection);
-
-    /**
      * Check if group is visible in frustum
      */
     bool isGroupVisible(const GroupResources& group, const glm::mat4& modelMatrix,
@@ -479,11 +490,6 @@ private:
 
     /**
      * Get visible groups via portal traversal
-     * @param model The WMO model data
-     * @param cameraLocalPos Camera position in model space
-     * @param frustum Frustum for portal visibility testing
-     * @param modelMatrix Transform for world-space frustum test
-     * @param outVisibleGroups Output set of visible group indices
      */
     void getVisibleGroupsViaPortals(const ModelData& model,
                                      const glm::vec3& cameraLocalPos,
@@ -502,23 +508,17 @@ private:
     /**
      * Load a texture from path
      */
-    GLuint loadTexture(const std::string& path);
+    VkTexture* loadTexture(const std::string& path);
 
     /**
-     * Initialize occlusion query resources (bbox VAO, shader)
+     * Allocate a material descriptor set from the pool
      */
-    void initOcclusionResources();
+    VkDescriptorSet allocateMaterialSet();
 
     /**
-     * Run occlusion query pre-pass for an instance
+     * Destroy GPU resources for a single group
      */
-    void runOcclusionQueries(const WMOInstance& instance, const ModelData& model,
-                              const glm::mat4& view, const glm::mat4& projection);
-
-    /**
-     * Check if a group passed occlusion test (uses previous frame results)
-     */
-    bool isGroupOccluded(uint32_t instanceId, uint32_t groupIndex) const;
+    void destroyGroupGPU(GroupResources& group);
 
     struct GridCell {
         int x;
@@ -541,8 +541,8 @@ private:
     void rebuildSpatialIndex();
     void gatherCandidates(const glm::vec3& queryMin, const glm::vec3& queryMax, std::vector<size_t>& outIndices) const;
 
-    // Shader
-    std::unique_ptr<Shader> shader;
+    // Vulkan context
+    VkContext* vkCtx_ = nullptr;
 
     // Asset manager for loading textures
     pipeline::AssetManager* assetManager = nullptr;
@@ -553,9 +553,31 @@ private:
     // Current map name for zone-specific floor cache
     std::string mapName_;
 
-    // Texture cache (path -> texture ID)
+    // Vulkan pipelines
+    VkPipeline opaquePipeline_ = VK_NULL_HANDLE;
+    VkPipeline transparentPipeline_ = VK_NULL_HANDLE;
+    VkPipeline wireframePipeline_ = VK_NULL_HANDLE;
+    VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
+
+    // Shadow rendering (Phase 7)
+    VkPipeline shadowPipeline_ = VK_NULL_HANDLE;
+    VkPipelineLayout shadowPipelineLayout_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout shadowParamsLayout_ = VK_NULL_HANDLE;
+    VkDescriptorPool shadowParamsPool_ = VK_NULL_HANDLE;
+    VkDescriptorSet shadowParamsSet_ = VK_NULL_HANDLE;
+    ::VkBuffer shadowParamsUBO_ = VK_NULL_HANDLE;
+    VmaAllocation shadowParamsAlloc_ = VK_NULL_HANDLE;
+
+    // Descriptor set layouts
+    VkDescriptorSetLayout materialSetLayout_ = VK_NULL_HANDLE;
+
+    // Descriptor pool for material sets
+    VkDescriptorPool materialDescPool_ = VK_NULL_HANDLE;
+    static constexpr uint32_t MAX_MATERIAL_SETS = 8192;
+
+    // Texture cache (path -> VkTexture)
     struct TextureCacheEntry {
-        GLuint id = 0;
+        std::unique_ptr<VkTexture> texture;
         size_t approxBytes = 0;
         uint64_t lastUse = 0;
     };
@@ -565,7 +587,7 @@ private:
     size_t textureCacheBudgetBytes_ = 2048ull * 1024 * 1024;  // Default, overridden at init
 
     // Default white texture
-    GLuint whiteTexture = 0;
+    std::unique_ptr<VkTexture> whiteTexture_;
 
     // Loaded models (modelId -> ModelData)
     std::unordered_map<uint32_t, ModelData> loadedModels;
@@ -581,38 +603,11 @@ private:
     bool frustumCulling = true;
     bool portalCulling = false;  // Disabled by default - needs debugging
     bool distanceCulling = false;  // Disabled - causes ground to disappear
-    bool occlusionCulling = false;  // GPU occlusion queries - disabled, adds overhead
     float maxGroupDistance = 500.0f;
     float maxGroupDistanceSq = 250000.0f;  // maxGroupDistance^2
     uint32_t lastDrawCalls = 0;
     mutable uint32_t lastPortalCulledGroups = 0;
     mutable uint32_t lastDistanceCulledGroups = 0;
-    mutable uint32_t lastOcclusionCulledGroups = 0;
-
-    // Occlusion query resources
-    GLuint bboxVao = 0;
-    GLuint bboxVbo = 0;
-    std::unique_ptr<Shader> occlusionShader;
-    // Query objects per (instance, group) - reused each frame
-    // Key: (instanceId << 16) | groupIndex
-    mutable std::unordered_map<uint32_t, GLuint> occlusionQueries;
-    // Results from previous frame (1 frame latency to avoid GPU stalls)
-    mutable std::unordered_map<uint32_t, bool> occlusionResults;
-
-    // Fog parameters
-    glm::vec3 fogColor = glm::vec3(0.5f, 0.6f, 0.7f);
-    float fogStart = 3000.0f;   // Increased to allow clearer visibility at distance
-    float fogEnd = 4000.0f;    // Increased to match extended view distance
-
-    // Lighting parameters
-    float lightDir[3] = {-0.3f, -0.7f, -0.6f};
-    float lightColor[3] = {1.5f, 1.4f, 1.3f};
-    float ambientColor[3] = {0.55f, 0.55f, 0.6f};
-
-    // Shadow mapping
-    GLuint shadowDepthTex = 0;
-    glm::mat4 lightSpaceMatrix = glm::mat4(1.0f);
-    bool shadowEnabled = false;
 
     // Optional query-space culling for collision/raycast hot paths.
     bool collisionFocusEnabled = false;
@@ -636,7 +631,6 @@ private:
         std::vector<uint32_t> visibleGroups;  // group indices that passed culling
         uint32_t portalCulled = 0;
         uint32_t distanceCulled = 0;
-        uint32_t occlusionCulled = 0;
     };
 
     // Collision query profiling (per frame).

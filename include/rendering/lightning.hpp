@@ -1,15 +1,15 @@
 #pragma once
 
+#include <vulkan/vulkan.h>
+#include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
-#include <memory>
 #include <vector>
 
 namespace wowee {
 namespace rendering {
 
-// Forward declarations
-class Shader;
 class Camera;
+class VkContext;
 
 /**
  * Lightning system for thunder storm effects
@@ -26,11 +26,11 @@ public:
     Lightning();
     ~Lightning();
 
-    bool initialize();
+    bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout);
     void shutdown();
 
     void update(float deltaTime, const Camera& camera);
-    void render(const Camera& camera, const glm::mat4& view, const glm::mat4& projection);
+    void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet);
 
     // Control
     void setEnabled(bool enabled);
@@ -68,8 +68,8 @@ private:
     void updateFlash(float deltaTime);
     void spawnRandomStrike(const glm::vec3& cameraPos);
 
-    void renderBolts(const glm::mat4& viewProj);
-    void renderFlash();
+    void renderBolts(VkCommandBuffer cmd, VkDescriptorSet perFrameSet);
+    void renderFlash(VkCommandBuffer cmd);
 
     bool enabled = true;
     float intensity = 0.5f;  // Strike frequency multiplier
@@ -82,13 +82,22 @@ private:
     std::vector<LightningBolt> bolts;
     Flash flash;
 
-    // Rendering
-    std::unique_ptr<Shader> boltShader;
-    std::unique_ptr<Shader> flashShader;
-    unsigned int boltVAO = 0;
-    unsigned int boltVBO = 0;
-    unsigned int flashVAO = 0;
-    unsigned int flashVBO = 0;
+    // Vulkan objects
+    VkContext* vkCtx = nullptr;
+
+    // Bolt pipeline + dynamic buffer
+    VkPipeline boltPipeline = VK_NULL_HANDLE;
+    VkPipelineLayout boltPipelineLayout = VK_NULL_HANDLE;
+    ::VkBuffer boltDynamicVB = VK_NULL_HANDLE;
+    VmaAllocation boltDynamicVBAlloc = VK_NULL_HANDLE;
+    VmaAllocationInfo boltDynamicVBAllocInfo{};
+    VkDeviceSize boltDynamicVBSize = 0;
+
+    // Flash pipeline + static quad buffer
+    VkPipeline flashPipeline = VK_NULL_HANDLE;
+    VkPipelineLayout flashPipelineLayout = VK_NULL_HANDLE;
+    ::VkBuffer flashQuadVB = VK_NULL_HANDLE;
+    VmaAllocation flashQuadVBAlloc = VK_NULL_HANDLE;
 
     // Configuration
     static constexpr int MAX_BOLTS = 3;

@@ -1,7 +1,8 @@
 #pragma once
 
 #include "pipeline/m2_loader.hpp"
-#include <GL/glew.h>
+#include <vulkan/vulkan.h>
+#include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <memory>
 #include <unordered_map>
@@ -20,15 +21,19 @@ namespace pipeline {
 
 namespace rendering {
 
-class Shader;
 class Camera;
+class VkContext;
+class VkTexture;
 
 /**
  * GPU representation of an M2 model
  */
 struct M2ModelGPU {
     struct BatchGPU {
-        GLuint texture = 0;
+        VkTexture* texture = nullptr;  // from cache, NOT owned
+        VkDescriptorSet materialSet = VK_NULL_HANDLE;  // set 1
+        ::VkBuffer materialUBO = VK_NULL_HANDLE;
+        VmaAllocation materialUBOAlloc = VK_NULL_HANDLE;
         uint32_t indexStart = 0;   // offset in indices (not bytes)
         uint32_t indexCount = 0;
         bool hasAlpha = false;
@@ -47,9 +52,10 @@ struct M2ModelGPU {
         float glowSize = 1.0f;              // Approx radius of batch geometry
     };
 
-    GLuint vao = 0;
-    GLuint vbo = 0;
-    GLuint ebo = 0;
+    ::VkBuffer vertexBuffer = VK_NULL_HANDLE;
+    VmaAllocation vertexAlloc = VK_NULL_HANDLE;
+    ::VkBuffer indexBuffer = VK_NULL_HANDLE;
+    VmaAllocation indexAlloc = VK_NULL_HANDLE;
     uint32_t indexCount = 0;
     uint32_t vertexCount = 0;
     std::vector<BatchGPU> batches;
@@ -109,14 +115,14 @@ struct M2ModelGPU {
 
     // Particle emitter data (kept from M2Model)
     std::vector<pipeline::M2ParticleEmitter> particleEmitters;
-    std::vector<GLuint> particleTextures;  // Resolved GL textures per emitter
+    std::vector<VkTexture*> particleTextures;  // Resolved Vulkan textures per emitter
 
     // Texture transform data for UV animation
     std::vector<pipeline::M2TextureTransform> textureTransforms;
     std::vector<uint16_t> textureTransformLookup;
     std::vector<int> idleVariationIndices;  // Sequence indices for idle variations (animId 0)
 
-    bool isValid() const { return vao != 0 && indexCount > 0; }
+    bool isValid() const { return vertexBuffer != VK_NULL_HANDLE && indexCount > 0; }
 };
 
 /**
@@ -164,6 +170,12 @@ struct M2Instance {
     // Frame-skip optimization (update distant animations less frequently)
     uint8_t frameSkipCounter = 0;
 
+    // Per-instance bone SSBO (double-buffered)
+    ::VkBuffer boneBuffer[2] = {};
+    VmaAllocation boneAlloc[2] = {};
+    void* boneMapped[2] = {};
+    VkDescriptorSet boneSet[2] = {};
+
     void updateModelMatrix();
 };
 
@@ -180,8 +192,29 @@ struct SmokeParticle {
     uint32_t instanceId = 0;
 };
 
+// M2 material UBO — matches M2Material in m2.frag.glsl (set 1, binding 2)
+struct M2MaterialUBO {
+    int32_t hasTexture;
+    int32_t alphaTest;
+    int32_t colorKeyBlack;
+    float colorKeyThreshold;
+    int32_t unlit;
+    int32_t blendMode;
+    float fadeAlpha;
+    float interiorDarken;
+    float specularIntensity;
+};
+
+// M2 params UBO — matches M2Params in m2.vert.glsl (set 1, binding 1)
+struct M2ParamsUBO {
+    float uvOffsetX;
+    float uvOffsetY;
+    int32_t texCoordSet;
+    int32_t useBones;
+};
+
 /**
- * M2 Model Renderer
+ * M2 Model Renderer (Vulkan)
  *
  * Handles rendering of M2 models (doodads like trees, rocks, bushes)
  */
@@ -190,137 +223,57 @@ public:
     M2Renderer();
     ~M2Renderer();
 
-    bool initialize(pipeline::AssetManager* assets);
+    bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout,
+                    pipeline::AssetManager* assets);
     void shutdown();
 
-    /**
-     * Check if a model is already loaded
-     * @param modelId ID to check
-     * @return True if model is loaded
-     */
     bool hasModel(uint32_t modelId) const;
-
-    /**
-     * Load an M2 model to GPU
-     * @param model Parsed M2 model data
-     * @param modelId Unique ID for this model
-     * @return True if successful
-     */
     bool loadModel(const pipeline::M2Model& model, uint32_t modelId);
 
-    /**
-     * Create an instance of a loaded model
-     * @param modelId ID of the loaded model
-     * @param position World position
-     * @param rotation Rotation in degrees (x, y, z)
-     * @param scale Scale factor (1.0 = normal)
-     * @return Instance ID
-     */
     uint32_t createInstance(uint32_t modelId, const glm::vec3& position,
                             const glm::vec3& rotation = glm::vec3(0.0f),
                             float scale = 1.0f);
-
-    /**
-     * Create an instance with a pre-computed model matrix
-     * Used for WMO doodads where the full transform is computed externally
-     */
     uint32_t createInstanceWithMatrix(uint32_t modelId, const glm::mat4& modelMatrix,
                                        const glm::vec3& position);
 
-    /**
-     * Update animation state for all instances
-     * @param deltaTime Time since last frame
-     * @param cameraPos Camera world position (for frustum-culling bones)
-     * @param viewProjection Combined view*projection matrix
-     */
     void update(float deltaTime, const glm::vec3& cameraPos, const glm::mat4& viewProjection);
 
     /**
-     * Render all visible instances
+     * Render all visible instances (Vulkan)
      */
-    void render(const Camera& camera, const glm::mat4& view, const glm::mat4& projection);
+    void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera);
+
+    /**
+     * Initialize shadow pipeline (Phase 7)
+     */
+    bool initializeShadow(VkRenderPass shadowRenderPass);
 
     /**
      * Render depth-only pass for shadow casting
      */
-    void renderShadow(GLuint shadowShaderProgram, const glm::vec3& shadowCenter, float halfExtent);
+    void renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMatrix);
 
     /**
-     * Render smoke particles (call after render())
+     * Render M2 particle emitters (point sprites)
      */
-    void renderSmokeParticles(const Camera& camera, const glm::mat4& view, const glm::mat4& projection);
+    void renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrameSet);
 
     /**
-     * Render M2 particle emitter particles (call after renderSmokeParticles())
+     * Render smoke particles from chimneys etc.
      */
-    void renderM2Particles(const glm::mat4& view, const glm::mat4& proj);
+    void renderSmokeParticles(VkCommandBuffer cmd, VkDescriptorSet perFrameSet);
 
-    /**
-     * Update the world position of an existing instance (e.g., for transports)
-     * @param instanceId Instance ID returned by createInstance()
-     * @param position New world position
-     */
     void setInstancePosition(uint32_t instanceId, const glm::vec3& position);
-
-    /**
-     * Update the full transform of an existing instance (e.g., for WMO doodads following parent WMO)
-     * @param instanceId Instance ID returned by createInstance()
-     * @param transform New world transform matrix
-     */
     void setInstanceTransform(uint32_t instanceId, const glm::mat4& transform);
-
-    /**
-     * Remove a specific instance by ID
-     * @param instanceId Instance ID returned by createInstance()
-     */
     void removeInstance(uint32_t instanceId);
-    /**
-     * Remove multiple instances with one spatial-index rebuild.
-     */
     void removeInstances(const std::vector<uint32_t>& instanceIds);
-
-    /**
-     * Clear all models and instances
-     */
     void clear();
-
-    /**
-     * Remove models that have no instances referencing them
-     * Call periodically to free GPU memory
-     */
     void cleanupUnusedModels();
 
-    /**
-     * Check collision with M2 objects and adjust position
-     * @param from Starting position
-     * @param to Desired position
-     * @param adjustedPos Output adjusted position
-     * @param playerRadius Collision radius of player
-     * @return true if collision occurred
-     */
     bool checkCollision(const glm::vec3& from, const glm::vec3& to,
                         glm::vec3& adjustedPos, float playerRadius = 0.5f) const;
-
-    /**
-     * Approximate top surface height for standing/jumping on doodads.
-     * @param glX World X
-     * @param glY World Y
-     * @param glZ Query/reference Z (used to ignore unreachable tops)
-     */
     std::optional<float> getFloorHeight(float glX, float glY, float glZ, float* outNormalZ = nullptr) const;
-
-    /**
-     * Raycast against M2 bounding boxes for camera collision
-     * @param origin Ray origin (e.g., character head position)
-     * @param direction Ray direction (normalized)
-     * @param maxDistance Maximum ray distance to check
-     * @return Distance to first intersection, or maxDistance if no hit
-     */
     float raycastBoundingBoxes(const glm::vec3& origin, const glm::vec3& direction, float maxDistance) const;
-
-    /**
-     * Limit expensive collision/raycast queries to objects near a focus point.
-     */
     void setCollisionFocus(const glm::vec3& worldPos, float radius);
     void clearCollisionFocus();
 
@@ -335,21 +288,12 @@ public:
     uint32_t getTotalTriangleCount() const;
     uint32_t getDrawCallCount() const { return lastDrawCallCount; }
 
-    void setFog(const glm::vec3& color, float start, float end) {
-        fogColor = color; fogStart = start; fogEnd = end;
-    }
-
-    void setLighting(const float lightDirIn[3], const float lightColorIn[3],
-                     const float ambientColorIn[3]) {
-        lightDir = glm::vec3(lightDirIn[0], lightDirIn[1], lightDirIn[2]);
-        lightColor = glm::vec3(lightColorIn[0], lightColorIn[1], lightColorIn[2]);
-        ambientColor = glm::vec3(ambientColorIn[0], ambientColorIn[1], ambientColorIn[2]);
-    }
-
-    void setShadowMap(GLuint depthTex, const glm::mat4& lightSpace) {
-        shadowDepthTex = depthTex; lightSpaceMatrix = lightSpace; shadowEnabled = true;
-    }
-    void clearShadowMap() { shadowEnabled = false; }
+    // Lighting/fog/shadow are now in per-frame UBO; these are no-ops for API compat
+    void setFog(const glm::vec3& /*color*/, float /*start*/, float /*end*/) {}
+    void setLighting(const float /*lightDirIn*/[3], const float /*lightColorIn*/[3],
+                     const float /*ambientColorIn*/[3]) {}
+    void setShadowMap(uint32_t /*depthTex*/, const glm::mat4& /*lightSpace*/) {}
+    void clearShadowMap() {}
 
     void setInsideInterior(bool inside) { insideInterior = inside; }
     void setOnTaxi(bool onTaxi) { onTaxi_ = onTaxi; }
@@ -359,7 +303,51 @@ private:
     bool insideInterior = false;
     bool onTaxi_ = false;
     pipeline::AssetManager* assetManager = nullptr;
-    std::unique_ptr<Shader> shader;
+
+    // Vulkan context
+    VkContext* vkCtx_ = nullptr;
+
+    // Vulkan pipelines (one per blend mode)
+    VkPipeline opaquePipeline_ = VK_NULL_HANDLE;       // blend mode 0
+    VkPipeline alphaTestPipeline_ = VK_NULL_HANDLE;     // blend mode 1
+    VkPipeline alphaPipeline_ = VK_NULL_HANDLE;         // blend mode 2
+    VkPipeline additivePipeline_ = VK_NULL_HANDLE;      // blend mode 3+
+    VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
+
+    // Shadow rendering (Phase 7)
+    VkPipeline shadowPipeline_ = VK_NULL_HANDLE;
+    VkPipelineLayout shadowPipelineLayout_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout shadowParamsLayout_ = VK_NULL_HANDLE;
+    VkDescriptorPool shadowParamsPool_ = VK_NULL_HANDLE;
+    VkDescriptorSet shadowParamsSet_ = VK_NULL_HANDLE;
+    ::VkBuffer shadowParamsUBO_ = VK_NULL_HANDLE;
+    VmaAllocation shadowParamsAlloc_ = VK_NULL_HANDLE;
+
+    // Particle pipelines
+    VkPipeline particlePipeline_ = VK_NULL_HANDLE;       // M2 emitter particles
+    VkPipeline particleAdditivePipeline_ = VK_NULL_HANDLE; // Additive particle blend
+    VkPipelineLayout particlePipelineLayout_ = VK_NULL_HANDLE;
+    VkPipeline smokePipeline_ = VK_NULL_HANDLE;           // Smoke particles
+    VkPipelineLayout smokePipelineLayout_ = VK_NULL_HANDLE;
+
+    // Descriptor set layouts
+    VkDescriptorSetLayout materialSetLayout_ = VK_NULL_HANDLE;  // set 1
+    VkDescriptorSetLayout boneSetLayout_ = VK_NULL_HANDLE;      // set 2
+    VkDescriptorSetLayout particleTexLayout_ = VK_NULL_HANDLE;  // particle set 1 (texture only)
+
+    // Descriptor pools
+    VkDescriptorPool materialDescPool_ = VK_NULL_HANDLE;
+    VkDescriptorPool boneDescPool_ = VK_NULL_HANDLE;
+    static constexpr uint32_t MAX_MATERIAL_SETS = 8192;
+    static constexpr uint32_t MAX_BONE_SETS = 2048;
+
+    // Dynamic particle buffers
+    ::VkBuffer smokeVB_ = VK_NULL_HANDLE;
+    VmaAllocation smokeVBAlloc_ = VK_NULL_HANDLE;
+    void* smokeVBMapped_ = nullptr;
+    ::VkBuffer m2ParticleVB_ = VK_NULL_HANDLE;
+    VmaAllocation m2ParticleVBAlloc_ = VK_NULL_HANDLE;
+    void* m2ParticleVBMapped_ = nullptr;
 
     std::unordered_map<uint32_t, M2ModelGPU> models;
     std::vector<M2Instance> instances;
@@ -367,37 +355,22 @@ private:
     uint32_t nextInstanceId = 1;
     uint32_t lastDrawCallCount = 0;
 
-    GLuint loadTexture(const std::string& path, uint32_t texFlags = 0);
+    VkTexture* loadTexture(const std::string& path, uint32_t texFlags = 0);
     struct TextureCacheEntry {
-        GLuint id = 0;
+        std::unique_ptr<VkTexture> texture;
         size_t approxBytes = 0;
         uint64_t lastUse = 0;
         bool hasAlpha = true;
         bool colorKeyBlack = false;
     };
     std::unordered_map<std::string, TextureCacheEntry> textureCache;
-    std::unordered_map<GLuint, bool> textureHasAlphaById_;
-    std::unordered_map<GLuint, bool> textureColorKeyBlackById_;
+    std::unordered_map<VkTexture*, bool> textureHasAlphaByPtr_;
+    std::unordered_map<VkTexture*, bool> textureColorKeyBlackByPtr_;
     size_t textureCacheBytes_ = 0;
     uint64_t textureCacheCounter_ = 0;
-    size_t textureCacheBudgetBytes_ = 2048ull * 1024 * 1024;  // Default, overridden at init
-    GLuint whiteTexture = 0;
-    GLuint glowTexture = 0;  // Soft radial gradient for glow sprites
-
-    // Lighting uniforms
-    glm::vec3 lightDir = glm::vec3(0.5f, 0.5f, 1.0f);
-    glm::vec3 lightColor = glm::vec3(1.5f, 1.4f, 1.3f);
-    glm::vec3 ambientColor = glm::vec3(0.4f, 0.4f, 0.45f);
-
-    // Fog parameters
-    glm::vec3 fogColor = glm::vec3(0.5f, 0.6f, 0.7f);
-    float fogStart = 400.0f;
-    float fogEnd = 1200.0f;
-
-    // Shadow mapping
-    GLuint shadowDepthTex = 0;
-    glm::mat4 lightSpaceMatrix = glm::mat4(1.0f);
-    bool shadowEnabled = false;
+    size_t textureCacheBudgetBytes_ = 2048ull * 1024 * 1024;
+    std::unique_ptr<VkTexture> whiteTexture_;
+    std::unique_ptr<VkTexture> glowTexture_;
 
     // Optional query-space culling for collision/raycast hot paths.
     bool collisionFocusEnabled = false;
@@ -458,17 +431,11 @@ private:
 
     // Smoke particle system
     std::vector<SmokeParticle> smokeParticles;
-    GLuint smokeVAO = 0;
-    GLuint smokeVBO = 0;
-    std::unique_ptr<Shader> smokeShader;
     static constexpr int MAX_SMOKE_PARTICLES = 1000;
     float smokeEmitAccum = 0.0f;
     std::mt19937 smokeRng{42};
 
     // M2 particle emitter system
-    GLuint m2ParticleShader_ = 0;
-    GLuint m2ParticleVAO_ = 0;
-    GLuint m2ParticleVBO_ = 0;
     static constexpr size_t MAX_M2_PARTICLES = 4000;
     std::mt19937 particleRng_{123};
 
@@ -486,6 +453,15 @@ private:
     glm::vec3 interpFBlockVec3(const pipeline::M2FBlock& fb, float lifeRatio);
     void emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt);
     void updateParticles(M2Instance& inst, float dt);
+
+    // Helper to allocate descriptor sets
+    VkDescriptorSet allocateMaterialSet();
+    VkDescriptorSet allocateBoneSet();
+
+    // Helper to destroy model GPU resources
+    void destroyModelGPU(M2ModelGPU& model);
+    // Helper to destroy instance bone buffers
+    void destroyInstanceBones(M2Instance& inst);
 };
 
 } // namespace rendering

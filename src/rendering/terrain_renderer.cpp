@@ -1,94 +1,221 @@
 #include "rendering/terrain_renderer.hpp"
-#include "rendering/texture.hpp"
+#include "rendering/vk_context.hpp"
+#include "rendering/vk_texture.hpp"
+#include "rendering/vk_buffer.hpp"
+#include "rendering/vk_pipeline.hpp"
+#include "rendering/vk_shader.hpp"
+#include "rendering/vk_utils.hpp"
+#include "rendering/vk_frame_data.hpp"
 #include "rendering/frustum.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/blp_loader.hpp"
 #include "core/logger.hpp"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
 #include <algorithm>
 #include <cstdlib>
 #include <limits>
+#include <cstring>
 
 namespace wowee {
 namespace rendering {
 
-TerrainRenderer::TerrainRenderer() {
-}
+// Matches set 1 binding 7 in terrain.frag.glsl
+struct TerrainParamsUBO {
+    int32_t layerCount;
+    int32_t hasLayer1;
+    int32_t hasLayer2;
+    int32_t hasLayer3;
+};
+
+TerrainRenderer::TerrainRenderer() = default;
 
 TerrainRenderer::~TerrainRenderer() {
     shutdown();
 }
 
-bool TerrainRenderer::initialize(pipeline::AssetManager* assets) {
+bool TerrainRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout,
+                                  pipeline::AssetManager* assets) {
+    vkCtx = ctx;
     assetManager = assets;
 
-    if (!assetManager) {
-        LOG_ERROR("Asset manager is null");
+    if (!vkCtx || !assetManager) {
+        LOG_ERROR("TerrainRenderer: null context or asset manager");
         return false;
     }
 
-    LOG_INFO("Initializing terrain renderer");
+    LOG_INFO("Initializing terrain renderer (Vulkan)");
+    VkDevice device = vkCtx->getDevice();
 
-    // Load terrain shader
-    shader = std::make_unique<Shader>();
-    if (!shader->loadFromFile("assets/shaders/terrain.vert", "assets/shaders/terrain.frag")) {
-        LOG_ERROR("Failed to load terrain shader");
+    // --- Create material descriptor set layout (set 1) ---
+    // bindings 0-6: combined image samplers (base + 3 layer + 3 alpha)
+    // binding 7: uniform buffer (TerrainParams)
+    std::vector<VkDescriptorSetLayoutBinding> materialBindings(8);
+    for (uint32_t i = 0; i < 7; i++) {
+        materialBindings[i] = {};
+        materialBindings[i].binding = i;
+        materialBindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        materialBindings[i].descriptorCount = 1;
+        materialBindings[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    }
+    materialBindings[7] = {};
+    materialBindings[7].binding = 7;
+    materialBindings[7].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    materialBindings[7].descriptorCount = 1;
+    materialBindings[7].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    materialSetLayout = createDescriptorSetLayout(device, materialBindings);
+    if (!materialSetLayout) {
+        LOG_ERROR("TerrainRenderer: failed to create material set layout");
         return false;
     }
 
-    // Create default white texture for fallback
+    // --- Create descriptor pool ---
+    VkDescriptorPoolSize poolSizes[] = {
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_MATERIAL_SETS * 7 },
+        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, MAX_MATERIAL_SETS },
+    };
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.maxSets = MAX_MATERIAL_SETS;
+    poolInfo.poolSizeCount = 2;
+    poolInfo.pPoolSizes = poolSizes;
+
+    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &materialDescPool) != VK_SUCCESS) {
+        LOG_ERROR("TerrainRenderer: failed to create descriptor pool");
+        return false;
+    }
+
+    // --- Create pipeline layout ---
+    VkPushConstantRange pushRange{};
+    pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushRange.offset = 0;
+    pushRange.size = sizeof(GPUPushConstants);
+
+    std::vector<VkDescriptorSetLayout> setLayouts = { perFrameLayout, materialSetLayout };
+    pipelineLayout = createPipelineLayout(device, setLayouts, { pushRange });
+    if (!pipelineLayout) {
+        LOG_ERROR("TerrainRenderer: failed to create pipeline layout");
+        return false;
+    }
+
+    // --- Load shaders ---
+    VkShaderModule vertShader, fragShader;
+    if (!vertShader.loadFromFile(device, "assets/shaders/terrain.vert.spv")) {
+        LOG_ERROR("TerrainRenderer: failed to load vertex shader");
+        return false;
+    }
+    if (!fragShader.loadFromFile(device, "assets/shaders/terrain.frag.spv")) {
+        LOG_ERROR("TerrainRenderer: failed to load fragment shader");
+        return false;
+    }
+
+    // --- Vertex input ---
+    VkVertexInputBindingDescription vertexBinding{};
+    vertexBinding.binding = 0;
+    vertexBinding.stride = sizeof(pipeline::TerrainVertex);
+    vertexBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::vector<VkVertexInputAttributeDescription> vertexAttribs(4);
+    vertexAttribs[0] = { 0, 0, VK_FORMAT_R32G32B32_SFLOAT,
+        static_cast<uint32_t>(offsetof(pipeline::TerrainVertex, position)) };
+    vertexAttribs[1] = { 1, 0, VK_FORMAT_R32G32B32_SFLOAT,
+        static_cast<uint32_t>(offsetof(pipeline::TerrainVertex, normal)) };
+    vertexAttribs[2] = { 2, 0, VK_FORMAT_R32G32_SFLOAT,
+        static_cast<uint32_t>(offsetof(pipeline::TerrainVertex, texCoord)) };
+    vertexAttribs[3] = { 3, 0, VK_FORMAT_R32G32_SFLOAT,
+        static_cast<uint32_t>(offsetof(pipeline::TerrainVertex, layerUV)) };
+
+    // --- Build fill pipeline ---
+    VkRenderPass mainPass = vkCtx->getImGuiRenderPass();
+
+    pipeline = PipelineBuilder()
+        .setShaders(vertShader.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                    fragShader.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+        .setVertexInput({ vertexBinding }, vertexAttribs)
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+        .setDepthTest(true, true, VK_COMPARE_OP_LESS_OR_EQUAL)
+        .setColorBlendAttachment(PipelineBuilder::blendDisabled())
+        .setLayout(pipelineLayout)
+        .setRenderPass(mainPass)
+        .setDynamicStates({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR })
+        .build(device);
+
+    if (!pipeline) {
+        LOG_ERROR("TerrainRenderer: failed to create fill pipeline");
+        vertShader.destroy();
+        fragShader.destroy();
+        return false;
+    }
+
+    // --- Build wireframe pipeline ---
+    wireframePipeline = PipelineBuilder()
+        .setShaders(vertShader.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                    fragShader.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+        .setVertexInput({ vertexBinding }, vertexAttribs)
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_LINE, VK_CULL_MODE_NONE)
+        .setDepthTest(true, true, VK_COMPARE_OP_LESS_OR_EQUAL)
+        .setColorBlendAttachment(PipelineBuilder::blendDisabled())
+        .setLayout(pipelineLayout)
+        .setRenderPass(mainPass)
+        .setDynamicStates({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR })
+        .build(device);
+
+    if (!wireframePipeline) {
+        LOG_WARNING("TerrainRenderer: wireframe pipeline not available");
+    }
+
+    vertShader.destroy();
+    fragShader.destroy();
+
+    // --- Create fallback textures ---
+    whiteTexture = std::make_unique<VkTexture>();
     uint8_t whitePixel[4] = {255, 255, 255, 255};
-    glGenTextures(1, &whiteTexture);
-    glBindTexture(GL_TEXTURE_2D, whiteTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, whitePixel);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    whiteTexture->upload(*vkCtx, whitePixel, 1, 1, VK_FORMAT_R8G8B8A8_UNORM, false);
+    whiteTexture->createSampler(device, VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+                                 VK_SAMPLER_ADDRESS_MODE_REPEAT);
 
-    // Create default opaque alpha texture for terrain layer masks
+    opaqueAlphaTexture = std::make_unique<VkTexture>();
     uint8_t opaqueAlpha = 255;
-    glGenTextures(1, &opaqueAlphaTexture);
-    glBindTexture(GL_TEXTURE_2D, opaqueAlphaTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, 1, 1, 0, GL_RED, GL_UNSIGNED_BYTE, &opaqueAlpha);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    opaqueAlphaTexture->upload(*vkCtx, &opaqueAlpha, 1, 1, VK_FORMAT_R8_UNORM, false);
+    opaqueAlphaTexture->createSampler(device, VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+                                       VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
 
-    LOG_INFO("Terrain renderer initialized");
+    LOG_INFO("Terrain renderer initialized (Vulkan)");
     return true;
 }
 
 void TerrainRenderer::shutdown() {
     LOG_INFO("Shutting down terrain renderer");
 
+    if (!vkCtx) return;
+    VkDevice device = vkCtx->getDevice();
+    VmaAllocator allocator = vkCtx->getAllocator();
+
+    vkDeviceWaitIdle(device);
+
     clear();
 
-    // Delete white texture
-    if (whiteTexture) {
-        glDeleteTextures(1, &whiteTexture);
-        whiteTexture = 0;
-    }
-    if (opaqueAlphaTexture) {
-        glDeleteTextures(1, &opaqueAlphaTexture);
-        opaqueAlphaTexture = 0;
-    }
-
-    // Delete cached textures
     for (auto& [path, entry] : textureCache) {
-        GLuint texId = entry.id;
-        if (texId != 0 && texId != whiteTexture) {
-            glDeleteTextures(1, &texId);
-        }
+        if (entry.texture) entry.texture->destroy(device, allocator);
     }
     textureCache.clear();
     textureCacheBytes_ = 0;
     textureCacheCounter_ = 0;
 
-    shader.reset();
+    if (whiteTexture) { whiteTexture->destroy(device, allocator); whiteTexture.reset(); }
+    if (opaqueAlphaTexture) { opaqueAlphaTexture->destroy(device, allocator); opaqueAlphaTexture.reset(); }
+
+    if (pipeline) { vkDestroyPipeline(device, pipeline, nullptr); pipeline = VK_NULL_HANDLE; }
+    if (wireframePipeline) { vkDestroyPipeline(device, wireframePipeline, nullptr); wireframePipeline = VK_NULL_HANDLE; }
+    if (pipelineLayout) { vkDestroyPipelineLayout(device, pipelineLayout, nullptr); pipelineLayout = VK_NULL_HANDLE; }
+    if (materialDescPool) { vkDestroyDescriptorPool(device, materialDescPool, nullptr); materialDescPool = VK_NULL_HANDLE; }
+    if (materialSetLayout) { vkDestroyDescriptorSetLayout(device, materialSetLayout, nullptr); materialSetLayout = VK_NULL_HANDLE; }
+
+    vkCtx = nullptr;
 }
 
 bool TerrainRenderer::loadTerrain(const pipeline::TerrainMesh& mesh,
@@ -96,61 +223,82 @@ bool TerrainRenderer::loadTerrain(const pipeline::TerrainMesh& mesh,
                                    int tileX, int tileY) {
     LOG_DEBUG("Loading terrain mesh: ", mesh.validChunkCount, " chunks");
 
-    // Upload each chunk to GPU
     for (int y = 0; y < 16; y++) {
         for (int x = 0; x < 16; x++) {
             const auto& chunk = mesh.getChunk(x, y);
-
-            if (!chunk.isValid()) {
-                continue;
-            }
+            if (!chunk.isValid()) continue;
 
             TerrainChunkGPU gpuChunk = uploadChunk(chunk);
-
             if (!gpuChunk.isValid()) {
                 LOG_WARNING("Failed to upload chunk [", x, ",", y, "]");
                 continue;
             }
 
-            // Calculate bounding sphere for frustum culling
             calculateBoundingSphere(gpuChunk, chunk);
 
             // Load textures for this chunk
             if (!chunk.layers.empty()) {
-                // Base layer (always present)
                 uint32_t baseTexId = chunk.layers[0].textureId;
                 if (baseTexId < texturePaths.size()) {
                     gpuChunk.baseTexture = loadTexture(texturePaths[baseTexId]);
                 } else {
-                    gpuChunk.baseTexture = whiteTexture;
+                    gpuChunk.baseTexture = whiteTexture.get();
                 }
 
-                // Additional layers (with alpha blending)
                 for (size_t i = 1; i < chunk.layers.size() && i < 4; i++) {
                     const auto& layer = chunk.layers[i];
+                    int li = static_cast<int>(i) - 1;
 
-                    // Load layer texture
-                    GLuint layerTex = whiteTexture;
+                    VkTexture* layerTex = whiteTexture.get();
                     if (layer.textureId < texturePaths.size()) {
                         layerTex = loadTexture(texturePaths[layer.textureId]);
                     }
-                    gpuChunk.layerTextures.push_back(layerTex);
+                    gpuChunk.layerTextures[li] = layerTex;
 
-                    // Create alpha texture
-                    GLuint alphaTex = opaqueAlphaTexture;
+                    VkTexture* alphaTex = opaqueAlphaTexture.get();
                     if (!layer.alphaData.empty()) {
                         alphaTex = createAlphaTexture(layer.alphaData);
                     }
-                    gpuChunk.alphaTextures.push_back(alphaTex);
+                    gpuChunk.alphaTextures[li] = alphaTex;
+                    gpuChunk.layerCount = static_cast<int>(i);
                 }
             } else {
-                // No layers, use default white texture
-                gpuChunk.baseTexture = whiteTexture;
+                gpuChunk.baseTexture = whiteTexture.get();
             }
 
             gpuChunk.tileX = tileX;
             gpuChunk.tileY = tileY;
-            chunks.push_back(gpuChunk);
+
+            // Create per-chunk params UBO
+            TerrainParamsUBO params{};
+            params.layerCount = gpuChunk.layerCount;
+            params.hasLayer1 = gpuChunk.layerCount >= 1 ? 1 : 0;
+            params.hasLayer2 = gpuChunk.layerCount >= 2 ? 1 : 0;
+            params.hasLayer3 = gpuChunk.layerCount >= 3 ? 1 : 0;
+
+            VkBufferCreateInfo bufCI{};
+            bufCI.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            bufCI.size = sizeof(TerrainParamsUBO);
+            bufCI.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+
+            VmaAllocationCreateInfo allocCI{};
+            allocCI.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+            allocCI.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+            VmaAllocationInfo mapInfo{};
+            vmaCreateBuffer(vkCtx->getAllocator(), &bufCI, &allocCI,
+                            &gpuChunk.paramsUBO, &gpuChunk.paramsAlloc, &mapInfo);
+            if (mapInfo.pMappedData) {
+                std::memcpy(mapInfo.pMappedData, &params, sizeof(params));
+            }
+
+            // Allocate and write material descriptor set
+            gpuChunk.materialSet = allocateMaterialSet();
+            if (gpuChunk.materialSet) {
+                writeMaterialDescriptors(gpuChunk.materialSet, gpuChunk);
+            }
+
+            chunks.push_back(std::move(gpuChunk));
         }
     }
 
@@ -166,69 +314,22 @@ TerrainChunkGPU TerrainRenderer::uploadChunk(const pipeline::ChunkMesh& chunk) {
     gpuChunk.worldZ = chunk.worldZ;
     gpuChunk.indexCount = static_cast<uint32_t>(chunk.indices.size());
 
-    // Debug: verify Z values in uploaded vertices
-    static int uploadLogCount = 0;
-    if (uploadLogCount < 3 && !chunk.vertices.empty()) {
-        float minZ = 999999.0f, maxZ = -999999.0f;
-        for (const auto& v : chunk.vertices) {
-            if (v.position[2] < minZ) minZ = v.position[2];
-            if (v.position[2] > maxZ) maxZ = v.position[2];
-        }
-        LOG_DEBUG("GPU upload Z range: [", minZ, ", ", maxZ, "] delta=", maxZ - minZ);
-        uploadLogCount++;
-    }
+    VkDeviceSize vbSize = chunk.vertices.size() * sizeof(pipeline::TerrainVertex);
+    AllocatedBuffer vb = uploadBuffer(*vkCtx, chunk.vertices.data(), vbSize,
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    gpuChunk.vertexBuffer = vb.buffer;
+    gpuChunk.vertexAlloc = vb.allocation;
 
-    // Create VAO
-    glGenVertexArrays(1, &gpuChunk.vao);
-    glBindVertexArray(gpuChunk.vao);
-
-    // Create VBO
-    glGenBuffers(1, &gpuChunk.vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, gpuChunk.vbo);
-    glBufferData(GL_ARRAY_BUFFER,
-                 chunk.vertices.size() * sizeof(pipeline::TerrainVertex),
-                 chunk.vertices.data(),
-                 GL_STATIC_DRAW);
-
-    // Create IBO
-    glGenBuffers(1, &gpuChunk.ibo);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gpuChunk.ibo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
-                 chunk.indices.size() * sizeof(pipeline::TerrainIndex),
-                 chunk.indices.data(),
-                 GL_STATIC_DRAW);
-
-    // Set up vertex attributes
-    // Location 0: Position (vec3)
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE,
-                         sizeof(pipeline::TerrainVertex),
-                         (void*)offsetof(pipeline::TerrainVertex, position));
-
-    // Location 1: Normal (vec3)
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE,
-                         sizeof(pipeline::TerrainVertex),
-                         (void*)offsetof(pipeline::TerrainVertex, normal));
-
-    // Location 2: TexCoord (vec2)
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE,
-                         sizeof(pipeline::TerrainVertex),
-                         (void*)offsetof(pipeline::TerrainVertex, texCoord));
-
-    // Location 3: LayerUV (vec2)
-    glEnableVertexAttribArray(3);
-    glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE,
-                         sizeof(pipeline::TerrainVertex),
-                         (void*)offsetof(pipeline::TerrainVertex, layerUV));
-
-    glBindVertexArray(0);
+    VkDeviceSize ibSize = chunk.indices.size() * sizeof(pipeline::TerrainIndex);
+    AllocatedBuffer ib = uploadBuffer(*vkCtx, chunk.indices.data(), ibSize,
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    gpuChunk.indexBuffer = ib.buffer;
+    gpuChunk.indexAlloc = ib.allocation;
 
     return gpuChunk;
 }
 
-GLuint TerrainRenderer::loadTexture(const std::string& path) {
+VkTexture* TerrainRenderer::loadTexture(const std::string& path) {
     auto normalizeKey = [](std::string key) {
         std::replace(key.begin(), key.end(), '/', '\\');
         std::transform(key.begin(), key.end(), key.begin(),
@@ -237,59 +338,41 @@ GLuint TerrainRenderer::loadTexture(const std::string& path) {
     };
     std::string key = normalizeKey(path);
 
-    // Check cache first
     auto it = textureCache.find(key);
     if (it != textureCache.end()) {
         it->second.lastUse = ++textureCacheCounter_;
-        return it->second.id;
+        return it->second.texture.get();
     }
 
-    // Load BLP texture
     pipeline::BLPImage blp = assetManager->loadTexture(key);
     if (!blp.isValid()) {
         LOG_WARNING("Failed to load texture: ", path);
-        // Do not cache failure as white: MPQ/file reads can fail transiently
-        // during heavy streaming and should be allowed to recover.
-        return whiteTexture;
+        return whiteTexture.get();
     }
 
-    // Create OpenGL texture
-    GLuint textureID;
-    glGenTextures(1, &textureID);
-    glBindTexture(GL_TEXTURE_2D, textureID);
+    auto tex = std::make_unique<VkTexture>();
+    if (!tex->upload(*vkCtx, blp.data.data(), blp.width, blp.height,
+                      VK_FORMAT_R8G8B8A8_UNORM, true)) {
+        LOG_WARNING("Failed to upload texture to GPU: ", path);
+        return whiteTexture.get();
+    }
+    tex->createSampler(vkCtx->getDevice(), VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+                        VK_SAMPLER_ADDRESS_MODE_REPEAT);
 
-    // Upload texture data (BLP loader outputs RGBA8)
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
-                 blp.width, blp.height, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, blp.data.data());
-
-    // Set texture parameters
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-
-    // Generate mipmaps
-    glGenerateMipmap(GL_TEXTURE_2D);
-    applyAnisotropicFiltering();
-
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    // Cache texture
+    VkTexture* raw = tex.get();
     TextureCacheEntry e;
-    e.id = textureID;
+    e.texture = std::move(tex);
     size_t base = static_cast<size_t>(blp.width) * static_cast<size_t>(blp.height) * 4ull;
     e.approxBytes = base + (base / 3);
     e.lastUse = ++textureCacheCounter_;
     textureCacheBytes_ += e.approxBytes;
-    textureCache[key] = e;
+    textureCache[key] = std::move(e);
 
-    LOG_DEBUG("Loaded texture: ", path, " (", blp.width, "x", blp.height, ")");
-
-    return textureID;
+    return raw;
 }
 
-void TerrainRenderer::uploadPreloadedTextures(const std::unordered_map<std::string, pipeline::BLPImage>& textures) {
+void TerrainRenderer::uploadPreloadedTextures(
+    const std::unordered_map<std::string, pipeline::BLPImage>& textures) {
     auto normalizeKey = [](std::string key) {
         std::replace(key.begin(), key.end(), '/', '\\');
         std::transform(key.begin(), key.end(), key.begin(),
@@ -298,52 +381,28 @@ void TerrainRenderer::uploadPreloadedTextures(const std::unordered_map<std::stri
     };
     for (const auto& [path, blp] : textures) {
         std::string key = normalizeKey(path);
-        // Skip if already cached
         if (textureCache.find(key) != textureCache.end()) continue;
-        if (!blp.isValid()) {
-            // Don't poison cache with white on invalid preload; allow fallback
-            // path to retry loading this texture later.
-            continue;
-        }
+        if (!blp.isValid()) continue;
 
-        GLuint textureID;
-        glGenTextures(1, &textureID);
-        glBindTexture(GL_TEXTURE_2D, textureID);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
-                     blp.width, blp.height, 0,
-                     GL_RGBA, GL_UNSIGNED_BYTE, blp.data.data());
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glGenerateMipmap(GL_TEXTURE_2D);
-        applyAnisotropicFiltering();
-        glBindTexture(GL_TEXTURE_2D, 0);
+        auto tex = std::make_unique<VkTexture>();
+        if (!tex->upload(*vkCtx, blp.data.data(), blp.width, blp.height,
+                          VK_FORMAT_R8G8B8A8_UNORM, true)) continue;
+        tex->createSampler(vkCtx->getDevice(), VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+                            VK_SAMPLER_ADDRESS_MODE_REPEAT);
 
         TextureCacheEntry e;
-        e.id = textureID;
+        e.texture = std::move(tex);
         size_t base = static_cast<size_t>(blp.width) * static_cast<size_t>(blp.height) * 4ull;
         e.approxBytes = base + (base / 3);
         e.lastUse = ++textureCacheCounter_;
         textureCacheBytes_ += e.approxBytes;
-        textureCache[key] = e;
+        textureCache[key] = std::move(e);
     }
 }
 
-GLuint TerrainRenderer::createAlphaTexture(const std::vector<uint8_t>& alphaData) {
-    if (alphaData.empty()) {
-        return opaqueAlphaTexture;
-    }
+VkTexture* TerrainRenderer::createAlphaTexture(const std::vector<uint8_t>& alphaData) {
+    if (alphaData.empty()) return opaqueAlphaTexture.get();
 
-    if (alphaData.size() != 4096) {
-        LOG_WARNING("Unexpected terrain alpha size: ", alphaData.size(), " (expected 4096)");
-    }
-
-    GLuint textureID;
-    glGenTextures(1, &textureID);
-    glBindTexture(GL_TEXTURE_2D, textureID);
-
-    // Alpha data should be 64x64 (4096 bytes). Clamp to a sane fallback when malformed.
     std::vector<uint8_t> expanded;
     const uint8_t* src = alphaData.data();
     if (alphaData.size() < 4096) {
@@ -352,141 +411,105 @@ GLuint TerrainRenderer::createAlphaTexture(const std::vector<uint8_t>& alphaData
         src = expanded.data();
     }
 
-    int width = 64;
-    int height = 64;
+    auto tex = std::make_unique<VkTexture>();
+    if (!tex->upload(*vkCtx, src, 64, 64, VK_FORMAT_R8_UNORM, false)) {
+        return opaqueAlphaTexture.get();
+    }
+    tex->createSampler(vkCtx->getDevice(), VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+                        VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
 
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED,
-                 width, height, 0,
-                 GL_RED, GL_UNSIGNED_BYTE, src);
+    VkTexture* raw = tex.get();
+    static uint64_t alphaCounter = 0;
+    std::string key = "__alpha_" + std::to_string(++alphaCounter);
+    TextureCacheEntry e;
+    e.texture = std::move(tex);
+    e.approxBytes = 64 * 64;
+    e.lastUse = ++textureCacheCounter_;
+    textureCacheBytes_ += e.approxBytes;
+    textureCache[key] = std::move(e);
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    return textureID;
+    return raw;
 }
 
-void TerrainRenderer::renderShadow(GLuint shaderProgram, const glm::vec3& shadowCenter, float halfExtent) {
-    if (chunks.empty()) return;
+VkDescriptorSet TerrainRenderer::allocateMaterialSet() {
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = materialDescPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &materialSetLayout;
 
-    GLint modelLoc = glGetUniformLocation(shaderProgram, "uModel");
-    glm::mat4 identity(1.0f);
-    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, &identity[0][0]);
-
-    for (const auto& chunk : chunks) {
-        if (!chunk.isValid()) continue;
-
-        // Cull chunks whose bounding sphere doesn't overlap the shadow frustum (XY plane)
-        float maxDist = halfExtent + chunk.boundingSphereRadius;
-        float dx = chunk.boundingSphereCenter.x - shadowCenter.x;
-        float dy = chunk.boundingSphereCenter.y - shadowCenter.y;
-        if (dx * dx + dy * dy > maxDist * maxDist) continue;
-
-        glBindVertexArray(chunk.vao);
-        glDrawElements(GL_TRIANGLES, chunk.indexCount, GL_UNSIGNED_INT, 0);
-        glBindVertexArray(0);
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    if (vkAllocateDescriptorSets(vkCtx->getDevice(), &allocInfo, &set) != VK_SUCCESS) {
+        LOG_WARNING("TerrainRenderer: failed to allocate material descriptor set");
+        return VK_NULL_HANDLE;
     }
+    return set;
 }
 
-void TerrainRenderer::render(const Camera& camera) {
-    if (chunks.empty() || !shader) {
-        return;
+void TerrainRenderer::writeMaterialDescriptors(VkDescriptorSet set, const TerrainChunkGPU& chunk) {
+    VkTexture* white = whiteTexture.get();
+    VkTexture* opaque = opaqueAlphaTexture.get();
+
+    VkDescriptorImageInfo imageInfos[7];
+    imageInfos[0] = (chunk.baseTexture ? chunk.baseTexture : white)->descriptorInfo();
+    for (int i = 0; i < 3; i++) {
+        imageInfos[1 + i] = (chunk.layerTextures[i] ? chunk.layerTextures[i] : white)->descriptorInfo();
+        imageInfos[4 + i] = (chunk.alphaTextures[i] ? chunk.alphaTextures[i] : opaque)->descriptorInfo();
     }
 
-    // Enable depth testing
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
-    glDepthMask(GL_TRUE);
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    glDisable(GL_BLEND);
+    VkDescriptorBufferInfo bufInfo{};
+    bufInfo.buffer = chunk.paramsUBO;
+    bufInfo.offset = 0;
+    bufInfo.range = sizeof(TerrainParamsUBO);
 
-    // Disable backface culling temporarily to debug flashing
-    glDisable(GL_CULL_FACE);
-    // glEnable(GL_CULL_FACE);
-    // glCullFace(GL_BACK);
-
-    // Wireframe mode
-    if (wireframe) {
-        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    } else {
-        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    VkWriteDescriptorSet writes[8] = {};
+    for (int i = 0; i < 7; i++) {
+        writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[i].dstSet = set;
+        writes[i].dstBinding = static_cast<uint32_t>(i);
+        writes[i].descriptorCount = 1;
+        writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[i].pImageInfo = &imageInfos[i];
     }
+    writes[7].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[7].dstSet = set;
+    writes[7].dstBinding = 7;
+    writes[7].descriptorCount = 1;
+    writes[7].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[7].pBufferInfo = &bufInfo;
 
-    // Use shader
-    shader->use();
+    vkUpdateDescriptorSets(vkCtx->getDevice(), 8, writes, 0, nullptr);
+}
 
-    // Bind sampler uniforms to texture units (constant, only needs to be set once per use)
-    shader->setUniform("uBaseTexture", 0);
-    shader->setUniform("uLayer1Texture", 1);
-    shader->setUniform("uLayer2Texture", 2);
-    shader->setUniform("uLayer3Texture", 3);
-    shader->setUniform("uLayer1Alpha", 4);
-    shader->setUniform("uLayer2Alpha", 5);
-    shader->setUniform("uLayer3Alpha", 6);
+void TerrainRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera) {
+    if (chunks.empty() || !pipeline) return;
 
-    // Set view/projection matrices
-    glm::mat4 view = camera.getViewMatrix();
-    glm::mat4 projection = camera.getProjectionMatrix();
-    glm::mat4 model = glm::mat4(1.0f);
+    VkPipeline activePipeline = (wireframe && wireframePipeline) ? wireframePipeline : pipeline;
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, activePipeline);
 
-    shader->setUniform("uModel", model);
-    shader->setUniform("uView", view);
-    shader->setUniform("uProjection", projection);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout,
+                             0, 1, &perFrameSet, 0, nullptr);
 
-    // Set lighting
-    shader->setUniform("uLightDir", glm::vec3(lightDir[0], lightDir[1], lightDir[2]));
-    shader->setUniform("uLightColor", glm::vec3(lightColor[0], lightColor[1], lightColor[2]));
-    shader->setUniform("uAmbientColor", glm::vec3(ambientColor[0], ambientColor[1], ambientColor[2]));
+    GPUPushConstants push{};
+    push.model = glm::mat4(1.0f);
+    vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT,
+                        0, sizeof(GPUPushConstants), &push);
 
-    // Set camera position
-    glm::vec3 camPos = camera.getPosition();
-    shader->setUniform("uViewPos", camPos);
-
-    // Set fog (disable by setting very far distances)
-    shader->setUniform("uFogColor", glm::vec3(fogColor[0], fogColor[1], fogColor[2]));
-    if (fogEnabled) {
-        shader->setUniform("uFogStart", fogStart);
-        shader->setUniform("uFogEnd", fogEnd);
-    } else {
-        shader->setUniform("uFogStart", 100000.0f);  // Very far
-        shader->setUniform("uFogEnd", 100001.0f);    // Effectively disabled
-    }
-
-    // Shadow map
-    shader->setUniform("uShadowEnabled", shadowEnabled ? 1 : 0);
-    shader->setUniform("uShadowStrength", 0.68f);
-    if (shadowEnabled) {
-        shader->setUniform("uLightSpaceMatrix", lightSpaceMatrix);
-        glActiveTexture(GL_TEXTURE7);
-        glBindTexture(GL_TEXTURE_2D, shadowDepthTex);
-        shader->setUniform("uShadowMap", 7);
-    }
-
-    // Extract frustum for culling
     Frustum frustum;
     if (frustumCullingEnabled) {
-        glm::mat4 viewProj = projection * view;
+        glm::mat4 viewProj = camera.getProjectionMatrix() * camera.getViewMatrix();
         frustum.extractFromMatrix(viewProj);
     }
 
-    // Render each chunk — track last-bound textures to skip redundant binds
+    glm::vec3 camPos = camera.getPosition();
+    const float maxTerrainDistSq = 1200.0f * 1200.0f;
+
     renderedChunks = 0;
     culledChunks = 0;
-    GLuint lastBound[7] = {0, 0, 0, 0, 0, 0, 0};
-    int lastLayerConfig = -1; // track hasLayer1|hasLayer2|hasLayer3 bitmask
-
-    // Distance culling: maximum render distance for terrain
-    const float maxTerrainDistSq = 1200.0f * 1200.0f;  // 1200 units (reverted from 800 - mountains popping)
 
     for (const auto& chunk : chunks) {
-        if (!chunk.isValid()) {
-            continue;
-        }
+        if (!chunk.isValid() || !chunk.materialSet) continue;
 
-        // Early distance culling (before expensive frustum check)
         float dx = chunk.boundingSphereCenter.x - camPos.x;
         float dy = chunk.boundingSphereCenter.y - camPos.y;
         float distSq = dx * dx + dy * dy;
@@ -495,83 +518,25 @@ void TerrainRenderer::render(const Camera& camera) {
             continue;
         }
 
-        // Frustum culling
         if (frustumCullingEnabled && !isChunkVisible(chunk, frustum)) {
             culledChunks++;
             continue;
         }
 
-        // Bind base texture (slot 0) — skip if same as last chunk
-        if (chunk.baseTexture != lastBound[0]) {
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, chunk.baseTexture);
-            lastBound[0] = chunk.baseTexture;
-        }
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout,
+                                 1, 1, &chunk.materialSet, 0, nullptr);
 
-        // Layer configuration
-        bool hasLayer1 = chunk.layerTextures.size() > 0;
-        bool hasLayer2 = chunk.layerTextures.size() > 1;
-        bool hasLayer3 = chunk.layerTextures.size() > 2;
-        int layerConfig = (hasLayer1 ? 1 : 0) | (hasLayer2 ? 2 : 0) | (hasLayer3 ? 4 : 0);
+        VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &chunk.vertexBuffer, &offset);
+        vkCmdBindIndexBuffer(cmd, chunk.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-        if (layerConfig != lastLayerConfig) {
-            shader->setUniform("uHasLayer1", hasLayer1 ? 1 : 0);
-            shader->setUniform("uHasLayer2", hasLayer2 ? 1 : 0);
-            shader->setUniform("uHasLayer3", hasLayer3 ? 1 : 0);
-            lastLayerConfig = layerConfig;
-        }
-
-        if (hasLayer1) {
-            if (chunk.layerTextures[0] != lastBound[1]) {
-                glActiveTexture(GL_TEXTURE1);
-                glBindTexture(GL_TEXTURE_2D, chunk.layerTextures[0]);
-                lastBound[1] = chunk.layerTextures[0];
-            }
-            if (chunk.alphaTextures[0] != lastBound[4]) {
-                glActiveTexture(GL_TEXTURE4);
-                glBindTexture(GL_TEXTURE_2D, chunk.alphaTextures[0]);
-                lastBound[4] = chunk.alphaTextures[0];
-            }
-        }
-
-        if (hasLayer2) {
-            if (chunk.layerTextures[1] != lastBound[2]) {
-                glActiveTexture(GL_TEXTURE2);
-                glBindTexture(GL_TEXTURE_2D, chunk.layerTextures[1]);
-                lastBound[2] = chunk.layerTextures[1];
-            }
-            if (chunk.alphaTextures[1] != lastBound[5]) {
-                glActiveTexture(GL_TEXTURE5);
-                glBindTexture(GL_TEXTURE_2D, chunk.alphaTextures[1]);
-                lastBound[5] = chunk.alphaTextures[1];
-            }
-        }
-
-        if (hasLayer3) {
-            if (chunk.layerTextures[2] != lastBound[3]) {
-                glActiveTexture(GL_TEXTURE3);
-                glBindTexture(GL_TEXTURE_2D, chunk.layerTextures[2]);
-                lastBound[3] = chunk.layerTextures[2];
-            }
-            if (chunk.alphaTextures[2] != lastBound[6]) {
-                glActiveTexture(GL_TEXTURE6);
-                glBindTexture(GL_TEXTURE_2D, chunk.alphaTextures[2]);
-                lastBound[6] = chunk.alphaTextures[2];
-            }
-        }
-
-        // Draw chunk
-        glBindVertexArray(chunk.vao);
-        glDrawElements(GL_TRIANGLES, chunk.indexCount, GL_UNSIGNED_INT, 0);
-        glBindVertexArray(0);
-
+        vkCmdDrawIndexed(cmd, chunk.indexCount, 1, 0, 0, 0);
         renderedChunks++;
     }
+}
 
-    // Reset wireframe
-    if (wireframe) {
-        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-    }
+void TerrainRenderer::renderShadow(VkCommandBuffer /*cmd*/, const glm::vec3& /*shadowCenter*/, float /*halfExtent*/) {
+    // Phase 6 stub
 }
 
 void TerrainRenderer::removeTile(int tileX, int tileY) {
@@ -579,12 +544,7 @@ void TerrainRenderer::removeTile(int tileX, int tileY) {
     auto it = chunks.begin();
     while (it != chunks.end()) {
         if (it->tileX == tileX && it->tileY == tileY) {
-            if (it->vao) glDeleteVertexArrays(1, &it->vao);
-            if (it->vbo) glDeleteBuffers(1, &it->vbo);
-            if (it->ibo) glDeleteBuffers(1, &it->ibo);
-            for (GLuint alpha : it->alphaTextures) {
-                if (alpha) glDeleteTextures(1, &alpha);
-            }
+            destroyChunkGPU(*it);
             it = chunks.erase(it);
             removed++;
         } else {
@@ -597,43 +557,38 @@ void TerrainRenderer::removeTile(int tileX, int tileY) {
 }
 
 void TerrainRenderer::clear() {
-    // Delete all GPU resources
+    if (!vkCtx) return;
+
     for (auto& chunk : chunks) {
-        if (chunk.vao) glDeleteVertexArrays(1, &chunk.vao);
-        if (chunk.vbo) glDeleteBuffers(1, &chunk.vbo);
-        if (chunk.ibo) glDeleteBuffers(1, &chunk.ibo);
-
-        // Delete alpha textures (not cached)
-        for (GLuint alpha : chunk.alphaTextures) {
-            if (alpha) glDeleteTextures(1, &alpha);
-        }
+        destroyChunkGPU(chunk);
     }
-
     chunks.clear();
     renderedChunks = 0;
+
+    if (materialDescPool) {
+        vkResetDescriptorPool(vkCtx->getDevice(), materialDescPool, 0);
+    }
 }
 
-void TerrainRenderer::setLighting(const float lightDirIn[3], const float lightColorIn[3],
-                                   const float ambientColorIn[3]) {
-    lightDir[0] = lightDirIn[0];
-    lightDir[1] = lightDirIn[1];
-    lightDir[2] = lightDirIn[2];
+void TerrainRenderer::destroyChunkGPU(TerrainChunkGPU& chunk) {
+    VmaAllocator allocator = vkCtx->getAllocator();
 
-    lightColor[0] = lightColorIn[0];
-    lightColor[1] = lightColorIn[1];
-    lightColor[2] = lightColorIn[2];
-
-    ambientColor[0] = ambientColorIn[0];
-    ambientColor[1] = ambientColorIn[1];
-    ambientColor[2] = ambientColorIn[2];
-}
-
-void TerrainRenderer::setFog(const float fogColorIn[3], float fogStartIn, float fogEndIn) {
-    fogColor[0] = fogColorIn[0];
-    fogColor[1] = fogColorIn[1];
-    fogColor[2] = fogColorIn[2];
-    fogStart = fogStartIn;
-    fogEnd = fogEndIn;
+    if (chunk.vertexBuffer) {
+        AllocatedBuffer ab{}; ab.buffer = chunk.vertexBuffer; ab.allocation = chunk.vertexAlloc;
+        destroyBuffer(allocator, ab);
+        chunk.vertexBuffer = VK_NULL_HANDLE;
+    }
+    if (chunk.indexBuffer) {
+        AllocatedBuffer ab{}; ab.buffer = chunk.indexBuffer; ab.allocation = chunk.indexAlloc;
+        destroyBuffer(allocator, ab);
+        chunk.indexBuffer = VK_NULL_HANDLE;
+    }
+    if (chunk.paramsUBO) {
+        AllocatedBuffer ab{}; ab.buffer = chunk.paramsUBO; ab.allocation = chunk.paramsAlloc;
+        destroyBuffer(allocator, ab);
+        chunk.paramsUBO = VK_NULL_HANDLE;
+    }
+    chunk.materialSet = VK_NULL_HANDLE;
 }
 
 int TerrainRenderer::getTriangleCount() const {
@@ -645,7 +600,6 @@ int TerrainRenderer::getTriangleCount() const {
 }
 
 bool TerrainRenderer::isChunkVisible(const TerrainChunkGPU& chunk, const Frustum& frustum) {
-    // Test bounding sphere against frustum
     return frustum.intersectsSphere(chunk.boundingSphereCenter, chunk.boundingSphereRadius);
 }
 
@@ -657,7 +611,6 @@ void TerrainRenderer::calculateBoundingSphere(TerrainChunkGPU& gpuChunk,
         return;
     }
 
-    // Calculate AABB first
     glm::vec3 min(std::numeric_limits<float>::max());
     glm::vec3 max(std::numeric_limits<float>::lowest());
 
@@ -667,10 +620,8 @@ void TerrainRenderer::calculateBoundingSphere(TerrainChunkGPU& gpuChunk,
         max = glm::max(max, pos);
     }
 
-    // Center is midpoint of AABB
     gpuChunk.boundingSphereCenter = (min + max) * 0.5f;
 
-    // Radius is distance from center to furthest vertex
     float maxDistSq = 0.0f;
     for (const auto& vertex : meshChunk.vertices) {
         glm::vec3 pos(vertex.position[0], vertex.position[1], vertex.position[2]);

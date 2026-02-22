@@ -1,10 +1,15 @@
 #include "rendering/mount_dust.hpp"
 #include "rendering/camera.hpp"
-#include "rendering/shader.hpp"
+#include "rendering/vk_context.hpp"
+#include "rendering/vk_shader.hpp"
+#include "rendering/vk_pipeline.hpp"
+#include "rendering/vk_frame_data.hpp"
+#include "rendering/vk_utils.hpp"
 #include "core/logger.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 #include <random>
 #include <cmath>
+#include <cstring>
 
 namespace wowee {
 namespace rendering {
@@ -23,69 +28,91 @@ static float randFloat(float lo, float hi) {
 MountDust::MountDust() = default;
 MountDust::~MountDust() { shutdown(); }
 
-bool MountDust::initialize() {
+bool MountDust::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout) {
     LOG_INFO("Initializing mount dust effects");
 
-    // Dust particle shader (brownish/tan dust clouds)
-    shader = std::make_unique<Shader>();
+    vkCtx = ctx;
+    VkDevice device = vkCtx->getDevice();
 
-    const char* dustVS = R"(
-        #version 330 core
-        layout (location = 0) in vec3 aPos;
-        layout (location = 1) in float aSize;
-        layout (location = 2) in float aAlpha;
-
-        uniform mat4 uView;
-        uniform mat4 uProjection;
-
-        out float vAlpha;
-
-        void main() {
-            gl_Position = uProjection * uView * vec4(aPos, 1.0);
-            gl_PointSize = aSize;
-            vAlpha = aAlpha;
-        }
-    )";
-
-    const char* dustFS = R"(
-        #version 330 core
-        in float vAlpha;
-        out vec4 FragColor;
-
-        void main() {
-            vec2 coord = gl_PointCoord - vec2(0.5);
-            float dist = length(coord);
-            if (dist > 0.5) discard;
-            // Soft dust cloud with brownish/tan color
-            float alpha = smoothstep(0.5, 0.0, dist) * vAlpha;
-            vec3 dustColor = vec3(0.7, 0.65, 0.55);  // Tan/brown dust
-            FragColor = vec4(dustColor, alpha * 0.4);  // Semi-transparent
-        }
-    )";
-
-    if (!shader->loadFromSource(dustVS, dustFS)) {
-        LOG_ERROR("Failed to create mount dust shader");
+    // Load SPIR-V shaders
+    VkShaderModule vertModule;
+    if (!vertModule.loadFromFile(device, "assets/shaders/mount_dust.vert.spv")) {
+        LOG_ERROR("Failed to load mount_dust vertex shader");
+        return false;
+    }
+    VkShaderModule fragModule;
+    if (!fragModule.loadFromFile(device, "assets/shaders/mount_dust.frag.spv")) {
+        LOG_ERROR("Failed to load mount_dust fragment shader");
         return false;
     }
 
-    // Create VAO/VBO
-    glGenVertexArrays(1, &vao);
-    glGenBuffers(1, &vbo);
+    VkPipelineShaderStageCreateInfo vertStage = vertModule.stageInfo(VK_SHADER_STAGE_VERTEX_BIT);
+    VkPipelineShaderStageCreateInfo fragStage = fragModule.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT);
 
-    glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    // No push constants needed for mount dust (all data is per-vertex)
+    pipelineLayout = createPipelineLayout(device, {perFrameLayout}, {});
+    if (pipelineLayout == VK_NULL_HANDLE) {
+        LOG_ERROR("Failed to create mount dust pipeline layout");
+        return false;
+    }
 
-    // Position (vec3) + Size (float) + Alpha (float) = 5 floats per vertex
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
+    // Vertex input: pos(vec3) + size(float) + alpha(float) = 5 floats, stride = 20 bytes
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = 5 * sizeof(float);
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
+    std::vector<VkVertexInputAttributeDescription> attrs(3);
+    attrs[0].location = 0;
+    attrs[0].binding = 0;
+    attrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attrs[0].offset = 0;
+    attrs[1].location = 1;
+    attrs[1].binding = 0;
+    attrs[1].format = VK_FORMAT_R32_SFLOAT;
+    attrs[1].offset = 3 * sizeof(float);
+    attrs[2].location = 2;
+    attrs[2].binding = 0;
+    attrs[2].format = VK_FORMAT_R32_SFLOAT;
+    attrs[2].offset = 4 * sizeof(float);
 
-    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(4 * sizeof(float)));
-    glEnableVertexAttribArray(2);
+    std::vector<VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
 
-    glBindVertexArray(0);
+    pipeline = PipelineBuilder()
+        .setShaders(vertStage, fragStage)
+        .setVertexInput({binding}, attrs)
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_POINT_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+        .setDepthTest(true, false, VK_COMPARE_OP_LESS)
+        .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+        .setLayout(pipelineLayout)
+        .setRenderPass(vkCtx->getImGuiRenderPass())
+        .setDynamicStates(dynamicStates)
+        .build(device);
+
+    vertModule.destroy();
+    fragModule.destroy();
+
+    if (pipeline == VK_NULL_HANDLE) {
+        LOG_ERROR("Failed to create mount dust pipeline");
+        return false;
+    }
+
+    // Create dynamic mapped vertex buffer
+    dynamicVBSize = MAX_DUST_PARTICLES * 5 * sizeof(float);
+    AllocatedBuffer buf = createBuffer(vkCtx->getAllocator(), dynamicVBSize,
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    dynamicVB = buf.buffer;
+    dynamicVBAlloc = buf.allocation;
+    dynamicVBAllocInfo = buf.info;
+
+    if (dynamicVB == VK_NULL_HANDLE) {
+        LOG_ERROR("Failed to create mount dust dynamic vertex buffer");
+        return false;
+    }
 
     particles.reserve(MAX_DUST_PARTICLES);
     vertexData.reserve(MAX_DUST_PARTICLES * 5);
@@ -95,12 +122,27 @@ bool MountDust::initialize() {
 }
 
 void MountDust::shutdown() {
-    if (vao) glDeleteVertexArrays(1, &vao);
-    if (vbo) glDeleteBuffers(1, &vbo);
-    vao = 0;
-    vbo = 0;
+    if (vkCtx) {
+        VkDevice device = vkCtx->getDevice();
+        VmaAllocator allocator = vkCtx->getAllocator();
+
+        if (pipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device, pipeline, nullptr);
+            pipeline = VK_NULL_HANDLE;
+        }
+        if (pipelineLayout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+            pipelineLayout = VK_NULL_HANDLE;
+        }
+        if (dynamicVB != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(allocator, dynamicVB, dynamicVBAlloc);
+            dynamicVB = VK_NULL_HANDLE;
+            dynamicVBAlloc = VK_NULL_HANDLE;
+        }
+    }
+
+    vkCtx = nullptr;
     particles.clear();
-    shader.reset();
 }
 
 void MountDust::spawnDust(const glm::vec3& position, const glm::vec3& velocity, bool isMoving) {
@@ -173,8 +215,8 @@ void MountDust::update(float deltaTime) {
     }
 }
 
-void MountDust::render(const Camera& camera) {
-    if (particles.empty() || !shader) return;
+void MountDust::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet) {
+    if (particles.empty() || pipeline == VK_NULL_HANDLE) return;
 
     // Build vertex data
     vertexData.clear();
@@ -186,26 +228,25 @@ void MountDust::render(const Camera& camera) {
         vertexData.push_back(p.alpha);
     }
 
-    // Upload to GPU
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, vertexData.size() * sizeof(float), vertexData.data(), GL_DYNAMIC_DRAW);
+    // Upload to mapped buffer
+    VkDeviceSize uploadSize = vertexData.size() * sizeof(float);
+    if (uploadSize > 0 && dynamicVBAllocInfo.pMappedData) {
+        std::memcpy(dynamicVBAllocInfo.pMappedData, vertexData.data(), uploadSize);
+    }
 
-    // Render
-    shader->use();
-    shader->setUniform("uView", camera.getViewMatrix());
-    shader->setUniform("uProjection", camera.getProjectionMatrix());
+    // Bind pipeline
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glDepthMask(GL_FALSE);  // Don't write to depth buffer
-    glEnable(GL_PROGRAM_POINT_SIZE);
+    // Bind per-frame descriptor set (set 0 - camera UBO)
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout,
+        0, 1, &perFrameSet, 0, nullptr);
 
-    glBindVertexArray(vao);
-    glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(particles.size()));
-    glBindVertexArray(0);
+    // Bind vertex buffer
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &dynamicVB, &offset);
 
-    glDepthMask(GL_TRUE);
-    glDisable(GL_PROGRAM_POINT_SIZE);
+    // Draw particles as points
+    vkCmdDraw(cmd, static_cast<uint32_t>(particles.size()), 1, 0, 0);
 }
 
 } // namespace rendering

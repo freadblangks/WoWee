@@ -301,11 +301,14 @@ void CharacterScreen::render(game::GameHandler& gameHandler) {
                 imgW = imgH * (static_cast<float>(preview_->getWidth()) /
                                static_cast<float>(preview_->getHeight()));
             }
-            ImGui::Image(
-                static_cast<ImTextureID>(preview_->getTextureId()),
-                ImVec2(imgW, imgH),
-                ImVec2(0.0f, 1.0f),  // flip Y for OpenGL
-                ImVec2(1.0f, 0.0f));
+            // TODO: Vulkan offscreen preview render target
+            if (preview_->getTextureId()) {
+                ImGui::Image(
+                    static_cast<ImTextureID>(0),
+                    ImVec2(imgW, imgH),
+                    ImVec2(0.0f, 1.0f),
+                    ImVec2(1.0f, 0.0f));
+            }
 
             if (ImGui::IsItemHovered() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
                 preview_->rotate(ImGui::GetIO().MouseDelta.x * 0.2f);

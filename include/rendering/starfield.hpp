@@ -1,14 +1,14 @@
 #pragma once
 
-#include <memory>
 #include <vector>
 #include <glm/glm.hpp>
+#include <vulkan/vulkan.h>
+#include <vk_mem_alloc.h>
 
 namespace wowee {
 namespace rendering {
 
-class Shader;
-class Camera;
+class VkContext;
 
 /**
  * Star field renderer
@@ -21,17 +21,18 @@ public:
     StarField();
     ~StarField();
 
-    bool initialize();
+    bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout);
     void shutdown();
 
     /**
      * Render the star field
-     * @param camera Camera for view matrix
-     * @param timeOfDay Time of day in hours (0-24)
+     * @param cmd         Command buffer to record into
+     * @param perFrameSet Per-frame descriptor set (set 0, contains camera UBO)
+     * @param timeOfDay   Time of day in hours (0-24)
      * @param cloudDensity Optional cloud density from lighting (0-1, reduces star visibility)
-     * @param fogDensity Optional fog density from lighting (reduces star visibility)
+     * @param fogDensity   Optional fog density from lighting (reduces star visibility)
      */
-    void render(const Camera& camera, float timeOfDay,
+    void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, float timeOfDay,
                 float cloudDensity = 0.0f, float fogDensity = 0.0f);
 
     /**
@@ -57,8 +58,6 @@ private:
 
     float getStarIntensity(float timeOfDay) const;
 
-    std::unique_ptr<Shader> starShader;
-
     struct Star {
         glm::vec3 position;
         float brightness;    // 0.3 to 1.0
@@ -68,8 +67,13 @@ private:
     std::vector<Star> stars;
     int starCount = 1000;
 
-    uint32_t vao = 0;
-    uint32_t vbo = 0;
+    VkContext* vkCtx = nullptr;
+
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+
+    VkBuffer vertexBuffer = VK_NULL_HANDLE;
+    VmaAllocation vertexAlloc = VK_NULL_HANDLE;
 
     float twinkleTime = 0.0f;
     bool renderingEnabled = true;

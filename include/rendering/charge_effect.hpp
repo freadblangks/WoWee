@@ -1,8 +1,8 @@
 #pragma once
 
-#include <GL/glew.h>
+#include <vulkan/vulkan.h>
+#include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
-#include <memory>
 #include <vector>
 #include <deque>
 #include <cstdint>
@@ -12,7 +12,7 @@ namespace pipeline { class AssetManager; }
 namespace rendering {
 
 class Camera;
-class Shader;
+class VkContext;
 class M2Renderer;
 
 /// Renders a red-orange ribbon streak trailing behind the warrior during Charge,
@@ -22,7 +22,7 @@ public:
     ChargeEffect();
     ~ChargeEffect();
 
-    bool initialize();
+    bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout);
     void shutdown();
 
     /// Try to load M2 spell models (Charge_Caster.m2, etc.)
@@ -41,7 +41,7 @@ public:
     void triggerImpact(const glm::vec3& position);
 
     void update(float deltaTime);
-    void render(const Camera& camera);
+    void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet);
 
     bool isActive() const { return emitting_ || !trail_.empty() || !dustPuffs_.empty(); }
 
@@ -59,10 +59,17 @@ private:
     static constexpr float TRAIL_SPAWN_DIST = 0.4f;   // Min distance between trail points
     std::deque<TrailPoint> trail_;
 
-    GLuint ribbonVao_ = 0;
-    GLuint ribbonVbo_ = 0;
-    std::unique_ptr<Shader> ribbonShader_;
-    std::vector<float> ribbonVerts_;  // pos(3) + alpha(1) + heat(1) = 5 floats per vert
+    // Vulkan objects
+    VkContext* vkCtx_ = nullptr;
+
+    // Ribbon pipeline + dynamic buffer
+    VkPipeline ribbonPipeline_ = VK_NULL_HANDLE;
+    VkPipelineLayout ribbonPipelineLayout_ = VK_NULL_HANDLE;
+    ::VkBuffer ribbonDynamicVB_ = VK_NULL_HANDLE;
+    VmaAllocation ribbonDynamicVBAlloc_ = VK_NULL_HANDLE;
+    VmaAllocationInfo ribbonDynamicVBAllocInfo_{};
+    VkDeviceSize ribbonDynamicVBSize_ = 0;
+    std::vector<float> ribbonVerts_;  // pos(3) + alpha(1) + heat(1) + height(1) = 6 floats per vert
 
     // --- Dust puffs (small point sprites at feet) ---
     struct DustPuff {
@@ -77,9 +84,13 @@ private:
     static constexpr int MAX_DUST = 80;
     std::vector<DustPuff> dustPuffs_;
 
-    GLuint dustVao_ = 0;
-    GLuint dustVbo_ = 0;
-    std::unique_ptr<Shader> dustShader_;
+    // Dust pipeline + dynamic buffer
+    VkPipeline dustPipeline_ = VK_NULL_HANDLE;
+    VkPipelineLayout dustPipelineLayout_ = VK_NULL_HANDLE;
+    ::VkBuffer dustDynamicVB_ = VK_NULL_HANDLE;
+    VmaAllocation dustDynamicVBAlloc_ = VK_NULL_HANDLE;
+    VmaAllocationInfo dustDynamicVBAllocInfo_{};
+    VkDeviceSize dustDynamicVBSize_ = 0;
     std::vector<float> dustVerts_;
 
     bool emitting_ = false;

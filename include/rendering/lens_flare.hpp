@@ -1,15 +1,15 @@
 #pragma once
 
-#include <GL/glew.h>
+#include <vulkan/vulkan.h>
+#include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
-#include <memory>
 #include <vector>
 
 namespace wowee {
 namespace rendering {
 
 class Camera;
-class Shader;
+class VkContext;
 
 /**
  * @brief Renders lens flare effect when looking at the sun
@@ -28,17 +28,25 @@ public:
 
     /**
      * @brief Initialize lens flare system
+     * @param ctx Vulkan context
+     * @param perFrameLayout Per-frame descriptor set layout (unused, kept for API consistency)
      * @return true if initialization succeeded
      */
-    bool initialize();
+    bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout);
+
+    /**
+     * @brief Destroy Vulkan resources
+     */
+    void shutdown();
 
     /**
      * @brief Render lens flare effect
+     * @param cmd Command buffer to record into
      * @param camera The camera to render from
      * @param sunPosition World-space sun position
      * @param timeOfDay Current time (0-24 hours)
      */
-    void render(const Camera& camera, const glm::vec3& sunPosition, float timeOfDay);
+    void render(VkCommandBuffer cmd, const Camera& camera, const glm::vec3& sunPosition, float timeOfDay);
 
     /**
      * @brief Enable or disable lens flare rendering
@@ -60,15 +68,24 @@ private:
         float brightness;    // Brightness multiplier
     };
 
+    struct FlarePushConstants {
+        glm::vec2 position;     // Screen-space position (-1 to 1)
+        float size;             // Size in screen space
+        float aspectRatio;      // Viewport aspect ratio
+        glm::vec4 colorBrightness; // RGB color + brightness in w
+    };
+
     void generateFlareElements();
-    void cleanup();
     float calculateSunVisibility(const Camera& camera, const glm::vec3& sunPosition) const;
     glm::vec2 worldToScreen(const Camera& camera, const glm::vec3& worldPos) const;
 
-    // OpenGL objects
-    GLuint vao = 0;
-    GLuint vbo = 0;
-    std::unique_ptr<Shader> shader;
+    VkContext* vkCtx = nullptr;
+
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+
+    VkBuffer vertexBuffer = VK_NULL_HANDLE;
+    VmaAllocation vertexAlloc = VK_NULL_HANDLE;
 
     // Flare elements
     std::vector<FlareElement> flareElements;

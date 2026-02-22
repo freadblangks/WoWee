@@ -1,11 +1,15 @@
 #include "rendering/world_map.hpp"
-#include "rendering/shader.hpp"
+#include "rendering/vk_context.hpp"
+#include "rendering/vk_texture.hpp"
+#include "rendering/vk_render_target.hpp"
+#include "rendering/vk_pipeline.hpp"
+#include "rendering/vk_shader.hpp"
+#include "rendering/vk_utils.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/dbc_layout.hpp"
 #include "core/coordinates.hpp"
 #include "core/input.hpp"
 #include "core/logger.hpp"
-#include <GL/glew.h>
 #include <imgui.h>
 #include <cmath>
 #include <algorithm>
@@ -35,44 +39,195 @@ bool isLeafContinent(const std::vector<WorldMapZone>& zones, int idx) {
 }
 } // namespace
 
+// Push constant for world map tile composite vertex shader
+struct WorldMapTilePush {
+    glm::vec2 gridOffset;  // 8 bytes
+    float gridCols;          // 4 bytes
+    float gridRows;          // 4 bytes
+};  // 16 bytes
+
 WorldMap::WorldMap() = default;
 
 WorldMap::~WorldMap() {
-    if (fbo) glDeleteFramebuffers(1, &fbo);
-    if (fboTexture) glDeleteTextures(1, &fboTexture);
-    if (tileQuadVAO) glDeleteVertexArrays(1, &tileQuadVAO);
-    if (tileQuadVBO) glDeleteBuffers(1, &tileQuadVBO);
-    for (auto& zone : zones) {
-        for (auto& tex : zone.tileTextures) {
-            if (tex) glDeleteTextures(1, &tex);
-        }
-    }
-    tileShader.reset();
+    shutdown();
 }
 
-void WorldMap::initialize(pipeline::AssetManager* am) {
-    if (initialized) return;
+bool WorldMap::initialize(VkContext* ctx, pipeline::AssetManager* am) {
+    if (initialized) return true;
+    vkCtx = ctx;
     assetManager = am;
-    createFBO();
-    createTileShader();
-    createQuad();
+    VkDevice device = vkCtx->getDevice();
+
+    // --- Composite render target (1024x768) ---
+    compositeTarget = std::make_unique<VkRenderTarget>();
+    if (!compositeTarget->create(*vkCtx, FBO_W, FBO_H)) {
+        LOG_ERROR("WorldMap: failed to create composite render target");
+        return false;
+    }
+
+    // --- Quad vertex buffer (unit quad: pos2 + uv2) ---
+    float quadVerts[] = {
+        0.0f, 0.0f,  0.0f, 0.0f,
+        1.0f, 0.0f,  1.0f, 0.0f,
+        1.0f, 1.0f,  1.0f, 1.0f,
+        0.0f, 0.0f,  0.0f, 0.0f,
+        1.0f, 1.0f,  1.0f, 1.0f,
+        0.0f, 1.0f,  0.0f, 1.0f,
+    };
+    auto quadBuf = uploadBuffer(*vkCtx, quadVerts, sizeof(quadVerts),
+                                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    quadVB = quadBuf.buffer;
+    quadVBAlloc = quadBuf.allocation;
+
+    // --- Descriptor set layout: 1 combined image sampler at binding 0 ---
+    VkDescriptorSetLayoutBinding samplerBinding{};
+    samplerBinding.binding = 0;
+    samplerBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerBinding.descriptorCount = 1;
+    samplerBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    samplerSetLayout = createDescriptorSetLayout(device, { samplerBinding });
+
+    // --- Descriptor pool (24 tile + 1 display = 25) ---
+    VkDescriptorPoolSize poolSize{};
+    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSize.descriptorCount = MAX_DESC_SETS;
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.maxSets = MAX_DESC_SETS;
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+    vkCreateDescriptorPool(device, &poolInfo, nullptr, &descPool);
+
+    // --- Allocate descriptor sets: 12*2 tile + 1 display = 25 ---
+    constexpr uint32_t totalSets = 25;
+    std::vector<VkDescriptorSetLayout> layouts(totalSets, samplerSetLayout);
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = descPool;
+    allocInfo.descriptorSetCount = totalSets;
+    allocInfo.pSetLayouts = layouts.data();
+
+    VkDescriptorSet allSets[25];
+    vkAllocateDescriptorSets(device, &allocInfo, allSets);
+
+    for (int f = 0; f < 2; f++)
+        for (int t = 0; t < 12; t++)
+            tileDescSets[f][t] = allSets[f * 12 + t];
+    imguiDisplaySet = allSets[24];
+
+    // --- Write display descriptor set → composite render target ---
+    VkDescriptorImageInfo compositeImgInfo = compositeTarget->descriptorInfo();
+    VkWriteDescriptorSet displayWrite{};
+    displayWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    displayWrite.dstSet = imguiDisplaySet;
+    displayWrite.dstBinding = 0;
+    displayWrite.descriptorCount = 1;
+    displayWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    displayWrite.pImageInfo = &compositeImgInfo;
+    vkUpdateDescriptorSets(device, 1, &displayWrite, 0, nullptr);
+
+    // --- Pipeline layout: samplerSetLayout + push constant (16 bytes, vertex) ---
+    VkPushConstantRange tilePush{};
+    tilePush.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    tilePush.offset = 0;
+    tilePush.size = sizeof(WorldMapTilePush);
+    tilePipelineLayout = createPipelineLayout(device, { samplerSetLayout }, { tilePush });
+
+    // --- Vertex input: pos2 (loc 0) + uv2 (loc 1), stride 16 ---
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = 4 * sizeof(float);
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::vector<VkVertexInputAttributeDescription> attrs(2);
+    attrs[0] = { 0, 0, VK_FORMAT_R32G32_SFLOAT, 0 };
+    attrs[1] = { 1, 0, VK_FORMAT_R32G32_SFLOAT, 2 * sizeof(float) };
+
+    // --- Load tile shaders and build pipeline ---
+    {
+        VkShaderModule vs, fs;
+        if (!vs.loadFromFile(device, "assets/shaders/world_map.vert.spv") ||
+            !fs.loadFromFile(device, "assets/shaders/world_map.frag.spv")) {
+            LOG_ERROR("WorldMap: failed to load tile shaders");
+            return false;
+        }
+
+        tilePipeline = PipelineBuilder()
+            .setShaders(vs.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                        fs.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+            .setVertexInput({ binding }, attrs)
+            .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+            .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+            .setNoDepthTest()
+            .setColorBlendAttachment(PipelineBuilder::blendDisabled())
+            .setLayout(tilePipelineLayout)
+            .setRenderPass(compositeTarget->getRenderPass())
+            .setDynamicStates({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR })
+            .build(device);
+
+        vs.destroy();
+        fs.destroy();
+    }
+
+    if (!tilePipeline) {
+        LOG_ERROR("WorldMap: failed to create tile pipeline");
+        return false;
+    }
+
     initialized = true;
-    LOG_INFO("WorldMap initialized (", FBO_W, "x", FBO_H, " FBO)");
+    LOG_INFO("WorldMap initialized (", FBO_W, "x", FBO_H, " composite)");
+    return true;
+}
+
+void WorldMap::shutdown() {
+    if (!vkCtx) return;
+    VkDevice device = vkCtx->getDevice();
+    VmaAllocator alloc = vkCtx->getAllocator();
+
+    vkDeviceWaitIdle(device);
+
+    if (tilePipeline) { vkDestroyPipeline(device, tilePipeline, nullptr); tilePipeline = VK_NULL_HANDLE; }
+    if (tilePipelineLayout) { vkDestroyPipelineLayout(device, tilePipelineLayout, nullptr); tilePipelineLayout = VK_NULL_HANDLE; }
+    if (descPool) { vkDestroyDescriptorPool(device, descPool, nullptr); descPool = VK_NULL_HANDLE; }
+    if (samplerSetLayout) { vkDestroyDescriptorSetLayout(device, samplerSetLayout, nullptr); samplerSetLayout = VK_NULL_HANDLE; }
+    if (quadVB) { vmaDestroyBuffer(alloc, quadVB, quadVBAlloc); quadVB = VK_NULL_HANDLE; }
+
+    destroyZoneTextures();
+
+    if (compositeTarget) { compositeTarget->destroy(device, alloc); compositeTarget.reset(); }
+
+    zones.clear();
+    initialized = false;
+    vkCtx = nullptr;
+}
+
+void WorldMap::destroyZoneTextures() {
+    if (!vkCtx) return;
+    VkDevice device = vkCtx->getDevice();
+    VmaAllocator alloc = vkCtx->getAllocator();
+
+    for (auto& tex : zoneTextures) {
+        if (tex) tex->destroy(device, alloc);
+    }
+    zoneTextures.clear();
+
+    for (auto& zone : zones) {
+        for (auto& tex : zone.tileTextures) tex = nullptr;
+        zone.tilesLoaded = false;
+    }
 }
 
 void WorldMap::setMapName(const std::string& name) {
     if (mapName == name && !zones.empty()) return;
     mapName = name;
-    // Clear old zone data
-    for (auto& zone : zones) {
-        for (auto& tex : zone.tileTextures) {
-            if (tex) { glDeleteTextures(1, &tex); tex = 0; }
-        }
-    }
+
+    destroyZoneTextures();
     zones.clear();
     continentIdx = -1;
     currentIdx = -1;
     compositedIdx = -1;
+    pendingCompositeIdx = -1;
     viewLevel = ViewLevel::WORLD;
 }
 
@@ -82,107 +237,17 @@ void WorldMap::setServerExplorationMask(const std::vector<uint32_t>& masks, bool
         serverExplorationMask.clear();
         return;
     }
-
     hasServerExplorationMask = true;
     serverExplorationMask = masks;
 }
 
 // --------------------------------------------------------
-// GL resource creation
-// --------------------------------------------------------
-
-void WorldMap::createFBO() {
-    glGenFramebuffers(1, &fbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-
-    glGenTextures(1, &fboTexture);
-    glBindTexture(GL_TEXTURE_2D, fboTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, FBO_W, FBO_H, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fboTexture, 0);
-
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        LOG_ERROR("WorldMap FBO incomplete");
-    }
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-}
-
-void WorldMap::createTileShader() {
-    const char* vertSrc = R"(
-        #version 330 core
-        layout (location = 0) in vec2 aPos;
-        layout (location = 1) in vec2 aUV;
-
-        uniform vec2 uGridOffset;  // (col, row) in grid
-        uniform float uGridCols;
-        uniform float uGridRows;
-
-        out vec2 TexCoord;
-
-        void main() {
-            vec2 gridPos = vec2(
-                (uGridOffset.x + aPos.x) / uGridCols,
-                (uGridOffset.y + aPos.y) / uGridRows
-            );
-            gl_Position = vec4(gridPos * 2.0 - 1.0, 0.0, 1.0);
-            TexCoord = aUV;
-        }
-    )";
-
-    const char* fragSrc = R"(
-        #version 330 core
-        in vec2 TexCoord;
-
-        uniform sampler2D uTileTexture;
-
-        out vec4 FragColor;
-
-        void main() {
-            FragColor = texture(uTileTexture, TexCoord);
-        }
-    )";
-
-    tileShader = std::make_unique<Shader>();
-    if (!tileShader->loadFromSource(vertSrc, fragSrc)) {
-        LOG_ERROR("Failed to create WorldMap tile shader");
-    }
-}
-
-void WorldMap::createQuad() {
-    float quadVerts[] = {
-        // pos (x,y), uv (u,v)
-        0.0f, 0.0f,  0.0f, 0.0f,
-        1.0f, 0.0f,  1.0f, 0.0f,
-        1.0f, 1.0f,  1.0f, 1.0f,
-        0.0f, 0.0f,  0.0f, 0.0f,
-        1.0f, 1.0f,  1.0f, 1.0f,
-        0.0f, 1.0f,  0.0f, 1.0f,
-    };
-
-    glGenVertexArrays(1, &tileQuadVAO);
-    glGenBuffers(1, &tileQuadVBO);
-    glBindVertexArray(tileQuadVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, tileQuadVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVerts), quadVerts, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-    glBindVertexArray(0);
-}
-
-// --------------------------------------------------------
-// DBC zone loading
+// DBC zone loading (identical to GL version)
 // --------------------------------------------------------
 
 void WorldMap::loadZonesFromDBC() {
     if (!zones.empty() || !assetManager) return;
 
-    // Step 1: Resolve mapID from Map.dbc
     const auto* activeLayout = pipeline::getActiveDBCLayout();
     const auto* mapL = activeLayout ? activeLayout->getLayout("Map") : nullptr;
 
@@ -210,7 +275,6 @@ void WorldMap::loadZonesFromDBC() {
         }
     }
 
-    // Step 2: Load AreaTable explore flags by areaID.
     const auto* atL = activeLayout ? activeLayout->getLayout("AreaTable") : nullptr;
     std::unordered_map<uint32_t, uint32_t> exploreFlagByAreaId;
     auto areaDbc = assetManager->loadDBC("AreaTable.dbc");
@@ -218,28 +282,15 @@ void WorldMap::loadZonesFromDBC() {
         for (uint32_t i = 0; i < areaDbc->getRecordCount(); i++) {
             const uint32_t areaId = areaDbc->getUInt32(i, atL ? (*atL)["ID"] : 0);
             const uint32_t exploreFlag = areaDbc->getUInt32(i, atL ? (*atL)["ExploreFlag"] : 3);
-            if (areaId != 0) {
-                exploreFlagByAreaId[areaId] = exploreFlag;
-            }
+            if (areaId != 0) exploreFlagByAreaId[areaId] = exploreFlag;
         }
-    } else {
-        LOG_WARNING("WorldMap: AreaTable.dbc missing or unexpected format; server exploration may be incomplete");
     }
 
-    // Step 3: Load ALL WorldMapArea records for this mapID
     auto wmaDbc = assetManager->loadDBC("WorldMapArea.dbc");
     if (!wmaDbc || !wmaDbc->isLoaded()) {
         LOG_WARNING("WorldMap: WorldMapArea.dbc not found");
         return;
     }
-
-    LOG_INFO("WorldMap: WorldMapArea.dbc has ", wmaDbc->getFieldCount(),
-             " fields, ", wmaDbc->getRecordCount(), " records");
-
-    // WorldMapArea.dbc layout (11 fields, no localized strings):
-    //   0: ID, 1: MapID, 2: AreaID, 3: AreaName (stringref)
-    //   4: locLeft, 5: locRight, 6: locTop, 7: locBottom
-    //   8: displayMapID, 9: defaultDungeonFloor, 10: parentWorldMapID
 
     const auto* wmaL = activeLayout ? activeLayout->getLayout("WorldMapArea") : nullptr;
 
@@ -258,60 +309,42 @@ void WorldMap::loadZonesFromDBC() {
         zone.displayMapID = wmaDbc->getUInt32(i, wmaL ? (*wmaL)["DisplayMapID"] : 8);
         zone.parentWorldMapID = wmaDbc->getUInt32(i, wmaL ? (*wmaL)["ParentWorldMapID"] : 10);
         auto exploreIt = exploreFlagByAreaId.find(zone.areaID);
-        if (exploreIt != exploreFlagByAreaId.end()) {
+        if (exploreIt != exploreFlagByAreaId.end())
             zone.exploreFlag = exploreIt->second;
-        }
 
         int idx = static_cast<int>(zones.size());
-
-        // Debug: also log raw uint32 values for bounds fields
-        uint32_t raw4 = wmaDbc->getUInt32(i, wmaL ? (*wmaL)["LocLeft"] : 4);
-        uint32_t raw5 = wmaDbc->getUInt32(i, wmaL ? (*wmaL)["LocRight"] : 5);
-        uint32_t raw6 = wmaDbc->getUInt32(i, wmaL ? (*wmaL)["LocTop"] : 6);
-        uint32_t raw7 = wmaDbc->getUInt32(i, wmaL ? (*wmaL)["LocBottom"] : 7);
 
         LOG_INFO("WorldMap: zone[", idx, "] areaID=", zone.areaID,
                  " '", zone.areaName, "' L=", zone.locLeft,
                  " R=", zone.locRight, " T=", zone.locTop,
-                 " B=", zone.locBottom,
-                 " (raw4=", raw4, " raw5=", raw5,
-                 " raw6=", raw6, " raw7=", raw7, ")");
+                 " B=", zone.locBottom);
 
-        if (zone.areaID == 0 && continentIdx < 0) {
+        if (zone.areaID == 0 && continentIdx < 0)
             continentIdx = idx;
-        }
 
         zones.push_back(std::move(zone));
     }
 
-    // For each continent entry with missing bounds, derive bounds from its child zones only.
+    // Derive continent bounds from child zones if missing
     for (int ci = 0; ci < static_cast<int>(zones.size()); ci++) {
         auto& cont = zones[ci];
         if (cont.areaID != 0) continue;
-
         if (std::abs(cont.locLeft) > 0.001f || std::abs(cont.locRight) > 0.001f ||
-            std::abs(cont.locTop) > 0.001f || std::abs(cont.locBottom) > 0.001f) {
+            std::abs(cont.locTop) > 0.001f || std::abs(cont.locBottom) > 0.001f)
             continue;
-        }
 
         bool first = true;
         for (const auto& z : zones) {
             if (z.areaID == 0) continue;
             if (std::abs(z.locLeft - z.locRight) < 0.001f ||
-                std::abs(z.locTop - z.locBottom) < 0.001f) {
+                std::abs(z.locTop - z.locBottom) < 0.001f)
                 continue;
-            }
-
-            // Prefer explicit parent linkage when deriving continent extents.
-            if (z.parentWorldMapID != 0 && cont.wmaID != 0 && z.parentWorldMapID != cont.wmaID) {
+            if (z.parentWorldMapID != 0 && cont.wmaID != 0 && z.parentWorldMapID != cont.wmaID)
                 continue;
-            }
 
             if (first) {
-                cont.locLeft = z.locLeft;
-                cont.locRight = z.locRight;
-                cont.locTop = z.locTop;
-                cont.locBottom = z.locBottom;
+                cont.locLeft = z.locLeft; cont.locRight = z.locRight;
+                cont.locTop = z.locTop; cont.locBottom = z.locBottom;
                 first = false;
             } else {
                 cont.locLeft = std::max(cont.locLeft, z.locLeft);
@@ -320,11 +353,6 @@ void WorldMap::loadZonesFromDBC() {
                 cont.locBottom = std::min(cont.locBottom, z.locBottom);
             }
         }
-
-        if (!first) {
-            LOG_INFO("WorldMap: computed bounds for continent '", cont.areaName, "': L=", cont.locLeft,
-                     " R=", cont.locRight, " T=", cont.locTop, " B=", cont.locBottom);
-        }
     }
 
     LOG_INFO("WorldMap: loaded ", zones.size(), " zones for mapID=", mapID,
@@ -332,8 +360,8 @@ void WorldMap::loadZonesFromDBC() {
 }
 
 int WorldMap::findBestContinentForPlayer(const glm::vec3& playerRenderPos) const {
-    float wowX = playerRenderPos.y;  // north/south
-    float wowY = playerRenderPos.x;  // west/east
+    float wowX = playerRenderPos.y;
+    float wowY = playerRenderPos.x;
 
     int bestIdx = -1;
     float bestArea = std::numeric_limits<float>::max();
@@ -363,56 +391,39 @@ int WorldMap::findBestContinentForPlayer(const glm::vec3& playerRenderPos) const
         bool contains = (wowX >= minX && wowX <= maxX && wowY >= minY && wowY <= maxY);
         float area = spanX * spanY;
         if (contains) {
-            if (area < bestArea) {
-                bestArea = area;
-                bestIdx = i;
-            }
+            if (area < bestArea) { bestArea = area; bestIdx = i; }
         } else if (bestIdx < 0) {
-            // Fallback if player isn't inside any continent bounds: nearest center.
-            float cx = (minX + maxX) * 0.5f;
-            float cy = (minY + maxY) * 0.5f;
-            float dx = wowX - cx;
-            float dy = wowY - cy;
-            float dist2 = dx * dx + dy * dy;
-            if (dist2 < bestCenterDist2) {
-                bestCenterDist2 = dist2;
-                bestIdx = i;
-            }
+            float cx = (minX + maxX) * 0.5f, cy = (minY + maxY) * 0.5f;
+            float dist2 = (wowX - cx) * (wowX - cx) + (wowY - cy) * (wowY - cy);
+            if (dist2 < bestCenterDist2) { bestCenterDist2 = dist2; bestIdx = i; }
         }
     }
-
     return bestIdx;
 }
 
 int WorldMap::findZoneForPlayer(const glm::vec3& playerRenderPos) const {
-    float wowX = playerRenderPos.y;  // north/south
-    float wowY = playerRenderPos.x;  // west/east
+    float wowX = playerRenderPos.y;
+    float wowY = playerRenderPos.x;
 
     int bestIdx = -1;
     float bestArea = std::numeric_limits<float>::max();
 
     for (int i = 0; i < static_cast<int>(zones.size()); i++) {
         const auto& z = zones[i];
-        if (z.areaID == 0) continue;  // skip continent-level entries
+        if (z.areaID == 0) continue;
 
         float minX = std::min(z.locLeft, z.locRight);
         float maxX = std::max(z.locLeft, z.locRight);
         float minY = std::min(z.locTop, z.locBottom);
         float maxY = std::max(z.locTop, z.locBottom);
-        float spanX = maxX - minX;
-        float spanY = maxY - minY;
+        float spanX = maxX - minX, spanY = maxY - minY;
         if (spanX < 0.001f || spanY < 0.001f) continue;
 
-        bool contains = (wowX >= minX && wowX <= maxX && wowY >= minY && wowY <= maxY);
-        if (contains) {
+        if (wowX >= minX && wowX <= maxX && wowY >= minY && wowY <= maxY) {
             float area = spanX * spanY;
-            if (area < bestArea) {
-                bestArea = area;
-                bestIdx = i;
-            }
+            if (area < bestArea) { bestArea = area; bestIdx = i; }
         }
     }
-
     return bestIdx;
 }
 
@@ -422,13 +433,10 @@ bool WorldMap::zoneBelongsToContinent(int zoneIdx, int contIdx) const {
 
     const auto& z = zones[zoneIdx];
     const auto& cont = zones[contIdx];
-
     if (z.areaID == 0) return false;
 
-    // Prefer explicit parent linkage from WorldMapArea.dbc.
-    if (z.parentWorldMapID != 0 && cont.wmaID != 0) {
+    if (z.parentWorldMapID != 0 && cont.wmaID != 0)
         return z.parentWorldMapID == cont.wmaID;
-    }
 
     auto rectMinX = [](const WorldMapZone& a) { return std::min(a.locLeft, a.locRight); };
     auto rectMaxX = [](const WorldMapZone& a) { return std::max(a.locLeft, a.locRight); };
@@ -439,13 +447,11 @@ bool WorldMap::zoneBelongsToContinent(int zoneIdx, int contIdx) const {
     float zMinY = rectMinY(z), zMaxY = rectMaxY(z);
     if ((zMaxX - zMinX) < 0.001f || (zMaxY - zMinY) < 0.001f) return false;
 
-    // Fallback: assign zone to the continent with highest overlap area.
     int bestContIdx = -1;
     float bestOverlap = 0.0f;
     for (int i = 0; i < static_cast<int>(zones.size()); i++) {
         const auto& c = zones[i];
         if (c.areaID != 0) continue;
-
         float cMinX = rectMinX(c), cMaxX = rectMaxX(c);
         float cMinY = rectMinY(c), cMaxY = rectMaxY(c);
         if ((cMaxX - cMinX) < 0.001f || (cMaxY - cMinY) < 0.001f) continue;
@@ -453,55 +459,35 @@ bool WorldMap::zoneBelongsToContinent(int zoneIdx, int contIdx) const {
         float ox = std::max(0.0f, std::min(zMaxX, cMaxX) - std::max(zMinX, cMinX));
         float oy = std::max(0.0f, std::min(zMaxY, cMaxY) - std::max(zMinY, cMinY));
         float overlap = ox * oy;
-        if (overlap > bestOverlap) {
-            bestOverlap = overlap;
-            bestContIdx = i;
-        }
+        if (overlap > bestOverlap) { bestOverlap = overlap; bestContIdx = i; }
     }
+    if (bestContIdx >= 0) return bestContIdx == contIdx;
 
-    if (bestContIdx >= 0) {
-        return bestContIdx == contIdx;
-    }
-
-    // Last resort: center-point containment.
     float centerX = (z.locLeft + z.locRight) * 0.5f;
     float centerY = (z.locTop + z.locBottom) * 0.5f;
-    float cMinX = rectMinX(cont), cMaxX = rectMaxX(cont);
-    float cMinY = rectMinY(cont), cMaxY = rectMaxY(cont);
-    return centerX >= cMinX && centerX <= cMaxX &&
-           centerY >= cMinY && centerY <= cMaxY;
+    return centerX >= rectMinX(cont) && centerX <= rectMaxX(cont) &&
+           centerY >= rectMinY(cont) && centerY <= rectMaxY(cont);
 }
 
 bool WorldMap::getContinentProjectionBounds(int contIdx, float& left, float& right,
                                             float& top, float& bottom) const {
     if (contIdx < 0 || contIdx >= static_cast<int>(zones.size())) return false;
-
     const auto& cont = zones[contIdx];
     if (cont.areaID != 0) return false;
 
-    // Prefer authored continent bounds from DBC when available.
     if (std::abs(cont.locLeft - cont.locRight) > 0.001f &&
         std::abs(cont.locTop - cont.locBottom) > 0.001f) {
-        left = cont.locLeft;
-        right = cont.locRight;
-        top = cont.locTop;
-        bottom = cont.locBottom;
+        left = cont.locLeft; right = cont.locRight;
+        top = cont.locTop; bottom = cont.locBottom;
         return true;
     }
 
-    std::vector<float> northEdges;
-    std::vector<float> southEdges;
-    std::vector<float> westEdges;
-    std::vector<float> eastEdges;
-
+    std::vector<float> northEdges, southEdges, westEdges, eastEdges;
     for (int zi = 0; zi < static_cast<int>(zones.size()); zi++) {
         if (!zoneBelongsToContinent(zi, contIdx)) continue;
         const auto& z = zones[zi];
         if (std::abs(z.locLeft - z.locRight) < 0.001f ||
-            std::abs(z.locTop - z.locBottom) < 0.001f) {
-            continue;
-        }
-
+            std::abs(z.locTop - z.locBottom) < 0.001f) continue;
         northEdges.push_back(std::max(z.locLeft, z.locRight));
         southEdges.push_back(std::min(z.locLeft, z.locRight));
         westEdges.push_back(std::max(z.locTop, z.locBottom));
@@ -509,31 +495,25 @@ bool WorldMap::getContinentProjectionBounds(int contIdx, float& left, float& rig
     }
 
     if (northEdges.size() < 3) {
-        left = cont.locLeft;
-        right = cont.locRight;
-        top = cont.locTop;
-        bottom = cont.locBottom;
+        left = cont.locLeft; right = cont.locRight;
+        top = cont.locTop; bottom = cont.locBottom;
         return std::abs(left - right) > 0.001f && std::abs(top - bottom) > 0.001f;
     }
 
-    // Fallback: derive full extents from child zones.
     left = *std::max_element(northEdges.begin(), northEdges.end());
     right = *std::min_element(southEdges.begin(), southEdges.end());
     top = *std::max_element(westEdges.begin(), westEdges.end());
     bottom = *std::min_element(eastEdges.begin(), eastEdges.end());
 
     if (left <= right || top <= bottom) {
-        left = cont.locLeft;
-        right = cont.locRight;
-        top = cont.locTop;
-        bottom = cont.locBottom;
+        left = cont.locLeft; right = cont.locRight;
+        top = cont.locTop; bottom = cont.locBottom;
     }
-
     return std::abs(left - right) > 0.001f && std::abs(top - bottom) > 0.001f;
 }
 
 // --------------------------------------------------------
-// Per-zone texture loading
+// Per-zone texture loading (Vulkan)
 // --------------------------------------------------------
 
 void WorldMap::loadZoneTextures(int zoneIdx) {
@@ -552,7 +532,9 @@ void WorldMap::loadZoneTextures(int zoneIdx) {
         if (folder != "EasternKingdoms") candidateFolders.push_back("EasternKingdoms");
     }
 
+    VkDevice device = vkCtx->getDevice();
     int loaded = 0;
+
     for (int i = 0; i < 12; i++) {
         pipeline::BLPImage blpImage;
         bool found = false;
@@ -560,28 +542,22 @@ void WorldMap::loadZoneTextures(int zoneIdx) {
             std::string path = "Interface\\WorldMap\\" + testFolder + "\\" +
                                testFolder + std::to_string(i + 1) + ".blp";
             blpImage = assetManager->loadTexture(path);
-            if (blpImage.isValid()) {
-                found = true;
-                break;
-            }
+            if (blpImage.isValid()) { found = true; break; }
         }
 
         if (!found) {
-            zone.tileTextures[i] = 0;
+            zone.tileTextures[i] = nullptr;
             continue;
         }
 
-        GLuint tex;
-        glGenTextures(1, &tex);
-        glBindTexture(GL_TEXTURE_2D, tex);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, blpImage.width, blpImage.height, 0,
-                     GL_RGBA, GL_UNSIGNED_BYTE, blpImage.data.data());
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        auto tex = std::make_unique<VkTexture>();
+        tex->upload(*vkCtx, blpImage.data.data(), blpImage.width, blpImage.height,
+                    VK_FORMAT_R8G8B8A8_UNORM, false);
+        tex->createSampler(device, VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+                           VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, 1.0f);
 
-        zone.tileTextures[i] = tex;
+        zone.tileTextures[i] = tex.get();
+        zoneTextures.push_back(std::move(tex));
         loaded++;
     }
 
@@ -589,65 +565,81 @@ void WorldMap::loadZoneTextures(int zoneIdx) {
 }
 
 // --------------------------------------------------------
-// Composite a zone's tiles into the FBO
+// Request composite (deferred to compositePass)
 // --------------------------------------------------------
 
-void WorldMap::compositeZone(int zoneIdx) {
+void WorldMap::requestComposite(int zoneIdx) {
     if (zoneIdx < 0 || zoneIdx >= static_cast<int>(zones.size())) return;
+    pendingCompositeIdx = zoneIdx;
+}
+
+// --------------------------------------------------------
+// Off-screen composite pass (call BEFORE main render pass)
+// --------------------------------------------------------
+
+void WorldMap::compositePass(VkCommandBuffer cmd) {
+    if (!initialized || pendingCompositeIdx < 0 || !compositeTarget) return;
+    if (pendingCompositeIdx >= static_cast<int>(zones.size())) {
+        pendingCompositeIdx = -1;
+        return;
+    }
+
+    int zoneIdx = pendingCompositeIdx;
+    pendingCompositeIdx = -1;
+
     if (compositedIdx == zoneIdx) return;
 
     const auto& zone = zones[zoneIdx];
+    uint32_t frameIdx = vkCtx->getCurrentFrame();
+    VkDevice device = vkCtx->getDevice();
 
-    // Save GL state
-    GLint prevFBO = 0;
-    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFBO);
-    GLint prevViewport[4];
-    glGetIntegerv(GL_VIEWPORT, prevViewport);
-    GLboolean prevBlend = glIsEnabled(GL_BLEND);
-    GLboolean prevDepthTest = glIsEnabled(GL_DEPTH_TEST);
-
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-    glViewport(0, 0, FBO_W, FBO_H);
-    glClearColor(0.05f, 0.08f, 0.12f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
-    glDisable(GL_BLEND);
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-
-    tileShader->use();
-    tileShader->setUniform("uTileTexture", 0);
-    tileShader->setUniform("uGridCols", static_cast<float>(GRID_COLS));
-    tileShader->setUniform("uGridRows", static_cast<float>(GRID_ROWS));
-
-    glBindVertexArray(tileQuadVAO);
-
-    // Tiles 1-12 in a 4x3 grid: tile N at col=(N-1)%4, row=(N-1)/4
-    // Row 0 (tiles 1-4) = top of image (north) → placed at FBO bottom (GL y=0)
-    // ImGui::Image maps GL (0,0) → widget top-left → north at top ✓
+    // Update tile descriptor sets for this frame
     for (int i = 0; i < 12; i++) {
-        if (zone.tileTextures[i] == 0) continue;
+        VkTexture* tileTex = zone.tileTextures[i];
+        if (!tileTex || !tileTex->isValid()) continue;
+
+        VkDescriptorImageInfo imgInfo = tileTex->descriptorInfo();
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = tileDescSets[frameIdx][i];
+        write.dstBinding = 0;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.pImageInfo = &imgInfo;
+        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+    }
+
+    // Begin off-screen render pass
+    VkClearColorValue clearColor = {{ 0.05f, 0.08f, 0.12f, 1.0f }};
+    compositeTarget->beginPass(cmd, clearColor);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, tilePipeline);
+
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &quadVB, &offset);
+
+    // Draw 4x3 tile grid
+    for (int i = 0; i < 12; i++) {
+        if (!zone.tileTextures[i] || !zone.tileTextures[i]->isValid()) continue;
 
         int col = i % GRID_COLS;
         int row = i / GRID_COLS;
 
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, zone.tileTextures[i]);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                tilePipelineLayout, 0, 1,
+                                &tileDescSets[frameIdx][i], 0, nullptr);
 
-        tileShader->setUniform("uGridOffset", glm::vec2(
-            static_cast<float>(col), static_cast<float>(row)));
-        glDrawArrays(GL_TRIANGLES, 0, 6);
+        WorldMapTilePush push{};
+        push.gridOffset = glm::vec2(static_cast<float>(col), static_cast<float>(row));
+        push.gridCols = static_cast<float>(GRID_COLS);
+        push.gridRows = static_cast<float>(GRID_ROWS);
+        vkCmdPushConstants(cmd, tilePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT,
+                           0, sizeof(push), &push);
+
+        vkCmdDraw(cmd, 6, 1, 0, 0);
     }
 
-    glBindVertexArray(0);
-
-    // Restore GL state
-    glBindFramebuffer(GL_FRAMEBUFFER, prevFBO);
-    glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
-    if (prevBlend) glEnable(GL_BLEND);
-    if (prevDepthTest) glEnable(GL_DEPTH_TEST);
-
+    compositeTarget->endPass(cmd);
     compositedIdx = zoneIdx;
 }
 
@@ -656,61 +648,44 @@ void WorldMap::enterWorldView() {
 
     int rootIdx = -1;
     for (int i = 0; i < static_cast<int>(zones.size()); i++) {
-        if (isRootContinent(zones, i)) {
-            rootIdx = i;
-            break;
-        }
+        if (isRootContinent(zones, i)) { rootIdx = i; break; }
     }
 
     if (rootIdx >= 0) {
         loadZoneTextures(rootIdx);
         bool hasAnyTile = false;
-        for (GLuint tex : zones[rootIdx].tileTextures) {
-            if (tex != 0) { hasAnyTile = true; break; }
+        for (VkTexture* tex : zones[rootIdx].tileTextures) {
+            if (tex != nullptr) { hasAnyTile = true; break; }
         }
         if (hasAnyTile) {
-            compositeZone(rootIdx);
+            requestComposite(rootIdx);
             currentIdx = rootIdx;
             return;
         }
     }
 
-    // Fallback: use first leaf continent as world-view backdrop.
     int fallbackContinent = -1;
     for (int i = 0; i < static_cast<int>(zones.size()); i++) {
-        if (isLeafContinent(zones, i)) {
-            fallbackContinent = i;
-            break;
-        }
+        if (isLeafContinent(zones, i)) { fallbackContinent = i; break; }
     }
     if (fallbackContinent < 0) {
         for (int i = 0; i < static_cast<int>(zones.size()); i++) {
             if (zones[i].areaID == 0 && !isRootContinent(zones, i)) {
-                fallbackContinent = i;
-                break;
+                fallbackContinent = i; break;
             }
         }
     }
     if (fallbackContinent >= 0) {
         loadZoneTextures(fallbackContinent);
-        compositeZone(fallbackContinent);
+        requestComposite(fallbackContinent);
         currentIdx = fallbackContinent;
         return;
     }
 
-    // No root world texture available: clear to neutral background.
     currentIdx = -1;
     compositedIdx = -1;
-    GLint prevFBO = 0;
-    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFBO);
-    GLint prevViewport[4];
-    glGetIntegerv(GL_VIEWPORT, prevViewport);
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-    glViewport(0, 0, FBO_W, FBO_H);
-    glClearColor(0.05f, 0.08f, 0.12f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-    glBindFramebuffer(GL_FRAMEBUFFER, prevFBO);
-    glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+    // Render target will be cleared by next compositePass
+    pendingCompositeIdx = -2;  // Signal "clear only"
 }
 
 // --------------------------------------------------------
@@ -722,15 +697,11 @@ glm::vec2 WorldMap::renderPosToMapUV(const glm::vec3& renderPos, int zoneIdx) co
         return glm::vec2(0.5f, 0.5f);
 
     const auto& zone = zones[zoneIdx];
+    float wowX = renderPos.y;
+    float wowY = renderPos.x;
 
-    // renderPos: x = wowY (west axis), y = wowX (north axis)
-    float wowX = renderPos.y;  // north
-    float wowY = renderPos.x;  // west
-
-    float left = zone.locLeft;
-    float right = zone.locRight;
-    float top = zone.locTop;
-    float bottom = zone.locBottom;
+    float left = zone.locLeft, right = zone.locRight;
+    float top = zone.locTop, bottom = zone.locBottom;
     if (zone.areaID == 0) {
         float l, r, t, b;
         if (getContinentProjectionBounds(zoneIdx, l, r, t, b)) {
@@ -738,44 +709,34 @@ glm::vec2 WorldMap::renderPosToMapUV(const glm::vec3& renderPos, int zoneIdx) co
         }
     }
 
-    // WorldMapArea.dbc axis mapping:
-    //   locLeft/locRight  contain wowX values (N/S), locLeft=north > locRight=south
-    //   locTop/locBottom  contain wowY values (W/E), locTop=west  > locBottom=east
-    // World map textures are laid out with axes transposed, so horizontal uses wowX.
-    float denom_h = left - right;    // wowX span (N-S) → horizontal
-    float denom_v = top - bottom;    // wowY span (W-E) → vertical
-
+    float denom_h = left - right;
+    float denom_v = top - bottom;
     if (std::abs(denom_h) < 0.001f || std::abs(denom_v) < 0.001f)
         return glm::vec2(0.5f, 0.5f);
 
     float u = (left - wowX) / denom_h;
     float v = (top  - wowY) / denom_v;
 
-    // Continent overlay calibration: shift overlays/player marker upward.
     if (zone.areaID == 0) {
         constexpr float kVScale = 1.0f;
-        constexpr float kVOffset = -0.15f; // ~15% upward total
+        constexpr float kVOffset = -0.15f;
         v = (v - 0.5f) * kVScale + 0.5f + kVOffset;
     }
     return glm::vec2(u, v);
 }
 
 // --------------------------------------------------------
-// Exploration tracking
+// Exploration tracking (identical to GL version)
 // --------------------------------------------------------
 
 void WorldMap::updateExploration(const glm::vec3& playerRenderPos) {
     auto isExploreFlagSet = [this](uint32_t flag) -> bool {
         if (!hasServerExplorationMask || serverExplorationMask.empty() || flag == 0) return false;
-
         const auto isSet = [this](uint32_t bitIndex) -> bool {
             const size_t word = bitIndex / 32;
             if (word >= serverExplorationMask.size()) return false;
-            const uint32_t bit = bitIndex % 32;
-            return (serverExplorationMask[word] & (1u << bit)) != 0;
+            return (serverExplorationMask[word] & (1u << (bitIndex % 32))) != 0;
         };
-
-        // Most cores use zero-based bit indices; some data behaves one-based.
         if (isSet(flag)) return true;
         if (flag > 0 && isSet(flag - 1)) return true;
         return false;
@@ -793,56 +754,42 @@ void WorldMap::updateExploration(const glm::vec3& playerRenderPos) {
             }
         }
     }
-
-    // Fall back to local bounds-based reveal if server masks are missing/unusable.
     if (markedAny) return;
 
-    float wowX = playerRenderPos.y;  // north/south
-    float wowY = playerRenderPos.x;  // west/east
+    float wowX = playerRenderPos.y;
+    float wowY = playerRenderPos.x;
 
     for (int i = 0; i < static_cast<int>(zones.size()); i++) {
         const auto& z = zones[i];
-        if (z.areaID == 0) continue;  // skip continent-level entries
-
-        float minX = std::min(z.locLeft, z.locRight);
-        float maxX = std::max(z.locLeft, z.locRight);
-        float minY = std::min(z.locTop, z.locBottom);
-        float maxY = std::max(z.locTop, z.locBottom);
-        float spanX = maxX - minX;
-        float spanY = maxY - minY;
-        if (spanX < 0.001f || spanY < 0.001f) continue;
-
-        bool contains = (wowX >= minX && wowX <= maxX && wowY >= minY && wowY <= maxY);
-        if (contains) {
+        if (z.areaID == 0) continue;
+        float minX = std::min(z.locLeft, z.locRight), maxX = std::max(z.locLeft, z.locRight);
+        float minY = std::min(z.locTop, z.locBottom), maxY = std::max(z.locTop, z.locBottom);
+        if (maxX - minX < 0.001f || maxY - minY < 0.001f) continue;
+        if (wowX >= minX && wowX <= maxX && wowY >= minY && wowY <= maxY) {
             exploredZones.insert(i);
             markedAny = true;
         }
     }
 
-    // Fallback for imperfect DBC bounds: reveal nearest zone so exploration still progresses.
     if (!markedAny) {
         int zoneIdx = findZoneForPlayer(playerRenderPos);
-        if (zoneIdx >= 0) {
-            exploredZones.insert(zoneIdx);
-        }
+        if (zoneIdx >= 0) exploredZones.insert(zoneIdx);
     }
 }
 
 void WorldMap::zoomIn(const glm::vec3& playerRenderPos) {
     if (viewLevel == ViewLevel::WORLD) {
-        // World → Continent
         if (continentIdx >= 0) {
             loadZoneTextures(continentIdx);
-            compositeZone(continentIdx);
+            requestComposite(continentIdx);
             currentIdx = continentIdx;
             viewLevel = ViewLevel::CONTINENT;
         }
     } else if (viewLevel == ViewLevel::CONTINENT) {
-        // Continent → Zone (use player's current zone)
         int zoneIdx = findZoneForPlayer(playerRenderPos);
         if (zoneIdx >= 0 && zoneBelongsToContinent(zoneIdx, continentIdx)) {
             loadZoneTextures(zoneIdx);
-            compositeZone(zoneIdx);
+            requestComposite(zoneIdx);
             currentIdx = zoneIdx;
             viewLevel = ViewLevel::ZONE;
         }
@@ -851,20 +798,18 @@ void WorldMap::zoomIn(const glm::vec3& playerRenderPos) {
 
 void WorldMap::zoomOut() {
     if (viewLevel == ViewLevel::ZONE) {
-        // Zone → Continent
         if (continentIdx >= 0) {
-            compositeZone(continentIdx);
+            requestComposite(continentIdx);
             currentIdx = continentIdx;
             viewLevel = ViewLevel::CONTINENT;
         }
     } else if (viewLevel == ViewLevel::CONTINENT) {
-        // Continent → World
         enterWorldView();
     }
 }
 
 // --------------------------------------------------------
-// Main render
+// Main render (input + ImGui overlay)
 // --------------------------------------------------------
 
 void WorldMap::render(const glm::vec3& playerRenderPos, int screenWidth, int screenHeight) {
@@ -872,12 +817,8 @@ void WorldMap::render(const glm::vec3& playerRenderPos, int screenWidth, int scr
 
     auto& input = core::Input::getInstance();
 
-    // Track exploration even when map is closed
-    if (!zones.empty()) {
-        updateExploration(playerRenderPos);
-    }
+    if (!zones.empty()) updateExploration(playerRenderPos);
 
-    // When map is open, always allow M/Escape to close (bypass ImGui keyboard capture)
     if (open) {
         if (input.isKeyJustPressed(SDL_SCANCODE_M) ||
             input.isKeyJustPressed(SDL_SCANCODE_ESCAPE)) {
@@ -885,24 +826,16 @@ void WorldMap::render(const glm::vec3& playerRenderPos, int screenWidth, int scr
             return;
         }
 
-        // Mouse wheel: scroll up = zoom in, scroll down = zoom out.
-        // Use both ImGui and raw input wheel deltas for reliability across frame order/capture paths.
         auto& io = ImGui::GetIO();
         float wheelDelta = io.MouseWheel;
-        if (std::abs(wheelDelta) < 0.001f) {
+        if (std::abs(wheelDelta) < 0.001f)
             wheelDelta = input.getMouseWheelDelta();
-        }
-        if (wheelDelta > 0.0f) {
-            zoomIn(playerRenderPos);
-        } else if (wheelDelta < 0.0f) {
-            zoomOut();
-        }
+        if (wheelDelta > 0.0f) zoomIn(playerRenderPos);
+        else if (wheelDelta < 0.0f) zoomOut();
     } else {
         auto& io = ImGui::GetIO();
         if (!io.WantCaptureKeyboard && input.isKeyJustPressed(SDL_SCANCODE_M)) {
             open = true;
-
-            // Lazy-load zone data on first open
             if (zones.empty()) loadZonesFromDBC();
 
             int bestContinent = findBestContinentForPlayer(playerRenderPos);
@@ -911,17 +844,16 @@ void WorldMap::render(const glm::vec3& playerRenderPos, int screenWidth, int scr
                 compositedIdx = -1;
             }
 
-            // Open directly to the player's current zone
             int playerZone = findZoneForPlayer(playerRenderPos);
             if (playerZone >= 0 && continentIdx >= 0 &&
                 zoneBelongsToContinent(playerZone, continentIdx)) {
                 loadZoneTextures(playerZone);
-                compositeZone(playerZone);
+                requestComposite(playerZone);
                 currentIdx = playerZone;
                 viewLevel = ViewLevel::ZONE;
             } else if (continentIdx >= 0) {
                 loadZoneTextures(continentIdx);
-                compositeZone(continentIdx);
+                requestComposite(continentIdx);
                 currentIdx = continentIdx;
                 viewLevel = ViewLevel::CONTINENT;
             }
@@ -929,7 +861,6 @@ void WorldMap::render(const glm::vec3& playerRenderPos, int screenWidth, int scr
     }
 
     if (!open) return;
-
     renderImGuiOverlay(playerRenderPos, screenWidth, screenHeight);
 }
 
@@ -941,7 +872,6 @@ void WorldMap::renderImGuiOverlay(const glm::vec3& playerRenderPos, int screenWi
     float sw = static_cast<float>(screenWidth);
     float sh = static_cast<float>(screenHeight);
 
-    // Full-screen dark background
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImVec2(sw, sh));
 
@@ -955,8 +885,7 @@ void WorldMap::renderImGuiOverlay(const glm::vec3& playerRenderPos, int screenWi
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 
     if (ImGui::Begin("##WorldMap", nullptr, flags)) {
-        // Map display area: maintain 4:3 aspect ratio, fit within ~85% of screen
-        float mapAspect = static_cast<float>(FBO_W) / static_cast<float>(FBO_H);  // 1.333
+        float mapAspect = static_cast<float>(FBO_W) / static_cast<float>(FBO_H);
         float availW = sw * 0.85f;
         float availH = sh * 0.85f;
         float displayW, displayH;
@@ -972,7 +901,8 @@ void WorldMap::renderImGuiOverlay(const glm::vec3& playerRenderPos, int screenWi
         float mapY = (sh - displayH) / 2.0f;
 
         ImGui::SetCursorPos(ImVec2(mapX, mapY));
-        ImGui::Image(static_cast<ImTextureID>(static_cast<uintptr_t>(fboTexture)),
+        // Display composite render target via ImGui (VkDescriptorSet as ImTextureID)
+        ImGui::Image(reinterpret_cast<ImTextureID>(imguiDisplaySet),
                      ImVec2(displayW, displayH), ImVec2(0, 0), ImVec2(1, 1));
 
         ImVec2 imgMin = ImGui::GetItemRectMin();
@@ -991,8 +921,6 @@ void WorldMap::renderImGuiOverlay(const glm::vec3& playerRenderPos, int screenWi
                 continentIndices.push_back(i);
             }
         }
-        // If we have multiple continent choices, hide the root/world alias entry
-        // (commonly "Azeroth") so picker only shows real continents.
         if (continentIndices.size() > 1) {
             std::vector<int> filtered;
             filtered.reserve(continentIndices.size());
@@ -1008,7 +936,7 @@ void WorldMap::renderImGuiOverlay(const glm::vec3& playerRenderPos, int screenWi
             }
         }
 
-        // World-level continent selection UI.
+        // World-level continent selection UI
         if (viewLevel == ViewLevel::WORLD && !continentIndices.empty()) {
             ImVec2 titleSz = ImGui::CalcTextSize("World");
             ImGui::SetCursorPos(ImVec2((sw - titleSz.x) * 0.5f, mapY + 8.0f));
@@ -1019,17 +947,15 @@ void WorldMap::renderImGuiOverlay(const glm::vec3& playerRenderPos, int screenWi
                 int ci = continentIndices[i];
                 if (i > 0) ImGui::SameLine();
                 const bool selected = (ci == continentIdx);
-                if (selected) {
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.25f, 0.05f, 0.9f));
-                }
+                if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.25f, 0.05f, 0.9f));
 
-                    std::string rawName = zones[ci].areaName.empty() ? "Continent" : zones[ci].areaName;
-                    if (rawName == "Azeroth") rawName = "Eastern Kingdoms";
-                    std::string label = rawName + "##" + std::to_string(ci);
+                std::string rawName = zones[ci].areaName.empty() ? "Continent" : zones[ci].areaName;
+                if (rawName == "Azeroth") rawName = "Eastern Kingdoms";
+                std::string label = rawName + "##" + std::to_string(ci);
                 if (ImGui::Button(label.c_str())) {
                     continentIdx = ci;
                     loadZoneTextures(continentIdx);
-                    compositeZone(continentIdx);
+                    requestComposite(continentIdx);
                     currentIdx = continentIdx;
                     viewLevel = ViewLevel::CONTINENT;
                 }
@@ -1041,9 +967,7 @@ void WorldMap::renderImGuiOverlay(const glm::vec3& playerRenderPos, int screenWi
                 int ci = continentIndices[i];
                 if (i > 0) ImGui::SameLine();
                 const bool selected = (ci == continentIdx);
-                if (selected) {
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.25f, 0.05f, 0.9f));
-                }
+                if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.25f, 0.05f, 0.9f));
 
                 std::string rawName = zones[ci].areaName.empty() ? "Continent" : zones[ci].areaName;
                 if (rawName == "Azeroth") rawName = "Eastern Kingdoms";
@@ -1051,40 +975,33 @@ void WorldMap::renderImGuiOverlay(const glm::vec3& playerRenderPos, int screenWi
                 if (ImGui::Button(label.c_str())) {
                     continentIdx = ci;
                     loadZoneTextures(continentIdx);
-                    compositeZone(continentIdx);
+                    requestComposite(continentIdx);
                     currentIdx = continentIdx;
                 }
                 if (selected) ImGui::PopStyleColor();
             }
         }
 
-        // Player marker on current view
+        // Player marker
         if (currentIdx >= 0 && viewLevel != ViewLevel::WORLD) {
             glm::vec2 playerUV = renderPosToMapUV(playerRenderPos, currentIdx);
-
             if (playerUV.x >= 0.0f && playerUV.x <= 1.0f &&
                 playerUV.y >= 0.0f && playerUV.y <= 1.0f) {
                 float px = imgMin.x + playerUV.x * displayW;
                 float py = imgMin.y + playerUV.y * displayH;
-
-                drawList->AddCircleFilled(ImVec2(px, py), 6.0f,
-                                          IM_COL32(255, 40, 40, 255));
-                drawList->AddCircle(ImVec2(px, py), 6.0f,
-                                    IM_COL32(0, 0, 0, 200), 0, 2.0f);
+                drawList->AddCircleFilled(ImVec2(px, py), 6.0f, IM_COL32(255, 40, 40, 255));
+                drawList->AddCircle(ImVec2(px, py), 6.0f, IM_COL32(0, 0, 0, 200), 0, 2.0f);
             }
         }
 
-        // --- Continent view: show clickable zone overlays ---
+        // Continent view: clickable zone overlays
         if (viewLevel == ViewLevel::CONTINENT && continentIdx >= 0) {
             const auto& cont = zones[continentIdx];
-            // World map textures are transposed; match the same axis mapping as player UV.
-            float cLeft = cont.locLeft;
-            float cRight = cont.locRight;
-            float cTop = cont.locTop;
-            float cBottom = cont.locBottom;
+            float cLeft = cont.locLeft, cRight = cont.locRight;
+            float cTop = cont.locTop, cBottom = cont.locBottom;
             getContinentProjectionBounds(continentIdx, cLeft, cRight, cTop, cBottom);
-            float cDenomU = cLeft - cRight;    // wowX span (N-S)
-            float cDenomV = cTop - cBottom;    // wowY span (W-E)
+            float cDenomU = cLeft - cRight;
+            float cDenomV = cTop - cBottom;
 
             ImVec2 mousePos = ImGui::GetMousePos();
             int hoveredZone = -1;
@@ -1092,65 +1009,45 @@ void WorldMap::renderImGuiOverlay(const glm::vec3& playerRenderPos, int screenWi
             if (std::abs(cDenomU) > 0.001f && std::abs(cDenomV) > 0.001f) {
                 for (int zi = 0; zi < static_cast<int>(zones.size()); zi++) {
                     if (!zoneBelongsToContinent(zi, continentIdx)) continue;
-
                     const auto& z = zones[zi];
-
-                    // Skip zones with zero-size bounds
                     if (std::abs(z.locLeft - z.locRight) < 0.001f ||
                         std::abs(z.locTop - z.locBottom) < 0.001f) continue;
 
-                    // Project zone bounds to continent UV
-                    // u axis (left->right): north->south
-                    float zuMin = (cLeft - z.locLeft) / cDenomU;      // zone north edge
-                    float zuMax = (cLeft - z.locRight) / cDenomU;     // zone south edge
-                    // v axis (top->bottom): west->east
-                    float zvMin = (cTop - z.locTop) / cDenomV;        // zone west edge
-                    float zvMax = (cTop - z.locBottom) / cDenomV;     // zone east edge
+                    float zuMin = (cLeft - z.locLeft) / cDenomU;
+                    float zuMax = (cLeft - z.locRight) / cDenomU;
+                    float zvMin = (cTop - z.locTop) / cDenomV;
+                    float zvMax = (cTop - z.locBottom) / cDenomV;
 
-                    // Slightly shrink DBC AABB overlays to reduce heavy overlap.
                     constexpr float kOverlayShrink = 0.92f;
-                    float cu = (zuMin + zuMax) * 0.5f;
-                    float cv = (zvMin + zvMax) * 0.5f;
+                    float cu = (zuMin + zuMax) * 0.5f, cv = (zvMin + zvMax) * 0.5f;
                     float hu = (zuMax - zuMin) * 0.5f * kOverlayShrink;
                     float hv = (zvMax - zvMin) * 0.5f * kOverlayShrink;
-                    zuMin = cu - hu;
-                    zuMax = cu + hu;
-                    zvMin = cv - hv;
-                    zvMax = cv + hv;
+                    zuMin = cu - hu; zuMax = cu + hu;
+                    zvMin = cv - hv; zvMax = cv + hv;
 
-                    // Continent overlay calibration (matches player marker calibration).
-                    constexpr float kVScale = 1.0f;
                     constexpr float kVOffset = -0.15f;
-                    zvMin = (zvMin - 0.5f) * kVScale + 0.5f + kVOffset;
-                    zvMax = (zvMax - 0.5f) * kVScale + 0.5f + kVOffset;
+                    zvMin = (zvMin - 0.5f) + 0.5f + kVOffset;
+                    zvMax = (zvMax - 0.5f) + 0.5f + kVOffset;
 
-                    // Clamp to [0,1]
                     zuMin = std::clamp(zuMin, 0.0f, 1.0f);
                     zuMax = std::clamp(zuMax, 0.0f, 1.0f);
                     zvMin = std::clamp(zvMin, 0.0f, 1.0f);
                     zvMax = std::clamp(zvMax, 0.0f, 1.0f);
-
-                    // Skip tiny or degenerate zones
                     if (zuMax - zuMin < 0.001f || zvMax - zvMin < 0.001f) continue;
 
-                    // Convert to screen coordinates
                     float sx0 = imgMin.x + zuMin * displayW;
                     float sy0 = imgMin.y + zvMin * displayH;
                     float sx1 = imgMin.x + zuMax * displayW;
                     float sy1 = imgMin.y + zvMax * displayH;
 
                     bool explored = exploredZones.count(zi) > 0;
-
-                    // Check hover
                     bool hovered = (mousePos.x >= sx0 && mousePos.x <= sx1 &&
                                     mousePos.y >= sy0 && mousePos.y <= sy1);
 
-                    // Fog of war: darken unexplored zones
                     if (!explored) {
                         drawList->AddRectFilled(ImVec2(sx0, sy0), ImVec2(sx1, sy1),
                                                 IM_COL32(0, 0, 0, 160));
                     }
-
                     if (hovered) {
                         hoveredZone = zi;
                         drawList->AddRectFilled(ImVec2(sx0, sy0), ImVec2(sx1, sy1),
@@ -1164,27 +1061,22 @@ void WorldMap::renderImGuiOverlay(const glm::vec3& playerRenderPos, int screenWi
                 }
             }
 
-            // Zone name tooltip
             if (hoveredZone >= 0) {
                 ImGui::SetTooltip("%s", zones[hoveredZone].areaName.c_str());
-
-                // Click to zoom into zone
                 if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
                     loadZoneTextures(hoveredZone);
-                    compositeZone(hoveredZone);
+                    requestComposite(hoveredZone);
                     currentIdx = hoveredZone;
                     viewLevel = ViewLevel::ZONE;
                 }
             }
         }
 
-        // --- Zone view: back to continent ---
+        // Zone view: back to continent
         if (viewLevel == ViewLevel::ZONE && continentIdx >= 0) {
-            // Right-click or Back button
             auto& io = ImGui::GetIO();
-            bool goBack = io.MouseClicked[1]; // right-click (direct IO check)
+            bool goBack = io.MouseClicked[1];
 
-            // "< Back" button in top-left of map area
             ImGui::SetCursorPos(ImVec2(mapX + 8.0f, mapY + 8.0f));
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.15f, 0.15f, 0.8f));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.1f, 0.9f));
@@ -1193,12 +1085,11 @@ void WorldMap::renderImGuiOverlay(const glm::vec3& playerRenderPos, int screenWi
             ImGui::PopStyleColor(3);
 
             if (goBack) {
-                compositeZone(continentIdx);
+                requestComposite(continentIdx);
                 currentIdx = continentIdx;
                 viewLevel = ViewLevel::CONTINENT;
             }
 
-            // Zone name header
             const char* zoneName = zones[currentIdx].areaName.c_str();
             ImVec2 nameSize = ImGui::CalcTextSize(zoneName);
             float nameY = mapY - nameSize.y - 8.0f;
@@ -1208,7 +1099,7 @@ void WorldMap::renderImGuiOverlay(const glm::vec3& playerRenderPos, int screenWi
             }
         }
 
-        // --- Continent view: back to world ---
+        // Continent view: back to world
         if (viewLevel == ViewLevel::CONTINENT) {
             auto& io = ImGui::GetIO();
             bool goWorld = io.MouseClicked[1];
@@ -1226,13 +1117,13 @@ void WorldMap::renderImGuiOverlay(const glm::vec3& playerRenderPos, int screenWi
 
         // Help text
         const char* helpText;
-        if (viewLevel == ViewLevel::ZONE) {
+        if (viewLevel == ViewLevel::ZONE)
             helpText = "Scroll out or right-click to zoom out | M or Escape to close";
-        } else if (viewLevel == ViewLevel::WORLD) {
+        else if (viewLevel == ViewLevel::WORLD)
             helpText = "Select a continent | Scroll in to zoom | M or Escape to close";
-        } else {
+        else
             helpText = "Click zone or scroll in to zoom | Scroll out / right-click for World | M or Escape to close";
-        }
+
         ImVec2 textSize = ImGui::CalcTextSize(helpText);
         float textY = mapY + displayH + 8.0f;
         if (textY + textSize.y < sh) {

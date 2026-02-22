@@ -1,15 +1,25 @@
 #include "rendering/quest_marker_renderer.hpp"
 #include "rendering/camera.hpp"
+#include "rendering/vk_context.hpp"
+#include "rendering/vk_shader.hpp"
+#include "rendering/vk_pipeline.hpp"
+#include "rendering/vk_utils.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/blp_loader.hpp"
 #include "core/logger.hpp"
-#include <GL/glew.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <SDL2/SDL.h>
 #include <cmath>
+#include <cstring>
 
 namespace wowee { namespace rendering {
+
+// Push constant layout matching quest_marker.vert.glsl / quest_marker.frag.glsl
+struct QuestMarkerPushConstants {
+    glm::mat4 model;  // 64 bytes, used by vertex shader
+    float alpha;       // 4 bytes, used by fragment shader
+};
 
 QuestMarkerRenderer::QuestMarkerRenderer() {
 }
@@ -18,33 +28,201 @@ QuestMarkerRenderer::~QuestMarkerRenderer() {
     shutdown();
 }
 
-bool QuestMarkerRenderer::initialize(pipeline::AssetManager* assetManager) {
-    if (!assetManager) {
-        LOG_WARNING("QuestMarkerRenderer: No AssetManager provided");
+bool QuestMarkerRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout,
+    pipeline::AssetManager* assetManager)
+{
+    if (!ctx || !assetManager) {
+        LOG_WARNING("QuestMarkerRenderer: Missing VkContext or AssetManager");
         return false;
     }
 
     LOG_INFO("QuestMarkerRenderer: Initializing...");
-    createShader();
-    createQuad();
-    loadTextures(assetManager);
-    LOG_INFO("QuestMarkerRenderer: Initialization complete");
+    vkCtx_ = ctx;
+    VkDevice device = vkCtx_->getDevice();
 
+    // --- Create material descriptor set layout (set 1: combined image sampler) ---
+    createDescriptorResources();
+
+    // --- Load shaders ---
+    VkShaderModule vertModule;
+    if (!vertModule.loadFromFile(device, "assets/shaders/quest_marker.vert.spv")) {
+        LOG_ERROR("Failed to load quest_marker vertex shader");
+        return false;
+    }
+
+    VkShaderModule fragModule;
+    if (!fragModule.loadFromFile(device, "assets/shaders/quest_marker.frag.spv")) {
+        LOG_ERROR("Failed to load quest_marker fragment shader");
+        vertModule.destroy();
+        return false;
+    }
+
+    VkPipelineShaderStageCreateInfo vertStage = vertModule.stageInfo(VK_SHADER_STAGE_VERTEX_BIT);
+    VkPipelineShaderStageCreateInfo fragStage = fragModule.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT);
+
+    // --- Push constant range: mat4 model (64) + float alpha (4) = 68 bytes ---
+    VkPushConstantRange pushRange{};
+    pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushRange.offset = 0;
+    pushRange.size = sizeof(QuestMarkerPushConstants);
+
+    // --- Pipeline layout: set 0 = per-frame, set 1 = material texture ---
+    pipelineLayout_ = createPipelineLayout(device,
+        {perFrameLayout, materialSetLayout_}, {pushRange});
+    if (pipelineLayout_ == VK_NULL_HANDLE) {
+        LOG_ERROR("Failed to create quest marker pipeline layout");
+        vertModule.destroy();
+        fragModule.destroy();
+        return false;
+    }
+
+    // --- Vertex input: vec3 pos (offset 0) + vec2 uv (offset 12), stride 20 ---
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = 5 * sizeof(float); // 20 bytes
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription posAttr{};
+    posAttr.location = 0;
+    posAttr.binding = 0;
+    posAttr.format = VK_FORMAT_R32G32B32_SFLOAT;
+    posAttr.offset = 0;
+
+    VkVertexInputAttributeDescription uvAttr{};
+    uvAttr.location = 1;
+    uvAttr.binding = 0;
+    uvAttr.format = VK_FORMAT_R32G32_SFLOAT;
+    uvAttr.offset = 3 * sizeof(float); // 12
+
+    // Dynamic viewport and scissor
+    std::vector<VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    // --- Build pipeline: alpha blending, no cull, depth test on / write off ---
+    pipeline_ = PipelineBuilder()
+        .setShaders(vertStage, fragStage)
+        .setVertexInput({binding}, {posAttr, uvAttr})
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+        .setDepthTest(true, false, VK_COMPARE_OP_LESS) // depth test on, write off
+        .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+        .setLayout(pipelineLayout_)
+        .setRenderPass(vkCtx_->getImGuiRenderPass())
+        .setDynamicStates(dynamicStates)
+        .build(device);
+
+    vertModule.destroy();
+    fragModule.destroy();
+
+    if (pipeline_ == VK_NULL_HANDLE) {
+        LOG_ERROR("Failed to create quest marker pipeline");
+        return false;
+    }
+
+    // --- Upload quad vertex buffer ---
+    createQuad();
+
+    // --- Load BLP textures ---
+    loadTextures(assetManager);
+
+    LOG_INFO("QuestMarkerRenderer: Initialization complete");
     return true;
 }
 
 void QuestMarkerRenderer::shutdown() {
-    if (vao_) glDeleteVertexArrays(1, &vao_);
-    if (vbo_) glDeleteBuffers(1, &vbo_);
-    if (shaderProgram_) glDeleteProgram(shaderProgram_);
+    if (!vkCtx_) return;
+
+    VkDevice device = vkCtx_->getDevice();
+    VmaAllocator allocator = vkCtx_->getAllocator();
+
+    // Wait for device idle before destroying resources
+    vkDeviceWaitIdle(device);
+
+    // Destroy textures
     for (int i = 0; i < 3; ++i) {
-        if (textures_[i]) glDeleteTextures(1, &textures_[i]);
+        textures_[i].destroy(device, allocator);
+        texDescSets_[i] = VK_NULL_HANDLE;
     }
+
+    // Destroy descriptor pool (frees all descriptor sets allocated from it)
+    if (descriptorPool_ != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(device, descriptorPool_, nullptr);
+        descriptorPool_ = VK_NULL_HANDLE;
+    }
+
+    // Destroy descriptor set layout
+    if (materialSetLayout_ != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(device, materialSetLayout_, nullptr);
+        materialSetLayout_ = VK_NULL_HANDLE;
+    }
+
+    // Destroy pipeline
+    if (pipeline_ != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device, pipeline_, nullptr);
+        pipeline_ = VK_NULL_HANDLE;
+    }
+    if (pipelineLayout_ != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(device, pipelineLayout_, nullptr);
+        pipelineLayout_ = VK_NULL_HANDLE;
+    }
+
+    // Destroy quad vertex buffer
+    if (quadVB_ != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(allocator, quadVB_, quadVBAlloc_);
+        quadVB_ = VK_NULL_HANDLE;
+        quadVBAlloc_ = VK_NULL_HANDLE;
+    }
+
     markers_.clear();
+    vkCtx_ = nullptr;
+}
+
+void QuestMarkerRenderer::createDescriptorResources() {
+    VkDevice device = vkCtx_->getDevice();
+
+    // Material set layout: binding 0 = combined image sampler (fragment stage)
+    VkDescriptorSetLayoutBinding samplerBinding{};
+    samplerBinding.binding = 0;
+    samplerBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerBinding.descriptorCount = 1;
+    samplerBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    materialSetLayout_ = createDescriptorSetLayout(device, {samplerBinding});
+
+    // Descriptor pool: 3 combined image samplers (one per marker type)
+    VkDescriptorPoolSize poolSize{};
+    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSize.descriptorCount = 3;
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.maxSets = 3;
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+
+    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool_) != VK_SUCCESS) {
+        LOG_ERROR("Failed to create quest marker descriptor pool");
+        return;
+    }
+
+    // Allocate 3 descriptor sets (one per texture)
+    VkDescriptorSetLayout layouts[3] = {materialSetLayout_, materialSetLayout_, materialSetLayout_};
+
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = descriptorPool_;
+    allocInfo.descriptorSetCount = 3;
+    allocInfo.pSetLayouts = layouts;
+
+    if (vkAllocateDescriptorSets(device, &allocInfo, texDescSets_) != VK_SUCCESS) {
+        LOG_ERROR("Failed to allocate quest marker descriptor sets");
+    }
 }
 
 void QuestMarkerRenderer::createQuad() {
-    // Billboard quad vertices (centered, 1 unit size)
+    // Billboard quad vertices (centered, 1 unit size) - 6 vertices for 2 triangles
     float vertices[] = {
         -0.5f, -0.5f, 0.0f,  0.0f, 1.0f,  // bottom-left
          0.5f, -0.5f, 0.0f,  1.0f, 1.0f,  // bottom-right
@@ -54,22 +232,10 @@ void QuestMarkerRenderer::createQuad() {
          0.5f,  0.5f, 0.0f,  1.0f, 0.0f   // top-right
     };
 
-    glGenVertexArrays(1, &vao_);
-    glGenBuffers(1, &vbo_);
-
-    glBindVertexArray(vao_);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo_);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-    // Position attribute
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-
-    // Texture coord attribute
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    glBindVertexArray(0);
+    AllocatedBuffer vbuf = uploadBuffer(*vkCtx_,
+        vertices, sizeof(vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    quadVB_ = vbuf.buffer;
+    quadVBAlloc_ = vbuf.allocation;
 }
 
 void QuestMarkerRenderer::loadTextures(pipeline::AssetManager* assetManager) {
@@ -79,6 +245,8 @@ void QuestMarkerRenderer::loadTextures(pipeline::AssetManager* assetManager) {
         "Interface\\GossipFrame\\IncompleteQuestIcon.blp"
     };
 
+    VkDevice device = vkCtx_->getDevice();
+
     for (int i = 0; i < 3; ++i) {
         pipeline::BLPImage blp = assetManager->loadTexture(paths[i]);
         if (!blp.isValid()) {
@@ -86,76 +254,32 @@ void QuestMarkerRenderer::loadTextures(pipeline::AssetManager* assetManager) {
             continue;
         }
 
-        glGenTextures(1, &textures_[i]);
-        glBindTexture(GL_TEXTURE_2D, textures_[i]);
+        // Upload RGBA data to VkTexture
+        if (!textures_[i].upload(*vkCtx_, blp.data.data(), blp.width, blp.height,
+                VK_FORMAT_R8G8B8A8_UNORM, true)) {
+            LOG_WARNING("Failed to upload quest marker texture to GPU: ", paths[i]);
+            continue;
+        }
 
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, blp.width, blp.height,
-                     0, GL_RGBA, GL_UNSIGNED_BYTE, blp.data.data());
+        // Create sampler with clamp-to-edge
+        textures_[i].createSampler(device, VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
 
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glGenerateMipmap(GL_TEXTURE_2D);
+        // Write descriptor set for this texture
+        VkDescriptorImageInfo imgInfo = textures_[i].descriptorInfo();
+
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = texDescSets_[i];
+        write.dstBinding = 0;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.pImageInfo = &imgInfo;
+
+        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
 
         LOG_INFO("Loaded quest marker texture: ", paths[i]);
     }
-
-    glBindTexture(GL_TEXTURE_2D, 0);
-}
-
-void QuestMarkerRenderer::createShader() {
-    const char* vertexShaderSource = R"(
-        #version 330 core
-        layout (location = 0) in vec3 aPos;
-        layout (location = 1) in vec2 aTexCoord;
-
-        out vec2 TexCoord;
-
-        uniform mat4 model;
-        uniform mat4 view;
-        uniform mat4 projection;
-
-        void main() {
-            gl_Position = projection * view * model * vec4(aPos, 1.0);
-            TexCoord = aTexCoord;
-        }
-    )";
-
-    const char* fragmentShaderSource = R"(
-        #version 330 core
-        in vec2 TexCoord;
-        out vec4 FragColor;
-
-        uniform sampler2D markerTexture;
-        uniform float uAlpha;
-
-        void main() {
-            vec4 texColor = texture(markerTexture, TexCoord);
-            if (texColor.a < 0.1)
-                discard;
-            FragColor = vec4(texColor.rgb, texColor.a * uAlpha);
-        }
-    )";
-
-    // Compile vertex shader
-    uint32_t vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vertexShaderSource, nullptr);
-    glCompileShader(vertexShader);
-
-    // Compile fragment shader
-    uint32_t fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentShaderSource, nullptr);
-    glCompileShader(fragmentShader);
-
-    // Link shader program
-    shaderProgram_ = glCreateProgram();
-    glAttachShader(shaderProgram_, vertexShader);
-    glAttachShader(shaderProgram_, fragmentShader);
-    glLinkProgram(shaderProgram_);
-
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
 }
 
 void QuestMarkerRenderer::setMarker(uint64_t guid, const glm::vec3& position, int markerType, float boundingHeight) {
@@ -170,8 +294,8 @@ void QuestMarkerRenderer::clear() {
     markers_.clear();
 }
 
-void QuestMarkerRenderer::render(const Camera& camera) {
-    if (markers_.empty() || !shaderProgram_ || !vao_) return;
+void QuestMarkerRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera) {
+    if (markers_.empty() || pipeline_ == VK_NULL_HANDLE || quadVB_ == VK_NULL_HANDLE) return;
 
     // WoW-style quest marker tuning parameters
     constexpr float BASE_SIZE = 0.65f;          // Base world-space size
@@ -181,38 +305,31 @@ void QuestMarkerRenderer::render(const Camera& camera) {
     constexpr float MIN_DIST = 4.0f;            // Near clamp
     constexpr float MAX_DIST = 90.0f;           // Far fade-out start
     constexpr float FADE_RANGE = 25.0f;         // Fade-out range
-    constexpr float GLOW_ALPHA = 0.35f;         // Glow pass alpha
 
     // Get time for bob animation
     float timeSeconds = SDL_GetTicks() / 1000.0f;
 
-    glEnable(GL_BLEND);
-    glEnable(GL_DEPTH_TEST);
-    glDepthMask(GL_FALSE); // Don't write to depth buffer
-
-    glUseProgram(shaderProgram_);
-
     glm::mat4 view = camera.getViewMatrix();
-    glm::mat4 projection = camera.getProjectionMatrix();
     glm::vec3 cameraPos = camera.getPosition();
-
-    int viewLoc = glGetUniformLocation(shaderProgram_, "view");
-    int projLoc = glGetUniformLocation(shaderProgram_, "projection");
-    int modelLoc = glGetUniformLocation(shaderProgram_, "model");
-    int alphaLoc = glGetUniformLocation(shaderProgram_, "uAlpha");
-
-    glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-    glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
-
-    glBindVertexArray(vao_);
 
     // Get camera right and up vectors for billboarding
     glm::vec3 cameraRight = glm::vec3(view[0][0], view[1][0], view[2][0]);
     glm::vec3 cameraUp = glm::vec3(view[0][1], view[1][1], view[2][1]);
 
+    // Bind pipeline
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
+
+    // Bind per-frame descriptor set (set 0)
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_,
+        0, 1, &perFrameSet, 0, nullptr);
+
+    // Bind quad vertex buffer
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &quadVB_, &offset);
+
     for (const auto& [guid, marker] : markers_) {
         if (marker.type < 0 || marker.type > 2) continue;
-        if (!textures_[marker.type]) continue;
+        if (!textures_[marker.type].isValid()) continue;
 
         // Calculate distance for LOD and culling
         glm::vec3 toCamera = cameraPos - marker.position;
@@ -252,29 +369,22 @@ void QuestMarkerRenderer::render(const Camera& camera) {
         model[1] = glm::vec4(cameraUp * size, 0.0f);
         model[2] = glm::vec4(glm::cross(cameraRight, cameraUp), 0.0f);
 
-        glBindTexture(GL_TEXTURE_2D, textures_[marker.type]);
+        // Bind material descriptor set (set 1) for this marker's texture
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_,
+            1, 1, &texDescSets_[marker.type], 0, nullptr);
 
-        // Glow pass (subtle additive glow for available/turnin markers)
-        if (marker.type == 0 || marker.type == 1) { // Available or turnin
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE); // Additive blending
-            glUniform1f(alphaLoc, fadeAlpha * GLOW_ALPHA); // Reduced alpha for glow
-            glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-            glDrawArrays(GL_TRIANGLES, 0, 6);
+        // Push constants: model matrix + alpha
+        QuestMarkerPushConstants push{};
+        push.model = model;
+        push.alpha = fadeAlpha;
 
-            // Restore standard alpha blending for main pass
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        }
+        vkCmdPushConstants(cmd, pipelineLayout_,
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            0, sizeof(push), &push);
 
-        // Main pass with fade alpha
-        glUniform1f(alphaLoc, fadeAlpha);
-        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-        glDrawArrays(GL_TRIANGLES, 0, 6);
+        // Draw the quad (6 vertices, 2 triangles)
+        vkCmdDraw(cmd, 6, 1, 0, 0);
     }
-
-    glBindVertexArray(0);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    glDepthMask(GL_TRUE);
-    glDisable(GL_BLEND);
 }
 
 }} // namespace wowee::rendering

@@ -1,27 +1,30 @@
 /**
- * CharacterRenderer — GPU rendering of M2 character models with skeletal animation
+ * CharacterRenderer — GPU rendering of M2 character models with skeletal animation (Vulkan)
  *
  * Handles:
- *  - Uploading M2 vertex/index data to OpenGL VAO/VBO/EBO
+ *  - Uploading M2 vertex/index data to Vulkan buffers via VMA
  *  - Per-frame bone matrix computation (hierarchical, with keyframe interpolation)
- *  - GPU vertex skinning via a bone-matrix uniform array in the vertex shader
+ *  - GPU vertex skinning via a bone-matrix SSBO in the vertex shader
  *  - Per-batch texture binding through the M2 texture-lookup indirection
  *  - Geoset filtering (activeGeosets) to show/hide body part groups
  *  - CPU texture compositing for character skins (base skin + underwear overlays)
  *
  * The character texture compositing uses the WoW CharComponentTextureSections
  * layout, placing region overlays (pelvis, torso, etc.) at their correct pixel
- * positions on the 512×512 body skin atlas. Region coordinates sourced from
+ * positions on the 512x512 body skin atlas. Region coordinates sourced from
  * the original WoW Model Viewer (charcontrol.h, REGION_FAC=2).
  */
 #include "rendering/character_renderer.hpp"
-#include "rendering/shader.hpp"
-#include "rendering/texture.hpp"
+#include "rendering/vk_context.hpp"
+#include "rendering/vk_texture.hpp"
+#include "rendering/vk_pipeline.hpp"
+#include "rendering/vk_shader.hpp"
+#include "rendering/vk_buffer.hpp"
+#include "rendering/vk_utils.hpp"
 #include "rendering/camera.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/blp_loader.hpp"
 #include "core/logger.hpp"
-#include <GL/glew.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/quaternion.hpp>
@@ -36,6 +39,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <limits>
+#include <cstring>
 
 namespace wowee {
 namespace rendering {
@@ -58,6 +62,22 @@ size_t approxTextureBytesWithMips(int w, int h) {
 }
 } // namespace
 
+// Descriptor pool sizing
+static constexpr uint32_t MAX_MATERIAL_SETS = 4096;
+static constexpr uint32_t MAX_BONE_SETS = 1024;
+
+// CharMaterial UBO layout (matches character.frag.glsl set=1 binding=1)
+struct CharMaterialUBO {
+    float opacity;
+    int32_t alphaTest;
+    int32_t colorKeyBlack;
+    int32_t unlit;
+    float emissiveBoost;
+    float emissiveTintR, emissiveTintG, emissiveTintB;
+    float specularIntensity;
+    float _pad[3]; // pad to 48 bytes
+};
+
 CharacterRenderer::CharacterRenderer() {
 }
 
@@ -65,316 +85,251 @@ CharacterRenderer::~CharacterRenderer() {
     shutdown();
 }
 
-bool CharacterRenderer::initialize() {
-    core::Logger::getInstance().info("Initializing character renderer...");
+bool CharacterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout,
+                                    pipeline::AssetManager* am) {
+    core::Logger::getInstance().info("Initializing character renderer (Vulkan)...");
 
-    // Create character shader with skeletal animation
-    const char* vertexSrc = R"(
-        #version 330 core
-        layout (location = 0) in vec3 aPos;
-        layout (location = 1) in vec4 aBoneWeights;
-        layout (location = 2) in ivec4 aBoneIndices;
-        layout (location = 3) in vec3 aNormal;
-        layout (location = 4) in vec2 aTexCoord;
+    vkCtx_ = ctx;
+    assetManager = am;
+    perFrameLayout_ = perFrameLayout;
 
-        uniform mat4 uModel;
-        uniform mat4 uView;
-        uniform mat4 uProjection;
-        uniform mat4 uBones[240];
+    VkDevice device = vkCtx_->getDevice();
 
-        out vec3 FragPos;
-        out vec3 Normal;
-        out vec2 TexCoord;
+    // --- Descriptor set layouts ---
 
-        void main() {
-            // Skinning: blend bone transformations
-            mat4 boneTransform = mat4(0.0);
-            boneTransform += uBones[aBoneIndices.x] * aBoneWeights.x;
-            boneTransform += uBones[aBoneIndices.y] * aBoneWeights.y;
-            boneTransform += uBones[aBoneIndices.z] * aBoneWeights.z;
-            boneTransform += uBones[aBoneIndices.w] * aBoneWeights.w;
+    // Material set layout (set 1): binding 0 = sampler2D, binding 1 = CharMaterial UBO
+    {
+        VkDescriptorSetLayoutBinding bindings[2] = {};
+        bindings[0].binding = 0;
+        bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[0].descriptorCount = 1;
+        bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[1].binding = 1;
+        bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        bindings[1].descriptorCount = 1;
+        bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-            // Transform position and normal
-            vec4 skinnedPos = boneTransform * vec4(aPos, 1.0);
-            vec4 worldPos = uModel * skinnedPos;
+        VkDescriptorSetLayoutCreateInfo ci{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+        ci.bindingCount = 2;
+        ci.pBindings = bindings;
+        vkCreateDescriptorSetLayout(device, &ci, nullptr, &materialSetLayout_);
+    }
 
-            FragPos = worldPos.xyz;
-            // Use mat3 directly - avoid expensive inverse() in shader
-            // Works correctly for uniform scaling; normalize in fragment shader handles the rest
-            Normal = mat3(uModel) * mat3(boneTransform) * aNormal;
-            TexCoord = aTexCoord;
+    // Bone set layout (set 2): binding 0 = STORAGE_BUFFER (bone matrices)
+    {
+        VkDescriptorSetLayoutBinding binding{};
+        binding.binding = 0;
+        binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        binding.descriptorCount = 1;
+        binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
-            gl_Position = uProjection * uView * worldPos;
-        }
-    )";
+        VkDescriptorSetLayoutCreateInfo ci{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+        ci.bindingCount = 1;
+        ci.pBindings = &binding;
+        vkCreateDescriptorSetLayout(device, &ci, nullptr, &boneSetLayout_);
+    }
 
-    const char* fragmentSrc = R"(
-        #version 330 core
-        in vec3 FragPos;
-        in vec3 Normal;
-        in vec2 TexCoord;
+    // --- Descriptor pools ---
+    {
+        VkDescriptorPoolSize sizes[] = {
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_MATERIAL_SETS},
+            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, MAX_MATERIAL_SETS},
+        };
+        VkDescriptorPoolCreateInfo ci{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+        ci.maxSets = MAX_MATERIAL_SETS;
+        ci.poolSizeCount = 2;
+        ci.pPoolSizes = sizes;
+        ci.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+        vkCreateDescriptorPool(device, &ci, nullptr, &materialDescPool_);
+    }
+    {
+        VkDescriptorPoolSize sizes[] = {
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, MAX_BONE_SETS},
+        };
+        VkDescriptorPoolCreateInfo ci{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+        ci.maxSets = MAX_BONE_SETS;
+        ci.poolSizeCount = 1;
+        ci.pPoolSizes = sizes;
+        ci.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+        vkCreateDescriptorPool(device, &ci, nullptr, &boneDescPool_);
+    }
 
-        uniform sampler2D uTexture0;
-        uniform vec3 uLightDir;
-        uniform vec3 uLightColor;
-        uniform float uSpecularIntensity;
-        uniform vec3 uViewPos;
+    // --- Pipeline layout ---
+    // set 0 = perFrame, set 1 = material, set 2 = bones
+    // Push constant: mat4 model = 64 bytes
+    {
+        VkDescriptorSetLayout setLayouts[] = {perFrameLayout, materialSetLayout_, boneSetLayout_};
+        VkPushConstantRange pushRange{};
+        pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        pushRange.offset = 0;
+        pushRange.size = 64; // mat4
 
-        uniform vec3 uFogColor;
-        uniform float uFogStart;
-        uniform float uFogEnd;
+        VkPipelineLayoutCreateInfo ci{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        ci.setLayoutCount = 3;
+        ci.pSetLayouts = setLayouts;
+        ci.pushConstantRangeCount = 1;
+        ci.pPushConstantRanges = &pushRange;
+        vkCreatePipelineLayout(device, &ci, nullptr, &pipelineLayout_);
+    }
 
-        uniform sampler2DShadow uShadowMap;
-        uniform mat4 uLightSpaceMatrix;
-        uniform int uShadowEnabled;
-        uniform float uShadowStrength;
-        uniform float uOpacity;
-        uniform int uAlphaTest;
-        uniform int uColorKeyBlack;
-        uniform int uUnlit;
-        uniform float uEmissiveBoost;
-        uniform vec3 uEmissiveTint;
+    // --- Load shaders ---
+    rendering::VkShaderModule charVert, charFrag;
+    charVert.loadFromFile(device, "assets/shaders/character.vert.spv");
+    charFrag.loadFromFile(device, "assets/shaders/character.frag.spv");
 
-        out vec4 FragColor;
-
-        void main() {
-            vec3 normal = normalize(Normal);
-            vec3 lightDir = normalize(uLightDir);
-
-            // Diffuse lighting
-            float diff = max(dot(normal, lightDir), 0.0);
-
-            // Blinn-Phong specular
-            vec3 viewDir = normalize(uViewPos - FragPos);
-            vec3 halfDir = normalize(lightDir + viewDir);
-            float spec = pow(max(dot(normal, halfDir), 0.0), 32.0);
-            vec3 specular = spec * uLightColor * uSpecularIntensity;
-
-            // Shadow mapping
-            float shadow = 1.0;
-            if (uShadowEnabled != 0) {
-                vec4 lsPos = uLightSpaceMatrix * vec4(FragPos, 1.0);
-                vec3 proj = lsPos.xyz / lsPos.w * 0.5 + 0.5;
-                if (proj.z <= 1.0 && proj.x >= 0.0 && proj.x <= 1.0 && proj.y >= 0.0 && proj.y <= 1.0) {
-                    float edgeDist = max(abs(proj.x - 0.5), abs(proj.y - 0.5));
-                    float coverageFade = 1.0 - smoothstep(0.40, 0.49, edgeDist);
-                    float bias = max(0.005 * (1.0 - abs(dot(normal, lightDir))), 0.001);
-                    // Single hardware PCF tap — GL_LINEAR + compare mode gives 2×2 bilinear PCF for free
-                    shadow = texture(uShadowMap, vec3(proj.xy, proj.z - bias));
-                    shadow = mix(1.0, shadow, coverageFade);
-                }
-            }
-            shadow = mix(1.0, shadow, clamp(uShadowStrength, 0.0, 1.0));
-
-            // Ambient
-            vec3 ambient = vec3(0.3);
-
-            // Sample texture
-            vec4 texColor = texture(uTexture0, TexCoord);
-            if (uAlphaTest != 0 && texColor.a < 0.5) discard;
-            if (uColorKeyBlack != 0) {
-                float key = max(texColor.r, max(texColor.g, texColor.b));
-                // Soft black-key: fade fringe instead of hard-cut to avoid dark halo.
-                float keyAlpha = smoothstep(0.12, 0.30, key);
-                texColor.a *= keyAlpha;
-                if (texColor.a < 0.02) discard;
-            }
-
-            // Combine
-            vec3 litResult = (ambient + (diff * vec3(1.0) + specular) * shadow) * texColor.rgb;
-            vec3 warmBase = vec3(
-                max(texColor.r, texColor.g * 0.92),
-                texColor.g * 0.90,
-                texColor.b * 0.45
-            );
-            vec3 emissiveResult = warmBase * uEmissiveTint * uEmissiveBoost;
-            vec3 result = (uUnlit != 0) ? emissiveResult : litResult;
-
-            // Fog
-            float fogDist = length(uViewPos - FragPos);
-            float fogFactor = clamp((uFogEnd - fogDist) / (uFogEnd - uFogStart), 0.0, 1.0);
-            result = mix(uFogColor, result, fogFactor);
-
-            // Apply texture alpha and instance opacity (for fade-in effects)
-            float finalAlpha = texColor.a * uOpacity;
-            if (finalAlpha < 0.02) discard;
-            FragColor = vec4(result, finalAlpha);
-        }
-    )";
-
-    // Log GPU uniform limit
-    GLint maxComponents = 0;
-    glGetIntegerv(GL_MAX_VERTEX_UNIFORM_COMPONENTS, &maxComponents);
-    core::Logger::getInstance().info("GPU max vertex uniform components: ", maxComponents,
-                                     " (supports ~", maxComponents / 16, " mat4)");
-
-    characterShader = std::make_unique<Shader>();
-    if (!characterShader->loadFromSource(vertexSrc, fragmentSrc)) {
-        core::Logger::getInstance().error("Failed to create character shader");
+    if (!charVert.isValid() || !charFrag.isValid()) {
+        LOG_ERROR("Character: Missing required shaders, cannot initialize");
         return false;
     }
 
-    const char* shadowVertSrc = R"(
-        #version 330 core
-        layout (location = 0) in vec3 aPos;
-        layout (location = 1) in vec4 aBoneWeights;
-        layout (location = 2) in ivec4 aBoneIndices;
-        layout (location = 4) in vec2 aTexCoord;
+    VkRenderPass mainPass = vkCtx_->getImGuiRenderPass();
 
-        uniform mat4 uLightSpaceMatrix;
-        uniform mat4 uModel;
-        uniform mat4 uBones[240];
+    // --- Vertex input ---
+    // M2Vertex: vec3 pos(12) + uint8[4] boneWeights(4) + uint8[4] boneIndices(4) +
+    //           vec3 normal(12) + vec2[2] texCoords(16) = 48 bytes
+    VkVertexInputBindingDescription charBinding{};
+    charBinding.binding = 0;
+    charBinding.stride = sizeof(pipeline::M2Vertex);
+    charBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-        out vec2 vTexCoord;
-
-        void main() {
-            mat4 boneTransform = mat4(0.0);
-            boneTransform += uBones[aBoneIndices.x] * aBoneWeights.x;
-            boneTransform += uBones[aBoneIndices.y] * aBoneWeights.y;
-            boneTransform += uBones[aBoneIndices.z] * aBoneWeights.z;
-            boneTransform += uBones[aBoneIndices.w] * aBoneWeights.w;
-            vec4 skinnedPos = boneTransform * vec4(aPos, 1.0);
-            vTexCoord = aTexCoord;
-            gl_Position = uLightSpaceMatrix * uModel * skinnedPos;
-        }
-    )";
-
-    const char* shadowFragSrc = R"(
-        #version 330 core
-        in vec2 vTexCoord;
-        uniform sampler2D uTexture;
-        uniform bool uAlphaTest;
-        uniform bool uColorKeyBlack;
-        void main() {
-            vec4 tex = texture(uTexture, vTexCoord);
-            if (uAlphaTest && tex.a < 0.5) discard;
-            if (uColorKeyBlack) {
-                float key = max(tex.r, max(tex.g, tex.b));
-                if (key < 0.14) discard;
-            }
-        }
-    )";
-
-    auto compileStage = [](GLenum type, const char* src) -> GLuint {
-        GLuint shader = glCreateShader(type);
-        glShaderSource(shader, 1, &src, nullptr);
-        glCompileShader(shader);
-        GLint ok = 0;
-        glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
-        if (!ok) {
-            char log[512];
-            glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
-            LOG_ERROR("Character shadow shader compile error: ", log);
-            glDeleteShader(shader);
-            return 0;
-        }
-        return shader;
+    std::vector<VkVertexInputAttributeDescription> charAttrs = {
+        {0, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<uint32_t>(offsetof(pipeline::M2Vertex, position))},
+        {1, 0, VK_FORMAT_R8G8B8A8_UNORM,   static_cast<uint32_t>(offsetof(pipeline::M2Vertex, boneWeights))},
+        {2, 0, VK_FORMAT_R8G8B8A8_UINT,     static_cast<uint32_t>(offsetof(pipeline::M2Vertex, boneIndices))},
+        {3, 0, VK_FORMAT_R32G32B32_SFLOAT,  static_cast<uint32_t>(offsetof(pipeline::M2Vertex, normal))},
+        {4, 0, VK_FORMAT_R32G32_SFLOAT,     static_cast<uint32_t>(offsetof(pipeline::M2Vertex, texCoords))},
     };
 
-    GLuint shVs = compileStage(GL_VERTEX_SHADER, shadowVertSrc);
-    GLuint shFs = compileStage(GL_FRAGMENT_SHADER, shadowFragSrc);
-    if (!shVs || !shFs) {
-        if (shVs) glDeleteShader(shVs);
-        if (shFs) glDeleteShader(shFs);
-        return false;
+    // --- Build pipelines ---
+    auto buildCharPipeline = [&](VkPipelineColorBlendAttachmentState blendState, bool depthWrite) -> VkPipeline {
+        return PipelineBuilder()
+            .setShaders(charVert.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                        charFrag.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+            .setVertexInput({charBinding}, charAttrs)
+            .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+            .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+            .setDepthTest(true, depthWrite, VK_COMPARE_OP_LESS_OR_EQUAL)
+            .setColorBlendAttachment(blendState)
+            .setLayout(pipelineLayout_)
+            .setRenderPass(mainPass)
+            .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
+            .build(device);
+    };
+
+    opaquePipeline_ = buildCharPipeline(PipelineBuilder::blendDisabled(), true);
+    alphaTestPipeline_ = buildCharPipeline(PipelineBuilder::blendAlpha(), true);
+    alphaPipeline_ = buildCharPipeline(PipelineBuilder::blendAlpha(), false);
+    additivePipeline_ = buildCharPipeline(PipelineBuilder::blendAdditive(), false);
+
+    // Clean up shader modules
+    charVert.destroy();
+    charFrag.destroy();
+
+    // --- Create white fallback texture ---
+    {
+        uint8_t white[] = {255, 255, 255, 255};
+        whiteTexture_ = std::make_unique<VkTexture>();
+        whiteTexture_->upload(*vkCtx_, white, 1, 1, VK_FORMAT_R8G8B8A8_UNORM, false);
+        whiteTexture_->createSampler(device, VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_REPEAT);
     }
 
-    shadowCasterProgram = glCreateProgram();
-    glAttachShader(shadowCasterProgram, shVs);
-    glAttachShader(shadowCasterProgram, shFs);
-    glLinkProgram(shadowCasterProgram);
-    GLint linked = 0;
-    glGetProgramiv(shadowCasterProgram, GL_LINK_STATUS, &linked);
-    glDeleteShader(shVs);
-    glDeleteShader(shFs);
-    if (!linked) {
-        char log[512];
-        glGetProgramInfoLog(shadowCasterProgram, sizeof(log), nullptr, log);
-        LOG_ERROR("Character shadow shader link error: ", log);
-        glDeleteProgram(shadowCasterProgram);
-        shadowCasterProgram = 0;
-        return false;
+    // --- Create transparent fallback texture ---
+    {
+        uint8_t transparent[] = {0, 0, 0, 0};
+        transparentTexture_ = std::make_unique<VkTexture>();
+        transparentTexture_->upload(*vkCtx_, transparent, 1, 1, VK_FORMAT_R8G8B8A8_UNORM, false);
+        transparentTexture_->createSampler(device, VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_REPEAT);
     }
-
-    // Create 1x1 white fallback texture
-    uint8_t white[] = { 255, 255, 255, 255 };
-    glGenTextures(1, &whiteTexture);
-    glBindTexture(GL_TEXTURE_2D, whiteTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, white);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-    // Create 1x1 transparent fallback texture for hidden texture slots.
-    uint8_t transparent[] = { 0, 0, 0, 0 };
-    glGenTextures(1, &transparentTexture);
-    glBindTexture(GL_TEXTURE_2D, transparentTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, transparent);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glBindTexture(GL_TEXTURE_2D, 0);
 
     // Diagnostics-only: cache lifetime is currently tied to renderer lifetime.
     textureCacheBudgetBytes_ = envSizeMBOrDefault("WOWEE_CHARACTER_TEX_CACHE_MB", 2048) * 1024ull * 1024ull;
 
-    core::Logger::getInstance().info("Character renderer initialized");
+    core::Logger::getInstance().info("Character renderer initialized (Vulkan)");
     return true;
 }
 
 void CharacterRenderer::shutdown() {
-    // Clean up GPU resources
+    if (!vkCtx_) return;
+
+    vkDeviceWaitIdle(vkCtx_->getDevice());
+    VkDevice device = vkCtx_->getDevice();
+    VmaAllocator alloc = vkCtx_->getAllocator();
+
+    // Clean up GPU resources for models
     for (auto& pair : models) {
-        auto& gpuModel = pair.second;
-        if (gpuModel.vao) {
-            glDeleteVertexArrays(1, &gpuModel.vao);
-            glDeleteBuffers(1, &gpuModel.vbo);
-            glDeleteBuffers(1, &gpuModel.ebo);
-        }
-        for (GLuint texId : gpuModel.textureIds) {
-            if (texId && texId != whiteTexture) {
-                glDeleteTextures(1, &texId);
-            }
-        }
+        destroyModelGPU(pair.second);
     }
 
-    // Clean up texture cache
-    for (auto& pair : textureCache) {
-        GLuint texId = pair.second.id;
-        if (texId && texId != whiteTexture) {
-            glDeleteTextures(1, &texId);
-        }
+    // Clean up instance bone buffers
+    for (auto& pair : instances) {
+        destroyInstanceBones(pair.second);
     }
+
+    // Clean up texture cache (VkTexture unique_ptrs auto-destroy)
     textureCache.clear();
-    textureHasAlphaById_.clear();
-    textureColorKeyBlackById_.clear();
+    textureHasAlphaByPtr_.clear();
+    textureColorKeyBlackByPtr_.clear();
     textureCacheBytes_ = 0;
     textureCacheCounter_ = 0;
 
-    if (whiteTexture) {
-        glDeleteTextures(1, &whiteTexture);
-        whiteTexture = 0;
-    }
-    if (transparentTexture) {
-        glDeleteTextures(1, &transparentTexture);
-        transparentTexture = 0;
-    }
+    // Clean up composite cache
+    compositeCache_.clear();
+    failedTextureCache_.clear();
+
+    whiteTexture_.reset();
+    transparentTexture_.reset();
 
     models.clear();
     instances.clear();
-    characterShader.reset();
-    if (shadowCasterProgram) {
-        glDeleteProgram(shadowCasterProgram);
-        shadowCasterProgram = 0;
+
+    // Destroy pipelines
+    auto destroyPipeline = [&](VkPipeline& p) {
+        if (p) { vkDestroyPipeline(device, p, nullptr); p = VK_NULL_HANDLE; }
+    };
+    destroyPipeline(opaquePipeline_);
+    destroyPipeline(alphaTestPipeline_);
+    destroyPipeline(alphaPipeline_);
+    destroyPipeline(additivePipeline_);
+
+    if (pipelineLayout_) { vkDestroyPipelineLayout(device, pipelineLayout_, nullptr); pipelineLayout_ = VK_NULL_HANDLE; }
+
+    // Destroy descriptor pools and layouts
+    if (materialDescPool_) { vkDestroyDescriptorPool(device, materialDescPool_, nullptr); materialDescPool_ = VK_NULL_HANDLE; }
+    if (boneDescPool_) { vkDestroyDescriptorPool(device, boneDescPool_, nullptr); boneDescPool_ = VK_NULL_HANDLE; }
+    if (materialSetLayout_) { vkDestroyDescriptorSetLayout(device, materialSetLayout_, nullptr); materialSetLayout_ = VK_NULL_HANDLE; }
+    if (boneSetLayout_) { vkDestroyDescriptorSetLayout(device, boneSetLayout_, nullptr); boneSetLayout_ = VK_NULL_HANDLE; }
+
+    vkCtx_ = nullptr;
+}
+
+void CharacterRenderer::destroyModelGPU(M2ModelGPU& gpuModel) {
+    if (!vkCtx_) return;
+    VmaAllocator alloc = vkCtx_->getAllocator();
+    if (gpuModel.vertexBuffer) { vmaDestroyBuffer(alloc, gpuModel.vertexBuffer, gpuModel.vertexAlloc); gpuModel.vertexBuffer = VK_NULL_HANDLE; }
+    if (gpuModel.indexBuffer) { vmaDestroyBuffer(alloc, gpuModel.indexBuffer, gpuModel.indexAlloc); gpuModel.indexBuffer = VK_NULL_HANDLE; }
+}
+
+void CharacterRenderer::destroyInstanceBones(CharacterInstance& inst) {
+    if (!vkCtx_) return;
+    VmaAllocator alloc = vkCtx_->getAllocator();
+    for (int i = 0; i < 2; i++) {
+        if (inst.boneBuffer[i]) {
+            vmaDestroyBuffer(alloc, inst.boneBuffer[i], inst.boneAlloc[i]);
+            inst.boneBuffer[i] = VK_NULL_HANDLE;
+            inst.boneMapped[i] = nullptr;
+        }
+        // boneSet freed when pool is reset/destroyed
     }
 }
 
-GLuint CharacterRenderer::loadTexture(const std::string& path) {
+VkTexture* CharacterRenderer::loadTexture(const std::string& path) {
     // Skip empty or whitespace-only paths (type-0 textures have no filename)
-    if (path.empty()) return whiteTexture;
+    if (path.empty()) return whiteTexture_.get();
     bool allWhitespace = true;
     for (char c : path) {
         if (c != ' ' && c != '\t' && c != '\0' && c != '\n') { allWhitespace = false; break; }
     }
-    if (allWhitespace) return whiteTexture;
+    if (allWhitespace) return whiteTexture_.get();
 
     auto normalizeKey = [](std::string key) {
         std::replace(key.begin(), key.end(), '/', '\\');
@@ -396,23 +351,23 @@ GLuint CharacterRenderer::loadTexture(const std::string& path) {
     auto it = textureCache.find(key);
     if (it != textureCache.end()) {
         it->second.lastUse = ++textureCacheCounter_;
-        return it->second.id;
+        return it->second.texture.get();
     }
 
     if (!assetManager || !assetManager->isInitialized()) {
-        return whiteTexture;
+        return whiteTexture_.get();
     }
 
     // Check negative cache to avoid repeated file I/O for textures that don't exist
     if (failedTextureCache_.count(key)) {
-        return whiteTexture;
+        return whiteTexture_.get();
     }
 
     auto blpImage = assetManager->loadTexture(key);
     if (!blpImage.isValid()) {
         core::Logger::getInstance().warning("Failed to load texture: ", path);
         failedTextureCache_.insert(key);
-        return whiteTexture;
+        return whiteTexture_.get();
     }
 
     bool hasAlpha = false;
@@ -423,29 +378,25 @@ GLuint CharacterRenderer::loadTexture(const std::string& path) {
         }
     }
 
-    GLuint texId;
-    glGenTextures(1, &texId);
-    glBindTexture(GL_TEXTURE_2D, texId);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, blpImage.width, blpImage.height,
-                 0, GL_RGBA, GL_UNSIGNED_BYTE, blpImage.data.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glGenerateMipmap(GL_TEXTURE_2D);
-    applyAnisotropicFiltering();
-    glBindTexture(GL_TEXTURE_2D, 0);
+    auto tex = std::make_unique<VkTexture>();
+    tex->upload(*vkCtx_, blpImage.data.data(), blpImage.width, blpImage.height,
+                VK_FORMAT_R8G8B8A8_UNORM, true);
+    tex->createSampler(vkCtx_->getDevice(), VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+                       VK_SAMPLER_ADDRESS_MODE_REPEAT);
+
+    VkTexture* texPtr = tex.get();
 
     TextureCacheEntry e;
-    e.id = texId;
+    e.texture = std::move(tex);
     e.approxBytes = approxTextureBytesWithMips(blpImage.width, blpImage.height);
     e.lastUse = ++textureCacheCounter_;
     e.hasAlpha = hasAlpha;
     e.colorKeyBlack = colorKeyBlackHint;
     textureCacheBytes_ += e.approxBytes;
-    textureCache[key] = e;
-    textureHasAlphaById_[texId] = hasAlpha;
-    textureColorKeyBlackById_[texId] = colorKeyBlackHint;
+    textureHasAlphaByPtr_[texPtr] = hasAlpha;
+    textureColorKeyBlackByPtr_[texPtr] = colorKeyBlackHint;
+    textureCache[key] = std::move(e);
+
     if (textureCacheBytes_ > textureCacheBudgetBytes_) {
         core::Logger::getInstance().warning(
             "Character texture cache over budget: ",
@@ -453,7 +404,7 @@ GLuint CharacterRenderer::loadTexture(const std::string& path) {
             textureCacheBudgetBytes_ / (1024 * 1024), " MB (textures=", textureCache.size(), ")");
     }
     core::Logger::getInstance().debug("Loaded character texture: ", path, " (", blpImage.width, "x", blpImage.height, ")");
-    return texId;
+    return texPtr;
 }
 
 // Alpha-blend overlay onto composite at (dstX, dstY)
@@ -499,7 +450,7 @@ static void blitOverlayScaledN(std::vector<uint8_t>& composite, int compW, int c
             uint8_t srcA = overlay.data[srcIdx + 3];
             if (srcA == 0) continue;
 
-            // Write to scale×scale block of destination pixels
+            // Write to scale x scale block of destination pixels
             for (int dy2 = 0; dy2 < scale; dy2++) {
                 int dy = dstY + sy * scale + dy2;
                 if (dy < 0 || dy >= compH) continue;
@@ -533,16 +484,16 @@ static void blitOverlayScaled2x(std::vector<uint8_t>& composite, int compW, int 
     blitOverlayScaledN(composite, compW, compH, overlay, dstX, dstY, 2);
 }
 
-GLuint CharacterRenderer::compositeTextures(const std::vector<std::string>& layerPaths) {
+VkTexture* CharacterRenderer::compositeTextures(const std::vector<std::string>& layerPaths) {
     if (layerPaths.empty() || !assetManager || !assetManager->isInitialized()) {
-        return whiteTexture;
+        return whiteTexture_.get();
     }
 
     // Load base layer
     auto base = assetManager->loadTexture(layerPaths[0]);
     if (!base.isValid()) {
         core::Logger::getInstance().warning("Composite: failed to load base layer: ", layerPaths[0]);
-        return whiteTexture;
+        return whiteTexture_.get();
     }
 
     // Copy base pixel data as our working buffer
@@ -628,7 +579,7 @@ GLuint CharacterRenderer::compositeTextures(const std::vector<std::string>& laye
                 dstX = 128; dstY = 160;
                 expectedW256 = 128; expectedH256 = 64;
             } else {
-                // Unknown — center placement as fallback
+                // Unknown -- center placement as fallback
                 dstX = (width - overlay.width) / 2;
                 dstY = (height - overlay.height) / 2;
                 core::Logger::getInstance().info("Composite: UNKNOWN region for '",
@@ -674,31 +625,38 @@ GLuint CharacterRenderer::compositeTextures(const std::vector<std::string>& laye
         }
     }
 
-    // Upload composite to GPU
-    GLuint texId;
-    glGenTextures(1, &texId);
-    glBindTexture(GL_TEXTURE_2D, texId);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, composite.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glGenerateMipmap(GL_TEXTURE_2D);
-    applyAnisotropicFiltering();
-    glBindTexture(GL_TEXTURE_2D, 0);
+    // Upload composite to GPU via VkTexture
+    auto tex = std::make_unique<VkTexture>();
+    tex->upload(*vkCtx_, composite.data(), width, height, VK_FORMAT_R8G8B8A8_UNORM, true);
+    tex->createSampler(vkCtx_->getDevice(), VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+                       VK_SAMPLER_ADDRESS_MODE_REPEAT);
+
+    VkTexture* texPtr = tex.get();
+
+    // Store in texture cache with a generated key
+    std::string cacheKey = "__composite__";
+    for (const auto& lp : layerPaths) { cacheKey += '|'; cacheKey += lp; }
+
+    TextureCacheEntry e;
+    e.texture = std::move(tex);
+    e.approxBytes = approxTextureBytesWithMips(width, height);
+    e.lastUse = ++textureCacheCounter_;
+    e.hasAlpha = false;
+    e.colorKeyBlack = false;
+    textureCache[cacheKey] = std::move(e);
 
     core::Logger::getInstance().info("Composite texture created: ", width, "x", height, " from ", layerPaths.size(), " layers");
-    return texId;
+    return texPtr;
 }
 
 void CharacterRenderer::clearCompositeCache() {
     // Just clear the lookup map so next compositeWithRegions() creates fresh textures.
-    // Don't delete GPU textures — they may still be referenced by models or instances.
+    // Don't delete GPU textures -- they may still be referenced by models or instances.
     // Orphaned textures will be cleaned up when their model/instance is destroyed.
     compositeCache_.clear();
 }
 
-GLuint CharacterRenderer::compositeWithRegions(const std::string& basePath,
+VkTexture* CharacterRenderer::compositeWithRegions(const std::string& basePath,
                                                 const std::vector<std::string>& baseLayers,
                                                 const std::vector<std::pair<int, std::string>>& regionLayers) {
     // Build cache key from all inputs to avoid redundant compositing
@@ -712,11 +670,11 @@ GLuint CharacterRenderer::compositeWithRegions(const std::string& basePath,
         cacheKey += ',';
     }
     auto cacheIt = compositeCache_.find(cacheKey);
-    if (cacheIt != compositeCache_.end() && cacheIt->second != 0) {
+    if (cacheIt != compositeCache_.end() && cacheIt->second != nullptr) {
         return cacheIt->second;
     }
 
-    // Region index → pixel coordinates on the 256x256 base atlas
+    // Region index -> pixel coordinates on the 256x256 base atlas
     // These are scaled up by (width/256, height/256) for larger textures (512x512, 1024x1024)
     static const int regionCoords256[][2] = {
         {   0,   0 },  // 0 = ArmUpper
@@ -737,19 +695,17 @@ GLuint CharacterRenderer::compositeWithRegions(const std::string& basePath,
     }
     // Load base composite into CPU buffer
     if (!assetManager || !assetManager->isInitialized()) {
-        return whiteTexture;
+        return whiteTexture_.get();
     }
 
     auto base = assetManager->loadTexture(basePath);
     if (!base.isValid()) {
-        return whiteTexture;
+        return whiteTexture_.get();
     }
 
     std::vector<uint8_t> composite;
     int width = base.width;
     int height = base.height;
-
-
 
     // If base texture is 256x256 (e.g., baked NPC texture), upscale to 512x512
     // so equipment regions can be composited at correct coordinates
@@ -776,7 +732,7 @@ GLuint CharacterRenderer::compositeWithRegions(const std::string& basePath,
     }
 
     // Blend face + underwear overlays
-    // If we upscaled from 256→512, scale coords and texels with blitOverlayScaled2x.
+    // If we upscaled from 256->512, scale coords and texels with blitOverlayScaled2x.
     // For native 512/1024 textures, face overlays are full atlas size (hit width==width branch).
     bool upscaled = (base.width == 256 && base.height == 256 && width == 512);
     for (const auto& ul : baseLayers) {
@@ -881,26 +837,31 @@ GLuint CharacterRenderer::compositeWithRegions(const std::string& basePath,
             " at (", dstX, ",", dstY, ") ", overlay.width, "x", overlay.height, " from ", rl.second);
     }
 
-    // Upload to GPU
-    GLuint texId;
-    glGenTextures(1, &texId);
-    glBindTexture(GL_TEXTURE_2D, texId);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, composite.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glGenerateMipmap(GL_TEXTURE_2D);
-    applyAnisotropicFiltering();
-    glBindTexture(GL_TEXTURE_2D, 0);
+    // Upload to GPU via VkTexture
+    auto tex = std::make_unique<VkTexture>();
+    tex->upload(*vkCtx_, composite.data(), width, height, VK_FORMAT_R8G8B8A8_UNORM, true);
+    tex->createSampler(vkCtx_->getDevice(), VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+                       VK_SAMPLER_ADDRESS_MODE_REPEAT);
+
+    VkTexture* texPtr = tex.get();
+
+    // Store in texture cache
+    std::string storageKey = "__compositeRegions__" + cacheKey;
+    TextureCacheEntry entry;
+    entry.texture = std::move(tex);
+    entry.approxBytes = approxTextureBytesWithMips(width, height);
+    entry.lastUse = ++textureCacheCounter_;
+    entry.hasAlpha = false;
+    entry.colorKeyBlack = false;
+    textureCache[storageKey] = std::move(entry);
 
     core::Logger::getInstance().debug("compositeWithRegions: created ", width, "x", height,
         " texture with ", regionLayers.size(), " equipment regions");
-    compositeCache_[cacheKey] = texId;
-    return texId;
+    compositeCache_[cacheKey] = texPtr;
+    return texPtr;
 }
 
-void CharacterRenderer::setModelTexture(uint32_t modelId, uint32_t textureSlot, GLuint textureId) {
+void CharacterRenderer::setModelTexture(uint32_t modelId, uint32_t textureSlot, VkTexture* texture) {
     auto it = models.find(modelId);
     if (it == models.end()) {
         core::Logger::getInstance().warning("setModelTexture: model ", modelId, " not found");
@@ -913,24 +874,12 @@ void CharacterRenderer::setModelTexture(uint32_t modelId, uint32_t textureSlot, 
         return;
     }
 
-    // Delete old texture if it's not shared and not in the texture cache
-    GLuint oldTex = gpuModel.textureIds[textureSlot];
-    if (oldTex && oldTex != whiteTexture) {
-        bool cached = false;
-        for (const auto& [k, v] : textureCache) {
-            if (v.id == oldTex) { cached = true; break; }
-        }
-        if (!cached) {
-            glDeleteTextures(1, &oldTex);
-        }
-    }
-
-    gpuModel.textureIds[textureSlot] = textureId;
+    gpuModel.textureIds[textureSlot] = texture;
     core::Logger::getInstance().debug("Replaced model ", modelId, " texture slot ", textureSlot, " with composited texture");
 }
 
 void CharacterRenderer::resetModelTexture(uint32_t modelId, uint32_t textureSlot) {
-    setModelTexture(modelId, textureSlot, whiteTexture);
+    setModelTexture(modelId, textureSlot, whiteTexture_.get());
 }
 
 bool CharacterRenderer::loadModel(const pipeline::M2Model& model, uint32_t id) {
@@ -941,12 +890,7 @@ bool CharacterRenderer::loadModel(const pipeline::M2Model& model, uint32_t id) {
 
     if (models.find(id) != models.end()) {
         core::Logger::getInstance().warning("Model ID ", id, " already loaded, replacing");
-        auto& old = models[id];
-        if (old.vao) {
-            glDeleteVertexArrays(1, &old.vao);
-            glDeleteBuffers(1, &old.vbo);
-            glDeleteBuffers(1, &old.ebo);
-        }
+        destroyModelGPU(models[id]);
     }
 
     M2ModelGPU gpuModel;
@@ -960,8 +904,8 @@ bool CharacterRenderer::loadModel(const pipeline::M2Model& model, uint32_t id) {
 
     // Load textures from model
     for (const auto& tex : model.textures) {
-        GLuint texId = loadTexture(tex.filename);
-        gpuModel.textureIds.push_back(texId);
+        VkTexture* texPtr = loadTexture(tex.filename);
+        gpuModel.textureIds.push_back(texPtr);
     }
 
     models[id] = std::move(gpuModel);
@@ -976,48 +920,25 @@ bool CharacterRenderer::loadModel(const pipeline::M2Model& model, uint32_t id) {
 void CharacterRenderer::setupModelBuffers(M2ModelGPU& gpuModel) {
     auto& model = gpuModel.data;
 
-    glGenVertexArrays(1, &gpuModel.vao);
-    glGenBuffers(1, &gpuModel.vbo);
-    glGenBuffers(1, &gpuModel.ebo);
+    if (model.vertices.empty() || model.indices.empty()) return;
 
-    glBindVertexArray(gpuModel.vao);
+    // Upload vertex buffer
+    auto vb = uploadBuffer(*vkCtx_,
+        model.vertices.data(),
+        model.vertices.size() * sizeof(pipeline::M2Vertex),
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    gpuModel.vertexBuffer = vb.buffer;
+    gpuModel.vertexAlloc = vb.allocation;
+    gpuModel.vertexCount = static_cast<uint32_t>(model.vertices.size());
 
-    // Interleaved vertex data
-    glBindBuffer(GL_ARRAY_BUFFER, gpuModel.vbo);
-    glBufferData(GL_ARRAY_BUFFER, model.vertices.size() * sizeof(pipeline::M2Vertex),
-                model.vertices.data(), GL_STATIC_DRAW);
-
-    // Position
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(pipeline::M2Vertex),
-                         (void*)offsetof(pipeline::M2Vertex, position));
-
-    // Bone weights (normalize uint8 to float)
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(pipeline::M2Vertex),
-                         (void*)offsetof(pipeline::M2Vertex, boneWeights));
-
-    // Bone indices
-    glEnableVertexAttribArray(2);
-    glVertexAttribIPointer(2, 4, GL_UNSIGNED_BYTE, sizeof(pipeline::M2Vertex),
-                          (void*)offsetof(pipeline::M2Vertex, boneIndices));
-
-    // Normal
-    glEnableVertexAttribArray(3);
-    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(pipeline::M2Vertex),
-                         (void*)offsetof(pipeline::M2Vertex, normal));
-
-    // TexCoord (first UV set)
-    glEnableVertexAttribArray(4);
-    glVertexAttribPointer(4, 2, GL_FLOAT, GL_FALSE, sizeof(pipeline::M2Vertex),
-                         (void*)offsetof(pipeline::M2Vertex, texCoords));
-
-    // Index buffer
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gpuModel.ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, model.indices.size() * sizeof(uint16_t),
-                model.indices.data(), GL_STATIC_DRAW);
-
-    glBindVertexArray(0);
+    // Upload index buffer
+    auto ib = uploadBuffer(*vkCtx_,
+        model.indices.data(),
+        model.indices.size() * sizeof(uint16_t),
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    gpuModel.indexBuffer = ib.buffer;
+    gpuModel.indexAlloc = ib.allocation;
+    gpuModel.indexCount = static_cast<uint32_t>(model.indices.size());
 }
 
 void CharacterRenderer::calculateBindPose(M2ModelGPU& gpuModel) {
@@ -1057,8 +978,9 @@ uint32_t CharacterRenderer::createInstance(uint32_t modelId, const glm::vec3& po
     auto& model = models[modelId].data;
     instance.boneMatrices.resize(std::max(static_cast<size_t>(1), model.bones.size()), glm::mat4(1.0f));
 
-    instances[instance.id] = instance;
-    return instance.id;
+    uint32_t id = instance.id;
+    instances[id] = std::move(instance);
+    return id;
 }
 
 void CharacterRenderer::playAnimation(uint32_t instanceId, uint32_t animationId, bool loop) {
@@ -1100,10 +1022,10 @@ void CharacterRenderer::playAnimation(uint32_t instanceId, uint32_t animationId,
 
         // Only log missing animation once per model (reduce spam)
         static std::unordered_map<uint32_t, std::unordered_set<uint32_t>> loggedMissingAnims;
-        uint32_t modelId = instance.modelId;  // Use modelId as identifier
-        if (loggedMissingAnims[modelId].insert(animationId).second) {
+        uint32_t mId = instance.modelId;  // Use modelId as identifier
+        if (loggedMissingAnims[mId].insert(animationId).second) {
             // First time seeing this missing animation for this model
-            LOG_WARNING("Animation ", animationId, " not found in model ", modelId, ", using default");
+            LOG_WARNING("Animation ", animationId, " not found in model ", mId, ", using default");
         }
     }
 }
@@ -1390,44 +1312,20 @@ glm::mat4 CharacterRenderer::getBoneTransform(const pipeline::M2Bone& bone, floa
 
 // --- Rendering ---
 
-void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, const glm::mat4& projection) {
-    if (instances.empty()) {
+void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera) {
+    if (instances.empty() || !opaquePipeline_) {
         return;
     }
 
-    glEnable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);  // M2 models have mixed winding; render both sides
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    uint32_t frameIndex = vkCtx_->getCurrentFrame();
 
-    characterShader->use();
-    characterShader->setUniform("uView", view);
-    characterShader->setUniform("uProjection", projection);
-    characterShader->setUniform("uLightDir", lightDir);
-    characterShader->setUniform("uLightColor", lightColor);
-    characterShader->setUniform("uSpecularIntensity", 0.5f);
-    characterShader->setUniform("uViewPos", camera.getPosition());
+    // Bind per-frame descriptor set (set 0) -- shared across all draws
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            pipelineLayout_, 0, 1, &perFrameSet, 0, nullptr);
 
-    // Fog
-    characterShader->setUniform("uFogColor", fogColor);
-    characterShader->setUniform("uFogStart", fogStart);
-    characterShader->setUniform("uFogEnd", fogEnd);
-
-    // Shadows
-    characterShader->setUniform("uShadowEnabled", shadowEnabled ? 1 : 0);
-    characterShader->setUniform("uShadowStrength", 0.68f);
-    characterShader->setUniform("uTexture0", 0);
-    characterShader->setUniform("uAlphaTest", 0);
-    characterShader->setUniform("uColorKeyBlack", 0);
-    characterShader->setUniform("uUnlit", 0);
-    characterShader->setUniform("uEmissiveBoost", 1.0f);
-    characterShader->setUniform("uEmissiveTint", glm::vec3(1.0f));
-    if (shadowEnabled) {
-        characterShader->setUniform("uLightSpaceMatrix", lightSpaceMatrix);
-        glActiveTexture(GL_TEXTURE7);
-        glBindTexture(GL_TEXTURE_2D, shadowDepthTex);
-        characterShader->setUniform("uShadowMap", 7);
-    }
+    // Start with opaque pipeline
+    VkPipeline currentPipeline = opaquePipeline_;
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, currentPipeline);
 
     for (const auto& pair : instances) {
         const auto& instance = pair.second;
@@ -1435,7 +1333,12 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
         // Skip invisible instances (e.g., player in first-person mode)
         if (!instance.visible) continue;
 
-        const auto& gpuModel = models[instance.modelId];
+        auto modelIt = models.find(instance.modelId);
+        if (modelIt == models.end()) continue;
+        const auto& gpuModel = modelIt->second;
+
+        // Skip models without GPU buffers
+        if (!gpuModel.vertexBuffer) continue;
 
         // Skip fully transparent instances
         if (instance.opacity <= 0.0f) continue;
@@ -1444,28 +1347,77 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
         glm::mat4 modelMat = instance.hasOverrideModelMatrix
             ? instance.overrideModelMatrix
             : getModelMatrix(instance);
-        characterShader->setUniform("uModel", modelMat);
-        characterShader->setUniform("uOpacity", instance.opacity);
 
-        // Set bone matrices (upload all at once for performance)
+        // Push model matrix
+        vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &modelMat);
+
+        // Upload bone matrices to SSBO
         int numBones = std::min(static_cast<int>(instance.boneMatrices.size()), MAX_BONES);
         if (numBones > 0) {
-            characterShader->setUniformMatrixArray("uBones[0]", instance.boneMatrices.data(), numBones);
+            // Lazy-allocate bone SSBO on first use
+            auto& instMut = const_cast<CharacterInstance&>(instance);
+            if (!instMut.boneBuffer[frameIndex]) {
+                VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+                bci.size = MAX_BONES * sizeof(glm::mat4);
+                bci.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+                VmaAllocationCreateInfo aci{};
+                aci.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+                aci.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+                VmaAllocationInfo allocInfo{};
+                vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci,
+                                &instMut.boneBuffer[frameIndex], &instMut.boneAlloc[frameIndex], &allocInfo);
+                instMut.boneMapped[frameIndex] = allocInfo.pMappedData;
+
+                // Allocate descriptor set for bone SSBO
+                VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+                ai.descriptorPool = boneDescPool_;
+                ai.descriptorSetCount = 1;
+                ai.pSetLayouts = &boneSetLayout_;
+                vkAllocateDescriptorSets(vkCtx_->getDevice(), &ai, &instMut.boneSet[frameIndex]);
+
+                if (instMut.boneSet[frameIndex]) {
+                    VkDescriptorBufferInfo bufInfo{};
+                    bufInfo.buffer = instMut.boneBuffer[frameIndex];
+                    bufInfo.offset = 0;
+                    bufInfo.range = bci.size;
+                    VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+                    write.dstSet = instMut.boneSet[frameIndex];
+                    write.dstBinding = 0;
+                    write.descriptorCount = 1;
+                    write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                    write.pBufferInfo = &bufInfo;
+                    vkUpdateDescriptorSets(vkCtx_->getDevice(), 1, &write, 0, nullptr);
+                }
+            }
+
+            // Upload bone matrices
+            if (instMut.boneMapped[frameIndex]) {
+                memcpy(instMut.boneMapped[frameIndex], instance.boneMatrices.data(),
+                       numBones * sizeof(glm::mat4));
+            }
+
+            // Bind bone descriptor set (set 2)
+            if (instMut.boneSet[frameIndex]) {
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        pipelineLayout_, 2, 1, &instMut.boneSet[frameIndex], 0, nullptr);
+            }
         }
 
-        // Bind VAO and draw
-        glBindVertexArray(gpuModel.vao);
+        // Bind vertex and index buffers
+        VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &gpuModel.vertexBuffer, &offset);
+        vkCmdBindIndexBuffer(cmd, gpuModel.indexBuffer, 0, VK_INDEX_TYPE_UINT16);
 
-	        if (!gpuModel.data.batches.empty()) {
-	            bool applyGeosetFilter = !instance.activeGeosets.empty();
-	            if (applyGeosetFilter) {
-	                bool hasRenderableGeoset = false;
-	                for (const auto& batch : gpuModel.data.batches) {
-	                    if (instance.activeGeosets.find(batch.submeshId) != instance.activeGeosets.end()) {
-	                        hasRenderableGeoset = true;
-	                        break;
-	                    }
-	                }
+        if (!gpuModel.data.batches.empty()) {
+            bool applyGeosetFilter = !instance.activeGeosets.empty();
+            if (applyGeosetFilter) {
+                bool hasRenderableGeoset = false;
+                for (const auto& batch : gpuModel.data.batches) {
+                    if (instance.activeGeosets.find(batch.submeshId) != instance.activeGeosets.end()) {
+                        hasRenderableGeoset = true;
+                        break;
+                    }
+                }
                 if (!hasRenderableGeoset) {
                     static std::unordered_set<uint32_t> loggedGeosetFallback;
                     if (loggedGeosetFallback.insert(instance.id).second) {
@@ -1473,81 +1425,77 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
                                     instance.id, " (model ", instance.modelId,
                                     "); rendering all batches as fallback");
                     }
-	                    applyGeosetFilter = false;
-	                }
-	            }
+                    applyGeosetFilter = false;
+                }
+            }
 
-	            auto resolveBatchTexture = [&](const CharacterInstance& inst, const M2ModelGPU& gm, const pipeline::M2Batch& b) -> GLuint {
-	                // A skin batch can reference multiple textures (b.textureCount) starting at b.textureIndex.
-	                // We currently bind only a single texture, so pick the most appropriate one.
-	                //
-	                // This matters for hair: the first texture in the combo can be a mask/empty slot,
-	                // causing the hair to render as solid white.
-	                if (b.textureIndex == 0xFFFF) return whiteTexture;
-	                if (gm.data.textureLookup.empty() || gm.textureIds.empty()) return whiteTexture;
+            auto resolveBatchTexture = [&](const CharacterInstance& inst, const M2ModelGPU& gm, const pipeline::M2Batch& b) -> VkTexture* {
+                // A skin batch can reference multiple textures (b.textureCount) starting at b.textureIndex.
+                // We currently bind only a single texture, so pick the most appropriate one.
+                if (b.textureIndex == 0xFFFF) return whiteTexture_.get();
+                if (gm.data.textureLookup.empty() || gm.textureIds.empty()) return whiteTexture_.get();
 
-	                uint32_t comboCount = b.textureCount ? static_cast<uint32_t>(b.textureCount) : 1u;
-	                comboCount = std::min<uint32_t>(comboCount, 8u);
+                uint32_t comboCount = b.textureCount ? static_cast<uint32_t>(b.textureCount) : 1u;
+                comboCount = std::min<uint32_t>(comboCount, 8u);
 
-	                struct Candidate { GLuint id; uint32_t type; };
-	                Candidate first{whiteTexture, 0};
-	                bool hasFirst = false;
-	                Candidate firstNonWhite{whiteTexture, 0};
-	                bool hasFirstNonWhite = false;
+                struct Candidate { VkTexture* tex; uint32_t type; };
+                Candidate first{whiteTexture_.get(), 0};
+                bool hasFirst = false;
+                Candidate firstNonWhite{whiteTexture_.get(), 0};
+                bool hasFirstNonWhite = false;
 
-	                for (uint32_t i = 0; i < comboCount; i++) {
-	                    uint32_t lookupPos = static_cast<uint32_t>(b.textureIndex) + i;
-	                    if (lookupPos >= gm.data.textureLookup.size()) break;
-	                    uint16_t texSlot = gm.data.textureLookup[lookupPos];
-	                    if (texSlot >= gm.textureIds.size()) continue;
+                for (uint32_t i = 0; i < comboCount; i++) {
+                    uint32_t lookupPos = static_cast<uint32_t>(b.textureIndex) + i;
+                    if (lookupPos >= gm.data.textureLookup.size()) break;
+                    uint16_t texSlot = gm.data.textureLookup[lookupPos];
+                    if (texSlot >= gm.textureIds.size()) continue;
 
-	                    GLuint texId = gm.textureIds[texSlot];
-	                    uint32_t texType = (texSlot < gm.data.textures.size()) ? gm.data.textures[texSlot].type : 0;
-                        // Apply texture slot overrides.
-                        // For type-1 (skin) overrides, only apply to skin-group batches
-                        // to prevent the skin composite from bleeding onto cloak/hair.
-                        {
-                            auto itO = inst.textureSlotOverrides.find(texSlot);
-                            if (itO != inst.textureSlotOverrides.end() && itO->second != 0) {
-                                if (texType == 1) {
-                                    // Only apply skin override to skin groups
-                                    uint16_t grp = b.submeshId / 100;
-                                    bool isSkinGroup = (grp == 0 || grp == 3 || grp == 4 || grp == 5 ||
-                                                        grp == 8 || grp == 9 || grp == 13 || grp == 20);
-                                    if (isSkinGroup) texId = itO->second;
-                                } else {
-                                    texId = itO->second;
-                                }
+                    VkTexture* texPtr = gm.textureIds[texSlot];
+                    uint32_t texType = (texSlot < gm.data.textures.size()) ? gm.data.textures[texSlot].type : 0;
+                    // Apply texture slot overrides.
+                    // For type-1 (skin) overrides, only apply to skin-group batches
+                    // to prevent the skin composite from bleeding onto cloak/hair.
+                    {
+                        auto itO = inst.textureSlotOverrides.find(texSlot);
+                        if (itO != inst.textureSlotOverrides.end() && itO->second != nullptr) {
+                            if (texType == 1) {
+                                // Only apply skin override to skin groups
+                                uint16_t grp = b.submeshId / 100;
+                                bool isSkinGroup = (grp == 0 || grp == 3 || grp == 4 || grp == 5 ||
+                                                    grp == 8 || grp == 9 || grp == 13 || grp == 20);
+                                if (isSkinGroup) texPtr = itO->second;
+                            } else {
+                                texPtr = itO->second;
                             }
                         }
+                    }
 
-	                    if (!hasFirst) {
-	                        first = {texId, texType};
-	                        hasFirst = true;
-	                    }
+                    if (!hasFirst) {
+                        first = {texPtr, texType};
+                        hasFirst = true;
+                    }
 
-	                    if (texId == 0 || texId == whiteTexture) continue;
+                    if (texPtr == nullptr || texPtr == whiteTexture_.get()) continue;
 
-	                    // Prefer the hair texture slot (type 6) whenever present in the combo.
-	                    // Humanoid scalp meshes can live in group 0, so group-based checks are insufficient.
-	                    if (texType == 6) {
-	                        return texId;
-	                    }
+                    // Prefer the hair texture slot (type 6) whenever present in the combo.
+                    if (texType == 6) {
+                        return texPtr;
+                    }
 
-	                    if (!hasFirstNonWhite) {
-	                        firstNonWhite = {texId, texType};
-	                        hasFirstNonWhite = true;
-	                    }
-	                }
+                    if (!hasFirstNonWhite) {
+                        firstNonWhite = {texPtr, texType};
+                        hasFirstNonWhite = true;
+                    }
+                }
 
-	                if (hasFirstNonWhite) return firstNonWhite.id;
-	                if (hasFirst && first.id != 0) return first.id;
-	                return whiteTexture;
-	            };
+                if (hasFirstNonWhite) return firstNonWhite.tex;
+                if (hasFirst && first.tex != nullptr) return first.tex;
+                return whiteTexture_.get();
+            };
 
-	            // One-time debug dump of rendered batches per model
-	            static std::unordered_set<uint32_t> dumpedModels;
-	            if (dumpedModels.find(instance.modelId) == dumpedModels.end()) {
+            // One-time debug dump of rendered batches per model
+            static std::unordered_set<uint32_t> dumpedModels;
+            if (dumpedModels.find(instance.modelId) == dumpedModels.end()) {
                 dumpedModels.insert(instance.modelId);
                 int bIdx = 0;
                 int rendered = 0, skipped = 0;
@@ -1556,11 +1504,11 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
                         (b.submeshId / 100 != 0) &&
                         instance.activeGeosets.find(b.submeshId) == instance.activeGeosets.end();
 
-	                    GLuint resolvedTex = resolveBatchTexture(instance, gpuModel, b);
-	                    std::string texInfo = "GL" + std::to_string(resolvedTex);
+                    VkTexture* resolvedTex = resolveBatchTexture(instance, gpuModel, b);
+                    std::string texInfo = resolvedTex ? "VkTex" : "null";
 
-	                    if (filtered) skipped++; else rendered++;
-	                    LOG_DEBUG("Batch ", bIdx, ": submesh=", b.submeshId,
+                    if (filtered) skipped++; else rendered++;
+                    LOG_DEBUG("Batch ", bIdx, ": submesh=", b.submeshId,
                               " level=", b.submeshLevel,
                               " idxStart=", b.indexStart, " idxCount=", b.indexCount,
                               " tex=", texInfo,
@@ -1571,13 +1519,10 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
                           gpuModel.textureIds.size(), " textures loaded, ",
                           gpuModel.data.textureLookup.size(), " in lookup table");
                 for (size_t t = 0; t < gpuModel.data.textures.size(); t++) {
-	                }
-	            }
+                }
+            }
 
-	            // Draw batches (submeshes) with per-batch textures
-	            // Geoset filtering: skip batches whose submeshId is not in activeGeosets.
-	            // For character models, group 0 (body/scalp) is also filtered so that only
-	            // the correct scalp mesh renders (not all overlapping variants).
+            // Draw batches (submeshes) with per-batch textures
             for (const auto& batch : gpuModel.data.batches) {
                 if (applyGeosetFilter) {
                     if (instance.activeGeosets.find(batch.submeshId) == instance.activeGeosets.end()) {
@@ -1585,12 +1530,12 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
                     }
                 }
 
-	                // Resolve texture for this batch (prefer hair textures for hair geosets).
-	                GLuint texId = resolveBatchTexture(instance, gpuModel, batch);
+                // Resolve texture for this batch (prefer hair textures for hair geosets).
+                VkTexture* texPtr = resolveBatchTexture(instance, gpuModel, batch);
                 const uint16_t batchGroup = static_cast<uint16_t>(batch.submeshId / 100);
                 auto groupTexIt = instance.groupTextureOverrides.find(batchGroup);
-                if (groupTexIt != instance.groupTextureOverrides.end() && groupTexIt->second != 0) {
-                    texId = groupTexIt->second;
+                if (groupTexIt != instance.groupTextureOverrides.end() && groupTexIt->second != nullptr) {
+                    texPtr = groupTexIt->second;
                 }
 
                 // Respect M2 material blend mode for creature/character submeshes.
@@ -1607,27 +1552,28 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
                 if (instance.hasOverrideModelMatrix && blendMode >= 3) {
                     continue;
                 }
+
+                // Select pipeline based on blend mode
+                VkPipeline desiredPipeline;
                 switch (blendMode) {
-                    case 0: glBlendFunc(GL_ONE, GL_ZERO); break;                      // Opaque
-                    case 1: glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); break; // AlphaKey
-                    case 2: glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); break; // Alpha
-                    case 3: glBlendFunc(GL_SRC_ALPHA, GL_ONE); break;                 // Additive
-                    case 4: glBlendFunc(GL_DST_COLOR, GL_ZERO); break;                // Mod
-                    case 5: glBlendFunc(GL_DST_COLOR, GL_SRC_COLOR); break;           // Mod2x
-                    case 6: glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA); break;       // BlendAdd
-                    default: glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); break;
+                    case 0: desiredPipeline = opaquePipeline_; break;
+                    case 1: desiredPipeline = alphaTestPipeline_; break;
+                    case 2: desiredPipeline = alphaPipeline_; break;
+                    case 3:
+                    case 6: desiredPipeline = additivePipeline_; break;
+                    default: desiredPipeline = alphaPipeline_; break;
+                }
+                if (desiredPipeline != currentPipeline) {
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, desiredPipeline);
+                    currentPipeline = desiredPipeline;
                 }
 
-
                 // For body/equipment parts with white/fallback texture, use skin (type 1) texture.
-                // Groups that share the body skin atlas: 0=body, 3=gloves, 4=boots, 5=chest,
-                // 8=wristbands, 9=pelvis, 13=pants. Hair (group 1) and facial hair (group 2) do NOT.
-                if (texId == whiteTexture) {
+                if (texPtr == whiteTexture_.get()) {
                     uint16_t group = batchGroup;
                     bool isSkinGroup = (group == 0 || group == 3 || group == 4 || group == 5 ||
                                         group == 8 || group == 9 || group == 13);
                     if (isSkinGroup) {
-                        // Check if this batch's texture slot is a hair type (don't override hair)
                         uint32_t texType = 0;
                         if (batch.textureIndex < gpuModel.data.textureLookup.size()) {
                             uint16_t lk = gpuModel.data.textureLookup[batch.textureIndex];
@@ -1638,16 +1584,15 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
                         // Do NOT apply skin composite to hair (type 6) batches
                         if (texType != 6) {
                             for (size_t ti = 0; ti < gpuModel.textureIds.size(); ti++) {
-                                GLuint candidate = gpuModel.textureIds[ti];
+                                VkTexture* candidate = gpuModel.textureIds[ti];
                                 auto itO = instance.textureSlotOverrides.find(static_cast<uint16_t>(ti));
-                                if (itO != instance.textureSlotOverrides.end() && itO->second != 0) {
+                                if (itO != instance.textureSlotOverrides.end() && itO->second != nullptr) {
                                     candidate = itO->second;
                                 }
-                                if (candidate != whiteTexture && candidate != 0) {
-                                    // Only use type 1 (skin) textures as fallback
+                                if (candidate != whiteTexture_.get() && candidate != nullptr) {
                                     if (ti < gpuModel.data.textures.size() &&
                                         (gpuModel.data.textures[ti].type == 1 || gpuModel.data.textures[ti].type == 11)) {
-                                        texId = candidate;
+                                        texPtr = candidate;
                                         break;
                                     }
                                 }
@@ -1656,21 +1601,18 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
                     }
                 }
 
-                glActiveTexture(GL_TEXTURE0);
-                glBindTexture(GL_TEXTURE_2D, texId);
+                // Determine material properties
                 bool alphaCutout = false;
                 bool colorKeyBlack = false;
-                if (texId != 0 && texId != whiteTexture) {
-                    auto ait = textureHasAlphaById_.find(texId);
-                    alphaCutout = (ait != textureHasAlphaById_.end()) ? ait->second : false;
-                    auto cit = textureColorKeyBlackById_.find(texId);
-                    colorKeyBlack = (cit != textureColorKeyBlackById_.end()) ? cit->second : false;
+                if (texPtr != nullptr && texPtr != whiteTexture_.get()) {
+                    auto ait = textureHasAlphaByPtr_.find(texPtr);
+                    alphaCutout = (ait != textureHasAlphaByPtr_.end()) ? ait->second : false;
+                    auto cit = textureColorKeyBlackByPtr_.find(texPtr);
+                    colorKeyBlack = (cit != textureColorKeyBlackByPtr_.end()) ? cit->second : false;
                 }
                 const bool blendNeedsCutout = (blendMode == 1) || (blendMode >= 2 && !alphaCutout);
-                characterShader->setUniform("uAlphaTest", (blendNeedsCutout || alphaCutout) ? 1 : 0);
-                characterShader->setUniform("uColorKeyBlack", (blendNeedsCutout || colorKeyBlack) ? 1 : 0);
                 const bool unlit = ((materialFlags & 0x01) != 0) || (blendMode >= 3);
-                characterShader->setUniform("uUnlit", unlit ? 1 : 0);
+
                 float emissiveBoost = 1.0f;
                 glm::vec3 emissiveTint(1.0f, 1.0f, 1.0f);
                 // Keep custom warm/flicker treatment narrowly scoped to kobold candle flames.
@@ -1695,125 +1637,164 @@ void CharacterRenderer::render(const Camera& camera, const glm::mat4& view, cons
                     float flicker = 0.90f + 0.10f * f1 + 0.06f * f2 + 0.04f * f3;
                     flicker = std::clamp(flicker, 0.72f, 1.12f);
                     emissiveBoost = (blendMode >= 3) ? (2.4f * flicker) : (1.5f * flicker);
-                    // Warm flame bias to avoid green cast from source textures.
                     emissiveTint = glm::vec3(1.28f, 1.04f, 0.82f);
                 }
-                characterShader->setUniform("uEmissiveBoost", emissiveBoost);
-                characterShader->setUniform("uEmissiveTint", emissiveTint);
 
-                glDrawElements(GL_TRIANGLES,
-                               batch.indexCount,
-                               GL_UNSIGNED_SHORT,
-                               (void*)(batch.indexStart * sizeof(uint16_t)));
-            }
-        } else {
-            // Draw entire model with first texture
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, !gpuModel.textureIds.empty() ? gpuModel.textureIds[0] : whiteTexture);
-            characterShader->setUniform("uAlphaTest", 0);
-            characterShader->setUniform("uColorKeyBlack", 0);
-            characterShader->setUniform("uUnlit", 0);
-            characterShader->setUniform("uEmissiveBoost", 1.0f);
-            characterShader->setUniform("uEmissiveTint", glm::vec3(1.0f));
-
-            glDrawElements(GL_TRIANGLES,
-                          static_cast<GLsizei>(gpuModel.data.indices.size()),
-                          GL_UNSIGNED_SHORT,
-                          0);
-        }
-    }
-
-    glBindVertexArray(0);
-    glDisable(GL_BLEND);
-    glEnable(GL_CULL_FACE);  // Restore culling for other renderers
-}
-
-void CharacterRenderer::renderShadow(const glm::mat4& lightSpaceMatrix) {
-    if (instances.empty() || shadowCasterProgram == 0) {
-        return;
-    }
-
-    glUseProgram(shadowCasterProgram);
-
-    GLint lightSpaceLoc = glGetUniformLocation(shadowCasterProgram, "uLightSpaceMatrix");
-    GLint modelLoc = glGetUniformLocation(shadowCasterProgram, "uModel");
-    GLint texLoc = glGetUniformLocation(shadowCasterProgram, "uTexture");
-    GLint alphaTestLoc = glGetUniformLocation(shadowCasterProgram, "uAlphaTest");
-    GLint colorKeyLoc = glGetUniformLocation(shadowCasterProgram, "uColorKeyBlack");
-    GLint bonesLoc = glGetUniformLocation(shadowCasterProgram, "uBones[0]");
-    if (lightSpaceLoc < 0 || modelLoc < 0) {
-        return;
-    }
-
-    glUniformMatrix4fv(lightSpaceLoc, 1, GL_FALSE, &lightSpaceMatrix[0][0]);
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_FRONT);
-
-    if (texLoc >= 0) glUniform1i(texLoc, 0);
-    glActiveTexture(GL_TEXTURE0);
-
-    for (const auto& [_, instance] : instances) {
-        auto modelIt = models.find(instance.modelId);
-        if (modelIt == models.end()) continue;
-        const auto& gpuModel = modelIt->second;
-
-        glm::mat4 modelMat = instance.hasOverrideModelMatrix
-            ? instance.overrideModelMatrix
-            : getModelMatrix(instance);
-        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, &modelMat[0][0]);
-
-        if (!instance.boneMatrices.empty() && bonesLoc >= 0) {
-            int numBones = std::min(static_cast<int>(instance.boneMatrices.size()), MAX_BONES);
-            glUniformMatrix4fv(bonesLoc, numBones, GL_FALSE, &instance.boneMatrices[0][0][0]);
-        }
-
-        glBindVertexArray(gpuModel.vao);
-
-        if (!gpuModel.data.batches.empty()) {
-            for (const auto& batch : gpuModel.data.batches) {
-                GLuint texId = whiteTexture;
-                if (batch.textureIndex < gpuModel.data.textureLookup.size()) {
-                    uint16_t lookupIdx = gpuModel.data.textureLookup[batch.textureIndex];
-                    if (lookupIdx < gpuModel.textureIds.size()) {
-                        texId = gpuModel.textureIds[lookupIdx];
-                        auto itO = instance.textureSlotOverrides.find(lookupIdx);
-                        if (itO != instance.textureSlotOverrides.end() && itO->second != 0) {
-                            texId = itO->second;
-                        }
+                // Allocate and fill material descriptor set (set 1)
+                VkDescriptorSet materialSet = VK_NULL_HANDLE;
+                {
+                    VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+                    ai.descriptorPool = materialDescPool_;
+                    ai.descriptorSetCount = 1;
+                    ai.pSetLayouts = &materialSetLayout_;
+                    if (vkAllocateDescriptorSets(vkCtx_->getDevice(), &ai, &materialSet) != VK_SUCCESS) {
+                        continue; // Pool exhausted, skip this batch
                     }
                 }
 
-                bool alphaCutout = false;
-                bool colorKeyBlack = false;
-                if (texId != 0 && texId != whiteTexture) {
-                    auto itA = textureHasAlphaById_.find(texId);
-                    alphaCutout = (itA != textureHasAlphaById_.end()) ? itA->second : false;
-                    auto itC = textureColorKeyBlackById_.find(texId);
-                    colorKeyBlack = (itC != textureColorKeyBlackById_.end()) ? itC->second : false;
-                }
-                if (alphaTestLoc >= 0) glUniform1i(alphaTestLoc, alphaCutout ? 1 : 0);
-                if (colorKeyLoc >= 0) glUniform1i(colorKeyLoc, colorKeyBlack ? 1 : 0);
-                glBindTexture(GL_TEXTURE_2D, texId ? texId : whiteTexture);
+                // Create per-batch material UBO
+                CharMaterialUBO matData{};
+                matData.opacity = instance.opacity;
+                matData.alphaTest = (blendNeedsCutout || alphaCutout) ? 1 : 0;
+                matData.colorKeyBlack = (blendNeedsCutout || colorKeyBlack) ? 1 : 0;
+                matData.unlit = unlit ? 1 : 0;
+                matData.emissiveBoost = emissiveBoost;
+                matData.emissiveTintR = emissiveTint.r;
+                matData.emissiveTintG = emissiveTint.g;
+                matData.emissiveTintB = emissiveTint.b;
+                matData.specularIntensity = 0.5f;
 
-                glDrawElements(GL_TRIANGLES,
-                               batch.indexCount,
-                               GL_UNSIGNED_SHORT,
-                               (void*)(batch.indexStart * sizeof(uint16_t)));
+                // Create a small UBO for this batch's material
+                VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+                bci.size = sizeof(CharMaterialUBO);
+                bci.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+                VmaAllocationCreateInfo aci{};
+                aci.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+                aci.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+                VmaAllocationInfo allocInfo{};
+                ::VkBuffer matUBO = VK_NULL_HANDLE;
+                VmaAllocation matUBOAlloc = VK_NULL_HANDLE;
+                vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci, &matUBO, &matUBOAlloc, &allocInfo);
+                if (allocInfo.pMappedData) {
+                    memcpy(allocInfo.pMappedData, &matData, sizeof(CharMaterialUBO));
+                }
+
+                // Write descriptor set: binding 0 = texture, binding 1 = material UBO
+                VkTexture* bindTex = (texPtr && texPtr->isValid()) ? texPtr : whiteTexture_.get();
+                VkDescriptorImageInfo imgInfo = bindTex->descriptorInfo();
+                VkDescriptorBufferInfo bufInfo{};
+                bufInfo.buffer = matUBO;
+                bufInfo.offset = 0;
+                bufInfo.range = sizeof(CharMaterialUBO);
+
+                VkWriteDescriptorSet writes[2] = {};
+                writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                writes[0].dstSet = materialSet;
+                writes[0].dstBinding = 0;
+                writes[0].descriptorCount = 1;
+                writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                writes[0].pImageInfo = &imgInfo;
+
+                writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                writes[1].dstSet = materialSet;
+                writes[1].dstBinding = 1;
+                writes[1].descriptorCount = 1;
+                writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                writes[1].pBufferInfo = &bufInfo;
+
+                vkUpdateDescriptorSets(vkCtx_->getDevice(), 2, writes, 0, nullptr);
+
+                // Bind material descriptor set (set 1)
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        pipelineLayout_, 1, 1, &materialSet, 0, nullptr);
+
+                vkCmdDrawIndexed(cmd, batch.indexCount, 1, batch.indexStart, 0, 0);
+
+                // Queue the ephemeral UBO for deferred deletion (will be cleaned up after frame completes)
+                // For now, we leak these tiny UBOs -- they are freed when the descriptor pool is reset/destroyed.
+                // A proper solution would use a per-frame linear allocator.
+                // TODO: Use a per-frame staging buffer to avoid per-batch VMA allocations
+                vmaDestroyBuffer(vkCtx_->getAllocator(), matUBO, matUBOAlloc);
             }
         } else {
-            if (alphaTestLoc >= 0) glUniform1i(alphaTestLoc, 0);
-            if (colorKeyLoc >= 0) glUniform1i(colorKeyLoc, 0);
-            glBindTexture(GL_TEXTURE_2D, whiteTexture);
-            glDrawElements(GL_TRIANGLES,
-                           static_cast<GLsizei>(gpuModel.data.indices.size()),
-                           GL_UNSIGNED_SHORT,
-                           0);
+            // Draw entire model with first texture
+            VkTexture* texPtr = !gpuModel.textureIds.empty() ? gpuModel.textureIds[0] : whiteTexture_.get();
+            if (!texPtr || !texPtr->isValid()) texPtr = whiteTexture_.get();
+
+            // Allocate material descriptor set
+            VkDescriptorSet materialSet = VK_NULL_HANDLE;
+            {
+                VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+                ai.descriptorPool = materialDescPool_;
+                ai.descriptorSetCount = 1;
+                ai.pSetLayouts = &materialSetLayout_;
+                if (vkAllocateDescriptorSets(vkCtx_->getDevice(), &ai, &materialSet) != VK_SUCCESS) {
+                    continue;
+                }
+            }
+
+            CharMaterialUBO matData{};
+            matData.opacity = instance.opacity;
+            matData.alphaTest = 0;
+            matData.colorKeyBlack = 0;
+            matData.unlit = 0;
+            matData.emissiveBoost = 1.0f;
+            matData.emissiveTintR = 1.0f;
+            matData.emissiveTintG = 1.0f;
+            matData.emissiveTintB = 1.0f;
+            matData.specularIntensity = 0.5f;
+
+            VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+            bci.size = sizeof(CharMaterialUBO);
+            bci.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+            VmaAllocationCreateInfo aci{};
+            aci.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+            aci.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+            VmaAllocationInfo allocInfo{};
+            ::VkBuffer matUBO = VK_NULL_HANDLE;
+            VmaAllocation matUBOAlloc = VK_NULL_HANDLE;
+            vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci, &matUBO, &matUBOAlloc, &allocInfo);
+            if (allocInfo.pMappedData) {
+                memcpy(allocInfo.pMappedData, &matData, sizeof(CharMaterialUBO));
+            }
+
+            VkDescriptorImageInfo imgInfo = texPtr->descriptorInfo();
+            VkDescriptorBufferInfo bufInfo{};
+            bufInfo.buffer = matUBO;
+            bufInfo.offset = 0;
+            bufInfo.range = sizeof(CharMaterialUBO);
+
+            VkWriteDescriptorSet writes[2] = {};
+            writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[0].dstSet = materialSet;
+            writes[0].dstBinding = 0;
+            writes[0].descriptorCount = 1;
+            writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[0].pImageInfo = &imgInfo;
+
+            writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[1].dstSet = materialSet;
+            writes[1].dstBinding = 1;
+            writes[1].descriptorCount = 1;
+            writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            writes[1].pBufferInfo = &bufInfo;
+
+            vkUpdateDescriptorSets(vkCtx_->getDevice(), 2, writes, 0, nullptr);
+
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    pipelineLayout_, 1, 1, &materialSet, 0, nullptr);
+
+            vkCmdDrawIndexed(cmd, gpuModel.indexCount, 1, 0, 0, 0);
+
+            vmaDestroyBuffer(vkCtx_->getAllocator(), matUBO, matUBOAlloc);
         }
     }
+}
 
-    glBindVertexArray(0);
-    glCullFace(GL_BACK);
+void CharacterRenderer::renderShadow(VkCommandBuffer cmd, VkDescriptorSet perFrameSet) {
+    // Phase 6 stub -- shadow rendering will be implemented with shadow pipeline
+    (void)cmd;
+    (void)perFrameSet;
 }
 
 glm::mat4 CharacterRenderer::getModelMatrix(const CharacterInstance& instance) const {
@@ -1931,17 +1912,17 @@ void CharacterRenderer::setActiveGeosets(uint32_t instanceId, const std::unorder
     }
 }
 
-void CharacterRenderer::setGroupTextureOverride(uint32_t instanceId, uint16_t geosetGroup, GLuint textureId) {
+void CharacterRenderer::setGroupTextureOverride(uint32_t instanceId, uint16_t geosetGroup, VkTexture* texture) {
     auto it = instances.find(instanceId);
     if (it != instances.end()) {
-        it->second.groupTextureOverrides[geosetGroup] = textureId;
+        it->second.groupTextureOverrides[geosetGroup] = texture;
     }
 }
 
-void CharacterRenderer::setTextureSlotOverride(uint32_t instanceId, uint16_t textureSlot, GLuint textureId) {
+void CharacterRenderer::setTextureSlotOverride(uint32_t instanceId, uint16_t textureSlot, VkTexture* texture) {
     auto it = instances.find(instanceId);
     if (it != instances.end()) {
-        it->second.textureSlotOverrides[textureSlot] = textureId;
+        it->second.textureSlotOverrides[textureSlot] = texture;
     }
 }
 
@@ -1977,6 +1958,9 @@ void CharacterRenderer::removeInstance(uint32_t instanceId) {
     for (const auto& wa : attachments) {
         removeInstance(wa.weaponInstanceId);
     }
+
+    // Destroy bone buffers for this instance
+    destroyInstanceBones(it->second);
 
     instances.erase(it);
 }
@@ -2138,9 +2122,9 @@ bool CharacterRenderer::attachWeapon(uint32_t charInstanceId, uint32_t attachmen
 
     // Apply weapon texture if provided
     if (!texturePath.empty()) {
-        GLuint texId = loadTexture(texturePath);
-        if (texId != whiteTexture) {
-            setModelTexture(weaponModelId, 0, texId);
+        VkTexture* texPtr = loadTexture(texturePath);
+        if (texPtr != whiteTexture_.get()) {
+            setModelTexture(weaponModelId, 0, texPtr);
         }
     }
 

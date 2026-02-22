@@ -1,316 +1,279 @@
 #include "rendering/clouds.hpp"
-#include "rendering/camera.hpp"
-#include "rendering/shader.hpp"
+#include "rendering/vk_context.hpp"
+#include "rendering/vk_shader.hpp"
+#include "rendering/vk_pipeline.hpp"
+#include "rendering/vk_frame_data.hpp"
+#include "rendering/vk_utils.hpp"
 #include "core/logger.hpp"
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
 #include <cmath>
 
 namespace wowee {
 namespace rendering {
 
-Clouds::Clouds() {
-}
+Clouds::Clouds() = default;
 
 Clouds::~Clouds() {
-    cleanup();
+    shutdown();
 }
 
-bool Clouds::initialize() {
-    LOG_INFO("Initializing cloud system");
+bool Clouds::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout) {
+    LOG_INFO("Initializing cloud system (Vulkan)");
 
-    // Generate cloud dome mesh
-    generateMesh();
+    vkCtx_ = ctx;
+    VkDevice device = vkCtx_->getDevice();
 
-    // Create VAO
-    glGenVertexArrays(1, &vao);
-    glGenBuffers(1, &vbo);
-    glGenBuffers(1, &ebo);
-
-    glBindVertexArray(vao);
-
-    // Upload vertex data
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER,
-                 vertices.size() * sizeof(glm::vec3),
-                 vertices.data(),
-                 GL_STATIC_DRAW);
-
-    // Upload index data
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
-                 indices.size() * sizeof(unsigned int),
-                 indices.data(),
-                 GL_STATIC_DRAW);
-
-    // Position attribute
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
-    glEnableVertexAttribArray(0);
-
-    glBindVertexArray(0);
-
-    // Create shader
-    shader = std::make_unique<Shader>();
-
-    // Cloud vertex shader
-    const char* vertexShaderSource = R"(
-        #version 330 core
-        layout (location = 0) in vec3 aPos;
-
-        uniform mat4 uView;
-        uniform mat4 uProjection;
-
-        out vec3 WorldPos;
-        out vec3 LocalPos;
-
-        void main() {
-            LocalPos = aPos;
-            WorldPos = aPos;
-
-            // Remove translation from view matrix (billboard effect)
-            mat4 viewNoTranslation = uView;
-            viewNoTranslation[3][0] = 0.0;
-            viewNoTranslation[3][1] = 0.0;
-            viewNoTranslation[3][2] = 0.0;
-
-            vec4 pos = uProjection * viewNoTranslation * vec4(aPos, 1.0);
-            gl_Position = pos.xyww;  // Put at far plane
-        }
-    )";
-
-    // Cloud fragment shader with procedural noise
-    const char* fragmentShaderSource = R"(
-        #version 330 core
-        in vec3 WorldPos;
-        in vec3 LocalPos;
-
-        uniform vec3 uCloudColor;
-        uniform float uDensity;
-        uniform float uWindOffset;
-
-        out vec4 FragColor;
-
-        // Simple 3D noise function
-        float hash(vec3 p) {
-            p = fract(p * vec3(0.1031, 0.1030, 0.0973));
-            p += dot(p, p.yxz + 19.19);
-            return fract((p.x + p.y) * p.z);
-        }
-
-        float noise(vec3 p) {
-            vec3 i = floor(p);
-            vec3 f = fract(p);
-            f = f * f * (3.0 - 2.0 * f);
-
-            return mix(
-                mix(mix(hash(i + vec3(0,0,0)), hash(i + vec3(1,0,0)), f.x),
-                    mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
-                mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x),
-                    mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y),
-                f.z);
-        }
-
-        // Fractal Brownian Motion for cloud-like patterns
-        float fbm(vec3 p) {
-            float value = 0.0;
-            float amplitude = 0.5;
-            float frequency = 1.0;
-
-            for (int i = 0; i < 4; i++) {
-                value += amplitude * noise(p * frequency);
-                frequency *= 2.0;
-                amplitude *= 0.5;
-            }
-
-            return value;
-        }
-
-        void main() {
-            // Normalize position for noise sampling
-            vec3 pos = normalize(LocalPos);
-
-            // Only render on upper hemisphere
-            if (pos.y < 0.1) {
-                discard;
-            }
-
-            // Apply wind offset to x coordinate
-            vec3 samplePos = vec3(pos.x + uWindOffset, pos.y, pos.z) * 3.0;
-
-            // Generate two cloud layers
-            float clouds1 = fbm(samplePos * 1.0);
-            float clouds2 = fbm(samplePos * 2.8 + vec3(100.0));
-
-            // Combine layers
-            float cloudPattern = clouds1 * 0.6 + clouds2 * 0.4;
-
-            // Apply density threshold to create cloud shapes with softer transition.
-            float cloudStart = 0.34 + (1.0 - uDensity) * 0.26;
-            float cloudEnd = 0.74;
-            float cloudMask = smoothstep(cloudStart, cloudEnd, cloudPattern);
-
-            // Fuzzy edge breakup: only modulate near the silhouette so cloud cores stay stable.
-            float edgeNoise = fbm(samplePos * 7.0 + vec3(41.0));
-            float edgeBand = 1.0 - smoothstep(0.30, 0.72, cloudMask); // 1 near edge, 0 in center
-            float fringe = mix(1.0, smoothstep(0.34, 0.80, edgeNoise), edgeBand * 0.95);
-            cloudMask *= fringe;
-
-            // Fade clouds near horizon
-            float horizonFade = smoothstep(0.0, 0.3, pos.y);
-            cloudMask *= horizonFade;
-
-            // Reduce edge contrast against skybox: soften + lower opacity.
-            float edgeSoften = smoothstep(0.0, 0.80, cloudMask);
-            edgeSoften = mix(0.45, 1.0, edgeSoften);
-            float alpha = cloudMask * edgeSoften * 0.70;
-
-            if (alpha < 0.05) {
-                discard;
-            }
-
-            FragColor = vec4(uCloudColor, alpha);
-        }
-    )";
-
-    if (!shader->loadFromSource(vertexShaderSource, fragmentShaderSource)) {
-        LOG_ERROR("Failed to create cloud shader");
+    // ------------------------------------------------------------------ shaders
+    VkShaderModule vertModule;
+    if (!vertModule.loadFromFile(device, "assets/shaders/clouds.vert.spv")) {
+        LOG_ERROR("Failed to load clouds vertex shader");
         return false;
     }
 
-    LOG_INFO("Cloud system initialized: ", triangleCount, " triangles");
+    VkShaderModule fragModule;
+    if (!fragModule.loadFromFile(device, "assets/shaders/clouds.frag.spv")) {
+        LOG_ERROR("Failed to load clouds fragment shader");
+        return false;
+    }
+
+    VkPipelineShaderStageCreateInfo vertStage = vertModule.stageInfo(VK_SHADER_STAGE_VERTEX_BIT);
+    VkPipelineShaderStageCreateInfo fragStage = fragModule.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT);
+
+    // ------------------------------------------------------------------ push constants
+    // Fragment-only push: vec4 cloudColor + float density + float windOffset = 24 bytes
+    VkPushConstantRange pushRange{};
+    pushRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushRange.offset     = 0;
+    pushRange.size       = sizeof(CloudPush); // 24 bytes
+
+    // ------------------------------------------------------------------ pipeline layout
+    pipelineLayout_ = createPipelineLayout(device, {perFrameLayout}, {pushRange});
+    if (pipelineLayout_ == VK_NULL_HANDLE) {
+        LOG_ERROR("Failed to create clouds pipeline layout");
+        return false;
+    }
+
+    // ------------------------------------------------------------------ vertex input
+    // Vertex: vec3 pos only, stride = 12 bytes
+    VkVertexInputBindingDescription binding{};
+    binding.binding   = 0;
+    binding.stride    = sizeof(glm::vec3); // 12 bytes
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription posAttr{};
+    posAttr.location = 0;
+    posAttr.binding  = 0;
+    posAttr.format   = VK_FORMAT_R32G32B32_SFLOAT;
+    posAttr.offset   = 0;
+
+    std::vector<VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    // ------------------------------------------------------------------ pipeline
+    pipeline_ = PipelineBuilder()
+        .setShaders(vertStage, fragStage)
+        .setVertexInput({binding}, {posAttr})
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+        .setDepthTest(true, false, VK_COMPARE_OP_LESS_OR_EQUAL) // test on, write off (sky layer)
+        .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+        .setLayout(pipelineLayout_)
+        .setRenderPass(vkCtx_->getImGuiRenderPass())
+        .setDynamicStates(dynamicStates)
+        .build(device);
+
+    vertModule.destroy();
+    fragModule.destroy();
+
+    if (pipeline_ == VK_NULL_HANDLE) {
+        LOG_ERROR("Failed to create clouds pipeline");
+        return false;
+    }
+
+    // ------------------------------------------------------------------ geometry
+    generateMesh();
+    createBuffers();
+
+    LOG_INFO("Cloud system initialized: ", indexCount_ / 3, " triangles");
     return true;
 }
 
-void Clouds::generateMesh() {
-    vertices.clear();
-    indices.clear();
+void Clouds::shutdown() {
+    destroyBuffers();
 
-    // Generate hemisphere mesh for clouds
-    for (int ring = 0; ring <= RINGS; ++ring) {
-        float phi = (ring / static_cast<float>(RINGS)) * (M_PI * 0.5f);  // 0 to π/2
-        float y = RADIUS * cosf(phi);
-        float ringRadius = RADIUS * sinf(phi);
-
-        for (int segment = 0; segment <= SEGMENTS; ++segment) {
-            float theta = (segment / static_cast<float>(SEGMENTS)) * (2.0f * M_PI);
-            float x = ringRadius * cosf(theta);
-            float z = ringRadius * sinf(theta);
-
-            vertices.push_back(glm::vec3(x, y, z));
+    if (vkCtx_) {
+        VkDevice device = vkCtx_->getDevice();
+        if (pipeline_ != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device, pipeline_, nullptr);
+            pipeline_ = VK_NULL_HANDLE;
+        }
+        if (pipelineLayout_ != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device, pipelineLayout_, nullptr);
+            pipelineLayout_ = VK_NULL_HANDLE;
         }
     }
 
-    // Generate indices
-    for (int ring = 0; ring < RINGS; ++ring) {
-        for (int segment = 0; segment < SEGMENTS; ++segment) {
-            int current = ring * (SEGMENTS + 1) + segment;
-            int next = current + SEGMENTS + 1;
-
-            // Two triangles per quad
-            indices.push_back(current);
-            indices.push_back(next);
-            indices.push_back(current + 1);
-
-            indices.push_back(current + 1);
-            indices.push_back(next);
-            indices.push_back(next + 1);
-        }
-    }
-
-    triangleCount = static_cast<int>(indices.size()) / 3;
+    vkCtx_ = nullptr;
 }
 
-void Clouds::update(float deltaTime) {
-    if (!enabled) {
+// ---------------------------------------------------------------------------
+// Render
+// ---------------------------------------------------------------------------
+
+void Clouds::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, float timeOfDay) {
+    if (!enabled_ || pipeline_ == VK_NULL_HANDLE) {
         return;
     }
 
-    // Accumulate wind movement
-    windOffset += deltaTime * windSpeed * 0.05f;  // Slow drift
+    glm::vec3 color = getCloudColor(timeOfDay);
+
+    CloudPush push{};
+    push.cloudColor  = glm::vec4(color, 1.0f);
+    push.density     = density_;
+    push.windOffset  = windOffset_;
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
+
+    // Bind per-frame UBO (set 0 — vertex shader reads view/projection from here)
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_,
+        0, 1, &perFrameSet, 0, nullptr);
+
+    // Push cloud params to fragment shader
+    vkCmdPushConstants(cmd, pipelineLayout_,
+        VK_SHADER_STAGE_FRAGMENT_BIT,
+        0, sizeof(push), &push);
+
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer_, &offset);
+    vkCmdBindIndexBuffer(cmd, indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
+
+    vkCmdDrawIndexed(cmd, static_cast<uint32_t>(indexCount_), 1, 0, 0, 0);
 }
 
+// ---------------------------------------------------------------------------
+// Update
+// ---------------------------------------------------------------------------
+
+void Clouds::update(float deltaTime) {
+    if (!enabled_) {
+        return;
+    }
+    windOffset_ += deltaTime * windSpeed_ * 0.05f; // Slow drift
+}
+
+// ---------------------------------------------------------------------------
+// Cloud colour (unchanged logic from GL version)
+// ---------------------------------------------------------------------------
+
 glm::vec3 Clouds::getCloudColor(float timeOfDay) const {
-    // Base cloud color (white/light gray)
     glm::vec3 dayColor(0.95f, 0.95f, 1.0f);
 
-    // Dawn clouds (orange tint)
     if (timeOfDay >= 5.0f && timeOfDay < 7.0f) {
+        // Dawn — orange tint fading to day
         float t = (timeOfDay - 5.0f) / 2.0f;
-        glm::vec3 dawnColor(1.0f, 0.7f, 0.5f);
-        return glm::mix(dawnColor, dayColor, t);
-    }
-    // Dusk clouds (orange/pink tint)
-    else if (timeOfDay >= 17.0f && timeOfDay < 19.0f) {
+        return glm::mix(glm::vec3(1.0f, 0.7f, 0.5f), dayColor, t);
+    } else if (timeOfDay >= 17.0f && timeOfDay < 19.0f) {
+        // Dusk — day fading to orange/pink
         float t = (timeOfDay - 17.0f) / 2.0f;
-        glm::vec3 duskColor(1.0f, 0.6f, 0.4f);
-        return glm::mix(dayColor, duskColor, t);
-    }
-    // Night clouds (dark blue-gray)
-    else if (timeOfDay >= 20.0f || timeOfDay < 5.0f) {
+        return glm::mix(dayColor, glm::vec3(1.0f, 0.6f, 0.4f), t);
+    } else if (timeOfDay >= 20.0f || timeOfDay < 5.0f) {
+        // Night — dark blue-grey
         return glm::vec3(0.15f, 0.15f, 0.25f);
     }
 
     return dayColor;
 }
 
-void Clouds::render(const Camera& camera, float timeOfDay) {
-    if (!enabled || !shader) {
-        return;
-    }
-
-    // Enable blending for transparent clouds
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    // Disable depth write (clouds are in sky)
-    glDepthMask(GL_FALSE);
-
-    // Enable depth test so clouds are behind skybox
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LEQUAL);
-
-    shader->use();
-
-    // Set matrices
-    glm::mat4 view = camera.getViewMatrix();
-    glm::mat4 projection = camera.getProjectionMatrix();
-
-    shader->setUniform("uView", view);
-    shader->setUniform("uProjection", projection);
-
-    // Set cloud parameters
-    glm::vec3 cloudColor = getCloudColor(timeOfDay);
-    shader->setUniform("uCloudColor", cloudColor);
-    shader->setUniform("uDensity", density);
-    shader->setUniform("uWindOffset", windOffset);
-
-    // Render
-    glBindVertexArray(vao);
-    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indices.size()), GL_UNSIGNED_INT, 0);
-    glBindVertexArray(0);
-
-    // Restore state
-    glDisable(GL_BLEND);
-    glDepthMask(GL_TRUE);
-    glDepthFunc(GL_LESS);
-}
+// ---------------------------------------------------------------------------
+// Density setter
+// ---------------------------------------------------------------------------
 
 void Clouds::setDensity(float density) {
-    this->density = glm::clamp(density, 0.0f, 1.0f);
+    density_ = glm::clamp(density, 0.0f, 1.0f);
 }
 
-void Clouds::cleanup() {
-    if (vao) {
-        glDeleteVertexArrays(1, &vao);
-        vao = 0;
+// ---------------------------------------------------------------------------
+// Mesh generation — identical algorithm to GL version
+// ---------------------------------------------------------------------------
+
+void Clouds::generateMesh() {
+    vertices_.clear();
+    indices_.clear();
+
+    // Upper hemisphere
+    for (int ring = 0; ring <= RINGS; ++ring) {
+        float phi        = (ring / static_cast<float>(RINGS)) * (static_cast<float>(M_PI) * 0.5f);
+        float y          = RADIUS * std::cos(phi);
+        float ringRadius = RADIUS * std::sin(phi);
+
+        for (int seg = 0; seg <= SEGMENTS; ++seg) {
+            float theta = (seg / static_cast<float>(SEGMENTS)) * (2.0f * static_cast<float>(M_PI));
+            float x = ringRadius * std::cos(theta);
+            float z = ringRadius * std::sin(theta);
+            vertices_.push_back(glm::vec3(x, y, z));
+        }
     }
-    if (vbo) {
-        glDeleteBuffers(1, &vbo);
-        vbo = 0;
+
+    for (int ring = 0; ring < RINGS; ++ring) {
+        for (int seg = 0; seg < SEGMENTS; ++seg) {
+            uint32_t current = static_cast<uint32_t>(ring * (SEGMENTS + 1) + seg);
+            uint32_t next    = current + static_cast<uint32_t>(SEGMENTS + 1);
+
+            indices_.push_back(current);
+            indices_.push_back(next);
+            indices_.push_back(current + 1);
+
+            indices_.push_back(current + 1);
+            indices_.push_back(next);
+            indices_.push_back(next + 1);
+        }
     }
-    if (ebo) {
-        glDeleteBuffers(1, &ebo);
-        ebo = 0;
+
+    indexCount_ = static_cast<int>(indices_.size());
+}
+
+// ---------------------------------------------------------------------------
+// GPU buffer management
+// ---------------------------------------------------------------------------
+
+void Clouds::createBuffers() {
+    AllocatedBuffer vbuf = uploadBuffer(*vkCtx_,
+        vertices_.data(),
+        vertices_.size() * sizeof(glm::vec3),
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    vertexBuffer_ = vbuf.buffer;
+    vertexAlloc_  = vbuf.allocation;
+
+    AllocatedBuffer ibuf = uploadBuffer(*vkCtx_,
+        indices_.data(),
+        indices_.size() * sizeof(uint32_t),
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    indexBuffer_ = ibuf.buffer;
+    indexAlloc_  = ibuf.allocation;
+
+    // CPU data no longer needed
+    vertices_.clear();
+    vertices_.shrink_to_fit();
+    indices_.clear();
+    indices_.shrink_to_fit();
+}
+
+void Clouds::destroyBuffers() {
+    if (!vkCtx_) return;
+
+    VmaAllocator allocator = vkCtx_->getAllocator();
+
+    if (vertexBuffer_ != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(allocator, vertexBuffer_, vertexAlloc_);
+        vertexBuffer_ = VK_NULL_HANDLE;
+        vertexAlloc_  = VK_NULL_HANDLE;
+    }
+    if (indexBuffer_ != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(allocator, indexBuffer_, indexAlloc_);
+        indexBuffer_ = VK_NULL_HANDLE;
+        indexAlloc_  = VK_NULL_HANDLE;
     }
 }
 

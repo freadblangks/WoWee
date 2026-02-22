@@ -1,9 +1,11 @@
 #include "rendering/lens_flare.hpp"
 #include "rendering/camera.hpp"
-#include "rendering/shader.hpp"
+#include "rendering/vk_context.hpp"
+#include "rendering/vk_shader.hpp"
+#include "rendering/vk_pipeline.hpp"
+#include "rendering/vk_utils.hpp"
 #include "core/logger.hpp"
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
 #include <cmath>
 
 namespace wowee {
@@ -13,23 +15,19 @@ LensFlare::LensFlare() {
 }
 
 LensFlare::~LensFlare() {
-    cleanup();
+    shutdown();
 }
 
-bool LensFlare::initialize() {
+bool LensFlare::initialize(VkContext* ctx, VkDescriptorSetLayout /*perFrameLayout*/) {
     LOG_INFO("Initializing lens flare system");
+
+    vkCtx = ctx;
+    VkDevice device = vkCtx->getDevice();
 
     // Generate flare elements
     generateFlareElements();
 
-    // Create VAO and VBO for quad rendering
-    glGenVertexArrays(1, &vao);
-    glGenBuffers(1, &vbo);
-
-    glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-
-    // Position (x, y) and UV (u, v) for a quad
+    // Upload static quad vertex buffer (pos2 + uv2, 6 vertices)
     float quadVertices[] = {
         // Pos      UV
         -0.5f, -0.5f, 0.0f, 0.0f,
@@ -40,86 +38,112 @@ bool LensFlare::initialize() {
         -0.5f,  0.5f, 0.0f, 1.0f
     };
 
-    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
+    AllocatedBuffer vbuf = uploadBuffer(*vkCtx,
+        quadVertices,
+        sizeof(quadVertices),
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    vertexBuffer = vbuf.buffer;
+    vertexAlloc  = vbuf.allocation;
 
-    // Position attribute
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
+    // Load SPIR-V shaders
+    VkShaderModule vertModule;
+    if (!vertModule.loadFromFile(device, "assets/shaders/lens_flare.vert.spv")) {
+        LOG_ERROR("Failed to load lens flare vertex shader");
+        return false;
+    }
 
-    // UV attribute
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-    glEnableVertexAttribArray(1);
+    VkShaderModule fragModule;
+    if (!fragModule.loadFromFile(device, "assets/shaders/lens_flare.frag.spv")) {
+        LOG_ERROR("Failed to load lens flare fragment shader");
+        return false;
+    }
 
-    glBindVertexArray(0);
+    VkPipelineShaderStageCreateInfo vertStage = vertModule.stageInfo(VK_SHADER_STAGE_VERTEX_BIT);
+    VkPipelineShaderStageCreateInfo fragStage = fragModule.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT);
 
-    // Create shader
-    shader = std::make_unique<Shader>();
+    // Push constant range: FlarePushConstants = 32 bytes, used by both vert and frag
+    VkPushConstantRange pushRange{};
+    pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushRange.offset = 0;
+    pushRange.size = sizeof(FlarePushConstants);  // 32 bytes
 
-    // Lens flare vertex shader (2D screen-space rendering)
-    const char* vertexShaderSource = R"(
-        #version 330 core
-        layout (location = 0) in vec2 aPos;
-        layout (location = 1) in vec2 aUV;
+    // No descriptor set layouts — lens flare only uses push constants
+    pipelineLayout = createPipelineLayout(device, {}, {pushRange});
+    if (pipelineLayout == VK_NULL_HANDLE) {
+        LOG_ERROR("Failed to create lens flare pipeline layout");
+        return false;
+    }
 
-        uniform vec2 uPosition;  // Screen-space position (-1 to 1)
-        uniform float uSize;      // Size in screen space
-        uniform float uAspectRatio;
+    // Vertex input: pos2 + uv2, stride = 4 * sizeof(float)
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = 4 * sizeof(float);
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-        out vec2 TexCoord;
+    VkVertexInputAttributeDescription posAttr{};
+    posAttr.location = 0;
+    posAttr.binding = 0;
+    posAttr.format = VK_FORMAT_R32G32_SFLOAT;
+    posAttr.offset = 0;
 
-        void main() {
-            // Scale by size and aspect ratio
-            vec2 scaledPos = aPos * uSize;
-            scaledPos.x /= uAspectRatio;
+    VkVertexInputAttributeDescription uvAttr{};
+    uvAttr.location = 1;
+    uvAttr.binding = 0;
+    uvAttr.format = VK_FORMAT_R32G32_SFLOAT;
+    uvAttr.offset = 2 * sizeof(float);
 
-            // Translate to position
-            vec2 finalPos = scaledPos + uPosition;
+    // Dynamic viewport and scissor
+    std::vector<VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
 
-            gl_Position = vec4(finalPos, 0.0, 1.0);
-            TexCoord = aUV;
-        }
-    )";
+    pipeline = PipelineBuilder()
+        .setShaders(vertStage, fragStage)
+        .setVertexInput({binding}, {posAttr, uvAttr})
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+        .setNoDepthTest()
+        .setColorBlendAttachment(PipelineBuilder::blendAdditive())
+        .setLayout(pipelineLayout)
+        .setRenderPass(vkCtx->getImGuiRenderPass())
+        .setDynamicStates(dynamicStates)
+        .build(device);
 
-    // Lens flare fragment shader (circular gradient)
-    const char* fragmentShaderSource = R"(
-        #version 330 core
-        in vec2 TexCoord;
+    // Shader modules can be freed after pipeline creation
+    vertModule.destroy();
+    fragModule.destroy();
 
-        uniform vec3 uColor;
-        uniform float uBrightness;
-
-        out vec4 FragColor;
-
-        void main() {
-            // Distance from center
-            vec2 center = vec2(0.5);
-            float dist = distance(TexCoord, center);
-
-            // Circular gradient with soft edges
-            float alpha = smoothstep(0.5, 0.0, dist);
-
-            // Add some variation - brighter in center
-            float centerGlow = smoothstep(0.5, 0.0, dist * 2.0);
-            alpha = max(alpha * 0.3, centerGlow);
-
-            // Apply brightness
-            alpha *= uBrightness;
-
-            if (alpha < 0.01) {
-                discard;
-            }
-
-            FragColor = vec4(uColor, alpha);
-        }
-    )";
-
-    if (!shader->loadFromSource(vertexShaderSource, fragmentShaderSource)) {
-        LOG_ERROR("Failed to create lens flare shader");
+    if (pipeline == VK_NULL_HANDLE) {
+        LOG_ERROR("Failed to create lens flare pipeline");
         return false;
     }
 
     LOG_INFO("Lens flare system initialized: ", flareElements.size(), " elements");
     return true;
+}
+
+void LensFlare::shutdown() {
+    if (vkCtx) {
+        VkDevice device = vkCtx->getDevice();
+        VmaAllocator allocator = vkCtx->getAllocator();
+
+        if (vertexBuffer != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(allocator, vertexBuffer, vertexAlloc);
+            vertexBuffer = VK_NULL_HANDLE;
+            vertexAlloc  = VK_NULL_HANDLE;
+        }
+        if (pipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device, pipeline, nullptr);
+            pipeline = VK_NULL_HANDLE;
+        }
+        if (pipelineLayout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+            pipelineLayout = VK_NULL_HANDLE;
+        }
+    }
+
+    vkCtx = nullptr;
 }
 
 void LensFlare::generateFlareElements() {
@@ -205,8 +229,8 @@ float LensFlare::calculateSunVisibility(const Camera& camera, const glm::vec3& s
     return angleFactor * edgeFade;
 }
 
-void LensFlare::render(const Camera& camera, const glm::vec3& sunPosition, float timeOfDay) {
-    if (!enabled || !shader) {
+void LensFlare::render(VkCommandBuffer cmd, const Camera& camera, const glm::vec3& sunPosition, float timeOfDay) {
+    if (!enabled || pipeline == VK_NULL_HANDLE) {
         return;
     }
 
@@ -237,60 +261,41 @@ void LensFlare::render(const Camera& camera, const glm::vec3& sunPosition, float
     // Vector from sun to screen center
     glm::vec2 sunToCenter = screenCenter - sunScreen;
 
-    // Enable additive blending for flare effect
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE);  // Additive blending
-
-    // Disable depth test (render on top)
-    glDisable(GL_DEPTH_TEST);
-
-    shader->use();
-
-    // Set aspect ratio
     float aspectRatio = camera.getAspectRatio();
-    shader->setUniform("uAspectRatio", aspectRatio);
 
-    glBindVertexArray(vao);
+    // Bind pipeline
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+    // Bind vertex buffer
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer, &offset);
 
     // Render each flare element
     for (const auto& element : flareElements) {
         // Calculate position along sun-to-center axis
         glm::vec2 position = sunScreen + sunToCenter * element.position;
 
-        // Set uniforms
-        shader->setUniform("uPosition", position);
-        shader->setUniform("uSize", element.size);
-        shader->setUniform("uColor", element.color);
-
         // Apply visibility and intensity
         float brightness = element.brightness * visibility * intensityMultiplier;
-        shader->setUniform("uBrightness", brightness);
 
-        // Render quad
-        glDrawArrays(GL_TRIANGLES, 0, VERTICES_PER_QUAD);
+        // Set push constants
+        FlarePushConstants push{};
+        push.position = position;
+        push.size = element.size;
+        push.aspectRatio = aspectRatio;
+        push.colorBrightness = glm::vec4(element.color, brightness);
+
+        vkCmdPushConstants(cmd, pipelineLayout,
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            0, sizeof(push), &push);
+
+        // Draw quad
+        vkCmdDraw(cmd, VERTICES_PER_QUAD, 1, 0, 0);
     }
-
-    glBindVertexArray(0);
-
-    // Restore state
-    glEnable(GL_DEPTH_TEST);
-    glDisable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);  // Restore standard blending
 }
 
 void LensFlare::setIntensity(float intensity) {
     this->intensityMultiplier = glm::clamp(intensity, 0.0f, 2.0f);
-}
-
-void LensFlare::cleanup() {
-    if (vao) {
-        glDeleteVertexArrays(1, &vao);
-        vao = 0;
-    }
-    if (vbo) {
-        glDeleteBuffers(1, &vbo);
-        vbo = 0;
-    }
 }
 
 } // namespace rendering

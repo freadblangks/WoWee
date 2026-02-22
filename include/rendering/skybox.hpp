@@ -2,12 +2,13 @@
 
 #include <memory>
 #include <glm/glm.hpp>
+#include <vulkan/vulkan.h>
+#include <vk_mem_alloc.h>
 
 namespace wowee {
 namespace rendering {
 
-class Shader;
-class Camera;
+class VkContext;
 
 /**
  * Skybox renderer
@@ -20,15 +21,16 @@ public:
     Skybox();
     ~Skybox();
 
-    bool initialize();
+    bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout);
     void shutdown();
 
     /**
      * Render the skybox
-     * @param camera Camera for view matrix (position is ignored for skybox)
+     * @param cmd Command buffer to record into
+     * @param perFrameSet Per-frame descriptor set (set 0, contains camera UBO)
      * @param timeOfDay Time of day in hours (0-24), affects sky color
      */
-    void render(const Camera& camera, float timeOfDay = 12.0f);
+    void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, float timeOfDay = 12.0f);
 
     /**
      * Enable/disable skybox rendering
@@ -66,11 +68,16 @@ private:
     glm::vec3 getSkyColor(float altitude, float time) const;
     glm::vec3 getZenithColor(float time) const;
 
-    std::unique_ptr<Shader> skyShader;
+    VkContext* vkCtx = nullptr;
 
-    uint32_t vao = 0;
-    uint32_t vbo = 0;
-    uint32_t ebo = 0;
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+
+    VkBuffer vertexBuffer = VK_NULL_HANDLE;
+    VmaAllocation vertexAlloc = VK_NULL_HANDLE;
+    VkBuffer indexBuffer = VK_NULL_HANDLE;
+    VmaAllocation indexAlloc = VK_NULL_HANDLE;
+
     int indexCount = 0;
 
     float timeOfDay = 12.0f;  // Default: noon

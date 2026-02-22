@@ -5,6 +5,7 @@
 #include "rendering/clouds.hpp"
 #include "rendering/lens_flare.hpp"
 #include "rendering/camera.hpp"
+#include "rendering/vk_context.hpp"
 #include "core/logger.hpp"
 
 namespace wowee {
@@ -16,7 +17,7 @@ SkySystem::~SkySystem() {
     shutdown();
 }
 
-bool SkySystem::initialize() {
+bool SkySystem::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout) {
     if (initialized_) {
         LOG_WARNING("SkySystem already initialized");
         return true;
@@ -24,39 +25,38 @@ bool SkySystem::initialize() {
 
     LOG_INFO("Initializing sky system");
 
-    // Initialize skybox (authoritative)
+    // Skybox (Vulkan)
     skybox_ = std::make_unique<Skybox>();
-    if (!skybox_->initialize()) {
+    if (!skybox_->initialize(ctx, perFrameLayout)) {
         LOG_ERROR("Failed to initialize skybox");
         return false;
     }
 
-    // Initialize celestial bodies (sun + 2 moons)
+    // Celestial bodies — sun + 2 moons (Vulkan)
     celestial_ = std::make_unique<Celestial>();
-    if (!celestial_->initialize()) {
+    if (!celestial_->initialize(ctx, perFrameLayout)) {
         LOG_ERROR("Failed to initialize celestial bodies");
         return false;
     }
 
-    // Initialize procedural stars (FALLBACK only)
+    // Procedural stars — fallback / debug (Vulkan)
     starField_ = std::make_unique<StarField>();
-    if (!starField_->initialize()) {
+    if (!starField_->initialize(ctx, perFrameLayout)) {
         LOG_ERROR("Failed to initialize star field");
         return false;
     }
-    // Default: disabled (skybox is authoritative)
-    starField_->setEnabled(false);
+    starField_->setEnabled(false); // Off by default; skybox is authoritative
 
-    // Initialize clouds
+    // Clouds (Vulkan)
     clouds_ = std::make_unique<Clouds>();
-    if (!clouds_->initialize()) {
+    if (!clouds_->initialize(ctx, perFrameLayout)) {
         LOG_ERROR("Failed to initialize clouds");
         return false;
     }
 
-    // Initialize lens flare
+    // Lens flare (Vulkan)
     lensFlare_ = std::make_unique<LensFlare>();
-    if (!lensFlare_->initialize()) {
+    if (!lensFlare_->initialize(ctx, perFrameLayout)) {
         LOG_ERROR("Failed to initialize lens flare");
         return false;
     }
@@ -73,12 +73,12 @@ void SkySystem::shutdown() {
 
     LOG_INFO("Shutting down sky system");
 
-    // Shutdown components that have explicit shutdown methods
-    if (starField_) starField_->shutdown();
-    if (celestial_) celestial_->shutdown();
-    if (skybox_) skybox_->shutdown();
+    if (lensFlare_)  lensFlare_->shutdown();
+    if (clouds_)     clouds_->shutdown();
+    if (starField_)  starField_->shutdown();
+    if (celestial_)  celestial_->shutdown();
+    if (skybox_)     skybox_->shutdown();
 
-    // Reset all (destructors handle cleanup for clouds/lensFlare)
     lensFlare_.reset();
     clouds_.reset();
     starField_.reset();
@@ -93,55 +93,55 @@ void SkySystem::update(float deltaTime) {
         return;
     }
 
-    // Update time-based systems
-    if (skybox_) skybox_->update(deltaTime);
+    if (skybox_)    skybox_->update(deltaTime);
     if (celestial_) celestial_->update(deltaTime);
     if (starField_) starField_->update(deltaTime);
+    if (clouds_)    clouds_->update(deltaTime);
 }
 
-void SkySystem::render(const Camera& camera, const SkyParams& params) {
+void SkySystem::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
+                        const Camera& camera, const SkyParams& params) {
     if (!initialized_) {
         return;
     }
 
-    // Render skybox first (authoritative, includes baked stars)
+    // --- Skybox (authoritative sky gradient) ---
     if (skybox_) {
-        skybox_->render(camera, params.timeOfDay);
+        skybox_->render(cmd, perFrameSet, params.timeOfDay);
     }
 
-    // Decide whether to render procedural stars
+    // --- Procedural stars (debug / fallback) ---
     bool renderProceduralStars = false;
     if (debugSkyMode_) {
-        // Debug mode: always show procedural stars
         renderProceduralStars = true;
     } else if (proceduralStarsEnabled_) {
-        // Fallback mode: show only if skybox doesn't have stars
         renderProceduralStars = !params.skyboxHasStars;
     }
 
-    // Render procedural stars (FALLBACK or DEBUG only)
-    if (renderProceduralStars && starField_) {
-        starField_->setEnabled(true);
-        starField_->render(camera, params.timeOfDay, params.cloudDensity, params.fogDensity);
-    } else if (starField_) {
-        starField_->setEnabled(false);
+    if (starField_) {
+        starField_->setEnabled(renderProceduralStars);
+        if (renderProceduralStars) {
+            const float cloudDensity = params.cloudDensity;
+            const float fogDensity   = params.fogDensity;
+            starField_->render(cmd, perFrameSet, params.timeOfDay, cloudDensity, fogDensity);
+        }
     }
 
-    // Render celestial bodies (sun + White Lady + Blue Child)
-    // Pass gameTime for deterministic moon phases
+    // --- Celestial bodies (sun + White Lady + Blue Child) ---
     if (celestial_) {
-        celestial_->render(camera, params.timeOfDay, &params.directionalDir, &params.sunColor, params.gameTime);
+        celestial_->render(cmd, perFrameSet, params.timeOfDay,
+                           &params.directionalDir, &params.sunColor, params.gameTime);
     }
 
-    // Render clouds
+    // --- Clouds ---
     if (clouds_) {
-        clouds_->render(camera, params.timeOfDay);
+        clouds_->render(cmd, perFrameSet, params.timeOfDay);
     }
 
-    // Render lens flare (sun glow effect)
+    // --- Lens flare ---
     if (lensFlare_) {
         glm::vec3 sunPos = getSunPosition(params);
-        lensFlare_->render(camera, sunPos, params.timeOfDay);
+        lensFlare_->render(cmd, camera, sunPos, params.timeOfDay);
     }
 }
 
@@ -154,27 +154,19 @@ glm::vec3 SkySystem::getSunPosition(const SkyParams& params) const {
     if (sunDir.z < 0.0f) {
         sunDir = dir;
     }
-    glm::vec3 pos = sunDir * 800.0f;
-    return pos;
+    return sunDir * 800.0f;
 }
 
-
 void SkySystem::setMoonPhaseCycling(bool enabled) {
-    if (celestial_) {
-        celestial_->setMoonPhaseCycling(enabled);
-    }
+    if (celestial_) celestial_->setMoonPhaseCycling(enabled);
 }
 
 void SkySystem::setWhiteLadyPhase(float phase) {
-    if (celestial_) {
-        celestial_->setMoonPhase(phase);  // White Lady is primary moon
-    }
+    if (celestial_) celestial_->setMoonPhase(phase);
 }
 
 void SkySystem::setBlueChildPhase(float phase) {
-    if (celestial_) {
-        celestial_->setBlueChildPhase(phase);
-    }
+    if (celestial_) celestial_->setBlueChildPhase(phase);
 }
 
 float SkySystem::getWhiteLadyPhase() const {

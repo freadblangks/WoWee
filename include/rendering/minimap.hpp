@@ -1,6 +1,7 @@
 #pragma once
 
-#include <GL/glew.h>
+#include <vulkan/vulkan.h>
+#include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <chrono>
 #include <memory>
@@ -12,22 +13,28 @@ namespace wowee {
 namespace pipeline { class AssetManager; }
 namespace rendering {
 
-class Shader;
 class Camera;
+class VkContext;
+class VkTexture;
+class VkRenderTarget;
 
 class Minimap {
 public:
     Minimap();
     ~Minimap();
 
-    bool initialize(int size = 200);
+    bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout, int size = 200);
     void shutdown();
 
     void setAssetManager(pipeline::AssetManager* am) { assetManager = am; }
     void setMapName(const std::string& name);
 
-    void render(const Camera& playerCamera, const glm::vec3& centerWorldPos,
-                int screenWidth, int screenHeight);
+    /// Off-screen composite pass — call BEFORE the main render pass begins.
+    void compositePass(VkCommandBuffer cmd, const glm::vec3& centerWorldPos);
+
+    /// Display quad — call INSIDE the main render pass.
+    void render(VkCommandBuffer cmd, const Camera& playerCamera,
+                const glm::vec3& centerWorldPos, int screenWidth, int screenHeight);
 
     void setEnabled(bool enabled) { this->enabled = enabled; }
     bool isEnabled() const { return enabled; }
@@ -45,17 +52,15 @@ public:
     void zoomOut() { viewRadius = std::min(800.0f, viewRadius + 50.0f); }
 
     // Public accessors for WorldMap
-    GLuint getOrLoadTileTexture(int tileX, int tileY);
+    VkTexture* getOrLoadTileTexture(int tileX, int tileY);
     void ensureTRSParsed() { if (!trsParsed) parseTRS(); }
-    GLuint getTileQuadVAO() const { return tileQuadVAO; }
     const std::string& getMapName() const { return mapName; }
 
 private:
     void parseTRS();
-    void compositeTilesToFBO(const glm::vec3& centerWorldPos);
-    void renderQuad(const Camera& playerCamera, const glm::vec3& centerWorldPos,
-                    int screenWidth, int screenHeight);
+    void updateTileDescriptors(uint32_t frameIdx, int centerTileX, int centerTileY);
 
+    VkContext* vkCtx = nullptr;
     pipeline::AssetManager* assetManager = nullptr;
     std::string mapName = "Azeroth";
 
@@ -63,28 +68,36 @@ private:
     std::unordered_map<std::string, std::string> trsLookup;
     bool trsParsed = false;
 
-    // Tile texture cache: hash → GL texture ID
-    std::unordered_map<std::string, GLuint> tileTextureCache;
-    GLuint noDataTexture = 0;  // dark fallback for missing tiles
+    // Tile texture cache: hash → VkTexture
+    std::unordered_map<std::string, std::unique_ptr<VkTexture>> tileTextureCache;
+    std::unique_ptr<VkTexture> noDataTexture;
 
-    // Composite FBO (3x3 tiles = 768x768)
-    GLuint compositeFBO = 0;
-    GLuint compositeTexture = 0;
+    // Composite render target (3x3 tiles = 768x768)
+    std::unique_ptr<VkRenderTarget> compositeTarget;
     static constexpr int TILE_PX = 256;
     static constexpr int COMPOSITE_PX = TILE_PX * 3;  // 768
 
-    // Tile compositing quad
-    GLuint tileQuadVAO = 0;
-    GLuint tileQuadVBO = 0;
-    std::unique_ptr<Shader> tileShader;
+    // Shared quad vertex buffer (6 verts, pos2 + uv2 = 16 bytes/vert)
+    ::VkBuffer quadVB = VK_NULL_HANDLE;
+    VmaAllocation quadVBAlloc = VK_NULL_HANDLE;
 
-    // Screen quad
-    GLuint quadVAO = 0;
-    GLuint quadVBO = 0;
-    std::unique_ptr<Shader> quadShader;
+    // Descriptor resources (shared layout: 1 combined image sampler at binding 0)
+    VkDescriptorSetLayout samplerSetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool descPool = VK_NULL_HANDLE;
+    static constexpr uint32_t MAX_DESC_SETS = 24;
+
+    // Tile composite pipeline (renders into VkRenderTarget)
+    VkPipeline tilePipeline = VK_NULL_HANDLE;
+    VkPipelineLayout tilePipelineLayout = VK_NULL_HANDLE;
+    VkDescriptorSet tileDescSets[2][9] = {};  // [frameInFlight][tileSlot]
+
+    // Display pipeline (renders into main render pass)
+    VkPipeline displayPipeline = VK_NULL_HANDLE;
+    VkPipelineLayout displayPipelineLayout = VK_NULL_HANDLE;
+    VkDescriptorSet displayDescSet = VK_NULL_HANDLE;
 
     int mapSize = 200;
-    float viewRadius = 400.0f;  // world units visible in minimap radius
+    float viewRadius = 400.0f;
     bool enabled = true;
     bool rotateWithCamera = false;
     bool squareShape = false;

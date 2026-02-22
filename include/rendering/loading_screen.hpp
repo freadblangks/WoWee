@@ -1,11 +1,13 @@
 #pragma once
 
-#include <GL/glew.h>
+#include <vulkan/vulkan.h>
 #include <string>
 #include <vector>
 
 namespace wowee {
 namespace rendering {
+
+class VkContext;
 
 class LoadingScreen {
 public:
@@ -15,32 +17,28 @@ public:
     bool initialize();
     void shutdown();
 
-    // Select a random loading screen image
     void selectRandomImage();
 
-    // Render the loading screen with progress bar and status text
+    // Render the loading screen with progress bar and status text (pure ImGui)
     void render();
 
-    // Update loading progress (0.0 to 1.0)
     void setProgress(float progress) { loadProgress = progress; }
-
-    // Set loading status text
     void setStatus(const std::string& status) { statusText = status; }
+
+    // Must be set before initialize() for Vulkan texture upload
+    void setVkContext(VkContext* ctx) { vkCtx = ctx; }
 
 private:
     bool loadImage(const std::string& path);
-    void createQuad();
-    void createBarQuad();
 
-    GLuint textureId = 0;
-    GLuint vao = 0;
-    GLuint vbo = 0;
-    GLuint shaderId = 0;
+    VkContext* vkCtx = nullptr;
 
-    // Progress bar GL objects
-    GLuint barVao = 0;
-    GLuint barVbo = 0;
-    GLuint barShaderId = 0;
+    // Vulkan texture for background image
+    VkImage bgImage = VK_NULL_HANDLE;
+    VkDeviceMemory bgMemory = VK_NULL_HANDLE;
+    VkImageView bgImageView = VK_NULL_HANDLE;
+    VkSampler bgSampler = VK_NULL_HANDLE;
+    VkDescriptorSet bgDescriptorSet = VK_NULL_HANDLE; // ImGui texture handle
 
     std::vector<std::string> imagePaths;
     int currentImageIndex = 0;

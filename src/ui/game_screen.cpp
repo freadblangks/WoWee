@@ -7,6 +7,7 @@
 #include "rendering/renderer.hpp"
 #include "rendering/terrain_manager.hpp"
 #include "rendering/minimap.hpp"
+#include "rendering/world_map.hpp"
 #include "rendering/character_renderer.hpp"
 #include "rendering/camera.hpp"
 #include "rendering/camera_controller.hpp"
@@ -3129,8 +3130,8 @@ void GameScreen::updateCharacterTextures(game::Inventory& inventory) {
     charRenderer->clearCompositeCache();
     // Use per-instance texture override (not model-level) to avoid deleting cached composites.
     uint32_t instanceId = renderer->getCharacterInstanceId();
-    GLuint newTex = charRenderer->compositeWithRegions(bodySkinPath, underwearPaths, regionLayers);
-    if (newTex != 0 && instanceId != 0) {
+    auto* newTex = charRenderer->compositeWithRegions(bodySkinPath, underwearPaths, regionLayers);
+    if (newTex != nullptr && instanceId != 0) {
         charRenderer->setTextureSlotOverride(instanceId, static_cast<uint16_t>(skinSlot), newTex);
     }
 
@@ -3155,8 +3156,8 @@ void GameScreen::updateCharacterTextures(game::Inventory& inventory) {
                 std::string capeName = displayInfoDbc->getString(static_cast<uint32_t>(recIdx), dispL ? (*dispL)["LeftModelTexture"] : 3);
                 if (!capeName.empty()) {
                     std::string capePath = "Item\\ObjectComponents\\Cape\\" + capeName + ".blp";
-                    GLuint capeTex = charRenderer->loadTexture(capePath);
-                    if (capeTex != 0) {
+                    auto* capeTex = charRenderer->loadTexture(capePath);
+                    if (capeTex != nullptr) {
                         charRenderer->setTextureSlotOverride(instanceId, static_cast<uint16_t>(cloakSlot), capeTex);
                         LOG_INFO("Cloak texture applied: ", capePath);
                     }
@@ -3176,17 +3177,17 @@ void GameScreen::updateCharacterTextures(game::Inventory& inventory) {
 void GameScreen::renderWorldMap(game::GameHandler& gameHandler) {
     auto& app = core::Application::getInstance();
     auto* renderer = app.getRenderer();
-    auto* assetMgr = app.getAssetManager();
-    if (!renderer || !assetMgr) return;
+    if (!renderer) return;
 
-    worldMap.initialize(assetMgr);
+    auto* wm = renderer->getWorldMap();
+    if (!wm) return;
 
     // Keep map name in sync with minimap's map name
     auto* minimap = renderer->getMinimap();
     if (minimap) {
-        worldMap.setMapName(minimap->getMapName());
+        wm->setMapName(minimap->getMapName());
     }
-    worldMap.setServerExplorationMask(
+    wm->setServerExplorationMask(
         gameHandler.getPlayerExploredZoneMasks(),
         gameHandler.hasPlayerExploredZoneMasks());
 
@@ -3194,7 +3195,7 @@ void GameScreen::renderWorldMap(game::GameHandler& gameHandler) {
     auto* window = app.getWindow();
     int screenW = window ? window->getWidth() : 1280;
     int screenH = window ? window->getHeight() : 720;
-    worldMap.render(playerPos, screenW, screenH);
+    wm->render(playerPos, screenW, screenH);
 }
 
 // ============================================================

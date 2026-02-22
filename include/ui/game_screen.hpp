@@ -2,7 +2,7 @@
 
 #include "game/game_handler.hpp"
 #include "game/inventory.hpp"
-#include "rendering/world_map.hpp"
+// WorldMap is now owned by Renderer, accessed via getWorldMap()
 #include "rendering/character_preview.hpp"
 #include "ui/inventory_screen.hpp"
 #include "ui/quest_log_screen.hpp"
@@ -212,7 +212,7 @@ private:
     QuestLogScreen questLogScreen;
     SpellbookScreen spellbookScreen;
     TalentScreen talentScreen;
-    rendering::WorldMap worldMap;
+    // WorldMap is now owned by Renderer (accessed via renderer->getWorldMap())
 
     // Spell icon cache: spellId -> GL texture ID
     std::unordered_map<uint32_t, GLuint> spellIconCache_;

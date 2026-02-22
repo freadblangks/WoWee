@@ -3,8 +3,11 @@
 #include <string>
 #include <memory>
 #include <SDL2/SDL.h>
+#include <vulkan/vulkan.h>
 
 namespace wowee {
+namespace rendering { class VkContext; }
+
 namespace core {
 
 struct WindowConfig {
@@ -27,7 +30,7 @@ public:
     bool initialize();
     void shutdown();
 
-    void swapBuffers();
+    void swapBuffers() {} // No-op: Vulkan presents in Renderer::endFrame()
     void pollEvents();
 
     bool shouldClose() const { return shouldCloseFlag; }
@@ -44,12 +47,14 @@ public:
     void applyResolution(int w, int h);
 
     SDL_Window* getSDLWindow() const { return window; }
-    SDL_GLContext getGLContext() const { return glContext; }
+
+    // Vulkan context access
+    rendering::VkContext* getVkContext() const { return vkContext.get(); }
 
 private:
     WindowConfig config;
     SDL_Window* window = nullptr;
-    SDL_GLContext glContext = nullptr;
+    std::unique_ptr<rendering::VkContext> vkContext;
 
     int width;
     int height;

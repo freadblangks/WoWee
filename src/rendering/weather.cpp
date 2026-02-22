@@ -1,10 +1,15 @@
 #include "rendering/weather.hpp"
 #include "rendering/camera.hpp"
-#include "rendering/shader.hpp"
+#include "rendering/vk_context.hpp"
+#include "rendering/vk_shader.hpp"
+#include "rendering/vk_pipeline.hpp"
+#include "rendering/vk_frame_data.hpp"
+#include "rendering/vk_utils.hpp"
 #include "core/logger.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 #include <random>
 #include <cmath>
+#include <cstring>
 
 namespace wowee {
 namespace rendering {
@@ -13,71 +18,94 @@ Weather::Weather() {
 }
 
 Weather::~Weather() {
-    cleanup();
+    shutdown();
 }
 
-bool Weather::initialize() {
+bool Weather::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout) {
     LOG_INFO("Initializing weather system");
 
-    // Create shader
-    shader = std::make_unique<Shader>();
+    vkCtx = ctx;
+    VkDevice device = vkCtx->getDevice();
 
-    // Vertex shader - point sprites with instancing
-    const char* vertexShaderSource = R"(
-        #version 330 core
-        layout (location = 0) in vec3 aPos;
-
-        uniform mat4 uView;
-        uniform mat4 uProjection;
-        uniform float uParticleSize;
-
-        void main() {
-            gl_Position = uProjection * uView * vec4(aPos, 1.0);
-            gl_PointSize = uParticleSize;
-        }
-    )";
-
-    // Fragment shader - simple particle with alpha
-    const char* fragmentShaderSource = R"(
-        #version 330 core
-
-        uniform vec4 uParticleColor;
-
-        out vec4 FragColor;
-
-        void main() {
-            // Circular particle shape
-            vec2 coord = gl_PointCoord - vec2(0.5);
-            float dist = length(coord);
-
-            if (dist > 0.5) {
-                discard;
-            }
-
-            // Soft edges
-            float alpha = smoothstep(0.5, 0.3, dist) * uParticleColor.a;
-
-            FragColor = vec4(uParticleColor.rgb, alpha);
-        }
-    )";
-
-    if (!shader->loadFromSource(vertexShaderSource, fragmentShaderSource)) {
-        LOG_ERROR("Failed to create weather shader");
+    // Load SPIR-V shaders
+    VkShaderModule vertModule;
+    if (!vertModule.loadFromFile(device, "assets/shaders/weather.vert.spv")) {
+        LOG_ERROR("Failed to load weather vertex shader");
         return false;
     }
 
-    // Create VAO and VBO for particle positions
-    glGenVertexArrays(1, &vao);
-    glGenBuffers(1, &vbo);
+    VkShaderModule fragModule;
+    if (!fragModule.loadFromFile(device, "assets/shaders/weather.frag.spv")) {
+        LOG_ERROR("Failed to load weather fragment shader");
+        return false;
+    }
 
-    glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    VkPipelineShaderStageCreateInfo vertStage = vertModule.stageInfo(VK_SHADER_STAGE_VERTEX_BIT);
+    VkPipelineShaderStageCreateInfo fragStage = fragModule.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT);
 
-    // Position attribute
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
-    glEnableVertexAttribArray(0);
+    // Push constant range: { float particleSize; float pad0; float pad1; float pad2; vec4 particleColor; } = 32 bytes
+    VkPushConstantRange pushRange{};
+    pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushRange.offset = 0;
+    pushRange.size = 32;  // 4 floats + vec4
 
-    glBindVertexArray(0);
+    // Create pipeline layout with perFrameLayout (set 0) + push constants
+    pipelineLayout = createPipelineLayout(device, {perFrameLayout}, {pushRange});
+    if (pipelineLayout == VK_NULL_HANDLE) {
+        LOG_ERROR("Failed to create weather pipeline layout");
+        return false;
+    }
+
+    // Vertex input: position only (vec3), stride = 3 * sizeof(float)
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = 3 * sizeof(float);
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription posAttr{};
+    posAttr.location = 0;
+    posAttr.binding = 0;
+    posAttr.format = VK_FORMAT_R32G32B32_SFLOAT;
+    posAttr.offset = 0;
+
+    // Dynamic viewport and scissor
+    std::vector<VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    pipeline = PipelineBuilder()
+        .setShaders(vertStage, fragStage)
+        .setVertexInput({binding}, {posAttr})
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_POINT_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+        .setDepthTest(true, false, VK_COMPARE_OP_LESS)  // depth test on, write off (transparent particles)
+        .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+        .setLayout(pipelineLayout)
+        .setRenderPass(vkCtx->getImGuiRenderPass())
+        .setDynamicStates(dynamicStates)
+        .build(device);
+
+    vertModule.destroy();
+    fragModule.destroy();
+
+    if (pipeline == VK_NULL_HANDLE) {
+        LOG_ERROR("Failed to create weather pipeline");
+        return false;
+    }
+
+    // Create a dynamic mapped vertex buffer large enough for MAX_PARTICLES
+    dynamicVBSize = MAX_PARTICLES * sizeof(glm::vec3);
+    AllocatedBuffer buf = createBuffer(vkCtx->getAllocator(), dynamicVBSize,
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    dynamicVB = buf.buffer;
+    dynamicVBAlloc = buf.allocation;
+    dynamicVBAllocInfo = buf.info;
+
+    if (dynamicVB == VK_NULL_HANDLE) {
+        LOG_ERROR("Failed to create weather dynamic vertex buffer");
+        return false;
+    }
 
     // Reserve space for particles
     particles.reserve(MAX_PARTICLES);
@@ -162,58 +190,54 @@ void Weather::updateParticle(Particle& particle, const Camera& camera, float del
     particle.position += particle.velocity * deltaTime;
 }
 
-void Weather::render(const Camera& camera) {
-    if (!enabled || weatherType == Type::NONE || particlePositions.empty() || !shader) {
+void Weather::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet) {
+    if (!enabled || weatherType == Type::NONE || particlePositions.empty() ||
+        pipeline == VK_NULL_HANDLE) {
         return;
     }
 
-    // Enable blending
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    // Disable depth write (particles are transparent)
-    glDepthMask(GL_FALSE);
-
-    // Enable point sprites
-    glEnable(GL_PROGRAM_POINT_SIZE);
-
-    shader->use();
-
-    // Set matrices
-    glm::mat4 view = camera.getViewMatrix();
-    glm::mat4 projection = camera.getProjectionMatrix();
-
-    shader->setUniform("uView", view);
-    shader->setUniform("uProjection", projection);
-
-    // Set particle appearance based on weather type
-    if (weatherType == Type::RAIN) {
-        // Rain: white/blue streaks, small size
-        shader->setUniform("uParticleColor", glm::vec4(0.7f, 0.8f, 0.9f, 0.6f));
-        shader->setUniform("uParticleSize", 3.0f);
-    } else {  // SNOW
-        // Snow: white fluffy, larger size
-        shader->setUniform("uParticleColor", glm::vec4(1.0f, 1.0f, 1.0f, 0.9f));
-        shader->setUniform("uParticleSize", 8.0f);
+    // Upload particle positions to mapped buffer
+    VkDeviceSize uploadSize = particlePositions.size() * sizeof(glm::vec3);
+    if (uploadSize > 0 && dynamicVBAllocInfo.pMappedData) {
+        std::memcpy(dynamicVBAllocInfo.pMappedData, particlePositions.data(), uploadSize);
     }
 
-    // Upload particle positions
-    glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER,
-                 particlePositions.size() * sizeof(glm::vec3),
-                 particlePositions.data(),
-                 GL_DYNAMIC_DRAW);
+    // Push constant data: { float particleSize; float pad0; float pad1; float pad2; vec4 particleColor; }
+    struct WeatherPush {
+        float particleSize;
+        float pad0;
+        float pad1;
+        float pad2;
+        glm::vec4 particleColor;
+    };
 
-    // Render particles as points
-    glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(particlePositions.size()));
+    WeatherPush push{};
+    if (weatherType == Type::RAIN) {
+        push.particleSize = 3.0f;
+        push.particleColor = glm::vec4(0.7f, 0.8f, 0.9f, 0.6f);
+    } else {  // SNOW
+        push.particleSize = 8.0f;
+        push.particleColor = glm::vec4(1.0f, 1.0f, 1.0f, 0.9f);
+    }
 
-    glBindVertexArray(0);
+    // Bind pipeline
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
-    // Restore state
-    glDisable(GL_BLEND);
-    glDepthMask(GL_TRUE);
-    glDisable(GL_PROGRAM_POINT_SIZE);
+    // Bind per-frame descriptor set (set 0 - camera UBO)
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout,
+        0, 1, &perFrameSet, 0, nullptr);
+
+    // Push constants
+    vkCmdPushConstants(cmd, pipelineLayout,
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+        0, sizeof(push), &push);
+
+    // Bind vertex buffer
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &dynamicVB, &offset);
+
+    // Draw particles as points
+    vkCmdDraw(cmd, static_cast<uint32_t>(particlePositions.size()), 1, 0, 0);
 }
 
 void Weather::resetParticles(const Camera& camera) {
@@ -260,15 +284,29 @@ int Weather::getParticleCount() const {
     return static_cast<int>(particles.size());
 }
 
-void Weather::cleanup() {
-    if (vao) {
-        glDeleteVertexArrays(1, &vao);
-        vao = 0;
+void Weather::shutdown() {
+    if (vkCtx) {
+        VkDevice device = vkCtx->getDevice();
+        VmaAllocator allocator = vkCtx->getAllocator();
+
+        if (pipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device, pipeline, nullptr);
+            pipeline = VK_NULL_HANDLE;
+        }
+        if (pipelineLayout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+            pipelineLayout = VK_NULL_HANDLE;
+        }
+        if (dynamicVB != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(allocator, dynamicVB, dynamicVBAlloc);
+            dynamicVB = VK_NULL_HANDLE;
+            dynamicVBAlloc = VK_NULL_HANDLE;
+        }
     }
-    if (vbo) {
-        glDeleteBuffers(1, &vbo);
-        vbo = 0;
-    }
+
+    vkCtx = nullptr;
+    particles.clear();
+    particlePositions.clear();
 }
 
 } // namespace rendering

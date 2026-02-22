@@ -1,6 +1,11 @@
 #include "rendering/m2_renderer.hpp"
-#include "rendering/texture.hpp"
-#include "rendering/shader.hpp"
+#include "rendering/vk_context.hpp"
+#include "rendering/vk_buffer.hpp"
+#include "rendering/vk_texture.hpp"
+#include "rendering/vk_pipeline.hpp"
+#include "rendering/vk_shader.hpp"
+#include "rendering/vk_utils.hpp"
+#include "rendering/vk_frame_data.hpp"
 #include "rendering/camera.hpp"
 #include "rendering/frustum.hpp"
 #include "pipeline/asset_manager.hpp"
@@ -279,384 +284,298 @@ M2Renderer::~M2Renderer() {
     shutdown();
 }
 
-bool M2Renderer::initialize(pipeline::AssetManager* assets) {
+bool M2Renderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout,
+                            pipeline::AssetManager* assets) {
     if (initialized_) { assetManager = assets; return true; }
+    vkCtx_ = ctx;
     assetManager = assets;
 
     numAnimThreads_ = std::min(4u, std::max(1u, std::thread::hardware_concurrency() - 1));
-    LOG_INFO("Initializing M2 renderer (", numAnimThreads_, " anim threads)...");
+    LOG_INFO("Initializing M2 renderer (Vulkan, ", numAnimThreads_, " anim threads)...");
 
-    // Create M2 shader with skeletal animation support
-    const char* vertexSrc = R"(
-        #version 330 core
-        layout (location = 0) in vec3 aPos;
-        layout (location = 1) in vec3 aNormal;
-        layout (location = 2) in vec2 aTexCoord;
-        layout (location = 3) in vec4 aBoneWeights;
-        layout (location = 4) in vec4 aBoneIndicesF;
-        layout (location = 5) in vec2 aTexCoord2;
+    VkDevice device = vkCtx_->getDevice();
 
-        uniform mat4 uModel;
-        uniform mat4 uView;
-        uniform mat4 uProjection;
-        uniform bool uUseBones;
-        uniform mat4 uBones[128];
-        uniform vec2 uUVOffset;
-        uniform int uTexCoordSet;  // 0 = UV set 0, 1 = UV set 1
-        out vec3 FragPos;
-        out vec3 Normal;
-        out vec2 TexCoord;
+    // --- Descriptor set layouts ---
 
-        void main() {
-            vec3 pos = aPos;
-            vec3 norm = aNormal;
+    // Material set layout (set 1): binding 0 = sampler2D, binding 2 = M2Material UBO
+    // (M2Params moved to push constants alongside model matrix)
+    {
+        VkDescriptorSetLayoutBinding bindings[2] = {};
+        bindings[0].binding = 0;
+        bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[0].descriptorCount = 1;
+        bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[1].binding = 2;
+        bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        bindings[1].descriptorCount = 1;
+        bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-            if (uUseBones) {
-                ivec4 bi = ivec4(aBoneIndicesF);
-                mat4 boneTransform = uBones[bi.x] * aBoneWeights.x
-                                   + uBones[bi.y] * aBoneWeights.y
-                                   + uBones[bi.z] * aBoneWeights.z
-                                   + uBones[bi.w] * aBoneWeights.w;
-                pos = vec3(boneTransform * vec4(aPos, 1.0));
-                norm = mat3(boneTransform) * aNormal;
-            }
+        VkDescriptorSetLayoutCreateInfo ci{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+        ci.bindingCount = 2;
+        ci.pBindings = bindings;
+        vkCreateDescriptorSetLayout(device, &ci, nullptr, &materialSetLayout_);
+    }
 
-            vec4 worldPos = uModel * vec4(pos, 1.0);
-            FragPos = worldPos.xyz;
-            Normal = mat3(uModel) * norm;
-            TexCoord = (uTexCoordSet == 1 ? aTexCoord2 : aTexCoord) + uUVOffset;
+    // Bone set layout (set 2): binding 0 = STORAGE_BUFFER (bone matrices)
+    {
+        VkDescriptorSetLayoutBinding binding{};
+        binding.binding = 0;
+        binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        binding.descriptorCount = 1;
+        binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
-            gl_Position = uProjection * uView * worldPos;
-        }
-    )";
+        VkDescriptorSetLayoutCreateInfo ci{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+        ci.bindingCount = 1;
+        ci.pBindings = &binding;
+        vkCreateDescriptorSetLayout(device, &ci, nullptr, &boneSetLayout_);
+    }
 
-    const char* fragmentSrc = R"(
-        #version 330 core
-        in vec3 FragPos;
-        in vec3 Normal;
-        in vec2 TexCoord;
+    // Particle texture set layout (set 1 for particles): binding 0 = sampler2D
+    {
+        VkDescriptorSetLayoutBinding binding{};
+        binding.binding = 0;
+        binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        binding.descriptorCount = 1;
+        binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-        uniform vec3 uLightDir;
-        uniform vec3 uLightColor;
-        uniform float uSpecularIntensity;
-        uniform vec3 uAmbientColor;
-        uniform vec3 uViewPos;
-        uniform sampler2D uTexture;
-        uniform bool uHasTexture;
-        uniform bool uAlphaTest;
-        uniform bool uColorKeyBlack;
-        uniform float uColorKeyThreshold;
-        uniform bool uUnlit;
-        uniform int uBlendMode;
-        uniform float uFadeAlpha;
+        VkDescriptorSetLayoutCreateInfo ci{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+        ci.bindingCount = 1;
+        ci.pBindings = &binding;
+        vkCreateDescriptorSetLayout(device, &ci, nullptr, &particleTexLayout_);
+    }
 
-        uniform vec3 uFogColor;
-        uniform float uFogStart;
-        uniform float uFogEnd;
+    // --- Descriptor pools ---
+    {
+        VkDescriptorPoolSize sizes[] = {
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_MATERIAL_SETS + 256},
+            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, MAX_MATERIAL_SETS + 256},
+        };
+        VkDescriptorPoolCreateInfo ci{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+        ci.maxSets = MAX_MATERIAL_SETS + 256;
+        ci.poolSizeCount = 2;
+        ci.pPoolSizes = sizes;
+        ci.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+        vkCreateDescriptorPool(device, &ci, nullptr, &materialDescPool_);
+    }
+    {
+        VkDescriptorPoolSize sizes[] = {
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, MAX_BONE_SETS},
+        };
+        VkDescriptorPoolCreateInfo ci{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+        ci.maxSets = MAX_BONE_SETS;
+        ci.poolSizeCount = 1;
+        ci.pPoolSizes = sizes;
+        ci.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+        vkCreateDescriptorPool(device, &ci, nullptr, &boneDescPool_);
+    }
 
-        uniform sampler2DShadow uShadowMap;
-        uniform mat4 uLightSpaceMatrix;
-        uniform bool uShadowEnabled;
-        uniform float uShadowStrength;
-        uniform bool uInteriorDarken;
+    // --- Pipeline layouts ---
 
-        out vec4 FragColor;
+    // Main M2 pipeline layout: set 0 = perFrame, set 1 = material, set 2 = bones
+    // Push constant: mat4 model + vec2 uvOffset + int texCoordSet + int useBones = 80 bytes
+    {
+        VkDescriptorSetLayout setLayouts[] = {perFrameLayout, materialSetLayout_, boneSetLayout_};
+        VkPushConstantRange pushRange{};
+        pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        pushRange.offset = 0;
+        pushRange.size = 80; // mat4(64) + vec2(8) + int(4) + int(4)
 
-        void main() {
-            vec4 texColor;
-            if (uHasTexture) {
-                texColor = texture(uTexture, TexCoord);
-            } else {
-                texColor = vec4(0.6, 0.5, 0.4, 1.0);  // Fallback brownish
-            }
+        VkPipelineLayoutCreateInfo ci{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        ci.setLayoutCount = 3;
+        ci.pSetLayouts = setLayouts;
+        ci.pushConstantRangeCount = 1;
+        ci.pPushConstantRanges = &pushRange;
+        vkCreatePipelineLayout(device, &ci, nullptr, &pipelineLayout_);
+    }
 
-            // Alpha test / alpha-key cutout for card textures.
-            if (uAlphaTest && texColor.a < 0.5) {
-                discard;
-            }
-            float maxRgb = max(texColor.r, max(texColor.g, texColor.b));
-            if (uAlphaTest && maxRgb < 0.06) {
-                discard;
-            }
-            if (uColorKeyBlack && maxRgb < uColorKeyThreshold) {
-                discard;
-            }
-            // Additive blend modes (3=Add, 6=BlendAdd): near-black fragments
-            // contribute nothing visually (add ~0 to framebuffer) but show as
-            // dark rectangles against sky/terrain. Discard them.
-            // Skip Mod(4)/Mod2x(5) since near-black is intentional for those.
-            if ((uBlendMode == 3 || uBlendMode == 6) && maxRgb < 0.1) {
-                discard;
-            }
-            // Unlit non-opaque batches (glow effects, emissive surfaces) with
-            // near-black pixels: these are glow textures where black = transparent.
-            if (uUnlit && uBlendMode >= 1 && maxRgb < 0.1) {
-                discard;
-            }
+    // Particle pipeline layout: set 0 = perFrame, set 1 = particleTex
+    // Push constant: vec2 tileCount + int alphaKey (12 bytes)
+    {
+        VkDescriptorSetLayout setLayouts[] = {perFrameLayout, particleTexLayout_};
+        VkPushConstantRange pushRange{};
+        pushRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        pushRange.offset = 0;
+        pushRange.size = 12; // vec2 + int
 
-            // Distance fade - discard nearly invisible fragments
-            float finalAlpha = texColor.a * uFadeAlpha;
-            if (finalAlpha < 0.02) {
-                discard;
-            }
+        VkPipelineLayoutCreateInfo ci{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        ci.setLayoutCount = 2;
+        ci.pSetLayouts = setLayouts;
+        ci.pushConstantRangeCount = 1;
+        ci.pPushConstantRanges = &pushRange;
+        vkCreatePipelineLayout(device, &ci, nullptr, &particlePipelineLayout_);
+    }
 
-            // Unlit path: emit texture color directly (glow effects, emissive surfaces)
-            if (uUnlit) {
-                FragColor = vec4(texColor.rgb, finalAlpha);
-                return;
-            }
+    // Smoke pipeline layout: set 0 = perFrame
+    // Push constant: float screenHeight (4 bytes)
+    {
+        VkDescriptorSetLayout setLayouts[] = {perFrameLayout};
+        VkPushConstantRange pushRange{};
+        pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        pushRange.offset = 0;
+        pushRange.size = 4;
 
-            vec3 normal = normalize(Normal);
-            vec3 lightDir = normalize(uLightDir);
+        VkPipelineLayoutCreateInfo ci{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        ci.setLayoutCount = 1;
+        ci.pSetLayouts = setLayouts;
+        ci.pushConstantRangeCount = 1;
+        ci.pPushConstantRanges = &pushRange;
+        vkCreatePipelineLayout(device, &ci, nullptr, &smokePipelineLayout_);
+    }
 
-            vec3 result;
-            if (uInteriorDarken) {
-                // Interior: dim ambient, minimal directional light
-                float diff = max(abs(dot(normal, lightDir)), 0.0) * 0.15;
-                result = texColor.rgb * (0.55 + diff);
-            } else {
-                // Two-sided lighting for foliage
-                float diff = max(abs(dot(normal, lightDir)), 0.3);
+    // --- Load shaders ---
+    rendering::VkShaderModule m2Vert, m2Frag;
+    rendering::VkShaderModule particleVert, particleFrag;
+    rendering::VkShaderModule smokeVert, smokeFrag;
 
-                // Blinn-Phong specular
-                vec3 viewDir = normalize(uViewPos - FragPos);
-                vec3 halfDir = normalize(lightDir + viewDir);
-                float spec = pow(max(dot(normal, halfDir), 0.0), 32.0);
-                vec3 specular = spec * uLightColor * uSpecularIntensity;
+    m2Vert.loadFromFile(device, "assets/shaders/m2.vert.spv");
+    m2Frag.loadFromFile(device, "assets/shaders/m2.frag.spv");
+    particleVert.loadFromFile(device, "assets/shaders/m2_particle.vert.spv");
+    particleFrag.loadFromFile(device, "assets/shaders/m2_particle.frag.spv");
+    smokeVert.loadFromFile(device, "assets/shaders/m2_smoke.vert.spv");
+    smokeFrag.loadFromFile(device, "assets/shaders/m2_smoke.frag.spv");
 
-                // Shadow mapping
-                float shadow = 1.0;
-                if (uShadowEnabled) {
-                    vec4 lsPos = uLightSpaceMatrix * vec4(FragPos, 1.0);
-                    vec3 proj = lsPos.xyz / lsPos.w * 0.5 + 0.5;
-                    if (proj.z <= 1.0 && proj.x >= 0.0 && proj.x <= 1.0 && proj.y >= 0.0 && proj.y <= 1.0) {
-                        float edgeDist = max(abs(proj.x - 0.5), abs(proj.y - 0.5));
-                        float coverageFade = 1.0 - smoothstep(0.40, 0.49, edgeDist);
-                        float bias = max(0.005 * (1.0 - abs(dot(normal, lightDir))), 0.001);
-                        // Single hardware PCF tap — GL_LINEAR + compare mode gives 2×2 bilinear PCF for free
-                        shadow = texture(uShadowMap, vec3(proj.xy, proj.z - bias));
-                        shadow = mix(1.0, shadow, coverageFade);
-                    }
-                }
-                shadow = mix(1.0, shadow, clamp(uShadowStrength, 0.0, 1.0));
-
-                vec3 ambient = uAmbientColor * texColor.rgb;
-                vec3 diffuse = diff * texColor.rgb;
-
-                result = ambient + (diffuse + specular) * shadow;
-            }
-
-            // Fog
-            float fogDist = length(uViewPos - FragPos);
-            float fogFactor = clamp((uFogEnd - fogDist) / (uFogEnd - uFogStart), 0.0, 1.0);
-            result = mix(uFogColor, result, fogFactor);
-
-            FragColor = vec4(result, finalAlpha);
-        }
-    )";
-
-    shader = std::make_unique<Shader>();
-    if (!shader->loadFromSource(vertexSrc, fragmentSrc)) {
-        LOG_ERROR("Failed to create M2 shader");
+    if (!m2Vert.isValid() || !m2Frag.isValid()) {
+        LOG_ERROR("M2: Missing required shaders, cannot initialize");
         return false;
     }
 
-    // Create smoke particle shader
-    const char* smokeVertSrc = R"(
-        #version 330 core
-        layout (location = 0) in vec3 aPos;
-        layout (location = 1) in float aLifeRatio;
-        layout (location = 2) in float aSize;
-        layout (location = 3) in float aIsSpark;
+    VkRenderPass mainPass = vkCtx_->getImGuiRenderPass();
 
-        uniform mat4 uView;
-        uniform mat4 uProjection;
-        uniform float uScreenHeight;
+    // --- Build M2 model pipelines ---
+    // Vertex input: 18 floats = 72 bytes stride
+    // loc 0: vec3 pos (0), loc 1: vec3 normal (12), loc 2: vec2 uv0 (24),
+    // loc 5: vec2 uv1 (32), loc 3: vec4 boneWeights (40), loc 4: vec4 boneIndices (56)
+    VkVertexInputBindingDescription m2Binding{};
+    m2Binding.binding = 0;
+    m2Binding.stride = 18 * sizeof(float);
+    m2Binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-        out float vLifeRatio;
-        out float vIsSpark;
+    std::vector<VkVertexInputAttributeDescription> m2Attrs = {
+        {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},                     // position
+        {1, 0, VK_FORMAT_R32G32B32_SFLOAT, 3 * sizeof(float)},     // normal
+        {2, 0, VK_FORMAT_R32G32_SFLOAT, 6 * sizeof(float)},        // texCoord0
+        {5, 0, VK_FORMAT_R32G32_SFLOAT, 8 * sizeof(float)},        // texCoord1
+        {3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 10 * sizeof(float)}, // boneWeights
+        {4, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 14 * sizeof(float)}, // boneIndices (float)
+    };
 
-        void main() {
-            vec4 viewPos = uView * vec4(aPos, 1.0);
-            gl_Position = uProjection * viewPos;
-            float dist = -viewPos.z;
-            float scale = (aIsSpark > 0.5) ? 0.12 : 0.3;
-            gl_PointSize = clamp(aSize * (uScreenHeight * scale) / max(dist, 1.0), 2.0, 200.0);
-            vLifeRatio = aLifeRatio;
-            vIsSpark = aIsSpark;
-        }
-    )";
+    auto buildM2Pipeline = [&](VkPipelineColorBlendAttachmentState blendState, bool depthWrite) -> VkPipeline {
+        return PipelineBuilder()
+            .setShaders(m2Vert.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                        m2Frag.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+            .setVertexInput({m2Binding}, m2Attrs)
+            .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+            .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+            .setDepthTest(true, depthWrite, VK_COMPARE_OP_LESS_OR_EQUAL)
+            .setColorBlendAttachment(blendState)
+            .setLayout(pipelineLayout_)
+            .setRenderPass(mainPass)
+            .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
+            .build(device);
+    };
 
-    const char* smokeFragSrc = R"(
-        #version 330 core
-        in float vLifeRatio;
-        in float vIsSpark;
-        out vec4 FragColor;
+    opaquePipeline_ = buildM2Pipeline(PipelineBuilder::blendDisabled(), true);
+    alphaTestPipeline_ = buildM2Pipeline(PipelineBuilder::blendAlpha(), true);
+    alphaPipeline_ = buildM2Pipeline(PipelineBuilder::blendAlpha(), false);
+    additivePipeline_ = buildM2Pipeline(PipelineBuilder::blendAdditive(), false);
 
-        void main() {
-            vec2 coord = gl_PointCoord - vec2(0.5);
-            float dist = length(coord) * 2.0;
+    // --- Build particle pipelines ---
+    if (particleVert.isValid() && particleFrag.isValid()) {
+        VkVertexInputBindingDescription pBind{};
+        pBind.binding = 0;
+        pBind.stride = 9 * sizeof(float); // pos3 + color4 + size1 + tile1
+        pBind.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-            if (vIsSpark > 0.5) {
-                // Ember/spark: bright hot dot, fades quickly
-                float circle = 1.0 - smoothstep(0.3, 0.8, dist);
-                float fade = 1.0 - smoothstep(0.0, 1.0, vLifeRatio);
-                float alpha = circle * fade;
-                vec3 color = mix(vec3(1.0, 0.6, 0.1), vec3(1.0, 0.2, 0.0), vLifeRatio);
-                FragColor = vec4(color, alpha);
-            } else {
-                // Smoke: soft gray circle
-                float circle = 1.0 - smoothstep(0.5, 1.0, dist);
-                float fadeIn = smoothstep(0.0, 0.1, vLifeRatio);
-                float fadeOut = 1.0 - smoothstep(0.4, 1.0, vLifeRatio);
-                float alpha = circle * fadeIn * fadeOut * 0.5;
-                vec3 color = mix(vec3(0.5, 0.5, 0.53), vec3(0.65, 0.65, 0.68), vLifeRatio);
-                FragColor = vec4(color, alpha);
-            }
-        }
-    )";
+        std::vector<VkVertexInputAttributeDescription> pAttrs = {
+            {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},                    // position
+            {1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 3 * sizeof(float)}, // color
+            {2, 0, VK_FORMAT_R32_SFLOAT, 7 * sizeof(float)},          // size
+            {3, 0, VK_FORMAT_R32_SFLOAT, 8 * sizeof(float)},          // tile
+        };
 
-    smokeShader = std::make_unique<Shader>();
-    if (!smokeShader->loadFromSource(smokeVertSrc, smokeFragSrc)) {
-        LOG_ERROR("Failed to create smoke particle shader (non-fatal)");
-        smokeShader.reset();
+        auto buildParticlePipeline = [&](VkPipelineColorBlendAttachmentState blend) -> VkPipeline {
+            return PipelineBuilder()
+                .setShaders(particleVert.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                            particleFrag.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+                .setVertexInput({pBind}, pAttrs)
+                .setTopology(VK_PRIMITIVE_TOPOLOGY_POINT_LIST)
+                .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+                .setDepthTest(true, false, VK_COMPARE_OP_LESS_OR_EQUAL)
+                .setColorBlendAttachment(blend)
+                .setLayout(particlePipelineLayout_)
+                .setRenderPass(mainPass)
+                .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
+                .build(device);
+        };
+
+        particlePipeline_ = buildParticlePipeline(PipelineBuilder::blendAlpha());
+        particleAdditivePipeline_ = buildParticlePipeline(PipelineBuilder::blendAdditive());
     }
 
-    // Create smoke particle VAO/VBO (only if shader compiled)
-    if (smokeShader) {
-        glGenVertexArrays(1, &smokeVAO);
-        glGenBuffers(1, &smokeVBO);
-        glBindVertexArray(smokeVAO);
-        glBindBuffer(GL_ARRAY_BUFFER, smokeVBO);
-        // 5 floats per particle: pos(3) + lifeRatio(1) + size(1)
-        // 6 floats per particle: pos(3) + lifeRatio(1) + size(1) + isSpark(1)
-        glBufferData(GL_ARRAY_BUFFER, MAX_SMOKE_PARTICLES * 6 * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
-        // Position
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
-        // Life ratio
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
-        // Size
-        glEnableVertexAttribArray(2);
-        glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(4 * sizeof(float)));
-        // IsSpark
-        glEnableVertexAttribArray(3);
-        glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(5 * sizeof(float)));
-        glBindVertexArray(0);
+    // --- Build smoke pipeline ---
+    if (smokeVert.isValid() && smokeFrag.isValid()) {
+        VkVertexInputBindingDescription sBind{};
+        sBind.binding = 0;
+        sBind.stride = 6 * sizeof(float); // pos3 + lifeRatio1 + size1 + isSpark1
+        sBind.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        std::vector<VkVertexInputAttributeDescription> sAttrs = {
+            {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},           // position
+            {1, 0, VK_FORMAT_R32_SFLOAT, 3 * sizeof(float)}, // lifeRatio
+            {2, 0, VK_FORMAT_R32_SFLOAT, 4 * sizeof(float)}, // size
+            {3, 0, VK_FORMAT_R32_SFLOAT, 5 * sizeof(float)}, // isSpark
+        };
+
+        smokePipeline_ = PipelineBuilder()
+            .setShaders(smokeVert.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                        smokeFrag.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+            .setVertexInput({sBind}, sAttrs)
+            .setTopology(VK_PRIMITIVE_TOPOLOGY_POINT_LIST)
+            .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+            .setDepthTest(true, false, VK_COMPARE_OP_LESS_OR_EQUAL)
+            .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+            .setLayout(smokePipelineLayout_)
+            .setRenderPass(mainPass)
+            .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
+            .build(device);
     }
 
-    // Create M2 particle emitter shader
+    // Clean up shader modules
+    m2Vert.destroy(); m2Frag.destroy();
+    particleVert.destroy(); particleFrag.destroy();
+    smokeVert.destroy(); smokeFrag.destroy();
+
+    // --- Create dynamic particle buffers (mapped for CPU writes) ---
     {
-        const char* particleVertSrc = R"(
-            #version 330 core
-            layout (location = 0) in vec3 aPos;
-            layout (location = 1) in vec4 aColor;
-            layout (location = 2) in float aSize;
-            layout (location = 3) in float aTile;
+        VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+        bci.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
 
-            uniform mat4 uView;
-            uniform mat4 uProjection;
+        VmaAllocationCreateInfo aci{};
+        aci.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+        aci.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
-            out vec4 vColor;
-            out float vTile;
+        VmaAllocationInfo allocInfo{};
 
-            void main() {
-                vec4 viewPos = uView * vec4(aPos, 1.0);
-                gl_Position = uProjection * viewPos;
-                float dist = max(-viewPos.z, 1.0);
-                gl_PointSize = clamp(aSize * 400.0 / dist, 1.0, 64.0);
-                vColor = aColor;
-                vTile = aTile;
-            }
-        )";
+        // Smoke particle buffer
+        bci.size = MAX_SMOKE_PARTICLES * 6 * sizeof(float);
+        vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci, &smokeVB_, &smokeVBAlloc_, &allocInfo);
+        smokeVBMapped_ = allocInfo.pMappedData;
 
-        const char* particleFragSrc = R"(
-            #version 330 core
-            in vec4 vColor;
-            in float vTile;
-            uniform sampler2D uTexture;
-            uniform vec2 uTileCount;
-            uniform bool uAlphaKey;
-            out vec4 FragColor;
-
-            void main() {
-                // Circular soft-edge falloff (GL_POINTS are square by default)
-                vec2 center = gl_PointCoord - vec2(0.5);
-                float dist = length(center);
-                if (dist > 0.5) discard;
-                float edgeFade = smoothstep(0.5, 0.2, dist);
-
-                vec2 tileCount = max(uTileCount, vec2(1.0));
-                float tilesX = tileCount.x;
-                float tilesY = tileCount.y;
-                float tileMax = max(tilesX * tilesY - 1.0, 0.0);
-                float tile = clamp(vTile, 0.0, tileMax);
-                float col = mod(tile, tilesX);
-                float row = floor(tile / tilesX);
-                vec2 tileSize = vec2(1.0 / tilesX, 1.0 / tilesY);
-                vec2 uv = gl_PointCoord * tileSize + vec2(col, row) * tileSize;
-                vec4 texColor = texture(uTexture, uv);
-
-                // Alpha-key particle textures often encode transparency as near-black
-                // color without meaningful alpha.
-                if (uAlphaKey) {
-                    float maxRgb = max(texColor.r, max(texColor.g, texColor.b));
-                    if (maxRgb < 0.06 || texColor.a < 0.5) discard;
-                }
-
-                FragColor = texColor * vColor;
-                FragColor.a *= edgeFade;
-                if (FragColor.a < 0.01) discard;
-            }
-        )";
-
-        GLuint vs = glCreateShader(GL_VERTEX_SHADER);
-        glShaderSource(vs, 1, &particleVertSrc, nullptr);
-        glCompileShader(vs);
-
-        GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
-        glShaderSource(fs, 1, &particleFragSrc, nullptr);
-        glCompileShader(fs);
-
-        m2ParticleShader_ = glCreateProgram();
-        glAttachShader(m2ParticleShader_, vs);
-        glAttachShader(m2ParticleShader_, fs);
-        glLinkProgram(m2ParticleShader_);
-        glDeleteShader(vs);
-        glDeleteShader(fs);
-
-        // Create particle VAO/VBO: 9 floats per particle (pos3 + rgba4 + size1 + tile1)
-        glGenVertexArrays(1, &m2ParticleVAO_);
-        glGenBuffers(1, &m2ParticleVBO_);
-        glBindVertexArray(m2ParticleVAO_);
-        glBindBuffer(GL_ARRAY_BUFFER, m2ParticleVBO_);
-        glBufferData(GL_ARRAY_BUFFER, MAX_M2_PARTICLES * 9 * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
-        // Position (3f)
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void*)0);
-        // Color (4f)
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void*)(3 * sizeof(float)));
-        // Size (1f)
-        glEnableVertexAttribArray(2);
-        glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void*)(7 * sizeof(float)));
-        // Tile index (1f)
-        glEnableVertexAttribArray(3);
-        glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void*)(8 * sizeof(float)));
-        glBindVertexArray(0);
+        // M2 particle buffer
+        bci.size = MAX_M2_PARTICLES * 9 * sizeof(float);
+        vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci, &m2ParticleVB_, &m2ParticleVBAlloc_, &allocInfo);
+        m2ParticleVBMapped_ = allocInfo.pMappedData;
     }
 
-    // Create white fallback texture
-    uint8_t white[] = {255, 255, 255, 255};
-    glGenTextures(1, &whiteTexture);
-    glBindTexture(GL_TEXTURE_2D, whiteTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, white);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    // --- Create white fallback texture ---
+    {
+        uint8_t white[] = {255, 255, 255, 255};
+        whiteTexture_ = std::make_unique<VkTexture>();
+        whiteTexture_->upload(*vkCtx_, white, 1, 1, VK_FORMAT_R8G8B8A8_UNORM);
+        whiteTexture_->createSampler(device, VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    }
 
-    // Generate soft radial gradient glow texture for light sprites
+    // --- Generate soft radial gradient glow texture ---
     {
         static constexpr int SZ = 64;
         std::vector<uint8_t> px(SZ * SZ * 4);
@@ -675,68 +594,125 @@ bool M2Renderer::initialize(pipeline::AssetManager* assets) {
                 px[idx + 3] = static_cast<uint8_t>(a * 255);
             }
         }
-        glGenTextures(1, &glowTexture);
-        glBindTexture(GL_TEXTURE_2D, glowTexture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, SZ, SZ, 0, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glBindTexture(GL_TEXTURE_2D, 0);
+        glowTexture_ = std::make_unique<VkTexture>();
+        glowTexture_->upload(*vkCtx_, px.data(), SZ, SZ, VK_FORMAT_R8G8B8A8_UNORM);
+        glowTexture_->createSampler(device, VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
     }
 
-    LOG_INFO("M2 renderer initialized");
+    LOG_INFO("M2 renderer initialized (Vulkan)");
     initialized_ = true;
     return true;
 }
 
 void M2Renderer::shutdown() {
     LOG_INFO("Shutting down M2 renderer...");
+    if (!vkCtx_) return;
 
-    // Delete GPU resources
+    vkDeviceWaitIdle(vkCtx_->getDevice());
+    VkDevice device = vkCtx_->getDevice();
+    VmaAllocator alloc = vkCtx_->getAllocator();
+
+    // Delete model GPU resources
     for (auto& [id, model] : models) {
-        if (model.vao != 0) glDeleteVertexArrays(1, &model.vao);
-        if (model.vbo != 0) glDeleteBuffers(1, &model.vbo);
-        if (model.ebo != 0) glDeleteBuffers(1, &model.ebo);
+        destroyModelGPU(model);
     }
     models.clear();
+
+    // Destroy instance bone buffers
+    for (auto& inst : instances) {
+        destroyInstanceBones(inst);
+    }
     instances.clear();
     spatialGrid.clear();
     instanceIndexById.clear();
 
     // Delete cached textures
-    for (auto& [path, entry] : textureCache) {
-        GLuint texId = entry.id;
-        if (texId != 0 && texId != whiteTexture) {
-            glDeleteTextures(1, &texId);
-        }
-    }
     textureCache.clear();
     textureCacheBytes_ = 0;
     textureCacheCounter_ = 0;
-    textureHasAlphaById_.clear();
-    textureColorKeyBlackById_.clear();
-    if (whiteTexture != 0) {
-        glDeleteTextures(1, &whiteTexture);
-        whiteTexture = 0;
-    }
-    if (glowTexture != 0) {
-        glDeleteTextures(1, &glowTexture);
-        glowTexture = 0;
-    }
+    textureHasAlphaByPtr_.clear();
+    textureColorKeyBlackByPtr_.clear();
+    whiteTexture_.reset();
+    glowTexture_.reset();
 
-    shader.reset();
-
-    // Clean up smoke particle resources
-    if (smokeVAO != 0) { glDeleteVertexArrays(1, &smokeVAO); smokeVAO = 0; }
-    if (smokeVBO != 0) { glDeleteBuffers(1, &smokeVBO); smokeVBO = 0; }
-    smokeShader.reset();
+    // Clean up particle buffers
+    if (smokeVB_) { vmaDestroyBuffer(alloc, smokeVB_, smokeVBAlloc_); smokeVB_ = VK_NULL_HANDLE; }
+    if (m2ParticleVB_) { vmaDestroyBuffer(alloc, m2ParticleVB_, m2ParticleVBAlloc_); m2ParticleVB_ = VK_NULL_HANDLE; }
     smokeParticles.clear();
 
-    // Clean up M2 particle resources
-    if (m2ParticleVAO_ != 0) { glDeleteVertexArrays(1, &m2ParticleVAO_); m2ParticleVAO_ = 0; }
-    if (m2ParticleVBO_ != 0) { glDeleteBuffers(1, &m2ParticleVBO_); m2ParticleVBO_ = 0; }
-    if (m2ParticleShader_ != 0) { glDeleteProgram(m2ParticleShader_); m2ParticleShader_ = 0; }
+    // Destroy pipelines
+    auto destroyPipeline = [&](VkPipeline& p) { if (p) { vkDestroyPipeline(device, p, nullptr); p = VK_NULL_HANDLE; } };
+    destroyPipeline(opaquePipeline_);
+    destroyPipeline(alphaTestPipeline_);
+    destroyPipeline(alphaPipeline_);
+    destroyPipeline(additivePipeline_);
+    destroyPipeline(particlePipeline_);
+    destroyPipeline(particleAdditivePipeline_);
+    destroyPipeline(smokePipeline_);
+
+    if (pipelineLayout_) { vkDestroyPipelineLayout(device, pipelineLayout_, nullptr); pipelineLayout_ = VK_NULL_HANDLE; }
+    if (particlePipelineLayout_) { vkDestroyPipelineLayout(device, particlePipelineLayout_, nullptr); particlePipelineLayout_ = VK_NULL_HANDLE; }
+    if (smokePipelineLayout_) { vkDestroyPipelineLayout(device, smokePipelineLayout_, nullptr); smokePipelineLayout_ = VK_NULL_HANDLE; }
+
+    // Destroy descriptor pools and layouts
+    if (materialDescPool_) { vkDestroyDescriptorPool(device, materialDescPool_, nullptr); materialDescPool_ = VK_NULL_HANDLE; }
+    if (boneDescPool_) { vkDestroyDescriptorPool(device, boneDescPool_, nullptr); boneDescPool_ = VK_NULL_HANDLE; }
+    if (materialSetLayout_) { vkDestroyDescriptorSetLayout(device, materialSetLayout_, nullptr); materialSetLayout_ = VK_NULL_HANDLE; }
+    if (boneSetLayout_) { vkDestroyDescriptorSetLayout(device, boneSetLayout_, nullptr); boneSetLayout_ = VK_NULL_HANDLE; }
+    if (particleTexLayout_) { vkDestroyDescriptorSetLayout(device, particleTexLayout_, nullptr); particleTexLayout_ = VK_NULL_HANDLE; }
+
+    // Destroy shadow resources
+    destroyPipeline(shadowPipeline_);
+    if (shadowPipelineLayout_) { vkDestroyPipelineLayout(device, shadowPipelineLayout_, nullptr); shadowPipelineLayout_ = VK_NULL_HANDLE; }
+    if (shadowParamsPool_) { vkDestroyDescriptorPool(device, shadowParamsPool_, nullptr); shadowParamsPool_ = VK_NULL_HANDLE; }
+    if (shadowParamsLayout_) { vkDestroyDescriptorSetLayout(device, shadowParamsLayout_, nullptr); shadowParamsLayout_ = VK_NULL_HANDLE; }
+    if (shadowParamsUBO_) { vmaDestroyBuffer(alloc, shadowParamsUBO_, shadowParamsAlloc_); shadowParamsUBO_ = VK_NULL_HANDLE; }
+
+    initialized_ = false;
+}
+
+void M2Renderer::destroyModelGPU(M2ModelGPU& model) {
+    if (!vkCtx_) return;
+    VmaAllocator alloc = vkCtx_->getAllocator();
+    if (model.vertexBuffer) { vmaDestroyBuffer(alloc, model.vertexBuffer, model.vertexAlloc); model.vertexBuffer = VK_NULL_HANDLE; }
+    if (model.indexBuffer) { vmaDestroyBuffer(alloc, model.indexBuffer, model.indexAlloc); model.indexBuffer = VK_NULL_HANDLE; }
+    for (auto& batch : model.batches) {
+        if (batch.materialUBO) { vmaDestroyBuffer(alloc, batch.materialUBO, batch.materialUBOAlloc); batch.materialUBO = VK_NULL_HANDLE; }
+        // materialSet freed when pool is reset/destroyed
+    }
+}
+
+void M2Renderer::destroyInstanceBones(M2Instance& inst) {
+    if (!vkCtx_) return;
+    VmaAllocator alloc = vkCtx_->getAllocator();
+    for (int i = 0; i < 2; i++) {
+        if (inst.boneBuffer[i]) {
+            vmaDestroyBuffer(alloc, inst.boneBuffer[i], inst.boneAlloc[i]);
+            inst.boneBuffer[i] = VK_NULL_HANDLE;
+            inst.boneMapped[i] = nullptr;
+        }
+        // boneSet freed when pool is reset/destroyed
+    }
+}
+
+VkDescriptorSet M2Renderer::allocateMaterialSet() {
+    VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    ai.descriptorPool = materialDescPool_;
+    ai.descriptorSetCount = 1;
+    ai.pSetLayouts = &materialSetLayout_;
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    vkAllocateDescriptorSets(vkCtx_->getDevice(), &ai, &set);
+    return set;
+}
+
+VkDescriptorSet M2Renderer::allocateBoneSet() {
+    VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    ai.descriptorPool = boneDescPool_;
+    ai.descriptorSetCount = 1;
+    ai.pSetLayouts = &boneSetLayout_;
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    vkAllocateDescriptorSets(vkCtx_->getDevice(), &ai, &set);
+    return set;
 }
 
 // ---------------------------------------------------------------------------
@@ -1034,10 +1010,6 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
     gpuModel.indexCount = static_cast<uint32_t>(model.indices.size());
     gpuModel.vertexCount = static_cast<uint32_t>(model.vertices.size());
 
-    // Create VAO
-    glGenVertexArrays(1, &gpuModel.vao);
-    glBindVertexArray(gpuModel.vao);
-
     // Store bone/sequence data for animation
     gpuModel.bones = model.bones;
     gpuModel.sequences = model.sequences;
@@ -1116,37 +1088,29 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
             vertexData.push_back(static_cast<float>(std::min(v.boneIndices[3], uint8_t(127))));
         }
 
-        glGenBuffers(1, &gpuModel.vbo);
-        glBindBuffer(GL_ARRAY_BUFFER, gpuModel.vbo);
-        glBufferData(GL_ARRAY_BUFFER, vertexData.size() * sizeof(float),
-                     vertexData.data(), GL_STATIC_DRAW);
+        // Upload vertex buffer to GPU
+        {
+            auto buf = uploadBuffer(*vkCtx_,
+                vertexData.data(), vertexData.size() * sizeof(float),
+                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+            gpuModel.vertexBuffer = buf.buffer;
+            gpuModel.vertexAlloc = buf.allocation;
+        }
 
-        glGenBuffers(1, &gpuModel.ebo);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gpuModel.ebo);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, model.indices.size() * sizeof(uint16_t),
-                     model.indices.data(), GL_STATIC_DRAW);
-
-        const size_t stride = floatsPerVertex * sizeof(float);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0);
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, (void*)(3 * sizeof(float)));
-        glEnableVertexAttribArray(2);
-        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride, (void*)(6 * sizeof(float)));
-        glEnableVertexAttribArray(5);
-        glVertexAttribPointer(5, 2, GL_FLOAT, GL_FALSE, stride, (void*)(8 * sizeof(float)));
-        glEnableVertexAttribArray(3);
-        glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, stride, (void*)(10 * sizeof(float)));
-        glEnableVertexAttribArray(4);
-        glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, stride, (void*)(14 * sizeof(float)));
+        // Upload index buffer to GPU
+        {
+            auto buf = uploadBuffer(*vkCtx_,
+                model.indices.data(), model.indices.size() * sizeof(uint16_t),
+                VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+            gpuModel.indexBuffer = buf.buffer;
+            gpuModel.indexAlloc = buf.allocation;
+        }
     }
-
-    glBindVertexArray(0);
 
     // Load ALL textures from the model into a local vector.
     // textureLoadFailed[i] is true if texture[i] had a named path that failed to load.
     // Such batches are hidden (batchOpacity=0) rather than rendered white.
-    std::vector<GLuint> allTextures;
+    std::vector<VkTexture*> allTextures;
     std::vector<bool> textureLoadFailed;
     std::vector<std::string> textureKeysLower;
     if (assetManager) {
@@ -1164,8 +1128,8 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
                 std::replace(texKey.begin(), texKey.end(), '/', '\\');
                 std::transform(texKey.begin(), texKey.end(), texKey.begin(),
                                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-                GLuint texId = loadTexture(texPath, tex.flags);
-                bool failed = (texId == whiteTexture);
+                VkTexture* texPtr = loadTexture(texPath, tex.flags);
+                bool failed = (texPtr == whiteTexture_.get());
                 if (failed) {
                     static std::unordered_set<std::string> loggedModelTextureFails;
                     std::string failKey = model.name + "|" + texKey;
@@ -1176,14 +1140,14 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
                 if (isInvisibleTrap) {
                     LOG_INFO("  InvisibleTrap texture[", ti, "]: ", texPath, " -> ", (failed ? "WHITE" : "OK"));
                 }
-                allTextures.push_back(texId);
+                allTextures.push_back(texPtr);
                 textureLoadFailed.push_back(failed);
                 textureKeysLower.push_back(std::move(texKey));
             } else {
                 if (isInvisibleTrap) {
                     LOG_INFO("  InvisibleTrap texture[", ti, "]: EMPTY (using white fallback)");
                 }
-                allTextures.push_back(whiteTexture);
+                allTextures.push_back(whiteTexture_.get());
                 textureLoadFailed.push_back(false);  // Empty filename = intentional white (type!=0)
                 textureKeysLower.emplace_back();
             }
@@ -1210,10 +1174,10 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
 
     // Copy particle emitter data and resolve textures
     gpuModel.particleEmitters = model.particleEmitters;
-    gpuModel.particleTextures.resize(model.particleEmitters.size(), whiteTexture);
+    gpuModel.particleTextures.resize(model.particleEmitters.size(), whiteTexture_.get());
     for (size_t ei = 0; ei < model.particleEmitters.size(); ei++) {
         uint16_t texIdx = model.particleEmitters[ei].texture;
-        if (texIdx < allTextures.size() && allTextures[texIdx] != 0) {
+        if (texIdx < allTextures.size() && allTextures[texIdx] != nullptr) {
             gpuModel.particleTextures[ei] = allTextures[texIdx];
         }
     }
@@ -1246,7 +1210,7 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
             bgpu.submeshLevel = batch.submeshLevel;
 
             // Resolve texture: batch.textureIndex → textureLookup → allTextures
-            GLuint tex = whiteTexture;
+            VkTexture* tex = whiteTexture_.get();
             bool texFailed = false;
             std::string batchTexKeyLower;
             if (batch.textureIndex < model.textureLookup.size()) {
@@ -1271,8 +1235,8 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
 
             if (texFailed && groundDetailModel) {
                 static const std::string kDetailFallbackTexture = "World\\NoDXT\\Detail\\8des_detaildoodads01.blp";
-                GLuint fallbackTex = loadTexture(kDetailFallbackTexture, 0);
-                if (fallbackTex != 0 && fallbackTex != whiteTexture) {
+                VkTexture* fallbackTex = loadTexture(kDetailFallbackTexture, 0);
+                if (fallbackTex != nullptr && fallbackTex != whiteTexture_.get()) {
                     tex = fallbackTex;
                     texFailed = false;
                 }
@@ -1333,15 +1297,15 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
                 (batchTexKeyLower.find("ruby") != std::string::npos);
             bgpu.glowTint = texCoolTint ? 1 : (texRedTint ? 2 : 0);
             bool texHasAlpha = false;
-            if (tex != 0 && tex != whiteTexture) {
-                auto ait = textureHasAlphaById_.find(tex);
-                texHasAlpha = (ait != textureHasAlphaById_.end()) ? ait->second : false;
+            if (tex != nullptr && tex != whiteTexture_.get()) {
+                auto ait = textureHasAlphaByPtr_.find(tex);
+                texHasAlpha = (ait != textureHasAlphaByPtr_.end()) ? ait->second : false;
             }
             bgpu.hasAlpha = texHasAlpha;
             bool colorKeyBlack = false;
-            if (tex != 0 && tex != whiteTexture) {
-                auto cit = textureColorKeyBlackById_.find(tex);
-                colorKeyBlack = (cit != textureColorKeyBlackById_.end()) ? cit->second : false;
+            if (tex != nullptr && tex != whiteTexture_.get()) {
+                auto cit = textureColorKeyBlackByPtr_.find(tex);
+                colorKeyBlack = (cit != textureColorKeyBlackByPtr_.end()) ? cit->second : false;
             }
             bgpu.colorKeyBlack = colorKeyBlack;
             // textureCoordIndex is an index into a texture coord combo table, not directly
@@ -1407,17 +1371,17 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
         M2ModelGPU::BatchGPU bgpu;
         bgpu.indexStart = 0;
         bgpu.indexCount = gpuModel.indexCount;
-        bgpu.texture = allTextures.empty() ? whiteTexture : allTextures[0];
+        bgpu.texture = allTextures.empty() ? whiteTexture_.get() : allTextures[0];
         bool texHasAlpha = false;
-        if (bgpu.texture != 0 && bgpu.texture != whiteTexture) {
-            auto ait = textureHasAlphaById_.find(bgpu.texture);
-            texHasAlpha = (ait != textureHasAlphaById_.end()) ? ait->second : false;
+        if (bgpu.texture != nullptr && bgpu.texture != whiteTexture_.get()) {
+            auto ait = textureHasAlphaByPtr_.find(bgpu.texture);
+            texHasAlpha = (ait != textureHasAlphaByPtr_.end()) ? ait->second : false;
         }
         bgpu.hasAlpha = texHasAlpha;
         bool colorKeyBlack = false;
-        if (bgpu.texture != 0 && bgpu.texture != whiteTexture) {
-            auto cit = textureColorKeyBlackById_.find(bgpu.texture);
-            colorKeyBlack = (cit != textureColorKeyBlackById_.end()) ? cit->second : false;
+        if (bgpu.texture != nullptr && bgpu.texture != whiteTexture_.get()) {
+            auto cit = textureColorKeyBlackByPtr_.find(bgpu.texture);
+            colorKeyBlack = (cit != textureColorKeyBlackByPtr_.end()) ? cit->second : false;
         }
         bgpu.colorKeyBlack = colorKeyBlack;
         gpuModel.batches.push_back(bgpu);
@@ -1435,6 +1399,65 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
             gpuModel.isInvisibleTrap = true;
             LOG_DEBUG("M2 emitter volume hidden: '", model.name, "' size=(",
                       size.x, " x ", size.y, " x ", size.z, ")");
+        }
+    }
+
+    // Allocate Vulkan descriptor sets and UBOs for each batch
+    for (auto& bgpu : gpuModel.batches) {
+        // Create combined UBO for M2Params (binding 1) + M2Material (binding 2)
+        // We allocate them as separate buffers for clarity
+        VmaAllocationInfo matAllocInfo{};
+        {
+            VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+            bci.size = sizeof(M2MaterialUBO);
+            bci.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+            VmaAllocationCreateInfo aci{};
+            aci.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+            aci.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+            vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci, &bgpu.materialUBO, &bgpu.materialUBOAlloc, &matAllocInfo);
+
+            // Write initial material data (static per-batch — fadeAlpha/interiorDarken updated at draw time)
+            M2MaterialUBO mat{};
+            mat.hasTexture = (bgpu.texture != nullptr && bgpu.texture != whiteTexture_.get()) ? 1 : 0;
+            mat.alphaTest = (bgpu.blendMode == 1 || (bgpu.blendMode >= 2 && !bgpu.hasAlpha)) ? 1 : 0;
+            mat.colorKeyBlack = bgpu.colorKeyBlack ? 1 : 0;
+            mat.colorKeyThreshold = 0.08f;
+            mat.unlit = (bgpu.materialFlags & 0x01) ? 1 : 0;
+            mat.blendMode = bgpu.blendMode;
+            mat.fadeAlpha = 1.0f;
+            mat.interiorDarken = 0.0f;
+            mat.specularIntensity = 0.5f;
+            memcpy(matAllocInfo.pMappedData, &mat, sizeof(mat));
+        }
+
+        // Allocate descriptor set and write all bindings
+        bgpu.materialSet = allocateMaterialSet();
+        if (bgpu.materialSet) {
+            VkTexture* batchTex = bgpu.texture ? bgpu.texture : whiteTexture_.get();
+            VkDescriptorImageInfo imgInfo = batchTex->descriptorInfo();
+
+            VkDescriptorBufferInfo matBufInfo{};
+            matBufInfo.buffer = bgpu.materialUBO;
+            matBufInfo.offset = 0;
+            matBufInfo.range = sizeof(M2MaterialUBO);
+
+            VkWriteDescriptorSet writes[2] = {};
+            // binding 0: texture
+            writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[0].dstSet = bgpu.materialSet;
+            writes[0].dstBinding = 0;
+            writes[0].descriptorCount = 1;
+            writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[0].pImageInfo = &imgInfo;
+            // binding 2: M2Material UBO
+            writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[1].dstSet = bgpu.materialSet;
+            writes[1].dstBinding = 2;
+            writes[1].descriptorCount = 1;
+            writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            writes[1].pBufferInfo = &matBufInfo;
+
+            vkUpdateDescriptorSets(vkCtx_->getDevice(), 2, writes, 0, nullptr);
         }
     }
 
@@ -1921,8 +1944,8 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
     }
 }
 
-void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::mat4& projection) {
-    if (instances.empty() || !shader) {
+void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera) {
+    if (instances.empty() || !opaquePipeline_) {
         return;
     }
 
@@ -1935,40 +1958,14 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
         LOG_INFO("M2 render: ", instances.size(), " instances, ", models.size(), " models");
     }
 
-    // Set up GL state for M2 rendering
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LEQUAL);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glDisable(GL_CULL_FACE);   // Some M2 geometry is single-sided
-
     // Build frustum for culling
+    const glm::mat4 view = camera.getViewMatrix();
+    const glm::mat4 projection = camera.getProjectionMatrix();
     Frustum frustum;
     frustum.extractFromMatrix(projection * view);
 
     // Reuse persistent buffers (clear instead of reallocating)
     glowSprites_.clear();
-
-    shader->use();
-    shader->setUniform("uView", view);
-    shader->setUniform("uProjection", projection);
-    shader->setUniform("uLightDir", lightDir);
-    shader->setUniform("uLightColor", lightColor);
-    shader->setUniform("uSpecularIntensity", 0.5f);
-    shader->setUniform("uAmbientColor", ambientColor);
-    shader->setUniform("uViewPos", camera.getPosition());
-    shader->setUniform("uFogColor", fogColor);
-    shader->setUniform("uFogStart", fogStart);
-    shader->setUniform("uFogEnd", fogEnd);
-    bool useShadows = shadowEnabled;
-    shader->setUniform("uShadowEnabled", useShadows ? 1 : 0);
-    shader->setUniform("uShadowStrength", 0.68f);
-    if (useShadows) {
-        shader->setUniform("uLightSpaceMatrix", lightSpaceMatrix);
-        glActiveTexture(GL_TEXTURE7);
-        glBindTexture(GL_TEXTURE_2D, shadowDepthTex);
-        shader->setUniform("uShadowMap", 7);
-    }
 
     lastDrawCallCount = 0;
 
@@ -2027,7 +2024,7 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
         sortedVisible_.push_back({i, instance.modelId, distSq, effectiveMaxDistSq});
     }
 
-    // Sort by modelId to minimize VAO rebinds (using stable_sort for better cache behavior)
+    // Sort by modelId to minimize vertex/index buffer rebinds
     std::stable_sort(sortedVisible_.begin(), sortedVisible_.end(),
                      [](const VisibleEntry& a, const VisibleEntry& b) { return a.modelId < b.modelId; });
 
@@ -2037,55 +2034,42 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
     uint32_t currentModelId = UINT32_MAX;
     const M2ModelGPU* currentModel = nullptr;
 
-    // State tracking to avoid redundant GL calls (similar to WMO renderer optimization)
-    static GLuint lastBoundTexture = 0;
-    static bool lastHasTexture = false;
-    static bool lastAlphaTest = false;
-    static bool lastColorKeyBlack = false;
-    static bool lastUnlit = false;
-    static bool lastUseBones = false;
-    static bool lastInteriorDarken = false;
-    static uint8_t lastBlendMode = 255;  // Invalid initial value
-    static bool depthMaskState = true;   // Track current depth mask state
-    static glm::vec2 lastUVOffset = glm::vec2(-999.0f);  // Track UV offset state
-    static int lastTexCoordSet = -1;     // Track active UV set (0 or 1)
-
-    // Reset state tracking at start of frame to handle shader rebinds
-    lastBoundTexture = 0;
-    lastHasTexture = false;
-    lastAlphaTest = false;
-    lastColorKeyBlack = false;
-    lastUnlit = false;
-    lastUseBones = false;
-    lastInteriorDarken = false;
-    lastBlendMode = 255;
-    depthMaskState = true;
-    lastUVOffset = glm::vec2(-999.0f);
-    lastTexCoordSet = -1;
-
-    // Set texture unit once per frame instead of per-batch
-    glActiveTexture(GL_TEXTURE0);
-    shader->setUniform("uTexture", 0);  // Texture unit 0, set once per frame
-    shader->setUniform("uColorKeyBlack", false);
-    shader->setUniform("uColorKeyThreshold", 0.08f);
-    shader->setUniform("uBlendMode", 0);
-
-    // Performance counters
+    // State tracking
+    VkPipeline currentPipeline = VK_NULL_HANDLE;
     uint32_t boneMatrixUploads = 0;
     uint32_t totalBatchesDrawn = 0;
+    uint32_t frameIndex = vkCtx_->getCurrentFrame();
+
+    // Push constants struct matching m2.vert.glsl push_constant block
+    struct M2PushConstants {
+        glm::mat4 model;
+        glm::vec2 uvOffset;
+        int texCoordSet;
+        int useBones;
+    };
+
+    // Bind per-frame descriptor set (set 0) — shared across all draws
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            pipelineLayout_, 0, 1, &perFrameSet, 0, nullptr);
+
+    // Start with opaque pipeline
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, opaquePipeline_);
+    currentPipeline = opaquePipeline_;
 
     for (const auto& entry : sortedVisible_) {
         if (entry.index >= instances.size()) continue;
-        const auto& instance = instances[entry.index];
+        auto& instance = instances[entry.index];
 
-        // Bind VAO once per model group
+        // Bind vertex + index buffers once per model group
         if (entry.modelId != currentModelId) {
-            if (currentModel) glBindVertexArray(0);
             currentModelId = entry.modelId;
             auto mdlIt = models.find(currentModelId);
             if (mdlIt == models.end()) continue;
             currentModel = &mdlIt->second;
-            glBindVertexArray(currentModel->vao);
+            if (!currentModel->vertexBuffer) continue;
+            VkDeviceSize offset = 0;
+            vkCmdBindVertexBuffers(cmd, 0, 1, &currentModel->vertexBuffer, &offset);
+            vkCmdBindIndexBuffer(cmd, currentModel->indexBuffer, 0, VK_INDEX_TYPE_UINT16);
         }
 
         const M2ModelGPU& model = *currentModel;
@@ -2099,62 +2083,73 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
                                   (entry.effectiveMaxDistSq - fadeStartDistSq), 0.0f, 1.0f);
         }
 
-        // Always update per-instance uniforms (these change every instance)
         float instanceFadeAlpha = fadeAlpha;
         if (model.isGroundDetail) {
             instanceFadeAlpha *= 0.82f;
         }
-        shader->setUniform("uModel", instance.modelMatrix);
-        shader->setUniform("uFadeAlpha", instanceFadeAlpha);
 
-        // Track interior darken state to avoid redundant updates
-        if (insideInterior != lastInteriorDarken) {
-            shader->setUniform("uInteriorDarken", insideInterior);
-            lastInteriorDarken = insideInterior;
-        }
-
-        // Upload bone matrices if model has skeletal animation
+        // Upload bone matrices to SSBO if model has skeletal animation
         bool useBones = model.hasAnimation && !model.disableAnimation && !instance.boneMatrices.empty();
-        if (useBones != lastUseBones) {
-            shader->setUniform("uUseBones", useBones);
-            lastUseBones = useBones;
-        }
         if (useBones) {
-            int numBones = std::min(static_cast<int>(instance.boneMatrices.size()), 128);
-            shader->setUniformMatrixArray("uBones[0]", instance.boneMatrices.data(), numBones);
-            boneMatrixUploads++;
-        }
+            // Lazy-allocate bone SSBO on first use
+            if (!instance.boneBuffer[frameIndex]) {
+                VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+                bci.size = 128 * sizeof(glm::mat4); // max 128 bones
+                bci.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+                VmaAllocationCreateInfo aci{};
+                aci.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+                aci.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+                VmaAllocationInfo allocInfo{};
+                vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci,
+                                &instance.boneBuffer[frameIndex], &instance.boneAlloc[frameIndex], &allocInfo);
+                instance.boneMapped[frameIndex] = allocInfo.pMappedData;
 
-        // Disable depth writes for fading objects to avoid z-fighting
-        if (instanceFadeAlpha < 1.0f) {
-            if (depthMaskState) {
-                glDepthMask(GL_FALSE);
-                depthMaskState = false;
+                // Allocate descriptor set for bone SSBO
+                instance.boneSet[frameIndex] = allocateBoneSet();
+                if (instance.boneSet[frameIndex]) {
+                    VkDescriptorBufferInfo bufInfo{};
+                    bufInfo.buffer = instance.boneBuffer[frameIndex];
+                    bufInfo.offset = 0;
+                    bufInfo.range = bci.size;
+                    VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+                    write.dstSet = instance.boneSet[frameIndex];
+                    write.dstBinding = 0;
+                    write.descriptorCount = 1;
+                    write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                    write.pBufferInfo = &bufInfo;
+                    vkUpdateDescriptorSets(vkCtx_->getDevice(), 1, &write, 0, nullptr);
+                }
+            }
+
+            // Upload bone matrices
+            if (instance.boneMapped[frameIndex]) {
+                int numBones = std::min(static_cast<int>(instance.boneMatrices.size()), 128);
+                memcpy(instance.boneMapped[frameIndex], instance.boneMatrices.data(),
+                       numBones * sizeof(glm::mat4));
+                boneMatrixUploads++;
+            }
+
+            // Bind bone descriptor set (set 2)
+            if (instance.boneSet[frameIndex]) {
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        pipelineLayout_, 2, 1, &instance.boneSet[frameIndex], 0, nullptr);
             }
         }
 
-        // LOD selection based on distance (WoW retail behavior)
-        // submeshLevel: 0=base detail, 1=LOD1, 2=LOD2, 3=LOD3
+        // LOD selection based on distance
         float dist = std::sqrt(entry.distSq);
         uint16_t desiredLOD = 0;
-        if (dist > 150.0f) desiredLOD = 3;       // Far: LOD3 (lowest detail)
-        else if (dist > 80.0f) desiredLOD = 2;   // Medium-far: LOD2
-        else if (dist > 40.0f) desiredLOD = 1;   // Medium: LOD1
-        // else desiredLOD = 0 (close: base detail)
+        if (dist > 150.0f) desiredLOD = 3;
+        else if (dist > 80.0f) desiredLOD = 2;
+        else if (dist > 40.0f) desiredLOD = 1;
 
-        // Check if model has the desired LOD level; if not, fall back to LOD 0
         uint16_t targetLOD = desiredLOD;
         if (desiredLOD > 0) {
             bool hasDesiredLOD = false;
             for (const auto& b : model.batches) {
-                if (b.submeshLevel == desiredLOD) {
-                    hasDesiredLOD = true;
-                    break;
-                }
+                if (b.submeshLevel == desiredLOD) { hasDesiredLOD = true; break; }
             }
-            if (!hasDesiredLOD) {
-                targetLOD = 0;  // Fall back to base LOD
-            }
+            if (!hasDesiredLOD) targetLOD = 0;
         }
 
         std::string modelKeyLower = model.name;
@@ -2162,11 +2157,7 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         for (const auto& batch : model.batches) {
             if (batch.indexCount == 0) continue;
-
-            // Skip batches that don't match target LOD level
             if (!model.isGroundDetail && batch.submeshLevel != targetLOD) continue;
-
-            // Skip batches with zero opacity from texture weight tracks (should be invisible)
             if (batch.batchOpacity < 0.01f) continue;
 
             const bool koboldFlameCard =
@@ -2176,8 +2167,6 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
                  (modelKeyLower.find("torch") != std::string::npos) ||
                  (modelKeyLower.find("mine") != std::string::npos));
 
-            // Replace only likely flame-card submeshes with sprite glow. Keep larger geometry
-            // (lantern housings, posts, etc.) authored so the prop itself remains visible.
             const bool smallCardLikeBatch =
                 (batch.glowSize <= 1.35f) ||
                 (batch.lanternGlowHint && batch.glowSize <= 6.0f);
@@ -2212,7 +2201,6 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
                     }
                     gs.size = batch.glowSize * instance.scale * 1.45f;
                     glowSprites_.push_back(gs);
-                    // Add wider, softer halo to avoid hard "disk" look.
                     GlowSprite halo = gs;
                     halo.color.a *= 0.42f;
                     halo.size *= 1.8f;
@@ -2222,15 +2210,13 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
                     (batch.blendMode >= 3) ||
                     batch.colorKeyBlack ||
                     ((batch.materialFlags & 0x01) != 0);
-                // Keep lantern/light model geometry visible; sprite glow should augment,
-                // not replace, those props.
                 if ((batch.glowCardLike && lanternLikeModel) ||
                     (cardLikeSkipMesh && !lanternLikeModel)) {
                     continue;
                 }
             }
 
-            // Compute UV offset for texture animation (only set uniform if changed)
+            // Compute UV offset for texture animation
             glm::vec2 uvOffset(0.0f, 0.0f);
             if (batch.textureAnimIndex != 0xFFFF && model.hasTextureAnimation) {
                 uint16_t lookupIdx = batch.textureAnimIndex;
@@ -2245,177 +2231,101 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
                     }
                 }
             }
-            // Only update uniform if UV offset changed (most batches have 0,0)
-            if (uvOffset != lastUVOffset) {
-                shader->setUniform("uUVOffset", uvOffset);
-                lastUVOffset = uvOffset;
-            }
 
-            // Apply per-batch blend mode from M2 material (only if changed)
-            // 0=Opaque, 1=AlphaKey, 2=Alpha, 3=Add, 4=Mod, 5=Mod2x, 6=BlendAdd, 7=Screen
-            bool batchTransparent = false;
-            // Spell effects: override Mod/Mod2x to Additive for bright glow rendering
+            // Select pipeline based on blend mode
             uint8_t effectiveBlendMode = batch.blendMode;
             if (model.isSpellEffect && (effectiveBlendMode == 4 || effectiveBlendMode == 5)) {
-                effectiveBlendMode = 3; // Additive
+                effectiveBlendMode = 3;
             }
             if (model.isGroundDetail) {
-                // Use regular alpha blending for detail cards to avoid hard cutout loss.
                 effectiveBlendMode = 2;
             }
-            if (effectiveBlendMode != lastBlendMode) {
-                switch (effectiveBlendMode) {
-                    case 0: // Opaque
-                        glBlendFunc(GL_ONE, GL_ZERO);
-                        break;
-                    case 1: // Alpha Key (alpha test, handled by uAlphaTest)
-                        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-                        break;
-                    case 2: // Alpha
-                        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-                        batchTransparent = true;
-                        break;
-                    case 3: // Additive
-                        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-                        batchTransparent = true;
-                        break;
-                    case 4: // Mod
-                        glBlendFunc(GL_DST_COLOR, GL_ZERO);
-                        batchTransparent = true;
-                        break;
-                    case 5: // Mod2x
-                        glBlendFunc(GL_DST_COLOR, GL_SRC_COLOR);
-                        batchTransparent = true;
-                        break;
-                    case 6: // BlendAdd
-                        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-                        batchTransparent = true;
-                        break;
-                    default: // Fallback
-                        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-                        break;
-                }
-                lastBlendMode = effectiveBlendMode;
-                shader->setUniform("uBlendMode", static_cast<int>(effectiveBlendMode));
-            } else {
-                // Still need to know if batch is transparent for depth mask logic
-                batchTransparent = (effectiveBlendMode >= 2);
+
+            VkPipeline desiredPipeline;
+            switch (effectiveBlendMode) {
+                case 0: desiredPipeline = opaquePipeline_; break;
+                case 1: desiredPipeline = alphaTestPipeline_; break;
+                case 2: desiredPipeline = alphaPipeline_; break;
+                default: desiredPipeline = additivePipeline_; break;
+            }
+            if (desiredPipeline != currentPipeline) {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, desiredPipeline);
+                currentPipeline = desiredPipeline;
             }
 
-            // Disable depth writes for transparent/additive batches
-            if (batchTransparent && instanceFadeAlpha >= 1.0f) {
-                if (depthMaskState) {
-                    glDepthMask(GL_FALSE);
-                    depthMaskState = false;
+            // Update material UBO with per-draw dynamic values (fadeAlpha, interiorDarken)
+            if (batch.materialUBO) {
+                // The UBO is mapped — update fadeAlpha and interiorDarken fields in-place
+                VmaAllocationInfo allocInfo{};
+                vmaGetAllocationInfo(vkCtx_->getAllocator(), batch.materialUBOAlloc, &allocInfo);
+                if (allocInfo.pMappedData) {
+                    auto* mat = static_cast<M2MaterialUBO*>(allocInfo.pMappedData);
+                    mat->fadeAlpha = instanceFadeAlpha;
+                    mat->interiorDarken = insideInterior ? 1.0f : 0.0f;
+                    // Update colorKeyThreshold for Mod/Mod2x blend modes
+                    if (batch.colorKeyBlack) {
+                        mat->colorKeyThreshold = (effectiveBlendMode == 4 || effectiveBlendMode == 5) ? 0.7f : 0.08f;
+                    }
+                    // Ground detail: override alphaTest and unlit
+                    if (model.isGroundDetail) {
+                        mat->alphaTest = 0;
+                        mat->unlit = 0;
+                    }
                 }
             }
 
-            // Unlit: material flag 0x01 (only update if changed)
-            bool unlit = (batch.materialFlags & 0x01) != 0;
-            if (model.isGroundDetail) {
-                // Ground clutter should receive scene lighting so it doesn't glow.
-                unlit = false;
-            }
-            if (unlit != lastUnlit) {
-                shader->setUniform("uUnlit", unlit);
-                lastUnlit = unlit;
+            // Bind material descriptor set (set 1)
+            if (batch.materialSet) {
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        pipelineLayout_, 1, 1, &batch.materialSet, 0, nullptr);
             }
 
-            // Texture state (only update if changed)
-            bool hasTexture = (batch.texture != 0);
-            if (hasTexture != lastHasTexture) {
-                shader->setUniform("uHasTexture", hasTexture);
-                lastHasTexture = hasTexture;
-            }
+            // Push constants
+            M2PushConstants pc;
+            pc.model = instance.modelMatrix;
+            pc.uvOffset = uvOffset;
+            pc.texCoordSet = static_cast<int>(batch.textureUnit);
+            pc.useBones = useBones ? 1 : 0;
+            vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
 
-            bool alphaTest = (effectiveBlendMode == 1) ||
-                             (effectiveBlendMode >= 2 && !batch.hasAlpha);
-            if (model.isGroundDetail) {
-                alphaTest = false;
-            }
-            if (alphaTest != lastAlphaTest) {
-                shader->setUniform("uAlphaTest", alphaTest);
-                lastAlphaTest = alphaTest;
-            }
-            bool colorKeyBlack = batch.colorKeyBlack;
-            if (colorKeyBlack != lastColorKeyBlack) {
-                shader->setUniform("uColorKeyBlack", colorKeyBlack);
-                lastColorKeyBlack = colorKeyBlack;
-            }
-            // ColorKeyBlack textures: discard dark pixels so background shows through.
-            // Mod blend (4) multiplies framebuffer by texture — dark pixels darken
-            // the scene, so use a high threshold to remove the dark rectangle.
-            if (colorKeyBlack) {
-                float thresh = 0.08f;
-                if (effectiveBlendMode == 4 || effectiveBlendMode == 5) {
-                    thresh = 0.7f;  // Mod/Mod2x: only keep near-white pixels
-                }
-                shader->setUniform("uColorKeyThreshold", thresh);
-            }
-
-            // Only bind texture if it changed (texture unit already set to GL_TEXTURE0)
-            if (hasTexture && batch.texture != lastBoundTexture) {
-                glBindTexture(GL_TEXTURE_2D, batch.texture);
-                lastBoundTexture = batch.texture;
-            }
-
-            // UV set selector (textureUnit: 0=UV0, 1=UV1)
-            int texCoordSet = static_cast<int>(batch.textureUnit);
-            if (texCoordSet != lastTexCoordSet) {
-                shader->setUniform("uTexCoordSet", texCoordSet);
-                lastTexCoordSet = texCoordSet;
-            }
-
-            glDrawElements(GL_TRIANGLES, batch.indexCount, GL_UNSIGNED_SHORT,
-                           (void*)(batch.indexStart * sizeof(uint16_t)));
-
+            vkCmdDrawIndexed(cmd, batch.indexCount, 1, batch.indexStart, 0, 0);
             totalBatchesDrawn++;
-
-            // Restore depth writes after transparent batch
-            if (batchTransparent && fadeAlpha >= 1.0f) {
-                if (!depthMaskState) {
-                    glDepthMask(GL_TRUE);
-                    depthMaskState = true;
-                }
-            }
-            // Note: blend func restoration removed - state tracking handles it
-
             lastDrawCallCount++;
-        }
-
-        // Restore depth mask after faded instance
-        if (fadeAlpha < 1.0f) {
-            if (!depthMaskState) {
-                glDepthMask(GL_TRUE);
-                depthMaskState = true;
-            }
         }
     }
 
-    if (currentModel) glBindVertexArray(0);
-
     // Render glow sprites as billboarded additive point lights
-    if (!glowSprites_.empty() && m2ParticleShader_ != 0 && m2ParticleVAO_ != 0) {
-        glUseProgram(m2ParticleShader_);
+    if (!glowSprites_.empty() && particleAdditivePipeline_ && m2ParticleVB_ && glowTexture_) {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, particleAdditivePipeline_);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                particlePipelineLayout_, 0, 1, &perFrameSet, 0, nullptr);
 
-        GLint viewLoc = glGetUniformLocation(m2ParticleShader_, "uView");
-        GLint projLoc = glGetUniformLocation(m2ParticleShader_, "uProjection");
-        GLint texLoc = glGetUniformLocation(m2ParticleShader_, "uTexture");
-        GLint tileLoc = glGetUniformLocation(m2ParticleShader_, "uTileCount");
-        glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-        glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
-        glUniform1i(texLoc, 0);
-        glUniform2f(tileLoc, 1.0f, 1.0f);
+        // Allocate a descriptor set for glow texture (from material pool using particle layout)
+        VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        ai.descriptorPool = materialDescPool_;
+        ai.descriptorSetCount = 1;
+        ai.pSetLayouts = &particleTexLayout_;
+        VkDescriptorSet glowSet = VK_NULL_HANDLE;
+        if (vkAllocateDescriptorSets(vkCtx_->getDevice(), &ai, &glowSet) == VK_SUCCESS) {
+            VkDescriptorImageInfo imgInfo = glowTexture_->descriptorInfo();
+            VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            write.dstSet = glowSet;
+            write.dstBinding = 0;
+            write.descriptorCount = 1;
+            write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            write.pImageInfo = &imgInfo;
+            vkUpdateDescriptorSets(vkCtx_->getDevice(), 1, &write, 0, nullptr);
 
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE); // Additive blending
-        glDepthMask(GL_FALSE);
-        glEnable(GL_PROGRAM_POINT_SIZE);
-        glDisable(GL_CULL_FACE);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    particlePipelineLayout_, 1, 1, &glowSet, 0, nullptr);
+        }
 
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, glowTexture);
+        // Push constants for particle: tileCount(vec2) + alphaKey(int)
+        struct { float tileX, tileY; int alphaKey; } particlePush = {1.0f, 1.0f, 0};
+        vkCmdPushConstants(cmd, particlePipelineLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                           sizeof(particlePush), &particlePush);
 
-        // Build vertex data: pos(3) + color(4) + size(1) + tile(1) = 9 floats per sprite
+        // Build and upload vertex data
         std::vector<float> glowData;
         glowData.reserve(glowSprites_.size() * 9);
         for (const auto& gs : glowSprites_) {
@@ -2430,27 +2340,18 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
             glowData.push_back(0.0f);
         }
 
-        glBindVertexArray(m2ParticleVAO_);
-        glBindBuffer(GL_ARRAY_BUFFER, m2ParticleVBO_);
         size_t uploadCount = std::min(glowSprites_.size(), MAX_M2_PARTICLES);
-        glBufferSubData(GL_ARRAY_BUFFER, 0, uploadCount * 9 * sizeof(float), glowData.data());
-        glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(uploadCount));
-        glBindVertexArray(0);
+        memcpy(m2ParticleVBMapped_, glowData.data(), uploadCount * 9 * sizeof(float));
 
-        glDepthMask(GL_TRUE);
-        glDisable(GL_PROGRAM_POINT_SIZE);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &m2ParticleVB_, &offset);
+        vkCmdDraw(cmd, static_cast<uint32_t>(uploadCount), 1, 0, 0);
     }
-
-    // Restore state
-    glDisable(GL_BLEND);
-    glEnable(GL_CULL_FACE);
 
     auto renderEndTime = std::chrono::high_resolution_clock::now();
     double totalMs = std::chrono::duration<double, std::milli>(renderEndTime - renderStartTime).count();
     double drawLoopMs = std::chrono::duration<double, std::milli>(renderEndTime - cullingSortTime).count();
 
-    // Log detailed timing every 120 frames (~2 seconds at 60fps)
     static int frameCounter = 0;
     if (++frameCounter >= 120) {
         frameCounter = 0;
@@ -2460,60 +2361,211 @@ void M2Renderer::render(const Camera& camera, const glm::mat4& view, const glm::
     }
 }
 
-void M2Renderer::renderShadow(GLuint shadowShaderProgram, const glm::vec3& shadowCenter, float halfExtent) {
-    if (instances.empty() || shadowShaderProgram == 0) {
-        return;
+bool M2Renderer::initializeShadow(VkRenderPass shadowRenderPass) {
+    if (!vkCtx_ || shadowRenderPass == VK_NULL_HANDLE) return false;
+    VkDevice device = vkCtx_->getDevice();
+
+    // ShadowParams UBO: useBones, useTexture, alphaTest, foliageSway, windTime, foliageMotionDamp
+    struct ShadowParamsUBO {
+        int32_t useBones = 0;
+        int32_t useTexture = 0;
+        int32_t alphaTest = 0;
+        int32_t foliageSway = 0;
+        float windTime = 0.0f;
+        float foliageMotionDamp = 1.0f;
+    };
+
+    // Create ShadowParams UBO
+    VkBufferCreateInfo bufCI{};
+    bufCI.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufCI.size = sizeof(ShadowParamsUBO);
+    bufCI.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    VmaAllocationCreateInfo allocCI{};
+    allocCI.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    allocCI.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    VmaAllocationInfo allocInfo{};
+    if (vmaCreateBuffer(vkCtx_->getAllocator(), &bufCI, &allocCI,
+            &shadowParamsUBO_, &shadowParamsAlloc_, &allocInfo) != VK_SUCCESS) {
+        LOG_ERROR("M2Renderer: failed to create shadow params UBO");
+        return false;
+    }
+    ShadowParamsUBO defaultParams{};
+    std::memcpy(allocInfo.pMappedData, &defaultParams, sizeof(defaultParams));
+
+    // Create descriptor set layout: binding 0 = sampler2D, binding 1 = ShadowParams UBO
+    VkDescriptorSetLayoutBinding layoutBindings[2]{};
+    layoutBindings[0].binding = 0;
+    layoutBindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    layoutBindings[0].descriptorCount = 1;
+    layoutBindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    layoutBindings[1].binding = 1;
+    layoutBindings[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    layoutBindings[1].descriptorCount = 1;
+    layoutBindings[1].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    VkDescriptorSetLayoutCreateInfo layoutCI{};
+    layoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutCI.bindingCount = 2;
+    layoutCI.pBindings = layoutBindings;
+    if (vkCreateDescriptorSetLayout(device, &layoutCI, nullptr, &shadowParamsLayout_) != VK_SUCCESS) {
+        LOG_ERROR("M2Renderer: failed to create shadow params layout");
+        return false;
     }
 
-    GLint modelLoc = glGetUniformLocation(shadowShaderProgram, "uModel");
-    GLint useTexLoc = glGetUniformLocation(shadowShaderProgram, "uUseTexture");
-    GLint texLoc = glGetUniformLocation(shadowShaderProgram, "uTexture");
-    GLint alphaTestLoc = glGetUniformLocation(shadowShaderProgram, "uAlphaTest");
-    GLint foliageSwayLoc = glGetUniformLocation(shadowShaderProgram, "uFoliageSway");
-    if (modelLoc < 0) {
-        return;
+    // Create descriptor pool
+    VkDescriptorPoolSize poolSizes[2]{};
+    poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[0].descriptorCount = 1;
+    poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSizes[1].descriptorCount = 1;
+    VkDescriptorPoolCreateInfo poolCI{};
+    poolCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolCI.maxSets = 1;
+    poolCI.poolSizeCount = 2;
+    poolCI.pPoolSizes = poolSizes;
+    if (vkCreateDescriptorPool(device, &poolCI, nullptr, &shadowParamsPool_) != VK_SUCCESS) {
+        LOG_ERROR("M2Renderer: failed to create shadow params pool");
+        return false;
     }
 
-    if (useTexLoc >= 0) glUniform1i(useTexLoc, 0);
-    if (alphaTestLoc >= 0) glUniform1i(alphaTestLoc, 0);
-    if (foliageSwayLoc >= 0) glUniform1i(foliageSwayLoc, 0);
-    if (texLoc >= 0) glUniform1i(texLoc, 0);
-    glActiveTexture(GL_TEXTURE0);
+    // Allocate descriptor set
+    VkDescriptorSetAllocateInfo setAlloc{};
+    setAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    setAlloc.descriptorPool = shadowParamsPool_;
+    setAlloc.descriptorSetCount = 1;
+    setAlloc.pSetLayouts = &shadowParamsLayout_;
+    if (vkAllocateDescriptorSets(device, &setAlloc, &shadowParamsSet_) != VK_SUCCESS) {
+        LOG_ERROR("M2Renderer: failed to allocate shadow params set");
+        return false;
+    }
+
+    // Write descriptors (use white fallback for binding 0)
+    VkDescriptorBufferInfo bufInfo{};
+    bufInfo.buffer = shadowParamsUBO_;
+    bufInfo.offset = 0;
+    bufInfo.range = sizeof(ShadowParamsUBO);
+
+    VkDescriptorImageInfo imgInfo{};
+    imgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    imgInfo.imageView = whiteTexture_->getImageView();
+    imgInfo.sampler = whiteTexture_->getSampler();
+
+    VkWriteDescriptorSet writes[2]{};
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = shadowParamsSet_;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorCount = 1;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[0].pImageInfo = &imgInfo;
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = shadowParamsSet_;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorCount = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[1].pBufferInfo = &bufInfo;
+    vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+
+    // Create shadow pipeline layout: set 1 = shadowParamsLayout_, push constants = 128 bytes
+    VkPushConstantRange pc{};
+    pc.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pc.offset = 0;
+    pc.size = 128;  // lightSpaceMatrix (64) + model (64)
+    shadowPipelineLayout_ = createPipelineLayout(device, {shadowParamsLayout_}, {pc});
+    if (!shadowPipelineLayout_) {
+        LOG_ERROR("M2Renderer: failed to create shadow pipeline layout");
+        return false;
+    }
+
+    // Load shadow shaders
+    VkShaderModule vertShader, fragShader;
+    if (!vertShader.loadFromFile(device, "assets/shaders/shadow.vert.spv")) {
+        LOG_ERROR("M2Renderer: failed to load shadow vertex shader");
+        return false;
+    }
+    if (!fragShader.loadFromFile(device, "assets/shaders/shadow.frag.spv")) {
+        LOG_ERROR("M2Renderer: failed to load shadow fragment shader");
+        return false;
+    }
+
+    // M2 vertex layout: 18 floats = 72 bytes stride
+    // loc0=pos(off0), loc1=normal(off12), loc2=texCoord0(off24), loc5=texCoord1(off32),
+    // loc3=boneWeights(off40), loc4=boneIndices(off56)
+    // Shadow shader locations: 0=aPos, 1=aTexCoord, 2=aBoneWeights, 3=aBoneIndicesF
+    // useBones=0 so locations 2,3 are never used
+    VkVertexInputBindingDescription vertBind{};
+    vertBind.binding = 0;
+    vertBind.stride = 18 * sizeof(float);
+    vertBind.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    std::vector<VkVertexInputAttributeDescription> vertAttrs = {
+        {0, 0, VK_FORMAT_R32G32B32_SFLOAT,    0},                     // aPos       -> position
+        {1, 0, VK_FORMAT_R32G32_SFLOAT,       6 * sizeof(float)},     // aTexCoord  -> texCoord0
+        {2, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 10 * sizeof(float)},    // aBoneWeights
+        {3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 14 * sizeof(float)},    // aBoneIndicesF
+    };
+
+    shadowPipeline_ = PipelineBuilder()
+        .setShaders(vertShader.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                    fragShader.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+        .setVertexInput({vertBind}, vertAttrs)
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT)
+        .setDepthTest(true, true, VK_COMPARE_OP_LESS_OR_EQUAL)
+        .setDepthBias(2.0f, 4.0f)
+        .setNoColorAttachment()
+        .setLayout(shadowPipelineLayout_)
+        .setRenderPass(shadowRenderPass)
+        .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
+        .build(device);
+
+    vertShader.destroy();
+    fragShader.destroy();
+
+    if (!shadowPipeline_) {
+        LOG_ERROR("M2Renderer: failed to create shadow pipeline");
+        return false;
+    }
+    LOG_INFO("M2Renderer shadow pipeline initialized");
+    return true;
+}
+
+void M2Renderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMatrix) {
+    if (!shadowPipeline_ || !shadowParamsSet_) return;
+    if (instances.empty() || models.empty()) return;
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline_);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipelineLayout_,
+        0, 1, &shadowParamsSet_, 0, nullptr);
+
+    struct ShadowPush { glm::mat4 lightSpaceMatrix; glm::mat4 model; };
+
+    uint32_t currentModelId = UINT32_MAX;
+    const M2ModelGPU* currentModel = nullptr;
 
     for (const auto& instance : instances) {
-        // Cull instances whose AABB doesn't overlap the shadow frustum (XY plane)
-        glm::vec3 instCenter = (instance.worldBoundsMin + instance.worldBoundsMax) * 0.5f;
-        glm::vec3 instHalf   = (instance.worldBoundsMax - instance.worldBoundsMin) * 0.5f;
-        if (std::abs(instCenter.x - shadowCenter.x) > halfExtent + instHalf.x) continue;
-        if (std::abs(instCenter.y - shadowCenter.y) > halfExtent + instHalf.y) continue;
+        auto modelIt = models.find(instance.modelId);
+        if (modelIt == models.end()) continue;
+        const M2ModelGPU& model = modelIt->second;
+        if (!model.isValid() || model.isSmoke || model.isInvisibleTrap) continue;
 
-        auto it = models.find(instance.modelId);
-        if (it == models.end()) continue;
+        // Bind vertex/index buffers when model changes
+        if (instance.modelId != currentModelId) {
+            currentModelId = instance.modelId;
+            currentModel = &model;
+            VkDeviceSize offset = 0;
+            vkCmdBindVertexBuffers(cmd, 0, 1, &currentModel->vertexBuffer, &offset);
+            vkCmdBindIndexBuffer(cmd, currentModel->indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+        }
 
-        const M2ModelGPU& model = it->second;
-        if (!model.isValid() || model.isSmoke) continue;
+        ShadowPush push{lightSpaceMatrix, instance.modelMatrix};
+        vkCmdPushConstants(cmd, shadowPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT,
+                           0, 128, &push);
 
-        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, &instance.modelMatrix[0][0]);
-        glBindVertexArray(model.vao);
-
+        // Draw only opaque batches
         for (const auto& batch : model.batches) {
-            if (batch.indexCount == 0) continue;
-            bool useTexture = (batch.texture != 0);
-            bool alphaCutout = batch.hasAlpha;
-            bool foliageSway = model.shadowWindFoliage && alphaCutout;
-
-            if (useTexLoc >= 0) glUniform1i(useTexLoc, useTexture ? 1 : 0);
-            if (alphaTestLoc >= 0) glUniform1i(alphaTestLoc, alphaCutout ? 1 : 0);
-            if (foliageSwayLoc >= 0) glUniform1i(foliageSwayLoc, foliageSway ? 1 : 0);
-            if (useTexture) {
-                glBindTexture(GL_TEXTURE_2D, batch.texture);
-            }
-            glDrawElements(GL_TRIANGLES, batch.indexCount, GL_UNSIGNED_SHORT,
-                           (void*)(batch.indexStart * sizeof(uint16_t)));
+            if (batch.blendMode >= 2) continue;  // skip transparent
+            if (batch.submeshLevel > 0) continue; // skip LOD submeshes
+            vkCmdDrawIndexed(cmd, batch.indexCount, 1, batch.indexStart, 0, 0);
         }
     }
-
-    glBindVertexArray(0);
 }
 
 // --- M2 Particle Emitter Helpers ---
@@ -2708,12 +2760,12 @@ void M2Renderer::updateParticles(M2Instance& inst, float dt) {
     }
 }
 
-void M2Renderer::renderM2Particles(const glm::mat4& view, const glm::mat4& proj) {
-    if (m2ParticleShader_ == 0 || m2ParticleVAO_ == 0) return;
+void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrameSet) {
+    if (!particlePipeline_ || !m2ParticleVB_) return;
 
     // Collect all particles from all instances, grouped by texture+blend
     struct ParticleGroupKey {
-        GLuint texture;
+        VkTexture* texture;
         uint8_t blendType;
         uint16_t tilesX;
         uint16_t tilesY;
@@ -2727,14 +2779,14 @@ void M2Renderer::renderM2Particles(const glm::mat4& view, const glm::mat4& proj)
     };
     struct ParticleGroupKeyHash {
         size_t operator()(const ParticleGroupKey& key) const {
-            size_t h1 = std::hash<uint32_t>{}(key.texture);
+            size_t h1 = std::hash<uintptr_t>{}(reinterpret_cast<uintptr_t>(key.texture));
             size_t h2 = std::hash<uint32_t>{}((static_cast<uint32_t>(key.tilesX) << 16) | key.tilesY);
             size_t h3 = std::hash<uint8_t>{}(key.blendType);
             return h1 ^ (h2 * 0x9e3779b9u) ^ (h3 * 0x85ebca6bu);
         }
     };
     struct ParticleGroup {
-        GLuint texture;
+        VkTexture* texture;
         uint8_t blendType;
         uint16_t tilesX;
         uint16_t tilesY;
@@ -2760,23 +2812,13 @@ void M2Renderer::renderM2Particles(const glm::mat4& view, const glm::mat4& proj)
             float rawScale = interpFBlockFloat(em.particleScale, lifeRatio);
 
             if (!gpu.isSpellEffect) {
-                // FBlock colors are tint values meant to multiply a bright texture.
-                // Desaturate toward white so particles look like water spray, not neon.
                 color = glm::mix(color, glm::vec3(1.0f), 0.7f);
-
-                // Large-scale particles (>2.0) are volume/backdrop effects meant to be
-                // nearly invisible mist. Fade them heavily since we render as point sprites.
-                if (rawScale > 2.0f) {
-                    alpha *= 0.02f;
-                }
-                // Reduce additive particle intensity to prevent blinding overlap
-                if (em.blendingType == 3 || em.blendingType == 4) {
-                    alpha *= 0.05f;
-                }
+                if (rawScale > 2.0f) alpha *= 0.02f;
+                if (em.blendingType == 3 || em.blendingType == 4) alpha *= 0.05f;
             }
             float scale = gpu.isSpellEffect ? rawScale : std::min(rawScale, 1.5f);
 
-            GLuint tex = whiteTexture;
+            VkTexture* tex = whiteTexture_.get();
             if (p.emitterIndex < static_cast<int>(gpu.particleTextures.size())) {
                 tex = gpu.particleTextures[p.emitterIndex];
             }
@@ -2813,114 +2855,95 @@ void M2Renderer::renderM2Particles(const glm::mat4& view, const glm::mat4& proj)
 
     if (totalParticles == 0) return;
 
-    // Set up GL state
-    glEnable(GL_BLEND);
-    glEnable(GL_DEPTH_TEST);
-    glDepthMask(GL_FALSE);
-    glEnable(GL_PROGRAM_POINT_SIZE);
-    glDisable(GL_CULL_FACE);
+    // Bind per-frame set (set 0) for particle pipeline
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            particlePipelineLayout_, 0, 1, &perFrameSet, 0, nullptr);
 
-    glUseProgram(m2ParticleShader_);
+    VkDeviceSize vbOffset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &m2ParticleVB_, &vbOffset);
 
-    GLint viewLoc = glGetUniformLocation(m2ParticleShader_, "uView");
-    GLint projLoc = glGetUniformLocation(m2ParticleShader_, "uProjection");
-    GLint texLoc = glGetUniformLocation(m2ParticleShader_, "uTexture");
-    GLint tileLoc = glGetUniformLocation(m2ParticleShader_, "uTileCount");
-    GLint alphaKeyLoc = glGetUniformLocation(m2ParticleShader_, "uAlphaKey");
-    glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-    glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
-    glUniform1i(texLoc, 0);
-    glActiveTexture(GL_TEXTURE0);
-
-    glBindVertexArray(m2ParticleVAO_);
+    VkPipeline currentPipeline = VK_NULL_HANDLE;
 
     for (auto& [key, group] : groups) {
         if (group.vertexData.empty()) continue;
 
-        // Use blend mode as specified by the emitter — don't override based on texture alpha.
-        // BlendType: 0=opaque, 1=alphaKey, 2=alpha, 3=add, 4=mod
         uint8_t blendType = group.blendType;
-        glUniform1i(alphaKeyLoc, (blendType == 1) ? 1 : 0);
-        if (blendType == 3 || blendType == 4) {
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE);  // Additive
-        } else {
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);  // Alpha
+        VkPipeline desiredPipeline = (blendType == 3 || blendType == 4)
+            ? particleAdditivePipeline_ : particlePipeline_;
+        if (desiredPipeline != currentPipeline) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, desiredPipeline);
+            currentPipeline = desiredPipeline;
         }
 
-        glBindTexture(GL_TEXTURE_2D, group.texture);
-        glUniform2f(tileLoc, static_cast<float>(group.tilesX), static_cast<float>(group.tilesY));
+        // Allocate descriptor set for this group's texture
+        VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        ai.descriptorPool = materialDescPool_;
+        ai.descriptorSetCount = 1;
+        ai.pSetLayouts = &particleTexLayout_;
+        VkDescriptorSet texSet = VK_NULL_HANDLE;
+        if (vkAllocateDescriptorSets(vkCtx_->getDevice(), &ai, &texSet) == VK_SUCCESS) {
+            VkTexture* tex = group.texture ? group.texture : whiteTexture_.get();
+            VkDescriptorImageInfo imgInfo = tex->descriptorInfo();
+            VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            write.dstSet = texSet;
+            write.dstBinding = 0;
+            write.descriptorCount = 1;
+            write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            write.pImageInfo = &imgInfo;
+            vkUpdateDescriptorSets(vkCtx_->getDevice(), 1, &write, 0, nullptr);
 
-        // Upload and draw in chunks of MAX_M2_PARTICLES
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    particlePipelineLayout_, 1, 1, &texSet, 0, nullptr);
+        }
+
+        // Push constants: tileCount + alphaKey
+        struct { float tileX, tileY; int alphaKey; } pc = {
+            static_cast<float>(group.tilesX), static_cast<float>(group.tilesY),
+            (blendType == 1) ? 1 : 0
+        };
+        vkCmdPushConstants(cmd, particlePipelineLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                           sizeof(pc), &pc);
+
+        // Upload and draw in chunks
         size_t count = group.vertexData.size() / 9;
         size_t offset = 0;
         while (offset < count) {
             size_t batch = std::min(count - offset, MAX_M2_PARTICLES);
-            glBindBuffer(GL_ARRAY_BUFFER, m2ParticleVBO_);
-            glBufferSubData(GL_ARRAY_BUFFER, 0, batch * 9 * sizeof(float),
-                            &group.vertexData[offset * 9]);
-            glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(batch));
+            memcpy(m2ParticleVBMapped_, &group.vertexData[offset * 9], batch * 9 * sizeof(float));
+            vkCmdDraw(cmd, static_cast<uint32_t>(batch), 1, 0, 0);
             offset += batch;
         }
     }
-
-    glBindVertexArray(0);
-
-    // Restore state
-    glDepthMask(GL_TRUE);
-    glDisable(GL_PROGRAM_POINT_SIZE);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glDisable(GL_BLEND);
-    glEnable(GL_CULL_FACE);
 }
 
-void M2Renderer::renderSmokeParticles(const Camera& /*camera*/, const glm::mat4& view, const glm::mat4& projection) {
-    if (smokeParticles.empty() || !smokeShader || smokeVAO == 0) return;
+void M2Renderer::renderSmokeParticles(VkCommandBuffer cmd, VkDescriptorSet perFrameSet) {
+    if (smokeParticles.empty() || !smokePipeline_ || !smokeVB_) return;
 
     // Build vertex data: pos(3) + lifeRatio(1) + size(1) + isSpark(1) per particle
-    std::vector<float> data;
-    data.reserve(smokeParticles.size() * 6);
-    for (const auto& p : smokeParticles) {
-        data.push_back(p.position.x);
-        data.push_back(p.position.y);
-        data.push_back(p.position.z);
-        data.push_back(p.life / p.maxLife);
-        data.push_back(p.size);
-        data.push_back(p.isSpark);
+    size_t count = std::min(smokeParticles.size(), static_cast<size_t>(MAX_SMOKE_PARTICLES));
+    float* dst = static_cast<float*>(smokeVBMapped_);
+    for (size_t i = 0; i < count; i++) {
+        const auto& p = smokeParticles[i];
+        *dst++ = p.position.x;
+        *dst++ = p.position.y;
+        *dst++ = p.position.z;
+        *dst++ = p.life / p.maxLife;
+        *dst++ = p.size;
+        *dst++ = p.isSpark;
     }
 
-    // Upload to VBO
-    glBindBuffer(GL_ARRAY_BUFFER, smokeVBO);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, data.size() * sizeof(float), data.data());
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, smokePipeline_);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            smokePipelineLayout_, 0, 1, &perFrameSet, 0, nullptr);
 
-    // Set GL state
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glEnable(GL_DEPTH_TEST);  // Occlude behind buildings
-    glDepthMask(GL_FALSE);
-    glEnable(GL_PROGRAM_POINT_SIZE);
-    glDisable(GL_CULL_FACE);
+    // Push constant: screenHeight
+    float screenHeight = static_cast<float>(vkCtx_->getSwapchainExtent().height);
+    vkCmdPushConstants(cmd, smokePipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                       sizeof(float), &screenHeight);
 
-    smokeShader->use();
-    smokeShader->setUniform("uView", view);
-    smokeShader->setUniform("uProjection", projection);
-
-    // Get viewport height for point size scaling
-    GLint viewport[4];
-    glGetIntegerv(GL_VIEWPORT, viewport);
-    smokeShader->setUniform("uScreenHeight", static_cast<float>(viewport[3]));
-
-    glBindVertexArray(smokeVAO);
-    glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(smokeParticles.size()));
-    glBindVertexArray(0);
-
-    // Restore state
-    glEnable(GL_DEPTH_TEST);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glDepthMask(GL_TRUE);
-    glDisable(GL_PROGRAM_POINT_SIZE);
-    glDisable(GL_BLEND);
-    glEnable(GL_CULL_FACE);
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &smokeVB_, &offset);
+    vkCmdDraw(cmd, static_cast<uint32_t>(count), 1, 0, 0);
 }
 
 void M2Renderer::setInstancePosition(uint32_t instanceId, const glm::vec3& position) {
@@ -2989,10 +3012,14 @@ void M2Renderer::removeInstances(const std::vector<uint32_t>& instanceIds) {
 }
 
 void M2Renderer::clear() {
-    for (auto& [id, model] : models) {
-        if (model.vao != 0) glDeleteVertexArrays(1, &model.vao);
-        if (model.vbo != 0) glDeleteBuffers(1, &model.vbo);
-        if (model.ebo != 0) glDeleteBuffers(1, &model.ebo);
+    if (vkCtx_) {
+        vkDeviceWaitIdle(vkCtx_->getDevice());
+        for (auto& [id, model] : models) {
+            destroyModelGPU(model);
+        }
+        for (auto& inst : instances) {
+            destroyInstanceBones(inst);
+        }
     }
     models.clear();
     instances.clear();
@@ -3100,9 +3127,7 @@ void M2Renderer::cleanupUnusedModels() {
     for (uint32_t id : toRemove) {
         auto it = models.find(id);
         if (it != models.end()) {
-            if (it->second.vao != 0) glDeleteVertexArrays(1, &it->second.vao);
-            if (it->second.vbo != 0) glDeleteBuffers(1, &it->second.vbo);
-            if (it->second.ebo != 0) glDeleteBuffers(1, &it->second.ebo);
+            destroyModelGPU(it->second);
             models.erase(it);
         }
     }
@@ -3112,7 +3137,7 @@ void M2Renderer::cleanupUnusedModels() {
     }
 }
 
-GLuint M2Renderer::loadTexture(const std::string& path, uint32_t texFlags) {
+VkTexture* M2Renderer::loadTexture(const std::string& path, uint32_t texFlags) {
     auto normalizeKey = [](std::string key) {
         std::replace(key.begin(), key.end(), '/', '\\');
         std::transform(key.begin(), key.end(), key.begin(),
@@ -3125,7 +3150,7 @@ GLuint M2Renderer::loadTexture(const std::string& path, uint32_t texFlags) {
     auto it = textureCache.find(key);
     if (it != textureCache.end()) {
         it->second.lastUse = ++textureCacheCounter_;
-        return it->second.id;
+        return it->second.texture.get();
     }
 
     auto containsToken = [](const std::string& haystack, const char* token) {
@@ -3151,9 +3176,7 @@ GLuint M2Renderer::loadTexture(const std::string& path, uint32_t texFlags) {
         if (loggedTextureLoadFails.insert(key).second) {
             LOG_WARNING("M2: Failed to load texture: ", path);
         }
-        // Don't cache failures — transient StormLib thread contention can
-        // cause reads to fail; next loadModel call will retry.
-        return whiteTexture;
+        return whiteTexture_.get();
     }
 
     // Track whether the texture actually uses alpha (any pixel with alpha < 255).
@@ -3165,38 +3188,31 @@ GLuint M2Renderer::loadTexture(const std::string& path, uint32_t texFlags) {
         }
     }
 
-    GLuint textureID;
-    glGenTextures(1, &textureID);
-    glBindTexture(GL_TEXTURE_2D, textureID);
+    // Create Vulkan texture
+    auto tex = std::make_unique<VkTexture>();
+    tex->upload(*vkCtx_, blp.data.data(), blp.width, blp.height, VK_FORMAT_R8G8B8A8_UNORM);
 
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
-                 blp.width, blp.height, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, blp.data.data());
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     // M2Texture flags: bit 0 = WrapS (1=repeat, 0=clamp), bit 1 = WrapT
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, (texFlags & 0x1) ? GL_REPEAT : GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, (texFlags & 0x2) ? GL_REPEAT : GL_CLAMP_TO_EDGE);
-    glGenerateMipmap(GL_TEXTURE_2D);
-    applyAnisotropicFiltering();
+    VkSamplerAddressMode wrapS = (texFlags & 0x1) ? VK_SAMPLER_ADDRESS_MODE_REPEAT : VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    VkSamplerAddressMode wrapT = (texFlags & 0x2) ? VK_SAMPLER_ADDRESS_MODE_REPEAT : VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    tex->createSampler(vkCtx_->getDevice(), VK_FILTER_LINEAR, wrapS, wrapT);
 
-    glBindTexture(GL_TEXTURE_2D, 0);
+    VkTexture* texPtr = tex.get();
 
     TextureCacheEntry e;
-    e.id = textureID;
+    e.texture = std::move(tex);
     size_t base = static_cast<size_t>(blp.width) * static_cast<size_t>(blp.height) * 4ull;
     e.approxBytes = base + (base / 3);
     e.hasAlpha = hasAlpha;
     e.colorKeyBlack = colorKeyBlackHint;
     e.lastUse = ++textureCacheCounter_;
     textureCacheBytes_ += e.approxBytes;
-    textureCache[key] = e;
-    textureHasAlphaById_[textureID] = hasAlpha;
-    textureColorKeyBlackById_[textureID] = colorKeyBlackHint;
+    textureCache[key] = std::move(e);
+    textureHasAlphaByPtr_[texPtr] = hasAlpha;
+    textureColorKeyBlackByPtr_[texPtr] = colorKeyBlackHint;
     LOG_DEBUG("M2: Loaded texture: ", path, " (", blp.width, "x", blp.height, ")");
 
-    return textureID;
+    return texPtr;
 }
 
 uint32_t M2Renderer::getTotalTriangleCount() const {

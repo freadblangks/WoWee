@@ -1,8 +1,8 @@
 #pragma once
 
-#include <GL/glew.h>
+#include <vulkan/vulkan.h>
+#include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
-#include <memory>
 #include <vector>
 
 namespace wowee {
@@ -11,18 +11,18 @@ namespace rendering {
 class Camera;
 class CameraController;
 class WaterRenderer;
-class Shader;
+class VkContext;
 
 class SwimEffects {
 public:
     SwimEffects();
     ~SwimEffects();
 
-    bool initialize();
+    bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout);
     void shutdown();
     void update(const Camera& camera, const CameraController& cc,
                 const WaterRenderer& water, float deltaTime);
-    void render(const Camera& camera);
+    void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet);
 
 private:
     struct Particle {
@@ -40,10 +40,24 @@ private:
     std::vector<Particle> ripples;
     std::vector<Particle> bubbles;
 
-    GLuint rippleVAO = 0, rippleVBO = 0;
-    GLuint bubbleVAO = 0, bubbleVBO = 0;
-    std::unique_ptr<Shader> rippleShader;
-    std::unique_ptr<Shader> bubbleShader;
+    // Vulkan objects
+    VkContext* vkCtx = nullptr;
+
+    // Ripple pipeline + dynamic buffer
+    VkPipeline ripplePipeline = VK_NULL_HANDLE;
+    VkPipelineLayout ripplePipelineLayout = VK_NULL_HANDLE;
+    ::VkBuffer rippleDynamicVB = VK_NULL_HANDLE;
+    VmaAllocation rippleDynamicVBAlloc = VK_NULL_HANDLE;
+    VmaAllocationInfo rippleDynamicVBAllocInfo{};
+    VkDeviceSize rippleDynamicVBSize = 0;
+
+    // Bubble pipeline + dynamic buffer
+    VkPipeline bubblePipeline = VK_NULL_HANDLE;
+    VkPipelineLayout bubblePipelineLayout = VK_NULL_HANDLE;
+    ::VkBuffer bubbleDynamicVB = VK_NULL_HANDLE;
+    VmaAllocation bubbleDynamicVBAlloc = VK_NULL_HANDLE;
+    VmaAllocationInfo bubbleDynamicVBAllocInfo{};
+    VkDeviceSize bubbleDynamicVBSize = 0;
 
     std::vector<float> rippleVertexData;
     std::vector<float> bubbleVertexData;

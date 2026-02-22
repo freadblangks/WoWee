@@ -2,10 +2,9 @@
 
 #include "pipeline/terrain_mesh.hpp"
 #include "pipeline/blp_loader.hpp"
-#include "rendering/shader.hpp"
-#include "rendering/texture.hpp"
 #include "rendering/camera.hpp"
-#include <GL/glew.h>
+#include <vulkan/vulkan.h>
+#include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <memory>
 #include <unordered_map>
@@ -18,21 +17,35 @@ namespace pipeline { class AssetManager; }
 
 namespace rendering {
 
+class VkContext;
+class VkTexture;
 class Frustum;
 
 /**
- * GPU-side terrain chunk data
+ * GPU-side terrain chunk data (Vulkan)
  */
 struct TerrainChunkGPU {
-    GLuint vao = 0;           // Vertex array object
-    GLuint vbo = 0;           // Vertex buffer
-    GLuint ibo = 0;           // Index buffer
-    uint32_t indexCount = 0;  // Number of indices to draw
+    ::VkBuffer vertexBuffer = VK_NULL_HANDLE;
+    VmaAllocation vertexAlloc = VK_NULL_HANDLE;
+    ::VkBuffer indexBuffer = VK_NULL_HANDLE;
+    VmaAllocation indexAlloc = VK_NULL_HANDLE;
+    uint32_t indexCount = 0;
 
-    // Texture IDs for this chunk
-    GLuint baseTexture = 0;
-    std::vector<GLuint> layerTextures;
-    std::vector<GLuint> alphaTextures;
+    // Material descriptor set (set 1: 7 samplers + params UBO)
+    VkDescriptorSet materialSet = VK_NULL_HANDLE;
+
+    // Per-chunk params UBO (hasLayer1/2/3)
+    ::VkBuffer paramsUBO = VK_NULL_HANDLE;
+    VmaAllocation paramsAlloc = VK_NULL_HANDLE;
+
+    // Texture handles (owned by cache, NOT destroyed per-chunk)
+    VkTexture* baseTexture = nullptr;
+    VkTexture* layerTextures[3] = {nullptr, nullptr, nullptr};
+    VkTexture* alphaTextures[3] = {nullptr, nullptr, nullptr};
+    int layerCount = 0;
+
+    // Per-chunk alpha textures (owned by this chunk, destroyed on removal)
+    std::vector<std::unique_ptr<VkTexture>> ownedAlphaTextures;
 
     // World position for culling
     float worldX = 0.0f;
@@ -46,13 +59,11 @@ struct TerrainChunkGPU {
     float boundingSphereRadius = 0.0f;
     glm::vec3 boundingSphereCenter = glm::vec3(0.0f);
 
-    bool isValid() const { return vao != 0 && vbo != 0 && ibo != 0; }
+    bool isValid() const { return vertexBuffer != VK_NULL_HANDLE && indexBuffer != VK_NULL_HANDLE; }
 };
 
 /**
- * Terrain renderer
- *
- * Handles uploading terrain meshes to GPU and rendering them
+ * Terrain renderer (Vulkan)
  */
 class TerrainRenderer {
 public:
@@ -61,150 +72,92 @@ public:
 
     /**
      * Initialize terrain renderer
+     * @param ctx Vulkan context
+     * @param perFrameLayout Descriptor set layout for set 0 (per-frame UBO)
      * @param assetManager Asset manager for loading textures
      */
-    bool initialize(pipeline::AssetManager* assetManager);
+    bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout,
+                    pipeline::AssetManager* assetManager);
 
-    /**
-     * Shutdown and cleanup GPU resources
-     */
     void shutdown();
 
-    /**
-     * Load terrain mesh and upload to GPU
-     * @param mesh Terrain mesh to load
-     * @param texturePaths Texture file paths from ADT
-     * @param tileX Tile X coordinate for tracking ownership (-1 = untracked)
-     * @param tileY Tile Y coordinate for tracking ownership (-1 = untracked)
-     */
     bool loadTerrain(const pipeline::TerrainMesh& mesh,
                      const std::vector<std::string>& texturePaths,
                      int tileX = -1, int tileY = -1);
 
-    /**
-     * Remove all chunks belonging to a specific tile
-     * @param tileX Tile X coordinate
-     * @param tileY Tile Y coordinate
-     */
     void removeTile(int tileX, int tileY);
 
-    /**
-     * Upload pre-loaded BLP textures to the GL texture cache.
-     * Called before loadTerrain() so texture loading avoids file I/O.
-     */
     void uploadPreloadedTextures(const std::unordered_map<std::string, pipeline::BLPImage>& textures);
 
     /**
-     * Render loaded terrain
-     * @param camera Camera for view/projection matrices
+     * Render terrain
+     * @param cmd Command buffer to record into
+     * @param perFrameSet Per-frame descriptor set (set 0)
+     * @param camera Camera for frustum culling
      */
-    void render(const Camera& camera);
+    void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera);
 
     /**
-     * Clear all loaded terrain
+     * Render terrain into shadow depth map (Phase 6 stub)
      */
+    void renderShadow(VkCommandBuffer cmd, const glm::vec3& shadowCenter, float halfExtent);
+
     void clear();
 
-    /**
-     * Set lighting parameters
-     */
-    void setLighting(const float lightDir[3], const float lightColor[3],
-                     const float ambientColor[3]);
-
-    /**
-     * Set fog parameters
-     */
-    void setFog(const float fogColor[3], float fogStart, float fogEnd);
-
-    /**
-     * Enable/disable wireframe rendering
-     */
     void setWireframe(bool enabled) { wireframe = enabled; }
-
-    /**
-     * Enable/disable frustum culling
-     */
     void setFrustumCulling(bool enabled) { frustumCullingEnabled = enabled; }
-
-    /**
-     * Enable/disable distance fog
-     */
     void setFogEnabled(bool enabled) { fogEnabled = enabled; }
     bool isFogEnabled() const { return fogEnabled; }
 
-    /**
-     * Render terrain geometry into shadow depth map
-     */
-    void renderShadow(GLuint shaderProgram, const glm::vec3& shadowCenter, float halfExtent);
+    // Shadow mapping stubs (Phase 6)
+    void setShadowMap(VkDescriptorImageInfo /*depthInfo*/, const glm::mat4& /*lightSpaceMat*/) {}
+    void clearShadowMap() {}
 
-    /**
-     * Set shadow map for receiving shadows
-     */
-    void setShadowMap(GLuint depthTex, const glm::mat4& lightSpaceMat) {
-        shadowDepthTex = depthTex; lightSpaceMatrix = lightSpaceMat; shadowEnabled = true;
-    }
-    void clearShadowMap() { shadowEnabled = false; }
-
-    /**
-     * Get statistics
-     */
     int getChunkCount() const { return static_cast<int>(chunks.size()); }
     int getRenderedChunkCount() const { return renderedChunks; }
     int getCulledChunkCount() const { return culledChunks; }
     int getTriangleCount() const;
 
 private:
-    /**
-     * Upload single chunk to GPU
-     */
     TerrainChunkGPU uploadChunk(const pipeline::ChunkMesh& chunk);
-
-    /**
-     * Load texture from asset manager
-     */
-    GLuint loadTexture(const std::string& path);
-
-    /**
-     * Create alpha texture from raw alpha data
-     */
-    GLuint createAlphaTexture(const std::vector<uint8_t>& alphaData);
-
-    /**
-     * Check if chunk is in view frustum
-     */
+    VkTexture* loadTexture(const std::string& path);
+    VkTexture* createAlphaTexture(const std::vector<uint8_t>& alphaData);
     bool isChunkVisible(const TerrainChunkGPU& chunk, const Frustum& frustum);
-
-    /**
-     * Calculate bounding sphere for chunk
-     */
     void calculateBoundingSphere(TerrainChunkGPU& chunk, const pipeline::ChunkMesh& meshChunk);
+    VkDescriptorSet allocateMaterialSet();
+    void writeMaterialDescriptors(VkDescriptorSet set, const TerrainChunkGPU& chunk);
+    void destroyChunkGPU(TerrainChunkGPU& chunk);
 
+    VkContext* vkCtx = nullptr;
     pipeline::AssetManager* assetManager = nullptr;
-    std::unique_ptr<Shader> shader;
+
+    // Pipeline
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkPipeline wireframePipeline = VK_NULL_HANDLE;
+    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout materialSetLayout = VK_NULL_HANDLE;
+
+    // Descriptor pool for material sets
+    VkDescriptorPool materialDescPool = VK_NULL_HANDLE;
+    static constexpr uint32_t MAX_MATERIAL_SETS = 8192;
 
     // Loaded terrain chunks
     std::vector<TerrainChunkGPU> chunks;
 
-    // Texture cache (path -> GL texture ID)
+    // Texture cache (path -> VkTexture)
     struct TextureCacheEntry {
-        GLuint id = 0;
+        std::unique_ptr<VkTexture> texture;
         size_t approxBytes = 0;
         uint64_t lastUse = 0;
     };
     std::unordered_map<std::string, TextureCacheEntry> textureCache;
     size_t textureCacheBytes_ = 0;
     uint64_t textureCacheCounter_ = 0;
-    size_t textureCacheBudgetBytes_ = 4096ull * 1024 * 1024;  // Default, overridden at init
+    size_t textureCacheBudgetBytes_ = 4096ull * 1024 * 1024;
 
-    // Lighting parameters
-    float lightDir[3] = {-0.5f, -1.0f, -0.5f};
-    float lightColor[3] = {1.0f, 1.0f, 0.9f};
-    float ambientColor[3] = {0.3f, 0.3f, 0.35f};
-
-    // Fog parameters
-    float fogColor[3] = {0.5f, 0.6f, 0.7f};
-    float fogStart = 400.0f;
-    float fogEnd = 800.0f;
+    // Fallback textures
+    std::unique_ptr<VkTexture> whiteTexture;
+    std::unique_ptr<VkTexture> opaqueAlphaTexture;
 
     // Rendering state
     bool wireframe = false;
@@ -212,16 +165,6 @@ private:
     bool fogEnabled = true;
     int renderedChunks = 0;
     int culledChunks = 0;
-
-    // Default white texture (fallback)
-    GLuint whiteTexture = 0;
-    // Opaque alpha fallback for missing/invalid layer alpha maps
-    GLuint opaqueAlphaTexture = 0;
-
-    // Shadow mapping (receiving)
-    GLuint shadowDepthTex = 0;
-    glm::mat4 lightSpaceMatrix = glm::mat4(1.0f);
-    bool shadowEnabled = false;
 };
 
 } // namespace rendering

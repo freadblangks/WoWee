@@ -5,9 +5,14 @@
 #include <cstdint>
 #include <vector>
 #include <glm/glm.hpp>
+#include <vulkan/vulkan.h>
+#include <vk_mem_alloc.h>
+#include "rendering/vk_frame_data.hpp"
+#include "rendering/sky_system.hpp"
 
 namespace wowee {
 namespace core { class Window; }
+namespace rendering { class VkContext; }
 namespace game { class World; class ZoneManager; class GameHandler; }
 namespace audio { class MusicManager; class FootstepManager; class ActivitySoundManager; class MountSoundManager; class NpcVoiceManager; class AmbientSoundManager; class UiSoundManager; class CombatSoundManager; class SpellSoundManager; class MovementSoundManager; enum class FootstepSurface : uint8_t; enum class VoiceType; }
 namespace pipeline { class AssetManager; }
@@ -28,7 +33,6 @@ class Clouds;
 class LensFlare;
 class Weather;
 class LightingManager;
-class SkySystem;
 class SwimEffects;
 class MountDust;
 class LevelUpEffect;
@@ -37,6 +41,7 @@ class CharacterRenderer;
 class WMORenderer;
 class M2Renderer;
 class Minimap;
+class WorldMap;
 class QuestMarkerRenderer;
 class Shader;
 
@@ -101,19 +106,23 @@ public:
     TerrainManager* getTerrainManager() const { return terrainManager.get(); }
     PerformanceHUD* getPerformanceHUD() { return performanceHUD.get(); }
     WaterRenderer* getWaterRenderer() const { return waterRenderer.get(); }
-    Skybox* getSkybox() const { return skybox.get(); }
-    Celestial* getCelestial() const { return celestial.get(); }
-    StarField* getStarField() const { return starField.get(); }
-    Clouds* getClouds() const { return clouds.get(); }
-    LensFlare* getLensFlare() const { return lensFlare.get(); }
+    Skybox* getSkybox() const { return skySystem ? skySystem->getSkybox() : nullptr; }
+    Celestial* getCelestial() const { return skySystem ? skySystem->getCelestial() : nullptr; }
+    StarField* getStarField() const { return skySystem ? skySystem->getStarField() : nullptr; }
+    Clouds* getClouds() const { return skySystem ? skySystem->getClouds() : nullptr; }
+    LensFlare* getLensFlare() const { return skySystem ? skySystem->getLensFlare() : nullptr; }
     Weather* getWeather() const { return weather.get(); }
     CharacterRenderer* getCharacterRenderer() const { return characterRenderer.get(); }
     WMORenderer* getWMORenderer() const { return wmoRenderer.get(); }
     M2Renderer* getM2Renderer() const { return m2Renderer.get(); }
     Minimap* getMinimap() const { return minimap.get(); }
+    WorldMap* getWorldMap() const { return worldMap.get(); }
     QuestMarkerRenderer* getQuestMarkerRenderer() const { return questMarkerRenderer.get(); }
     SkySystem* getSkySystem() const { return skySystem.get(); }
     const std::string& getCurrentZoneName() const { return currentZoneName; }
+    VkContext* getVkContext() const { return vkCtx; }
+    VkDescriptorSetLayout getPerFrameSetLayout() const { return perFrameSetLayout; }
+    VkRenderPass getShadowRenderPass() const { return shadowRenderPass; }
 
     // Third-person character follow
     void setCharacterFollow(uint32_t instanceId);
@@ -202,6 +211,7 @@ private:
     std::unique_ptr<WMORenderer> wmoRenderer;
     std::unique_ptr<M2Renderer> m2Renderer;
     std::unique_ptr<Minimap> minimap;
+    std::unique_ptr<WorldMap> worldMap;
     std::unique_ptr<QuestMarkerRenderer> questMarkerRenderer;
     std::unique_ptr<audio::MusicManager> musicManager;
     std::unique_ptr<audio::FootstepManager> footstepManager;
@@ -214,31 +224,14 @@ private:
     std::unique_ptr<audio::SpellSoundManager> spellSoundManager;
     std::unique_ptr<audio::MovementSoundManager> movementSoundManager;
     std::unique_ptr<game::ZoneManager> zoneManager;
-    std::unique_ptr<Shader> underwaterOverlayShader;
-    uint32_t underwaterOverlayVAO = 0;
-    uint32_t underwaterOverlayVBO = 0;
-
-    // Post-process FBO pipeline (HDR MSAA → resolve → tonemap)
-    uint32_t sceneFBO = 0;          // MSAA render target
-    uint32_t sceneColorRBO = 0;     // GL_RGBA16F multisampled renderbuffer
-    uint32_t sceneDepthRBO = 0;     // GL_DEPTH_COMPONENT24 multisampled renderbuffer
-    uint32_t resolveFBO = 0;        // Non-MSAA resolve target
-    uint32_t resolveColorTex = 0;   // GL_RGBA16F resolved texture (sampled by post-process)
-    uint32_t resolveDepthTex = 0;   // GL_DEPTH_COMPONENT24 resolved texture (for future SSAO)
-    uint32_t screenQuadVAO = 0;
-    uint32_t screenQuadVBO = 0;
-    std::unique_ptr<Shader> postProcessShader;
-    int fbWidth = 0, fbHeight = 0;
-
-    void initPostProcess(int w, int h);
-    void resizePostProcess(int w, int h);
-    void shutdownPostProcess();
-
-    // Shadow mapping
-    static constexpr int SHADOW_MAP_SIZE = 2048;
-    uint32_t shadowFBO = 0;
-    uint32_t shadowDepthTex = 0;
-    uint32_t shadowShaderProgram = 0;
+    // Shadow mapping (Vulkan)
+    static constexpr uint32_t SHADOW_MAP_SIZE = 2048;
+    VkImage shadowDepthImage = VK_NULL_HANDLE;
+    VmaAllocation shadowDepthAlloc = VK_NULL_HANDLE;
+    VkImageView shadowDepthView = VK_NULL_HANDLE;
+    VkSampler shadowSampler = VK_NULL_HANDLE;
+    VkRenderPass shadowRenderPass = VK_NULL_HANDLE;
+    VkFramebuffer shadowFramebuffer = VK_NULL_HANDLE;
     glm::mat4 lightSpaceMatrix = glm::mat4(1.0f);
     glm::vec3 shadowCenter = glm::vec3(0.0f);
     bool shadowCenterInitialized = false;
@@ -250,9 +243,7 @@ public:
     bool areShadowsEnabled() const { return shadowsEnabled; }
 
 private:
-    void initShadowMap();
     void renderShadowPass();
-    uint32_t compileShadowShader();
     glm::mat4 computeLightSpaceMatrix();
 
     pipeline::AssetManager* cachedAssetManager = nullptr;
@@ -289,10 +280,13 @@ private:
     const glm::vec3* targetPosition = nullptr;
     bool inCombat_ = false;
 
-    // Selection circle rendering
-    uint32_t selCircleVAO = 0;
-    uint32_t selCircleVBO = 0;
-    uint32_t selCircleShader = 0;
+    // Selection circle rendering (Vulkan)
+    VkPipeline selCirclePipeline = VK_NULL_HANDLE;
+    VkPipelineLayout selCirclePipelineLayout = VK_NULL_HANDLE;
+    ::VkBuffer selCircleVertBuf = VK_NULL_HANDLE;
+    VmaAllocation selCircleVertAlloc = VK_NULL_HANDLE;
+    ::VkBuffer selCircleIdxBuf = VK_NULL_HANDLE;
+    VmaAllocation selCircleIdxAlloc = VK_NULL_HANDLE;
     int selCircleVertCount = 0;
     void initSelectionCircle();
     void renderSelectionCircle(const glm::mat4& view, const glm::mat4& projection);
@@ -359,6 +353,26 @@ private:
     uint32_t mountActiveFidget_ = 0;     // Currently playing fidget animation ID (0 = none)
     bool taxiFlight_ = false;
     bool taxiAnimsLogged_ = false;
+
+    // Vulkan frame state
+    VkContext* vkCtx = nullptr;
+    VkCommandBuffer currentCmd = VK_NULL_HANDLE;
+    uint32_t currentImageIndex = 0;
+
+    // Per-frame UBO + descriptors (set 0)
+    static constexpr uint32_t MAX_FRAMES = 2;
+    VkDescriptorSetLayout perFrameSetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool sceneDescriptorPool = VK_NULL_HANDLE;
+    VkDescriptorSet perFrameDescSets[MAX_FRAMES] = {};
+    VkBuffer perFrameUBOs[MAX_FRAMES] = {};
+    VmaAllocation perFrameUBOAllocs[MAX_FRAMES] = {};
+    void* perFrameUBOMapped[MAX_FRAMES] = {};
+    GPUPerFrameData currentFrameData{};
+    float globalTime = 0.0f;
+
+    bool createPerFrameResources();
+    void destroyPerFrameResources();
+    void updatePerFrameUBO();
 
     bool terrainEnabled = true;
     bool terrainLoaded = false;

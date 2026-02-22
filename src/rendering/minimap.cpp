@@ -1,11 +1,15 @@
 #include "rendering/minimap.hpp"
-#include "rendering/shader.hpp"
+#include "rendering/vk_context.hpp"
+#include "rendering/vk_texture.hpp"
+#include "rendering/vk_render_target.hpp"
+#include "rendering/vk_pipeline.hpp"
+#include "rendering/vk_shader.hpp"
+#include "rendering/vk_utils.hpp"
 #include "rendering/camera.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/blp_loader.hpp"
 #include "core/coordinates.hpp"
 #include "core/logger.hpp"
-#include <GL/glew.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <sstream>
 #include <cmath>
@@ -13,37 +17,47 @@
 namespace wowee {
 namespace rendering {
 
+// Push constant for tile composite vertex shader
+struct MinimapTilePush {
+    glm::vec2 gridOffset;  // 8 bytes
+};
+
+// Push constant for display vertex + fragment shaders
+struct MinimapDisplayPush {
+    glm::vec4 rect;         // x, y, w, h in 0..1 screen space
+    glm::vec2 playerUV;
+    float rotation;
+    float arrowRotation;
+    float zoomRadius;
+    int32_t squareShape;
+};  // 40 bytes
+
 Minimap::Minimap() = default;
 
 Minimap::~Minimap() {
     shutdown();
 }
 
-bool Minimap::initialize(int size) {
+bool Minimap::initialize(VkContext* ctx, VkDescriptorSetLayout /*perFrameLayout*/, int size) {
+    vkCtx = ctx;
     mapSize = size;
+    VkDevice device = vkCtx->getDevice();
 
-    // --- Composite FBO (3x3 tiles = 768x768) ---
-    glGenFramebuffers(1, &compositeFBO);
-    glBindFramebuffer(GL_FRAMEBUFFER, compositeFBO);
-
-    glGenTextures(1, &compositeTexture);
-    glBindTexture(GL_TEXTURE_2D, compositeTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, COMPOSITE_PX, COMPOSITE_PX, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, compositeTexture, 0);
-
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        LOG_ERROR("Minimap composite FBO incomplete");
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    // --- Composite render target (768x768) ---
+    compositeTarget = std::make_unique<VkRenderTarget>();
+    if (!compositeTarget->create(*vkCtx, COMPOSITE_PX, COMPOSITE_PX)) {
+        LOG_ERROR("Minimap: failed to create composite render target");
         return false;
     }
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    // --- Unit quad for tile compositing ---
+    // --- No-data fallback texture (dark blue-gray, 1x1) ---
+    noDataTexture = std::make_unique<VkTexture>();
+    uint8_t darkPixel[4] = { 12, 20, 30, 255 };
+    noDataTexture->upload(*vkCtx, darkPixel, 1, 1, VK_FORMAT_R8G8B8A8_UNORM, false);
+    noDataTexture->createSampler(device, VK_FILTER_NEAREST, VK_FILTER_NEAREST,
+                                 VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, 1.0f);
+
+    // --- Shared quad vertex buffer (unit quad: pos2 + uv2) ---
     float quadVerts[] = {
         // pos (x,y), uv (u,v)
         0.0f, 0.0f,  0.0f, 0.0f,
@@ -53,178 +67,139 @@ bool Minimap::initialize(int size) {
         1.0f, 1.0f,  1.0f, 1.0f,
         0.0f, 1.0f,  0.0f, 1.0f,
     };
+    auto quadBuf = uploadBuffer(*vkCtx, quadVerts, sizeof(quadVerts),
+                                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    quadVB = quadBuf.buffer;
+    quadVBAlloc = quadBuf.allocation;
 
-    glGenVertexArrays(1, &tileQuadVAO);
-    glGenBuffers(1, &tileQuadVBO);
-    glBindVertexArray(tileQuadVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, tileQuadVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVerts), quadVerts, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-    glBindVertexArray(0);
+    // --- Descriptor set layout: 1 combined image sampler at binding 0 (fragment) ---
+    VkDescriptorSetLayoutBinding samplerBinding{};
+    samplerBinding.binding = 0;
+    samplerBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerBinding.descriptorCount = 1;
+    samplerBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    samplerSetLayout = createDescriptorSetLayout(device, { samplerBinding });
 
-    // --- Tile compositing shader ---
-    const char* tileVertSrc = R"(
-        #version 330 core
-        layout (location = 0) in vec2 aPos;
-        layout (location = 1) in vec2 aUV;
+    // --- Descriptor pool ---
+    VkDescriptorPoolSize poolSize{};
+    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSize.descriptorCount = MAX_DESC_SETS;
 
-        uniform vec2 uGridOffset;  // (col, row) in 0-2
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.maxSets = MAX_DESC_SETS;
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+    vkCreateDescriptorPool(device, &poolInfo, nullptr, &descPool);
 
-        out vec2 TexCoord;
+    // --- Allocate all descriptor sets ---
+    // 18 tile sets (2 frames × 9 tiles) + 1 display set = 19 total
+    std::vector<VkDescriptorSetLayout> layouts(19, samplerSetLayout);
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = descPool;
+    allocInfo.descriptorSetCount = 19;
+    allocInfo.pSetLayouts = layouts.data();
 
-        void main() {
-            vec2 gridPos = (uGridOffset + aPos) / 3.0;
-            gl_Position = vec4(gridPos * 2.0 - 1.0, 0.0, 1.0);
-            TexCoord = aUV;
+    VkDescriptorSet allSets[19];
+    vkAllocateDescriptorSets(device, &allocInfo, allSets);
+
+    for (int f = 0; f < 2; f++)
+        for (int t = 0; t < 9; t++)
+            tileDescSets[f][t] = allSets[f * 9 + t];
+    displayDescSet = allSets[18];
+
+    // --- Write display descriptor set → composite render target ---
+    VkDescriptorImageInfo compositeImgInfo = compositeTarget->descriptorInfo();
+    VkWriteDescriptorSet displayWrite{};
+    displayWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    displayWrite.dstSet = displayDescSet;
+    displayWrite.dstBinding = 0;
+    displayWrite.descriptorCount = 1;
+    displayWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    displayWrite.pImageInfo = &compositeImgInfo;
+    vkUpdateDescriptorSets(device, 1, &displayWrite, 0, nullptr);
+
+    // --- Tile pipeline layout: samplerSetLayout + 8-byte push constant (vertex) ---
+    VkPushConstantRange tilePush{};
+    tilePush.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    tilePush.offset = 0;
+    tilePush.size = sizeof(MinimapTilePush);
+    tilePipelineLayout = createPipelineLayout(device, { samplerSetLayout }, { tilePush });
+
+    // --- Display pipeline layout: samplerSetLayout + 40-byte push constant (vert+frag) ---
+    VkPushConstantRange displayPush{};
+    displayPush.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    displayPush.offset = 0;
+    displayPush.size = sizeof(MinimapDisplayPush);
+    displayPipelineLayout = createPipelineLayout(device, { samplerSetLayout }, { displayPush });
+
+    // --- Vertex input: pos2 (loc 0) + uv2 (loc 1), stride 16 ---
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = 4 * sizeof(float);
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::vector<VkVertexInputAttributeDescription> attrs(2);
+    attrs[0] = { 0, 0, VK_FORMAT_R32G32_SFLOAT, 0 };                    // aPos
+    attrs[1] = { 1, 0, VK_FORMAT_R32G32_SFLOAT, 2 * sizeof(float) };    // aUV
+
+    // --- Load tile shaders ---
+    {
+        VkShaderModule vs, fs;
+        if (!vs.loadFromFile(device, "assets/shaders/minimap_tile.vert.spv") ||
+            !fs.loadFromFile(device, "assets/shaders/minimap_tile.frag.spv")) {
+            LOG_ERROR("Minimap: failed to load tile shaders");
+            return false;
         }
-    )";
 
-    const char* tileFragSrc = R"(
-        #version 330 core
-        in vec2 TexCoord;
+        tilePipeline = PipelineBuilder()
+            .setShaders(vs.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                        fs.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+            .setVertexInput({ binding }, attrs)
+            .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+            .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+            .setNoDepthTest()
+            .setColorBlendAttachment(PipelineBuilder::blendDisabled())
+            .setLayout(tilePipelineLayout)
+            .setRenderPass(compositeTarget->getRenderPass())
+            .setDynamicStates({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR })
+            .build(device);
 
-        uniform sampler2D uTileTexture;
-
-        out vec4 FragColor;
-
-        void main() {
-            // BLP minimap tiles have same axis transposition as ADT terrain:
-            // tile U (cols) = north-south, tile V (rows) = west-east
-            // Composite grid: TexCoord.x = west-east, TexCoord.y = north-south
-            // So swap to match
-            FragColor = texture(uTileTexture, vec2(TexCoord.y, TexCoord.x));
-        }
-    )";
-
-    tileShader = std::make_unique<Shader>();
-    if (!tileShader->loadFromSource(tileVertSrc, tileFragSrc)) {
-        LOG_ERROR("Failed to create minimap tile compositing shader");
-        return false;
+        vs.destroy();
+        fs.destroy();
     }
 
-    // --- Screen quad ---
-    glGenVertexArrays(1, &quadVAO);
-    glGenBuffers(1, &quadVBO);
-    glBindVertexArray(quadVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVerts), quadVerts, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-    glBindVertexArray(0);
-
-    // --- Screen quad shader with rotation + circular mask ---
-    const char* quadVertSrc = R"(
-        #version 330 core
-        layout (location = 0) in vec2 aPos;
-        layout (location = 1) in vec2 aUV;
-
-        uniform vec4 uRect;  // x, y, w, h in 0..1 screen space
-
-        out vec2 TexCoord;
-
-        void main() {
-            vec2 pos = uRect.xy + aUV * uRect.zw;
-            gl_Position = vec4(pos * 2.0 - 1.0, 0.0, 1.0);
-            TexCoord = aUV;
-        }
-    )";
-
-    const char* quadFragSrc = R"(
-        #version 330 core
-        in vec2 TexCoord;
-
-        uniform sampler2D uComposite;
-        uniform vec2 uPlayerUV;
-        uniform float uRotation;
-        uniform float uArrowRotation;
-        uniform float uZoomRadius;
-        uniform bool uSquareShape;
-
-        out vec4 FragColor;
-
-        bool pointInTriangle(vec2 p, vec2 a, vec2 b, vec2 c) {
-            vec2 v0 = c - a, v1 = b - a, v2 = p - a;
-            float d00 = dot(v0, v0);
-            float d01 = dot(v0, v1);
-            float d02 = dot(v0, v2);
-            float d11 = dot(v1, v1);
-            float d12 = dot(v1, v2);
-            float inv = 1.0 / (d00 * d11 - d01 * d01);
-            float u = (d11 * d02 - d01 * d12) * inv;
-            float v = (d00 * d12 - d01 * d02) * inv;
-            return (u >= 0.0) && (v >= 0.0) && (u + v <= 1.0);
+    // --- Load display shaders ---
+    {
+        VkShaderModule vs, fs;
+        if (!vs.loadFromFile(device, "assets/shaders/minimap_display.vert.spv") ||
+            !fs.loadFromFile(device, "assets/shaders/minimap_display.frag.spv")) {
+            LOG_ERROR("Minimap: failed to load display shaders");
+            return false;
         }
 
-        vec2 rot2(vec2 v, float ang) {
-            float c = cos(ang);
-            float s = sin(ang);
-            return vec2(v.x * c - v.y * s, v.x * s + v.y * c);
-        }
+        displayPipeline = PipelineBuilder()
+            .setShaders(vs.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                        fs.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+            .setVertexInput({ binding }, attrs)
+            .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+            .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+            .setNoDepthTest()
+            .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+            .setLayout(displayPipelineLayout)
+            .setRenderPass(vkCtx->getImGuiRenderPass())
+            .setDynamicStates({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR })
+            .build(device);
 
-        void main() {
-            vec2 centered = TexCoord - 0.5;
-            float dist = length(centered);
-            float maxDist = uSquareShape ? max(abs(centered.x), abs(centered.y)) : dist;
-            if (maxDist > 0.5) discard;
-
-            // Rotate screen coords → composite UV offset
-            // Composite: U increases east, V increases north
-            // Screen: +X=right, +Y=up
-            float c = cos(uRotation);
-            float s = sin(uRotation);
-            float scale = uZoomRadius * 2.0;
-
-            vec2 offset = vec2(
-                centered.x * c + centered.y * s,
-                -centered.x * s + centered.y * c
-            ) * scale;
-
-            vec2 uv = uPlayerUV + offset;
-            vec3 color = texture(uComposite, uv).rgb;
-
-            // Thin dark border at edge
-            if (maxDist > 0.49) {
-                color = mix(color, vec3(0.08), smoothstep(0.49, 0.5, maxDist));
-            }
-
-            // Player arrow at center (always points up = forward)
-            vec2 ap = rot2(centered, -(uArrowRotation + 3.14159265));
-            vec2 tip = vec2(0.0, 0.035);
-            vec2 lt  = vec2(-0.018, -0.016);
-            vec2 rt  = vec2(0.018, -0.016);
-            vec2 nL  = vec2(-0.006, -0.006);
-            vec2 nR  = vec2(0.006, -0.006);
-            vec2 nB  = vec2(0.0, 0.006);
-
-            bool inArrow = pointInTriangle(ap, tip, lt, rt)
-                        && !pointInTriangle(ap, nL, nR, nB);
-
-            if (inArrow) {
-                color = vec3(0.0, 0.0, 0.0);
-            }
-
-            FragColor = vec4(color, 0.8);
-        }
-    )";
-
-    quadShader = std::make_unique<Shader>();
-    if (!quadShader->loadFromSource(quadVertSrc, quadFragSrc)) {
-        LOG_ERROR("Failed to create minimap screen quad shader");
-        return false;
+        vs.destroy();
+        fs.destroy();
     }
 
-    // --- No-data fallback texture (dark blue-gray) ---
-    glGenTextures(1, &noDataTexture);
-    glBindTexture(GL_TEXTURE_2D, noDataTexture);
-    uint8_t darkPixel[4] = { 12, 20, 30, 255 };
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, darkPixel);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    if (!tilePipeline || !displayPipeline) {
+        LOG_ERROR("Minimap: failed to create pipelines");
+        return false;
+    }
 
     LOG_INFO("Minimap initialized (", mapSize, "x", mapSize, " screen, ",
              COMPOSITE_PX, "x", COMPOSITE_PX, " composite)");
@@ -232,22 +207,30 @@ bool Minimap::initialize(int size) {
 }
 
 void Minimap::shutdown() {
-    if (compositeFBO) { glDeleteFramebuffers(1, &compositeFBO); compositeFBO = 0; }
-    if (compositeTexture) { glDeleteTextures(1, &compositeTexture); compositeTexture = 0; }
-    if (tileQuadVAO) { glDeleteVertexArrays(1, &tileQuadVAO); tileQuadVAO = 0; }
-    if (tileQuadVBO) { glDeleteBuffers(1, &tileQuadVBO); tileQuadVBO = 0; }
-    if (quadVAO) { glDeleteVertexArrays(1, &quadVAO); quadVAO = 0; }
-    if (quadVBO) { glDeleteBuffers(1, &quadVBO); quadVBO = 0; }
-    if (noDataTexture) { glDeleteTextures(1, &noDataTexture); noDataTexture = 0; }
+    if (!vkCtx) return;
+    VkDevice device = vkCtx->getDevice();
+    VmaAllocator alloc = vkCtx->getAllocator();
 
-    // Delete cached tile textures
+    vkDeviceWaitIdle(device);
+
+    if (tilePipeline) { vkDestroyPipeline(device, tilePipeline, nullptr); tilePipeline = VK_NULL_HANDLE; }
+    if (displayPipeline) { vkDestroyPipeline(device, displayPipeline, nullptr); displayPipeline = VK_NULL_HANDLE; }
+    if (tilePipelineLayout) { vkDestroyPipelineLayout(device, tilePipelineLayout, nullptr); tilePipelineLayout = VK_NULL_HANDLE; }
+    if (displayPipelineLayout) { vkDestroyPipelineLayout(device, displayPipelineLayout, nullptr); displayPipelineLayout = VK_NULL_HANDLE; }
+    if (descPool) { vkDestroyDescriptorPool(device, descPool, nullptr); descPool = VK_NULL_HANDLE; }
+    if (samplerSetLayout) { vkDestroyDescriptorSetLayout(device, samplerSetLayout, nullptr); samplerSetLayout = VK_NULL_HANDLE; }
+
+    if (quadVB) { vmaDestroyBuffer(alloc, quadVB, quadVBAlloc); quadVB = VK_NULL_HANDLE; }
+
     for (auto& [hash, tex] : tileTextureCache) {
-        if (tex) glDeleteTextures(1, &tex);
+        if (tex) tex->destroy(device, alloc);
     }
     tileTextureCache.clear();
 
-    tileShader.reset();
-    quadShader.reset();
+    if (noDataTexture) { noDataTexture->destroy(device, alloc); noDataTexture.reset(); }
+    if (compositeTarget) { compositeTarget->destroy(device, alloc); compositeTarget.reset(); }
+
+    vkCtx = nullptr;
 }
 
 void Minimap::setMapName(const std::string& name) {
@@ -279,27 +262,19 @@ void Minimap::parseTRS() {
     int count = 0;
 
     while (std::getline(stream, line)) {
-        // Remove \r
         if (!line.empty() && line.back() == '\r') line.pop_back();
-
-        // Skip "dir:" lines and empty lines
         if (line.empty() || line.substr(0, 4) == "dir:") continue;
 
-        // Format: "Azeroth\map32_49.blp\t<hash>.blp"
         auto tabPos = line.find('\t');
         if (tabPos == std::string::npos) continue;
 
         std::string key = line.substr(0, tabPos);
         std::string hashFile = line.substr(tabPos + 1);
 
-        // Strip .blp from key: "Azeroth\map32_49"
-        if (key.size() > 4 && key.substr(key.size() - 4) == ".blp") {
+        if (key.size() > 4 && key.substr(key.size() - 4) == ".blp")
             key = key.substr(0, key.size() - 4);
-        }
-        // Strip .blp from hash to get just the md5: "e7f0dea73ee6baca78231aaf4b7e772a"
-        if (hashFile.size() > 4 && hashFile.substr(hashFile.size() - 4) == ".blp") {
+        if (hashFile.size() > 4 && hashFile.substr(hashFile.size() - 4) == ".blp")
             hashFile = hashFile.substr(0, hashFile.size() - 4);
-        }
 
         trsLookup[key] = hashFile;
         count++;
@@ -312,118 +287,80 @@ void Minimap::parseTRS() {
 // Tile texture loading
 // --------------------------------------------------------
 
-GLuint Minimap::getOrLoadTileTexture(int tileX, int tileY) {
-    // Build TRS key: "Azeroth\map32_49"
+VkTexture* Minimap::getOrLoadTileTexture(int tileX, int tileY) {
+    if (!trsParsed) parseTRS();
+
     std::string key = mapName + "\\map" + std::to_string(tileX) + "_" + std::to_string(tileY);
 
     auto trsIt = trsLookup.find(key);
-    if (trsIt == trsLookup.end()) {
-        return noDataTexture;
-    }
+    if (trsIt == trsLookup.end())
+        return noDataTexture.get();
 
     const std::string& hash = trsIt->second;
 
-    // Check texture cache
     auto cacheIt = tileTextureCache.find(hash);
-    if (cacheIt != tileTextureCache.end()) {
-        return cacheIt->second;
-    }
+    if (cacheIt != tileTextureCache.end())
+        return cacheIt->second.get();
 
     // Load from MPQ
     std::string blpPath = "Textures\\Minimap\\" + hash + ".blp";
     auto blpImage = assetManager->loadTexture(blpPath);
     if (!blpImage.isValid()) {
-        tileTextureCache[hash] = noDataTexture;
-        return noDataTexture;
+        tileTextureCache[hash] = nullptr;  // Mark as failed
+        return noDataTexture.get();
     }
 
-    // Create GL texture
-    GLuint tex;
-    glGenTextures(1, &tex);
-    glBindTexture(GL_TEXTURE_2D, tex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, blpImage.width, blpImage.height, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, blpImage.data.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    auto tex = std::make_unique<VkTexture>();
+    tex->upload(*vkCtx, blpImage.data.data(), blpImage.width, blpImage.height,
+                VK_FORMAT_R8G8B8A8_UNORM, false);
+    tex->createSampler(vkCtx->getDevice(), VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+                       VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, 1.0f);
 
-    tileTextureCache[hash] = tex;
-    return tex;
+    VkTexture* ptr = tex.get();
+    tileTextureCache[hash] = std::move(tex);
+    return ptr;
 }
 
 // --------------------------------------------------------
-// Composite 3x3 tiles into FBO
+// Update tile descriptor sets for composite pass
 // --------------------------------------------------------
 
-void Minimap::compositeTilesToFBO(const glm::vec3& centerWorldPos) {
-    // centerWorldPos is in render coords (renderX=wowY, renderY=wowX)
-    auto [tileX, tileY] = core::coords::worldToTile(centerWorldPos.x, centerWorldPos.y);
+void Minimap::updateTileDescriptors(uint32_t frameIdx, int centerTileX, int centerTileY) {
+    VkDevice device = vkCtx->getDevice();
+    int slot = 0;
 
-    // Save GL state
-    GLint prevFBO = 0;
-    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFBO);
-    GLint prevViewport[4];
-    glGetIntegerv(GL_VIEWPORT, prevViewport);
-
-    glBindFramebuffer(GL_FRAMEBUFFER, compositeFBO);
-    glViewport(0, 0, COMPOSITE_PX, COMPOSITE_PX);
-    glClearColor(0.05f, 0.08f, 0.12f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
-    glDisable(GL_BLEND);
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-
-    tileShader->use();
-    tileShader->setUniform("uTileTexture", 0);
-
-    glBindVertexArray(tileQuadVAO);
-
-    // Draw 3x3 tile grid into composite FBO.
-    // BLP first row → GL V=0 (bottom) = north edge of tile.
-    // So north tile (dr=-1) goes to row 0 (bottom), south (dr=+1) to row 2 (top).
-    // West tile (dc=-1) goes to col 0 (left), east (dc=+1) to col 2 (right).
-    // Result: composite U=0→west, U=1→east, V=0→north, V=1→south.
     for (int dr = -1; dr <= 1; dr++) {
         for (int dc = -1; dc <= 1; dc++) {
-            int tx = tileX + dr;
-            int ty = tileY + dc;
+            int tx = centerTileX + dr;
+            int ty = centerTileY + dc;
 
-            GLuint tileTex = getOrLoadTileTexture(tx, ty);
+            VkTexture* tileTex = getOrLoadTileTexture(tx, ty);
+            if (!tileTex || !tileTex->isValid())
+                tileTex = noDataTexture.get();
 
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, tileTex);
+            VkDescriptorImageInfo imgInfo = tileTex->descriptorInfo();
 
-            // Grid position: dr=-1 (north) → row 0, dr=0 → row 1, dr=+1 (south) → row 2
-            float col = static_cast<float>(dc + 1);  // 0, 1, 2
-            float row = static_cast<float>(dr + 1);  // 0, 1, 2
+            VkWriteDescriptorSet write{};
+            write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            write.dstSet = tileDescSets[frameIdx][slot];
+            write.dstBinding = 0;
+            write.descriptorCount = 1;
+            write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            write.pImageInfo = &imgInfo;
 
-            tileShader->setUniform("uGridOffset", glm::vec2(col, row));
-            glDrawArrays(GL_TRIANGLES, 0, 6);
+            vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+            slot++;
         }
     }
-
-    glBindVertexArray(0);
-
-    // Restore GL state
-    glBindFramebuffer(GL_FRAMEBUFFER, prevFBO);
-    glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
-
-    lastCenterTileX = tileX;
-    lastCenterTileY = tileY;
 }
 
 // --------------------------------------------------------
-// Main render
+// Off-screen composite pass (call BEFORE main render pass)
 // --------------------------------------------------------
 
-void Minimap::render(const Camera& playerCamera, const glm::vec3& centerWorldPos,
-                     int screenWidth, int screenHeight) {
-    if (!enabled || !assetManager || !compositeFBO) return;
+void Minimap::compositePass(VkCommandBuffer cmd, const glm::vec3& centerWorldPos) {
+    if (!enabled || !assetManager || !compositeTarget || !compositeTarget->isValid()) return;
 
-    // Lazy-parse TRS on first use
     if (!trsParsed) parseTRS();
 
     // Check if composite needs refresh
@@ -438,30 +375,71 @@ void Minimap::render(const Camera& playerCamera, const glm::vec3& centerWorldPos
 
     // Also refresh if player crossed a tile boundary
     auto [curTileX, curTileY] = core::coords::worldToTile(centerWorldPos.x, centerWorldPos.y);
-    if (curTileX != lastCenterTileX || curTileY != lastCenterTileY) {
+    if (curTileX != lastCenterTileX || curTileY != lastCenterTileY)
         needsRefresh = true;
+
+    if (!needsRefresh) return;
+
+    uint32_t frameIdx = vkCtx->getCurrentFrame();
+
+    // Update tile descriptor sets
+    updateTileDescriptors(frameIdx, curTileX, curTileY);
+
+    // Begin off-screen render pass
+    VkClearColorValue clearColor = {{ 0.05f, 0.08f, 0.12f, 1.0f }};
+    compositeTarget->beginPass(cmd, clearColor);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, tilePipeline);
+
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &quadVB, &offset);
+
+    // Draw 3x3 tile grid
+    int slot = 0;
+    for (int dr = -1; dr <= 1; dr++) {
+        for (int dc = -1; dc <= 1; dc++) {
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    tilePipelineLayout, 0, 1,
+                                    &tileDescSets[frameIdx][slot], 0, nullptr);
+
+            MinimapTilePush push{};
+            push.gridOffset = glm::vec2(static_cast<float>(dc + 1),
+                                        static_cast<float>(dr + 1));
+            vkCmdPushConstants(cmd, tilePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT,
+                               0, sizeof(push), &push);
+
+            vkCmdDraw(cmd, 6, 1, 0, 0);
+            slot++;
+        }
     }
 
-    if (needsRefresh) {
-        compositeTilesToFBO(centerWorldPos);
-        lastUpdateTime = now;
-        lastUpdatePos = centerWorldPos;
-        hasCachedFrame = true;
-    }
+    compositeTarget->endPass(cmd);
 
-    // Draw screen quad
-    renderQuad(playerCamera, centerWorldPos, screenWidth, screenHeight);
+    // Update tracking
+    lastCenterTileX = curTileX;
+    lastCenterTileY = curTileY;
+    lastUpdateTime = now;
+    lastUpdatePos = centerWorldPos;
+    hasCachedFrame = true;
 }
 
-void Minimap::renderQuad(const Camera& playerCamera, const glm::vec3& centerWorldPos,
-                         int screenWidth, int screenHeight) {
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+// --------------------------------------------------------
+// Display quad (call INSIDE main render pass)
+// --------------------------------------------------------
 
-    quadShader->use();
+void Minimap::render(VkCommandBuffer cmd, const Camera& playerCamera,
+                     const glm::vec3& centerWorldPos,
+                     int screenWidth, int screenHeight) {
+    if (!enabled || !hasCachedFrame || !displayPipeline) return;
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, displayPipeline);
+
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            displayPipelineLayout, 0, 1,
+                            &displayDescSet, 0, nullptr);
+
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &quadVB, &offset);
 
     // Position minimap in top-right corner
     float margin = 10.0f;
@@ -469,59 +447,44 @@ void Minimap::renderQuad(const Camera& playerCamera, const glm::vec3& centerWorl
     float pixelH = static_cast<float>(mapSize) / screenHeight;
     float x = 1.0f - pixelW - margin / screenWidth;
     float y = 1.0f - pixelH - margin / screenHeight;
-    quadShader->setUniform("uRect", glm::vec4(x, y, pixelW, pixelH));
 
     // Compute player's UV in the composite texture
-    // Render coords: renderX = wowY (west axis), renderY = wowX (north axis)
     constexpr float TILE_SIZE = core::coords::TILE_SIZE;
     auto [tileX, tileY] = core::coords::worldToTile(centerWorldPos.x, centerWorldPos.y);
 
-    // Fractional position within center tile
-    // tileX = floor(32 - wowX/TILE_SIZE), wowX = renderY
-    // fracNS: 0 = north edge of tile, 1 = south edge
     float fracNS = 32.0f - static_cast<float>(tileX) - centerWorldPos.y / TILE_SIZE;
-    // fracEW: 0 = west edge of tile, 1 = east edge
     float fracEW = 32.0f - static_cast<float>(tileY) - centerWorldPos.x / TILE_SIZE;
 
-    // Composite UV: center tile is grid slot (1,1) → UV range [1/3, 2/3]
-    // Composite orientation: U=0→west, U=1→east, V=0→north, V=1→south
     float playerU = (1.0f + fracEW) / 3.0f;
     float playerV = (1.0f + fracNS) / 3.0f;
 
-    quadShader->setUniform("uPlayerUV", glm::vec2(playerU, playerV));
-
-    // Zoom: convert view radius from world units to composite UV fraction
     float zoomRadius = viewRadius / (TILE_SIZE * 3.0f);
-    quadShader->setUniform("uZoomRadius", zoomRadius);
 
-    // Rotation: compass bearing from north, clockwise
-    // renderX = wowY (west), renderY = wowX (north)
-    // Facing north: fwd=(0,1,0) → bearing=0
-    // Facing east:  fwd=(-1,0,0) → bearing=π/2
     float rotation = 0.0f;
     if (rotateWithCamera) {
         glm::vec3 fwd = playerCamera.getForward();
         rotation = std::atan2(-fwd.x, fwd.y);
     }
-    quadShader->setUniform("uRotation", rotation);
+
     float arrowRotation = 0.0f;
     if (!rotateWithCamera) {
         glm::vec3 fwd = playerCamera.getForward();
         arrowRotation = std::atan2(-fwd.x, fwd.y);
     }
-    quadShader->setUniform("uArrowRotation", arrowRotation);
-    quadShader->setUniform("uSquareShape", squareShape);
 
-    quadShader->setUniform("uComposite", 0);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, compositeTexture);
+    MinimapDisplayPush push{};
+    push.rect = glm::vec4(x, y, pixelW, pixelH);
+    push.playerUV = glm::vec2(playerU, playerV);
+    push.rotation = rotation;
+    push.arrowRotation = arrowRotation;
+    push.zoomRadius = zoomRadius;
+    push.squareShape = squareShape ? 1 : 0;
 
-    glBindVertexArray(quadVAO);
-    glDrawArrays(GL_TRIANGLES, 0, 6);
-    glBindVertexArray(0);
+    vkCmdPushConstants(cmd, displayPipelineLayout,
+                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                       0, sizeof(push), &push);
 
-    glDisable(GL_BLEND);
-    glEnable(GL_DEPTH_TEST);
+    vkCmdDraw(cmd, 6, 1, 0, 0);
 }
 
 } // namespace rendering

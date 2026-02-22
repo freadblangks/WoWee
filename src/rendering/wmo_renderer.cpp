@@ -1,13 +1,17 @@
 #include "rendering/wmo_renderer.hpp"
 #include "rendering/m2_renderer.hpp"
-#include "rendering/texture.hpp"
-#include "rendering/shader.hpp"
+#include "rendering/vk_context.hpp"
+#include "rendering/vk_texture.hpp"
+#include "rendering/vk_buffer.hpp"
+#include "rendering/vk_pipeline.hpp"
+#include "rendering/vk_shader.hpp"
+#include "rendering/vk_utils.hpp"
+#include "rendering/vk_frame_data.hpp"
 #include "rendering/camera.hpp"
 #include "rendering/frustum.hpp"
 #include "pipeline/wmo_loader.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "core/logger.hpp"
-#include <GL/glew.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <algorithm>
@@ -36,175 +40,179 @@ WMORenderer::~WMORenderer() {
     shutdown();
 }
 
-bool WMORenderer::initialize(pipeline::AssetManager* assets) {
+bool WMORenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout,
+                              pipeline::AssetManager* assets) {
     if (initialized_) { assetManager = assets; return true; }
-    core::Logger::getInstance().info("Initializing WMO renderer...");
+    core::Logger::getInstance().info("Initializing WMO renderer (Vulkan)...");
 
+    vkCtx_ = ctx;
     assetManager = assets;
 
-    numCullThreads_ = std::min(4u, std::max(1u, std::thread::hardware_concurrency() - 1));
-
-    // Create WMO shader with texture support
-    const char* vertexSrc = R"(
-        #version 330 core
-        layout (location = 0) in vec3 aPos;
-        layout (location = 1) in vec3 aNormal;
-        layout (location = 2) in vec2 aTexCoord;
-        layout (location = 3) in vec4 aColor;
-
-        uniform mat4 uModel;
-        uniform mat4 uView;
-        uniform mat4 uProjection;
-
-        out vec3 FragPos;
-        out vec3 Normal;
-        out vec2 TexCoord;
-        out vec4 VertexColor;
-
-        void main() {
-            vec4 worldPos = uModel * vec4(aPos, 1.0);
-            FragPos = worldPos.xyz;
-            // Use mat3(uModel) directly - avoids expensive inverse() per vertex
-            // This works correctly for uniform scale transforms
-            Normal = mat3(uModel) * aNormal;
-            TexCoord = aTexCoord;
-            VertexColor = aColor;
-
-            gl_Position = uProjection * uView * worldPos;
-        }
-    )";
-
-    const char* fragmentSrc = R"(
-        #version 330 core
-        in vec3 FragPos;
-        in vec3 Normal;
-        in vec2 TexCoord;
-        in vec4 VertexColor;
-
-        uniform vec3 uLightDir;
-        uniform vec3 uLightColor;
-        uniform float uSpecularIntensity;
-        uniform vec3 uViewPos;
-        uniform vec3 uAmbientColor;
-        uniform sampler2D uTexture;
-        uniform bool uHasTexture;
-        uniform bool uAlphaTest;
-        uniform bool uUnlit;
-        uniform bool uIsInterior;
-
-        uniform vec3 uFogColor;
-        uniform float uFogStart;
-        uniform float uFogEnd;
-
-        uniform sampler2DShadow uShadowMap;
-        uniform mat4 uLightSpaceMatrix;
-        uniform bool uShadowEnabled;
-        uniform float uShadowStrength;
-
-        out vec4 FragColor;
-
-        void main() {
-            // Sample texture or use vertex color
-            vec4 texColor;
-            float alpha = 1.0;
-            if (uHasTexture) {
-                texColor = texture(uTexture, TexCoord);
-                // Alpha test only for cutout materials (lattice, grating, etc.)
-                if (uAlphaTest && texColor.a < 0.5) discard;
-                alpha = texColor.a;
-                // Don't multiply texture by vertex color here - it zeros out black MOCV areas
-                // Vertex colors will be applied as AO modulation after lighting
-            } else {
-                // MOCV vertex color alpha is a lighting blend factor, not transparency
-                texColor = vec4(VertexColor.rgb, 1.0);
-            }
-
-            // Unlit materials (windows, lamps) — emit texture color directly
-            if (uUnlit) {
-                // Apply fog only
-                float fogDist = length(uViewPos - FragPos);
-                float fogFactor = clamp((uFogEnd - fogDist) / (uFogEnd - uFogStart), 0.0, 1.0);
-                vec3 result = mix(uFogColor, texColor.rgb, fogFactor);
-                FragColor = vec4(result, alpha);
-                return;
-            }
-
-            vec3 normal = normalize(Normal);
-            vec3 lightDir = normalize(uLightDir);
-
-            vec3 litColor;
-            if (uIsInterior) {
-                // Interior: MOCV vertex colors are baked lighting.
-                // Use them directly as the light multiplier on the texture.
-                vec3 vertLight = VertexColor.rgb * 2.4 + 0.35;
-                // Subtle directional fill so geometry reads
-                float diff = max(dot(normal, lightDir), 0.0);
-                vertLight += diff * 0.10;
-                litColor = texColor.rgb * vertLight;
-            } else {
-                // Exterior: standard diffuse + specular lighting
-                vec3 ambient = uAmbientColor;
-
-                float diff = max(dot(normal, lightDir), 0.0);
-                vec3 diffuse = diff * vec3(1.0);
-
-                vec3 viewDir = normalize(uViewPos - FragPos);
-                vec3 halfDir = normalize(lightDir + viewDir);
-                float spec = pow(max(dot(normal, halfDir), 0.0), 32.0);
-                vec3 specular = spec * uLightColor * uSpecularIntensity;
-
-                // Shadow mapping
-                float shadow = 1.0;
-                if (uShadowEnabled) {
-                    vec4 lsPos = uLightSpaceMatrix * vec4(FragPos, 1.0);
-                    vec3 proj = lsPos.xyz / lsPos.w * 0.5 + 0.5;
-                    if (proj.z <= 1.0 && proj.x >= 0.0 && proj.x <= 1.0 && proj.y >= 0.0 && proj.y <= 1.0) {
-                        float edgeDist = max(abs(proj.x - 0.5), abs(proj.y - 0.5));
-                        float coverageFade = 1.0 - smoothstep(0.40, 0.49, edgeDist);
-                        float bias = max(0.005 * (1.0 - dot(normal, lightDir)), 0.001);
-                        // Single hardware PCF tap — GL_LINEAR + compare mode gives 2×2 bilinear PCF for free
-                        shadow = texture(uShadowMap, vec3(proj.xy, proj.z - bias));
-                        shadow = mix(1.0, shadow, coverageFade);
-                    }
-                }
-                shadow = mix(1.0, shadow, clamp(uShadowStrength, 0.0, 1.0));
-
-                litColor = (ambient + (diffuse + specular) * shadow) * texColor.rgb;
-
-                // Apply vertex color as ambient occlusion (AO) with minimum to prevent blackout
-                // MOCV values of (0,0,0) are clamped to 0.5 to keep areas visible
-                vec3 ao = max(VertexColor.rgb, vec3(0.5));
-                litColor *= ao;
-            }
-
-            // Fog
-            float fogDist = length(uViewPos - FragPos);
-            float fogFactor = clamp((uFogEnd - fogDist) / (uFogEnd - uFogStart), 0.0, 1.0);
-            vec3 result = mix(uFogColor, litColor, fogFactor);
-
-            FragColor = vec4(result, alpha);
-        }
-    )";
-
-    shader = std::make_unique<Shader>();
-    if (!shader->loadFromSource(vertexSrc, fragmentSrc)) {
-        core::Logger::getInstance().error("Failed to create WMO shader");
+    if (!vkCtx_) {
+        core::Logger::getInstance().error("WMORenderer: null VkContext");
         return false;
     }
 
-    // Create default white texture for fallback
+    numCullThreads_ = std::min(4u, std::max(1u, std::thread::hardware_concurrency() - 1));
+
+    VkDevice device = vkCtx_->getDevice();
+
+    // --- Create material descriptor set layout (set 1) ---
+    // binding 0: sampler2D (diffuse texture)
+    // binding 1: uniform buffer (WMOMaterial)
+    std::vector<VkDescriptorSetLayoutBinding> materialBindings(2);
+    materialBindings[0] = {};
+    materialBindings[0].binding = 0;
+    materialBindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    materialBindings[0].descriptorCount = 1;
+    materialBindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    materialBindings[1] = {};
+    materialBindings[1].binding = 1;
+    materialBindings[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    materialBindings[1].descriptorCount = 1;
+    materialBindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    materialSetLayout_ = createDescriptorSetLayout(device, materialBindings);
+    if (!materialSetLayout_) {
+        core::Logger::getInstance().error("WMORenderer: failed to create material set layout");
+        return false;
+    }
+
+    // --- Create descriptor pool ---
+    VkDescriptorPoolSize poolSizes[] = {
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_MATERIAL_SETS },
+        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, MAX_MATERIAL_SETS },
+    };
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.maxSets = MAX_MATERIAL_SETS;
+    poolInfo.poolSizeCount = 2;
+    poolInfo.pPoolSizes = poolSizes;
+
+    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &materialDescPool_) != VK_SUCCESS) {
+        core::Logger::getInstance().error("WMORenderer: failed to create descriptor pool");
+        return false;
+    }
+
+    // --- Create pipeline layout ---
+    VkPushConstantRange pushRange{};
+    pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushRange.offset = 0;
+    pushRange.size = sizeof(GPUPushConstants);
+
+    std::vector<VkDescriptorSetLayout> setLayouts = { perFrameLayout, materialSetLayout_ };
+    pipelineLayout_ = createPipelineLayout(device, setLayouts, { pushRange });
+    if (!pipelineLayout_) {
+        core::Logger::getInstance().error("WMORenderer: failed to create pipeline layout");
+        return false;
+    }
+
+    // --- Load shaders ---
+    VkShaderModule vertShader, fragShader;
+    if (!vertShader.loadFromFile(device, "assets/shaders/wmo.vert.spv")) {
+        core::Logger::getInstance().error("WMORenderer: failed to load vertex shader");
+        return false;
+    }
+    if (!fragShader.loadFromFile(device, "assets/shaders/wmo.frag.spv")) {
+        core::Logger::getInstance().error("WMORenderer: failed to load fragment shader");
+        return false;
+    }
+
+    // --- Vertex input ---
+    // WMO vertex: pos3 + normal3 + texCoord2 + color4 = 48 bytes
+    struct WMOVertexData {
+        glm::vec3 position;
+        glm::vec3 normal;
+        glm::vec2 texCoord;
+        glm::vec4 color;
+    };
+
+    VkVertexInputBindingDescription vertexBinding{};
+    vertexBinding.binding = 0;
+    vertexBinding.stride = sizeof(WMOVertexData);
+    vertexBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::vector<VkVertexInputAttributeDescription> vertexAttribs(4);
+    vertexAttribs[0] = { 0, 0, VK_FORMAT_R32G32B32_SFLOAT,
+        static_cast<uint32_t>(offsetof(WMOVertexData, position)) };
+    vertexAttribs[1] = { 1, 0, VK_FORMAT_R32G32B32_SFLOAT,
+        static_cast<uint32_t>(offsetof(WMOVertexData, normal)) };
+    vertexAttribs[2] = { 2, 0, VK_FORMAT_R32G32_SFLOAT,
+        static_cast<uint32_t>(offsetof(WMOVertexData, texCoord)) };
+    vertexAttribs[3] = { 3, 0, VK_FORMAT_R32G32B32A32_SFLOAT,
+        static_cast<uint32_t>(offsetof(WMOVertexData, color)) };
+
+    // --- Build opaque pipeline ---
+    VkRenderPass mainPass = vkCtx_->getImGuiRenderPass();
+
+    opaquePipeline_ = PipelineBuilder()
+        .setShaders(vertShader.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                    fragShader.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+        .setVertexInput({ vertexBinding }, vertexAttribs)
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+        .setDepthTest(true, true, VK_COMPARE_OP_LESS_OR_EQUAL)
+        .setColorBlendAttachment(PipelineBuilder::blendDisabled())
+        .setLayout(pipelineLayout_)
+        .setRenderPass(mainPass)
+        .setDynamicStates({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR })
+        .build(device);
+
+    if (!opaquePipeline_) {
+        core::Logger::getInstance().error("WMORenderer: failed to create opaque pipeline");
+        vertShader.destroy();
+        fragShader.destroy();
+        return false;
+    }
+
+    // --- Build transparent pipeline ---
+    transparentPipeline_ = PipelineBuilder()
+        .setShaders(vertShader.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                    fragShader.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+        .setVertexInput({ vertexBinding }, vertexAttribs)
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+        .setDepthTest(true, false, VK_COMPARE_OP_LESS_OR_EQUAL)
+        .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+        .setLayout(pipelineLayout_)
+        .setRenderPass(mainPass)
+        .setDynamicStates({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR })
+        .build(device);
+
+    if (!transparentPipeline_) {
+        core::Logger::getInstance().warning("WMORenderer: transparent pipeline not available");
+    }
+
+    // --- Build wireframe pipeline ---
+    wireframePipeline_ = PipelineBuilder()
+        .setShaders(vertShader.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                    fragShader.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+        .setVertexInput({ vertexBinding }, vertexAttribs)
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_LINE, VK_CULL_MODE_NONE)
+        .setDepthTest(true, true, VK_COMPARE_OP_LESS_OR_EQUAL)
+        .setColorBlendAttachment(PipelineBuilder::blendDisabled())
+        .setLayout(pipelineLayout_)
+        .setRenderPass(mainPass)
+        .setDynamicStates({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR })
+        .build(device);
+
+    if (!wireframePipeline_) {
+        core::Logger::getInstance().warning("WMORenderer: wireframe pipeline not available");
+    }
+
+    vertShader.destroy();
+    fragShader.destroy();
+
+    // --- Create fallback white texture ---
+    whiteTexture_ = std::make_unique<VkTexture>();
     uint8_t whitePixel[4] = {255, 255, 255, 255};
-    glGenTextures(1, &whiteTexture);
-    glBindTexture(GL_TEXTURE_2D, whiteTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, whitePixel);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    whiteTexture_->upload(*vkCtx_, whitePixel, 1, 1, VK_FORMAT_R8G8B8A8_UNORM, false);
+    whiteTexture_->createSampler(device, VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+                                  VK_SAMPLER_ADDRESS_MODE_REPEAT);
 
-    // Initialize occlusion query resources
-    initOcclusionResources();
-
-    core::Logger::getInstance().info("WMO renderer initialized");
+    core::Logger::getInstance().info("WMO renderer initialized (Vulkan)");
     initialized_ = true;
     return true;
 }
@@ -212,47 +220,60 @@ bool WMORenderer::initialize(pipeline::AssetManager* assets) {
 void WMORenderer::shutdown() {
     core::Logger::getInstance().info("Shutting down WMO renderer...");
 
-    // Free all GPU resources
+    if (!vkCtx_) {
+        loadedModels.clear();
+        instances.clear();
+        spatialGrid.clear();
+        instanceIndexById.clear();
+        initialized_ = false;
+        return;
+    }
+
+    VkDevice device = vkCtx_->getDevice();
+    VmaAllocator allocator = vkCtx_->getAllocator();
+
+    vkDeviceWaitIdle(device);
+
+    // Free all GPU resources for loaded models
     for (auto& [id, model] : loadedModels) {
         for (auto& group : model.groups) {
-            if (group.vao != 0) glDeleteVertexArrays(1, &group.vao);
-            if (group.vbo != 0) glDeleteBuffers(1, &group.vbo);
-            if (group.ebo != 0) glDeleteBuffers(1, &group.ebo);
+            destroyGroupGPU(group);
         }
     }
 
     // Free cached textures
     for (auto& [path, entry] : textureCache) {
-        GLuint texId = entry.id;
-        if (texId != 0 && texId != whiteTexture) {
-            glDeleteTextures(1, &texId);
-        }
+        if (entry.texture) entry.texture->destroy(device, allocator);
     }
     textureCache.clear();
     textureCacheBytes_ = 0;
     textureCacheCounter_ = 0;
 
     // Free white texture
-    if (whiteTexture != 0) {
-        glDeleteTextures(1, &whiteTexture);
-        whiteTexture = 0;
-    }
+    if (whiteTexture_) { whiteTexture_->destroy(device, allocator); whiteTexture_.reset(); }
 
     loadedModels.clear();
     instances.clear();
     spatialGrid.clear();
     instanceIndexById.clear();
-    shader.reset();
 
-    // Free occlusion query resources
-    for (auto& [key, query] : occlusionQueries) {
-        glDeleteQueries(1, &query);
-    }
-    occlusionQueries.clear();
-    occlusionResults.clear();
-    if (bboxVao != 0) { glDeleteVertexArrays(1, &bboxVao); bboxVao = 0; }
-    if (bboxVbo != 0) { glDeleteBuffers(1, &bboxVbo); bboxVbo = 0; }
-    occlusionShader.reset();
+    // Destroy pipelines
+    if (opaquePipeline_) { vkDestroyPipeline(device, opaquePipeline_, nullptr); opaquePipeline_ = VK_NULL_HANDLE; }
+    if (transparentPipeline_) { vkDestroyPipeline(device, transparentPipeline_, nullptr); transparentPipeline_ = VK_NULL_HANDLE; }
+    if (wireframePipeline_) { vkDestroyPipeline(device, wireframePipeline_, nullptr); wireframePipeline_ = VK_NULL_HANDLE; }
+    if (pipelineLayout_) { vkDestroyPipelineLayout(device, pipelineLayout_, nullptr); pipelineLayout_ = VK_NULL_HANDLE; }
+    if (materialDescPool_) { vkDestroyDescriptorPool(device, materialDescPool_, nullptr); materialDescPool_ = VK_NULL_HANDLE; }
+    if (materialSetLayout_) { vkDestroyDescriptorSetLayout(device, materialSetLayout_, nullptr); materialSetLayout_ = VK_NULL_HANDLE; }
+
+    // Destroy shadow resources
+    if (shadowPipeline_) { vkDestroyPipeline(device, shadowPipeline_, nullptr); shadowPipeline_ = VK_NULL_HANDLE; }
+    if (shadowPipelineLayout_) { vkDestroyPipelineLayout(device, shadowPipelineLayout_, nullptr); shadowPipelineLayout_ = VK_NULL_HANDLE; }
+    if (shadowParamsPool_) { vkDestroyDescriptorPool(device, shadowParamsPool_, nullptr); shadowParamsPool_ = VK_NULL_HANDLE; }
+    if (shadowParamsLayout_) { vkDestroyDescriptorSetLayout(device, shadowParamsLayout_, nullptr); shadowParamsLayout_ = VK_NULL_HANDLE; }
+    if (shadowParamsUBO_) { vmaDestroyBuffer(allocator, shadowParamsUBO_, shadowParamsAlloc_); shadowParamsUBO_ = VK_NULL_HANDLE; }
+
+    vkCtx_ = nullptr;
+    initialized_ = false;
 }
 
 bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
@@ -266,12 +287,12 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
     if (existingIt != loadedModels.end()) {
         // If a model was first loaded while texture resolution failed (or before
         // assets were fully available), it can remain permanently white because
-        // merged batches cache texture IDs at load time. Do a one-time reload for
+        // merged batches cache texture pointers at load time. Do a one-time reload for
         // models that have texture paths but no resolved non-white textures.
         if (assetManager && !model.textures.empty()) {
             bool hasResolvedTexture = false;
-            for (GLuint texId : existingIt->second.textures) {
-                if (texId != 0 && texId != whiteTexture) {
+            for (VkTexture* tex : existingIt->second.textures) {
+                if (tex != nullptr && tex != whiteTexture_.get()) {
                     hasResolvedTexture = true;
                     break;
                 }
@@ -313,8 +334,8 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
         for (size_t i = 0; i < model.textures.size(); i++) {
             const auto& texPath = model.textures[i];
             core::Logger::getInstance().debug("    Loading texture ", i, ": ", texPath);
-            GLuint texId = loadTexture(texPath);
-            modelData.textures.push_back(texId);
+            VkTexture* tex = loadTexture(texPath);
+            modelData.textures.push_back(tex);
         }
         core::Logger::getInstance().debug("  Loaded ", modelData.textures.size(), " textures for WMO");
     }
@@ -393,20 +414,32 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
 
     // Build pre-merged batches for each group (texture-sorted for efficient rendering)
     for (auto& groupRes : modelData.groups) {
-        std::unordered_map<uint64_t, GroupResources::MergedBatch> batchMap;
+        // Use pointer value as key for batching
+        struct BatchKey {
+            uintptr_t texPtr;
+            bool alphaTest;
+            bool unlit;
+            bool operator==(const BatchKey& o) const { return texPtr == o.texPtr && alphaTest == o.alphaTest && unlit == o.unlit; }
+        };
+        struct BatchKeyHash {
+            size_t operator()(const BatchKey& k) const {
+                return std::hash<uintptr_t>()(k.texPtr) ^ (std::hash<bool>()(k.alphaTest) << 1) ^ (std::hash<bool>()(k.unlit) << 2);
+            }
+        };
+        std::unordered_map<BatchKey, GroupResources::MergedBatch, BatchKeyHash> batchMap;
 
         for (const auto& batch : groupRes.batches) {
-            GLuint texId = whiteTexture;
+            VkTexture* tex = whiteTexture_.get();
             bool hasTexture = false;
 
             if (batch.materialId < modelData.materialTextureIndices.size()) {
                 uint32_t texIndex = modelData.materialTextureIndices[batch.materialId];
                 if (texIndex < modelData.textures.size()) {
-                    texId = modelData.textures[texIndex];
-                    hasTexture = (texId != 0 && texId != whiteTexture);
+                    tex = modelData.textures[texIndex];
+                    hasTexture = (tex != nullptr && tex != whiteTexture_.get());
+                    if (!tex) tex = whiteTexture_.get();
                 }
             }
-
 
             bool alphaTest = false;
             uint32_t blendMode = 0;
@@ -426,26 +459,76 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
             // 0x20 = F_SIDN (night sky window), 0x40 = F_WINDOW
             if (matFlags & 0x60) continue;
 
-            // Merge key: texture ID + alphaTest + unlit (unlit batches must not merge with lit)
-            uint64_t key = (static_cast<uint64_t>(texId) << 2)
-                         | (alphaTest ? 1ULL : 0ULL)
-                         | (unlit ? 2ULL : 0ULL);
+            BatchKey key{ reinterpret_cast<uintptr_t>(tex), alphaTest, unlit };
             auto& mb = batchMap[key];
-            if (mb.counts.empty()) {
-                mb.texId = texId;
+            if (mb.draws.empty()) {
+                mb.texture = tex;
                 mb.hasTexture = hasTexture;
                 mb.alphaTest = alphaTest;
                 mb.unlit = unlit;
-                mb.blendMode = blendMode;
+                mb.isTransparent = (blendMode >= 2);
             }
-            mb.counts.push_back(static_cast<GLsizei>(batch.indexCount));
-            mb.offsets.push_back(reinterpret_cast<const void*>(batch.startIndex * sizeof(uint16_t)));
+            GroupResources::MergedBatch::DrawRange dr;
+            dr.firstIndex = batch.startIndex;
+            dr.indexCount = batch.indexCount;
+            mb.draws.push_back(dr);
         }
 
+        // Allocate descriptor sets and UBOs for each merged batch
         groupRes.mergedBatches.reserve(batchMap.size());
         bool anyTextured = false;
+        bool isInterior = (groupRes.groupFlags & 0x2000) != 0;
         for (auto& [key, mb] : batchMap) {
             if (mb.hasTexture) anyTextured = true;
+
+            // Create material UBO
+            VmaAllocator allocator = vkCtx_->getAllocator();
+            AllocatedBuffer matBuf = createBuffer(allocator, sizeof(WMOMaterialUBO),
+                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                VMA_MEMORY_USAGE_CPU_TO_GPU);
+            mb.materialUBO = matBuf.buffer;
+            mb.materialUBOAlloc = matBuf.allocation;
+
+            // Write material params
+            WMOMaterialUBO matData{};
+            matData.hasTexture = mb.hasTexture ? 1 : 0;
+            matData.alphaTest = mb.alphaTest ? 1 : 0;
+            matData.unlit = mb.unlit ? 1 : 0;
+            matData.isInterior = isInterior ? 1 : 0;
+            matData.specularIntensity = 0.5f;
+            if (matBuf.info.pMappedData) {
+                memcpy(matBuf.info.pMappedData, &matData, sizeof(matData));
+            }
+
+            // Allocate and write descriptor set
+            mb.materialSet = allocateMaterialSet();
+            if (mb.materialSet) {
+                VkTexture* texToUse = mb.texture ? mb.texture : whiteTexture_.get();
+                VkDescriptorImageInfo imgInfo = texToUse->descriptorInfo();
+
+                VkDescriptorBufferInfo bufInfo{};
+                bufInfo.buffer = mb.materialUBO;
+                bufInfo.offset = 0;
+                bufInfo.range = sizeof(WMOMaterialUBO);
+
+                VkWriteDescriptorSet writes[2] = {};
+                writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                writes[0].dstSet = mb.materialSet;
+                writes[0].dstBinding = 0;
+                writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                writes[0].descriptorCount = 1;
+                writes[0].pImageInfo = &imgInfo;
+
+                writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                writes[1].dstSet = mb.materialSet;
+                writes[1].dstBinding = 1;
+                writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                writes[1].descriptorCount = 1;
+                writes[1].pBufferInfo = &bufInfo;
+
+                vkUpdateDescriptorSets(vkCtx_->getDevice(), 2, writes, 0, nullptr);
+            }
+
             groupRes.mergedBatches.push_back(std::move(mb));
         }
         groupRes.allUntextured = !anyTextured && !groupRes.mergedBatches.empty();
@@ -544,9 +627,7 @@ void WMORenderer::unloadModel(uint32_t id) {
 
     // Free GPU resources
     for (auto& group : it->second.groups) {
-        if (group.vao != 0) glDeleteVertexArrays(1, &group.vao);
-        if (group.vbo != 0) glDeleteBuffers(1, &group.vbo);
-        if (group.ebo != 0) glDeleteBuffers(1, &group.ebo);
+        destroyGroupGPU(group);
     }
 
     loadedModels.erase(it);
@@ -792,20 +873,7 @@ void WMORenderer::clearCollisionFocus() {
     collisionFocusEnabled = false;
 }
 
-void WMORenderer::setLighting(const float lightDirIn[3], const float lightColorIn[3],
-                               const float ambientColorIn[3]) {
-    lightDir[0] = lightDirIn[0];
-    lightDir[1] = lightDirIn[1];
-    lightDir[2] = lightDirIn[2];
-
-    lightColor[0] = lightColorIn[0];
-    lightColor[1] = lightColorIn[1];
-    lightColor[2] = lightColorIn[2];
-
-    ambientColor[0] = ambientColorIn[0];
-    ambientColor[1] = ambientColorIn[1];
-    ambientColor[2] = ambientColorIn[2];
-}
+// setLighting is now a no-op (lighting is in the per-frame UBO)
 
 void WMORenderer::resetQueryStats() {
     queryTimeMs = 0.0;
@@ -1017,77 +1085,23 @@ void WMORenderer::gatherCandidates(const glm::vec3& queryMin, const glm::vec3& q
     }
 }
 
-void WMORenderer::render(const Camera& camera, const glm::mat4& view, const glm::mat4& projection) {
-    if (!shader || instances.empty()) {
+void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera) {
+    if (!opaquePipeline_ || instances.empty()) {
         lastDrawCalls = 0;
         return;
     }
 
     lastDrawCalls = 0;
 
-    // Set shader uniforms
-    shader->use();
-    shader->setUniform("uView", view);
-    shader->setUniform("uProjection", projection);
-    shader->setUniform("uViewPos", camera.getPosition());
-    shader->setUniform("uLightDir", glm::vec3(lightDir[0], lightDir[1], lightDir[2]));
-    shader->setUniform("uLightColor", glm::vec3(lightColor[0], lightColor[1], lightColor[2]));
-    shader->setUniform("uSpecularIntensity", 0.5f);
-    shader->setUniform("uAmbientColor", glm::vec3(ambientColor[0], ambientColor[1], ambientColor[2]));
-    shader->setUniform("uFogColor", fogColor);
-    shader->setUniform("uFogStart", fogStart);
-    shader->setUniform("uFogEnd", fogEnd);
-    shader->setUniform("uShadowEnabled", shadowEnabled ? 1 : 0);
-    shader->setUniform("uShadowStrength", 0.68f);
-    if (shadowEnabled) {
-        shader->setUniform("uLightSpaceMatrix", lightSpaceMatrix);
-        glActiveTexture(GL_TEXTURE7);
-        glBindTexture(GL_TEXTURE_2D, shadowDepthTex);
-        shader->setUniform("uShadowMap", 7);
-    }
-
-    // Set up texture unit 0 for diffuse textures (set once per frame)
-    glActiveTexture(GL_TEXTURE0);
-    shader->setUniform("uTexture", 0);
-
-    // Initialize new uniforms to defaults
-    shader->setUniform("uUnlit", false);
-    shader->setUniform("uIsInterior", false);
-
-    // Enable wireframe if requested
-    if (wireframeMode) {
-        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    }
-
-    // WMOs are opaque — ensure blending is off (alpha test via discard in shader)
-    glDisable(GL_BLEND);
-
-    // Disable backface culling for WMOs (some faces may have wrong winding)
-    glDisable(GL_CULL_FACE);
-
     // Extract frustum planes for proper culling
+    glm::mat4 viewProj = camera.getProjectionMatrix() * camera.getViewMatrix();
     Frustum frustum;
-    frustum.extractFromMatrix(projection * view);
+    frustum.extractFromMatrix(viewProj);
 
     lastPortalCulledGroups = 0;
     lastDistanceCulledGroups = 0;
-    lastOcclusionCulledGroups = 0;
-
-    // Collect occlusion query results from previous frame (non-blocking)
-    if (occlusionCulling) {
-        for (auto& [queryKey, query] : occlusionQueries) {
-            GLuint available = 0;
-            glGetQueryObjectuiv(query, GL_QUERY_RESULT_AVAILABLE, &available);
-            if (available) {
-                GLuint result = 0;
-                glGetQueryObjectuiv(query, GL_QUERY_RESULT, &result);
-                occlusionResults[queryKey] = (result > 0);
-            }
-        }
-    }
 
     // ── Phase 1: Parallel visibility culling ──────────────────────────
-    // Build list of instances for draw list generation.
     std::vector<size_t> visibleInstances;
     visibleInstances.reserve(instances.size());
     for (size_t i = 0; i < instances.size(); ++i) {
@@ -1097,11 +1111,8 @@ void WMORenderer::render(const Camera& camera, const glm::mat4& view, const glm:
         visibleInstances.push_back(i);
     }
 
-    // Per-instance cull lambda — produces an InstanceDrawList for one instance.
-    // Reads only const data; each invocation writes to its own output.
     glm::vec3 camPos = camera.getPosition();
     bool doPortalCull = portalCulling;
-    bool doOcclusionCull = occlusionCulling;
     bool doFrustumCull = false; // Temporarily disabled: can over-cull world WMOs
     bool doDistanceCull = distanceCulling;
 
@@ -1125,16 +1136,9 @@ void WMORenderer::render(const Camera& camera, const glm::mat4& view, const glm:
         }
 
         for (size_t gi = 0; gi < model.groups.size(); ++gi) {
-            // Portal culling
             if (usePortalCulling &&
                 portalVisibleGroups.find(static_cast<uint32_t>(gi)) == portalVisibleGroups.end()) {
                 result.portalCulled++;
-                continue;
-            }
-
-            // Occlusion culling (reads previous-frame results, read-only map)
-            if (doOcclusionCull && isGroupOccluded(instance.id, static_cast<uint32_t>(gi))) {
-                result.occlusionCulled++;
                 continue;
             }
 
@@ -1150,7 +1154,6 @@ void WMORenderer::render(const Camera& camera, const glm::mat4& view, const glm:
                     }
                 }
 
-                // Frustum culling
                 if (doFrustumCull && !frustum.intersectsAABB(gMin, gMax))
                     continue;
             }
@@ -1170,7 +1173,6 @@ void WMORenderer::render(const Camera& camera, const glm::mat4& view, const glm:
         const size_t chunkSize = visibleInstances.size() / numThreads;
         const size_t remainder = visibleInstances.size() % numThreads;
 
-        // Each future returns a vector of InstanceDrawList for its chunk.
         std::vector<std::future<std::vector<InstanceDrawList>>> futures;
         futures.reserve(numThreads);
 
@@ -1198,70 +1200,281 @@ void WMORenderer::render(const Camera& camera, const glm::mat4& view, const glm:
             drawLists.push_back(cullInstance(idx));
     }
 
-    // ── Phase 2: Sequential GL draw ────────────────────────────────
+    // ── Phase 2: Vulkan draw ────────────────────────────────
+    // Select pipeline based on wireframe mode
+    VkPipeline activePipeline = (wireframeMode && wireframePipeline_) ? wireframePipeline_ : opaquePipeline_;
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, activePipeline);
+
+    // Bind per-frame descriptor set (set 0)
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_,
+                             0, 1, &perFrameSet, 0, nullptr);
+
+    bool inTransparentPipeline = false;
+
     for (const auto& dl : drawLists) {
         if (dl.instanceIndex >= instances.size()) continue;
         const auto& instance = instances[dl.instanceIndex];
         auto modelIt = loadedModels.find(instance.modelId);
         if (modelIt == loadedModels.end()) continue;
         const ModelData& model = modelIt->second;
-        // Occlusion query pre-pass (GL calls — must be main thread)
-        if (occlusionCulling && occlusionShader && bboxVao != 0) {
-            runOcclusionQueries(instance, model, view, projection);
-            shader->use();
-        }
 
-        shader->setUniform("uModel", instance.modelMatrix);
+        // Push model matrix
+        GPUPushConstants push{};
+        push.model = instance.modelMatrix;
+        vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT,
+                            0, sizeof(GPUPushConstants), &push);
 
         // Render visible groups
         for (uint32_t gi : dl.visibleGroups) {
             const auto& group = model.groups[gi];
 
-            // Only skip antiportal geometry. Other flags vary across assets and can
-            // incorrectly hide valid world building groups.
-            if (group.groupFlags & 0x4000000) {
-                continue;
+            // Only skip antiportal geometry
+            if (group.groupFlags & 0x4000000) continue;
+
+            // Bind vertex + index buffers
+            VkDeviceSize offset = 0;
+            vkCmdBindVertexBuffers(cmd, 0, 1, &group.vertexBuffer, &offset);
+            vkCmdBindIndexBuffer(cmd, group.indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+
+            // Render each merged batch
+            for (const auto& mb : group.mergedBatches) {
+                if (!mb.materialSet) continue;
+
+                // Switch pipeline for transparent batches
+                if (mb.isTransparent && !inTransparentPipeline && transparentPipeline_) {
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, transparentPipeline_);
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_,
+                                             0, 1, &perFrameSet, 0, nullptr);
+                    vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT,
+                                        0, sizeof(GPUPushConstants), &push);
+                    inTransparentPipeline = true;
+                } else if (!mb.isTransparent && inTransparentPipeline) {
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, activePipeline);
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_,
+                                             0, 1, &perFrameSet, 0, nullptr);
+                    vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT,
+                                        0, sizeof(GPUPushConstants), &push);
+                    inTransparentPipeline = false;
+                }
+
+                // Bind material descriptor set (set 1)
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_,
+                                         1, 1, &mb.materialSet, 0, nullptr);
+
+                // Issue draw calls for each range in this merged batch
+                for (const auto& dr : mb.draws) {
+                    vkCmdDrawIndexed(cmd, dr.indexCount, 1, dr.firstIndex, 0, 0);
+                    lastDrawCalls++;
+                }
             }
-
-            // Do not globally cull untextured groups: some valid world WMOs can
-            // temporarily resolve to fallback textures. Render geometry anyway.
-
-
-            renderGroup(group, model, instance.modelMatrix, view, projection);
         }
 
         lastPortalCulledGroups += dl.portalCulled;
         lastDistanceCulledGroups += dl.distanceCulled;
-        lastOcclusionCulledGroups += dl.occlusionCulled;
     }
-
-    // Restore polygon mode
-    if (wireframeMode) {
-        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-    }
-
-    // Re-enable backface culling
-    glEnable(GL_CULL_FACE);
 }
 
-void WMORenderer::renderShadow(const glm::mat4& lightView, const glm::mat4& lightProj, Shader& shadowShader) {
-    if (instances.empty()) return;
-    Frustum frustum;
-    frustum.extractFromMatrix(lightProj * lightView);
+bool WMORenderer::initializeShadow(VkRenderPass shadowRenderPass) {
+    if (!vkCtx_ || shadowRenderPass == VK_NULL_HANDLE) return false;
+    VkDevice device = vkCtx_->getDevice();
+
+    // ShadowParams UBO: useBones, useTexture, alphaTest, foliageSway, windTime, foliageMotionDamp
+    struct ShadowParamsUBO {
+        int32_t useBones = 0;
+        int32_t useTexture = 0;
+        int32_t alphaTest = 0;
+        int32_t foliageSway = 0;
+        float windTime = 0.0f;
+        float foliageMotionDamp = 1.0f;
+    };
+
+    // Create ShadowParams UBO
+    VkBufferCreateInfo bufCI{};
+    bufCI.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufCI.size = sizeof(ShadowParamsUBO);
+    bufCI.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    VmaAllocationCreateInfo allocCI{};
+    allocCI.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    allocCI.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    VmaAllocationInfo allocInfo{};
+    if (vmaCreateBuffer(vkCtx_->getAllocator(), &bufCI, &allocCI,
+            &shadowParamsUBO_, &shadowParamsAlloc_, &allocInfo) != VK_SUCCESS) {
+        core::Logger::getInstance().error("WMORenderer: failed to create shadow params UBO");
+        return false;
+    }
+    ShadowParamsUBO defaultParams{};
+    std::memcpy(allocInfo.pMappedData, &defaultParams, sizeof(defaultParams));
+
+    // Create descriptor set layout: binding 0 = sampler2D (texture), binding 1 = ShadowParams UBO
+    VkDescriptorSetLayoutBinding layoutBindings[2]{};
+    layoutBindings[0].binding = 0;
+    layoutBindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    layoutBindings[0].descriptorCount = 1;
+    layoutBindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    layoutBindings[1].binding = 1;
+    layoutBindings[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    layoutBindings[1].descriptorCount = 1;
+    layoutBindings[1].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    VkDescriptorSetLayoutCreateInfo layoutCI{};
+    layoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutCI.bindingCount = 2;
+    layoutCI.pBindings = layoutBindings;
+    if (vkCreateDescriptorSetLayout(device, &layoutCI, nullptr, &shadowParamsLayout_) != VK_SUCCESS) {
+        core::Logger::getInstance().error("WMORenderer: failed to create shadow params layout");
+        return false;
+    }
+
+    // Create descriptor pool
+    VkDescriptorPoolSize poolSizes[2]{};
+    poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[0].descriptorCount = 1;
+    poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSizes[1].descriptorCount = 1;
+    VkDescriptorPoolCreateInfo poolCI{};
+    poolCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolCI.maxSets = 1;
+    poolCI.poolSizeCount = 2;
+    poolCI.pPoolSizes = poolSizes;
+    if (vkCreateDescriptorPool(device, &poolCI, nullptr, &shadowParamsPool_) != VK_SUCCESS) {
+        core::Logger::getInstance().error("WMORenderer: failed to create shadow params pool");
+        return false;
+    }
+
+    // Allocate descriptor set
+    VkDescriptorSetAllocateInfo setAlloc{};
+    setAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    setAlloc.descriptorPool = shadowParamsPool_;
+    setAlloc.descriptorSetCount = 1;
+    setAlloc.pSetLayouts = &shadowParamsLayout_;
+    if (vkAllocateDescriptorSets(device, &setAlloc, &shadowParamsSet_) != VK_SUCCESS) {
+        core::Logger::getInstance().error("WMORenderer: failed to allocate shadow params set");
+        return false;
+    }
+
+    // Write descriptors
+    VkDescriptorBufferInfo bufInfo{};
+    bufInfo.buffer = shadowParamsUBO_;
+    bufInfo.offset = 0;
+    bufInfo.range = sizeof(ShadowParamsUBO);
+
+    VkWriteDescriptorSet writes[2]{};
+    // binding 0: texture (use white fallback so binding is valid; useTexture=0 so it's not sampled)
+    VkDescriptorImageInfo imgInfo{};
+    imgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    imgInfo.imageView = whiteTexture_->getImageView();
+    imgInfo.sampler = whiteTexture_->getSampler();
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = shadowParamsSet_;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorCount = 1;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[0].pImageInfo = &imgInfo;
+    // binding 1: params UBO
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = shadowParamsSet_;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorCount = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[1].pBufferInfo = &bufInfo;
+    vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+
+    // Create shadow pipeline layout: set 1 = shadowParamsLayout_, push constants = 128 bytes
+    VkPushConstantRange pc{};
+    pc.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pc.offset = 0;
+    pc.size = 128;  // lightSpaceMatrix (64) + model (64)
+    shadowPipelineLayout_ = createPipelineLayout(device, {shadowParamsLayout_}, {pc});
+    if (!shadowPipelineLayout_) {
+        core::Logger::getInstance().error("WMORenderer: failed to create shadow pipeline layout");
+        return false;
+    }
+
+    // Load shadow shaders
+    VkShaderModule vertShader, fragShader;
+    if (!vertShader.loadFromFile(device, "assets/shaders/shadow.vert.spv")) {
+        core::Logger::getInstance().error("WMORenderer: failed to load shadow vertex shader");
+        return false;
+    }
+    if (!fragShader.loadFromFile(device, "assets/shaders/shadow.frag.spv")) {
+        core::Logger::getInstance().error("WMORenderer: failed to load shadow fragment shader");
+        return false;
+    }
+
+    // WMO vertex layout: pos(loc0,off0) normal(loc1,off12) texCoord(loc2,off24) color(loc3,off32), stride=48
+    // Shadow shader locations: 0=aPos, 1=aTexCoord, 2=aBoneWeights, 3=aBoneIndicesF
+    // useBones=0 so locations 2,3 are never read; we alias them to existing data offsets
+    VkVertexInputBindingDescription vertBind{};
+    vertBind.binding = 0;
+    vertBind.stride = 48;
+    vertBind.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    std::vector<VkVertexInputAttributeDescription> vertAttrs = {
+        {0, 0, VK_FORMAT_R32G32B32_SFLOAT,    0},   // aPos       -> position
+        {1, 0, VK_FORMAT_R32G32_SFLOAT,       24},  // aTexCoord  -> texCoord
+        {2, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 32},  // aBoneWeights (aliased to color, not used)
+        {3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 32},  // aBoneIndicesF (aliased to color, not used)
+    };
+
+    shadowPipeline_ = PipelineBuilder()
+        .setShaders(vertShader.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                    fragShader.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+        .setVertexInput({vertBind}, vertAttrs)
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT)
+        .setDepthTest(true, true, VK_COMPARE_OP_LESS_OR_EQUAL)
+        .setDepthBias(2.0f, 4.0f)
+        .setNoColorAttachment()
+        .setLayout(shadowPipelineLayout_)
+        .setRenderPass(shadowRenderPass)
+        .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
+        .build(device);
+
+    vertShader.destroy();
+    fragShader.destroy();
+
+    if (!shadowPipeline_) {
+        core::Logger::getInstance().error("WMORenderer: failed to create shadow pipeline");
+        return false;
+    }
+    core::Logger::getInstance().info("WMORenderer shadow pipeline initialized");
+    return true;
+}
+
+void WMORenderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMatrix) {
+    if (!shadowPipeline_ || !shadowParamsSet_) return;
+    if (instances.empty() || loadedModels.empty()) return;
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline_);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipelineLayout_,
+        0, 1, &shadowParamsSet_, 0, nullptr);
+
+    struct ShadowPush { glm::mat4 lightSpaceMatrix; glm::mat4 model; };
+
     for (const auto& instance : instances) {
         auto modelIt = loadedModels.find(instance.modelId);
         if (modelIt == loadedModels.end()) continue;
-        if (frustumCulling) {
-            glm::vec3 instMin = instance.worldBoundsMin - glm::vec3(0.5f);
-            glm::vec3 instMax = instance.worldBoundsMax + glm::vec3(0.5f);
-            if (!frustum.intersectsAABB(instMin, instMax)) continue;
-        }
         const ModelData& model = modelIt->second;
-        shadowShader.setUniform("uModel", instance.modelMatrix);
+
+        ShadowPush push{lightSpaceMatrix, instance.modelMatrix};
+        vkCmdPushConstants(cmd, shadowPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT,
+                           0, 128, &push);
+
         for (const auto& group : model.groups) {
-            glBindVertexArray(group.vao);
-            glDrawElements(GL_TRIANGLES, group.indexCount, GL_UNSIGNED_SHORT, 0);
-            glBindVertexArray(0);
+            if (group.vertexBuffer == VK_NULL_HANDLE || group.indexBuffer == VK_NULL_HANDLE) continue;
+
+            // Skip antiportal geometry
+            if (group.groupFlags & 0x4000000) continue;
+
+            VkDeviceSize offset = 0;
+            vkCmdBindVertexBuffers(cmd, 0, 1, &group.vertexBuffer, &offset);
+            vkCmdBindIndexBuffer(cmd, group.indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+
+            // Draw only opaque batches (skip transparent)
+            for (const auto& mb : group.mergedBatches) {
+                if (mb.isTransparent) continue;
+                for (const auto& dr : mb.draws) {
+                    vkCmdDrawIndexed(cmd, dr.indexCount, 1, dr.firstIndex, 0, 0);
+                }
+            }
         }
     }
 }
@@ -1309,45 +1522,19 @@ bool WMORenderer::createGroupResources(const pipeline::WMOGroup& group, GroupRes
         vertices.push_back(vd);
     }
 
-    // Create VAO/VBO/EBO
-    glGenVertexArrays(1, &resources.vao);
-    glGenBuffers(1, &resources.vbo);
-    glGenBuffers(1, &resources.ebo);
+    // Upload vertex buffer to GPU
+    AllocatedBuffer vertBuf = uploadBuffer(*vkCtx_, vertices.data(),
+        vertices.size() * sizeof(VertexData),
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    resources.vertexBuffer = vertBuf.buffer;
+    resources.vertexAlloc = vertBuf.allocation;
 
-    glBindVertexArray(resources.vao);
-
-    // Upload vertex data
-    glBindBuffer(GL_ARRAY_BUFFER, resources.vbo);
-    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(VertexData),
-                vertices.data(), GL_STATIC_DRAW);
-
-    // Upload index data
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, resources.ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, group.indices.size() * sizeof(uint16_t),
-                group.indices.data(), GL_STATIC_DRAW);
-
-    // Vertex attributes
-    // Position
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(VertexData),
-                         (void*)offsetof(VertexData, position));
-
-    // Normal
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(VertexData),
-                         (void*)offsetof(VertexData, normal));
-
-    // TexCoord
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(VertexData),
-                         (void*)offsetof(VertexData, texCoord));
-
-    // Color
-    glEnableVertexAttribArray(3);
-    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(VertexData),
-                         (void*)offsetof(VertexData, color));
-
-    glBindVertexArray(0);
+    // Upload index buffer to GPU
+    AllocatedBuffer idxBuf = uploadBuffer(*vkCtx_, group.indices.data(),
+        group.indices.size() * sizeof(uint16_t),
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    resources.indexBuffer = idxBuf.buffer;
+    resources.indexAlloc = idxBuf.allocation;
 
     // Store collision geometry for floor raycasting
     resources.collisionVertices.reserve(group.vertices.size());
@@ -1390,60 +1577,48 @@ bool WMORenderer::createGroupResources(const pipeline::WMOGroup& group, GroupRes
     return true;
 }
 
-void WMORenderer::renderGroup(const GroupResources& group, [[maybe_unused]] const ModelData& model,
-                              [[maybe_unused]] const glm::mat4& modelMatrix,
-                              [[maybe_unused]] const glm::mat4& view,
-                              [[maybe_unused]] const glm::mat4& projection) {
-    glBindVertexArray(group.vao);
+// renderGroup removed — draw calls are inlined in render()
 
-    // Set interior flag once per group (0x2000 = interior)
-    bool isInterior = (group.groupFlags & 0x2000) != 0;
-    shader->setUniform("uIsInterior", isInterior);
+void WMORenderer::destroyGroupGPU(GroupResources& group) {
+    if (!vkCtx_) return;
+    VmaAllocator allocator = vkCtx_->getAllocator();
 
-    // Use pre-computed merged batches (built at load time)
-    // Track state within this draw call only.
-    GLuint lastBoundTex = std::numeric_limits<GLuint>::max();
-    bool lastHasTexture = false;
-    bool lastAlphaTest = false;
-    bool lastUnlit = false;
-    bool firstBatch = true;
-
-    for (const auto& mb : group.mergedBatches) {
-        if (firstBatch || mb.texId != lastBoundTex) {
-            glBindTexture(GL_TEXTURE_2D, mb.texId);
-            lastBoundTex = mb.texId;
-        }
-        if (firstBatch || mb.hasTexture != lastHasTexture) {
-            shader->setUniform("uHasTexture", mb.hasTexture);
-            lastHasTexture = mb.hasTexture;
-        }
-        if (firstBatch || mb.alphaTest != lastAlphaTest) {
-            shader->setUniform("uAlphaTest", mb.alphaTest);
-            lastAlphaTest = mb.alphaTest;
-        }
-        if (firstBatch || mb.unlit != lastUnlit) {
-            shader->setUniform("uUnlit", mb.unlit);
-            lastUnlit = mb.unlit;
-        }
-        firstBatch = false;
-
-        // Enable alpha blending for translucent materials (blendMode >= 2)
-        bool needsBlend = (mb.blendMode >= 2);
-        if (needsBlend) {
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        }
-
-        glMultiDrawElements(GL_TRIANGLES, mb.counts.data(), GL_UNSIGNED_SHORT,
-                            mb.offsets.data(), static_cast<GLsizei>(mb.counts.size()));
-        lastDrawCalls++;
-
-        if (needsBlend) {
-            glDisable(GL_BLEND);
-        }
+    if (group.vertexBuffer) {
+        vmaDestroyBuffer(allocator, group.vertexBuffer, group.vertexAlloc);
+        group.vertexBuffer = VK_NULL_HANDLE;
+        group.vertexAlloc = VK_NULL_HANDLE;
+    }
+    if (group.indexBuffer) {
+        vmaDestroyBuffer(allocator, group.indexBuffer, group.indexAlloc);
+        group.indexBuffer = VK_NULL_HANDLE;
+        group.indexAlloc = VK_NULL_HANDLE;
     }
 
-    glBindVertexArray(0);
+    // Destroy material UBOs (descriptor sets are freed when pool is reset/destroyed)
+    for (auto& mb : group.mergedBatches) {
+        if (mb.materialUBO) {
+            vmaDestroyBuffer(allocator, mb.materialUBO, mb.materialUBOAlloc);
+            mb.materialUBO = VK_NULL_HANDLE;
+            mb.materialUBOAlloc = VK_NULL_HANDLE;
+        }
+    }
+}
+
+VkDescriptorSet WMORenderer::allocateMaterialSet() {
+    if (!materialDescPool_ || !materialSetLayout_) return VK_NULL_HANDLE;
+
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = materialDescPool_;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &materialSetLayout_;
+
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    if (vkAllocateDescriptorSets(vkCtx_->getDevice(), &allocInfo, &set) != VK_SUCCESS) {
+        core::Logger::getInstance().warning("WMORenderer: failed to allocate material descriptor set");
+        return VK_NULL_HANDLE;
+    }
+    return set;
 }
 
 bool WMORenderer::isGroupVisible(const GroupResources& group, const glm::mat4& modelMatrix,
@@ -1607,9 +1782,9 @@ void WMORenderer::WMOInstance::updateModelMatrix() {
     invModelMatrix = glm::inverse(modelMatrix);
 }
 
-GLuint WMORenderer::loadTexture(const std::string& path) {
-    if (!assetManager) {
-        return whiteTexture;
+VkTexture* WMORenderer::loadTexture(const std::string& path) {
+    if (!assetManager || !vkCtx_) {
+        return whiteTexture_.get();
     }
 
     auto normalizeKey = [](std::string key) {
@@ -1625,7 +1800,7 @@ GLuint WMORenderer::loadTexture(const std::string& path) {
     key = normalizeKey(key);
     if (key.rfind(".\\", 0) == 0) key = key.substr(2);
     while (!key.empty() && key.front() == '\\') key.erase(key.begin());
-    if (key.empty()) return whiteTexture;
+    if (key.empty()) return whiteTexture_.get();
 
     auto hasKnownExt = [](const std::string& p) {
         if (p.size() < 4) return false;
@@ -1679,7 +1854,7 @@ GLuint WMORenderer::loadTexture(const std::string& path) {
         auto it = textureCache.find(c);
         if (it != textureCache.end()) {
             it->second.lastUse = ++textureCacheCounter_;
-            return it->second.id;
+            return it->second.texture.get();
         }
     }
 
@@ -1698,46 +1873,37 @@ GLuint WMORenderer::loadTexture(const std::string& path) {
         // Do not cache failures as white. MPQ reads can fail transiently
         // during streaming/contention, and caching white here permanently
         // poisons the texture for this session.
-        return whiteTexture;
+        return whiteTexture_.get();
     }
 
     core::Logger::getInstance().debug("WMO texture: ", path, " size=", blp.width, "x", blp.height);
 
-    // Create OpenGL texture
-    GLuint textureID;
-    glGenTextures(1, &textureID);
-    glBindTexture(GL_TEXTURE_2D, textureID);
-
-    // Upload texture data (BLP loader outputs RGBA8)
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
-                 blp.width, blp.height, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, blp.data.data());
-
-    // Set texture parameters with mipmaps
-    glGenerateMipmap(GL_TEXTURE_2D);
-    applyAnisotropicFiltering();
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-
-    glBindTexture(GL_TEXTURE_2D, 0);
+    // Create Vulkan texture
+    auto texture = std::make_unique<VkTexture>();
+    if (!texture->upload(*vkCtx_, blp.data.data(), blp.width, blp.height,
+                          VK_FORMAT_R8G8B8A8_UNORM, true)) {
+        core::Logger::getInstance().warning("WMO: Failed to upload texture to GPU: ", path);
+        return whiteTexture_.get();
+    }
+    texture->createSampler(vkCtx_->getDevice(), VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+                            VK_SAMPLER_ADDRESS_MODE_REPEAT);
 
     // Cache it
     TextureCacheEntry e;
-    e.id = textureID;
+    VkTexture* rawPtr = texture.get();
     size_t base = static_cast<size_t>(blp.width) * static_cast<size_t>(blp.height) * 4ull;
     e.approxBytes = base + (base / 3);
     e.lastUse = ++textureCacheCounter_;
+    e.texture = std::move(texture);
     textureCacheBytes_ += e.approxBytes;
     if (!resolvedKey.empty()) {
-        textureCache[resolvedKey] = e;
+        textureCache[resolvedKey] = std::move(e);
     } else {
-        textureCache[key] = e;
+        textureCache[key] = std::move(e);
     }
     core::Logger::getInstance().debug("WMO: Loaded texture: ", path, " (", blp.width, "x", blp.height, ")");
 
-    return textureID;
+    return rawPtr;
 }
 
 // Ray-AABB intersection (slab method)
@@ -2710,123 +2876,7 @@ float WMORenderer::raycastBoundingBoxes(const glm::vec3& origin, const glm::vec3
     return closestHit;
 }
 
-void WMORenderer::initOcclusionResources() {
-    // Simple vertex shader for bounding box rendering
-    const char* occVertSrc = R"(
-        #version 330 core
-        layout(location = 0) in vec3 aPos;
-        uniform mat4 uMVP;
-        void main() {
-            gl_Position = uMVP * vec4(aPos, 1.0);
-        }
-    )";
-
-    // Fragment shader that writes nothing (depth-only)
-    const char* occFragSrc = R"(
-        #version 330 core
-        void main() {
-            // No color output - depth only
-        }
-    )";
-
-    occlusionShader = std::make_unique<Shader>();
-    if (!occlusionShader->loadFromSource(occVertSrc, occFragSrc)) {
-        core::Logger::getInstance().warning("Failed to create occlusion shader");
-        occlusionCulling = false;
-        return;
-    }
-
-    // Create unit cube vertices (will be scaled to group bounds)
-    float cubeVerts[] = {
-        // Front face
-        0,0,1, 1,0,1, 1,1,1, 0,0,1, 1,1,1, 0,1,1,
-        // Back face
-        1,0,0, 0,0,0, 0,1,0, 1,0,0, 0,1,0, 1,1,0,
-        // Left face
-        0,0,0, 0,0,1, 0,1,1, 0,0,0, 0,1,1, 0,1,0,
-        // Right face
-        1,0,1, 1,0,0, 1,1,0, 1,0,1, 1,1,0, 1,1,1,
-        // Top face
-        0,1,1, 1,1,1, 1,1,0, 0,1,1, 1,1,0, 0,1,0,
-        // Bottom face
-        0,0,0, 1,0,0, 1,0,1, 0,0,0, 1,0,1, 0,0,1,
-    };
-
-    glGenVertexArrays(1, &bboxVao);
-    glGenBuffers(1, &bboxVbo);
-
-    glBindVertexArray(bboxVao);
-    glBindBuffer(GL_ARRAY_BUFFER, bboxVbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(cubeVerts), cubeVerts, GL_STATIC_DRAW);
-
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-
-    glBindVertexArray(0);
-
-    core::Logger::getInstance().info("Occlusion query resources initialized");
-}
-
-void WMORenderer::runOcclusionQueries(const WMOInstance& instance, const ModelData& model,
-                                       const glm::mat4& view, const glm::mat4& projection) {
-    if (!occlusionShader || bboxVao == 0) return;
-
-    occlusionShader->use();
-    glBindVertexArray(bboxVao);
-
-    // Disable color writes, keep depth test
-    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-    glDepthMask(GL_FALSE);  // Don't write depth
-
-    for (size_t gi = 0; gi < model.groups.size(); ++gi) {
-        const auto& group = model.groups[gi];
-
-        // Create query key
-        uint32_t queryKey = (instance.id << 16) | static_cast<uint32_t>(gi);
-
-        // Get or create query object
-        GLuint query;
-        auto it = occlusionQueries.find(queryKey);
-        if (it == occlusionQueries.end()) {
-            glGenQueries(1, &query);
-            occlusionQueries[queryKey] = query;
-        } else {
-            query = it->second;
-        }
-
-        // Compute MVP for this group's bounding box
-        glm::vec3 bboxSize = group.boundingBoxMax - group.boundingBoxMin;
-        glm::mat4 bboxModel = instance.modelMatrix;
-        bboxModel = glm::translate(bboxModel, group.boundingBoxMin);
-        bboxModel = glm::scale(bboxModel, bboxSize);
-        glm::mat4 mvp = projection * view * bboxModel;
-
-        occlusionShader->setUniform("uMVP", mvp);
-
-        // Run occlusion query
-        glBeginQuery(GL_ANY_SAMPLES_PASSED, query);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        glEndQuery(GL_ANY_SAMPLES_PASSED);
-    }
-
-    // Restore state
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    glDepthMask(GL_TRUE);
-    glBindVertexArray(0);
-}
-
-bool WMORenderer::isGroupOccluded(uint32_t instanceId, uint32_t groupIndex) const {
-    uint32_t queryKey = (instanceId << 16) | groupIndex;
-
-    // Check previous frame's result
-    auto resultIt = occlusionResults.find(queryKey);
-    if (resultIt != occlusionResults.end()) {
-        return !resultIt->second;  // Return true if NOT visible
-    }
-
-    // No result yet - assume visible
-    return false;
-}
+// Occlusion queries stubbed out in Vulkan (were disabled by default anyway)
 
 } // namespace rendering
 } // namespace wowee

@@ -1,8 +1,10 @@
 #include "rendering/skybox.hpp"
-#include "rendering/shader.hpp"
-#include "rendering/camera.hpp"
+#include "rendering/vk_context.hpp"
+#include "rendering/vk_shader.hpp"
+#include "rendering/vk_pipeline.hpp"
+#include "rendering/vk_frame_data.hpp"
+#include "rendering/vk_utils.hpp"
 #include "core/logger.hpp"
-#include <GL/glew.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <cmath>
 #include <vector>
@@ -16,71 +18,82 @@ Skybox::~Skybox() {
     shutdown();
 }
 
-bool Skybox::initialize() {
+bool Skybox::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout) {
     LOG_INFO("Initializing skybox");
 
-    // Create sky shader
-    skyShader = std::make_unique<Shader>();
+    vkCtx = ctx;
 
-    // Vertex shader - position-only skybox
-    const char* vertexShaderSource = R"(
-        #version 330 core
-        layout (location = 0) in vec3 aPos;
+    VkDevice device = vkCtx->getDevice();
 
-        uniform mat4 view;
-        uniform mat4 projection;
-
-        out vec3 WorldPos;
-        out float Altitude;
-
-        void main() {
-            WorldPos = aPos;
-
-            // Calculate altitude (0 at horizon, 1 at zenith)
-            Altitude = normalize(aPos).z;
-
-            // Remove translation from view matrix (keep rotation only)
-            mat4 viewNoTranslation = mat4(mat3(view));
-
-            gl_Position = projection * viewNoTranslation * vec4(aPos, 1.0);
-
-            // Ensure skybox is always at far plane
-            gl_Position = gl_Position.xyww;
-        }
-    )";
-
-    // Fragment shader - gradient sky with time of day
-    const char* fragmentShaderSource = R"(
-        #version 330 core
-        in vec3 WorldPos;
-        in float Altitude;
-
-        uniform vec3 horizonColor;
-        uniform vec3 zenithColor;
-        uniform float timeOfDay;
-
-        out vec4 FragColor;
-
-        void main() {
-            // Smooth gradient from horizon to zenith
-            float t = pow(max(Altitude, 0.0), 0.5);  // Curve for more interesting gradient
-
-            vec3 skyColor = mix(horizonColor, zenithColor, t);
-
-            // Add atmospheric scattering effect (more saturated near horizon)
-            float scattering = 1.0 - t * 0.3;
-            skyColor *= scattering;
-
-            FragColor = vec4(skyColor, 1.0);
-        }
-    )";
-
-    if (!skyShader->loadFromSource(vertexShaderSource, fragmentShaderSource)) {
-        LOG_ERROR("Failed to create sky shader");
+    // Load SPIR-V shaders
+    VkShaderModule vertModule;
+    if (!vertModule.loadFromFile(device, "assets/shaders/skybox.vert.spv")) {
+        LOG_ERROR("Failed to load skybox vertex shader");
         return false;
     }
 
-    // Create sky dome mesh
+    VkShaderModule fragModule;
+    if (!fragModule.loadFromFile(device, "assets/shaders/skybox.frag.spv")) {
+        LOG_ERROR("Failed to load skybox fragment shader");
+        return false;
+    }
+
+    VkPipelineShaderStageCreateInfo vertStage = vertModule.stageInfo(VK_SHADER_STAGE_VERTEX_BIT);
+    VkPipelineShaderStageCreateInfo fragStage = fragModule.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT);
+
+    // Push constant range: horizonColor (vec4) + zenithColor (vec4) + timeOfDay (float) = 36 bytes
+    VkPushConstantRange pushRange{};
+    pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushRange.offset = 0;
+    pushRange.size = sizeof(glm::vec4) + sizeof(glm::vec4) + sizeof(float);  // 36 bytes
+
+    // Create pipeline layout with perFrameLayout (set 0) + push constants
+    pipelineLayout = createPipelineLayout(device, {perFrameLayout}, {pushRange});
+    if (pipelineLayout == VK_NULL_HANDLE) {
+        LOG_ERROR("Failed to create skybox pipeline layout");
+        return false;
+    }
+
+    // Vertex input: position only (vec3), stride = 3 * sizeof(float)
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = 3 * sizeof(float);
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription posAttr{};
+    posAttr.location = 0;
+    posAttr.binding = 0;
+    posAttr.format = VK_FORMAT_R32G32B32_SFLOAT;
+    posAttr.offset = 0;
+
+    // Dynamic viewport and scissor
+    std::vector<VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    pipeline = PipelineBuilder()
+        .setShaders(vertStage, fragStage)
+        .setVertexInput({binding}, {posAttr})
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+        .setDepthTest(true, false, VK_COMPARE_OP_LESS_OR_EQUAL)  // depth test on, write off, LEQUAL for far plane
+        .setColorBlendAttachment(PipelineBuilder::blendDisabled())
+        .setLayout(pipelineLayout)
+        .setRenderPass(vkCtx->getImGuiRenderPass())
+        .setDynamicStates(dynamicStates)
+        .build(device);
+
+    // Shader modules can be freed after pipeline creation
+    vertModule.destroy();
+    fragModule.destroy();
+
+    if (pipeline == VK_NULL_HANDLE) {
+        LOG_ERROR("Failed to create skybox pipeline");
+        return false;
+    }
+
+    // Create sky dome mesh and upload to GPU
     createSkyDome();
 
     LOG_INFO("Skybox initialized");
@@ -89,41 +102,62 @@ bool Skybox::initialize() {
 
 void Skybox::shutdown() {
     destroySkyDome();
-    skyShader.reset();
+
+    if (vkCtx) {
+        VkDevice device = vkCtx->getDevice();
+        if (pipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device, pipeline, nullptr);
+            pipeline = VK_NULL_HANDLE;
+        }
+        if (pipelineLayout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+            pipelineLayout = VK_NULL_HANDLE;
+        }
+    }
+
+    vkCtx = nullptr;
 }
 
-void Skybox::render(const Camera& camera, float time) {
-    if (!renderingEnabled || vao == 0 || !skyShader) {
+void Skybox::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, float time) {
+    if (pipeline == VK_NULL_HANDLE || !renderingEnabled) {
         return;
     }
 
-    // Render skybox first (before terrain), with depth test set to LEQUAL
-    glDepthFunc(GL_LEQUAL);
+    // Push constant data
+    struct SkyPushConstants {
+        glm::vec4 horizonColor;
+        glm::vec4 zenithColor;
+        float timeOfDay;
+    };
 
-    skyShader->use();
-
-    // Set uniforms
-    glm::mat4 view = camera.getViewMatrix();
-    glm::mat4 projection = camera.getProjectionMatrix();
-
-    skyShader->setUniform("view", view);
-    skyShader->setUniform("projection", projection);
-    skyShader->setUniform("timeOfDay", time);
-
-    // Get colors based on time of day
+    SkyPushConstants push{};
     glm::vec3 horizon = getHorizonColor(time);
     glm::vec3 zenith = getZenithColor(time);
+    push.horizonColor = glm::vec4(horizon, 1.0f);
+    push.zenithColor  = glm::vec4(zenith,  1.0f);
+    push.timeOfDay    = time;
 
-    skyShader->setUniform("horizonColor", horizon);
-    skyShader->setUniform("zenithColor", zenith);
+    // Bind pipeline
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
-    // Render dome
-    glBindVertexArray(vao);
-    glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, nullptr);
-    glBindVertexArray(0);
+    // Bind per-frame descriptor set (set 0 — camera UBO)
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout,
+        0, 1, &perFrameSet, 0, nullptr);
 
-    // Restore depth function
-    glDepthFunc(GL_LESS);
+    // Push constants
+    vkCmdPushConstants(cmd, pipelineLayout,
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+        0, sizeof(push), &push);
+
+    // Bind vertex buffer
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer, &offset);
+
+    // Bind index buffer
+    vkCmdBindIndexBuffer(cmd, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+    // Draw
+    vkCmdDrawIndexed(cmd, static_cast<uint32_t>(indexCount), 1, 0, 0, 0);
 }
 
 void Skybox::update(float deltaTime) {
@@ -193,42 +227,39 @@ void Skybox::createSkyDome() {
 
     indexCount = static_cast<int>(indices.size());
 
-    // Create OpenGL buffers
-    glGenVertexArrays(1, &vao);
-    glGenBuffers(1, &vbo);
-    glGenBuffers(1, &ebo);
+    // Upload vertex buffer to GPU via staging
+    AllocatedBuffer vbuf = uploadBuffer(*vkCtx,
+        vertices.data(),
+        vertices.size() * sizeof(float),
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    vertexBuffer = vbuf.buffer;
+    vertexAlloc  = vbuf.allocation;
 
-    glBindVertexArray(vao);
-
-    // Upload vertex data
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
-
-    // Upload index data
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(uint32_t), indices.data(), GL_STATIC_DRAW);
-
-    // Set vertex attributes (position only)
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-
-    glBindVertexArray(0);
+    // Upload index buffer to GPU via staging
+    AllocatedBuffer ibuf = uploadBuffer(*vkCtx,
+        indices.data(),
+        indices.size() * sizeof(uint32_t),
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    indexBuffer = ibuf.buffer;
+    indexAlloc  = ibuf.allocation;
 
     LOG_DEBUG("Sky dome created: ", (rings + 1) * (sectors + 1), " vertices, ", indexCount / 3, " triangles");
 }
 
 void Skybox::destroySkyDome() {
-    if (vao != 0) {
-        glDeleteVertexArrays(1, &vao);
-        vao = 0;
+    if (!vkCtx) return;
+
+    VmaAllocator allocator = vkCtx->getAllocator();
+
+    if (vertexBuffer != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(allocator, vertexBuffer, vertexAlloc);
+        vertexBuffer = VK_NULL_HANDLE;
+        vertexAlloc  = VK_NULL_HANDLE;
     }
-    if (vbo != 0) {
-        glDeleteBuffers(1, &vbo);
-        vbo = 0;
-    }
-    if (ebo != 0) {
-        glDeleteBuffers(1, &ebo);
-        ebo = 0;
+    if (indexBuffer != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(allocator, indexBuffer, indexAlloc);
+        indexBuffer = VK_NULL_HANDLE;
+        indexAlloc  = VK_NULL_HANDLE;
     }
 }
 

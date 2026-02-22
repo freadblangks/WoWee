@@ -1,15 +1,15 @@
 #pragma once
 
-#include <GL/glew.h>
+#include <vulkan/vulkan.h>
+#include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
-#include <memory>
 #include <vector>
 
 namespace wowee {
 namespace rendering {
 
 class Camera;
-class Shader;
+class VkContext;
 
 /**
  * @brief Weather particle system for rain and snow
@@ -20,7 +20,7 @@ class Shader;
  * - Particle recycling for efficiency
  * - Camera-relative positioning (follows player)
  * - Adjustable intensity (light, medium, heavy)
- * - GPU instanced rendering
+ * - Vulkan point-sprite rendering
  */
 class Weather {
 public:
@@ -35,9 +35,11 @@ public:
 
     /**
      * @brief Initialize weather system
+     * @param ctx Vulkan context
+     * @param perFrameLayout Descriptor set layout for the per-frame UBO (set 0)
      * @return true if initialization succeeded
      */
-    bool initialize();
+    bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout);
 
     /**
      * @brief Update weather particles
@@ -48,9 +50,10 @@ public:
 
     /**
      * @brief Render weather particles
-     * @param camera Camera for rendering
+     * @param cmd Command buffer to record into
+     * @param perFrameSet Per-frame descriptor set (set 0, contains camera UBO)
      */
-    void render(const Camera& camera);
+    void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet);
 
     /**
      * @brief Set weather type
@@ -75,6 +78,11 @@ public:
      */
     int getParticleCount() const;
 
+    /**
+     * @brief Clean up Vulkan resources
+     */
+    void shutdown();
+
 private:
     struct Particle {
         glm::vec3 position;
@@ -83,15 +91,20 @@ private:
         float maxLifetime;
     };
 
-    void cleanup();
     void resetParticles(const Camera& camera);
     void updateParticle(Particle& particle, const Camera& camera, float deltaTime);
     glm::vec3 getRandomPosition(const glm::vec3& center) const;
 
-    // OpenGL objects
-    GLuint vao = 0;
-    GLuint vbo = 0;  // Instance buffer
-    std::unique_ptr<Shader> shader;
+    // Vulkan objects
+    VkContext* vkCtx = nullptr;
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+
+    // Dynamic mapped buffer for particle positions (updated every frame)
+    ::VkBuffer dynamicVB = VK_NULL_HANDLE;
+    VmaAllocation dynamicVBAlloc = VK_NULL_HANDLE;
+    VmaAllocationInfo dynamicVBAllocInfo{};
+    VkDeviceSize dynamicVBSize = 0;
 
     // Particles
     std::vector<Particle> particles;

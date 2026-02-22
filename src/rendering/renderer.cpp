@@ -22,6 +22,7 @@
 #include "rendering/wmo_renderer.hpp"
 #include "rendering/m2_renderer.hpp"
 #include "rendering/minimap.hpp"
+#include "rendering/world_map.hpp"
 #include "rendering/quest_marker_renderer.hpp"
 #include "rendering/shader.hpp"
 #include "game/game_handler.hpp"
@@ -50,7 +51,14 @@
 #include "audio/combat_sound_manager.hpp"
 #include "audio/spell_sound_manager.hpp"
 #include "audio/movement_sound_manager.hpp"
-#include <GL/glew.h>
+#include <GL/glew.h> // TODO: Remove in Phase 7 (unconverted sub-renderers still reference GL types)
+#include "rendering/vk_context.hpp"
+#include "rendering/vk_frame_data.hpp"
+#include "rendering/vk_shader.hpp"
+#include "rendering/vk_pipeline.hpp"
+#include "rendering/vk_utils.hpp"
+#include <imgui.h>
+#include <imgui_impl_vulkan.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/euler_angles.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -259,10 +267,273 @@ static void loadEmotesFromDbc() {
 Renderer::Renderer() = default;
 Renderer::~Renderer() = default;
 
+bool Renderer::createPerFrameResources() {
+    VkDevice device = vkCtx->getDevice();
+
+    // --- Create shadow depth image ---
+    VkImageCreateInfo imgCI{};
+    imgCI.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imgCI.imageType = VK_IMAGE_TYPE_2D;
+    imgCI.format = VK_FORMAT_D32_SFLOAT;
+    imgCI.extent = {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, 1};
+    imgCI.mipLevels = 1;
+    imgCI.arrayLayers = 1;
+    imgCI.samples = VK_SAMPLE_COUNT_1_BIT;
+    imgCI.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imgCI.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    VmaAllocationCreateInfo imgAllocCI{};
+    imgAllocCI.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+    if (vmaCreateImage(vkCtx->getAllocator(), &imgCI, &imgAllocCI,
+            &shadowDepthImage, &shadowDepthAlloc, nullptr) != VK_SUCCESS) {
+        LOG_ERROR("Failed to create shadow depth image");
+        return false;
+    }
+
+    // --- Create shadow depth image view ---
+    VkImageViewCreateInfo viewCI{};
+    viewCI.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewCI.image = shadowDepthImage;
+    viewCI.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewCI.format = VK_FORMAT_D32_SFLOAT;
+    viewCI.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+    if (vkCreateImageView(device, &viewCI, nullptr, &shadowDepthView) != VK_SUCCESS) {
+        LOG_ERROR("Failed to create shadow depth image view");
+        return false;
+    }
+
+    // --- Create shadow sampler ---
+    VkSamplerCreateInfo sampCI{};
+    sampCI.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    sampCI.magFilter = VK_FILTER_LINEAR;
+    sampCI.minFilter = VK_FILTER_LINEAR;
+    sampCI.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    sampCI.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    sampCI.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    sampCI.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    sampCI.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+    sampCI.compareEnable = VK_TRUE;
+    sampCI.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    if (vkCreateSampler(device, &sampCI, nullptr, &shadowSampler) != VK_SUCCESS) {
+        LOG_ERROR("Failed to create shadow sampler");
+        return false;
+    }
+
+    // --- Create shadow render pass (depth-only) ---
+    VkAttachmentDescription depthAtt{};
+    depthAtt.format = VK_FORMAT_D32_SFLOAT;
+    depthAtt.samples = VK_SAMPLE_COUNT_1_BIT;
+    depthAtt.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    depthAtt.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depthAtt.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAtt.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthAtt.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference depthRef{};
+    depthRef.attachment = 0;
+    depthRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.pDepthStencilAttachment = &depthRef;
+
+    VkSubpassDependency dep{};
+    dep.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dep.dstSubpass = 0;
+    dep.srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dep.dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dep.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    dep.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+    VkRenderPassCreateInfo rpCI{};
+    rpCI.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    rpCI.attachmentCount = 1;
+    rpCI.pAttachments = &depthAtt;
+    rpCI.subpassCount = 1;
+    rpCI.pSubpasses = &subpass;
+    rpCI.dependencyCount = 1;
+    rpCI.pDependencies = &dep;
+    if (vkCreateRenderPass(device, &rpCI, nullptr, &shadowRenderPass) != VK_SUCCESS) {
+        LOG_ERROR("Failed to create shadow render pass");
+        return false;
+    }
+
+    // --- Create shadow framebuffer ---
+    VkFramebufferCreateInfo fbCI{};
+    fbCI.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    fbCI.renderPass = shadowRenderPass;
+    fbCI.attachmentCount = 1;
+    fbCI.pAttachments = &shadowDepthView;
+    fbCI.width = SHADOW_MAP_SIZE;
+    fbCI.height = SHADOW_MAP_SIZE;
+    fbCI.layers = 1;
+    if (vkCreateFramebuffer(device, &fbCI, nullptr, &shadowFramebuffer) != VK_SUCCESS) {
+        LOG_ERROR("Failed to create shadow framebuffer");
+        return false;
+    }
+
+    // --- Create descriptor set layout for set 0 (per-frame UBO + shadow sampler) ---
+    VkDescriptorSetLayoutBinding bindings[2]{};
+    bindings[0].binding = 0;
+    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    bindings[0].descriptorCount = 1;
+    bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[1].binding = 1;
+    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[1].descriptorCount = 1;
+    bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 2;
+    layoutInfo.pBindings = bindings;
+
+    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &perFrameSetLayout) != VK_SUCCESS) {
+        LOG_ERROR("Failed to create per-frame descriptor set layout");
+        return false;
+    }
+
+    // --- Create descriptor pool for both UBO and combined image sampler ---
+    VkDescriptorPoolSize poolSizes[2]{};
+    poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSizes[0].descriptorCount = MAX_FRAMES;
+    poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[1].descriptorCount = MAX_FRAMES;
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.maxSets = MAX_FRAMES;
+    poolInfo.poolSizeCount = 2;
+    poolInfo.pPoolSizes = poolSizes;
+
+    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &sceneDescriptorPool) != VK_SUCCESS) {
+        LOG_ERROR("Failed to create scene descriptor pool");
+        return false;
+    }
+
+    // --- Create per-frame UBOs and descriptor sets ---
+    for (uint32_t i = 0; i < MAX_FRAMES; i++) {
+        // Create mapped UBO
+        VkBufferCreateInfo bufInfo{};
+        bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufInfo.size = sizeof(GPUPerFrameData);
+        bufInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+
+        VmaAllocationCreateInfo allocInfo{};
+        allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+        allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+        VmaAllocationInfo mapInfo{};
+        if (vmaCreateBuffer(vkCtx->getAllocator(), &bufInfo, &allocInfo,
+                &perFrameUBOs[i], &perFrameUBOAllocs[i], &mapInfo) != VK_SUCCESS) {
+            LOG_ERROR("Failed to create per-frame UBO ", i);
+            return false;
+        }
+        perFrameUBOMapped[i] = mapInfo.pMappedData;
+
+        // Allocate descriptor set
+        VkDescriptorSetAllocateInfo setAlloc{};
+        setAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        setAlloc.descriptorPool = sceneDescriptorPool;
+        setAlloc.descriptorSetCount = 1;
+        setAlloc.pSetLayouts = &perFrameSetLayout;
+
+        if (vkAllocateDescriptorSets(device, &setAlloc, &perFrameDescSets[i]) != VK_SUCCESS) {
+            LOG_ERROR("Failed to allocate per-frame descriptor set ", i);
+            return false;
+        }
+
+        // Write binding 0 (UBO) and binding 1 (shadow sampler)
+        VkDescriptorBufferInfo descBuf{};
+        descBuf.buffer = perFrameUBOs[i];
+        descBuf.offset = 0;
+        descBuf.range = sizeof(GPUPerFrameData);
+
+        VkDescriptorImageInfo shadowImgInfo{};
+        shadowImgInfo.sampler = shadowSampler;
+        shadowImgInfo.imageView = shadowDepthView;
+        shadowImgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        VkWriteDescriptorSet writes[2]{};
+        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[0].dstSet = perFrameDescSets[i];
+        writes[0].dstBinding = 0;
+        writes[0].descriptorCount = 1;
+        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writes[0].pBufferInfo = &descBuf;
+        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[1].dstSet = perFrameDescSets[i];
+        writes[1].dstBinding = 1;
+        writes[1].descriptorCount = 1;
+        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[1].pImageInfo = &shadowImgInfo;
+
+        vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+    }
+
+    LOG_INFO("Per-frame Vulkan resources created (shadow map ", SHADOW_MAP_SIZE, "x", SHADOW_MAP_SIZE, ")");
+    return true;
+}
+
+void Renderer::destroyPerFrameResources() {
+    if (!vkCtx) return;
+    vkDeviceWaitIdle(vkCtx->getDevice());
+    VkDevice device = vkCtx->getDevice();
+
+    for (uint32_t i = 0; i < MAX_FRAMES; i++) {
+        if (perFrameUBOs[i]) {
+            vmaDestroyBuffer(vkCtx->getAllocator(), perFrameUBOs[i], perFrameUBOAllocs[i]);
+            perFrameUBOs[i] = VK_NULL_HANDLE;
+        }
+    }
+    if (sceneDescriptorPool) {
+        vkDestroyDescriptorPool(device, sceneDescriptorPool, nullptr);
+        sceneDescriptorPool = VK_NULL_HANDLE;
+    }
+    if (perFrameSetLayout) {
+        vkDestroyDescriptorSetLayout(device, perFrameSetLayout, nullptr);
+        perFrameSetLayout = VK_NULL_HANDLE;
+    }
+
+    // Destroy shadow resources
+    if (shadowFramebuffer) { vkDestroyFramebuffer(device, shadowFramebuffer, nullptr); shadowFramebuffer = VK_NULL_HANDLE; }
+    if (shadowRenderPass) { vkDestroyRenderPass(device, shadowRenderPass, nullptr); shadowRenderPass = VK_NULL_HANDLE; }
+    if (shadowDepthView) { vkDestroyImageView(device, shadowDepthView, nullptr); shadowDepthView = VK_NULL_HANDLE; }
+    if (shadowDepthImage) { vmaDestroyImage(vkCtx->getAllocator(), shadowDepthImage, shadowDepthAlloc); shadowDepthImage = VK_NULL_HANDLE; shadowDepthAlloc = VK_NULL_HANDLE; }
+    if (shadowSampler) { vkDestroySampler(device, shadowSampler, nullptr); shadowSampler = VK_NULL_HANDLE; }
+}
+
+void Renderer::updatePerFrameUBO() {
+    if (!camera) return;
+
+    currentFrameData.view = camera->getViewMatrix();
+    currentFrameData.projection = camera->getProjectionMatrix();
+    currentFrameData.viewPos = glm::vec4(camera->getPosition(), 1.0f);
+    currentFrameData.fogParams.z = globalTime;
+
+    // Lighting from LightingManager
+    if (lightingManager) {
+        const auto& lp = lightingManager->getLightingParams();
+        currentFrameData.lightDir = glm::vec4(lp.directionalDir, 0.0f);
+        currentFrameData.lightColor = glm::vec4(lp.diffuseColor, 1.0f);
+        currentFrameData.ambientColor = glm::vec4(lp.ambientColor, 1.0f);
+        currentFrameData.fogColor = glm::vec4(lp.fogColor, 1.0f);
+        currentFrameData.fogParams.x = lp.fogStart;
+        currentFrameData.fogParams.y = lp.fogEnd;
+    }
+
+    currentFrameData.shadowParams = glm::vec4(shadowsEnabled ? 1.0f : 0.0f, 0.5f, 0.0f, 0.0f);
+
+    // Copy to current frame's mapped UBO
+    uint32_t frame = vkCtx->getCurrentFrame();
+    std::memcpy(perFrameUBOMapped[frame], &currentFrameData, sizeof(GPUPerFrameData));
+}
+
 bool Renderer::initialize(core::Window* win) {
     window = win;
+    vkCtx = win->getVkContext();
     deferredWorldInitEnabled_ = envFlagEnabled("WOWEE_DEFER_WORLD_SYSTEMS", true);
-    LOG_INFO("Initializing renderer");
+    LOG_INFO("Initializing renderer (Vulkan)");
 
     // Create camera (in front of Stormwind gate, looking north)
     camera = std::make_unique<Camera>();
@@ -283,129 +554,46 @@ bool Renderer::initialize(core::Window* win) {
     performanceHUD = std::make_unique<PerformanceHUD>();
     performanceHUD->setPosition(PerformanceHUD::Position::TOP_LEFT);
 
-    // Create water renderer
-    waterRenderer = std::make_unique<WaterRenderer>();
-    if (!waterRenderer->initialize()) {
-        LOG_WARNING("Failed to initialize water renderer");
-        waterRenderer.reset();
+    // Create per-frame UBO and descriptor sets
+    if (!createPerFrameResources()) {
+        LOG_ERROR("Failed to create per-frame Vulkan resources");
+        return false;
     }
 
-    // Create skybox
-    skybox = std::make_unique<Skybox>();
-    if (!skybox->initialize()) {
-        LOG_WARNING("Failed to initialize skybox");
-        skybox.reset();
-    } else {
-        skybox->setTimeOfDay(12.0f);  // Start at noon
-    }
+    // Initialize Vulkan sub-renderers (Phase 3)
 
-    // Create celestial renderer (sun and moon)
-    celestial = std::make_unique<Celestial>();
-    if (!celestial->initialize()) {
-        LOG_WARNING("Failed to initialize celestial renderer");
-        celestial.reset();
-    }
-
-    // Create star field
-    starField = std::make_unique<StarField>();
-    if (!starField->initialize()) {
-        LOG_WARNING("Failed to initialize star field");
-        starField.reset();
-    }
-
-    // Create clouds
-    clouds = std::make_unique<Clouds>();
-    if (!clouds->initialize()) {
-        LOG_WARNING("Failed to initialize clouds");
-        clouds.reset();
-    } else {
-        clouds->setDensity(0.5f);  // Medium cloud coverage
-    }
-
-    // Create lens flare
-    lensFlare = std::make_unique<LensFlare>();
-    if (!lensFlare->initialize()) {
-        LOG_WARNING("Failed to initialize lens flare");
-        lensFlare.reset();
-    }
-
-    // Create sky system (coordinator for sky rendering)
+    // Sky system (owns skybox, starfield, celestial, clouds, lens flare)
     skySystem = std::make_unique<SkySystem>();
-    if (!skySystem->initialize()) {
-        LOG_WARNING("Failed to initialize sky system");
-        skySystem.reset();
-    } else {
-        // Note: SkySystem manages its own components internally
-        // Keep existing components for backwards compatibility (PerformanceHUD access)
-        LOG_INFO("Sky system initialized successfully (coordinator active)");
+    if (!skySystem->initialize(vkCtx, perFrameSetLayout)) {
+        LOG_ERROR("Failed to initialize sky system");
+        return false;
     }
+    // Expose sub-components via renderer accessors
+    skybox = nullptr;  // Owned by skySystem; access via skySystem->getSkybox()
+    celestial = nullptr;
+    starField = nullptr;
+    clouds = nullptr;
+    lensFlare = nullptr;
 
-    // Create weather system
     weather = std::make_unique<Weather>();
-    if (!weather->initialize()) {
-        LOG_WARNING("Failed to initialize weather");
-        weather.reset();
-    }
+    weather->initialize(vkCtx, perFrameSetLayout);
 
-    // Create lighting system
-    lightingManager = std::make_unique<LightingManager>();
-    auto* assetManager = core::Application::getInstance().getAssetManager();
-    if (assetManager && !lightingManager->initialize(assetManager)) {
-        LOG_WARNING("Failed to initialize lighting manager");
-        lightingManager.reset();
-    }
-
-    // Create swim effects
     swimEffects = std::make_unique<SwimEffects>();
-    if (!swimEffects->initialize()) {
-        LOG_WARNING("Failed to initialize swim effects");
-        swimEffects.reset();
-    }
+    swimEffects->initialize(vkCtx, perFrameSetLayout);
 
-    // Create mount dust effects
     mountDust = std::make_unique<MountDust>();
-    if (!mountDust->initialize()) {
-        LOG_WARNING("Failed to initialize mount dust effects");
-        mountDust.reset();
-    }
+    mountDust->initialize(vkCtx, perFrameSetLayout);
 
-    // Create level-up effect (model loaded later via loadLevelUpEffect)
+    chargeEffect = std::make_unique<ChargeEffect>();
+    chargeEffect->initialize(vkCtx, perFrameSetLayout);
+
     levelUpEffect = std::make_unique<LevelUpEffect>();
 
-    // Create charge effect (point-sprite particles + optional M2 models)
-    chargeEffect = std::make_unique<ChargeEffect>();
-    if (!chargeEffect->initialize()) {
-        LOG_WARNING("Failed to initialize charge effect");
-        chargeEffect.reset();
-    }
+    LOG_INFO("Vulkan sub-renderers initialized (Phase 3)");
 
-    // Create character renderer
-    characterRenderer = std::make_unique<CharacterRenderer>();
-    if (!characterRenderer->initialize()) {
-        LOG_WARNING("Failed to initialize character renderer");
-        characterRenderer.reset();
-    }
-
-    // Create WMO renderer
-    wmoRenderer = std::make_unique<WMORenderer>();
-    if (!wmoRenderer->initialize(assetManager)) {
-        LOG_WARNING("Failed to initialize WMO renderer");
-        wmoRenderer.reset();
-    }
-
-    // Create minimap
-    minimap = std::make_unique<Minimap>();
-    if (!minimap->initialize(200)) {
-        LOG_WARNING("Failed to initialize minimap");
-        minimap.reset();
-    }
-
-    // Create quest marker renderer (initialized later with AssetManager)
-    questMarkerRenderer = std::make_unique<QuestMarkerRenderer>();
-
-    // Create M2 renderer (for doodads)
-    m2Renderer = std::make_unique<M2Renderer>();
-    // Note: M2 renderer needs asset manager, will be initialized when terrain loads
+    // LightingManager doesn't use GL — initialize for data-only use
+    lightingManager = std::make_unique<LightingManager>();
+    [[maybe_unused]] auto* assetManager = core::Application::getInstance().getAssetManager();
 
     // Create zone manager
     zoneManager = std::make_unique<game::ZoneManager>();
@@ -428,42 +616,8 @@ bool Renderer::initialize(core::Window* win) {
     spellSoundManager = std::make_unique<audio::SpellSoundManager>();
     movementSoundManager = std::make_unique<audio::MovementSoundManager>();
 
-    // Underwater full-screen tint overlay (applies to all world geometry).
-    underwaterOverlayShader = std::make_unique<Shader>();
-    const char* overlayVS = R"(
-        #version 330 core
-        layout (location = 0) in vec2 aPos;
-        void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
-    )";
-    const char* overlayFS = R"(
-        #version 330 core
-        uniform vec4 uTint;
-        out vec4 FragColor;
-        void main() { FragColor = uTint; }
-    )";
-    if (!underwaterOverlayShader->loadFromSource(overlayVS, overlayFS)) {
-        LOG_WARNING("Failed to initialize underwater overlay shader");
-        underwaterOverlayShader.reset();
-    } else {
-        const float quadVerts[] = {
-            -1.0f, -1.0f,  1.0f, -1.0f,
-            -1.0f,  1.0f,  1.0f,  1.0f
-        };
-        glGenVertexArrays(1, &underwaterOverlayVAO);
-        glGenBuffers(1, &underwaterOverlayVBO);
-        glBindVertexArray(underwaterOverlayVAO);
-        glBindBuffer(GL_ARRAY_BUFFER, underwaterOverlayVBO);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(quadVerts), quadVerts, GL_STATIC_DRAW);
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
-        glEnableVertexAttribArray(0);
-        glBindVertexArray(0);
-    }
-
-    // Initialize post-process FBO pipeline
-    initPostProcess(window->getWidth(), window->getHeight());
-
-    // Initialize shadow map
-    initShadowMap();
+    // TODO Phase 6: Vulkan underwater overlay, post-process, and shadow map
+    // GL versions stubbed during migration
 
     LOG_INFO("Renderer initialized");
     return true;
@@ -485,28 +639,27 @@ void Renderer::shutdown() {
         waterRenderer.reset();
     }
 
-    if (skybox) {
-        skybox->shutdown();
-        skybox.reset();
+    if (minimap) {
+        minimap->shutdown();
+        minimap.reset();
     }
 
-    if (celestial) {
-        celestial->shutdown();
-        celestial.reset();
+    if (worldMap) {
+        worldMap->shutdown();
+        worldMap.reset();
     }
 
-    if (starField) {
-        starField->shutdown();
-        starField.reset();
+    if (skySystem) {
+        skySystem->shutdown();
+        skySystem.reset();
     }
 
-    if (clouds) {
-        clouds.reset();
-    }
-
-    if (lensFlare) {
-        lensFlare.reset();
-    }
+    // Individual sky components are owned by skySystem; just null the aliases
+    skybox = nullptr;
+    celestial = nullptr;
+    starField = nullptr;
+    clouds = nullptr;
+    lensFlare = nullptr;
 
     if (weather) {
         weather.reset();
@@ -548,22 +701,16 @@ void Renderer::shutdown() {
     // Shutdown AudioEngine singleton
     audio::AudioEngine::instance().shutdown();
 
-    if (underwaterOverlayVAO) {
-        glDeleteVertexArrays(1, &underwaterOverlayVAO);
-        underwaterOverlayVAO = 0;
+    // Cleanup Vulkan selection circle resources
+    if (vkCtx) {
+        VkDevice device = vkCtx->getDevice();
+        if (selCirclePipeline) { vkDestroyPipeline(device, selCirclePipeline, nullptr); selCirclePipeline = VK_NULL_HANDLE; }
+        if (selCirclePipelineLayout) { vkDestroyPipelineLayout(device, selCirclePipelineLayout, nullptr); selCirclePipelineLayout = VK_NULL_HANDLE; }
+        if (selCircleVertBuf) { vmaDestroyBuffer(vkCtx->getAllocator(), selCircleVertBuf, selCircleVertAlloc); selCircleVertBuf = VK_NULL_HANDLE; selCircleVertAlloc = VK_NULL_HANDLE; }
+        if (selCircleIdxBuf) { vmaDestroyBuffer(vkCtx->getAllocator(), selCircleIdxBuf, selCircleIdxAlloc); selCircleIdxBuf = VK_NULL_HANDLE; selCircleIdxAlloc = VK_NULL_HANDLE; }
     }
-    if (underwaterOverlayVBO) {
-        glDeleteBuffers(1, &underwaterOverlayVBO);
-        underwaterOverlayVBO = 0;
-    }
-    underwaterOverlayShader.reset();
 
-    // Cleanup shadow map resources
-    if (shadowFBO) { glDeleteFramebuffers(1, &shadowFBO); shadowFBO = 0; }
-    if (shadowDepthTex) { glDeleteTextures(1, &shadowDepthTex); shadowDepthTex = 0; }
-    if (shadowShaderProgram) { glDeleteProgram(shadowShaderProgram); shadowShaderProgram = 0; }
-
-    shutdownPostProcess();
+    destroyPerFrameResources();
 
     zoneManager.reset();
 
@@ -576,21 +723,85 @@ void Renderer::shutdown() {
 }
 
 void Renderer::beginFrame() {
-    // Resize post-process FBO if window size changed
-    int w = window->getWidth();
-    int h = window->getHeight();
-    if (w != fbWidth || h != fbHeight) {
-        resizePostProcess(w, h);
+    if (!vkCtx) return;
+
+    // Handle swapchain recreation if needed
+    if (vkCtx->isSwapchainDirty()) {
+        vkCtx->recreateSwapchain(window->getWidth(), window->getHeight());
     }
 
-    // Clear default framebuffer (login screen renders here directly)
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    // Acquire swapchain image and begin command buffer
+    currentCmd = vkCtx->beginFrame(currentImageIndex);
+    if (currentCmd == VK_NULL_HANDLE) {
+        // Swapchain out of date, will retry next frame
+        return;
+    }
+
+    // Update per-frame UBO with current camera/lighting state
+    updatePerFrameUBO();
+
+    // --- Off-screen pre-passes (before main render pass) ---
+    // Minimap composite (renders 3x3 tile grid into 768x768 render target)
+    if (minimap && minimap->isEnabled() && camera) {
+        glm::vec3 minimapCenter = camera->getPosition();
+        if (cameraController && cameraController->isThirdPerson())
+            minimapCenter = characterPosition;
+        minimap->compositePass(currentCmd, minimapCenter);
+    }
+    // World map composite (renders zone tiles into 1024x768 render target)
+    if (worldMap) {
+        worldMap->compositePass(currentCmd);
+    }
+
+    // Shadow pre-pass (before main render pass)
+    if (shadowsEnabled && shadowDepthImage != VK_NULL_HANDLE) {
+        renderShadowPass();
+    }
+
+    // --- Begin main render pass (clear color + depth) ---
+    VkRenderPassBeginInfo rpInfo{};
+    rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    rpInfo.renderPass = vkCtx->getImGuiRenderPass();
+    rpInfo.framebuffer = vkCtx->getSwapchainFramebuffers()[currentImageIndex];
+    rpInfo.renderArea.offset = {0, 0};
+    rpInfo.renderArea.extent = vkCtx->getSwapchainExtent();
+
+    VkClearValue clearValues[2]{};
+    clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+    clearValues[1].depthStencil = {1.0f, 0};
+    rpInfo.clearValueCount = 2;
+    rpInfo.pClearValues = clearValues;
+
+    vkCmdBeginRenderPass(currentCmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    // Set dynamic viewport and scissor
+    VkExtent2D extent = vkCtx->getSwapchainExtent();
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(extent.width);
+    viewport.height = static_cast<float>(extent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(currentCmd, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = extent;
+    vkCmdSetScissor(currentCmd, 0, 1, &scissor);
 }
 
 void Renderer::endFrame() {
-    // Nothing needed here for now
+    if (!vkCtx || currentCmd == VK_NULL_HANDLE) return;
+
+    // Record ImGui draw commands into the command buffer
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), currentCmd);
+
+    vkCmdEndRenderPass(currentCmd);
+
+    // Submit and present
+    vkCtx->endFrame(currentCmd, currentImageIndex);
+    currentCmd = VK_NULL_HANDLE;
 }
 
 void Renderer::setCharacterFollow(uint32_t instanceId) {
@@ -1918,6 +2129,7 @@ audio::FootstepSurface Renderer::resolveFootstepSurface() const {
 }
 
 void Renderer::update(float deltaTime) {
+    globalTime += deltaTime;
     if (musicSwitchCooldown_ > 0.0f) {
         musicSwitchCooldown_ = std::max(0.0f, musicSwitchCooldown_ - deltaTime);
     }
@@ -2043,25 +2255,10 @@ void Renderer::update(float deltaTime) {
     auto terrain2 = std::chrono::high_resolution_clock::now();
     terrainTime += std::chrono::duration<float, std::milli>(terrain2 - terrain1).count();
 
-    // Update skybox time progression
+    // Update sky system (skybox time, star twinkle, clouds, celestial moon phases)
     auto sky1 = std::chrono::high_resolution_clock::now();
-    if (skybox) {
-        skybox->update(deltaTime);
-    }
-
-    // Update star field twinkle
-    if (starField) {
-        starField->update(deltaTime);
-    }
-
-    // Update clouds animation
-    if (clouds) {
-        clouds->update(deltaTime);
-    }
-
-    // Update celestial (moon phase cycling)
-    if (celestial) {
-        celestial->update(deltaTime);
+    if (skySystem) {
+        skySystem->update(deltaTime);
     }
 
     // Update weather particles
@@ -2497,7 +2694,7 @@ void Renderer::runDeferredWorldInitStep(float deltaTime) {
             if (movementSoundManager) movementSoundManager->initialize(cachedAssetManager);
             break;
         case 5:
-            if (questMarkerRenderer) questMarkerRenderer->initialize(cachedAssetManager);
+            if (questMarkerRenderer) questMarkerRenderer->initialize(vkCtx, perFrameSetLayout, cachedAssetManager);
             break;
         default:
             deferredWorldInitPending_ = false;
@@ -2513,82 +2710,90 @@ void Renderer::runDeferredWorldInitStep(float deltaTime) {
 // ============================================================
 
 void Renderer::initSelectionCircle() {
-    if (selCircleVAO) return;
+    if (selCirclePipeline != VK_NULL_HANDLE) return;
+    if (!vkCtx) return;
+    VkDevice device = vkCtx->getDevice();
 
-    // Selection effect shader: thin outer ring + inward fade toward center.
-    const char* vsSrc = R"(
-        #version 330 core
-        layout(location = 0) in vec3 aPos;
-        uniform mat4 uMVP;
-        out vec2 vLocalPos;
-        void main() {
-            vLocalPos = aPos.xy;
-            gl_Position = uMVP * vec4(aPos, 1.0);
-        }
-    )";
-    const char* fsSrc = R"(
-        #version 330 core
-        uniform vec3 uColor;
-        in vec2 vLocalPos;
-        out vec4 FragColor;
-        void main() {
-            float r = clamp(length(vLocalPos), 0.0, 1.0);
+    // Load shaders
+    VkShaderModule vertShader, fragShader;
+    if (!vertShader.loadFromFile(device, "assets/shaders/selection_circle.vert.spv")) {
+        LOG_ERROR("initSelectionCircle: failed to load vertex shader");
+        return;
+    }
+    if (!fragShader.loadFromFile(device, "assets/shaders/selection_circle.frag.spv")) {
+        LOG_ERROR("initSelectionCircle: failed to load fragment shader");
+        vertShader.destroy();
+        return;
+    }
 
-            float ringInner = 0.93;
-            float ringOuter = 1.00;
-            float ring = smoothstep(ringInner - 0.01, ringInner + 0.01, r) *
-                         (1.0 - smoothstep(ringOuter - 0.008, ringOuter + 0.004, r));
+    // Pipeline layout: push constants only (mat4 mvp=64 + vec4 color=16), VERTEX|FRAGMENT
+    VkPushConstantRange pcRange{};
+    pcRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pcRange.offset = 0;
+    pcRange.size = 80;
+    selCirclePipelineLayout = createPipelineLayout(device, {}, {pcRange});
 
-            float inward = smoothstep(0.0, ringInner, r);
-            inward = pow(inward, 1.9) * (1.0 - smoothstep(ringInner - 0.015, ringInner + 0.01, r));
+    // Vertex input: binding 0, stride 12, vec3 at location 0
+    VkVertexInputBindingDescription vertBind{0, 12, VK_VERTEX_INPUT_RATE_VERTEX};
+    VkVertexInputAttributeDescription vertAttr{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0};
 
-            float alpha = max(ring * 0.9, inward * 0.45);
-            FragColor = vec4(uColor, alpha);
-        }
-    )";
-
-    auto compile = [](GLenum type, const char* src) -> GLuint {
-        GLuint s = glCreateShader(type);
-        glShaderSource(s, 1, &src, nullptr);
-        glCompileShader(s);
-        return s;
-    };
-
-    GLuint vs = compile(GL_VERTEX_SHADER, vsSrc);
-    GLuint fs = compile(GL_FRAGMENT_SHADER, fsSrc);
-    selCircleShader = glCreateProgram();
-    glAttachShader(selCircleShader, vs);
-    glAttachShader(selCircleShader, fs);
-    glLinkProgram(selCircleShader);
-    glDeleteShader(vs);
-    glDeleteShader(fs);
-
-    // Build a unit disc; fragment shader shapes ring+gradient by radius.
+    // Build disc geometry as TRIANGLE_LIST (replaces GL_TRIANGLE_FAN)
+    // N=48 segments: center at origin + ring verts
     constexpr int SEGMENTS = 48;
     std::vector<float> verts;
-    verts.reserve((SEGMENTS + 2) * 3);
-
-    verts.push_back(0.0f);
-    verts.push_back(0.0f);
-    verts.push_back(0.0f);
-
+    verts.reserve((SEGMENTS + 1) * 3);
+    // Center vertex
+    verts.insert(verts.end(), {0.0f, 0.0f, 0.0f});
+    // Ring vertices
     for (int i = 0; i <= SEGMENTS; ++i) {
         float angle = 2.0f * 3.14159265f * static_cast<float>(i) / static_cast<float>(SEGMENTS);
-        float c = std::cos(angle), s = std::sin(angle);
-        verts.push_back(c);
-        verts.push_back(s);
+        verts.push_back(std::cos(angle));
+        verts.push_back(std::sin(angle));
         verts.push_back(0.0f);
     }
-    selCircleVertCount = static_cast<int>(SEGMENTS + 2);
 
-    glGenVertexArrays(1, &selCircleVAO);
-    glGenBuffers(1, &selCircleVBO);
-    glBindVertexArray(selCircleVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, selCircleVBO);
-    glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(float), verts.data(), GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
-    glEnableVertexAttribArray(0);
-    glBindVertexArray(0);
+    // Build TRIANGLE_LIST indices: N triangles (center=0, ring[i]=i+1, ring[i+1]=i+2)
+    std::vector<uint16_t> indices;
+    indices.reserve(SEGMENTS * 3);
+    for (int i = 0; i < SEGMENTS; ++i) {
+        indices.push_back(0);
+        indices.push_back(static_cast<uint16_t>(i + 1));
+        indices.push_back(static_cast<uint16_t>(i + 2));
+    }
+    selCircleVertCount = SEGMENTS * 3; // index count for drawing
+
+    // Upload vertex buffer
+    AllocatedBuffer vbuf = uploadBuffer(*vkCtx, verts.data(),
+        verts.size() * sizeof(float), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    selCircleVertBuf = vbuf.buffer;
+    selCircleVertAlloc = vbuf.allocation;
+
+    // Upload index buffer
+    AllocatedBuffer ibuf = uploadBuffer(*vkCtx, indices.data(),
+        indices.size() * sizeof(uint16_t), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    selCircleIdxBuf = ibuf.buffer;
+    selCircleIdxAlloc = ibuf.allocation;
+
+    // Build pipeline: alpha blend, no depth write/test, TRIANGLE_LIST, CULL_NONE
+    selCirclePipeline = PipelineBuilder()
+        .setShaders(vertShader.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                    fragShader.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+        .setVertexInput({vertBind}, {vertAttr})
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+        .setNoDepthTest()
+        .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+        .setLayout(selCirclePipelineLayout)
+        .setRenderPass(vkCtx->getImGuiRenderPass())
+        .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
+        .build(device);
+
+    vertShader.destroy();
+    fragShader.destroy();
+
+    if (!selCirclePipeline) {
+        LOG_ERROR("initSelectionCircle: failed to build pipeline");
+    }
 }
 
 void Renderer::setSelectionCircle(const glm::vec3& pos, float radius, const glm::vec3& color) {
@@ -2605,6 +2810,7 @@ void Renderer::clearSelectionCircle() {
 void Renderer::renderSelectionCircle(const glm::mat4& view, const glm::mat4& projection) {
     if (!selCircleVisible) return;
     initSelectionCircle();
+    if (selCirclePipeline == VK_NULL_HANDLE || currentCmd == VK_NULL_HANDLE) return;
 
     // Keep circle anchored near target foot Z. Accept nearby floor probes only,
     // so distant upper/lower WMO planes don't yank the ring away from feet.
@@ -2634,28 +2840,117 @@ void Renderer::renderSelectionCircle(const glm::mat4& view, const glm::mat4& pro
     model = glm::scale(model, glm::vec3(selCircleRadius));
 
     glm::mat4 mvp = projection * view * model;
+    glm::vec4 color4(selCircleColor, 1.0f);
 
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glDisable(GL_CULL_FACE);
-    glDepthMask(GL_FALSE);
-    GLboolean depthTestWasEnabled = glIsEnabled(GL_DEPTH_TEST);
-    glDisable(GL_DEPTH_TEST);
-
-    glUseProgram(selCircleShader);
-    glUniformMatrix4fv(glGetUniformLocation(selCircleShader, "uMVP"), 1, GL_FALSE, &mvp[0][0]);
-    glUniform3fv(glGetUniformLocation(selCircleShader, "uColor"), 1, &selCircleColor[0]);
-
-    glBindVertexArray(selCircleVAO);
-    glDrawArrays(GL_TRIANGLE_FAN, 0, selCircleVertCount);
-    glBindVertexArray(0);
-
-    if (depthTestWasEnabled) glEnable(GL_DEPTH_TEST);
-    glDepthMask(GL_TRUE);
-    glEnable(GL_CULL_FACE);
+    vkCmdBindPipeline(currentCmd, VK_PIPELINE_BIND_POINT_GRAPHICS, selCirclePipeline);
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(currentCmd, 0, 1, &selCircleVertBuf, &offset);
+    vkCmdBindIndexBuffer(currentCmd, selCircleIdxBuf, 0, VK_INDEX_TYPE_UINT16);
+    // Push mvp (64 bytes) at offset 0
+    vkCmdPushConstants(currentCmd, selCirclePipelineLayout,
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+        0, 64, &mvp[0][0]);
+    // Push color (16 bytes) at offset 64
+    vkCmdPushConstants(currentCmd, selCirclePipelineLayout,
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+        64, 16, &color4[0]);
+    vkCmdDrawIndexed(currentCmd, static_cast<uint32_t>(selCircleVertCount), 1, 0, 0, 0);
 }
 
 void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
+    (void)world;  // Used later in Phases 4-5
+
+    auto renderStart = std::chrono::steady_clock::now();
+    lastTerrainRenderMs = 0.0;
+    lastWMORenderMs = 0.0;
+    lastM2RenderMs = 0.0;
+
+    uint32_t frameIdx = vkCtx->getCurrentFrame();
+    VkDescriptorSet perFrameSet = perFrameDescSets[frameIdx];
+
+    // Get time of day for sky-related rendering
+    float timeOfDay = (skySystem && skySystem->getSkybox()) ? skySystem->getSkybox()->getTimeOfDay() : 12.0f;
+
+    // Render sky system (unified coordinator for skybox, stars, celestial, clouds, lens flare)
+    if (skySystem && camera) {
+        rendering::SkyParams skyParams;
+        skyParams.timeOfDay = timeOfDay;
+        skyParams.gameTime = gameHandler ? gameHandler->getGameTime() : -1.0f;
+
+        if (lightingManager) {
+            const auto& lighting = lightingManager->getLightingParams();
+            skyParams.directionalDir = lighting.directionalDir;
+            skyParams.sunColor = lighting.diffuseColor;
+            skyParams.skyTopColor = lighting.skyTopColor;
+            skyParams.skyMiddleColor = lighting.skyMiddleColor;
+            skyParams.skyBand1Color = lighting.skyBand1Color;
+            skyParams.skyBand2Color = lighting.skyBand2Color;
+            skyParams.cloudDensity = lighting.cloudDensity;
+            skyParams.fogDensity = lighting.fogDensity;
+            skyParams.horizonGlow = lighting.horizonGlow;
+        }
+
+        skyParams.skyboxModelId = 0;
+        skyParams.skyboxHasStars = false;
+
+        skySystem->render(currentCmd, perFrameSet, *camera, skyParams);
+    }
+
+    // Terrain rendering
+    if (terrainRenderer && camera && terrainEnabled) {
+        terrainRenderer->render(currentCmd, perFrameSet, *camera);
+    }
+
+    // Water rendering (after terrain, transparent)
+    if (waterRenderer && camera) {
+        waterRenderer->render(currentCmd, perFrameSet, *camera, globalTime);
+    }
+
+    // Render weather particles (after terrain/water, before characters)
+    if (weather && camera) {
+        weather->render(currentCmd, perFrameSet);
+    }
+
+    // Render swim effects (ripples and bubbles)
+    if (swimEffects && camera) {
+        swimEffects->render(currentCmd, perFrameSet);
+    }
+
+    // Render mount dust effects
+    if (mountDust && camera) {
+        mountDust->render(currentCmd, perFrameSet);
+    }
+
+    // Render charge effect (red haze + dust)
+    if (chargeEffect && camera) {
+        chargeEffect->render(currentCmd, perFrameSet);
+    }
+
+    // TODO Phase 5: WMO rendering
+    // TODO Phase 5: Character rendering
+    // TODO Phase 5: M2 rendering
+
+    // Render quest markers (billboards above NPCs)
+    if (questMarkerRenderer && camera) {
+        questMarkerRenderer->render(currentCmd, perFrameSet, *camera);
+    }
+
+    // Minimap display overlay (screen-space quad with composite texture)
+    if (minimap && minimap->isEnabled() && camera && window) {
+        glm::vec3 minimapCenter = camera->getPosition();
+        if (cameraController && cameraController->isThirdPerson())
+            minimapCenter = characterPosition;
+        minimap->render(currentCmd, *camera, minimapCenter,
+                        window->getWidth(), window->getHeight());
+    }
+
+    // TODO Phase 6: Post-process pipeline, shadow mapping, underwater overlay
+
+    auto renderEnd = std::chrono::steady_clock::now();
+    lastRenderMs = std::chrono::duration<double, std::milli>(renderEnd - renderStart).count();
+
+    // ===== STUBBED GL RENDERING (dead code — reference for Phases 4-6) =====
+#if 0
     auto renderStart = std::chrono::steady_clock::now();
     lastTerrainRenderMs = 0.0;
     lastWMORenderMs = 0.0;
@@ -2709,11 +3004,11 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
         skyParams.skyboxModelId = 0;
         skyParams.skyboxHasStars = false;  // Gradient skybox has no baked stars
 
-        skySystem->render(*camera, skyParams);
+        skySystem->render(currentCmd, perFrameDescSets[vkCtx->getCurrentFrame()], *camera, skyParams);
     } else {
         // Fallback: render individual components (backwards compatibility)
         if (skybox && camera) {
-            skybox->render(*camera, timeOfDay);
+            skybox->render(currentCmd, perFrameDescSets[vkCtx->getCurrentFrame()], timeOfDay);
         }
 
         // Get lighting parameters for celestial rendering
@@ -2730,15 +3025,15 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
         }
 
         if (starField && camera) {
-            starField->render(*camera, timeOfDay, cloudDensity, fogDensity);
+            starField->render(currentCmd, perFrameDescSets[vkCtx->getCurrentFrame()], timeOfDay, cloudDensity, fogDensity);
         }
 
         if (celestial && camera) {
-            celestial->render(*camera, timeOfDay, sunDir, sunColor);
+            celestial->render(currentCmd, perFrameDescSets[vkCtx->getCurrentFrame()], timeOfDay, sunDir, sunColor);
         }
 
         if (clouds && camera) {
-            clouds->render(*camera, timeOfDay);
+            clouds->render(currentCmd, perFrameDescSets[vkCtx->getCurrentFrame()], timeOfDay);
         }
 
         if (lensFlare && camera && celestial) {
@@ -2843,22 +3138,22 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
 
     // Render weather particles (after terrain/water, before characters)
     if (weather && camera) {
-        weather->render(*camera);
+        weather->render(currentCmd, perFrameDescSets[vkCtx->getCurrentFrame()]);
     }
 
     // Render swim effects (ripples and bubbles)
     if (swimEffects && camera) {
-        swimEffects->render(*camera);
+        swimEffects->render(currentCmd, perFrameDescSets[vkCtx->getCurrentFrame()]);
     }
 
     // Render mount dust effects
     if (mountDust && camera) {
-        mountDust->render(*camera);
+        mountDust->render(currentCmd, perFrameDescSets[vkCtx->getCurrentFrame()]);
     }
 
     // Render charge effect (red haze + dust)
     if (chargeEffect && camera) {
-        chargeEffect->render(*camera);
+        chargeEffect->render(currentCmd, perFrameDescSets[vkCtx->getCurrentFrame()]);
     }
 
     // Compute view/projection once for all sub-renderers
@@ -2868,7 +3163,7 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
     // Render WMO buildings first so selection circle can be drawn above WMO depth.
     if (wmoRenderer && camera) {
         auto wmoStart = std::chrono::steady_clock::now();
-        wmoRenderer->render(*camera, view, projection);
+        wmoRenderer->render(currentCmd, perFrameDescSets[vkCtx->getCurrentFrame()], *camera);
         auto wmoEnd = std::chrono::steady_clock::now();
         lastWMORenderMs = std::chrono::duration<double, std::milli>(wmoEnd - wmoStart).count();
     }
@@ -2879,7 +3174,7 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
 
     // Render characters (after selection circle)
     if (characterRenderer && camera) {
-        characterRenderer->render(*camera, view, projection);
+        characterRenderer->render(currentCmd, perFrameDescSets[vkCtx->getCurrentFrame()], *camera);
     }
 
     // Render M2 doodads (trees, rocks, etc.)
@@ -2890,9 +3185,11 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
             m2Renderer->setOnTaxi(cameraController->isOnTaxi());
         }
         auto m2Start = std::chrono::steady_clock::now();
-        m2Renderer->render(*camera, view, projection);
-        m2Renderer->renderSmokeParticles(*camera, view, projection);
-        m2Renderer->renderM2Particles(view, projection);
+        uint32_t frame = vkCtx->getCurrentFrame();
+        VkDescriptorSet pfSet = perFrameDescSets[frame];
+        m2Renderer->render(currentCmd, pfSet, *camera);
+        m2Renderer->renderSmokeParticles(currentCmd, pfSet);
+        m2Renderer->renderM2Particles(currentCmd, pfSet);
         auto m2End = std::chrono::steady_clock::now();
         lastM2RenderMs = std::chrono::duration<double, std::milli>(m2End - m2Start).count();
     }
@@ -2963,170 +3260,11 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
 
     auto renderEnd = std::chrono::steady_clock::now();
     lastRenderMs = std::chrono::duration<double, std::milli>(renderEnd - renderStart).count();
+#endif // Stubbed GL rendering
 }
 
-// ──────────────────────────────────────────────────────
-// Post-process FBO helpers
-// ──────────────────────────────────────────────────────
-
-void Renderer::initPostProcess(int w, int h) {
-    fbWidth = w;
-    fbHeight = h;
-    constexpr int SAMPLES = 4;
-
-    // --- MSAA FBO (render target) ---
-    glGenRenderbuffers(1, &sceneColorRBO);
-    glBindRenderbuffer(GL_RENDERBUFFER, sceneColorRBO);
-    glRenderbufferStorageMultisample(GL_RENDERBUFFER, SAMPLES, GL_RGBA16F, w, h);
-
-    glGenRenderbuffers(1, &sceneDepthRBO);
-    glBindRenderbuffer(GL_RENDERBUFFER, sceneDepthRBO);
-    glRenderbufferStorageMultisample(GL_RENDERBUFFER, SAMPLES, GL_DEPTH_COMPONENT24, w, h);
-
-    glGenFramebuffers(1, &sceneFBO);
-    glBindFramebuffer(GL_FRAMEBUFFER, sceneFBO);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, sceneColorRBO);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, sceneDepthRBO);
-
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        LOG_ERROR("MSAA scene FBO incomplete!");
-    }
-
-    // --- Resolve FBO (non-MSAA, for post-process sampling) ---
-    glGenTextures(1, &resolveColorTex);
-    glBindTexture(GL_TEXTURE_2D, resolveColorTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, w, h, 0, GL_RGBA, GL_FLOAT, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    glGenTextures(1, &resolveDepthTex);
-    glBindTexture(GL_TEXTURE_2D, resolveDepthTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, w, h, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    glGenFramebuffers(1, &resolveFBO);
-    glBindFramebuffer(GL_FRAMEBUFFER, resolveFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, resolveColorTex, 0);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, resolveDepthTex, 0);
-
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        LOG_ERROR("Resolve FBO incomplete!");
-    }
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-    // --- Fullscreen quad (triangle strip, pos + UV) ---
-    const float quadVerts[] = {
-        // pos (x,y)   uv (u,v)
-        -1.0f, -1.0f,  0.0f, 0.0f,
-         1.0f, -1.0f,  1.0f, 0.0f,
-        -1.0f,  1.0f,  0.0f, 1.0f,
-         1.0f,  1.0f,  1.0f, 1.0f,
-    };
-    glGenVertexArrays(1, &screenQuadVAO);
-    glGenBuffers(1, &screenQuadVBO);
-    glBindVertexArray(screenQuadVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, screenQuadVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVerts), quadVerts, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-    glBindVertexArray(0);
-
-    // --- Post-process shader (Reinhard tonemap + gamma 2.2) ---
-    const char* ppVS = R"(
-        #version 330 core
-        layout (location = 0) in vec2 aPos;
-        layout (location = 1) in vec2 aUV;
-        out vec2 vUV;
-        void main() {
-            vUV = aUV;
-            gl_Position = vec4(aPos, 0.0, 1.0);
-        }
-    )";
-    const char* ppFS = R"(
-        #version 330 core
-        in vec2 vUV;
-        uniform sampler2D uScene;
-        out vec4 FragColor;
-        void main() {
-            vec3 color = texture(uScene, vUV).rgb;
-            // Shoulder tonemap: identity below 0.9, soft rolloff above
-            vec3 excess = max(color - 0.9, 0.0);
-            vec3 mapped = min(color, vec3(0.9)) + 0.1 * excess / (excess + 0.1);
-            FragColor = vec4(mapped, 1.0);
-        }
-    )";
-    postProcessShader = std::make_unique<Shader>();
-    if (!postProcessShader->loadFromSource(ppVS, ppFS)) {
-        LOG_ERROR("Failed to compile post-process shader");
-        postProcessShader.reset();
-    }
-
-    LOG_INFO("Post-process FBO initialized (", w, "x", h, ")");
-}
-
-void Renderer::resizePostProcess(int w, int h) {
-    if (w <= 0 || h <= 0) return;
-    fbWidth = w;
-    fbHeight = h;
-    constexpr int SAMPLES = 4;
-
-    // Resize MSAA renderbuffers
-    glBindRenderbuffer(GL_RENDERBUFFER, sceneColorRBO);
-    glRenderbufferStorageMultisample(GL_RENDERBUFFER, SAMPLES, GL_RGBA16F, w, h);
-    glBindRenderbuffer(GL_RENDERBUFFER, sceneDepthRBO);
-    glRenderbufferStorageMultisample(GL_RENDERBUFFER, SAMPLES, GL_DEPTH_COMPONENT24, w, h);
-
-    // Resize resolve textures
-    glBindTexture(GL_TEXTURE_2D, resolveColorTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, w, h, 0, GL_RGBA, GL_FLOAT, nullptr);
-    glBindTexture(GL_TEXTURE_2D, resolveDepthTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, w, h, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
-
-    LOG_INFO("Post-process FBO resized (", w, "x", h, ")");
-}
-
-void Renderer::shutdownPostProcess() {
-    if (sceneFBO) {
-        glDeleteFramebuffers(1, &sceneFBO);
-        sceneFBO = 0;
-    }
-    if (sceneColorRBO) {
-        glDeleteRenderbuffers(1, &sceneColorRBO);
-        sceneColorRBO = 0;
-    }
-    if (sceneDepthRBO) {
-        glDeleteRenderbuffers(1, &sceneDepthRBO);
-        sceneDepthRBO = 0;
-    }
-    if (resolveFBO) {
-        glDeleteFramebuffers(1, &resolveFBO);
-        resolveFBO = 0;
-    }
-    if (resolveColorTex) {
-        glDeleteTextures(1, &resolveColorTex);
-        resolveColorTex = 0;
-    }
-    if (resolveDepthTex) {
-        glDeleteTextures(1, &resolveDepthTex);
-        resolveDepthTex = 0;
-    }
-    if (screenQuadVAO) {
-        glDeleteVertexArrays(1, &screenQuadVAO);
-        screenQuadVAO = 0;
-    }
-    if (screenQuadVBO) {
-        glDeleteBuffers(1, &screenQuadVBO);
-        screenQuadVBO = 0;
-    }
-    postProcessShader.reset();
-}
+// initPostProcess(), resizePostProcess(), shutdownPostProcess() removed —
+// post-process pipeline is now handled by Vulkan (Phase 6 cleanup).
 
 bool Renderer::loadTestTerrain(pipeline::AssetManager* assetManager, const std::string& adtPath) {
     if (!assetManager) {
@@ -3139,11 +3277,60 @@ bool Renderer::loadTestTerrain(pipeline::AssetManager* assetManager, const std::
     // Create terrain renderer if not already created
     if (!terrainRenderer) {
         terrainRenderer = std::make_unique<TerrainRenderer>();
-        if (!terrainRenderer->initialize(assetManager)) {
+        if (!terrainRenderer->initialize(vkCtx, perFrameSetLayout, assetManager)) {
             LOG_ERROR("Failed to initialize terrain renderer");
             terrainRenderer.reset();
             return false;
         }
+    }
+
+    // Create water renderer if not already created
+    if (!waterRenderer) {
+        waterRenderer = std::make_unique<WaterRenderer>();
+        if (!waterRenderer->initialize(vkCtx, perFrameSetLayout)) {
+            LOG_ERROR("Failed to initialize water renderer");
+            waterRenderer.reset();
+        }
+    }
+
+    // Create minimap if not already created
+    if (!minimap) {
+        minimap = std::make_unique<Minimap>();
+        if (!minimap->initialize(vkCtx, perFrameSetLayout)) {
+            LOG_ERROR("Failed to initialize minimap");
+            minimap.reset();
+        }
+    }
+
+    // Create world map if not already created
+    if (!worldMap) {
+        worldMap = std::make_unique<WorldMap>();
+        if (!worldMap->initialize(vkCtx, assetManager)) {
+            LOG_ERROR("Failed to initialize world map");
+            worldMap.reset();
+        }
+    }
+
+    // Create M2, WMO, and Character renderers
+    if (!m2Renderer) {
+        m2Renderer = std::make_unique<M2Renderer>();
+        m2Renderer->initialize(vkCtx, perFrameSetLayout, assetManager);
+    }
+    if (!wmoRenderer) {
+        wmoRenderer = std::make_unique<WMORenderer>();
+        wmoRenderer->initialize(vkCtx, perFrameSetLayout, assetManager);
+    }
+
+    // Initialize shadow pipelines (Phase 7)
+    if (wmoRenderer && shadowRenderPass != VK_NULL_HANDLE) {
+        wmoRenderer->initializeShadow(shadowRenderPass);
+    }
+    if (m2Renderer && shadowRenderPass != VK_NULL_HANDLE) {
+        m2Renderer->initializeShadow(shadowRenderPass);
+    }
+    if (!characterRenderer) {
+        characterRenderer = std::make_unique<CharacterRenderer>();
+        characterRenderer->initialize(vkCtx, perFrameSetLayout, assetManager);
     }
 
     // Create and initialize terrain manager
@@ -3219,6 +3406,9 @@ bool Renderer::loadTestTerrain(pipeline::AssetManager* assetManager, const std::
             if (minimap) {
                 minimap->setMapName(mapName);
             }
+            if (worldMap) {
+                worldMap->setMapName(mapName);
+            }
         }
     }
 
@@ -3265,7 +3455,7 @@ bool Renderer::loadTestTerrain(pipeline::AssetManager* assetManager, const std::
                 movementSoundManager->initialize(assetManager);
             }
             if (questMarkerRenderer) {
-                questMarkerRenderer->initialize(assetManager);
+                questMarkerRenderer->initialize(vkCtx, perFrameSetLayout, assetManager);
             }
 
             if (envFlagEnabled("WOWEE_PREWARM_ZONE_MUSIC", false)) {
@@ -3391,7 +3581,7 @@ bool Renderer::loadTerrainArea(const std::string& mapName, int centerX, int cent
             movementSoundManager->initialize(cachedAssetManager);
         }
         if (questMarkerRenderer && cachedAssetManager) {
-            questMarkerRenderer->initialize(cachedAssetManager);
+            questMarkerRenderer->initialize(vkCtx, perFrameSetLayout, cachedAssetManager);
         }
     } else {
         deferredWorldInitPending_ = true;
@@ -3442,156 +3632,8 @@ void Renderer::renderHUD() {
 // Shadow mapping helpers
 // ──────────────────────────────────────────────────────
 
-void Renderer::initShadowMap() {
-    // Compile shadow shader
-    shadowShaderProgram = compileShadowShader();
-    if (!shadowShaderProgram) {
-        LOG_ERROR("Failed to compile shadow shader");
-        return;
-    }
-
-    // Create depth texture
-    glGenTextures(1, &shadowDepthTex);
-    glBindTexture(GL_TEXTURE_2D, shadowDepthTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24,
-                 SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, 0,
-                 GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    float borderColor[] = {1.0f, 1.0f, 1.0f, 1.0f};
-    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    // Create depth-only FBO
-    glGenFramebuffers(1, &shadowFBO);
-    glBindFramebuffer(GL_FRAMEBUFFER, shadowFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, shadowDepthTex, 0);
-    glDrawBuffer(GL_NONE);
-    glReadBuffer(GL_NONE);
-
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        LOG_ERROR("Shadow FBO incomplete!");
-    }
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-    LOG_INFO("Shadow map initialized (", SHADOW_MAP_SIZE, "x", SHADOW_MAP_SIZE, ")");
-}
-
-uint32_t Renderer::compileShadowShader() {
-    const char* vertSrc = R"(
-        #version 330 core
-        uniform mat4 uLightSpaceMatrix;
-        uniform mat4 uModel;
-        layout(location = 0) in vec3 aPos;
-        layout(location = 2) in vec2 aTexCoord;
-        layout(location = 3) in vec4 aBoneWeights;
-        layout(location = 4) in vec4 aBoneIndicesF;
-        uniform bool uUseBones;
-        uniform mat4 uBones[200];
-        out vec2 vTexCoord;
-        out vec3 vWorldPos;
-        void main() {
-            vec3 pos = aPos;
-            if (uUseBones) {
-                ivec4 bi = ivec4(aBoneIndicesF);
-                mat4 boneTransform = uBones[bi.x] * aBoneWeights.x
-                                   + uBones[bi.y] * aBoneWeights.y
-                                   + uBones[bi.z] * aBoneWeights.z
-                                   + uBones[bi.w] * aBoneWeights.w;
-                pos = vec3(boneTransform * vec4(aPos, 1.0));
-            }
-            vTexCoord = aTexCoord;
-            vec4 worldPos = uModel * vec4(pos, 1.0);
-            vWorldPos = worldPos.xyz;
-            gl_Position = uLightSpaceMatrix * worldPos;
-        }
-    )";
-    const char* fragSrc = R"(
-        #version 330 core
-        in vec2 vTexCoord;
-        in vec3 vWorldPos;
-        uniform bool uUseTexture;
-        uniform sampler2D uTexture;
-        uniform bool uAlphaTest;
-        uniform bool uFoliageSway;
-        uniform float uWindTime;
-        uniform float uFoliageMotionDamp;
-
-        void main() {
-            if (uUseTexture) {
-                vec2 uv = vTexCoord;
-                vec2 uv2 = vTexCoord;
-                if (uFoliageSway && uAlphaTest) {
-                    // Slow, coherent wind-driven sway for foliage shadow cutouts.
-                    float gust = sin(uWindTime * 0.32 + vWorldPos.x * 0.05 + vWorldPos.y * 0.04);
-                    float flutter = sin(uWindTime * 0.55 + vWorldPos.y * 0.09 + vWorldPos.z * 0.18);
-                    float damp = clamp(uFoliageMotionDamp, 0.2, 1.0);
-                    uv += vec2(gust * 0.0040 * damp, flutter * 0.0022 * damp);
-
-                    // Second, phase-shifted sample gives smooth position-to-position
-                    // transitions (less on/off popping during motion).
-                    float gust2 = sin(uWindTime * 0.32 + 1.57 + vWorldPos.x * 0.05 + vWorldPos.y * 0.04);
-                    float flutter2 = sin(uWindTime * 0.55 + 2.17 + vWorldPos.y * 0.09 + vWorldPos.z * 0.18);
-                    uv2 += vec2(gust2 * 0.0040 * damp, flutter2 * 0.0022 * damp);
-                }
-                // Force base mip for alpha-cutout casters to avoid temporal
-                // shadow holes from mip-level transitions on thin foliage cards.
-                vec4 tex = textureLod(uTexture, uv, 0.0);
-                vec4 tex2 = textureLod(uTexture, uv2, 0.0);
-                float alphaCut = 0.5;
-                float alphaVal = (tex.a + tex2.a) * 0.5;
-                if (uAlphaTest && alphaVal < alphaCut) discard;
-            }
-        }
-    )";
-
-    GLuint vs = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vs, 1, &vertSrc, nullptr);
-    glCompileShader(vs);
-    GLint success;
-    glGetShaderiv(vs, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        char log[512];
-        glGetShaderInfoLog(vs, 512, nullptr, log);
-        LOG_ERROR("Shadow vertex shader error: ", log);
-        glDeleteShader(vs);
-        return 0;
-    }
-
-    GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fs, 1, &fragSrc, nullptr);
-    glCompileShader(fs);
-    glGetShaderiv(fs, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        char log[512];
-        glGetShaderInfoLog(fs, 512, nullptr, log);
-        LOG_ERROR("Shadow fragment shader error: ", log);
-        glDeleteShader(vs);
-        glDeleteShader(fs);
-        return 0;
-    }
-
-    GLuint program = glCreateProgram();
-    glAttachShader(program, vs);
-    glAttachShader(program, fs);
-    glLinkProgram(program);
-    glGetProgramiv(program, GL_LINK_STATUS, &success);
-    if (!success) {
-        char log[512];
-        glGetProgramInfoLog(program, 512, nullptr, log);
-        LOG_ERROR("Shadow shader link error: ", log);
-        glDeleteProgram(program);
-        program = 0;
-    }
-
-    glDeleteShader(vs);
-    glDeleteShader(fs);
-    return program;
-}
+// initShadowMap() and compileShadowShader() removed — shadow resources now created
+// in createPerFrameResources() as part of the Vulkan shadow infrastructure.
 
 glm::mat4 Renderer::computeLightSpaceMatrix() {
     constexpr float kShadowHalfExtent = 180.0f;
@@ -3688,134 +3730,74 @@ glm::mat4 Renderer::computeLightSpaceMatrix() {
 }
 
 void Renderer::renderShadowPass() {
-    constexpr float kShadowHalfExtent = 180.0f;
-    constexpr float kShadowLightDistance = 280.0f;
-    constexpr float kShadowNearPlane = 1.0f;
-    constexpr float kShadowFarPlane = 600.0f;
+    if (!shadowsEnabled || shadowDepthImage == VK_NULL_HANDLE) return;
+    if (currentCmd == VK_NULL_HANDLE) return;
 
-    // Compute light space matrix
+    // Compute and store light space matrix; write to per-frame UBO
     lightSpaceMatrix = computeLightSpaceMatrix();
-
-    // Bind shadow FBO
-    glBindFramebuffer(GL_FRAMEBUFFER, shadowFBO);
-    glViewport(0, 0, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
-    glClear(GL_DEPTH_BUFFER_BIT);
-
-    // Caster-side bias: front-face culling + polygon offset
-    glEnable(GL_POLYGON_OFFSET_FILL);
-    glPolygonOffset(2.0f, 4.0f);
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_FRONT);
-
-    // Use shadow shader
-    glUseProgram(shadowShaderProgram);
-    GLint lsmLoc = glGetUniformLocation(shadowShaderProgram, "uLightSpaceMatrix");
-    glUniformMatrix4fv(lsmLoc, 1, GL_FALSE, &lightSpaceMatrix[0][0]);
-    GLint useTexLoc = glGetUniformLocation(shadowShaderProgram, "uUseTexture");
-    GLint texLoc = glGetUniformLocation(shadowShaderProgram, "uTexture");
-    GLint alphaTestLoc = glGetUniformLocation(shadowShaderProgram, "uAlphaTest");
-    GLint useBonesLoc = glGetUniformLocation(shadowShaderProgram, "uUseBones");
-    GLint foliageSwayLoc = glGetUniformLocation(shadowShaderProgram, "uFoliageSway");
-    GLint windTimeLoc = glGetUniformLocation(shadowShaderProgram, "uWindTime");
-    GLint foliageDampLoc = glGetUniformLocation(shadowShaderProgram, "uFoliageMotionDamp");
-    if (useTexLoc >= 0) glUniform1i(useTexLoc, 0);
-    if (alphaTestLoc >= 0) glUniform1i(alphaTestLoc, 0);
-    if (useBonesLoc >= 0) glUniform1i(useBonesLoc, 0);
-    if (texLoc >= 0) glUniform1i(texLoc, 0);
-    if (foliageSwayLoc >= 0) glUniform1i(foliageSwayLoc, 0);
-    if (foliageDampLoc >= 0) glUniform1f(foliageDampLoc, 1.0f);
-    if (windTimeLoc >= 0) {
-        const auto now = std::chrono::steady_clock::now();
-        static auto prev = now;
-        static float windPhaseSec = 0.0f;
-        float dt = std::chrono::duration<float>(now - prev).count();
-        prev = now;
-        dt = std::clamp(dt, 0.0f, 0.1f);
-        // Match moving and idle foliage evolution speed at 80% of original.
-        float phaseRate = 0.8f;
-        windPhaseSec += dt * phaseRate;
-        glUniform1f(windTimeLoc, windPhaseSec);
-        if (foliageDampLoc >= 0) {
-            glUniform1f(foliageDampLoc, 1.0f);
-        }
+    uint32_t frame = vkCtx->getCurrentFrame();
+    auto* ubo = reinterpret_cast<GPUPerFrameData*>(perFrameUBOMapped[frame]);
+    if (ubo) {
+        ubo->lightSpaceMatrix = lightSpaceMatrix;
+        ubo->shadowParams = glm::vec4(shadowsEnabled ? 1.0f : 0.0f, 0.8f, 0.0f, 0.0f);
     }
 
-    // Render terrain into shadow map (only chunks within shadow frustum)
-    if (terrainRenderer) {
-        glm::vec3 shadowCtr = shadowCenterInitialized ? shadowCenter : characterPosition;
-        terrainRenderer->renderShadow(shadowShaderProgram, shadowCtr, kShadowHalfExtent);
-    }
+    // Barrier 1: UNDEFINED → DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+    VkImageMemoryBarrier b1{};
+    b1.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    b1.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    b1.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    b1.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b1.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b1.srcAccessMask = 0;
+    b1.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    b1.image = shadowDepthImage;
+    b1.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+    vkCmdPipelineBarrier(currentCmd,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+        0, 0, nullptr, 0, nullptr, 1, &b1);
 
-    // Render WMO into shadow map
+    // Begin shadow render pass
+    VkRenderPassBeginInfo rpInfo{};
+    rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    rpInfo.renderPass = shadowRenderPass;
+    rpInfo.framebuffer = shadowFramebuffer;
+    rpInfo.renderArea = {{0, 0}, {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE}};
+    VkClearValue clear{};
+    clear.depthStencil = {1.0f, 0};
+    rpInfo.clearValueCount = 1;
+    rpInfo.pClearValues = &clear;
+    vkCmdBeginRenderPass(currentCmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    VkViewport vp{0, 0, static_cast<float>(SHADOW_MAP_SIZE), static_cast<float>(SHADOW_MAP_SIZE), 0.0f, 1.0f};
+    vkCmdSetViewport(currentCmd, 0, 1, &vp);
+    VkRect2D sc{{0, 0}, {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE}};
+    vkCmdSetScissor(currentCmd, 0, 1, &sc);
+
+    // Phase 7: render shadow casters
     if (wmoRenderer) {
-        // WMO renderShadow takes separate view/proj matrices and a Shader ref.
-        // We need to decompose our lightSpaceMatrix or use the raw shader program.
-        // Since WMO::renderShadow sets uModel per instance, we use the shadow shader
-        // directly by calling renderShadow with the light view/proj split.
-        // For simplicity, compute the split:
-        glm::vec3 sunDir = glm::normalize(glm::vec3(-0.3f, -0.7f, -0.6f));
-        if (lightingManager) {
-            const auto& lighting = lightingManager->getLightingParams();
-            if (glm::length(lighting.directionalDir) > 0.001f) {
-                sunDir = glm::normalize(lighting.directionalDir);
-            }
-        }
-        if (sunDir.z > 0.0f) {
-            sunDir = -sunDir;
-        }
-        if (sunDir.z > -0.08f) {
-            sunDir.z = -0.08f;
-            sunDir = glm::normalize(sunDir);
-        }
-        glm::vec3 center = shadowCenterInitialized ? shadowCenter : characterPosition;
-        float halfExtent = kShadowHalfExtent;
-        glm::vec3 up(0.0f, 0.0f, 1.0f);
-        if (std::abs(glm::dot(sunDir, up)) > 0.99f) up = glm::vec3(0.0f, 1.0f, 0.0f);
-        glm::mat4 lightView = glm::lookAt(center - sunDir * kShadowLightDistance, center, up);
-        glm::mat4 lightProj = glm::ortho(-halfExtent, halfExtent, -halfExtent, halfExtent,
-                                         kShadowNearPlane, kShadowFarPlane);
-
-        // WMO renderShadow needs a Shader reference — but it only uses setUniform("uModel", ...)
-        // We'll create a thin wrapper. Actually, WMO's renderShadow takes a Shader& and calls
-        // shadowShader.setUniform("uModel", ...). We need a Shader object wrapping our program.
-        // Instead, let's use the lower-level approach: WMO renderShadow uses the shader passed in.
-        // We need to temporarily wrap our GL program in a Shader object.
-        Shader shadowShaderWrapper;
-        shadowShaderWrapper.setProgram(shadowShaderProgram);
-        wmoRenderer->renderShadow(lightView, lightProj, shadowShaderWrapper);
-        shadowShaderWrapper.releaseProgram();  // Don't let wrapper delete our program
+        wmoRenderer->renderShadow(currentCmd, lightSpaceMatrix);
     }
-
-    // Render M2 doodads into shadow map (only instances within shadow frustum)
     if (m2Renderer) {
-        glm::vec3 shadowCtr = shadowCenterInitialized ? shadowCenter : characterPosition;
-        m2Renderer->renderShadow(shadowShaderProgram, shadowCtr, kShadowHalfExtent);
+        m2Renderer->renderShadow(currentCmd, lightSpaceMatrix);
     }
 
-    // Render characters into shadow map
-    if (characterRenderer) {
-        // Character shadows need less caster bias to avoid "floating" away from feet.
-        glDisable(GL_POLYGON_OFFSET_FILL);
-        glCullFace(GL_BACK);
-        characterRenderer->renderShadow(lightSpaceMatrix);
-        glCullFace(GL_FRONT);
-        glEnable(GL_POLYGON_OFFSET_FILL);
-        glPolygonOffset(2.0f, 4.0f);
-    }
+    vkCmdEndRenderPass(currentCmd);
 
-    // Restore state
-    glDisable(GL_POLYGON_OFFSET_FILL);
-    glCullFace(GL_BACK);
-
-    // Restore main viewport
-    glViewport(0, 0, fbWidth, fbHeight);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-    // Distribute shadow map to all receivers
-    if (terrainRenderer) terrainRenderer->setShadowMap(shadowDepthTex, lightSpaceMatrix);
-    if (wmoRenderer) wmoRenderer->setShadowMap(shadowDepthTex, lightSpaceMatrix);
-    if (m2Renderer) m2Renderer->setShadowMap(shadowDepthTex, lightSpaceMatrix);
-    if (characterRenderer) characterRenderer->setShadowMap(shadowDepthTex, lightSpaceMatrix);
+    // Barrier 2: DEPTH_STENCIL_ATTACHMENT_OPTIMAL → SHADER_READ_ONLY_OPTIMAL
+    VkImageMemoryBarrier b2{};
+    b2.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    b2.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    b2.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    b2.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b2.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b2.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    b2.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    b2.image = shadowDepthImage;
+    b2.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+    vkCmdPipelineBarrier(currentCmd,
+        VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        0, 0, nullptr, 0, nullptr, 1, &b2);
 }
 
 } // namespace rendering

@@ -2,11 +2,13 @@
 
 #include <memory>
 #include <glm/glm.hpp>
+#include <vulkan/vulkan.h>
 
 namespace wowee {
 namespace rendering {
 
 class Camera;
+class VkContext;
 class Skybox;
 class Celestial;
 class StarField;
@@ -59,9 +61,11 @@ public:
     ~SkySystem();
 
     /**
-     * Initialize sky system components
+     * Initialize sky system components.
+     * @param ctx            Vulkan context (required for Vulkan renderers)
+     * @param perFrameLayout Descriptor set layout for set 0 (camera UBO)
      */
-    bool initialize();
+    bool initialize(VkContext* ctx = nullptr, VkDescriptorSetLayout perFrameLayout = VK_NULL_HANDLE);
     void shutdown();
 
     /**
@@ -70,11 +74,14 @@ public:
     void update(float deltaTime);
 
     /**
-     * Render complete sky
-     * @param camera Camera for view/projection
-     * @param params Sky parameters from lighting system
+     * Render complete sky.
+     * @param cmd         Active Vulkan command buffer
+     * @param perFrameSet Per-frame descriptor set (set 0, camera UBO)
+     * @param camera      Camera for legacy sub-renderers (lens flare, etc.)
+     * @param params      Sky parameters from lighting system
      */
-    void render(const Camera& camera, const SkyParams& params);
+    void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
+                const Camera& camera, const SkyParams& params);
 
     /**
      * Enable/disable procedural stars (DEBUG/FALLBACK)
@@ -109,21 +116,21 @@ public:
     float getBlueChildPhase() const;
 
     // Component accessors (for direct control if needed)
-    Skybox* getSkybox() const { return skybox_.get(); }
+    Skybox*    getSkybox()    const { return skybox_.get(); }
     Celestial* getCelestial() const { return celestial_.get(); }
     StarField* getStarField() const { return starField_.get(); }
-    Clouds* getClouds() const { return clouds_.get(); }
+    Clouds*    getClouds()    const { return clouds_.get(); }
     LensFlare* getLensFlare() const { return lensFlare_.get(); }
 
 private:
-    std::unique_ptr<Skybox> skybox_;        // Authoritative sky (gradient now, M2 models later)
-    std::unique_ptr<Celestial> celestial_;  // Sun + 2 moons
-    std::unique_ptr<StarField> starField_;  // Fallback procedural stars
-    std::unique_ptr<Clouds> clouds_;        // Cloud layer
-    std::unique_ptr<LensFlare> lensFlare_;  // Sun lens flare
+    std::unique_ptr<Skybox>    skybox_;      // Authoritative sky
+    std::unique_ptr<Celestial> celestial_;   // Sun + 2 moons
+    std::unique_ptr<StarField> starField_;   // Fallback procedural stars
+    std::unique_ptr<Clouds>    clouds_;      // Cloud layer
+    std::unique_ptr<LensFlare> lensFlare_;   // Sun lens flare
 
-    bool proceduralStarsEnabled_ = false;   // Default: OFF (skybox is authoritative)
-    bool debugSkyMode_ = false;             // Force procedural stars for debugging
+    bool proceduralStarsEnabled_ = false;
+    bool debugSkyMode_ = false;
     bool initialized_ = false;
 };
 

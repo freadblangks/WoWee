@@ -1858,6 +1858,77 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
         float dz = target->getZ() - movement.z;
         float distance = std::sqrt(dx*dx + dy*dy + dz*dz);
         ImGui::TextDisabled("%.1f yd", distance);
+
+        // Target auras (buffs/debuffs)
+        const auto& targetAuras = gameHandler.getTargetAuras();
+        int activeAuras = 0;
+        for (const auto& a : targetAuras) {
+            if (!a.isEmpty()) activeAuras++;
+        }
+        if (activeAuras > 0) {
+            auto* assetMgr = core::Application::getInstance().getAssetManager();
+            constexpr float ICON_SIZE = 24.0f;
+            constexpr int ICONS_PER_ROW = 8;
+
+            ImGui::Separator();
+
+            int shown = 0;
+            for (size_t i = 0; i < targetAuras.size() && shown < 16; ++i) {
+                const auto& aura = targetAuras[i];
+                if (aura.isEmpty()) continue;
+
+                if (shown > 0 && shown % ICONS_PER_ROW != 0) ImGui::SameLine();
+
+                ImGui::PushID(static_cast<int>(10000 + i));
+
+                bool isBuff = (aura.flags & 0x80) == 0;
+                ImVec4 auraBorderColor = isBuff ? ImVec4(0.2f, 0.8f, 0.2f, 0.9f) : ImVec4(0.8f, 0.2f, 0.2f, 0.9f);
+
+                VkDescriptorSet iconTex = VK_NULL_HANDLE;
+                if (assetMgr) {
+                    iconTex = getSpellIcon(aura.spellId, assetMgr);
+                }
+
+                if (iconTex) {
+                    ImGui::PushStyleColor(ImGuiCol_Button, auraBorderColor);
+                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1, 1));
+                    ImGui::ImageButton("##taura",
+                        (ImTextureID)(uintptr_t)iconTex,
+                        ImVec2(ICON_SIZE - 2, ICON_SIZE - 2));
+                    ImGui::PopStyleVar();
+                    ImGui::PopStyleColor();
+                } else {
+                    ImGui::PushStyleColor(ImGuiCol_Button, auraBorderColor);
+                    char label[8];
+                    snprintf(label, sizeof(label), "%u", aura.spellId);
+                    ImGui::Button(label, ImVec2(ICON_SIZE, ICON_SIZE));
+                    ImGui::PopStyleColor();
+                }
+
+                // Tooltip
+                if (ImGui::IsItemHovered()) {
+                    std::string name = spellbookScreen.lookupSpellName(aura.spellId, assetMgr);
+                    if (name.empty()) name = "Spell #" + std::to_string(aura.spellId);
+                    uint64_t nowMs = static_cast<uint64_t>(
+                        std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now().time_since_epoch()).count());
+                    int32_t remaining = aura.getRemainingMs(nowMs);
+                    if (remaining > 0) {
+                        int seconds = remaining / 1000;
+                        if (seconds < 60) {
+                            ImGui::SetTooltip("%s (%ds)", name.c_str(), seconds);
+                        } else {
+                            ImGui::SetTooltip("%s (%dm %ds)", name.c_str(), seconds / 60, seconds % 60);
+                        }
+                    } else {
+                        ImGui::SetTooltip("%s", name.c_str());
+                    }
+                }
+
+                ImGui::PopID();
+                shown++;
+            }
+        }
     }
     ImGui::End();
 

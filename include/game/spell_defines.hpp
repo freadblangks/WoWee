@@ -180,7 +180,7 @@ inline const char* getSpellCastResultString(uint8_t result, int powerType = -1) 
         case 91:  return "Only mounted";
         case 92:  return "Only nighttime";
         case 93:  return "Only outdoors";
-        case 94:  return "Only shapeshift";
+        case 94:  return "Requires correct stance/form";
         case 95:  return "Only stealthed";
         case 96:  return "Only underwater";
         case 97:  return "Out of range";

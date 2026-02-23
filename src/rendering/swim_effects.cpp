@@ -552,7 +552,8 @@ void SwimEffects::update(const Camera& camera, const CameraController& cc,
         }
     } else {
         rippleSpawnAccum = 0.0f;
-        ripples.clear();
+        // Don't clear ripples — foot splash particles are added while wading
+        // (not swimming) and need to live out their lifetime.
     }
 
     // --- Bubble spawning ---

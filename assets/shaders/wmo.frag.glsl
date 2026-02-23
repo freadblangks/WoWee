@@ -27,6 +27,7 @@ layout(set = 1, binding = 1) uniform WMOMaterial {
     float pomScale;
     int pomMaxSamples;
     float heightMapVariance;
+    float normalMapStrength;
 };
 
 layout(set = 1, binding = 2) uniform sampler2D uNormalHeightMap;
@@ -55,6 +56,10 @@ float computeLodFactor() {
 // Parallax Occlusion Mapping with angle-adaptive sampling
 vec2 parallaxOcclusionMap(vec2 uv, vec3 viewDirTS, float lodFactor) {
     float VdotN = abs(viewDirTS.z);  // 1=head-on, 0=grazing
+
+    // Fade out POM at grazing angles to avoid distortion
+    if (VdotN < 0.15) return uv;
+
     float angleFactor = clamp(VdotN, 0.15, 1.0);
     int maxS = pomMaxSamples;
     int minS = max(maxS / 4, 4);
@@ -64,8 +69,11 @@ vec2 parallaxOcclusionMap(vec2 uv, vec3 viewDirTS, float lodFactor) {
     float layerDepth = 1.0 / float(numSamples);
     float currentLayerDepth = 0.0;
 
-    // Direction to shift UV per layer
-    vec2 P = viewDirTS.xy / max(abs(viewDirTS.z), 0.001) * pomScale;
+    // Direction to shift UV per layer — clamp denominator to prevent explosion at grazing angles
+    vec2 P = viewDirTS.xy / max(VdotN, 0.15) * pomScale;
+    // Hard-clamp total UV offset to prevent texture swimming
+    float maxOffset = pomScale * 3.0;
+    P = clamp(P, vec2(-maxOffset), vec2(maxOffset));
     vec2 deltaUV = P / float(numSamples);
 
     vec2 currentUV = uv;
@@ -84,7 +92,11 @@ vec2 parallaxOcclusionMap(vec2 uv, vec3 viewDirTS, float lodFactor) {
     float afterDepth = currentDepthMapValue - currentLayerDepth;
     float beforeDepth = (1.0 - texture(uNormalHeightMap, prevUV).a) - currentLayerDepth + layerDepth;
     float weight = afterDepth / (afterDepth - beforeDepth + 0.0001);
-    return mix(currentUV, prevUV, weight);
+    vec2 result = mix(currentUV, prevUV, weight);
+
+    // Fade toward original UV at grazing angles for smooth transition
+    float fadeFactor = smoothstep(0.15, 0.35, VdotN);
+    return mix(uv, result, fadeFactor);
 }
 
 void main() {
@@ -114,11 +126,16 @@ void main() {
 
     // Compute normal (with normal mapping if enabled)
     vec3 norm = vertexNormal;
-    if (enableNormalMap != 0 && lodFactor < 0.99) {
+    if (enableNormalMap != 0 && lodFactor < 0.99 && normalMapStrength > 0.001) {
         vec3 mapNormal = texture(uNormalHeightMap, finalUV).rgb * 2.0 - 1.0;
+        // Scale XY by strength to control effect intensity
+        mapNormal.xy *= normalMapStrength;
+        mapNormal = normalize(mapNormal);
         vec3 worldNormal = normalize(TBN * mapNormal);
         if (!gl_FrontFacing) worldNormal = -worldNormal;
-        norm = normalize(mix(worldNormal, vertexNormal, lodFactor));
+        // Blend: strength + LOD both contribute to fade toward vertex normal
+        float blendFactor = max(lodFactor, 1.0 - normalMapStrength);
+        norm = normalize(mix(worldNormal, vertexNormal, blendFactor));
     }
 
     vec3 result;

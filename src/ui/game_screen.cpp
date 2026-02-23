@@ -284,6 +284,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         if (renderer) {
             if (auto* wr = renderer->getWMORenderer()) {
                 wr->setNormalMappingEnabled(pendingNormalMapping);
+                wr->setNormalMapStrength(pendingNormalMapStrength);
                 wr->setPOMEnabled(pendingPOM);
                 wr->setPOMQuality(pendingPOMQuality);
                 normalMapSettingsApplied_ = true;
@@ -5916,6 +5917,16 @@ void GameScreen::renderSettingsWindow() {
                     }
                     saveSettings();
                 }
+                if (pendingNormalMapping) {
+                    if (ImGui::SliderFloat("Normal Map Strength", &pendingNormalMapStrength, 0.0f, 2.0f, "%.1f")) {
+                        if (renderer) {
+                            if (auto* wr = renderer->getWMORenderer()) {
+                                wr->setNormalMapStrength(pendingNormalMapStrength);
+                            }
+                        }
+                        saveSettings();
+                    }
+                }
                 if (ImGui::Checkbox("Parallax Mapping", &pendingPOM)) {
                     if (renderer) {
                         if (auto* wr = renderer->getWMORenderer()) {
@@ -5959,6 +5970,7 @@ void GameScreen::renderSettingsWindow() {
                     pendingGroundClutterDensity = kDefaultGroundClutterDensity;
                     pendingAntiAliasing = 0;
                     pendingNormalMapping = true;
+                    pendingNormalMapStrength = 1.0f;
                     pendingPOM = false;
                     pendingPOMQuality = 1;
                     pendingResIndex = defaultResIndex;
@@ -5975,6 +5987,7 @@ void GameScreen::renderSettingsWindow() {
                     if (renderer) {
                         if (auto* wr = renderer->getWMORenderer()) {
                             wr->setNormalMappingEnabled(pendingNormalMapping);
+                            wr->setNormalMapStrength(pendingNormalMapStrength);
                             wr->setPOMEnabled(pendingPOM);
                             wr->setPOMQuality(pendingPOMQuality);
                         }
@@ -6906,6 +6919,7 @@ void GameScreen::saveSettings() {
     out << "ground_clutter_density=" << pendingGroundClutterDensity << "\n";
     out << "antialiasing=" << pendingAntiAliasing << "\n";
     out << "normal_mapping=" << (pendingNormalMapping ? 1 : 0) << "\n";
+    out << "normal_map_strength=" << pendingNormalMapStrength << "\n";
     out << "pom=" << (pendingPOM ? 1 : 0) << "\n";
     out << "pom_quality=" << pendingPOMQuality << "\n";
 
@@ -6987,6 +7001,7 @@ void GameScreen::loadSettings() {
             else if (key == "ground_clutter_density") pendingGroundClutterDensity = std::clamp(std::stoi(val), 0, 150);
             else if (key == "antialiasing") pendingAntiAliasing = std::clamp(std::stoi(val), 0, 3);
             else if (key == "normal_mapping") pendingNormalMapping = (std::stoi(val) != 0);
+            else if (key == "normal_map_strength") pendingNormalMapStrength = std::clamp(std::stof(val), 0.0f, 2.0f);
             else if (key == "pom") pendingPOM = (std::stoi(val) != 0);
             else if (key == "pom_quality") pendingPOMQuality = std::clamp(std::stoi(val), 0, 2);
             // Controls

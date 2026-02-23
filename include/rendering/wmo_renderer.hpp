@@ -186,9 +186,11 @@ public:
      * Normal mapping / Parallax Occlusion Mapping settings
      */
     void setNormalMappingEnabled(bool enabled) { normalMappingEnabled_ = enabled; materialSettingsDirty_ = true; }
+    void setNormalMapStrength(float s) { normalMapStrength_ = s; materialSettingsDirty_ = true; }
     void setPOMEnabled(bool enabled) { pomEnabled_ = enabled; materialSettingsDirty_ = true; }
     void setPOMQuality(int q) { pomQuality_ = q; materialSettingsDirty_ = true; }
     bool isNormalMappingEnabled() const { return normalMappingEnabled_; }
+    float getNormalMapStrength() const { return normalMapStrength_; }
     bool isPOMEnabled() const { return pomEnabled_; }
     int getPOMQuality() const { return pomQuality_; }
 
@@ -326,7 +328,7 @@ private:
         float pomScale;            // 32 (height scale)
         int32_t pomMaxSamples;     // 36 (max ray-march steps)
         float heightMapVariance;   // 40 (low variance = skip POM)
-        float pad;                 // 44
+        float normalMapStrength;   // 44 (0=flat, 1=full, 2=exaggerated)
     };  // 48 bytes total
 
     /**
@@ -643,6 +645,7 @@ private:
 
     // Normal mapping / POM settings
     bool normalMappingEnabled_ = true;   // on by default
+    float normalMapStrength_ = 1.0f;     // 0.0 = flat, 1.0 = full, 2.0 = exaggerated
     bool pomEnabled_ = false;            // off by default (expensive)
     int pomQuality_ = 1;                 // 0=Low(16), 1=Medium(32), 2=High(64)
     bool materialSettingsDirty_ = false; // rebuild UBOs when settings change

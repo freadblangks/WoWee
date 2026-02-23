@@ -104,6 +104,7 @@ private:
     int pendingGroundClutterDensity = 100;
     int pendingAntiAliasing = 0;  // 0=Off, 1=2x, 2=4x, 3=8x
     bool pendingNormalMapping = true;   // on by default
+    float pendingNormalMapStrength = 1.0f;  // 0.0-2.0
     bool pendingPOM = false;            // off by default (expensive)
     int pendingPOMQuality = 1;          // 0=Low(16), 1=Medium(32), 2=High(64)
 

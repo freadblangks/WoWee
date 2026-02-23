@@ -601,12 +601,13 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
             matData.isWindow = mb.isWindow ? 1 : 0;
             matData.enableNormalMap = normalMappingEnabled_ ? 1 : 0;
             matData.enablePOM = pomEnabled_ ? 1 : 0;
-            matData.pomScale = 0.03f;
+            matData.pomScale = 0.012f;
             {
                 static const int pomSampleTable[] = { 16, 32, 64 };
                 matData.pomMaxSamples = pomSampleTable[std::clamp(pomQuality_, 0, 2)];
             }
             matData.heightMapVariance = mb.heightMapVariance;
+            matData.normalMapStrength = normalMapStrength_;
             if (matBuf.info.pMappedData) {
                 memcpy(matBuf.info.pMappedData, &matData, sizeof(matData));
             }
@@ -1228,9 +1229,10 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
                         auto* ubo = reinterpret_cast<WMOMaterialUBO*>(allocInfo.pMappedData);
                         ubo->enableNormalMap = normalMappingEnabled_ ? 1 : 0;
                         ubo->enablePOM = pomEnabled_ ? 1 : 0;
-                        ubo->pomScale = 0.03f;
+                        ubo->pomScale = 0.012f;
                         ubo->pomMaxSamples = maxSamples;
                         ubo->heightMapVariance = mb.heightMapVariance;
+                        ubo->normalMapStrength = normalMapStrength_;
                     }
                 }
             }
@@ -2019,7 +2021,27 @@ std::unique_ptr<VkTexture> WMORenderer::generateNormalHeightMap(
     double mean = sumH / totalPixels;
     outVariance = static_cast<float>(sumH2 / totalPixels - mean * mean);
 
-    // Step 2: Sobel 3x3 → normal map (wrap-sampled for tiling textures)
+    // Step 1.5: Box blur the height map to reduce noise from diffuse textures
+    auto wrapSample = [&](const std::vector<float>& map, int x, int y) -> float {
+        x = ((x % (int)width) + (int)width) % (int)width;
+        y = ((y % (int)height) + (int)height) % (int)height;
+        return map[y * width + x];
+    };
+
+    std::vector<float> blurredHeight(totalPixels);
+    for (uint32_t y = 0; y < height; y++) {
+        for (uint32_t x = 0; x < width; x++) {
+            int ix = static_cast<int>(x), iy = static_cast<int>(y);
+            float sum = 0.0f;
+            for (int dy = -1; dy <= 1; dy++)
+                for (int dx = -1; dx <= 1; dx++)
+                    sum += wrapSample(heightMap, ix + dx, iy + dy);
+            blurredHeight[y * width + x] = sum / 9.0f;
+        }
+    }
+
+    // Step 2: Sobel 3x3 → normal map
+    // Use ORIGINAL height for normals (crisp detail), blurred height for POM alpha only
     const float strength = 2.0f;
     std::vector<uint8_t> output(totalPixels * 4);
 
@@ -2050,7 +2072,7 @@ std::unique_ptr<VkTexture> WMORenderer::generateNormalHeightMap(
             output[idx + 0] = static_cast<uint8_t>(std::clamp((nx * 0.5f + 0.5f) * 255.0f, 0.0f, 255.0f));
             output[idx + 1] = static_cast<uint8_t>(std::clamp((ny * 0.5f + 0.5f) * 255.0f, 0.0f, 255.0f));
             output[idx + 2] = static_cast<uint8_t>(std::clamp((nz * 0.5f + 0.5f) * 255.0f, 0.0f, 255.0f));
-            output[idx + 3] = static_cast<uint8_t>(std::clamp(heightMap[y * width + x] * 255.0f, 0.0f, 255.0f));
+            output[idx + 3] = static_cast<uint8_t>(std::clamp(blurredHeight[y * width + x] * 255.0f, 0.0f, 255.0f));
         }
     }
 

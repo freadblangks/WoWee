@@ -3705,7 +3705,13 @@ glm::mat4 Renderer::computeLightSpaceMatrix() {
     // Keep a stable shadow focus center and move it smoothly toward the player
     // to avoid visible shadow "state jumps" during movement.
     glm::vec3 desiredCenter = characterPosition;
+    // Don't initialize shadow center until the player has a real world position.
+    // characterPosition starts at (0,0,0) and gets set once the server places us.
     if (!shadowCenterInitialized) {
+        if (glm::dot(desiredCenter, desiredCenter) < 1.0f) {
+            // Position not set yet — skip shadow rendering this frame.
+            return glm::mat4(0.0f);
+        }
         shadowCenter = desiredCenter;
         shadowCenterInitialized = true;
     } else {
@@ -3860,6 +3866,8 @@ void Renderer::renderShadowPass() {
 
     // Compute and store light space matrix; write to per-frame UBO
     lightSpaceMatrix = computeLightSpaceMatrix();
+    // Zero matrix means character position isn't set yet — skip shadow pass entirely.
+    if (lightSpaceMatrix == glm::mat4(0.0f)) return;
     uint32_t frame = vkCtx->getCurrentFrame();
     auto* ubo = reinterpret_cast<GPUPerFrameData*>(perFrameUBOMapped[frame]);
     if (ubo) {

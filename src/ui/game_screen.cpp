@@ -6,6 +6,7 @@
 #include "core/spawn_presets.hpp"
 #include "core/input.hpp"
 #include "rendering/renderer.hpp"
+#include "rendering/wmo_renderer.hpp"
 #include "rendering/terrain_manager.hpp"
 #include "rendering/minimap.hpp"
 #include "rendering/world_map.hpp"
@@ -275,6 +276,19 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         }
     } else {
         msaaSettingsApplied_ = true;
+    }
+
+    // Apply saved normal mapping / POM settings once when WMO renderer is available
+    if (!normalMapSettingsApplied_) {
+        auto* renderer = core::Application::getInstance().getRenderer();
+        if (renderer) {
+            if (auto* wr = renderer->getWMORenderer()) {
+                wr->setNormalMappingEnabled(pendingNormalMapping);
+                wr->setPOMEnabled(pendingPOM);
+                wr->setPOMQuality(pendingPOMQuality);
+                normalMapSettingsApplied_ = true;
+            }
+        }
     }
 
     // Apply auto-loot setting to GameHandler every frame (cheap bool sync)
@@ -5894,6 +5908,33 @@ void GameScreen::renderSettingsWindow() {
                     }
                     saveSettings();
                 }
+                if (ImGui::Checkbox("Normal Mapping", &pendingNormalMapping)) {
+                    if (renderer) {
+                        if (auto* wr = renderer->getWMORenderer()) {
+                            wr->setNormalMappingEnabled(pendingNormalMapping);
+                        }
+                    }
+                    saveSettings();
+                }
+                if (ImGui::Checkbox("Parallax Mapping", &pendingPOM)) {
+                    if (renderer) {
+                        if (auto* wr = renderer->getWMORenderer()) {
+                            wr->setPOMEnabled(pendingPOM);
+                        }
+                    }
+                    saveSettings();
+                }
+                if (pendingPOM) {
+                    const char* pomLabels[] = { "Low", "Medium", "High" };
+                    if (ImGui::Combo("Parallax Quality", &pendingPOMQuality, pomLabels, 3)) {
+                        if (renderer) {
+                            if (auto* wr = renderer->getWMORenderer()) {
+                                wr->setPOMQuality(pendingPOMQuality);
+                            }
+                        }
+                        saveSettings();
+                    }
+                }
 
                 const char* resLabel = "Resolution";
                 const char* resItems[kResCount];
@@ -5917,6 +5958,9 @@ void GameScreen::renderSettingsWindow() {
                     pendingShadows = kDefaultShadows;
                     pendingGroundClutterDensity = kDefaultGroundClutterDensity;
                     pendingAntiAliasing = 0;
+                    pendingNormalMapping = true;
+                    pendingPOM = false;
+                    pendingPOMQuality = 1;
                     pendingResIndex = defaultResIndex;
                     window->setFullscreen(pendingFullscreen);
                     window->setVsync(pendingVsync);
@@ -5926,6 +5970,13 @@ void GameScreen::renderSettingsWindow() {
                     if (renderer) {
                         if (auto* tm = renderer->getTerrainManager()) {
                             tm->setGroundClutterDensityScale(static_cast<float>(pendingGroundClutterDensity) / 100.0f);
+                        }
+                    }
+                    if (renderer) {
+                        if (auto* wr = renderer->getWMORenderer()) {
+                            wr->setNormalMappingEnabled(pendingNormalMapping);
+                            wr->setPOMEnabled(pendingPOM);
+                            wr->setPOMQuality(pendingPOMQuality);
                         }
                     }
                     saveSettings();
@@ -6854,6 +6905,9 @@ void GameScreen::saveSettings() {
     out << "auto_loot=" << (pendingAutoLoot ? 1 : 0) << "\n";
     out << "ground_clutter_density=" << pendingGroundClutterDensity << "\n";
     out << "antialiasing=" << pendingAntiAliasing << "\n";
+    out << "normal_mapping=" << (pendingNormalMapping ? 1 : 0) << "\n";
+    out << "pom=" << (pendingPOM ? 1 : 0) << "\n";
+    out << "pom_quality=" << pendingPOMQuality << "\n";
 
     // Controls
     out << "mouse_sensitivity=" << pendingMouseSensitivity << "\n";
@@ -6932,6 +6986,9 @@ void GameScreen::loadSettings() {
             else if (key == "auto_loot") pendingAutoLoot = (std::stoi(val) != 0);
             else if (key == "ground_clutter_density") pendingGroundClutterDensity = std::clamp(std::stoi(val), 0, 150);
             else if (key == "antialiasing") pendingAntiAliasing = std::clamp(std::stoi(val), 0, 3);
+            else if (key == "normal_mapping") pendingNormalMapping = (std::stoi(val) != 0);
+            else if (key == "pom") pendingPOM = (std::stoi(val) != 0);
+            else if (key == "pom_quality") pendingPOMQuality = std::clamp(std::stoi(val), 0, 2);
             // Controls
             else if (key == "mouse_sensitivity") pendingMouseSensitivity = std::clamp(std::stof(val), 0.05f, 1.0f);
             else if (key == "invert_mouse") pendingInvertMouse = (std::stoi(val) != 0);

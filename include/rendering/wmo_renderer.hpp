@@ -183,6 +183,16 @@ public:
     uint32_t getDrawCallCount() const { return lastDrawCalls; }
 
     /**
+     * Normal mapping / Parallax Occlusion Mapping settings
+     */
+    void setNormalMappingEnabled(bool enabled) { normalMappingEnabled_ = enabled; materialSettingsDirty_ = true; }
+    void setPOMEnabled(bool enabled) { pomEnabled_ = enabled; materialSettingsDirty_ = true; }
+    void setPOMQuality(int q) { pomQuality_ = q; materialSettingsDirty_ = true; }
+    bool isNormalMappingEnabled() const { return normalMappingEnabled_; }
+    bool isPOMEnabled() const { return pomEnabled_; }
+    int getPOMQuality() const { return pomQuality_; }
+
+    /**
      * Enable/disable wireframe rendering
      */
     void setWireframeMode(bool enabled) { wireframeMode = enabled; }
@@ -305,14 +315,19 @@ public:
 private:
     // WMO material UBO — matches WMOMaterial in wmo.frag.glsl
     struct WMOMaterialUBO {
-        int32_t hasTexture;
-        int32_t alphaTest;
-        int32_t unlit;
-        int32_t isInterior;
-        float specularIntensity;
-        int32_t isWindow;
-        float pad[2];  // pad to 32 bytes
-    };
+        int32_t hasTexture;        // 0
+        int32_t alphaTest;         // 4
+        int32_t unlit;             // 8
+        int32_t isInterior;        // 12
+        float specularIntensity;   // 16
+        int32_t isWindow;          // 20
+        int32_t enableNormalMap;   // 24
+        int32_t enablePOM;         // 28
+        float pomScale;            // 32 (height scale)
+        int32_t pomMaxSamples;     // 36 (max ray-march steps)
+        float heightMapVariance;   // 40 (low variance = skip POM)
+        float pad;                 // 44
+    };  // 48 bytes total
 
     /**
      * WMO group GPU resources
@@ -341,6 +356,8 @@ private:
         // Pre-merged batches for efficient rendering (computed at load time)
         struct MergedBatch {
             VkTexture* texture = nullptr;   // from cache, NOT owned
+            VkTexture* normalHeightMap = nullptr;  // generated from diffuse, NOT owned
+            float heightMapVariance = 0.0f; // variance of height map (low = flat texture)
             VkDescriptorSet materialSet = VK_NULL_HANDLE;  // set 1
             ::VkBuffer materialUBO = VK_NULL_HANDLE;
             VmaAllocation materialUBOAlloc = VK_NULL_HANDLE;
@@ -516,6 +533,16 @@ private:
     VkTexture* loadTexture(const std::string& path);
 
     /**
+     * Generate normal+height map from diffuse RGBA8 pixels
+     * @param pixels RGBA8 pixel data
+     * @param width Texture width
+     * @param height Texture height
+     * @param outVariance Receives height map variance (for POM threshold)
+     * @return Generated VkTexture (RGBA8: RGB=normal, A=height)
+     */
+    std::unique_ptr<VkTexture> generateNormalHeightMap(const uint8_t* pixels, uint32_t width, uint32_t height, float& outVariance);
+
+    /**
      * Allocate a material descriptor set from the pool
      */
     VkDescriptorSet allocateMaterialSet();
@@ -584,6 +611,8 @@ private:
     // Texture cache (path -> VkTexture)
     struct TextureCacheEntry {
         std::unique_ptr<VkTexture> texture;
+        std::unique_ptr<VkTexture> normalHeightMap;  // generated normal+height from diffuse
+        float heightMapVariance = 0.0f;  // variance of generated height map
         size_t approxBytes = 0;
         uint64_t lastUse = 0;
     };
@@ -598,6 +627,9 @@ private:
     // Default white texture
     std::unique_ptr<VkTexture> whiteTexture_;
 
+    // Flat normal placeholder (128,128,255,128) = up-pointing normal, mid-height
+    std::unique_ptr<VkTexture> flatNormalTexture_;
+
     // Loaded models (modelId -> ModelData)
     std::unordered_map<uint32_t, ModelData> loadedModels;
     size_t modelCacheLimit_ = 4000;
@@ -608,6 +640,12 @@ private:
     uint32_t nextInstanceId = 1;
 
     bool initialized_ = false;
+
+    // Normal mapping / POM settings
+    bool normalMappingEnabled_ = true;   // on by default
+    bool pomEnabled_ = false;            // off by default (expensive)
+    int pomQuality_ = 1;                 // 0=Low(16), 1=Medium(32), 2=High(64)
+    bool materialSettingsDirty_ = false; // rebuild UBOs when settings change
 
     // Rendering state
     bool wireframeMode = false;

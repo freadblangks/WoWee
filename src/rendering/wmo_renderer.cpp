@@ -87,7 +87,8 @@ bool WMORenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayou
     // --- Create material descriptor set layout (set 1) ---
     // binding 0: sampler2D (diffuse texture)
     // binding 1: uniform buffer (WMOMaterial)
-    std::vector<VkDescriptorSetLayoutBinding> materialBindings(2);
+    // binding 2: sampler2D (normal+height map)
+    std::vector<VkDescriptorSetLayoutBinding> materialBindings(3);
     materialBindings[0] = {};
     materialBindings[0].binding = 0;
     materialBindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -98,6 +99,11 @@ bool WMORenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayou
     materialBindings[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     materialBindings[1].descriptorCount = 1;
     materialBindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    materialBindings[2] = {};
+    materialBindings[2].binding = 2;
+    materialBindings[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    materialBindings[2].descriptorCount = 1;
+    materialBindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
     materialSetLayout_ = createDescriptorSetLayout(device, materialBindings);
     if (!materialSetLayout_) {
@@ -107,7 +113,7 @@ bool WMORenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayou
 
     // --- Create descriptor pool ---
     VkDescriptorPoolSize poolSizes[] = {
-        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_MATERIAL_SETS },
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_MATERIAL_SETS * 2 },  // diffuse + normal/height
         { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, MAX_MATERIAL_SETS },
     };
 
@@ -147,12 +153,13 @@ bool WMORenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayou
     }
 
     // --- Vertex input ---
-    // WMO vertex: pos3 + normal3 + texCoord2 + color4 = 48 bytes
+    // WMO vertex: pos3 + normal3 + texCoord2 + color4 + tangent4 = 64 bytes
     struct WMOVertexData {
         glm::vec3 position;
         glm::vec3 normal;
         glm::vec2 texCoord;
         glm::vec4 color;
+        glm::vec4 tangent;  // xyz=tangent dir, w=handedness ±1
     };
 
     VkVertexInputBindingDescription vertexBinding{};
@@ -160,7 +167,7 @@ bool WMORenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayou
     vertexBinding.stride = sizeof(WMOVertexData);
     vertexBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    std::vector<VkVertexInputAttributeDescription> vertexAttribs(4);
+    std::vector<VkVertexInputAttributeDescription> vertexAttribs(5);
     vertexAttribs[0] = { 0, 0, VK_FORMAT_R32G32B32_SFLOAT,
         static_cast<uint32_t>(offsetof(WMOVertexData, position)) };
     vertexAttribs[1] = { 1, 0, VK_FORMAT_R32G32B32_SFLOAT,
@@ -169,6 +176,8 @@ bool WMORenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayou
         static_cast<uint32_t>(offsetof(WMOVertexData, texCoord)) };
     vertexAttribs[3] = { 3, 0, VK_FORMAT_R32G32B32A32_SFLOAT,
         static_cast<uint32_t>(offsetof(WMOVertexData, color)) };
+    vertexAttribs[4] = { 4, 0, VK_FORMAT_R32G32B32A32_SFLOAT,
+        static_cast<uint32_t>(offsetof(WMOVertexData, tangent)) };
 
     // --- Build opaque pipeline ---
     VkRenderPass mainPass = vkCtx_->getImGuiRenderPass();
@@ -256,6 +265,14 @@ bool WMORenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayou
     whiteTexture_->upload(*vkCtx_, whitePixel, 1, 1, VK_FORMAT_R8G8B8A8_UNORM, false);
     whiteTexture_->createSampler(device, VK_FILTER_LINEAR, VK_FILTER_LINEAR,
                                   VK_SAMPLER_ADDRESS_MODE_REPEAT);
+
+    // --- Create flat normal placeholder texture ---
+    // (128,128,255,128) = flat normal pointing up (0,0,1), mid-height
+    flatNormalTexture_ = std::make_unique<VkTexture>();
+    uint8_t flatNormalPixel[4] = {128, 128, 255, 128};
+    flatNormalTexture_->upload(*vkCtx_, flatNormalPixel, 1, 1, VK_FORMAT_R8G8B8A8_UNORM, false);
+    flatNormalTexture_->createSampler(device, VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+                                       VK_SAMPLER_ADDRESS_MODE_REPEAT);
     textureCacheBudgetBytes_ =
         envSizeMBOrDefault("WOWEE_WMO_TEX_CACHE_MB", 1024) * 1024ull * 1024ull;
     modelCacheLimit_ = envSizeMBOrDefault("WOWEE_WMO_MODEL_LIMIT", 4000);
@@ -295,6 +312,7 @@ void WMORenderer::shutdown() {
     // Free cached textures
     for (auto& [path, entry] : textureCache) {
         if (entry.texture) entry.texture->destroy(device, allocator);
+        if (entry.normalHeightMap) entry.normalHeightMap->destroy(device, allocator);
     }
     textureCache.clear();
     textureCacheBytes_ = 0;
@@ -303,8 +321,9 @@ void WMORenderer::shutdown() {
     loggedTextureLoadFails_.clear();
     textureBudgetRejectWarnings_ = 0;
 
-    // Free white texture
+    // Free white texture and flat normal texture
     if (whiteTexture_) { whiteTexture_->destroy(device, allocator); whiteTexture_.reset(); }
+    if (flatNormalTexture_) { flatNormalTexture_->destroy(device, allocator); flatNormalTexture_.reset(); }
 
     loadedModels.clear();
     instances.clear();
@@ -540,6 +559,16 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
                 mb.unlit = unlit;
                 mb.isTransparent = (blendMode >= 2);
                 mb.isWindow = isWindow;
+                // Look up normal/height map from texture cache
+                if (hasTexture && tex != whiteTexture_.get()) {
+                    for (const auto& [cacheKey, cacheEntry] : textureCache) {
+                        if (cacheEntry.texture.get() == tex) {
+                            mb.normalHeightMap = cacheEntry.normalHeightMap.get();
+                            mb.heightMapVariance = cacheEntry.heightMapVariance;
+                            break;
+                        }
+                    }
+                }
             }
             GroupResources::MergedBatch::DrawRange dr;
             dr.firstIndex = batch.startIndex;
@@ -570,6 +599,14 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
             matData.isInterior = isInterior ? 1 : 0;
             matData.specularIntensity = 0.5f;
             matData.isWindow = mb.isWindow ? 1 : 0;
+            matData.enableNormalMap = normalMappingEnabled_ ? 1 : 0;
+            matData.enablePOM = pomEnabled_ ? 1 : 0;
+            matData.pomScale = 0.03f;
+            {
+                static const int pomSampleTable[] = { 16, 32, 64 };
+                matData.pomMaxSamples = pomSampleTable[std::clamp(pomQuality_, 0, 2)];
+            }
+            matData.heightMapVariance = mb.heightMapVariance;
             if (matBuf.info.pMappedData) {
                 memcpy(matBuf.info.pMappedData, &matData, sizeof(matData));
             }
@@ -585,7 +622,10 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
                 bufInfo.offset = 0;
                 bufInfo.range = sizeof(WMOMaterialUBO);
 
-                VkWriteDescriptorSet writes[2] = {};
+                VkTexture* nhMap = mb.normalHeightMap ? mb.normalHeightMap : flatNormalTexture_.get();
+                VkDescriptorImageInfo nhImgInfo = nhMap->descriptorInfo();
+
+                VkWriteDescriptorSet writes[3] = {};
                 writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
                 writes[0].dstSet = mb.materialSet;
                 writes[0].dstBinding = 0;
@@ -600,7 +640,14 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
                 writes[1].descriptorCount = 1;
                 writes[1].pBufferInfo = &bufInfo;
 
-                vkUpdateDescriptorSets(vkCtx_->getDevice(), 2, writes, 0, nullptr);
+                writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                writes[2].dstSet = mb.materialSet;
+                writes[2].dstBinding = 2;
+                writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                writes[2].descriptorCount = 1;
+                writes[2].pImageInfo = &nhImgInfo;
+
+                vkUpdateDescriptorSets(vkCtx_->getDevice(), 3, writes, 0, nullptr);
             }
 
             groupRes.mergedBatches.push_back(std::move(mb));
@@ -1165,6 +1212,31 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
         return;
     }
 
+    // Update material UBOs if settings changed
+    if (materialSettingsDirty_) {
+        materialSettingsDirty_ = false;
+        static const int pomSampleTable[] = { 16, 32, 64 };
+        int maxSamples = pomSampleTable[std::clamp(pomQuality_, 0, 2)];
+        for (auto& [modelId, model] : loadedModels) {
+            for (auto& group : model.groups) {
+                for (auto& mb : group.mergedBatches) {
+                    if (!mb.materialUBO) continue;
+                    // Read existing UBO data, update normal/POM fields
+                    VmaAllocationInfo allocInfo{};
+                    vmaGetAllocationInfo(vkCtx_->getAllocator(), mb.materialUBOAlloc, &allocInfo);
+                    if (allocInfo.pMappedData) {
+                        auto* ubo = reinterpret_cast<WMOMaterialUBO*>(allocInfo.pMappedData);
+                        ubo->enableNormalMap = normalMappingEnabled_ ? 1 : 0;
+                        ubo->enablePOM = pomEnabled_ ? 1 : 0;
+                        ubo->pomScale = 0.03f;
+                        ubo->pomMaxSamples = maxSamples;
+                        ubo->heightMapVariance = mb.heightMapVariance;
+                    }
+                }
+            }
+        }
+    }
+
     lastDrawCalls = 0;
 
     // Extract frustum planes for proper culling
@@ -1491,12 +1563,12 @@ bool WMORenderer::initializeShadow(VkRenderPass shadowRenderPass) {
         return false;
     }
 
-    // WMO vertex layout: pos(loc0,off0) normal(loc1,off12) texCoord(loc2,off24) color(loc3,off32), stride=48
+    // WMO vertex layout: pos(loc0,off0) normal(loc1,off12) texCoord(loc2,off24) color(loc3,off32) tangent(loc4,off48), stride=64
     // Shadow shader locations: 0=aPos, 1=aTexCoord, 2=aBoneWeights, 3=aBoneIndicesF
     // useBones=0 so locations 2,3 are never read; we alias them to existing data offsets
     VkVertexInputBindingDescription vertBind{};
     vertBind.binding = 0;
-    vertBind.stride = 48;
+    vertBind.stride = 64;
     vertBind.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
     std::vector<VkVertexInputAttributeDescription> vertAttrs = {
         {0, 0, VK_FORMAT_R32G32B32_SFLOAT,    0},   // aPos       -> position
@@ -1594,12 +1666,13 @@ bool WMORenderer::createGroupResources(const pipeline::WMOGroup& group, GroupRes
     resources.boundingBoxMin = group.boundingBoxMin;
     resources.boundingBoxMax = group.boundingBoxMax;
 
-    // Create vertex data (position, normal, texcoord, color)
+    // Create vertex data (position, normal, texcoord, color, tangent)
     struct VertexData {
         glm::vec3 position;
         glm::vec3 normal;
         glm::vec2 texCoord;
         glm::vec4 color;
+        glm::vec4 tangent;  // xyz=tangent dir, w=handedness ±1
     };
 
     std::vector<VertexData> vertices;
@@ -1611,7 +1684,58 @@ bool WMORenderer::createGroupResources(const pipeline::WMOGroup& group, GroupRes
         vd.normal = v.normal;
         vd.texCoord = v.texCoord;
         vd.color = v.color;
+        vd.tangent = glm::vec4(0.0f);
         vertices.push_back(vd);
+    }
+
+    // Compute tangents using Lengyel's method
+    {
+        std::vector<glm::vec3> tan1(vertices.size(), glm::vec3(0.0f));
+        std::vector<glm::vec3> tan2(vertices.size(), glm::vec3(0.0f));
+
+        const auto& indices = group.indices;
+        for (size_t i = 0; i + 2 < indices.size(); i += 3) {
+            uint16_t i0 = indices[i], i1 = indices[i + 1], i2 = indices[i + 2];
+            if (i0 >= vertices.size() || i1 >= vertices.size() || i2 >= vertices.size()) continue;
+
+            const glm::vec3& p0 = vertices[i0].position;
+            const glm::vec3& p1 = vertices[i1].position;
+            const glm::vec3& p2 = vertices[i2].position;
+            const glm::vec2& uv0 = vertices[i0].texCoord;
+            const glm::vec2& uv1 = vertices[i1].texCoord;
+            const glm::vec2& uv2 = vertices[i2].texCoord;
+
+            glm::vec3 dp1 = p1 - p0;
+            glm::vec3 dp2 = p2 - p0;
+            glm::vec2 duv1 = uv1 - uv0;
+            glm::vec2 duv2 = uv2 - uv0;
+
+            float det = duv1.x * duv2.y - duv1.y * duv2.x;
+            if (std::abs(det) < 1e-8f) continue;  // degenerate UVs
+            float r = 1.0f / det;
+
+            glm::vec3 sdir = (dp1 * duv2.y - dp2 * duv1.y) * r;
+            glm::vec3 tdir = (dp2 * duv1.x - dp1 * duv2.x) * r;
+
+            tan1[i0] += sdir; tan1[i1] += sdir; tan1[i2] += sdir;
+            tan2[i0] += tdir; tan2[i1] += tdir; tan2[i2] += tdir;
+        }
+
+        for (size_t i = 0; i < vertices.size(); i++) {
+            glm::vec3 n = glm::normalize(vertices[i].normal);
+            glm::vec3 t = tan1[i];
+
+            if (glm::dot(t, t) < 1e-8f) {
+                // Fallback: generate tangent perpendicular to normal
+                glm::vec3 up = (std::abs(n.y) < 0.999f) ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0);
+                t = glm::normalize(glm::cross(n, up));
+            }
+
+            // Gram-Schmidt orthogonalize
+            t = glm::normalize(t - n * glm::dot(n, t));
+            float w = (glm::dot(glm::cross(n, t), tan2[i]) < 0.0f) ? -1.0f : 1.0f;
+            vertices[i].tangent = glm::vec4(t, w);
+        }
     }
 
     // Upload vertex buffer to GPU
@@ -1874,6 +1998,72 @@ void WMORenderer::WMOInstance::updateModelMatrix() {
     invModelMatrix = glm::inverse(modelMatrix);
 }
 
+std::unique_ptr<VkTexture> WMORenderer::generateNormalHeightMap(
+        const uint8_t* pixels, uint32_t width, uint32_t height, float& outVariance) {
+    if (!vkCtx_ || width == 0 || height == 0) return nullptr;
+
+    const uint32_t totalPixels = width * height;
+
+    // Step 1: Compute height from luminance
+    std::vector<float> heightMap(totalPixels);
+    double sumH = 0.0, sumH2 = 0.0;
+    for (uint32_t i = 0; i < totalPixels; i++) {
+        float r = pixels[i * 4 + 0] / 255.0f;
+        float g = pixels[i * 4 + 1] / 255.0f;
+        float b = pixels[i * 4 + 2] / 255.0f;
+        float h = 0.299f * r + 0.587f * g + 0.114f * b;
+        heightMap[i] = h;
+        sumH += h;
+        sumH2 += h * h;
+    }
+    double mean = sumH / totalPixels;
+    outVariance = static_cast<float>(sumH2 / totalPixels - mean * mean);
+
+    // Step 2: Sobel 3x3 → normal map (wrap-sampled for tiling textures)
+    const float strength = 2.0f;
+    std::vector<uint8_t> output(totalPixels * 4);
+
+    auto sampleH = [&](int x, int y) -> float {
+        x = ((x % (int)width) + (int)width) % (int)width;
+        y = ((y % (int)height) + (int)height) % (int)height;
+        return heightMap[y * width + x];
+    };
+
+    for (uint32_t y = 0; y < height; y++) {
+        for (uint32_t x = 0; x < width; x++) {
+            int ix = static_cast<int>(x);
+            int iy = static_cast<int>(y);
+            // Sobel X
+            float gx = -sampleH(ix-1, iy-1) - 2.0f*sampleH(ix-1, iy) - sampleH(ix-1, iy+1)
+                       + sampleH(ix+1, iy-1) + 2.0f*sampleH(ix+1, iy) + sampleH(ix+1, iy+1);
+            // Sobel Y
+            float gy = -sampleH(ix-1, iy-1) - 2.0f*sampleH(ix, iy-1) - sampleH(ix+1, iy-1)
+                       + sampleH(ix-1, iy+1) + 2.0f*sampleH(ix, iy+1) + sampleH(ix+1, iy+1);
+
+            float nx = -gx * strength;
+            float ny = -gy * strength;
+            float nz = 1.0f;
+            float len = std::sqrt(nx*nx + ny*ny + nz*nz);
+            if (len > 0.0f) { nx /= len; ny /= len; nz /= len; }
+
+            uint32_t idx = (y * width + x) * 4;
+            output[idx + 0] = static_cast<uint8_t>(std::clamp((nx * 0.5f + 0.5f) * 255.0f, 0.0f, 255.0f));
+            output[idx + 1] = static_cast<uint8_t>(std::clamp((ny * 0.5f + 0.5f) * 255.0f, 0.0f, 255.0f));
+            output[idx + 2] = static_cast<uint8_t>(std::clamp((nz * 0.5f + 0.5f) * 255.0f, 0.0f, 255.0f));
+            output[idx + 3] = static_cast<uint8_t>(std::clamp(heightMap[y * width + x] * 255.0f, 0.0f, 255.0f));
+        }
+    }
+
+    // Step 3: Upload to GPU with mipmaps
+    auto tex = std::make_unique<VkTexture>();
+    if (!tex->upload(*vkCtx_, output.data(), width, height, VK_FORMAT_R8G8B8A8_UNORM, true)) {
+        return nullptr;
+    }
+    tex->createSampler(vkCtx_->getDevice(), VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+                        VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    return tex;
+}
+
 VkTexture* WMORenderer::loadTexture(const std::string& path) {
     if (!assetManager || !vkCtx_) {
         return whiteTexture_.get();
@@ -1997,12 +2187,24 @@ VkTexture* WMORenderer::loadTexture(const std::string& path) {
     texture->createSampler(vkCtx_->getDevice(), VK_FILTER_LINEAR, VK_FILTER_LINEAR,
                             VK_SAMPLER_ADDRESS_MODE_REPEAT);
 
+    // Generate normal+height map from diffuse pixels
+    float nhVariance = 0.0f;
+    std::unique_ptr<VkTexture> nhMap;
+    if (normalMappingEnabled_ || pomEnabled_) {
+        nhMap = generateNormalHeightMap(blp.data.data(), blp.width, blp.height, nhVariance);
+        if (nhMap) {
+            approxBytes *= 2;  // account for normal map in budget
+        }
+    }
+
     // Cache it
     TextureCacheEntry e;
     VkTexture* rawPtr = texture.get();
     e.approxBytes = approxBytes;
     e.lastUse = ++textureCacheCounter_;
     e.texture = std::move(texture);
+    e.normalHeightMap = std::move(nhMap);
+    e.heightMapVariance = nhVariance;
     textureCacheBytes_ += e.approxBytes;
     if (!resolvedKey.empty()) {
         textureCache[resolvedKey] = std::move(e);
@@ -3010,6 +3212,7 @@ void WMORenderer::recreatePipelines() {
         glm::vec3 normal;
         glm::vec2 texCoord;
         glm::vec4 color;
+        glm::vec4 tangent;
     };
 
     VkVertexInputBindingDescription vertexBinding{};
@@ -3017,7 +3220,7 @@ void WMORenderer::recreatePipelines() {
     vertexBinding.stride = sizeof(WMOVertexData);
     vertexBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    std::vector<VkVertexInputAttributeDescription> vertexAttribs(4);
+    std::vector<VkVertexInputAttributeDescription> vertexAttribs(5);
     vertexAttribs[0] = { 0, 0, VK_FORMAT_R32G32B32_SFLOAT,
         static_cast<uint32_t>(offsetof(WMOVertexData, position)) };
     vertexAttribs[1] = { 1, 0, VK_FORMAT_R32G32B32_SFLOAT,
@@ -3026,6 +3229,8 @@ void WMORenderer::recreatePipelines() {
         static_cast<uint32_t>(offsetof(WMOVertexData, texCoord)) };
     vertexAttribs[3] = { 3, 0, VK_FORMAT_R32G32B32A32_SFLOAT,
         static_cast<uint32_t>(offsetof(WMOVertexData, color)) };
+    vertexAttribs[4] = { 4, 0, VK_FORMAT_R32G32B32A32_SFLOAT,
+        static_cast<uint32_t>(offsetof(WMOVertexData, tangent)) };
 
     VkRenderPass mainPass = vkCtx_->getImGuiRenderPass();
 

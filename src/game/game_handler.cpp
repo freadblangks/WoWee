@@ -4622,7 +4622,9 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
     static const bool kVerboseUpdateObject = envFlagEnabled("WOWEE_LOG_UPDATE_OBJECT_VERBOSE", false);
     UpdateObjectData data;
     if (!packetParsers_->parseUpdateObject(packet, data)) {
-        LOG_WARNING("Failed to parse SMSG_UPDATE_OBJECT");
+        static int updateObjErrors = 0;
+        if (++updateObjErrors <= 5)
+            LOG_WARNING("Failed to parse SMSG_UPDATE_OBJECT");
         return;
     }
 

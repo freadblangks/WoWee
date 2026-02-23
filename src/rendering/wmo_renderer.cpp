@@ -274,7 +274,7 @@ bool WMORenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayou
     flatNormalTexture_->createSampler(device, VK_FILTER_LINEAR, VK_FILTER_LINEAR,
                                        VK_SAMPLER_ADDRESS_MODE_REPEAT);
     textureCacheBudgetBytes_ =
-        envSizeMBOrDefault("WOWEE_WMO_TEX_CACHE_MB", 1024) * 1024ull * 1024ull;
+        envSizeMBOrDefault("WOWEE_WMO_TEX_CACHE_MB", 4096) * 1024ull * 1024ull;
     modelCacheLimit_ = envSizeMBOrDefault("WOWEE_WMO_MODEL_LIMIT", 4000);
     core::Logger::getInstance().info("WMO texture cache budget: ",
                                      textureCacheBudgetBytes_ / (1024 * 1024), " MB");
@@ -393,7 +393,7 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
         }
     }
     if (loadedModels.size() >= modelCacheLimit_) {
-        if (modelLimitRejectWarnings_ < 8 || (modelLimitRejectWarnings_ % 120) == 0) {
+        if (modelLimitRejectWarnings_ < 3) {
             core::Logger::getInstance().warning("WMO model cache full (",
                                                 loadedModels.size(), "/", modelCacheLimit_,
                                                 "), skipping model load: id=", id);
@@ -2259,7 +2259,7 @@ VkTexture* WMORenderer::loadTexture(const std::string& path) {
     size_t base = static_cast<size_t>(blp.width) * static_cast<size_t>(blp.height) * 4ull;
     size_t approxBytes = base + (base / 3);
     if (textureCacheBytes_ + approxBytes > textureCacheBudgetBytes_) {
-        if (textureBudgetRejectWarnings_ < 8 || (textureBudgetRejectWarnings_ % 120) == 0) {
+        if (textureBudgetRejectWarnings_ < 3) {
             core::Logger::getInstance().warning(
                 "WMO texture cache full (", textureCacheBytes_ / (1024 * 1024),
                 " MB / ", textureCacheBudgetBytes_ / (1024 * 1024),

@@ -1253,7 +1253,12 @@ bool UpdateObjectParser::parse(network::Packet& packet, UpdateObjectData& data) 
 
         UpdateBlock block;
         if (!parseUpdateBlock(packet, block)) {
-            LOG_ERROR("Failed to parse update block ", i + 1);
+            static int parseBlockErrors = 0;
+            if (++parseBlockErrors <= 5) {
+                LOG_ERROR("Failed to parse update block ", i + 1);
+                if (parseBlockErrors == 5)
+                    LOG_ERROR("(suppressing further update block parse errors)");
+            }
             return false;
         }
 

@@ -294,7 +294,7 @@ bool CharacterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFram
     }
 
     // Diagnostics-only: cache lifetime is currently tied to renderer lifetime.
-    textureCacheBudgetBytes_ = envSizeMBOrDefault("WOWEE_CHARACTER_TEX_CACHE_MB", 1024) * 1024ull * 1024ull;
+    textureCacheBudgetBytes_ = envSizeMBOrDefault("WOWEE_CHARACTER_TEX_CACHE_MB", 4096) * 1024ull * 1024ull;
     LOG_INFO("Character texture cache budget: ", textureCacheBudgetBytes_ / (1024 * 1024), " MB");
 
     core::Logger::getInstance().info("Character renderer initialized (Vulkan)");
@@ -548,7 +548,7 @@ VkTexture* CharacterRenderer::loadTexture(const std::string& path) {
             // Budget is saturated; avoid repeatedly decoding/uploading this texture.
             failedTextureCache_.insert(key);
         }
-        if (textureBudgetRejectWarnings_ < 8 || (textureBudgetRejectWarnings_ % 120) == 0) {
+        if (textureBudgetRejectWarnings_ < 3) {
             core::Logger::getInstance().warning(
                 "Character texture cache full (",
                 textureCacheBytes_ / (1024 * 1024), " MB / ",

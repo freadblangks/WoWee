@@ -1475,17 +1475,14 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
                     neededPipeline = 1; // transparent (alpha blend, no depth write)
                 }
 
-                // Switch pipeline if needed
+                // Switch pipeline if needed (descriptor sets and push constants
+                // are preserved across compatible pipeline layout switches)
                 if (neededPipeline != currentPipelineKind) {
                     VkPipeline targetPipeline = activePipeline;
                     if (neededPipeline == 1) targetPipeline = transparentPipeline_;
                     else if (neededPipeline == 2) targetPipeline = glassPipeline_;
 
                     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, targetPipeline);
-                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_,
-                                             0, 1, &perFrameSet, 0, nullptr);
-                    vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT,
-                                        0, sizeof(GPUPushConstants), &push);
                     currentPipelineKind = neededPipeline;
                 }
 

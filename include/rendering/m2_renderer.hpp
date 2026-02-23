@@ -34,6 +34,7 @@ struct M2ModelGPU {
         VkDescriptorSet materialSet = VK_NULL_HANDLE;  // set 1
         ::VkBuffer materialUBO = VK_NULL_HANDLE;
         VmaAllocation materialUBOAlloc = VK_NULL_HANDLE;
+        void* materialUBOMapped = nullptr;  // cached mapped pointer (avoids per-frame vmaGetAllocationInfo)
         uint32_t indexStart = 0;   // offset in indices (not bytes)
         uint32_t indexCount = 0;
         bool hasAlpha = false;
@@ -111,6 +112,10 @@ struct M2ModelGPU {
     bool isSpellEffect = false;  // True for spell effect models (skip particle dampeners)
     bool disableAnimation = false; // Keep foliage/tree doodads visually stable
     bool shadowWindFoliage = false; // Apply wind sway in shadow pass for foliage/tree cards
+    bool isFoliageLike = false;     // Model name matches foliage/tree/bush/grass etc (precomputed)
+    bool isElvenLike = false;       // Model name matches elf/elven/quel (precomputed)
+    bool isLanternLike = false;     // Model name matches lantern/lamp/light (precomputed)
+    bool isKoboldFlame = false;     // Model name matches kobold+(candle/torch/mine) (precomputed)
     bool hasTextureAnimation = false; // True if any batch has UV animation
 
     // Particle emitter data (kept from M2Model)
@@ -382,6 +387,7 @@ private:
     uint32_t textureBudgetRejectWarnings_ = 0;
     std::unique_ptr<VkTexture> whiteTexture_;
     std::unique_ptr<VkTexture> glowTexture_;
+    VkDescriptorSet glowTexDescSet_ = VK_NULL_HANDLE;  // cached glow texture descriptor (allocated once)
 
     // Optional query-space culling for collision/raycast hot paths.
     bool collisionFocusEnabled = false;

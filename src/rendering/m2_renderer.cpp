@@ -623,6 +623,23 @@ bool M2Renderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout
         glowTexture_ = std::make_unique<VkTexture>();
         glowTexture_->upload(*vkCtx_, px.data(), SZ, SZ, VK_FORMAT_R8G8B8A8_UNORM);
         glowTexture_->createSampler(device, VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+        // Pre-allocate glow texture descriptor set (reused every frame)
+        if (particleTexLayout_ && materialDescPool_) {
+            VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+            ai.descriptorPool = materialDescPool_;
+            ai.descriptorSetCount = 1;
+            ai.pSetLayouts = &particleTexLayout_;
+            if (vkAllocateDescriptorSets(device, &ai, &glowTexDescSet_) == VK_SUCCESS) {
+                VkDescriptorImageInfo imgInfo = glowTexture_->descriptorInfo();
+                VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+                write.dstSet = glowTexDescSet_;
+                write.dstBinding = 0;
+                write.descriptorCount = 1;
+                write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                write.pImageInfo = &imgInfo;
+                vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+            }
+        }
     }
     textureCacheBudgetBytes_ =
         envSizeMBOrDefault("WOWEE_M2_TEX_CACHE_MB", 4096) * 1024ull * 1024ull;
@@ -1066,6 +1083,20 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
     }
     gpuModel.disableAnimation = foliageOrTreeLike || chestName;
     gpuModel.shadowWindFoliage = foliageOrTreeLike;
+    gpuModel.isFoliageLike = foliageOrTreeLike;
+    gpuModel.isElvenLike =
+        (lowerName.find("elf") != std::string::npos) ||
+        (lowerName.find("elven") != std::string::npos) ||
+        (lowerName.find("quel") != std::string::npos);
+    gpuModel.isLanternLike =
+        (lowerName.find("lantern") != std::string::npos) ||
+        (lowerName.find("lamp") != std::string::npos) ||
+        (lowerName.find("light") != std::string::npos);
+    gpuModel.isKoboldFlame =
+        (lowerName.find("kobold") != std::string::npos) &&
+        ((lowerName.find("candle") != std::string::npos) ||
+         (lowerName.find("torch") != std::string::npos) ||
+         (lowerName.find("mine") != std::string::npos));
     gpuModel.isGroundDetail = groundDetailModel;
     if (groundDetailModel) {
         // Ground clutter (grass/pebbles/detail cards) should never block camera/movement.
@@ -1476,6 +1507,7 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
             mat.interiorDarken = 0.0f;
             mat.specularIntensity = 0.5f;
             memcpy(matAllocInfo.pMappedData, &mat, sizeof(mat));
+            bgpu.materialUBOMapped = matAllocInfo.pMappedData;
         }
 
         // Allocate descriptor set and write all bindings
@@ -2209,43 +2241,19 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
             if (!hasDesiredLOD) targetLOD = 0;
         }
 
-            std::string modelKeyLower = model.name;
-            std::transform(modelKeyLower.begin(), modelKeyLower.end(), modelKeyLower.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        const bool foliageLikeModel =
-            (modelKeyLower.find("tree") != std::string::npos) ||
-            (modelKeyLower.find("bush") != std::string::npos) ||
-            (modelKeyLower.find("foliage") != std::string::npos) ||
-            (modelKeyLower.find("grass") != std::string::npos) ||
-            (modelKeyLower.find("plant") != std::string::npos) ||
-            (modelKeyLower.find("shrub") != std::string::npos) ||
-            (modelKeyLower.find("leaf") != std::string::npos) ||
-            (modelKeyLower.find("leaves") != std::string::npos) ||
-            (modelKeyLower.find("vine") != std::string::npos);
+        const bool foliageLikeModel = model.isFoliageLike;
         for (const auto& batch : model.batches) {
             if (batch.indexCount == 0) continue;
             if (!model.isGroundDetail && batch.submeshLevel != targetLOD) continue;
             if (batch.batchOpacity < 0.01f) continue;
 
-            const bool koboldFlameCard =
-                batch.colorKeyBlack &&
-                (modelKeyLower.find("kobold") != std::string::npos) &&
-                ((modelKeyLower.find("candle") != std::string::npos) ||
-                 (modelKeyLower.find("torch") != std::string::npos) ||
-                 (modelKeyLower.find("mine") != std::string::npos));
-
+            const bool koboldFlameCard = batch.colorKeyBlack && model.isKoboldFlame;
             const bool smallCardLikeBatch =
                 (batch.glowSize <= 1.35f) ||
                 (batch.lanternGlowHint && batch.glowSize <= 6.0f);
             const bool batchUnlit = (batch.materialFlags & 0x01) != 0;
-            const bool elvenLikeModel =
-                (modelKeyLower.find("elf") != std::string::npos) ||
-                (modelKeyLower.find("elven") != std::string::npos) ||
-                (modelKeyLower.find("quel") != std::string::npos);
-            const bool lanternLikeModel =
-                (modelKeyLower.find("lantern") != std::string::npos) ||
-                (modelKeyLower.find("lamp") != std::string::npos) ||
-                (modelKeyLower.find("light") != std::string::npos);
+            const bool elvenLikeModel = model.isElvenLike;
+            const bool lanternLikeModel = model.isLanternLike;
             const bool shouldUseGlowSprite =
                 !koboldFlameCard &&
                 (elvenLikeModel || (lanternLikeModel && batch.lanternGlowHint)) &&
@@ -2340,26 +2348,17 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
             }
 
             // Update material UBO with per-draw dynamic values (fadeAlpha, interiorDarken)
-            if (batch.materialUBO) {
-                // The UBO is mapped — update fadeAlpha and interiorDarken fields in-place
-                VmaAllocationInfo allocInfo{};
-                vmaGetAllocationInfo(vkCtx_->getAllocator(), batch.materialUBOAlloc, &allocInfo);
-                if (allocInfo.pMappedData) {
-                    auto* mat = static_cast<M2MaterialUBO*>(allocInfo.pMappedData);
-                    mat->fadeAlpha = instanceFadeAlpha;
-                    mat->interiorDarken = insideInterior ? 1.0f : 0.0f;
-                    // Update colorKeyThreshold for Mod/Mod2x blend modes
-                    if (batch.colorKeyBlack) {
-                        mat->colorKeyThreshold = (effectiveBlendMode == 4 || effectiveBlendMode == 5) ? 0.7f : 0.08f;
-                    }
-                    // Cutout path for foliage/cards.
-                    if (forceCutout) {
-                        // Ground clutter uses a softer dedicated cutout mode so thin
-                        // grass cards are not over-discarded.
-                        mat->alphaTest = model.isGroundDetail ? 3 : (foliageCutout ? 2 : 1);
-                        if (model.isGroundDetail) {
-                            mat->unlit = 0;
-                        }
+            if (batch.materialUBOMapped) {
+                auto* mat = static_cast<M2MaterialUBO*>(batch.materialUBOMapped);
+                mat->fadeAlpha = instanceFadeAlpha;
+                mat->interiorDarken = insideInterior ? 1.0f : 0.0f;
+                if (batch.colorKeyBlack) {
+                    mat->colorKeyThreshold = (effectiveBlendMode == 4 || effectiveBlendMode == 5) ? 0.7f : 0.08f;
+                }
+                if (forceCutout) {
+                    mat->alphaTest = model.isGroundDetail ? 3 : (foliageCutout ? 2 : 1);
+                    if (model.isGroundDetail) {
+                        mat->unlit = 0;
                     }
                 }
             }
@@ -2385,30 +2384,12 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
     }
 
     // Render glow sprites as billboarded additive point lights
-    if (!glowSprites_.empty() && particleAdditivePipeline_ && m2ParticleVB_ && glowTexture_) {
+    if (!glowSprites_.empty() && particleAdditivePipeline_ && m2ParticleVB_ && glowTexDescSet_) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, particleAdditivePipeline_);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 particlePipelineLayout_, 0, 1, &perFrameSet, 0, nullptr);
-
-        // Allocate a descriptor set for glow texture (from material pool using particle layout)
-        VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-        ai.descriptorPool = materialDescPool_;
-        ai.descriptorSetCount = 1;
-        ai.pSetLayouts = &particleTexLayout_;
-        VkDescriptorSet glowSet = VK_NULL_HANDLE;
-        if (vkAllocateDescriptorSets(vkCtx_->getDevice(), &ai, &glowSet) == VK_SUCCESS) {
-            VkDescriptorImageInfo imgInfo = glowTexture_->descriptorInfo();
-            VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-            write.dstSet = glowSet;
-            write.dstBinding = 0;
-            write.descriptorCount = 1;
-            write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            write.pImageInfo = &imgInfo;
-            vkUpdateDescriptorSets(vkCtx_->getDevice(), 1, &write, 0, nullptr);
-
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    particlePipelineLayout_, 1, 1, &glowSet, 0, nullptr);
-        }
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                particlePipelineLayout_, 1, 1, &glowTexDescSet_, 0, nullptr);
 
         // Push constants for particle: tileCount(vec2) + alphaKey(int)
         struct { float tileX, tileY; int alphaKey; } particlePush = {1.0f, 1.0f, 0};

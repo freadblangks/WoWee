@@ -96,7 +96,9 @@ void main() {
         // Bump strength controls how much texture detail affects lighting
         const float bumpStrength = 9.0;
         vec3 perturbation = (dLdx * cross(norm, dpdy) + dLdy * cross(dpdx, norm)) * bumpStrength;
-        norm = normalize(norm - perturbation);
+        vec3 candidate = norm - perturbation;
+        float len2 = dot(candidate, candidate);
+        norm = (len2 > 1e-8) ? candidate * inversesqrt(len2) : norm;
     }
 
     vec3 lightDir2 = normalize(-lightDir.xyz);

@@ -13,25 +13,13 @@ float HeightMap::getHeight(int x, int y) const {
         return 0.0f;
     }
 
-    // WoW uses 9x9 outer + 8x8 inner vertex layout
-    // Outer vertices: 0-80 (9x9 grid)
-    // Inner vertices: 81-144 (8x8 grid between outer vertices)
-
-    // Calculate index based on vertex type
-    int index;
-    if (x < 9 && y < 9) {
-        // Outer vertex
-        index = y * 9 + x;
-    } else {
-        // Inner vertex (between outer vertices)
-        int innerX = x - 1;
-        int innerY = y - 1;
-        if (innerX >= 0 && innerX < 8 && innerY >= 0 && innerY < 8) {
-            index = 81 + innerY * 8 + innerX;
-        } else {
-            return 0.0f;
-        }
-    }
+    // MCVT heights are stored in interleaved 9x17 row-major layout:
+    //   Row 0: 9 outer (indices 0-8), then 8 inner (indices 9-16)
+    //   Row 1: 9 outer (indices 17-25), then 8 inner (indices 26-33)
+    //   ...
+    // Outer vertex (x, y) is at index: y * 17 + x
+    int index = y * 17 + x;
+    if (index < 0 || index >= 145) return 0.0f;
 
     return heights[index];
 }

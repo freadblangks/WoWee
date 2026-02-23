@@ -27,17 +27,20 @@ void main() {
     vec2 uv = TexCoord - 0.5;
     float dist = length(uv);
 
-    // Hard disc with smooth edge
-    float disc = smoothstep(0.42, 0.35, dist);
+    // Hard circular cutoff — nothing beyond radius 0.35
+    if (dist > 0.35) discard;
 
-    // Soft glow that fades to zero well within quad bounds
-    float glow = exp(-dist * dist * 32.0) * 0.5;
+    // Hard disc with smooth edge
+    float disc = smoothstep(0.35, 0.28, dist);
+
+    // Soft glow confined within cutoff radius
+    float glow = exp(-dist * dist * 40.0) * 0.5;
 
     // Combine disc and glow
     float alpha = max(disc, glow) * push.intensity;
 
-    // Fade to zero well before quad edges
-    float edgeFade = 1.0 - smoothstep(0.30, 0.38, dist);
+    // Smooth fade to zero at cutoff boundary
+    float edgeFade = 1.0 - smoothstep(0.25, 0.35, dist);
     alpha *= edgeFade;
 
     vec3 color = push.celestialColor.rgb;

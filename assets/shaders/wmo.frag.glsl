@@ -152,11 +152,29 @@ void main() {
 
     vec3 result;
 
+    // Sample shadow map for all non-window WMO surfaces
+    float shadow = 1.0;
+    if (shadowParams.x > 0.5) {
+        vec3 ldir = normalize(-lightDir.xyz);
+        float normalOffset = SHADOW_TEXEL * 2.0 * (1.0 - abs(dot(norm, ldir)));
+        vec3 biasedPos = FragPos + norm * normalOffset;
+        vec4 lsPos = lightSpaceMatrix * vec4(biasedPos, 1.0);
+        vec3 proj = lsPos.xyz / lsPos.w;
+        proj.xy = proj.xy * 0.5 + 0.5;
+        if (proj.x >= 0.0 && proj.x <= 1.0 &&
+            proj.y >= 0.0 && proj.y <= 1.0 &&
+            proj.z >= 0.0 && proj.z <= 1.0) {
+            float bias = max(0.0005 * (1.0 - dot(norm, ldir)), 0.00005);
+            shadow = sampleShadowPCF(uShadowMap, vec3(proj.xy, proj.z - bias));
+        }
+        shadow = mix(1.0, shadow, shadowParams.y);
+    }
+
     if (unlit != 0) {
-        result = texColor.rgb;
+        result = texColor.rgb * shadow;
     } else if (isInterior != 0) {
         vec3 mocv = max(VertColor.rgb, vec3(0.5));
-        result = texColor.rgb * mocv;
+        result = texColor.rgb * mocv * shadow;
     } else {
         vec3 ldir = normalize(-lightDir.xyz);
         float diff = max(dot(norm, ldir), 0.0);
@@ -164,22 +182,6 @@ void main() {
         vec3 viewDir = normalize(viewPos.xyz - FragPos);
         vec3 halfDir = normalize(ldir + viewDir);
         float spec = pow(max(dot(norm, halfDir), 0.0), 32.0) * specularIntensity;
-
-        float shadow = 1.0;
-        if (shadowParams.x > 0.5) {
-            float normalOffset = SHADOW_TEXEL * 2.0 * (1.0 - abs(dot(norm, ldir)));
-            vec3 biasedPos = FragPos + norm * normalOffset;
-            vec4 lsPos = lightSpaceMatrix * vec4(biasedPos, 1.0);
-            vec3 proj = lsPos.xyz / lsPos.w;
-            proj.xy = proj.xy * 0.5 + 0.5;
-            if (proj.x >= 0.0 && proj.x <= 1.0 &&
-                proj.y >= 0.0 && proj.y <= 1.0 &&
-                proj.z >= 0.0 && proj.z <= 1.0) {
-                float bias = max(0.0005 * (1.0 - dot(norm, ldir)), 0.00005);
-                shadow = sampleShadowPCF(uShadowMap, vec3(proj.xy, proj.z - bias));
-            }
-            shadow = mix(1.0, shadow, shadowParams.y);
-        }
 
         result = ambientColor.rgb * texColor.rgb
                + shadow * (diff * lightColor.rgb * texColor.rgb + spec * lightColor.rgb);

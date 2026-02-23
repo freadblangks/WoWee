@@ -80,7 +80,7 @@ private:
     bool pendingFullscreen = false;
     bool pendingVsync = false;
     int pendingResIndex = 0;
-    bool pendingShadows = false;
+    bool pendingShadows = true;
     int pendingMasterVolume = 100;
     int pendingMusicVolume = 30;
     int pendingAmbientVolume = 100;

@@ -603,7 +603,8 @@ void Renderer::updatePerFrameUBO() {
         }
     }
 
-    currentFrameData.shadowParams = glm::vec4(shadowsEnabled ? 1.0f : 0.0f, 0.5f, 0.0f, 0.0f);
+    currentFrameData.lightSpaceMatrix = lightSpaceMatrix;
+    currentFrameData.shadowParams = glm::vec4(shadowsEnabled ? 1.0f : 0.0f, 0.8f, 0.0f, 0.0f);
 
     // Player water ripple data: pack player XY into shadowParams.zw, ripple strength into fogParams.w
     if (cameraController) {

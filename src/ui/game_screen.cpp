@@ -5893,7 +5893,7 @@ void GameScreen::renderSettingsWindow() {
     constexpr int kDefaultResH = 1080;
     constexpr bool kDefaultFullscreen = false;
     constexpr bool kDefaultVsync = true;
-    constexpr bool kDefaultShadows = false;
+    constexpr bool kDefaultShadows = true;
     constexpr int kDefaultMusicVolume = 30;
     constexpr float kDefaultMouseSensitivity = 0.2f;
     constexpr bool kDefaultInvertMouse = false;
@@ -5910,8 +5910,8 @@ void GameScreen::renderSettingsWindow() {
     if (!settingsInit) {
         pendingFullscreen = window->isFullscreen();
         pendingVsync = window->isVsyncEnabled();
-        pendingShadows = renderer ? renderer->areShadowsEnabled() : true;
         if (renderer) {
+            renderer->setShadowsEnabled(pendingShadows);
             // Read non-volume settings from actual state (volumes come from saved settings)
             if (auto* cameraController = renderer->getCameraController()) {
                 pendingMouseSensitivity = cameraController->getMouseSensitivity();
@@ -7089,6 +7089,7 @@ void GameScreen::saveSettings() {
     // Gameplay
     out << "auto_loot=" << (pendingAutoLoot ? 1 : 0) << "\n";
     out << "ground_clutter_density=" << pendingGroundClutterDensity << "\n";
+    out << "shadows=" << (pendingShadows ? 1 : 0) << "\n";
     out << "antialiasing=" << pendingAntiAliasing << "\n";
     out << "normal_mapping=" << (pendingNormalMapping ? 1 : 0) << "\n";
     out << "normal_map_strength=" << pendingNormalMapStrength << "\n";
@@ -7172,6 +7173,7 @@ void GameScreen::loadSettings() {
             // Gameplay
             else if (key == "auto_loot") pendingAutoLoot = (std::stoi(val) != 0);
             else if (key == "ground_clutter_density") pendingGroundClutterDensity = std::clamp(std::stoi(val), 0, 150);
+            else if (key == "shadows") pendingShadows = (std::stoi(val) != 0);
             else if (key == "antialiasing") pendingAntiAliasing = std::clamp(std::stoi(val), 0, 3);
             else if (key == "normal_mapping") pendingNormalMapping = (std::stoi(val) != 0);
             else if (key == "normal_map_strength") pendingNormalMapStrength = std::clamp(std::stof(val), 0.0f, 2.0f);

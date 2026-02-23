@@ -113,13 +113,15 @@ CharacterRenderer::~CharacterRenderer() {
 
 bool CharacterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout,
                                     pipeline::AssetManager* am,
-                                    VkRenderPass renderPassOverride) {
+                                    VkRenderPass renderPassOverride,
+                                    VkSampleCountFlagBits msaaSamples) {
     core::Logger::getInstance().info("Initializing character renderer (Vulkan)...");
 
     vkCtx_ = ctx;
     assetManager = am;
     perFrameLayout_ = perFrameLayout;
     renderPassOverride_ = renderPassOverride;
+    msaaSamplesOverride_ = msaaSamples;
     const unsigned hc = std::thread::hardware_concurrency();
     const size_t availableCores = (hc > 1u) ? static_cast<size_t>(hc - 1u) : 1ull;
     // Character updates run alongside M2/WMO work; default to a smaller share.
@@ -224,7 +226,7 @@ bool CharacterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFram
     }
 
     VkRenderPass mainPass = renderPassOverride_ ? renderPassOverride_ : vkCtx_->getImGuiRenderPass();
-    VkSampleCountFlagBits samples = renderPassOverride_ ? VK_SAMPLE_COUNT_1_BIT : vkCtx_->getMsaaSamples();
+    VkSampleCountFlagBits samples = renderPassOverride_ ? msaaSamplesOverride_ : vkCtx_->getMsaaSamples();
 
     // --- Vertex input ---
     // CharVertexGPU: vec3 pos(12) + uint8[4] boneWeights(4) + uint8[4] boneIndices(4) +
@@ -2946,7 +2948,7 @@ void CharacterRenderer::recreatePipelines() {
     }
 
     VkRenderPass mainPass = renderPassOverride_ ? renderPassOverride_ : vkCtx_->getImGuiRenderPass();
-    VkSampleCountFlagBits samples = renderPassOverride_ ? VK_SAMPLE_COUNT_1_BIT : vkCtx_->getMsaaSamples();
+    VkSampleCountFlagBits samples = renderPassOverride_ ? msaaSamplesOverride_ : vkCtx_->getMsaaSamples();
 
     // --- Vertex input ---
     VkVertexInputBindingDescription charBinding{};

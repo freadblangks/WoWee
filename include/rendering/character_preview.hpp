@@ -89,7 +89,7 @@ private:
     bool modelLoaded_ = false;
     bool compositeRequested_ = false;
     bool compositeRendered_ = false;  // True after first successful compositePass
-    float modelYaw_ = 180.0f;
+    float modelYaw_ = 90.0f;
 
     // Cached info from loadCharacter() for later recompositing.
     game::Race race_ = game::Race::HUMAN;

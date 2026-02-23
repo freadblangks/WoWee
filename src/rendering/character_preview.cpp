@@ -58,7 +58,8 @@ bool CharacterPreview::initialize(pipeline::AssetManager* am) {
 
     // Initialize CharacterRenderer with our off-screen render pass
     charRenderer_ = std::make_unique<CharacterRenderer>();
-    if (!charRenderer_->initialize(vkCtx_, perFrameLayout, am, renderTarget_->getRenderPass())) {
+    if (!charRenderer_->initialize(vkCtx_, perFrameLayout, am, renderTarget_->getRenderPass(),
+                                   renderTarget_->getSampleCount())) {
         LOG_ERROR("CharacterPreview: failed to initialize CharacterRenderer");
         return false;
     }
@@ -103,7 +104,8 @@ void CharacterPreview::createFBO() {
 
     // 1. Create off-screen render target with depth
     renderTarget_ = std::make_unique<VkRenderTarget>();
-    if (!renderTarget_->create(*vkCtx_, fboWidth_, fboHeight_, VK_FORMAT_R8G8B8A8_UNORM, true)) {
+    if (!renderTarget_->create(*vkCtx_, fboWidth_, fboHeight_, VK_FORMAT_R8G8B8A8_UNORM, true,
+                               VK_SAMPLE_COUNT_4_BIT)) {
         LOG_ERROR("CharacterPreview: failed to create render target");
         renderTarget_.reset();
         return;

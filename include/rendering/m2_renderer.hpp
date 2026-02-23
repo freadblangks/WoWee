@@ -326,6 +326,8 @@ private:
     VkDescriptorSet shadowParamsSet_ = VK_NULL_HANDLE;
     ::VkBuffer shadowParamsUBO_ = VK_NULL_HANDLE;
     VmaAllocation shadowParamsAlloc_ = VK_NULL_HANDLE;
+    // Per-frame pool for foliage shadow texture descriptor sets
+    VkDescriptorPool shadowTexPool_ = VK_NULL_HANDLE;
 
     // Particle pipelines
     VkPipeline particlePipeline_ = VK_NULL_HANDLE;       // M2 emitter particles

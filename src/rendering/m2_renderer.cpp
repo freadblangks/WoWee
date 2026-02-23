@@ -698,6 +698,7 @@ void M2Renderer::shutdown() {
     // Destroy shadow resources
     destroyPipeline(shadowPipeline_);
     if (shadowPipelineLayout_) { vkDestroyPipelineLayout(device, shadowPipelineLayout_, nullptr); shadowPipelineLayout_ = VK_NULL_HANDLE; }
+    if (shadowTexPool_) { vkDestroyDescriptorPool(device, shadowTexPool_, nullptr); shadowTexPool_ = VK_NULL_HANDLE; }
     if (shadowParamsPool_) { vkDestroyDescriptorPool(device, shadowParamsPool_, nullptr); shadowParamsPool_ = VK_NULL_HANDLE; }
     if (shadowParamsLayout_) { vkDestroyDescriptorSetLayout(device, shadowParamsLayout_, nullptr); shadowParamsLayout_ = VK_NULL_HANDLE; }
     if (shadowParamsUBO_) { vmaDestroyBuffer(alloc, shadowParamsUBO_, shadowParamsAlloc_); shadowParamsUBO_ = VK_NULL_HANDLE; }
@@ -2542,6 +2543,24 @@ bool M2Renderer::initializeShadow(VkRenderPass shadowRenderPass) {
     writes[1].pBufferInfo = &bufInfo;
     vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
 
+    // Per-frame pool for foliage shadow texture sets (reset each frame)
+    {
+        VkDescriptorPoolSize texPoolSizes[2]{};
+        texPoolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        texPoolSizes[0].descriptorCount = 256;
+        texPoolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        texPoolSizes[1].descriptorCount = 256;
+        VkDescriptorPoolCreateInfo texPoolCI{};
+        texPoolCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        texPoolCI.maxSets = 256;
+        texPoolCI.poolSizeCount = 2;
+        texPoolCI.pPoolSizes = texPoolSizes;
+        if (vkCreateDescriptorPool(device, &texPoolCI, nullptr, &shadowTexPool_) != VK_SUCCESS) {
+            LOG_ERROR("M2Renderer: failed to create shadow texture pool");
+            return false;
+        }
+    }
+
     // Create shadow pipeline layout: set 1 = shadowParamsLayout_, push constants = 128 bytes
     VkPushConstantRange pc{};
     pc.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
@@ -2613,23 +2632,74 @@ void M2Renderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMa
     if (instances.empty() || models.empty()) return;
 
     struct ShadowPush { glm::mat4 lightSpaceMatrix; glm::mat4 model; };
+    struct ShadowParamsUBO {
+        int32_t useBones = 0;
+        int32_t useTexture = 0;
+        int32_t alphaTest = 0;
+        int32_t foliageSway = 0;
+        float windTime = 0.0f;
+        float foliageMotionDamp = 1.0f;
+    };
     const float shadowRadiusSq = shadowRadius * shadowRadius;
+
+    // Reset per-frame texture descriptor pool for foliage alpha-test sets
+    if (shadowTexPool_) {
+        vkResetDescriptorPool(vkCtx_->getDevice(), shadowTexPool_, 0);
+    }
+    // Cache: texture imageView -> allocated descriptor set (avoids duplicates within frame)
+    std::unordered_map<VkImageView, VkDescriptorSet> texSetCache;
+
+    auto getTexDescSet = [&](VkTexture* tex) -> VkDescriptorSet {
+        VkImageView iv = tex->getImageView();
+        auto cacheIt = texSetCache.find(iv);
+        if (cacheIt != texSetCache.end()) return cacheIt->second;
+
+        VkDescriptorSet set = VK_NULL_HANDLE;
+        VkDescriptorSetAllocateInfo ai{};
+        ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        ai.descriptorPool = shadowTexPool_;
+        ai.descriptorSetCount = 1;
+        ai.pSetLayouts = &shadowParamsLayout_;
+        if (vkAllocateDescriptorSets(vkCtx_->getDevice(), &ai, &set) != VK_SUCCESS) {
+            return shadowParamsSet_; // fallback to white texture
+        }
+        VkDescriptorImageInfo imgInfo{};
+        imgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imgInfo.imageView = iv;
+        imgInfo.sampler = tex->getSampler();
+        VkDescriptorBufferInfo bufInfo{};
+        bufInfo.buffer = shadowParamsUBO_;
+        bufInfo.offset = 0;
+        bufInfo.range = sizeof(ShadowParamsUBO);
+        VkWriteDescriptorSet writes[2]{};
+        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[0].dstSet = set;
+        writes[0].dstBinding = 0;
+        writes[0].descriptorCount = 1;
+        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[0].pImageInfo = &imgInfo;
+        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[1].dstSet = set;
+        writes[1].dstBinding = 1;
+        writes[1].descriptorCount = 1;
+        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writes[1].pBufferInfo = &bufInfo;
+        vkUpdateDescriptorSets(vkCtx_->getDevice(), 2, writes, 0, nullptr);
+        texSetCache[iv] = set;
+        return set;
+    };
 
     // Helper lambda to draw instances with a given foliageSway setting
     auto drawPass = [&](bool foliagePass) {
-        // Update ShadowParams UBO for this pass
-        struct ShadowParamsUBO {
-            int32_t useBones = 0;
-            int32_t useTexture = 0;
-            int32_t alphaTest = 0;
-            int32_t foliageSway = 0;
-            float windTime = 0.0f;
-            float foliageMotionDamp = 1.0f;
-        };
         ShadowParamsUBO params{};
         params.foliageSway = foliagePass ? 1 : 0;
         params.windTime = globalTime;
         params.foliageMotionDamp = 1.0f;
+        // For foliage pass: enable texture+alphaTest in UBO (per-batch textures bound below)
+        if (foliagePass) {
+            params.useTexture = 1;
+            params.alphaTest = 1;
+        }
 
         VmaAllocationInfo allocInfo{};
         vmaGetAllocationInfo(vkCtx_->getAllocator(), shadowParamsAlloc_, &allocInfo);
@@ -2670,6 +2740,16 @@ void M2Renderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMa
 
             for (const auto& batch : model.batches) {
                 if (batch.submeshLevel > 0) continue;
+                // For foliage: bind per-batch texture for alpha-tested shadows
+                if (foliagePass && batch.hasAlpha && batch.texture) {
+                    VkDescriptorSet texSet = getTexDescSet(batch.texture);
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipelineLayout_,
+                        0, 1, &texSet, 0, nullptr);
+                } else if (foliagePass) {
+                    // Non-alpha batch: rebind default set (white texture, alpha test passes)
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipelineLayout_,
+                        0, 1, &shadowParamsSet_, 0, nullptr);
+                }
                 vkCmdDrawIndexed(cmd, batch.indexCount, 1, batch.indexStart, 0, 0);
             }
         }
@@ -2677,7 +2757,7 @@ void M2Renderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMa
 
     // Pass 1: non-foliage (no wind displacement)
     drawPass(false);
-    // Pass 2: foliage (wind displacement enabled)
+    // Pass 2: foliage (wind displacement enabled, per-batch alpha-tested textures)
     drawPass(true);
 }
 

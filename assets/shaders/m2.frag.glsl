@@ -125,32 +125,26 @@ void main() {
     } else {
         vec3 viewDir = normalize(viewPos.xyz - FragPos);
 
-        // Foliage: no specular, no shadow map — both flicker on swaying thin cards
         float spec = 0.0;
         float shadow = 1.0;
-        if (isFoliage) {
-            // Use a fixed gentle shadow from the shadow system strength
-            if (shadowParams.x > 0.5) {
-                shadow = mix(1.0, 0.75, shadowParams.y);
-            }
-        } else {
+        if (!isFoliage) {
             vec3 halfDir = normalize(ldir + viewDir);
             spec = pow(max(dot(norm, halfDir), 0.0), 32.0) * specularIntensity;
+        }
 
-            if (shadowParams.x > 0.5) {
-                float normalOffset = SHADOW_TEXEL * 2.0 * (1.0 - abs(dot(norm, ldir)));
-                vec3 biasedPos = FragPos + norm * normalOffset;
-                vec4 lsPos = lightSpaceMatrix * vec4(biasedPos, 1.0);
-                vec3 proj = lsPos.xyz / lsPos.w;
-                proj.xy = proj.xy * 0.5 + 0.5;
-                if (proj.x >= 0.0 && proj.x <= 1.0 &&
-                    proj.y >= 0.0 && proj.y <= 1.0 &&
-                    proj.z >= 0.0 && proj.z <= 1.0) {
-                    float bias = max(0.0005 * (1.0 - abs(dot(norm, ldir))), 0.00005);
-                    shadow = sampleShadowPCF(uShadowMap, vec3(proj.xy, proj.z - bias));
-                }
-                shadow = mix(1.0, shadow, shadowParams.y);
+        if (shadowParams.x > 0.5) {
+            float normalOffset = SHADOW_TEXEL * 2.0 * (1.0 - abs(dot(norm, ldir)));
+            vec3 biasedPos = FragPos + norm * normalOffset;
+            vec4 lsPos = lightSpaceMatrix * vec4(biasedPos, 1.0);
+            vec3 proj = lsPos.xyz / lsPos.w;
+            proj.xy = proj.xy * 0.5 + 0.5;
+            if (proj.x >= 0.0 && proj.x <= 1.0 &&
+                proj.y >= 0.0 && proj.y <= 1.0 &&
+                proj.z >= 0.0 && proj.z <= 1.0) {
+                float bias = max(0.0005 * (1.0 - abs(dot(norm, ldir))), 0.00005);
+                shadow = sampleShadowPCF(uShadowMap, vec3(proj.xy, proj.z - bias));
             }
+            shadow = mix(1.0, shadow, shadowParams.y);
         }
 
         // Leaf subsurface scattering (foliage only) — uses stable normal, no FragPos dependency

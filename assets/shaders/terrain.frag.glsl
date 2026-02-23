@@ -85,6 +85,20 @@ void main() {
     }
 
     vec3 norm = normalize(Normal);
+
+    // Derivative-based normal mapping: perturb vertex normal using texture detail
+    {
+        float lum = dot(finalColor.rgb, vec3(0.299, 0.587, 0.114));
+        float dLdx = dFdx(lum);
+        float dLdy = dFdy(lum);
+        vec3 dpdx = dFdx(FragPos);
+        vec3 dpdy = dFdy(FragPos);
+        // Bump strength controls how much texture detail affects lighting
+        const float bumpStrength = 9.0;
+        vec3 perturbation = (dLdx * cross(norm, dpdy) + dLdy * cross(dpdx, norm)) * bumpStrength;
+        norm = normalize(norm - perturbation);
+    }
+
     vec3 lightDir2 = normalize(-lightDir.xyz);
     vec3 ambient = ambientColor.rgb * finalColor.rgb;
     float diff = max(abs(dot(norm, lightDir2)), 0.2);

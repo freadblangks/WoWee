@@ -14,6 +14,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # Options
 option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 option(WOWEE_BUILD_TESTS "Build tests" OFF)
+option(WOWEE_ENABLE_ASAN "Enable AddressSanitizer (Debug builds)" OFF)
 
 # Opcode registry generation/validation
 find_package(Python3 COMPONENTS Interpreter QUIET)
@@ -50,7 +51,7 @@ else()
     find_package(PkgConfig REQUIRED)
 endif()
 if(PkgConfig_FOUND)
-    pkg_check_modules(FFMPEG REQUIRED libavformat libavcodec libswscale libavutil)
+    pkg_check_modules(FFMPEG libavformat libavcodec libswscale libavutil)
 else()
     # Fallback for MSVC/vcpkg — find FFmpeg libraries manually
     find_path(FFMPEG_INCLUDE_DIRS libavformat/avformat.h)
@@ -59,9 +60,15 @@ else()
     find_library(AVUTIL_LIB   NAMES avutil)
     find_library(SWSCALE_LIB  NAMES swscale)
     set(FFMPEG_LIBRARIES ${AVFORMAT_LIB} ${AVCODEC_LIB} ${AVUTIL_LIB} ${SWSCALE_LIB})
-    if(NOT AVFORMAT_LIB)
-        message(FATAL_ERROR "FFmpeg not found. On Windows install via MSYS2: mingw-w64-x86_64-ffmpeg")
-    endif()
+endif()
+if(FFMPEG_INCLUDE_DIRS AND AVFORMAT_LIB)
+    set(HAVE_FFMPEG TRUE)
+    message(STATUS "Found FFmpeg: ${AVFORMAT_LIB}")
+elseif(FFMPEG_FOUND)
+    set(HAVE_FFMPEG TRUE)
+else()
+    set(HAVE_FFMPEG FALSE)
+    message(WARNING "FFmpeg not found — video_player will be disabled. Install via vcpkg: ffmpeg:x64-windows")
 endif()
 
 # Unicorn Engine (x86 emulator for cross-platform Warden module execution)
@@ -83,6 +90,9 @@ if(NOT glm_FOUND)
 endif()
 # GLM GTX extensions (quaternion, norm, etc.) require this flag on newer GLM versions
 add_compile_definitions(GLM_ENABLE_EXPERIMENTAL GLM_FORCE_DEPTH_ZERO_TO_ONE)
+if(WIN32)
+    add_compile_definitions(NOMINMAX _CRT_SECURE_NO_WARNINGS)
+endif()
 
 # SPIR-V shader compilation via glslc
 find_program(GLSLC glslc HINTS ${Vulkan_GLSLC_EXECUTABLE} "$ENV{VULKAN_SDK}/bin")
@@ -292,7 +302,7 @@ set(WOWEE_SOURCES
     src/rendering/levelup_effect.cpp
     src/rendering/charge_effect.cpp
     src/rendering/loading_screen.cpp
-    src/rendering/video_player.cpp
+    $<$<BOOL:${HAVE_FFMPEG}>:${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/video_player.cpp>
 
     # UI
     src/ui/ui_manager.cpp
@@ -438,8 +448,10 @@ target_include_directories(wowee PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/extern
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/vk-bootstrap/src
-    ${FFMPEG_INCLUDE_DIRS}
 )
+if(HAVE_FFMPEG)
+    target_include_directories(wowee PRIVATE ${FFMPEG_INCLUDE_DIRS})
+endif()
 
 # Link libraries
 target_link_libraries(wowee PRIVATE
@@ -460,9 +472,12 @@ if(TARGET GLEW::GLEW)
     target_link_libraries(wowee PRIVATE GLEW::GLEW)
 endif()
 
-target_link_libraries(wowee PRIVATE ${FFMPEG_LIBRARIES})
-if (FFMPEG_LIBRARY_DIRS)
-    target_link_directories(wowee PRIVATE ${FFMPEG_LIBRARY_DIRS})
+if(HAVE_FFMPEG)
+    target_compile_definitions(wowee PRIVATE HAVE_FFMPEG)
+    target_link_libraries(wowee PRIVATE ${FFMPEG_LIBRARIES})
+    if(FFMPEG_LIBRARY_DIRS)
+        target_link_directories(wowee PRIVATE ${FFMPEG_LIBRARY_DIRS})
+    endif()
 endif()
 
 # Platform-specific libraries
@@ -508,6 +523,47 @@ else()
     target_compile_options(wowee PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+# Debug build flags
+if(MSVC)
+    # /ZI  — Edit-and-Continue debug info (works with hot-reload in VS 2022)
+    # /RTC1 — stack-frame and uninitialised-variable runtime checks (Debug only)
+    # /sdl  — additional SDL security checks
+    # /Od   — disable optimisation so stepping matches source lines exactly
+    target_compile_options(wowee PRIVATE
+        $<$<CONFIG:Debug>:/ZI /RTC1 /sdl /Od>
+    )
+    # Ensure the linker emits a .pdb alongside the .exe for every config
+    target_link_options(wowee PRIVATE
+        $<$<CONFIG:Debug>:/DEBUG:FULL>
+        $<$<CONFIG:RelWithDebInfo>:/DEBUG:FASTLINK>
+    )
+else()
+    # -g3          — maximum DWARF debug info (includes macro definitions)
+    # -Og          — optimise for debugging (better than -O0, keeps most frames)
+    # -fno-omit-frame-pointer — preserve frame pointers so stack traces are clean
+    target_compile_options(wowee PRIVATE
+        $<$<CONFIG:Debug>:-g3 -Og -fno-omit-frame-pointer>
+        $<$<CONFIG:RelWithDebInfo>:-g -fno-omit-frame-pointer>
+    )
+endif()
+
+# AddressSanitizer — catch buffer overflows, use-after-free, etc.
+# Enable with:  cmake ... -DWOWEE_ENABLE_ASAN=ON -DCMAKE_BUILD_TYPE=Debug
+if(WOWEE_ENABLE_ASAN)
+    if(MSVC)
+        target_compile_options(wowee PRIVATE /fsanitize=address)
+        # ASAN on MSVC requires the dynamic CRT (/MD or /MDd)
+        target_compile_options(wowee PRIVATE
+            $<$<CONFIG:Debug>:/MDd>
+            $<$<CONFIG:Release>:/MD>
+        )
+    else()
+        target_compile_options(wowee PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+        target_link_options(wowee PRIVATE -fsanitize=address)
+    endif()
+    message(STATUS "AddressSanitizer: ENABLED")
+endif()
+
 # Release build optimizations
 include(CheckIPOSupported)
 check_ipo_supported(RESULT _ipo_supported OUTPUT _ipo_error)
@@ -522,14 +578,27 @@ if(NOT MSVC)
     target_compile_options(wowee PRIVATE $<$<CONFIG:Release>:-fvisibility=hidden -fvisibility-inlines-hidden>)
 endif()
 
-# Copy assets to build directory (runs every build, not just configure)
-add_custom_target(copy_assets ALL
+# Copy assets next to the executable (runs every build, not just configure).
+# Uses $<TARGET_FILE_DIR:wowee> so MSVC multi-config generators place assets
+# in bin/Debug/ or bin/Release/ alongside the exe, not the common bin/ parent.
+add_custom_command(TARGET wowee POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_CURRENT_SOURCE_DIR}/assets
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets
-    COMMENT "Syncing assets to build directory"
+        $<TARGET_FILE_DIR:wowee>/assets
+    COMMENT "Syncing assets to $<TARGET_FILE_DIR:wowee>/assets"
 )
-add_dependencies(wowee copy_assets)
+
+# On Windows, SDL 2.28+ uses LoadLibraryExW with LOAD_LIBRARY_SEARCH_DEFAULT_DIRS
+# which does NOT include System32. Copy vulkan-1.dll into the output directory so
+# SDL_Vulkan_LoadLibrary can locate it without needing a full system PATH search.
+if(WIN32)
+    add_custom_command(TARGET wowee POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$ENV{SystemRoot}/System32/vulkan-1.dll"
+            "$<TARGET_FILE_DIR:wowee>/vulkan-1.dll"
+        COMMENT "Copying vulkan-1.dll to output directory"
+    )
+endif()
 
 # Install targets
 install(TARGETS wowee
@@ -685,6 +754,7 @@ message(STATUS "  Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "  SDL2: ${SDL2_VERSION}")
 message(STATUS "  OpenSSL: ${OPENSSL_VERSION}")
 message(STATUS "  ImGui: ${IMGUI_DIR}")
+message(STATUS "  ASAN: ${WOWEE_ENABLE_ASAN}")
 message(STATUS "")
 
 # ---- CPack packaging ----

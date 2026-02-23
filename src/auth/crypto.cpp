@@ -2,6 +2,7 @@
 #include <openssl/sha.h>
 #include <openssl/md5.h>
 #include <openssl/hmac.h>
+#include <openssl/evp.h>
 
 namespace wowee {
 namespace auth {
@@ -19,7 +20,8 @@ std::vector<uint8_t> Crypto::sha1(const std::string& data) {
 
 std::vector<uint8_t> Crypto::md5(const std::vector<uint8_t>& data) {
     std::vector<uint8_t> hash(MD5_DIGEST_LENGTH);
-    MD5(data.data(), data.size(), hash.data());
+    unsigned int length = 0;
+    EVP_Digest(data.data(), data.size(), hash.data(), &length, EVP_md5(), nullptr);
     return hash;
 }
 

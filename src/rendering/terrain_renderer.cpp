@@ -658,13 +658,6 @@ void TerrainRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, c
     renderedChunks = 0;
     culledChunks = 0;
 
-    // Periodic culling summary (every ~5s at 60fps)
-    static int renderCallCount = 0;
-    if (++renderCallCount % 300 == 1) {
-        glm::vec3 cam = camera.getPosition();
-        LOG_INFO("Terrain render call: total=", chunks.size(), " cam=(", cam.x, ",", cam.y, ",", cam.z, ")");
-    }
-
     for (const auto& chunk : chunks) {
         if (!chunk.isValid() || !chunk.materialSet) continue;
 
@@ -692,10 +685,6 @@ void TerrainRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, c
         renderedChunks++;
     }
 
-    // Log culling result periodically
-    if (renderCallCount % 300 == 1) {
-        LOG_INFO("Terrain culling: rendered=", renderedChunks, " culled=", culledChunks);
-    }
 }
 
 void TerrainRenderer::renderShadow(VkCommandBuffer /*cmd*/, const glm::vec3& /*shadowCenter*/, float /*halfExtent*/) {

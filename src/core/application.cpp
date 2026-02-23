@@ -6417,11 +6417,6 @@ void Application::updateQuestMarkers() {
 
     const auto& questStatuses = gameHandler->getNpcQuestStatuses();
 
-    static int logCounter = 0;
-    if (++logCounter % 300 == 0) {  // Log every ~10 seconds at 30fps
-        LOG_DEBUG("Quest markers: ", questStatuses.size(), " NPCs with quest status");
-    }
-
     // Clear all markers (we'll re-add active ones)
     questMarkerRenderer->clear();
 

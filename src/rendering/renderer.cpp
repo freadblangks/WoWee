@@ -305,15 +305,15 @@ bool Renderer::createPerFrameResources() {
     // --- Create shadow sampler ---
     VkSamplerCreateInfo sampCI{};
     sampCI.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    sampCI.magFilter = VK_FILTER_NEAREST;
-    sampCI.minFilter = VK_FILTER_NEAREST;
+    sampCI.magFilter = VK_FILTER_LINEAR;
+    sampCI.minFilter = VK_FILTER_LINEAR;
     sampCI.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
     sampCI.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
     sampCI.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
     sampCI.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
     sampCI.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
     sampCI.compareEnable = VK_TRUE;
-    sampCI.compareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;
+    sampCI.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
     if (vkCreateSampler(device, &sampCI, nullptr, &shadowSampler) != VK_SUCCESS) {
         LOG_ERROR("Failed to create shadow sampler");
         return false;
@@ -2384,16 +2384,9 @@ void Renderer::update(float deltaTime) {
     auto updateStart = std::chrono::steady_clock::now();
     lastDeltaTime_ = deltaTime;  // Cache for use in updateCharacterAnimation()
 
-    // Renderer update profiling
-    static int rendProfileCounter = 0;
-    static float camTime = 0.0f, lightTime = 0.0f, charAnimTime = 0.0f;
-    static float terrainTime = 0.0f, skyTime = 0.0f, charRendTime = 0.0f;
-    static float audioTime = 0.0f, footstepTime = 0.0f, ambientTime = 0.0f;
-
     if (wmoRenderer) wmoRenderer->resetQueryStats();
     if (m2Renderer) m2Renderer->resetQueryStats();
 
-    auto cam1 = std::chrono::high_resolution_clock::now();
     if (cameraController) {
         auto cameraStart = std::chrono::steady_clock::now();
         cameraController->update(deltaTime);
@@ -2408,8 +2401,6 @@ void Renderer::update(float deltaTime) {
     } else {
         lastCameraUpdateMs = 0.0;
     }
-    auto cam2 = std::chrono::high_resolution_clock::now();
-    camTime += std::chrono::duration<float, std::milli>(cam2 - cam1).count();
 
     // Visibility hardening: ensure player instance cannot stay hidden after
     // taxi/camera transitions, but preserve first-person self-hide.
@@ -2420,7 +2411,6 @@ void Renderer::update(float deltaTime) {
     }
 
     // Update lighting system
-    auto light1 = std::chrono::high_resolution_clock::now();
     if (lightingManager) {
         const auto* gh = core::Application::getInstance().getGameHandler();
         uint32_t mapId    = gh ? gh->getCurrentMapId() : 0;
@@ -2451,11 +2441,8 @@ void Renderer::update(float deltaTime) {
             weather->setEnabled(true);
         }
     }
-    auto light2 = std::chrono::high_resolution_clock::now();
-    lightTime += std::chrono::duration<float, std::milli>(light2 - light1).count();
 
     // Sync character model position/rotation and animation with follow target
-    auto charAnim1 = std::chrono::high_resolution_clock::now();
     if (characterInstanceId > 0 && characterRenderer && cameraController) {
         if (meleeSwingCooldown > 0.0f) {
             meleeSwingCooldown = std::max(0.0f, meleeSwingCooldown - deltaTime);
@@ -2501,19 +2488,13 @@ void Renderer::update(float deltaTime) {
         // Update animation based on movement state
         updateCharacterAnimation();
     }
-    auto charAnim2 = std::chrono::high_resolution_clock::now();
-    charAnimTime += std::chrono::duration<float, std::milli>(charAnim2 - charAnim1).count();
 
     // Update terrain streaming
-    auto terrain1 = std::chrono::high_resolution_clock::now();
     if (terrainManager && camera) {
         terrainManager->update(*camera, deltaTime);
     }
-    auto terrain2 = std::chrono::high_resolution_clock::now();
-    terrainTime += std::chrono::duration<float, std::milli>(terrain2 - terrain1).count();
 
     // Update sky system (skybox time, star twinkle, clouds, celestial moon phases)
-    auto sky1 = std::chrono::high_resolution_clock::now();
     if (skySystem) {
         skySystem->update(deltaTime);
     }
@@ -2559,25 +2540,16 @@ void Renderer::update(float deltaTime) {
         chargeEffect->update(deltaTime);
     }
 
-    auto sky2 = std::chrono::high_resolution_clock::now();
-    skyTime += std::chrono::duration<float, std::milli>(sky2 - sky1).count();
 
     // Update character animations
-    auto charRend1 = std::chrono::high_resolution_clock::now();
     if (characterRenderer && camera) {
         characterRenderer->update(deltaTime, camera->getPosition());
     }
-    auto charRend2 = std::chrono::high_resolution_clock::now();
-    charRendTime += std::chrono::duration<float, std::milli>(charRend2 - charRend1).count();
 
     // Update AudioEngine (cleanup finished sounds, etc.)
-    auto audio1 = std::chrono::high_resolution_clock::now();
     audio::AudioEngine::instance().update(deltaTime);
-    auto audio2 = std::chrono::high_resolution_clock::now();
-    audioTime += std::chrono::duration<float, std::milli>(audio2 - audio1).count();
 
     // Footsteps: animation-event driven + surface query at event time.
-    auto footstep1 = std::chrono::high_resolution_clock::now();
     if (footstepManager) {
         footstepManager->update(deltaTime);
         cachedFootstepUpdateTimer += deltaTime;  // Update surface cache timer
@@ -2697,11 +2669,8 @@ void Renderer::update(float deltaTime) {
             mountSoundManager->setFlying(flying);
         }
     }
-    auto footstep2 = std::chrono::high_resolution_clock::now();
-    footstepTime += std::chrono::duration<float, std::milli>(footstep2 - footstep1).count();
 
     // Ambient environmental sounds: fireplaces, water, birds, etc.
-    auto ambient1 = std::chrono::high_resolution_clock::now();
     if (ambientSoundManager && camera && wmoRenderer && cameraController) {
         glm::vec3 camPos = camera->getPosition();
         uint32_t wmoId = 0;
@@ -2741,19 +2710,12 @@ void Renderer::update(float deltaTime) {
 
         ambientSoundManager->update(deltaTime, camPos, isIndoor, isSwimming, isBlacksmith);
     }
-    auto ambient2 = std::chrono::high_resolution_clock::now();
-    ambientTime += std::chrono::duration<float, std::milli>(ambient2 - ambient1).count();
 
     // Update M2 doodad animations (pass camera for frustum-culling bone computation)
-    static int m2ProfileCounter = 0;
-    static float m2Time = 0.0f;
-    auto m21 = std::chrono::high_resolution_clock::now();
     if (m2Renderer && camera) {
         m2Renderer->update(deltaTime, camera->getPosition(),
                            camera->getProjectionMatrix() * camera->getViewMatrix());
     }
-    auto m22 = std::chrono::high_resolution_clock::now();
-    m2Time += std::chrono::duration<float, std::milli>(m22 - m21).count();
 
     // Helper: play zone music, dispatching local files (file: prefix) vs MPQ paths
     auto playZoneMusic = [&](const std::string& music) {
@@ -2915,24 +2877,6 @@ void Renderer::update(float deltaTime) {
 
     auto updateEnd = std::chrono::steady_clock::now();
     lastUpdateMs = std::chrono::duration<double, std::milli>(updateEnd - updateStart).count();
-
-    // Log renderer profiling every 60 frames
-    if (++rendProfileCounter >= 60) {
-        LOG_DEBUG("RENDERER UPDATE PROFILE (60 frames): camera=", camTime / 60.0f,
-                 "ms light=", lightTime / 60.0f, "ms charAnim=", charAnimTime / 60.0f,
-                 "ms terrain=", terrainTime / 60.0f, "ms sky=", skyTime / 60.0f,
-                 "ms charRend=", charRendTime / 60.0f, "ms audio=", audioTime / 60.0f,
-                 "ms footstep=", footstepTime / 60.0f, "ms ambient=", ambientTime / 60.0f,
-                 "ms m2Anim=", m2Time / 60.0f, "ms");
-        rendProfileCounter = 0;
-        camTime = lightTime = charAnimTime = 0.0f;
-        terrainTime = skyTime = charRendTime = 0.0f;
-        audioTime = footstepTime = ambientTime = 0.0f;
-        m2Time = 0.0f;
-    }
-    if (++m2ProfileCounter >= 60) {
-        m2ProfileCounter = 0;
-    }
 }
 
 void Renderer::runDeferredWorldInitStep(float deltaTime) {
@@ -3186,15 +3130,6 @@ void Renderer::renderOverlay(const glm::vec4& color) {
 
 void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
     (void)world;
-
-    {
-        static int rwLogCounter = 0;
-        if (++rwLogCounter % 300 == 1) {
-            LOG_INFO("Renderer::renderWorld frame=", rwLogCounter,
-                     " cmd=", (void*)currentCmd,
-                     " charRenderer=", (void*)characterRenderer.get());
-        }
-    }
 
     auto renderStart = std::chrono::steady_clock::now();
     lastTerrainRenderMs = 0.0;
@@ -3832,6 +3767,7 @@ glm::mat4 Renderer::computeLightSpaceMatrix() {
 
     glm::mat4 lightProj = glm::ortho(-halfExtent, halfExtent, -halfExtent, halfExtent,
                                      kShadowNearPlane, kShadowFarPlane);
+    lightProj[1][1] *= -1.0f; // Vulkan Y-flip for shadow pass
 
     return lightProj * lightView;
 }

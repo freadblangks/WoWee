@@ -1403,13 +1403,6 @@ void CharacterRenderer::update(float deltaTime, const glm::vec3& cameraPos) {
         }
     }
 
-    static int logCounter = 0;
-    if (++logCounter >= 300) {  // Log every 10 seconds at 30fps
-        LOG_DEBUG("CharacterRenderer: ", updatedCount, "/", instances.size(), " instances updated (",
-                 instances.size() - updatedCount, " culled)");
-        logCounter = 0;
-    }
-
     // Update weapon attachment transforms (after all bone matrices are computed)
     for (auto& pair : instances) {
         auto& instance = pair.second;

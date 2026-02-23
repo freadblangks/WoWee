@@ -37,8 +37,8 @@ void main() {
     // Combine disc and glow
     float alpha = max(disc, glow) * push.intensity;
 
-    // Fade to zero at quad edges to prevent visible box
-    float edgeFade = 1.0 - smoothstep(0.4, 0.5, dist);
+    // Fade to zero well before quad edges
+    float edgeFade = 1.0 - smoothstep(0.35, 0.48, dist);
     alpha *= edgeFade;
 
     vec3 color = push.celestialColor.rgb;
@@ -56,6 +56,7 @@ void main() {
     float phaseShadow = smoothstep(-0.1, 0.1, phaseX);
     alpha *= mix(phaseShadow, 1.0, step(0.5, push.intensity));
 
-    if (alpha < 0.001) discard;
-    outColor = vec4(color, alpha);
+    if (alpha < 0.003) discard;
+    // Pre-multiply for additive blending: RGB is the light contribution
+    outColor = vec4(color * alpha, alpha);
 }

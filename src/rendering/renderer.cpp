@@ -914,13 +914,13 @@ void Renderer::beginFrame() {
     // Handle swapchain recreation if needed
     if (vkCtx->isSwapchainDirty()) {
         vkCtx->recreateSwapchain(window->getWidth(), window->getHeight());
-        // Rebuild water 1x framebuffers (they reference swapchain image views)
-        if (waterRenderer && waterRenderer->hasWater1xPass()
-            && vkCtx->getMsaaSamples() != VK_SAMPLE_COUNT_1_BIT) {
-            VkImageView depthView = vkCtx->getDepthResolveImageView();
-            if (depthView) {
-                waterRenderer->createWater1xFramebuffers(
-                    vkCtx->getSwapchainImageViews(), depthView, vkCtx->getSwapchainExtent());
+        // Rebuild water resources that reference swapchain extent/views
+        if (waterRenderer) {
+            waterRenderer->recreatePipelines();
+            if (waterRenderer->hasWater1xPass()
+                && vkCtx->getMsaaSamples() != VK_SAMPLE_COUNT_1_BIT) {
+                waterRenderer->destroyWater1xResources();
+                setupWater1xPass();
             }
         }
     }

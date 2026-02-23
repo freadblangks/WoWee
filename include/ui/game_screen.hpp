@@ -94,6 +94,7 @@ private:
     int pendingActivityVolume = 100;
     float pendingMouseSensitivity = 0.2f;
     bool pendingInvertMouse = false;
+    bool pendingExtendedZoom = false;
     int pendingUiOpacity = 65;
     bool pendingMinimapRotate = false;
     bool pendingMinimapSquare = false;

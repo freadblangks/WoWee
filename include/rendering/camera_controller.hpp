@@ -27,6 +27,8 @@ public:
     float getMouseSensitivity() const { return mouseSensitivity; }
     void setInvertMouse(bool invert) { invertMouse = invert; }
     bool isInvertMouse() const { return invertMouse; }
+    void setExtendedZoom(bool extended) { extendedZoom_ = extended; }
+    bool isExtendedZoom() const { return extendedZoom_; }
     void setEnabled(bool enabled) { this->enabled = enabled; }
     void setTerrainManager(TerrainManager* tm) { terrainManager = tm; }
     void setWMORenderer(WMORenderer* wmo) { wmoRenderer = wmo; }
@@ -137,7 +139,9 @@ private:
     float collisionDistance = 10.0f;    // Max allowed by collision
     bool externalFollow_ = false;
     static constexpr float MIN_DISTANCE = 0.5f;     // Minimum zoom (first-person threshold)
-    static constexpr float MAX_DISTANCE = 50.0f;    // Maximum zoom out
+    static constexpr float MAX_DISTANCE_NORMAL = 33.0f;   // Default max zoom out
+    static constexpr float MAX_DISTANCE_EXTENDED = 50.0f;  // Extended max zoom out
+    bool extendedZoom_ = false;
     static constexpr float ZOOM_SMOOTH_SPEED = 15.0f;  // How fast zoom eases
     static constexpr float CAM_SMOOTH_SPEED = 20.0f;   // How fast camera position smooths
     static constexpr float PIVOT_HEIGHT = 1.8f;     // Pivot at head height

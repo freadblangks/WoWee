@@ -5916,6 +5916,7 @@ void GameScreen::renderSettingsWindow() {
             if (auto* cameraController = renderer->getCameraController()) {
                 pendingMouseSensitivity = cameraController->getMouseSensitivity();
                 pendingInvertMouse = cameraController->isInvertMouse();
+                cameraController->setExtendedZoom(pendingExtendedZoom);
             }
         }
         pendingResIndex = 0;
@@ -6275,6 +6276,16 @@ void GameScreen::renderSettingsWindow() {
                     }
                     saveSettings();
                 }
+                if (ImGui::Checkbox("Extended Camera Zoom", &pendingExtendedZoom)) {
+                    if (renderer) {
+                        if (auto* cameraController = renderer->getCameraController()) {
+                            cameraController->setExtendedZoom(pendingExtendedZoom);
+                        }
+                    }
+                    saveSettings();
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Allow the camera to zoom out further than normal");
 
                 ImGui::Spacing();
                 ImGui::Spacing();
@@ -6354,6 +6365,7 @@ void GameScreen::renderSettingsWindow() {
                 if (ImGui::Button("Restore Gameplay Defaults", ImVec2(-1, 0))) {
                     pendingMouseSensitivity = kDefaultMouseSensitivity;
                     pendingInvertMouse = kDefaultInvertMouse;
+                    pendingExtendedZoom = false;
                     pendingUiOpacity = 65;
                     pendingMinimapRotate = false;
                     pendingMinimapSquare = false;
@@ -6368,6 +6380,7 @@ void GameScreen::renderSettingsWindow() {
                         if (auto* cameraController = renderer->getCameraController()) {
                             cameraController->setMouseSensitivity(pendingMouseSensitivity);
                             cameraController->setInvertMouse(pendingInvertMouse);
+                            cameraController->setExtendedZoom(pendingExtendedZoom);
                         }
                         if (auto* minimap = renderer->getMinimap()) {
                             minimap->setRotateWithCamera(minimapRotate_);
@@ -7085,6 +7098,7 @@ void GameScreen::saveSettings() {
     // Controls
     out << "mouse_sensitivity=" << pendingMouseSensitivity << "\n";
     out << "invert_mouse=" << (pendingInvertMouse ? 1 : 0) << "\n";
+    out << "extended_zoom=" << (pendingExtendedZoom ? 1 : 0) << "\n";
 
     // Chat
     out << "chat_active_tab=" << activeChatTab_ << "\n";
@@ -7166,6 +7180,7 @@ void GameScreen::loadSettings() {
             // Controls
             else if (key == "mouse_sensitivity") pendingMouseSensitivity = std::clamp(std::stof(val), 0.05f, 1.0f);
             else if (key == "invert_mouse") pendingInvertMouse = (std::stoi(val) != 0);
+            else if (key == "extended_zoom") pendingExtendedZoom = (std::stoi(val) != 0);
             // Chat
             else if (key == "chat_active_tab") activeChatTab_ = std::clamp(std::stoi(val), 0, 3);
             else if (key == "chat_timestamps") chatShowTimestamps_ = (std::stoi(val) != 0);

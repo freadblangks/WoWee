@@ -1678,9 +1678,11 @@ void CameraController::teleportTo(const glm::vec3& pos) {
 }
 
 void CameraController::processMouseWheel(float delta) {
-    // Adjust user's target distance (collision may limit actual distance)
-    userTargetDistance -= delta * 2.0f;  // 2.0 units per scroll notch
-    userTargetDistance = glm::clamp(userTargetDistance, MIN_DISTANCE, MAX_DISTANCE);
+    // Scale zoom speed proportionally to current distance for fine control up close
+    float zoomSpeed = glm::max(userTargetDistance * 0.15f, 0.3f);
+    userTargetDistance -= delta * zoomSpeed;
+    float maxDist = extendedZoom_ ? MAX_DISTANCE_EXTENDED : MAX_DISTANCE_NORMAL;
+    userTargetDistance = glm::clamp(userTargetDistance, MIN_DISTANCE, maxDist);
 }
 
 void CameraController::setFollowTarget(glm::vec3* target) {

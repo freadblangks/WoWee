@@ -3099,6 +3099,7 @@ void M2Renderer::setInstanceTransform(uint32_t instanceId, const glm::mat4& tran
 void M2Renderer::removeInstance(uint32_t instanceId) {
     for (auto it = instances.begin(); it != instances.end(); ++it) {
         if (it->id == instanceId) {
+            destroyInstanceBones(*it);
             instances.erase(it);
             rebuildSpatialIndex();
             return;
@@ -3113,6 +3114,11 @@ void M2Renderer::removeInstances(const std::vector<uint32_t>& instanceIds) {
 
     std::unordered_set<uint32_t> toRemove(instanceIds.begin(), instanceIds.end());
     const size_t oldSize = instances.size();
+    for (auto& inst : instances) {
+        if (toRemove.count(inst.id)) {
+            destroyInstanceBones(inst);
+        }
+    }
     instances.erase(std::remove_if(instances.begin(), instances.end(),
                    [&toRemove](const M2Instance& inst) {
                        return toRemove.find(inst.id) != toRemove.end();

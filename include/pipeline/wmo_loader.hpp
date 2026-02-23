@@ -216,6 +216,7 @@ struct WMOModel {
 
     // Group names
     std::vector<std::string> groupNames;
+    std::vector<uint8_t> groupNameRaw;  // Raw MOGN chunk for offset-based name lookup
 
     bool isValid() const {
         return nGroups > 0 && !groups.empty();

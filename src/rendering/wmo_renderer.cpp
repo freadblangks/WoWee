@@ -483,9 +483,23 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
         modelData.materialFlags.push_back(mat.flags);
     }
 
+    // Helper: look up group name from MOGN raw data via MOGI nameOffset
+    auto getGroupName = [&](uint32_t groupIdx) -> std::string {
+        if (groupIdx < model.groupInfo.size()) {
+            int32_t nameOff = model.groupInfo[groupIdx].nameOffset;
+            if (nameOff >= 0 && static_cast<size_t>(nameOff) < model.groupNameRaw.size()) {
+                const char* str = reinterpret_cast<const char*>(model.groupNameRaw.data() + nameOff);
+                size_t maxLen = model.groupNameRaw.size() - nameOff;
+                return std::string(str, strnlen(str, maxLen));
+            }
+        }
+        return {};
+    };
+
     // Create GPU resources for each group
     uint32_t loadedGroups = 0;
-    for (const auto& wmoGroup : model.groups) {
+    for (size_t gi = 0; gi < model.groups.size(); gi++) {
+        const auto& wmoGroup = model.groups[gi];
         // Skip empty groups
         if (wmoGroup.vertices.empty() || wmoGroup.indices.empty()) {
             continue;
@@ -493,6 +507,17 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
 
         GroupResources resources;
         if (createGroupResources(wmoGroup, resources, wmoGroup.flags)) {
+            // Detect distance-only LOD groups by name pattern
+            std::string gname = getGroupName(static_cast<uint32_t>(gi));
+            if (!gname.empty()) {
+                std::string lower = gname;
+                std::transform(lower.begin(), lower.end(), lower.begin(),
+                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                if (lower.find("lod") != std::string::npos) {
+                    resources.isLOD = true;
+                    LOG_INFO("WMO group ", gi, " '", gname, "' marked as LOD (distance-only)");
+                }
+            }
             modelData.groups.push_back(resources);
             loadedGroups++;
         }
@@ -510,11 +535,12 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
             uintptr_t texPtr;
             bool alphaTest;
             bool unlit;
-            bool operator==(const BatchKey& o) const { return texPtr == o.texPtr && alphaTest == o.alphaTest && unlit == o.unlit; }
+            bool isWindow;
+            bool operator==(const BatchKey& o) const { return texPtr == o.texPtr && alphaTest == o.alphaTest && unlit == o.unlit && isWindow == o.isWindow; }
         };
         struct BatchKeyHash {
             size_t operator()(const BatchKey& k) const {
-                return std::hash<uintptr_t>()(k.texPtr) ^ (std::hash<bool>()(k.alphaTest) << 1) ^ (std::hash<bool>()(k.unlit) << 2);
+                return std::hash<uintptr_t>()(k.texPtr) ^ (std::hash<bool>()(k.alphaTest) << 1) ^ (std::hash<bool>()(k.unlit) << 2) ^ (std::hash<bool>()(k.isWindow) << 3);
             }
         };
         std::unordered_map<BatchKey, GroupResources::MergedBatch, BatchKeyHash> batchMap;
@@ -551,7 +577,7 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
             // lamp posts, lanterns, etc. — those should NOT be glass.
             bool isWindow = (matFlags & 0x40) != 0;
 
-            BatchKey key{ reinterpret_cast<uintptr_t>(tex), alphaTest, unlit };
+            BatchKey key{ reinterpret_cast<uintptr_t>(tex), alphaTest, unlit, isWindow };
             auto& mb = batchMap[key];
             if (mb.draws.empty()) {
                 mb.texture = tex;
@@ -1385,12 +1411,22 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
         vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT,
                             0, sizeof(GPUPushConstants), &push);
 
+        // Compute camera distance to WMO bounding box center for LOD decisions
+        glm::vec3 wmoCenter = instance.modelMatrix * glm::vec4(
+            (model.boundingBoxMin + model.boundingBoxMax) * 0.5f, 1.0f);
+        float camDistSq = glm::dot(camPos - wmoCenter, camPos - wmoCenter);
+        // LOD groups render only beyond this distance squared (200 units)
+        static constexpr float LOD_SHOW_DIST_SQ = 200.0f * 200.0f;
+
         // Render visible groups
         for (uint32_t gi : dl.visibleGroups) {
             const auto& group = model.groups[gi];
 
             // Only skip antiportal geometry
             if (group.groupFlags & 0x4000000) continue;
+
+            // Skip distance-only LOD groups when camera is close
+            if (group.isLOD && camDistSq < LOD_SHOW_DIST_SQ) continue;
 
             // Bind vertex + index buffers
             VkDeviceSize offset = 0;
@@ -1629,6 +1665,9 @@ void WMORenderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceM
 
             // Skip antiportal geometry
             if (group.groupFlags & 0x4000000) continue;
+
+            // Skip LOD groups in shadow pass (they overlap real geometry)
+            if (group.isLOD) continue;
 
             VkDeviceSize offset = 0;
             vkCmdBindVertexBuffers(cmd, 0, 1, &group.vertexBuffer, &offset);

@@ -192,7 +192,10 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
             }
 
             case MOGN: {
-                // Group names
+                // Group names — store raw chunk for offset-based lookup (MOGI nameOffset)
+                if (chunkSize > 0 && chunkEnd <= wmoData.size()) {
+                    model.groupNameRaw.assign(wmoData.begin() + chunkStart, wmoData.begin() + chunkEnd);
+                }
                 uint32_t nameOffset = chunkStart;
                 while (nameOffset < chunkEnd) {
                     std::string name = readString(wmoData, nameOffset);

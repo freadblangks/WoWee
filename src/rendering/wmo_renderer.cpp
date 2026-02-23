@@ -546,9 +546,10 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
                 unlit = (matFlags & 0x01) != 0;
             }
 
-            // Window materials (F_SIDN=0x20, F_WINDOW=0x40) render as
-            // slightly transparent reflective glass.
-            bool isWindow = (matFlags & 0x60) != 0;
+            // Only F_WINDOW (0x40) materials render as transparent glass.
+            // F_SIDN (0x20) is the night-glow/self-illuminated flag used on
+            // lamp posts, lanterns, etc. — those should NOT be glass.
+            bool isWindow = (matFlags & 0x40) != 0;
 
             BatchKey key{ reinterpret_cast<uintptr_t>(tex), alphaTest, unlit };
             auto& mb = batchMap[key];

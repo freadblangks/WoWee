@@ -526,17 +526,12 @@ VkTexture* CharacterRenderer::loadTexture(const std::string& path) {
         return whiteTexture_.get();
     }
 
-    // Check negative cache to avoid repeated file I/O for textures that don't exist
-    if (failedTextureCache_.count(key)) {
-        return whiteTexture_.get();
-    }
-
     auto blpImage = assetManager->loadTexture(key);
     if (!blpImage.isValid()) {
-        static constexpr size_t kMaxFailedTextureCache = 200000;
-        core::Logger::getInstance().warning("Failed to load texture: ", path);
-        if (failedTextureCache_.size() < kMaxFailedTextureCache) {
-            failedTextureCache_.insert(key);
+        // Return white fallback but don't cache the failure — allow retry
+        // on next character load in case the asset becomes available.
+        if (loggedTextureLoadFails_.insert(key).second) {
+            core::Logger::getInstance().warning("Failed to load texture: ", path);
         }
         return whiteTexture_.get();
     }

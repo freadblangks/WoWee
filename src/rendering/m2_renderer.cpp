@@ -3342,9 +3342,7 @@ VkTexture* M2Renderer::loadTexture(const std::string& path, uint32_t texFlags) {
         it->second.lastUse = ++textureCacheCounter_;
         return it->second.texture.get();
     }
-    if (failedTextureCache_.count(key)) {
-        return whiteTexture_.get();
-    }
+    // No negative cache check — allow retries for transiently missing textures
 
     auto containsToken = [](const std::string& haystack, const char* token) {
         return haystack.find(token) != std::string::npos;
@@ -3365,10 +3363,8 @@ VkTexture* M2Renderer::loadTexture(const std::string& path, uint32_t texFlags) {
     // Load BLP texture
     pipeline::BLPImage blp = assetManager->loadTexture(key);
     if (!blp.isValid()) {
-        static constexpr size_t kMaxFailedTextureCache = 200000;
-        if (failedTextureCache_.size() < kMaxFailedTextureCache) {
-            failedTextureCache_.insert(key);
-        }
+        // Return white fallback but don't cache the failure — MPQ reads can
+        // fail transiently during streaming; allow retry on next model load.
         if (loggedTextureLoadFails_.insert(key).second) {
             LOG_WARNING("M2: Failed to load texture: ", path);
         }

@@ -442,16 +442,10 @@ VkTexture* TerrainRenderer::loadTexture(const std::string& path) {
         it->second.lastUse = ++textureCacheCounter_;
         return it->second.texture.get();
     }
-    if (failedTextureCache_.count(key)) {
-        return whiteTexture.get();
-    }
-
     pipeline::BLPImage blp = assetManager->loadTexture(key);
     if (!blp.isValid()) {
-        static constexpr size_t kMaxFailedTextureCache = 200000;
-        if (failedTextureCache_.size() < kMaxFailedTextureCache) {
-            failedTextureCache_.insert(key);
-        }
+        // Return white fallback but don't cache the failure — allow retry
+        // on next tile load in case the asset becomes available.
         if (loggedTextureLoadFails_.insert(key).second) {
             LOG_WARNING("Failed to load texture: ", path);
         }

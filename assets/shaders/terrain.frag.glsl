@@ -86,15 +86,17 @@ void main() {
 
     vec3 norm = normalize(Normal);
 
-    // Derivative-based normal mapping: perturb vertex normal using texture detail
-    {
+    // Derivative-based normal mapping: perturb vertex normal using texture detail.
+    // Fade out with distance — looks noisy/harsh beyond ~100 units.
+    float fragDist = length(viewPos.xyz - FragPos);
+    float bumpFade = 1.0 - smoothstep(50.0, 125.0, fragDist);
+    if (bumpFade > 0.001) {
         float lum = dot(finalColor.rgb, vec3(0.299, 0.587, 0.114));
         float dLdx = dFdx(lum);
         float dLdy = dFdy(lum);
         vec3 dpdx = dFdx(FragPos);
         vec3 dpdy = dFdy(FragPos);
-        // Bump strength controls how much texture detail affects lighting
-        const float bumpStrength = 9.0;
+        float bumpStrength = 9.0 * bumpFade;
         vec3 perturbation = (dLdx * cross(norm, dpdy) + dLdy * cross(dpdx, norm)) * bumpStrength;
         vec3 candidate = norm - perturbation;
         float len2 = dot(candidate, candidate);
@@ -123,8 +125,7 @@ void main() {
 
     vec3 result = ambient + shadow * diffuse;
 
-    float distance = length(viewPos.xyz - FragPos);
-    float fogFactor = clamp((fogParams.y - distance) / (fogParams.y - fogParams.x), 0.0, 1.0);
+    float fogFactor = clamp((fogParams.y - fragDist) / (fogParams.y - fogParams.x), 0.0, 1.0);
     result = mix(fogColor.rgb, result, fogFactor);
 
     outColor = vec4(result, 1.0);

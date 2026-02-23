@@ -139,7 +139,7 @@ private:
     float collisionDistance = 10.0f;    // Max allowed by collision
     bool externalFollow_ = false;
     static constexpr float MIN_DISTANCE = 0.5f;     // Minimum zoom (first-person threshold)
-    static constexpr float MAX_DISTANCE_NORMAL = 33.0f;   // Default max zoom out
+    static constexpr float MAX_DISTANCE_NORMAL = 22.0f;   // Default max zoom out
     static constexpr float MAX_DISTANCE_EXTENDED = 50.0f;  // Extended max zoom out
     bool extendedZoom_ = false;
     static constexpr float ZOOM_SMOOTH_SPEED = 15.0f;  // How fast zoom eases

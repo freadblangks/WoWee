@@ -66,27 +66,26 @@ void main() {
 
     bool isFoliage = (alphaTest == 2);
 
+    // Fix DXT fringe: transparent edge texels have garbage (black) RGB.
+    // At low alpha the original RGB is untrustworthy — replace with the
+    // averaged color from nearby opaque texels (high mip).  The lower
+    // the alpha the more we distrust the original color.
+    if (alphaTest != 0 && texColor.a > 0.01 && texColor.a < 1.0) {
+        vec3 mipColor = textureLod(uTexture, TexCoord, 4.0).rgb;
+        // trust = 0 at alpha 0, trust = 1 at alpha ~0.9
+        float trust = smoothstep(0.0, 0.9, texColor.a);
+        texColor.rgb = mix(mipColor, texColor.rgb, trust);
+    }
+
     float alphaCutoff = 0.5;
     if (alphaTest == 2) {
-        // Vegetation cutout: lower threshold to preserve leaf coverage at grazing angles.
-        alphaCutoff = 0.33;
+        alphaCutoff = 0.4;
     } else if (alphaTest == 3) {
-        // Ground detail clutter (grass/small cards) needs softer clipping.
-        alphaCutoff = 0.20;
+        alphaCutoff = 0.25;
     } else if (alphaTest != 0) {
-        alphaCutoff = 0.35;
+        alphaCutoff = 0.4;
     }
-    if (alphaTest == 2) {
-        float alpha = texColor.a;
-        float softBand = 0.15;
-        if (alpha < (alphaCutoff - softBand)) discard;
-        if (alpha < alphaCutoff) {
-            ivec2 p = ivec2(gl_FragCoord.xy);
-            float threshold = bayerDither4x4(p);
-            float keep = clamp((alpha - (alphaCutoff - softBand)) / softBand, 0.0, 1.0);
-            if (threshold > keep) discard;
-        }
-    } else if (alphaTest != 0 && texColor.a < alphaCutoff) {
+    if (alphaTest != 0 && texColor.a < alphaCutoff) {
         discard;
     }
     if (colorKeyBlack != 0) {

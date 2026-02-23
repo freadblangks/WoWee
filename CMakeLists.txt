@@ -589,6 +589,9 @@ if(STORMLIB_LIBRARY AND STORMLIB_INCLUDE_DIR)
         ZLIB::ZLIB
         Threads::Threads
     )
+    if(WIN32)
+        target_link_libraries(asset_extract PRIVATE wininet bz2)
+    endif()
     set_target_properties(asset_extract PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
     )

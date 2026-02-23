@@ -238,7 +238,7 @@ private:
     glm::vec3 shadowCenter = glm::vec3(0.0f);
     bool shadowCenterInitialized = false;
     bool shadowsEnabled = true;
-    int shadowPostMoveFrames_ = 0; // transition marker for movement->idle shadow recenter
+
 
 public:
     // Character preview registration (for off-screen composite pass)

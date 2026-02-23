@@ -3713,52 +3713,16 @@ glm::mat4 Renderer::computeLightSpaceMatrix() {
         sunDir = glm::normalize(sunDir);
     }
 
-    // Keep a stable shadow focus center and move it smoothly toward the player
-    // to avoid visible shadow "state jumps" during movement.
+    // Shadow center follows the player directly; texel snapping below
+    // prevents shimmer without needing to freeze the projection.
     glm::vec3 desiredCenter = characterPosition;
-    // Don't initialize shadow center until the player has a real world position.
-    // characterPosition starts at (0,0,0) and gets set once the server places us.
     if (!shadowCenterInitialized) {
         if (glm::dot(desiredCenter, desiredCenter) < 1.0f) {
-            // Position not set yet — skip shadow rendering this frame.
             return glm::mat4(0.0f);
         }
-        shadowCenter = desiredCenter;
         shadowCenterInitialized = true;
-    } else {
-        const bool movingNow = cameraController && cameraController->isMoving();
-        if (movingNow) {
-            // Hold projection center fixed while moving to eliminate
-            // frame-to-frame surface flicker from projection churn.
-            shadowPostMoveFrames_ = 1; // transition marker: was moving last frame
-        } else {
-            if (shadowPostMoveFrames_ == 1) {
-                // First frame after movement: snap once so there's no delayed catch-up.
-                shadowCenter = desiredCenter;
-            } else {
-                // Normal idle smoothing.
-                constexpr float kCenterLerp = 0.12f;
-                constexpr float kMaxHorizontalStep = 1.5f;
-                constexpr float kMaxVerticalStep = 0.6f;
-
-                glm::vec2 deltaXY(desiredCenter.x - shadowCenter.x, desiredCenter.y - shadowCenter.y);
-                float distXY = glm::length(deltaXY);
-                if (distXY > 0.001f) {
-                    float step = std::min(distXY * kCenterLerp, kMaxHorizontalStep);
-                    glm::vec2 move = (deltaXY / distXY) * step;
-                    shadowCenter.x += move.x;
-                    shadowCenter.y += move.y;
-                }
-
-                float deltaZ = desiredCenter.z - shadowCenter.z;
-                if (std::abs(deltaZ) > 0.001f) {
-                    float stepZ = std::clamp(deltaZ * kCenterLerp, -kMaxVerticalStep, kMaxVerticalStep);
-                    shadowCenter.z += stepZ;
-                }
-            }
-            shadowPostMoveFrames_ = 0;
-        }
     }
+    shadowCenter = desiredCenter;
     glm::vec3 center = shadowCenter;
 
     // Snap to shadow texel grid to keep projection stable while moving.

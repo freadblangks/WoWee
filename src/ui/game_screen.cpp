@@ -5971,7 +5971,7 @@ void GameScreen::renderSettingsWindow() {
                     pendingAntiAliasing = 0;
                     pendingNormalMapping = true;
                     pendingNormalMapStrength = 0.8f;
-                    pendingPOM = false;
+                    pendingPOM = true;
                     pendingPOMQuality = 1;
                     pendingResIndex = defaultResIndex;
                     window->setFullscreen(pendingFullscreen);

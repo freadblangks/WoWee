@@ -105,7 +105,7 @@ private:
     int pendingAntiAliasing = 0;  // 0=Off, 1=2x, 2=4x, 3=8x
     bool pendingNormalMapping = true;   // on by default
     float pendingNormalMapStrength = 0.8f;  // 0.0-2.0
-    bool pendingPOM = false;            // off by default (expensive)
+    bool pendingPOM = true;             // on by default
     int pendingPOMQuality = 1;          // 0=Low(16), 1=Medium(32), 2=High(64)
 
     // UI element transparency (0.0 = fully transparent, 1.0 = fully opaque)

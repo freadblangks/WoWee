@@ -646,7 +646,7 @@ private:
     // Normal mapping / POM settings
     bool normalMappingEnabled_ = true;   // on by default
     float normalMapStrength_ = 0.8f;     // 0.0 = flat, 1.0 = full, 2.0 = exaggerated
-    bool pomEnabled_ = false;            // off by default (expensive)
+    bool pomEnabled_ = true;             // on by default
     int pomQuality_ = 1;                 // 0=Low(16), 1=Medium(32), 2=High(64)
     bool materialSettingsDirty_ = false; // rebuild UBOs when settings change
 

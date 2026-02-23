@@ -445,6 +445,7 @@ private:
 
         // Texture handles for this model (indexed by texture path order)
         std::vector<VkTexture*> textures;  // non-owning, from cache
+        std::vector<std::string> textureNames;  // lowercase texture paths (parallel to textures)
 
         // Material texture indices (materialId -> texture index)
         std::vector<uint32_t> materialTextureIndices;

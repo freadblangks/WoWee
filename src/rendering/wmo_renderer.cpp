@@ -427,6 +427,11 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
             core::Logger::getInstance().debug("    Loading texture ", i, ": ", texPath);
             VkTexture* tex = loadTexture(texPath);
             modelData.textures.push_back(tex);
+            // Store lowercase texture name for material detection
+            std::string lowerPath = texPath;
+            std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            modelData.textureNames.push_back(lowerPath);
         }
         core::Logger::getInstance().debug("  Loaded ", modelData.textures.size(), " textures for WMO");
     }
@@ -588,8 +593,17 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
                 unlit = (matFlags & 0x01) != 0;
             }
 
-            // F_WINDOW = 0x40, renders as transparent glass.
-            bool isWindow = (matFlags & 0x40) != 0;
+            // Detect window/glass materials by texture name.
+            // Flag 0x10 (F_SIDN) marks night-glow materials (windows AND lamps),
+            // so we additionally check for "window" in the texture path to
+            // distinguish actual glass from lamp post geometry.
+            bool isWindow = false;
+            if (batch.materialId < modelData.materialTextureIndices.size()) {
+                uint32_t ti = modelData.materialTextureIndices[batch.materialId];
+                if (ti < modelData.textureNames.size()) {
+                    isWindow = (modelData.textureNames[ti].find("window") != std::string::npos);
+                }
+            }
 
             BatchKey key{ reinterpret_cast<uintptr_t>(tex), alphaTest, unlit, isWindow };
             auto& mb = batchMap[key];

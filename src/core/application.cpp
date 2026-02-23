@@ -5730,6 +5730,9 @@ void Application::spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_t 
             return;
         }
 
+        // Freeze animation — gameobjects are static until interacted with
+        m2Renderer->setInstanceAnimationFrozen(instanceId, true);
+
         gameObjectInstances_[guid] = {modelId, instanceId, false};
     }
 

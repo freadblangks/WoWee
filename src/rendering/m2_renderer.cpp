@@ -3074,6 +3074,16 @@ void M2Renderer::setInstancePosition(uint32_t instanceId, const glm::vec3& posit
     spatialIndexDirty_ = true;
 }
 
+void M2Renderer::setInstanceAnimationFrozen(uint32_t instanceId, bool frozen) {
+    auto idxIt = instanceIndexById.find(instanceId);
+    if (idxIt == instanceIndexById.end()) return;
+    auto& inst = instances[idxIt->second];
+    inst.animSpeed = frozen ? 0.0f : 1.0f;
+    if (frozen) {
+        inst.animTime = 0.0f;  // Reset to bind pose
+    }
+}
+
 void M2Renderer::setInstanceTransform(uint32_t instanceId, const glm::mat4& transform) {
     auto idxIt = instanceIndexById.find(instanceId);
     if (idxIt == instanceIndexById.end()) return;

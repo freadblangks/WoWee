@@ -266,6 +266,7 @@ public:
 
     void setInstancePosition(uint32_t instanceId, const glm::vec3& position);
     void setInstanceTransform(uint32_t instanceId, const glm::mat4& transform);
+    void setInstanceAnimationFrozen(uint32_t instanceId, bool frozen);
     void removeInstance(uint32_t instanceId);
     void removeInstances(const std::vector<uint32_t>& instanceIds);
     void clear();

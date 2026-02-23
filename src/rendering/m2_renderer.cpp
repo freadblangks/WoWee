@@ -2607,11 +2607,13 @@ bool M2Renderer::initializeShadow(VkRenderPass shadowRenderPass) {
     return true;
 }
 
-void M2Renderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMatrix, float globalTime) {
+void M2Renderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMatrix, float globalTime,
+                              const glm::vec3& shadowCenter, float shadowRadius) {
     if (!shadowPipeline_ || !shadowParamsSet_) return;
     if (instances.empty() || models.empty()) return;
 
     struct ShadowPush { glm::mat4 lightSpaceMatrix; glm::mat4 model; };
+    const float shadowRadiusSq = shadowRadius * shadowRadius;
 
     // Helper lambda to draw instances with a given foliageSway setting
     auto drawPass = [&](bool foliagePass) {
@@ -2641,6 +2643,10 @@ void M2Renderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMa
         const M2ModelGPU* currentModel = nullptr;
 
         for (const auto& instance : instances) {
+            // Distance cull against shadow frustum
+            glm::vec3 diff = instance.position - shadowCenter;
+            if (glm::dot(diff, diff) > shadowRadiusSq) continue;
+
             auto modelIt = models.find(instance.modelId);
             if (modelIt == models.end()) continue;
             const M2ModelGPU& model = modelIt->second;

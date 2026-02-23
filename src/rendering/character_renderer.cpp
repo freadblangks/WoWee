@@ -2302,7 +2302,8 @@ bool CharacterRenderer::initializeShadow(VkRenderPass shadowRenderPass) {
     return true;
 }
 
-void CharacterRenderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMatrix) {
+void CharacterRenderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMatrix,
+                                     const glm::vec3& shadowCenter, float shadowRadius) {
     if (!shadowPipeline_ || !shadowParamsSet_) return;
     if (instances.empty() || models.empty()) return;
 
@@ -2316,9 +2317,14 @@ void CharacterRenderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& light
 
     struct ShadowPush { glm::mat4 lightSpaceMatrix; glm::mat4 model; };
 
+    const float shadowRadiusSq = shadowRadius * shadowRadius;
     for (auto& pair : instances) {
         auto& inst = pair.second;
         if (!inst.visible) continue;
+
+        // Distance cull against shadow frustum
+        glm::vec3 diff = inst.position - shadowCenter;
+        if (glm::dot(diff, diff) > shadowRadiusSq) continue;
 
         auto modelIt = models.find(inst.modelId);
         if (modelIt == models.end()) continue;

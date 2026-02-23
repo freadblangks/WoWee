@@ -1671,7 +1671,8 @@ bool WMORenderer::initializeShadow(VkRenderPass shadowRenderPass) {
     return true;
 }
 
-void WMORenderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMatrix) {
+void WMORenderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMatrix,
+                               const glm::vec3& shadowCenter, float shadowRadius) {
     if (!shadowPipeline_ || !shadowParamsSet_) return;
     if (instances.empty() || loadedModels.empty()) return;
 
@@ -1681,7 +1682,11 @@ void WMORenderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceM
 
     struct ShadowPush { glm::mat4 lightSpaceMatrix; glm::mat4 model; };
 
+    const float shadowRadiusSq = shadowRadius * shadowRadius;
     for (const auto& instance : instances) {
+        // Distance cull against shadow frustum
+        glm::vec3 diff = instance.position - shadowCenter;
+        if (glm::dot(diff, diff) > shadowRadiusSq) continue;
         auto modelIt = loadedModels.find(instance.modelId);
         if (modelIt == loadedModels.end()) continue;
         const ModelData& model = modelIt->second;

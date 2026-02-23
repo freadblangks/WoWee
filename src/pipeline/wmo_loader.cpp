@@ -429,9 +429,11 @@ bool WMOLoader::loadGroup(const std::vector<uint8_t>& groupData,
             }
 
             // Read MOGP header
-            // NOTE: In WMO group files, the MOGP data starts directly at flags
-            // (groupName/descriptiveGroupName are handled by the root WMO's MOGI chunk).
+            // MOGP starts with groupName(4) + descriptiveName(4) offsets into MOGN,
+            // followed by flags at offset +8.
             uint32_t mogpOffset = offset;
+            mogpOffset += 4; // skip groupName offset
+            mogpOffset += 4; // skip descriptiveGroupName offset
             group.flags = read<uint32_t>(groupData, mogpOffset);
             bool isInterior = (group.flags & 0x2000) != 0;
             core::Logger::getInstance().debug("  Group flags: 0x", std::hex, group.flags, std::dec,
@@ -442,14 +444,14 @@ bool WMOLoader::loadGroup(const std::vector<uint8_t>& groupData,
             group.boundingBoxMax.x = read<float>(groupData, mogpOffset);
             group.boundingBoxMax.y = read<float>(groupData, mogpOffset);
             group.boundingBoxMax.z = read<float>(groupData, mogpOffset);
-            mogpOffset += 4; // nameOffset
             group.portalStart = read<uint16_t>(groupData, mogpOffset);
             group.portalCount = read<uint16_t>(groupData, mogpOffset);
             mogpOffset += 8; // transBatchCount, intBatchCount, extBatchCount, padding
-            group.fogIndices[0] = read<uint32_t>(groupData, mogpOffset);
-            group.fogIndices[1] = read<uint32_t>(groupData, mogpOffset);
-            group.fogIndices[2] = read<uint32_t>(groupData, mogpOffset);
-            group.fogIndices[3] = read<uint32_t>(groupData, mogpOffset);
+            // fogIndices: 4 × uint8 (4 bytes total, NOT 4 × uint32)
+            group.fogIndices[0] = read<uint8_t>(groupData, mogpOffset);
+            group.fogIndices[1] = read<uint8_t>(groupData, mogpOffset);
+            group.fogIndices[2] = read<uint8_t>(groupData, mogpOffset);
+            group.fogIndices[3] = read<uint8_t>(groupData, mogpOffset);
             group.liquidType = read<uint32_t>(groupData, mogpOffset);
             // Skip to end of 68-byte header
             mogpOffset = offset + 68;

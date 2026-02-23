@@ -481,6 +481,7 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
         modelData.materialTextureIndices.push_back(texIndex);
         modelData.materialBlendModes.push_back(mat.blendMode);
         modelData.materialFlags.push_back(mat.flags);
+
     }
 
     // Helper: look up group name from MOGN raw data via MOGI nameOffset
@@ -507,16 +508,31 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
 
         GroupResources resources;
         if (createGroupResources(wmoGroup, resources, wmoGroup.flags)) {
-            // Detect distance-only LOD groups by name pattern
+            // Detect distance-only LOD/exterior shell groups:
+            // 1. Very low vertex count (<100) — portal connectors, tiny shells
+            // 2. ALWAYS_DRAW (0x10000) with low verts — distant LOD stand-ins
+            // 3. Pure OUTDOOR groups (0x8 set, 0x2000 not set) in large WMOs —
+            //    exterior cityscape shells (e.g. "city01" in Stormwind)
+            bool alwaysDraw = (wmoGroup.flags & 0x10000) != 0;
+            size_t nVerts = wmoGroup.vertices.size();
+            bool isLargeWmo = model.nGroups > 50;
+            // Detect facade groups by name (exterior face of buildings)
             std::string gname = getGroupName(static_cast<uint32_t>(gi));
+            bool isFacade = false;
+            bool isCityShell = false;
             if (!gname.empty()) {
                 std::string lower = gname;
                 std::transform(lower.begin(), lower.end(), lower.begin(),
                                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-                if (lower.find("lod") != std::string::npos) {
-                    resources.isLOD = true;
-                    LOG_INFO("WMO group ", gi, " '", gname, "' marked as LOD (distance-only)");
-                }
+                isFacade = lower.find("facade") != std::string::npos;
+                // "city01" etc are exterior cityscape shells in large WMOs
+                isCityShell = (lower.find("city") == 0 && lower.size() <= 8);
+            }
+            // Flag 0x80 on INDOOR groups in large WMOs = interior cathedral shell
+            bool hasFlag80 = (wmoGroup.flags & 0x80) != 0;
+            bool isIndoor = (wmoGroup.flags & 0x2000) != 0;
+            if (nVerts < 100 || (alwaysDraw && nVerts < 5000) || (isFacade && isLargeWmo) || (isCityShell && isLargeWmo) || (hasFlag80 && isIndoor && isLargeWmo)) {
+                resources.isLOD = true;
             }
             modelData.groups.push_back(resources);
             loadedGroups++;
@@ -572,9 +588,7 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
                 unlit = (matFlags & 0x01) != 0;
             }
 
-            // Only F_WINDOW (0x40) materials render as transparent glass.
-            // F_SIDN (0x20) is the night-glow/self-illuminated flag used on
-            // lamp posts, lanterns, etc. — those should NOT be glass.
+            // F_WINDOW = 0x40, renders as transparent glass.
             bool isWindow = (matFlags & 0x40) != 0;
 
             BatchKey key{ reinterpret_cast<uintptr_t>(tex), alphaTest, unlit, isWindow };
@@ -1405,18 +1419,15 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
         if (modelIt == loadedModels.end()) continue;
         const ModelData& model = modelIt->second;
 
+
         // Push model matrix
         GPUPushConstants push{};
         push.model = instance.modelMatrix;
         vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT,
                             0, sizeof(GPUPushConstants), &push);
 
-        // Compute camera distance to WMO bounding box center for LOD decisions
-        glm::vec3 wmoCenter = instance.modelMatrix * glm::vec4(
-            (model.boundingBoxMin + model.boundingBoxMax) * 0.5f, 1.0f);
-        float camDistSq = glm::dot(camPos - wmoCenter, camPos - wmoCenter);
-        // LOD groups render only beyond this distance squared (200 units)
-        static constexpr float LOD_SHOW_DIST_SQ = 200.0f * 200.0f;
+        // LOD shell groups render only beyond this distance squared (190 units)
+        static constexpr float LOD_SHELL_DIST_SQ = 196.0f * 196.0f;
 
         // Render visible groups
         for (uint32_t gi : dl.visibleGroups) {
@@ -1425,8 +1436,13 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
             // Only skip antiportal geometry
             if (group.groupFlags & 0x4000000) continue;
 
-            // Skip distance-only LOD groups when camera is close
-            if (group.isLOD && camDistSq < LOD_SHOW_DIST_SQ) continue;
+            // Skip distance-only LOD shell groups when camera is close to the group
+            if (group.isLOD) {
+                glm::vec3 groupCenter = instance.modelMatrix * glm::vec4(
+                    (group.boundingBoxMin + group.boundingBoxMax) * 0.5f, 1.0f);
+                float groupDistSq = glm::dot(camPos - groupCenter, camPos - groupCenter);
+                if (groupDistSq < LOD_SHELL_DIST_SQ) continue;
+            }
 
             // Bind vertex + index buffers
             VkDeviceSize offset = 0;

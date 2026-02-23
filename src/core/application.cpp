@@ -327,11 +327,6 @@ void Application::run() {
         // Update input
         Input::getInstance().update();
 
-        // Timing breakdown
-        static int frameCount = 0;
-        static double totalUpdateMs = 0, totalRenderMs = 0, totalSwapMs = 0;
-        auto t1 = std::chrono::steady_clock::now();
-
         // Update application state
         try {
             update(deltaTime);
@@ -344,8 +339,6 @@ void Application::run() {
                       ", dt=", deltaTime, "): ", e.what());
             throw;
         }
-        auto t2 = std::chrono::steady_clock::now();
-
         // Render
         try {
             render();
@@ -356,8 +349,6 @@ void Application::run() {
             LOG_ERROR("Exception during Application::render (state=", static_cast<int>(state), "): ", e.what());
             throw;
         }
-        auto t3 = std::chrono::steady_clock::now();
-
         // Swap buffers
         try {
             window->swapBuffers();
@@ -367,21 +358,6 @@ void Application::run() {
         } catch (const std::exception& e) {
             LOG_ERROR("Exception during swapBuffers: ", e.what());
             throw;
-        }
-        auto t4 = std::chrono::steady_clock::now();
-
-        totalUpdateMs += std::chrono::duration<double, std::milli>(t2 - t1).count();
-        totalRenderMs += std::chrono::duration<double, std::milli>(t3 - t2).count();
-        totalSwapMs += std::chrono::duration<double, std::milli>(t4 - t3).count();
-
-        if (++frameCount >= 60) {
-            if (frameProfileEnabled && core::Logger::getInstance().shouldLog(core::LogLevel::DEBUG)) {
-                LOG_DEBUG("[Frame] Update: ", totalUpdateMs / 60.0,
-                          "ms Render: ", totalRenderMs / 60.0,
-                          "ms Swap: ", totalSwapMs / 60.0, "ms");
-            }
-            frameCount = 0;
-            totalUpdateMs = totalRenderMs = totalSwapMs = 0;
         }
     }
 
@@ -625,14 +601,6 @@ void Application::update(float deltaTime) {
                     throw;
                 }
             };
-            // Application update profiling
-            updateCheckpoint = "in_game: profile init";
-            static int appProfileCounter = 0;
-            static float ghTime = 0.0f, worldTime = 0.0f, spawnTime = 0.0f;
-            static float creatureQTime = 0.0f, goQTime = 0.0f, mountTime = 0.0f;
-            static float npcMgrTime = 0.0f, questMarkTime = 0.0f, syncTime = 0.0f;
-
-            auto gh1 = std::chrono::high_resolution_clock::now();
             inGameStep = "gameHandler update";
             updateCheckpoint = "in_game: gameHandler update";
             runInGameStage("gameHandler->update", [&] {
@@ -640,9 +608,6 @@ void Application::update(float deltaTime) {
                     gameHandler->update(deltaTime);
                 }
             });
-            auto gh2 = std::chrono::high_resolution_clock::now();
-            ghTime += std::chrono::duration<float, std::milli>(gh2 - gh1).count();
-
             // Always unsheath on combat engage.
             inGameStep = "auto-unsheathe";
             updateCheckpoint = "in_game: auto-unsheathe";
@@ -667,7 +632,6 @@ void Application::update(float deltaTime) {
                 }
             }
 
-            auto w1 = std::chrono::high_resolution_clock::now();
             inGameStep = "world update";
             updateCheckpoint = "in_game: world update";
             runInGameStage("world->update", [&] {
@@ -675,10 +639,6 @@ void Application::update(float deltaTime) {
                     world->update(deltaTime);
                 }
             });
-            auto w2 = std::chrono::high_resolution_clock::now();
-            worldTime += std::chrono::duration<float, std::milli>(w2 - w1).count();
-
-            auto cq1 = std::chrono::high_resolution_clock::now();
             inGameStep = "spawn/equipment queues";
             updateCheckpoint = "in_game: spawn/equipment queues";
             runInGameStage("spawn/equipment queues", [&] {
@@ -688,9 +648,6 @@ void Application::update(float deltaTime) {
                 // Process deferred equipment compositing (max 1 per frame to avoid stutter)
                 processDeferredEquipmentQueue();
             });
-            auto cq2 = std::chrono::high_resolution_clock::now();
-            creatureQTime += std::chrono::duration<float, std::milli>(cq2 - cq1).count();
-
             // Self-heal missing creature visuals: if a nearby UNIT exists in
             // entity state but has no render instance, queue a spawn retry.
             inGameStep = "creature resync scan";
@@ -739,41 +696,23 @@ void Application::update(float deltaTime) {
                 }
             }
 
-            auto goq1 = std::chrono::high_resolution_clock::now();
             inGameStep = "gameobject/transport queues";
             updateCheckpoint = "in_game: gameobject/transport queues";
             runInGameStage("gameobject/transport queues", [&] {
                 processGameObjectSpawnQueue();
                 processPendingTransportDoodads();
             });
-            auto goq2 = std::chrono::high_resolution_clock::now();
-            goQTime += std::chrono::duration<float, std::milli>(goq2 - goq1).count();
-
-            auto m1 = std::chrono::high_resolution_clock::now();
             inGameStep = "pending mount";
             updateCheckpoint = "in_game: pending mount";
             runInGameStage("processPendingMount", [&] {
                 processPendingMount();
             });
-            auto m2 = std::chrono::high_resolution_clock::now();
-            mountTime += std::chrono::duration<float, std::milli>(m2 - m1).count();
-
-            auto nm1 = std::chrono::high_resolution_clock::now();
-            auto nm2 = std::chrono::high_resolution_clock::now();
-            npcMgrTime += std::chrono::duration<float, std::milli>(nm2 - nm1).count();
-
-            auto qm1 = std::chrono::high_resolution_clock::now();
             // Update 3D quest markers above NPCs
             inGameStep = "quest markers";
             updateCheckpoint = "in_game: quest markers";
             runInGameStage("updateQuestMarkers", [&] {
                 updateQuestMarkers();
             });
-            auto qm2 = std::chrono::high_resolution_clock::now();
-            questMarkTime += std::chrono::duration<float, std::milli>(qm2 - qm1).count();
-
-            auto sync1 = std::chrono::high_resolution_clock::now();
-
             // Sync server run speed to camera controller
             inGameStep = "post-update sync";
             updateCheckpoint = "in_game: post-update sync";
@@ -1155,24 +1094,6 @@ void Application::update(float deltaTime) {
             // Movement heartbeat is sent from GameHandler::update() to avoid
             // duplicate packets from multiple update loops.
 
-            auto sync2 = std::chrono::high_resolution_clock::now();
-            syncTime += std::chrono::duration<float, std::milli>(sync2 - sync1).count();
-
-            // Log profiling every 60 frames
-            if (++appProfileCounter >= 60) {
-                updateCheckpoint = "in_game: profile log";
-                if (core::Logger::getInstance().shouldLog(core::LogLevel::DEBUG)) {
-                    LOG_DEBUG("APP UPDATE PROFILE (60 frames): gameHandler=", ghTime / 60.0f,
-                             "ms world=", worldTime / 60.0f, "ms spawn=", spawnTime / 60.0f,
-                             "ms creatureQ=", creatureQTime / 60.0f, "ms goQ=", goQTime / 60.0f,
-                             "ms mount=", mountTime / 60.0f, "ms npcMgr=", npcMgrTime / 60.0f,
-                             "ms questMark=", questMarkTime / 60.0f, "ms sync=", syncTime / 60.0f, "ms");
-                }
-                appProfileCounter = 0;
-                ghTime = worldTime = spawnTime = 0.0f;
-                creatureQTime = goQTime = mountTime = 0.0f;
-                npcMgrTime = questMarkTime = syncTime = 0.0f;
-            }
             } catch (const std::bad_alloc& e) {
                 LOG_ERROR("OOM inside AppState::IN_GAME at step '", inGameStep, "': ", e.what());
                 throw;
@@ -1189,11 +1110,7 @@ void Application::update(float deltaTime) {
     }
 
     // Update renderer (camera, etc.) only when in-game
-    static int rendererProfileCounter = 0;
-    static float rendererTime = 0.0f, uiTime = 0.0f;
-
     updateCheckpoint = "renderer update";
-    auto r1 = std::chrono::high_resolution_clock::now();
     if (renderer && state == AppState::IN_GAME) {
         try {
             renderer->update(deltaTime);
@@ -1205,12 +1122,8 @@ void Application::update(float deltaTime) {
             throw;
         }
     }
-    auto r2 = std::chrono::high_resolution_clock::now();
-    rendererTime += std::chrono::duration<float, std::milli>(r2 - r1).count();
-
     // Update UI
     updateCheckpoint = "ui update";
-    auto u1 = std::chrono::high_resolution_clock::now();
     if (uiManager) {
         try {
             uiManager->update(deltaTime);
@@ -1221,18 +1134,6 @@ void Application::update(float deltaTime) {
             LOG_ERROR("Exception during Application::update stage 'uiManager->update': ", e.what());
             throw;
         }
-    }
-    auto u2 = std::chrono::high_resolution_clock::now();
-    uiTime += std::chrono::duration<float, std::milli>(u2 - u1).count();
-
-    updateCheckpoint = "renderer/ui profile log";
-    if (state == AppState::IN_GAME && ++rendererProfileCounter >= 60) {
-        if (core::Logger::getInstance().shouldLog(core::LogLevel::DEBUG)) {
-            LOG_DEBUG("RENDERER/UI PROFILE (60 frames): renderer=", rendererTime / 60.0f,
-                     "ms ui=", uiTime / 60.0f, "ms");
-        }
-        rendererProfileCounter = 0;
-        rendererTime = uiTime = 0.0f;
     }
     } catch (const std::bad_alloc& e) {
         LOG_ERROR("OOM in Application::update checkpoint '", updateCheckpoint, "': ", e.what());

@@ -524,16 +524,6 @@ bool GameHandler::isConnected() const {
 }
 
 void GameHandler::update(float deltaTime) {
-    // Timing profiling (log every 60 frames to reduce spam)
-    static int profileCounter = 0;
-    static float socketTime = 0.0f;
-    static float taxiTime = 0.0f;
-    static float distanceCheckTime = 0.0f;
-    static float entityUpdateTime = 0.0f;
-    static float totalTime = 0.0f;
-
-    auto updateStart = std::chrono::high_resolution_clock::now();
-
     // Fire deferred char-create callback (outside ImGui render)
     if (pendingCharCreateResult_) {
         pendingCharCreateResult_ = false;
@@ -547,12 +537,9 @@ void GameHandler::update(float deltaTime) {
     }
 
     // Update socket (processes incoming data and triggers callbacks)
-    auto socketStart = std::chrono::high_resolution_clock::now();
     if (socket) {
         socket->update();
     }
-    auto socketEnd = std::chrono::high_resolution_clock::now();
-    socketTime += std::chrono::duration<float, std::milli>(socketEnd - socketStart).count();
 
     // Detect server-side disconnect (socket closed during update)
     if (socket && !socket->isConnected() && state != WorldState::DISCONNECTED) {
@@ -792,9 +779,6 @@ void GameHandler::update(float deltaTime) {
             }
         }
 
-        // Taxi logic timing
-        auto taxiStart = std::chrono::high_resolution_clock::now();
-
         // Detect taxi flight landing: UNIT_FLAG_TAXI_FLIGHT (0x00000100) cleared
         if (onTaxiFlight_) {
             updateClientTaxi(deltaTime);
@@ -912,17 +896,11 @@ void GameHandler::update(float deltaTime) {
             }
         }
 
-        auto taxiEnd = std::chrono::high_resolution_clock::now();
-        taxiTime += std::chrono::duration<float, std::milli>(taxiEnd - taxiStart).count();
-
         // Update transport manager
         if (transportManager_) {
             transportManager_->update(deltaTime);
             updateAttachedTransportChildren(deltaTime);
         }
-
-        // Distance check timing
-        auto distanceStart = std::chrono::high_resolution_clock::now();
 
         // Leave combat if auto-attack target is too far away (leash range)
         // and keep melee intent tightly synced while stationary.
@@ -1081,12 +1059,6 @@ void GameHandler::update(float deltaTime) {
             }
         }
 
-        auto distanceEnd = std::chrono::high_resolution_clock::now();
-        distanceCheckTime += std::chrono::duration<float, std::milli>(distanceEnd - distanceStart).count();
-
-        // Entity update timing
-        auto entityStart = std::chrono::high_resolution_clock::now();
-
         // Update entity movement interpolation (keeps targeting in sync with visuals)
         // Only update entities within reasonable distance for performance
         const float updateRadiusSq = 150.0f * 150.0f;  // 150 unit radius
@@ -1113,24 +1085,6 @@ void GameHandler::update(float deltaTime) {
             }
         }
 
-        auto entityEnd = std::chrono::high_resolution_clock::now();
-        entityUpdateTime += std::chrono::duration<float, std::milli>(entityEnd - entityStart).count();
-    }
-
-    auto updateEnd = std::chrono::high_resolution_clock::now();
-    totalTime += std::chrono::duration<float, std::milli>(updateEnd - updateStart).count();
-
-    // Log profiling every 60 frames
-    if (++profileCounter >= 60) {
-        LOG_DEBUG("UPDATE PROFILE (60 frames): socket=", socketTime / 60.0f, "ms taxi=", taxiTime / 60.0f,
-                 "ms distance=", distanceCheckTime / 60.0f, "ms entity=", entityUpdateTime / 60.0f,
-                 "ms TOTAL=", totalTime / 60.0f, "ms");
-        profileCounter = 0;
-        socketTime = 0.0f;
-        taxiTime = 0.0f;
-        distanceCheckTime = 0.0f;
-        entityUpdateTime = 0.0f;
-        totalTime = 0.0f;
     }
 }
 

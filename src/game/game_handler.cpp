@@ -4984,8 +4984,9 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     }
                 // Trigger creature spawn callback for units/players with displayId
                     if (block.objectType == ObjectType::UNIT && unit->getDisplayId() == 0) {
-                        LOG_DEBUG("[Spawn] UNIT guid=0x", std::hex, block.guid, std::dec,
-                                  " has displayId=0 — no spawn (entry=", unit->getEntry(), ")");
+                        LOG_WARNING("[Spawn] UNIT guid=0x", std::hex, block.guid, std::dec,
+                                  " has displayId=0 — no spawn (entry=", unit->getEntry(),
+                                  " at ", unit->getX(), ",", unit->getY(), ",", unit->getZ(), ")");
                     }
                     if ((block.objectType == ObjectType::UNIT || block.objectType == ObjectType::PLAYER) && unit->getDisplayId() != 0) {
                         if (block.objectType == ObjectType::PLAYER && block.guid == playerGuid) {

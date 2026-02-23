@@ -1081,9 +1081,17 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
             break;
         }
     }
-    gpuModel.disableAnimation = foliageOrTreeLike || chestName;
-    gpuModel.shadowWindFoliage = foliageOrTreeLike;
-    gpuModel.isFoliageLike = foliageOrTreeLike;
+    bool ambientCreature =
+        (lowerName.find("firefly") != std::string::npos) ||
+        (lowerName.find("fireflies") != std::string::npos) ||
+        (lowerName.find("fireflys") != std::string::npos) ||
+        (lowerName.find("dragonfly") != std::string::npos) ||
+        (lowerName.find("dragonflies") != std::string::npos) ||
+        (lowerName.find("butterfly") != std::string::npos) ||
+        (lowerName.find("moth") != std::string::npos);
+    gpuModel.disableAnimation = (foliageOrTreeLike && !ambientCreature) || chestName;
+    gpuModel.shadowWindFoliage = foliageOrTreeLike && !ambientCreature;
+    gpuModel.isFoliageLike = foliageOrTreeLike && !ambientCreature;
     gpuModel.isElvenLike =
         (lowerName.find("elf") != std::string::npos) ||
         (lowerName.find("elven") != std::string::npos) ||
@@ -1113,11 +1121,8 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
         (lowerName.find("seaweed") != std::string::npos) ||
         (lowerName.find("kelp") != std::string::npos) ||
         (lowerName.find("lilypad") != std::string::npos);
-    // Firefly effect models: particle-based ambient glow (exempt from dampeners)
-    gpuModel.isFireflyEffect =
-        (lowerName.find("firefly") != std::string::npos) ||
-        (lowerName.find("fireflies") != std::string::npos) ||
-        (lowerName.find("fireflys") != std::string::npos);
+    // Ambient creature effects: particle-based glow (exempt from particle dampeners)
+    gpuModel.isFireflyEffect = ambientCreature;
 
     // Build collision mesh + spatial grid from M2 bounding geometry
     gpuModel.collision.vertices = model.collisionVertices;

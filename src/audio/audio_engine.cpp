@@ -273,7 +273,7 @@ bool AudioEngine::playSound2D(const std::vector<uint8_t>& wavData, float volume,
     }
 
     // Set volume (pitch not supported with NO_PITCH flag)
-    ma_sound_set_volume(sound, volume * masterVolume_);
+    ma_sound_set_volume(sound, volume);
 
     // Start playback
     result = ma_sound_start(sound);
@@ -361,7 +361,7 @@ bool AudioEngine::playSound3D(const std::vector<uint8_t>& wavData, const glm::ve
 
     // Set 3D position and attenuation
     ma_sound_set_position(sound, position.x, position.y, position.z);
-    ma_sound_set_volume(sound, volume * masterVolume_);
+    ma_sound_set_volume(sound, volume);
     ma_sound_set_pitch(sound, pitch);  // Enable pitch variation
     ma_sound_set_attenuation_model(sound, ma_attenuation_model_inverse);
     ma_sound_set_min_gain(sound, 0.0f);
@@ -462,7 +462,7 @@ bool AudioEngine::playMusic(const std::vector<uint8_t>& musicData, float volume,
     }
 
     // Set volume and looping
-    ma_sound_set_volume(musicSound_, volume * masterVolume_);
+    ma_sound_set_volume(musicSound_, volume);
     ma_sound_set_looping(musicSound_, loop ? MA_TRUE : MA_FALSE);
 
     // Start playback
@@ -510,7 +510,7 @@ bool AudioEngine::isMusicPlaying() const {
 void AudioEngine::setMusicVolume(float volume) {
     musicVolume_ = glm::clamp(volume, 0.0f, 1.0f);
     if (musicSound_) {
-        ma_sound_set_volume(musicSound_, musicVolume_ * masterVolume_);
+        ma_sound_set_volume(musicSound_, musicVolume_);
     }
 }
 

@@ -228,36 +228,36 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         auto* renderer = core::Application::getInstance().getRenderer();
         if (renderer && renderer->getUiSoundManager()) {
             float masterScale = soundMuted_ ? 0.0f : static_cast<float>(pendingMasterVolume) / 100.0f;
-            audio::AudioEngine::instance().setMasterVolume(soundMuted_ ? 0.0f : masterScale);
+            audio::AudioEngine::instance().setMasterVolume(masterScale);
             if (auto* music = renderer->getMusicManager()) {
-                music->setVolume(static_cast<int>(pendingMusicVolume * masterScale));
+                music->setVolume(pendingMusicVolume);
             }
             if (auto* ambient = renderer->getAmbientSoundManager()) {
-                ambient->setVolumeScale(pendingAmbientVolume / 100.0f * masterScale);
+                ambient->setVolumeScale(pendingAmbientVolume / 100.0f);
             }
             if (auto* ui = renderer->getUiSoundManager()) {
-                ui->setVolumeScale(pendingUiVolume / 100.0f * masterScale);
+                ui->setVolumeScale(pendingUiVolume / 100.0f);
             }
             if (auto* combat = renderer->getCombatSoundManager()) {
-                combat->setVolumeScale(pendingCombatVolume / 100.0f * masterScale);
+                combat->setVolumeScale(pendingCombatVolume / 100.0f);
             }
             if (auto* spell = renderer->getSpellSoundManager()) {
-                spell->setVolumeScale(pendingSpellVolume / 100.0f * masterScale);
+                spell->setVolumeScale(pendingSpellVolume / 100.0f);
             }
             if (auto* movement = renderer->getMovementSoundManager()) {
-                movement->setVolumeScale(pendingMovementVolume / 100.0f * masterScale);
+                movement->setVolumeScale(pendingMovementVolume / 100.0f);
             }
             if (auto* footstep = renderer->getFootstepManager()) {
-                footstep->setVolumeScale(pendingFootstepVolume / 100.0f * masterScale);
+                footstep->setVolumeScale(pendingFootstepVolume / 100.0f);
             }
             if (auto* npcVoice = renderer->getNpcVoiceManager()) {
-                npcVoice->setVolumeScale(pendingNpcVoiceVolume / 100.0f * masterScale);
+                npcVoice->setVolumeScale(pendingNpcVoiceVolume / 100.0f);
             }
             if (auto* mount = renderer->getMountSoundManager()) {
-                mount->setVolumeScale(pendingMountVolume / 100.0f * masterScale);
+                mount->setVolumeScale(pendingMountVolume / 100.0f);
             }
             if (auto* activity = renderer->getActivitySoundManager()) {
-                activity->setVolumeScale(pendingActivityVolume / 100.0f * masterScale);
+                activity->setVolumeScale(pendingActivityVolume / 100.0f);
             }
             volumeSettingsApplied_ = true;
         }
@@ -6104,36 +6104,36 @@ void GameScreen::renderSettingsWindow() {
                 auto applyAudioSettings = [&]() {
                     if (!renderer) return;
                     float masterScale = soundMuted_ ? 0.0f : static_cast<float>(pendingMasterVolume) / 100.0f;
-                    audio::AudioEngine::instance().setMasterVolume(soundMuted_ ? 0.0f : masterScale);
+                    audio::AudioEngine::instance().setMasterVolume(masterScale);
                     if (auto* music = renderer->getMusicManager()) {
-                        music->setVolume(static_cast<int>(pendingMusicVolume * masterScale));
+                        music->setVolume(pendingMusicVolume);
                     }
                     if (auto* ambient = renderer->getAmbientSoundManager()) {
-                        ambient->setVolumeScale(pendingAmbientVolume / 100.0f * masterScale);
+                        ambient->setVolumeScale(pendingAmbientVolume / 100.0f);
                     }
                     if (auto* ui = renderer->getUiSoundManager()) {
-                        ui->setVolumeScale(pendingUiVolume / 100.0f * masterScale);
+                        ui->setVolumeScale(pendingUiVolume / 100.0f);
                     }
                     if (auto* combat = renderer->getCombatSoundManager()) {
-                        combat->setVolumeScale(pendingCombatVolume / 100.0f * masterScale);
+                        combat->setVolumeScale(pendingCombatVolume / 100.0f);
                     }
                     if (auto* spell = renderer->getSpellSoundManager()) {
-                        spell->setVolumeScale(pendingSpellVolume / 100.0f * masterScale);
+                        spell->setVolumeScale(pendingSpellVolume / 100.0f);
                     }
                     if (auto* movement = renderer->getMovementSoundManager()) {
-                        movement->setVolumeScale(pendingMovementVolume / 100.0f * masterScale);
+                        movement->setVolumeScale(pendingMovementVolume / 100.0f);
                     }
                     if (auto* footstep = renderer->getFootstepManager()) {
-                        footstep->setVolumeScale(pendingFootstepVolume / 100.0f * masterScale);
+                        footstep->setVolumeScale(pendingFootstepVolume / 100.0f);
                     }
                     if (auto* npcVoice = renderer->getNpcVoiceManager()) {
-                        npcVoice->setVolumeScale(pendingNpcVoiceVolume / 100.0f * masterScale);
+                        npcVoice->setVolumeScale(pendingNpcVoiceVolume / 100.0f);
                     }
                     if (auto* mount = renderer->getMountSoundManager()) {
-                        mount->setVolumeScale(pendingMountVolume / 100.0f * masterScale);
+                        mount->setVolumeScale(pendingMountVolume / 100.0f);
                     }
                     if (auto* activity = renderer->getActivitySoundManager()) {
-                        activity->setVolumeScale(pendingActivityVolume / 100.0f * masterScale);
+                        activity->setVolumeScale(pendingActivityVolume / 100.0f);
                     }
                     saveSettings();
                 };
@@ -6425,6 +6425,60 @@ void GameScreen::renderSettingsWindow() {
                 ImGui::EndTabItem();
             }
 
+            // ============================================================
+            // ABOUT TAB
+            // ============================================================
+            if (ImGui::BeginTabItem("About")) {
+                ImGui::Spacing();
+                ImGui::Spacing();
+
+                ImGui::TextWrapped("WoWee - World of Warcraft Client Emulator");
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                ImGui::Text("Developer");
+                ImGui::Indent();
+                ImGui::Text("Kelsi Davis");
+                ImGui::Unindent();
+                ImGui::Spacing();
+
+                ImGui::Text("GitHub");
+                ImGui::Indent();
+                ImGui::TextColored(ImVec4(0.4f, 0.7f, 1.0f, 1.0f), "https://github.com/Kelsidavis/WoWee");
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+                    ImGui::SetTooltip("Click to copy");
+                }
+                if (ImGui::IsItemClicked()) {
+                    ImGui::SetClipboardText("https://github.com/Kelsidavis/WoWee");
+                }
+                ImGui::Unindent();
+                ImGui::Spacing();
+
+                ImGui::Text("Contact");
+                ImGui::Indent();
+                ImGui::TextColored(ImVec4(0.4f, 0.7f, 1.0f, 1.0f), "github.com/Kelsidavis");
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+                    ImGui::SetTooltip("Click to copy");
+                }
+                if (ImGui::IsItemClicked()) {
+                    ImGui::SetClipboardText("https://github.com/Kelsidavis");
+                }
+                ImGui::Unindent();
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                ImGui::TextWrapped("A multi-expansion WoW client supporting Classic, TBC, and WotLK (3.3.5a).");
+                ImGui::Spacing();
+                ImGui::TextDisabled("Built with Vulkan, SDL2, and ImGui");
+
+                ImGui::EndTabItem();
+            }
+
             ImGui::EndTabBar();
         }
 
@@ -6639,34 +6693,34 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         audio::AudioEngine::instance().setMasterVolume(masterScale);
         if (!activeRenderer) return;
         if (auto* music = activeRenderer->getMusicManager()) {
-            music->setVolume(static_cast<int>(pendingMusicVolume * masterScale));
+            music->setVolume(pendingMusicVolume);
         }
         if (auto* ambient = activeRenderer->getAmbientSoundManager()) {
-            ambient->setVolumeScale(pendingAmbientVolume / 100.0f * masterScale);
+            ambient->setVolumeScale(pendingAmbientVolume / 100.0f);
         }
         if (auto* ui = activeRenderer->getUiSoundManager()) {
-            ui->setVolumeScale(pendingUiVolume / 100.0f * masterScale);
+            ui->setVolumeScale(pendingUiVolume / 100.0f);
         }
         if (auto* combat = activeRenderer->getCombatSoundManager()) {
-            combat->setVolumeScale(pendingCombatVolume / 100.0f * masterScale);
+            combat->setVolumeScale(pendingCombatVolume / 100.0f);
         }
         if (auto* spell = activeRenderer->getSpellSoundManager()) {
-            spell->setVolumeScale(pendingSpellVolume / 100.0f * masterScale);
+            spell->setVolumeScale(pendingSpellVolume / 100.0f);
         }
         if (auto* movement = activeRenderer->getMovementSoundManager()) {
-            movement->setVolumeScale(pendingMovementVolume / 100.0f * masterScale);
+            movement->setVolumeScale(pendingMovementVolume / 100.0f);
         }
         if (auto* footstep = activeRenderer->getFootstepManager()) {
-            footstep->setVolumeScale(pendingFootstepVolume / 100.0f * masterScale);
+            footstep->setVolumeScale(pendingFootstepVolume / 100.0f);
         }
         if (auto* npcVoice = activeRenderer->getNpcVoiceManager()) {
-            npcVoice->setVolumeScale(pendingNpcVoiceVolume / 100.0f * masterScale);
+            npcVoice->setVolumeScale(pendingNpcVoiceVolume / 100.0f);
         }
         if (auto* mount = activeRenderer->getMountSoundManager()) {
-            mount->setVolumeScale(pendingMountVolume / 100.0f * masterScale);
+            mount->setVolumeScale(pendingMountVolume / 100.0f);
         }
         if (auto* activity = activeRenderer->getActivitySoundManager()) {
-            activity->setVolumeScale(pendingActivityVolume / 100.0f * masterScale);
+            activity->setVolumeScale(pendingActivityVolume / 100.0f);
         }
     };
 

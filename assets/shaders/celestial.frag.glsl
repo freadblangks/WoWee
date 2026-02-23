@@ -26,9 +26,21 @@ float valueNoise(vec2 p) {
 void main() {
     vec2 uv = TexCoord - 0.5;
     float dist = length(uv);
-    float disc = smoothstep(0.42, 0.38, dist);
-    float glow = exp(-dist * dist * 12.0) * 0.6;
+
+    // Hard disc with smooth edge
+    float disc = smoothstep(0.42, 0.35, dist);
+
+    // Soft glow that fades to zero well within quad bounds
+    // At dist=0.5 (quad edge), this should be negligible
+    float glow = exp(-dist * dist * 18.0) * 0.5;
+
+    // Combine disc and glow
     float alpha = max(disc, glow) * push.intensity;
+
+    // Fade to zero at quad edges to prevent visible box
+    float edgeFade = 1.0 - smoothstep(0.4, 0.5, dist);
+    alpha *= edgeFade;
+
     vec3 color = push.celestialColor.rgb;
 
     // Animated haze/turbulence overlay for the sun disc

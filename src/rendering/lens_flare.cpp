@@ -211,28 +211,27 @@ void LensFlare::generateFlareElements() {
     flareElements.push_back({0.0f, 0.3f, glm::vec3(1.0f, 0.95f, 0.8f), 0.8f});
 
     // Flare ghosts along sun-to-center axis
-    // These appear at various positions between sun and opposite side
 
     // Bright white ghost near sun
     flareElements.push_back({0.2f, 0.08f, glm::vec3(1.0f, 1.0f, 1.0f), 0.5f});
 
     // Blue-tinted ghost
-    flareElements.push_back({0.4f, 0.15f, glm::vec3(0.3f, 0.5f, 1.0f), 0.4f});
+    flareElements.push_back({0.4f, 0.15f, glm::vec3(0.4f, 0.55f, 0.9f), 0.35f});
 
     // Small bright spot
-    flareElements.push_back({0.6f, 0.05f, glm::vec3(1.0f, 0.8f, 0.6f), 0.6f});
+    flareElements.push_back({0.6f, 0.05f, glm::vec3(1.0f, 0.8f, 0.6f), 0.5f});
 
-    // Green-tinted ghost (chromatic aberration)
-    flareElements.push_back({0.8f, 0.12f, glm::vec3(0.4f, 1.0f, 0.5f), 0.3f});
+    // Warm amber ghost (replaced oversaturated green)
+    flareElements.push_back({0.8f, 0.10f, glm::vec3(0.9f, 0.75f, 0.5f), 0.2f});
 
     // Large halo on opposite side
-    flareElements.push_back({-0.5f, 0.25f, glm::vec3(1.0f, 0.7f, 0.4f), 0.2f});
+    flareElements.push_back({-0.5f, 0.22f, glm::vec3(1.0f, 0.8f, 0.5f), 0.15f});
 
-    // Purple ghost far from sun
-    flareElements.push_back({-0.8f, 0.1f, glm::vec3(0.8f, 0.4f, 1.0f), 0.25f});
+    // Faint blue ghost far from sun
+    flareElements.push_back({-0.8f, 0.08f, glm::vec3(0.6f, 0.5f, 0.9f), 0.15f});
 
-    // Small red ghost
-    flareElements.push_back({-1.2f, 0.06f, glm::vec3(1.0f, 0.3f, 0.3f), 0.3f});
+    // Small warm ghost
+    flareElements.push_back({-1.2f, 0.05f, glm::vec3(1.0f, 0.6f, 0.4f), 0.2f});
 }
 
 glm::vec2 LensFlare::worldToScreen(const Camera& camera, const glm::vec3& worldPos) const {
@@ -287,7 +286,9 @@ float LensFlare::calculateSunVisibility(const Camera& camera, const glm::vec3& s
     return angleFactor * edgeFade;
 }
 
-void LensFlare::render(VkCommandBuffer cmd, const Camera& camera, const glm::vec3& sunPosition, float timeOfDay) {
+void LensFlare::render(VkCommandBuffer cmd, const Camera& camera, const glm::vec3& sunPosition,
+                       float timeOfDay, float fogDensity, float cloudDensity,
+                       float weatherIntensity) {
     if (!enabled || pipeline == VK_NULL_HANDLE) {
         return;
     }
@@ -312,6 +313,16 @@ void LensFlare::render(VkCommandBuffer cmd, const Camera& camera, const glm::vec
         return;
     }
 
+    // Atmospheric attenuation — fog, clouds, and weather reduce lens flare
+    float atmosphericFactor = 1.0f;
+    atmosphericFactor *= (1.0f - glm::clamp(fogDensity * 0.8f, 0.0f, 0.9f));       // Heavy fog nearly kills flare
+    atmosphericFactor *= (1.0f - glm::clamp(cloudDensity * 0.6f, 0.0f, 0.7f));     // Clouds attenuate
+    atmosphericFactor *= (1.0f - glm::clamp(weatherIntensity * 0.9f, 0.0f, 0.95f)); // Rain/snow heavily attenuates
+
+    if (atmosphericFactor < 0.01f) {
+        return;
+    }
+
     // Get sun screen position
     glm::vec2 sunScreen = worldToScreen(camera, anchoredSunPos);
     glm::vec2 screenCenter(0.0f, 0.0f);
@@ -333,8 +344,8 @@ void LensFlare::render(VkCommandBuffer cmd, const Camera& camera, const glm::vec
         // Calculate position along sun-to-center axis
         glm::vec2 position = sunScreen + sunToCenter * element.position;
 
-        // Apply visibility and intensity
-        float brightness = element.brightness * visibility * intensityMultiplier;
+        // Apply visibility, intensity, and atmospheric attenuation
+        float brightness = element.brightness * visibility * intensityMultiplier * atmosphericFactor;
 
         // Set push constants
         FlarePushConstants push{};

@@ -1,4 +1,5 @@
 #include "rendering/skybox.hpp"
+#include "rendering/sky_system.hpp"
 #include "rendering/vk_context.hpp"
 #include "rendering/vk_shader.hpp"
 #include "rendering/vk_pipeline.hpp"
@@ -9,6 +10,16 @@
 
 namespace wowee {
 namespace rendering {
+
+// Push constant struct — must match skybox.frag.glsl layout
+struct SkyPushConstants {
+    glm::vec4 zenithColor;    // DBC skyTopColor
+    glm::vec4 midColor;       // DBC skyMiddleColor
+    glm::vec4 horizonColor;   // DBC skyBand1Color
+    glm::vec4 fogColor;       // DBC skyBand2Color / fogColor blend
+    glm::vec4 sunDirAndTime;  // xyz = sun direction, w = timeOfDay
+};
+static_assert(sizeof(SkyPushConstants) == 80, "SkyPushConstants size mismatch");
 
 Skybox::Skybox() = default;
 
@@ -39,11 +50,11 @@ bool Skybox::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout) {
     VkPipelineShaderStageCreateInfo vertStage = vertModule.stageInfo(VK_SHADER_STAGE_VERTEX_BIT);
     VkPipelineShaderStageCreateInfo fragStage = fragModule.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT);
 
-    // Push constant range: horizonColor (vec4) + zenithColor (vec4) + timeOfDay (float) = 36 bytes
+    // Push constant range: 5 x vec4 = 80 bytes
     VkPushConstantRange pushRange{};
     pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     pushRange.offset = 0;
-    pushRange.size = sizeof(glm::vec4) + sizeof(glm::vec4) + sizeof(float);  // 36 bytes
+    pushRange.size = sizeof(SkyPushConstants);  // 80 bytes
 
     // Create pipeline layout with perFrameLayout (set 0) + push constants
     pipelineLayout = createPipelineLayout(device, {perFrameLayout}, {pushRange});
@@ -148,24 +159,20 @@ void Skybox::shutdown() {
     vkCtx = nullptr;
 }
 
-void Skybox::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, float time) {
+void Skybox::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const SkyParams& params) {
     if (pipeline == VK_NULL_HANDLE || !renderingEnabled) {
         return;
     }
 
-    // Push constant data
-    struct SkyPushConstants {
-        glm::vec4 horizonColor;
-        glm::vec4 zenithColor;
-        float timeOfDay;
-    };
+    // Compute sun direction from directionalDir (light points toward scene, sun is opposite)
+    glm::vec3 sunDir = -glm::normalize(params.directionalDir);
 
     SkyPushConstants push{};
-    glm::vec3 horizon = getHorizonColor(time);
-    glm::vec3 zenith = getZenithColor(time);
-    push.horizonColor = glm::vec4(horizon, 1.0f);
-    push.zenithColor  = glm::vec4(zenith,  1.0f);
-    push.timeOfDay    = time;
+    push.zenithColor   = glm::vec4(params.skyTopColor, 1.0f);
+    push.midColor      = glm::vec4(params.skyMiddleColor, 1.0f);
+    push.horizonColor  = glm::vec4(params.skyBand1Color, 1.0f);
+    push.fogColor      = glm::vec4(params.skyBand2Color, 1.0f);
+    push.sunDirAndTime = glm::vec4(sunDir, params.timeOfDay);
 
     // Bind pipeline
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
@@ -200,104 +207,6 @@ void Skybox::setTimeOfDay(float time) {
     while (time >= 24.0f) time -= 24.0f;
 
     timeOfDay = time;
-}
-
-glm::vec3 Skybox::getHorizonColor(float time) const {
-    // Time-based horizon colors
-    // 0-6: Night (dark blue)
-    // 6-8: Dawn (orange/pink)
-    // 8-16: Day (light blue)
-    // 16-18: Dusk (orange/red)
-    // 18-24: Night (dark blue)
-
-    if (time < 5.0f || time >= 21.0f) {
-        // Night - dark blue/purple horizon
-        return glm::vec3(0.05f, 0.05f, 0.15f);
-    }
-    else if (time >= 5.0f && time < 7.0f) {
-        // Dawn - blend from night to orange
-        float t = (time - 5.0f) / 2.0f;
-        glm::vec3 night = glm::vec3(0.05f, 0.05f, 0.15f);
-        glm::vec3 dawn = glm::vec3(1.0f, 0.5f, 0.2f);
-        return glm::mix(night, dawn, t);
-    }
-    else if (time >= 7.0f && time < 9.0f) {
-        // Morning - blend from orange to blue
-        float t = (time - 7.0f) / 2.0f;
-        glm::vec3 dawn = glm::vec3(1.0f, 0.5f, 0.2f);
-        glm::vec3 day = glm::vec3(0.6f, 0.7f, 0.9f);
-        return glm::mix(dawn, day, t);
-    }
-    else if (time >= 9.0f && time < 17.0f) {
-        // Day - light blue horizon
-        return glm::vec3(0.6f, 0.7f, 0.9f);
-    }
-    else if (time >= 17.0f && time < 19.0f) {
-        // Dusk - blend from blue to orange/red
-        float t = (time - 17.0f) / 2.0f;
-        glm::vec3 day = glm::vec3(0.6f, 0.7f, 0.9f);
-        glm::vec3 dusk = glm::vec3(1.0f, 0.4f, 0.1f);
-        return glm::mix(day, dusk, t);
-    }
-    else {
-        // Evening - blend from orange to night
-        float t = (time - 19.0f) / 2.0f;
-        glm::vec3 dusk = glm::vec3(1.0f, 0.4f, 0.1f);
-        glm::vec3 night = glm::vec3(0.05f, 0.05f, 0.15f);
-        return glm::mix(dusk, night, t);
-    }
-}
-
-glm::vec3 Skybox::getZenithColor(float time) const {
-    // Zenith (top of sky) colors
-
-    if (time < 5.0f || time >= 21.0f) {
-        // Night - very dark blue, almost black
-        return glm::vec3(0.01f, 0.01f, 0.05f);
-    }
-    else if (time >= 5.0f && time < 7.0f) {
-        // Dawn - blend from night to light blue
-        float t = (time - 5.0f) / 2.0f;
-        glm::vec3 night = glm::vec3(0.01f, 0.01f, 0.05f);
-        glm::vec3 dawn = glm::vec3(0.3f, 0.4f, 0.7f);
-        return glm::mix(night, dawn, t);
-    }
-    else if (time >= 7.0f && time < 9.0f) {
-        // Morning - blend to bright blue
-        float t = (time - 7.0f) / 2.0f;
-        glm::vec3 dawn = glm::vec3(0.3f, 0.4f, 0.7f);
-        glm::vec3 day = glm::vec3(0.2f, 0.5f, 1.0f);
-        return glm::mix(dawn, day, t);
-    }
-    else if (time >= 9.0f && time < 17.0f) {
-        // Day - bright blue zenith
-        return glm::vec3(0.2f, 0.5f, 1.0f);
-    }
-    else if (time >= 17.0f && time < 19.0f) {
-        // Dusk - blend to darker blue
-        float t = (time - 17.0f) / 2.0f;
-        glm::vec3 day = glm::vec3(0.2f, 0.5f, 1.0f);
-        glm::vec3 dusk = glm::vec3(0.1f, 0.2f, 0.4f);
-        return glm::mix(day, dusk, t);
-    }
-    else {
-        // Evening - blend to night
-        float t = (time - 19.0f) / 2.0f;
-        glm::vec3 dusk = glm::vec3(0.1f, 0.2f, 0.4f);
-        glm::vec3 night = glm::vec3(0.01f, 0.01f, 0.05f);
-        return glm::mix(dusk, night, t);
-    }
-}
-
-glm::vec3 Skybox::getSkyColor(float altitude, float time) const {
-    // Blend between horizon and zenith based on altitude
-    glm::vec3 horizon = getHorizonColor(time);
-    glm::vec3 zenith = getZenithColor(time);
-
-    // Use power curve for more natural gradient
-    float t = std::pow(std::max(altitude, 0.0f), 0.5f);
-
-    return glm::mix(horizon, zenith, t);
 }
 
 } // namespace rendering

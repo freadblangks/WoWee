@@ -14,9 +14,11 @@ layout(set = 0, binding = 0) uniform PerFrame {
 };
 
 layout(push_constant) uniform Push {
-    vec4 horizonColor;
-    vec4 zenithColor;
-    float timeOfDay;
+    vec4 zenithColor;     // DBC skyTopColor
+    vec4 midColor;        // DBC skyMiddleColor
+    vec4 horizonColor;    // DBC skyBand1Color
+    vec4 fogColorPush;    // DBC skyBand2Color
+    vec4 sunDirAndTime;   // xyz = sun direction, w = timeOfDay
 } push;
 
 layout(location = 0) in vec2 TexCoord;
@@ -25,27 +27,71 @@ layout(location = 0) out vec4 outColor;
 
 void main() {
     // Reconstruct world-space ray direction from screen position.
-    // TexCoord is [0,1]^2; convert to NDC [-1,1]^2.
     float ndcX =  TexCoord.x * 2.0 - 1.0;
-    float ndcY = -(TexCoord.y * 2.0 - 1.0);  // flip Y: Vulkan NDC Y-down, but projection already flipped
+    float ndcY = -(TexCoord.y * 2.0 - 1.0);
 
-    // Unproject to view space using focal lengths from projection matrix.
-    // projection[0][0] = 2*near/(right-left) = 1/tan(fovX/2)
-    // projection[1][1] = 2*near/(top-bottom)  (already negated for Vulkan Y-flip)
-    // We want the original magnitude, so take abs to get the focal length.
     vec3 viewDir = vec3(ndcX / projection[0][0],
                         ndcY / abs(projection[1][1]),
                         -1.0);
 
-    // Rotate to world space: view = R*T, so R^-1 = R^T = transpose(mat3(view))
     mat3 invViewRot = transpose(mat3(view));
     vec3 worldDir = normalize(invViewRot * viewDir);
 
-    // worldDir.z = sin(elevation); +1 = zenith, 0 = horizon, -1 = nadir
-    float t = clamp(worldDir.z, 0.0, 1.0);
-    t = pow(t, 1.5);
-    vec3 sky = mix(push.horizonColor.rgb, push.zenithColor.rgb, t);
-    float scatter = max(0.0, 1.0 - t * 2.0) * 0.15;
-    sky += vec3(scatter * 0.8, scatter * 0.4, scatter * 0.1);
+    vec3 sunDir = push.sunDirAndTime.xyz;
+    float timeOfDay = push.sunDirAndTime.w;
+
+    // Elevation: +1 = zenith, 0 = horizon, -1 = nadir
+    float elev = worldDir.z;
+    float elevClamped = clamp(elev, 0.0, 1.0);
+
+    // --- 3-band sky gradient using DBC colors ---
+    // Zenith dominates upper sky, mid color fills the middle,
+    // horizon band at the bottom with a thin fog fringe.
+    vec3 sky;
+    if (elevClamped > 0.4) {
+        // Upper sky: mid -> zenith
+        float t = (elevClamped - 0.4) / 0.6;
+        sky = mix(push.midColor.rgb, push.zenithColor.rgb, t);
+    } else if (elevClamped > 0.05) {
+        // Lower sky: horizon -> mid (wide band)
+        float t = (elevClamped - 0.05) / 0.35;
+        sky = mix(push.horizonColor.rgb, push.midColor.rgb, t);
+    } else {
+        // Thin fog fringe right at horizon
+        float t = elevClamped / 0.05;
+        sky = mix(push.fogColorPush.rgb, push.horizonColor.rgb, t);
+    }
+
+    // --- Below-horizon darkening (nadir) ---
+    if (elev < 0.0) {
+        float nadirFade = clamp(-elev * 3.0, 0.0, 1.0);
+        vec3 nadirColor = push.fogColorPush.rgb * 0.3;
+        sky = mix(push.fogColorPush.rgb, nadirColor, nadirFade);
+    }
+
+    // --- Rayleigh-like scattering (subtle warm glow near sun) ---
+    float sunDot = max(dot(worldDir, sunDir), 0.0);
+    float sunAboveHorizon = clamp(sunDir.z, 0.0, 1.0);
+
+    float rayleighStrength = pow(1.0 - elevClamped, 3.0) * 0.15;
+    vec3 scatterColor = mix(vec3(0.8, 0.45, 0.15), vec3(0.3, 0.5, 1.0), elevClamped);
+    sky += scatterColor * rayleighStrength * sunDot * sunAboveHorizon;
+
+    // --- Mie-like forward scatter (sun disk glow) ---
+    float mieSharp = pow(sunDot, 64.0) * 0.4;
+    float mieSoft  = pow(sunDot, 8.0) * 0.1;
+    vec3 sunGlowColor = mix(vec3(1.0, 0.85, 0.55), vec3(1.0, 1.0, 0.95), elevClamped);
+    sky += sunGlowColor * (mieSharp + mieSoft) * sunAboveHorizon;
+
+    // --- Subtle horizon haze ---
+    float hazeDensity = exp(-elevClamped * 12.0) * 0.06;
+    sky += push.horizonColor.rgb * hazeDensity * sunAboveHorizon;
+
+    // --- Night: slight moonlight tint ---
+    if (sunDir.z < 0.0) {
+        float moonlight = clamp(-sunDir.z * 0.5, 0.0, 0.15);
+        sky += vec3(0.02, 0.03, 0.08) * moonlight;
+    }
+
     outColor = vec4(sky, 1.0);
 }

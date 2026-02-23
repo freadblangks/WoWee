@@ -31,9 +31,10 @@ struct SkyParams {
     glm::vec3 skyBand2Color{1.0f, 0.98f, 0.9f};
 
     // Atmospheric effects
-    float cloudDensity = 0.0f;  // 0-1
-    float fogDensity = 0.0f;    // 0-1
-    float horizonGlow = 0.3f;   // 0-1
+    float cloudDensity = 0.0f;      // 0-1
+    float fogDensity = 0.0f;        // 0-1
+    float horizonGlow = 0.3f;       // 0-1
+    float weatherIntensity = 0.0f;  // 0-1 (rain/snow intensity, attenuates lens flare)
 
     // Time
     float timeOfDay = 12.0f;    // 0-24 hours

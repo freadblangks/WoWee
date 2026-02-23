@@ -2417,10 +2417,21 @@ void Renderer::update(float deltaTime) {
         if (weather && gh) {
             uint32_t wType = gh->getWeatherType();
             float wInt = gh->getWeatherIntensity();
-            if (wType == 1)      weather->setWeatherType(Weather::Type::RAIN);
-            else if (wType == 2) weather->setWeatherType(Weather::Type::SNOW);
-            else                 weather->setWeatherType(Weather::Type::NONE);
-            weather->setIntensity(wInt);
+            if (wType != 0) {
+                // Server-driven weather (SMSG_WEATHER) — authoritative
+                if (wType == 1)      weather->setWeatherType(Weather::Type::RAIN);
+                else if (wType == 2) weather->setWeatherType(Weather::Type::SNOW);
+                else                 weather->setWeatherType(Weather::Type::NONE);
+                weather->setIntensity(wInt);
+            } else {
+                // No server weather — use zone-based weather configuration
+                weather->updateZoneWeather(currentZoneId, deltaTime);
+            }
+            weather->setEnabled(true);
+        } else if (weather) {
+            // No game handler (single-player without network) — zone weather only
+            weather->updateZoneWeather(currentZoneId, deltaTime);
+            weather->setEnabled(true);
         }
     }
     auto light2 = std::chrono::high_resolution_clock::now();
@@ -3200,6 +3211,11 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
             skyParams.horizonGlow = lighting.horizonGlow;
         }
 
+        // Weather attenuation for lens flare
+        if (gameHandler) {
+            skyParams.weatherIntensity = gameHandler->getWeatherIntensity();
+        }
+
         skyParams.skyboxModelId = 0;
         skyParams.skyboxHasStars = false;
 
@@ -3866,6 +3882,7 @@ void Renderer::renderReflectionPass() {
                 skyParams.fogDensity = lp.fogDensity;
                 skyParams.horizonGlow = lp.horizonGlow;
             }
+            // weatherIntensity left at default 0 for reflection pass (no game handler in scope)
             skySystem->render(currentCmd, reflPerFrameDescSet, *camera, skyParams);
         }
         if (terrainRenderer && terrainEnabled) {

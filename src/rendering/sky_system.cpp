@@ -105,9 +105,9 @@ void SkySystem::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
         return;
     }
 
-    // --- Skybox (authoritative sky gradient) ---
+    // --- Skybox (authoritative sky gradient, DBC-driven colors) ---
     if (skybox_) {
-        skybox_->render(cmd, perFrameSet, params.timeOfDay);
+        skybox_->render(cmd, perFrameSet, params);
     }
 
     // --- Procedural stars (debug / fallback) ---
@@ -133,15 +133,17 @@ void SkySystem::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                            &params.directionalDir, &params.sunColor, params.gameTime);
     }
 
-    // --- Clouds ---
+    // --- Clouds (DBC-driven colors + sun lighting) ---
     if (clouds_) {
-        clouds_->render(cmd, perFrameSet, params.timeOfDay);
+        clouds_->render(cmd, perFrameSet, params);
     }
 
-    // --- Lens flare ---
+    // --- Lens flare (attenuated by atmosphere) ---
     if (lensFlare_) {
         glm::vec3 sunPos = getSunPosition(params);
-        lensFlare_->render(cmd, camera, sunPos, params.timeOfDay);
+        lensFlare_->render(cmd, camera, sunPos, params.timeOfDay,
+                           params.fogDensity, params.cloudDensity,
+                           params.weatherIntensity);
     }
 }
 

@@ -4,6 +4,7 @@
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <vector>
+#include <unordered_map>
 
 namespace wowee {
 namespace rendering {
@@ -80,6 +81,35 @@ public:
     int getParticleCount() const;
 
     /**
+     * @brief Zone weather configuration
+     * Provides default weather per zone for single-player mode.
+     * When connected to a server, SMSG_WEATHER overrides these.
+     */
+    struct ZoneWeather {
+        Type type = Type::NONE;
+        float minIntensity = 0.0f;     // Min intensity (varies over time)
+        float maxIntensity = 0.0f;     // Max intensity
+        float probability = 0.0f;      // Chance of weather being active (0-1)
+    };
+
+    /**
+     * @brief Set weather for a zone (used for zone-based weather configuration)
+     */
+    void setZoneWeather(uint32_t zoneId, Type type, float minIntensity, float maxIntensity, float probability);
+
+    /**
+     * @brief Update weather based on current zone (single-player mode)
+     * @param zoneId Current zone ID
+     * @param deltaTime Time since last frame
+     */
+    void updateZoneWeather(uint32_t zoneId, float deltaTime);
+
+    /**
+     * @brief Initialize default zone weather table
+     */
+    void initializeZoneWeatherDefaults();
+
+    /**
      * @brief Clean up Vulkan resources
      */
     void shutdown();
@@ -120,6 +150,15 @@ private:
     static constexpr int MAX_PARTICLES = 2000;
     static constexpr float SPAWN_VOLUME_SIZE = 100.0f;  // Size of spawn area around camera
     static constexpr float SPAWN_HEIGHT = 80.0f;        // Height above camera to spawn
+
+    // Zone-based weather
+    std::unordered_map<uint32_t, ZoneWeather> zoneWeatherTable_;
+    uint32_t currentWeatherZone_ = 0;
+    float zoneWeatherTimer_ = 0.0f;         // Time accumulator for weather cycling
+    float zoneWeatherCycleDuration_ = 0.0f;  // Current cycle length
+    bool zoneWeatherActive_ = false;         // Is zone weather currently active?
+    float targetIntensity_ = 0.0f;           // Target intensity for smooth transitions
+    bool zoneWeatherInitialized_ = false;
 };
 
 } // namespace rendering

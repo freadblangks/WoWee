@@ -47,8 +47,13 @@ public:
      * @param camera The camera to render from
      * @param sunPosition World-space sun position
      * @param timeOfDay Current time (0-24 hours)
+     * @param fogDensity Fog density 0-1 (attenuates flare)
+     * @param cloudDensity Cloud density 0-1 (attenuates flare)
+     * @param weatherIntensity Weather intensity 0-1 (rain/snow attenuates flare)
      */
-    void render(VkCommandBuffer cmd, const Camera& camera, const glm::vec3& sunPosition, float timeOfDay);
+    void render(VkCommandBuffer cmd, const Camera& camera, const glm::vec3& sunPosition,
+                float timeOfDay, float fogDensity = 0.0f, float cloudDensity = 0.0f,
+                float weatherIntensity = 0.0f);
 
     /**
      * @brief Enable or disable lens flare rendering

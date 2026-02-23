@@ -9,45 +9,37 @@ namespace wowee {
 namespace rendering {
 
 class VkContext;
+struct SkyParams;
 
 /**
  * Procedural cloud renderer (Vulkan)
  *
  * Renders animated procedural clouds on a sky hemisphere using FBM noise.
- * Two noise layers at different frequencies produce realistic cloud shapes.
+ * Sun-lit edges, self-shadowing, and DBC-driven cloud colors for realistic appearance.
  *
  * Pipeline layout:
  *   set 0 = perFrameLayout  (camera UBO — view, projection, etc.)
- *   push  = CloudPush       (vec4 cloudColor + float density + float windOffset = 24 bytes)
- *
- * The vertex shader reads view/projection from set 0 directly; no per-object
- * model matrix is needed (clouds are locked to the sky dome).
+ *   push  = CloudPush       (3 x vec4 = 48 bytes)
  */
 class Clouds {
 public:
     Clouds();
     ~Clouds();
 
-    /**
-     * Initialize the cloud system.
-     * @param ctx            Vulkan context
-     * @param perFrameLayout Descriptor set layout for set 0 (camera UBO)
-     */
     bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout);
     void shutdown();
     void recreatePipelines();
 
     /**
-     * Render clouds.
+     * Render clouds using DBC-driven colors and sun lighting.
      * @param cmd         Command buffer to record into
      * @param perFrameSet Per-frame descriptor set (set 0, camera UBO)
-     * @param timeOfDay   Time of day in hours (0-24)
+     * @param params      Sky parameters with DBC colors and sun direction
      */
-    void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, float timeOfDay);
+    void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const SkyParams& params);
 
     /**
      * Update cloud animation (wind drift).
-     * @param deltaTime Seconds since last frame
      */
     void update(float deltaTime);
 
@@ -56,7 +48,6 @@ public:
     bool isEnabled() const { return enabled_; }
 
     // --- Cloud parameters ---
-    /** Cloud coverage, 0 = clear, 1 = overcast. */
     void setDensity(float density);
     float getDensity() const { return density_; }
 
@@ -66,18 +57,15 @@ public:
 private:
     // Push constant block — must match clouds.frag.glsl
     struct CloudPush {
-        glm::vec4 cloudColor; // 16 bytes (xyz = colour, w unused)
-        float     density;    //  4 bytes
-        float     windOffset; //  4 bytes
-        // total = 24 bytes
+        glm::vec4 cloudColor;     // xyz = DBC-derived base cloud color, w = unused
+        glm::vec4 sunDirDensity;  // xyz = sun direction, w = density
+        glm::vec4 windAndLight;   // x = windOffset, y = sunIntensity, z = ambient, w = unused
     };
-    static_assert(sizeof(CloudPush) == 24, "CloudPush size mismatch");
+    static_assert(sizeof(CloudPush) == 48, "CloudPush size mismatch");
 
     void generateMesh();
     void createBuffers();
     void destroyBuffers();
-
-    glm::vec3 getCloudColor(float timeOfDay) const;
 
     // Vulkan objects
     VkContext*       vkCtx_          = nullptr;
@@ -95,14 +83,14 @@ private:
 
     // Cloud parameters
     bool  enabled_    = true;
-    float density_    = 0.5f;
+    float density_    = 0.35f;
     float windSpeed_  = 1.0f;
-    float windOffset_ = 0.0f; // Accumulated wind movement
+    float windOffset_ = 0.0f;
 
     // Mesh generation parameters
     static constexpr int   SEGMENTS = 32;
     static constexpr int   RINGS    = 8;
-    static constexpr float RADIUS   = 900.0f; // Slightly smaller than skybox
+    static constexpr float RADIUS   = 900.0f;
 };
 
 } // namespace rendering

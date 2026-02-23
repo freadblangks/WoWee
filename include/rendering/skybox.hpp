@@ -9,6 +9,7 @@ namespace wowee {
 namespace rendering {
 
 class VkContext;
+struct SkyParams;
 
 /**
  * Skybox renderer
@@ -16,6 +17,9 @@ class VkContext;
  * Renders an atmospheric sky gradient using a fullscreen triangle.
  * No vertex buffer: 3 vertices cover the entire screen via gl_VertexIndex.
  * World-space ray direction is reconstructed from the inverse view+projection.
+ *
+ * Sky colors are driven by DBC data (Light.dbc / LightIntBand.dbc) via SkyParams,
+ * with Rayleigh/Mie atmospheric scattering for realistic appearance.
  */
 class Skybox {
 public:
@@ -27,12 +31,12 @@ public:
     void recreatePipelines();
 
     /**
-     * Render the skybox
+     * Render the skybox using DBC-driven sky colors.
      * @param cmd Command buffer to record into
      * @param perFrameSet Per-frame descriptor set (set 0, contains camera UBO)
-     * @param timeOfDay Time of day in hours (0-24), affects sky color
+     * @param params Sky parameters with DBC colors and sun direction
      */
-    void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, float timeOfDay = 12.0f);
+    void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const SkyParams& params);
 
     /**
      * Enable/disable skybox rendering
@@ -58,15 +62,7 @@ public:
      */
     void update(float deltaTime);
 
-    /**
-     * Get horizon color for fog (public for fog system)
-     */
-    glm::vec3 getHorizonColor(float time) const;
-
 private:
-    glm::vec3 getSkyColor(float altitude, float time) const;
-    glm::vec3 getZenithColor(float time) const;
-
     VkContext* vkCtx = nullptr;
 
     VkPipeline pipeline = VK_NULL_HANDLE;

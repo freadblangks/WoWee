@@ -1,4 +1,5 @@
 #include "rendering/clouds.hpp"
+#include "rendering/sky_system.hpp"
 #include "rendering/vk_context.hpp"
 #include "rendering/vk_shader.hpp"
 #include "rendering/vk_pipeline.hpp"
@@ -40,11 +41,11 @@ bool Clouds::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout) {
     VkPipelineShaderStageCreateInfo fragStage = fragModule.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT);
 
     // ------------------------------------------------------------------ push constants
-    // Fragment-only push: vec4 cloudColor + float density + float windOffset = 24 bytes
+    // Fragment-only push: 3 x vec4 = 48 bytes
     VkPushConstantRange pushRange{};
     pushRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     pushRange.offset     = 0;
-    pushRange.size       = sizeof(CloudPush); // 24 bytes
+    pushRange.size       = sizeof(CloudPush); // 48 bytes
 
     // ------------------------------------------------------------------ pipeline layout
     pipelineLayout_ = createPipelineLayout(device, {perFrameLayout}, {pushRange});
@@ -54,10 +55,9 @@ bool Clouds::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout) {
     }
 
     // ------------------------------------------------------------------ vertex input
-    // Vertex: vec3 pos only, stride = 12 bytes
     VkVertexInputBindingDescription binding{};
     binding.binding   = 0;
-    binding.stride    = sizeof(glm::vec3); // 12 bytes
+    binding.stride    = sizeof(glm::vec3);
     binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
     VkVertexInputAttributeDescription posAttr{};
@@ -77,7 +77,7 @@ bool Clouds::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout) {
         .setVertexInput({binding}, {posAttr})
         .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
         .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
-        .setDepthTest(true, false, VK_COMPARE_OP_LESS_OR_EQUAL) // test on, write off (sky layer)
+        .setDepthTest(true, false, VK_COMPARE_OP_LESS_OR_EQUAL)
         .setColorBlendAttachment(PipelineBuilder::blendAlpha())
         .setMultisample(vkCtx_->getMsaaSamples())
         .setLayout(pipelineLayout_)
@@ -122,7 +122,6 @@ void Clouds::recreatePipelines() {
     VkPipelineShaderStageCreateInfo vertStage = vertModule.stageInfo(VK_SHADER_STAGE_VERTEX_BIT);
     VkPipelineShaderStageCreateInfo fragStage = fragModule.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT);
 
-    // Vertex input (same as initialize)
     VkVertexInputBindingDescription binding{};
     binding.binding   = 0;
     binding.stride    = sizeof(glm::vec3);
@@ -182,25 +181,35 @@ void Clouds::shutdown() {
 // Render
 // ---------------------------------------------------------------------------
 
-void Clouds::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, float timeOfDay) {
+void Clouds::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const SkyParams& params) {
     if (!enabled_ || pipeline_ == VK_NULL_HANDLE) {
         return;
     }
 
-    glm::vec3 color = getCloudColor(timeOfDay);
+    // Derive cloud base color from DBC horizon band, slightly brightened
+    glm::vec3 cloudBaseColor = params.skyBand1Color * 1.1f;
+    cloudBaseColor = glm::clamp(cloudBaseColor, glm::vec3(0.0f), glm::vec3(1.0f));
+
+    // Sun direction (opposite of light direction)
+    glm::vec3 sunDir = -glm::normalize(params.directionalDir);
+    float sunAboveHorizon = glm::clamp(sunDir.z, 0.0f, 1.0f);
+
+    // Sun intensity based on elevation
+    float sunIntensity = sunAboveHorizon;
+
+    // Ambient light — brighter during day, dimmer at night
+    float ambient = glm::mix(0.3f, 0.7f, sunAboveHorizon);
 
     CloudPush push{};
-    push.cloudColor  = glm::vec4(color, 1.0f);
-    push.density     = density_;
-    push.windOffset  = windOffset_;
+    push.cloudColor    = glm::vec4(cloudBaseColor, 1.0f);
+    push.sunDirDensity = glm::vec4(sunDir, density_);
+    push.windAndLight  = glm::vec4(windOffset_, sunIntensity, ambient, 0.0f);
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
 
-    // Bind per-frame UBO (set 0 — vertex shader reads view/projection from here)
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_,
         0, 1, &perFrameSet, 0, nullptr);
 
-    // Push cloud params to fragment shader
     vkCmdPushConstants(cmd, pipelineLayout_,
         VK_SHADER_STAGE_FRAGMENT_BIT,
         0, sizeof(push), &push);
@@ -224,29 +233,6 @@ void Clouds::update(float deltaTime) {
 }
 
 // ---------------------------------------------------------------------------
-// Cloud colour (unchanged logic from GL version)
-// ---------------------------------------------------------------------------
-
-glm::vec3 Clouds::getCloudColor(float timeOfDay) const {
-    glm::vec3 dayColor(0.95f, 0.95f, 1.0f);
-
-    if (timeOfDay >= 5.0f && timeOfDay < 7.0f) {
-        // Dawn — orange tint fading to day
-        float t = (timeOfDay - 5.0f) / 2.0f;
-        return glm::mix(glm::vec3(1.0f, 0.7f, 0.5f), dayColor, t);
-    } else if (timeOfDay >= 17.0f && timeOfDay < 19.0f) {
-        // Dusk — day fading to orange/pink
-        float t = (timeOfDay - 17.0f) / 2.0f;
-        return glm::mix(dayColor, glm::vec3(1.0f, 0.6f, 0.4f), t);
-    } else if (timeOfDay >= 20.0f || timeOfDay < 5.0f) {
-        // Night — dark blue-grey
-        return glm::vec3(0.15f, 0.15f, 0.25f);
-    }
-
-    return dayColor;
-}
-
-// ---------------------------------------------------------------------------
 // Density setter
 // ---------------------------------------------------------------------------
 
@@ -265,7 +251,7 @@ void Clouds::generateMesh() {
     // Upper hemisphere — Z-up world: altitude goes into Z, horizontal spread in X/Y
     for (int ring = 0; ring <= RINGS; ++ring) {
         float phi        = (ring / static_cast<float>(RINGS)) * (static_cast<float>(M_PI) * 0.5f);
-        float altZ       = RADIUS * std::cos(phi);   // altitude → world Z (up)
+        float altZ       = RADIUS * std::cos(phi);
         float ringRadius = RADIUS * std::sin(phi);
 
         for (int seg = 0; seg <= SEGMENTS; ++seg) {

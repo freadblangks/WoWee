@@ -28,7 +28,7 @@ struct LightingParams {
     glm::vec3 skyBand1Color{0.9f, 0.95f, 1.0f};    // Sky band 1
     glm::vec3 skyBand2Color{1.0f, 0.98f, 0.9f};    // Sky band 2
 
-    float cloudDensity = 1.0f;                      // Cloud density/opacity
+    float cloudDensity = 0.3f;                      // Cloud density/opacity
     float horizonGlow = 0.3f;                       // Horizon glow intensity
 };
 

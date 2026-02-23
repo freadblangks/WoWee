@@ -369,5 +369,134 @@ void Weather::shutdown() {
     particlePositions.clear();
 }
 
+// ---------------------------------------------------------------------------
+// Zone-based weather configuration
+// ---------------------------------------------------------------------------
+
+void Weather::setZoneWeather(uint32_t zoneId, Type type, float minIntensity, float maxIntensity, float probability) {
+    zoneWeatherTable_[zoneId] = {type, minIntensity, maxIntensity, probability};
+}
+
+void Weather::initializeZoneWeatherDefaults() {
+    if (zoneWeatherInitialized_) return;
+    zoneWeatherInitialized_ = true;
+
+    // Eastern Kingdoms zones
+    setZoneWeather(10,   Type::RAIN, 0.2f, 0.6f, 0.3f);   // Duskwood — frequent rain
+    setZoneWeather(11,   Type::RAIN, 0.1f, 0.4f, 0.15f);  // Wetlands — moderate rain
+    setZoneWeather(8,    Type::RAIN, 0.1f, 0.5f, 0.2f);   // Swamp of Sorrows
+    setZoneWeather(33,   Type::RAIN, 0.2f, 0.7f, 0.25f);  // Stranglethorn Vale
+    setZoneWeather(44,   Type::RAIN, 0.1f, 0.3f, 0.1f);   // Redridge Mountains — light rain
+    setZoneWeather(36,   Type::RAIN, 0.1f, 0.4f, 0.15f);  // Alterac Mountains
+    setZoneWeather(45,   Type::RAIN, 0.1f, 0.3f, 0.1f);   // Arathi Highlands
+    setZoneWeather(267,  Type::RAIN, 0.2f, 0.5f, 0.2f);   // Hillsbrad Foothills
+    setZoneWeather(28,   Type::RAIN, 0.1f, 0.3f, 0.1f);   // Western Plaguelands — occasional rain
+    setZoneWeather(139,  Type::RAIN, 0.1f, 0.3f, 0.1f);   // Eastern Plaguelands
+
+    // Snowy zones
+    setZoneWeather(1,    Type::SNOW, 0.2f, 0.6f, 0.3f);   // Dun Morogh
+    setZoneWeather(51,   Type::SNOW, 0.1f, 0.5f, 0.2f);   // Searing Gorge (occasional)
+    setZoneWeather(41,   Type::SNOW, 0.1f, 0.4f, 0.15f);  // Deadwind Pass
+    setZoneWeather(2817, Type::SNOW, 0.3f, 0.7f, 0.4f);   // Crystalsong Forest
+    setZoneWeather(67,   Type::SNOW, 0.2f, 0.6f, 0.35f);  // Storm Peaks
+    setZoneWeather(65,   Type::SNOW, 0.2f, 0.5f, 0.3f);   // Dragonblight
+    setZoneWeather(394,  Type::SNOW, 0.1f, 0.4f, 0.2f);   // Grizzly Hills
+    setZoneWeather(495,  Type::SNOW, 0.3f, 0.8f, 0.5f);   // Howling Fjord
+    setZoneWeather(210,  Type::SNOW, 0.2f, 0.5f, 0.25f);  // Icecrown
+    setZoneWeather(3537, Type::SNOW, 0.2f, 0.6f, 0.3f);   // Borean Tundra
+    setZoneWeather(4742, Type::SNOW, 0.2f, 0.5f, 0.3f);   // Hrothgar's Landing
+
+    // Kalimdor zones
+    setZoneWeather(15,   Type::RAIN, 0.1f, 0.4f, 0.15f);  // Dustwallow Marsh
+    setZoneWeather(16,   Type::RAIN, 0.1f, 0.3f, 0.1f);   // Azshara
+    setZoneWeather(148,  Type::RAIN, 0.1f, 0.4f, 0.15f);  // Darkshore
+    setZoneWeather(331,  Type::RAIN, 0.1f, 0.3f, 0.1f);   // Ashenvale
+    setZoneWeather(405,  Type::RAIN, 0.1f, 0.3f, 0.1f);   // Desolace
+    setZoneWeather(15,   Type::RAIN, 0.2f, 0.5f, 0.2f);   // Dustwallow Marsh
+    setZoneWeather(490,  Type::RAIN, 0.1f, 0.4f, 0.15f);  // Un'Goro Crater
+    setZoneWeather(493,  Type::RAIN, 0.1f, 0.3f, 0.1f);   // Moonglade
+
+    // Winterspring is snowy
+    setZoneWeather(618,  Type::SNOW, 0.2f, 0.6f, 0.3f);   // Winterspring
+
+    // Outland
+    setZoneWeather(3483, Type::RAIN, 0.1f, 0.3f, 0.1f);   // Hellfire Peninsula (occasional)
+    setZoneWeather(3521, Type::RAIN, 0.1f, 0.4f, 0.15f);  // Zangarmarsh
+    setZoneWeather(3519, Type::RAIN, 0.1f, 0.3f, 0.1f);   // Terokkar Forest
+}
+
+void Weather::updateZoneWeather(uint32_t zoneId, float deltaTime) {
+    if (!zoneWeatherInitialized_) {
+        initializeZoneWeatherDefaults();
+    }
+
+    // Zone changed — reset weather cycle
+    if (zoneId != currentWeatherZone_) {
+        currentWeatherZone_ = zoneId;
+        zoneWeatherTimer_ = 0.0f;
+
+        auto it = zoneWeatherTable_.find(zoneId);
+        if (it == zoneWeatherTable_.end()) {
+            // Zone has no configured weather — clear gradually
+            targetIntensity_ = 0.0f;
+        } else {
+            // Roll whether weather is active based on probability
+            float roll = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+            zoneWeatherActive_ = (roll < it->second.probability);
+
+            if (zoneWeatherActive_) {
+                weatherType = it->second.type;
+                // Random intensity within configured range
+                float t = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+                targetIntensity_ = glm::mix(it->second.minIntensity, it->second.maxIntensity, t);
+                // Random cycle duration: 3-8 minutes
+                zoneWeatherCycleDuration_ = 180.0f + static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 300.0f;
+            } else {
+                targetIntensity_ = 0.0f;
+                zoneWeatherCycleDuration_ = 120.0f + static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 180.0f;
+            }
+        }
+    }
+
+    // Smooth intensity transitions
+    float transitionSpeed = 0.15f * deltaTime; // ~7 seconds to full transition
+    if (intensity < targetIntensity_) {
+        intensity = std::min(intensity + transitionSpeed, targetIntensity_);
+    } else if (intensity > targetIntensity_) {
+        intensity = std::max(intensity - transitionSpeed, targetIntensity_);
+    }
+
+    // If intensity reached zero and target is zero, clear weather type
+    if (intensity <= 0.01f && targetIntensity_ <= 0.01f) {
+        if (weatherType != Type::NONE) {
+            weatherType = Type::NONE;
+            particles.clear();
+        }
+    }
+
+    // Weather cycling — periodically re-roll weather
+    zoneWeatherTimer_ += deltaTime;
+    if (zoneWeatherTimer_ >= zoneWeatherCycleDuration_ && zoneWeatherCycleDuration_ > 0.0f) {
+        zoneWeatherTimer_ = 0.0f;
+
+        auto it = zoneWeatherTable_.find(zoneId);
+        if (it != zoneWeatherTable_.end()) {
+            float roll = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+            zoneWeatherActive_ = (roll < it->second.probability);
+
+            if (zoneWeatherActive_) {
+                weatherType = it->second.type;
+                float t = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+                targetIntensity_ = glm::mix(it->second.minIntensity, it->second.maxIntensity, t);
+            } else {
+                targetIntensity_ = 0.0f;
+            }
+
+            // New cycle duration
+            zoneWeatherCycleDuration_ = 180.0f + static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 300.0f;
+        }
+    }
+}
+
 } // namespace rendering
 } // namespace wowee

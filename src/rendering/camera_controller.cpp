@@ -681,7 +681,10 @@ void CameraController::update(float deltaTime) {
                     if (terrainManager) {
                         terrainH = terrainManager->getHeightAt(targetPos.x, targetPos.y);
                     }
-                    float wmoProbeZ = std::max(targetPos.z, lastGroundZ) + stepUpBudget + 0.5f;
+                    // When airborne, anchor probe to last ground level so the
+                    // ceiling doesn't rise with the jump and catch roof geometry.
+                    float wmoBaseZ = grounded ? std::max(targetPos.z, lastGroundZ) : lastGroundZ;
+                    float wmoProbeZ = wmoBaseZ + stepUpBudget + 0.5f;
                     float wmoNormalZ = 1.0f;
                     if (wmoRenderer) {
                         wmoH = wmoRenderer->getFloorHeight(targetPos.x, targetPos.y, wmoProbeZ, &wmoNormalZ);
@@ -691,6 +694,13 @@ void CameraController::update(float deltaTime) {
                     float minWalkableWmo = cachedInsideWMO ? MIN_WALKABLE_NORMAL_WMO : MIN_WALKABLE_NORMAL_TERRAIN;
                     if (wmoH && wmoNormalZ < minWalkableWmo) {
                         wmoH = std::nullopt;  // Treat as unwalkable
+                    }
+
+                    // Reject WMO floors far above last known ground when airborne
+                    // (prevents snapping to roof/ceiling surfaces during jumps)
+                    if (wmoH && !grounded && *wmoH > lastGroundZ + stepUpBudget + 0.5f) {
+                        wmoH = std::nullopt;
+                        centerWmoH = std::nullopt;
                     }
                     centerTerrainH = terrainH;
                     centerWmoH = wmoH;
@@ -802,7 +812,8 @@ void CameraController::update(float deltaTime) {
                     {0.0f,  WMO_FOOTPRINT}, {0.0f, -WMO_FOOTPRINT}
                 };
 
-                float wmoProbeZ = std::max(targetPos.z, lastGroundZ) + stepUpBudget + 0.6f;
+                float wmoMultiBaseZ = grounded ? std::max(targetPos.z, lastGroundZ) : lastGroundZ;
+                float wmoProbeZ = wmoMultiBaseZ + stepUpBudget + 0.6f;
                 float minWalkableWmo = cachedInsideWMO ? MIN_WALKABLE_NORMAL_WMO : MIN_WALKABLE_NORMAL_TERRAIN;
 
                 for (const auto& o : wmoOffsets) {
@@ -810,6 +821,9 @@ void CameraController::update(float deltaTime) {
                     auto wh = wmoRenderer->getFloorHeight(targetPos.x + o.x, targetPos.y + o.y, wmoProbeZ, &nz);
                     if (!wh) continue;
                     if (nz < minWalkableWmo) continue;
+
+                    // Reject roof/ceiling surfaces when airborne
+                    if (!grounded && *wh > lastGroundZ + stepUpBudget + 0.5f) continue;
 
                     // Keep to nearby, walkable steps only.
                     if (*wh > targetPos.z + stepUpBudget) continue;

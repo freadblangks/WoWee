@@ -447,7 +447,9 @@ std::unique_ptr<VkTexture> CharacterRenderer::generateNormalHeightMap(
     }
 
     // Step 2: Sobel 3x3 → normal map (crisp detail from original, blurred for POM alpha)
-    const float strength = 2.0f;
+    // Higher strength than WMO (2.0) because character/weapon textures are hand-painted
+    // with baked-in lighting that produces low-contrast gradients in the Sobel filter.
+    const float strength = 5.0f;
     std::vector<uint8_t> output(totalPixels * 4);
 
     auto sampleH = [&](int x, int y) -> float {
@@ -2024,7 +2026,7 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                 matData.specularIntensity = 0.5f;
                 matData.enableNormalMap = normalMappingEnabled_ ? 1 : 0;
                 matData.enablePOM = pomEnabled_ ? 1 : 0;
-                matData.pomScale = 0.03f;
+                matData.pomScale = 0.06f;
                 matData.pomMaxSamples = pomSamples;
                 matData.heightMapVariance = batchHeightVariance;
                 matData.normalMapStrength = normalMapStrength_;
@@ -2119,7 +2121,7 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
             matData.specularIntensity = 0.5f;
             matData.enableNormalMap = normalMappingEnabled_ ? 1 : 0;
             matData.enablePOM = pomEnabled_ ? 1 : 0;
-            matData.pomScale = 0.03f;
+            matData.pomScale = 0.06f;
             matData.pomMaxSamples = pomSamples2;
             matData.heightMapVariance = 0.0f;
             matData.normalMapStrength = normalMapStrength_;

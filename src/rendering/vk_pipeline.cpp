@@ -90,6 +90,11 @@ PipelineBuilder& PipelineBuilder::setMultisample(VkSampleCountFlagBits samples) 
     return *this;
 }
 
+PipelineBuilder& PipelineBuilder::setAlphaToCoverage(bool enable) {
+    alphaToCoverage_ = enable;
+    return *this;
+}
+
 PipelineBuilder& PipelineBuilder::setLayout(VkPipelineLayout layout) {
     pipelineLayout_ = layout;
     return *this;
@@ -145,6 +150,7 @@ VkPipeline PipelineBuilder::build(VkDevice device) const {
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisampling.sampleShadingEnable = VK_FALSE;
     multisampling.rasterizationSamples = msaaSamples_;
+    multisampling.alphaToCoverageEnable = alphaToCoverage_ ? VK_TRUE : VK_FALSE;
 
     // Depth/stencil
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
@@ -210,6 +216,20 @@ VkPipelineColorBlendAttachmentState PipelineBuilder::blendAlpha() {
         VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
     state.blendEnable = VK_TRUE;
     state.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    state.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    state.colorBlendOp = VK_BLEND_OP_ADD;
+    state.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    state.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    state.alphaBlendOp = VK_BLEND_OP_ADD;
+    return state;
+}
+
+VkPipelineColorBlendAttachmentState PipelineBuilder::blendPremultiplied() {
+    VkPipelineColorBlendAttachmentState state{};
+    state.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    state.blendEnable = VK_TRUE;
+    state.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
     state.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
     state.colorBlendOp = VK_BLEND_OP_ADD;
     state.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;

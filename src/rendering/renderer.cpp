@@ -394,16 +394,16 @@ bool Renderer::createPerFrameResources() {
         return false;
     }
 
-    // --- Create descriptor pool for both UBO and combined image sampler ---
+    // --- Create descriptor pool for UBO + image sampler (normal frames + reflection) ---
     VkDescriptorPoolSize poolSizes[2]{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = MAX_FRAMES;
+    poolSizes[0].descriptorCount = MAX_FRAMES + 1; // +1 for reflection perFrame UBO
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = MAX_FRAMES;
+    poolSizes[1].descriptorCount = MAX_FRAMES + 1;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.maxSets = MAX_FRAMES;
+    poolInfo.maxSets = MAX_FRAMES + 1; // +1 for reflection descriptor set
     poolInfo.poolSizeCount = 2;
     poolInfo.pPoolSizes = poolSizes;
 
@@ -472,6 +472,63 @@ bool Renderer::createPerFrameResources() {
         vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
     }
 
+    // --- Create reflection per-frame UBO and descriptor set ---
+    {
+        VkBufferCreateInfo bufInfo{};
+        bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufInfo.size = sizeof(GPUPerFrameData);
+        bufInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+
+        VmaAllocationCreateInfo allocInfo{};
+        allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+        allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+        VmaAllocationInfo mapInfo{};
+        if (vmaCreateBuffer(vkCtx->getAllocator(), &bufInfo, &allocInfo,
+                &reflPerFrameUBO, &reflPerFrameUBOAlloc, &mapInfo) != VK_SUCCESS) {
+            LOG_ERROR("Failed to create reflection per-frame UBO");
+            return false;
+        }
+        reflPerFrameUBOMapped = mapInfo.pMappedData;
+
+        VkDescriptorSetAllocateInfo setAlloc{};
+        setAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        setAlloc.descriptorPool = sceneDescriptorPool;
+        setAlloc.descriptorSetCount = 1;
+        setAlloc.pSetLayouts = &perFrameSetLayout;
+
+        if (vkAllocateDescriptorSets(device, &setAlloc, &reflPerFrameDescSet) != VK_SUCCESS) {
+            LOG_ERROR("Failed to allocate reflection per-frame descriptor set");
+            return false;
+        }
+
+        VkDescriptorBufferInfo descBuf{};
+        descBuf.buffer = reflPerFrameUBO;
+        descBuf.offset = 0;
+        descBuf.range = sizeof(GPUPerFrameData);
+
+        VkDescriptorImageInfo shadowImgInfo{};
+        shadowImgInfo.sampler = shadowSampler;
+        shadowImgInfo.imageView = shadowDepthView;
+        shadowImgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        VkWriteDescriptorSet writes[2]{};
+        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[0].dstSet = reflPerFrameDescSet;
+        writes[0].dstBinding = 0;
+        writes[0].descriptorCount = 1;
+        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writes[0].pBufferInfo = &descBuf;
+        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[1].dstSet = reflPerFrameDescSet;
+        writes[1].dstBinding = 1;
+        writes[1].descriptorCount = 1;
+        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[1].pImageInfo = &shadowImgInfo;
+
+        vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+    }
+
     LOG_INFO("Per-frame Vulkan resources created (shadow map ", SHADOW_MAP_SIZE, "x", SHADOW_MAP_SIZE, ")");
     return true;
 }
@@ -486,6 +543,11 @@ void Renderer::destroyPerFrameResources() {
             vmaDestroyBuffer(vkCtx->getAllocator(), perFrameUBOs[i], perFrameUBOAllocs[i]);
             perFrameUBOs[i] = VK_NULL_HANDLE;
         }
+    }
+    if (reflPerFrameUBO) {
+        vmaDestroyBuffer(vkCtx->getAllocator(), reflPerFrameUBO, reflPerFrameUBOAlloc);
+        reflPerFrameUBO = VK_NULL_HANDLE;
+        reflPerFrameUBOMapped = nullptr;
     }
     if (sceneDescriptorPool) {
         vkDestroyDescriptorPool(device, sceneDescriptorPool, nullptr);
@@ -525,6 +587,17 @@ void Renderer::updatePerFrameUBO() {
     }
 
     currentFrameData.shadowParams = glm::vec4(shadowsEnabled ? 1.0f : 0.0f, 0.5f, 0.0f, 0.0f);
+
+    // Player water ripple data: pack player XY into shadowParams.zw, ripple strength into fogParams.w
+    if (cameraController) {
+        currentFrameData.shadowParams.z = characterPosition.x;
+        currentFrameData.shadowParams.w = characterPosition.y;
+        bool inWater = cameraController->isSwimming();
+        bool moving = cameraController->isMoving();
+        currentFrameData.fogParams.w = (inWater && moving) ? 1.0f : 0.0f;
+    } else {
+        currentFrameData.fogParams.w = 0.0f;
+    }
 
     // Copy to current frame's mapped UBO
     uint32_t frame = vkCtx->getCurrentFrame();
@@ -777,7 +850,15 @@ void Renderer::applyMsaaChange() {
 
     // Recreate all sub-renderer pipelines (they embed sample count from render pass)
     if (terrainRenderer) terrainRenderer->recreatePipelines();
-    if (waterRenderer) waterRenderer->recreatePipelines();
+    if (waterRenderer) {
+        waterRenderer->recreatePipelines();
+        if (vkCtx->getMsaaSamples() != VK_SAMPLE_COUNT_1_BIT) {
+            waterRenderer->destroyWater1xResources();
+            setupWater1xPass();
+        } else {
+            waterRenderer->destroyWater1xResources();
+        }
+    }
     if (wmoRenderer) wmoRenderer->recreatePipelines();
     if (m2Renderer) m2Renderer->recreatePipelines();
     if (characterRenderer) characterRenderer->recreatePipelines();
@@ -833,6 +914,15 @@ void Renderer::beginFrame() {
     // Handle swapchain recreation if needed
     if (vkCtx->isSwapchainDirty()) {
         vkCtx->recreateSwapchain(window->getWidth(), window->getHeight());
+        // Rebuild water 1x framebuffers (they reference swapchain image views)
+        if (waterRenderer && waterRenderer->hasWater1xPass()
+            && vkCtx->getMsaaSamples() != VK_SAMPLE_COUNT_1_BIT) {
+            VkImageView depthView = vkCtx->getDepthResolveImageView();
+            if (depthView) {
+                waterRenderer->createWater1xFramebuffers(
+                    vkCtx->getSwapchainImageViews(), depthView, vkCtx->getSwapchainExtent());
+            }
+        }
     }
 
     // Acquire swapchain image and begin command buffer
@@ -869,6 +959,9 @@ void Renderer::beginFrame() {
     if (shadowsEnabled && shadowDepthImage != VK_NULL_HANDLE) {
         renderShadowPass();
     }
+
+    // Water reflection pre-pass (renders scene from mirrored camera into 512x512 texture)
+    renderReflectionPass();
 
     // --- Begin main render pass (clear color + depth) ---
     VkRenderPassBeginInfo rpInfo{};
@@ -909,7 +1002,7 @@ void Renderer::beginFrame() {
 void Renderer::endFrame() {
     if (!vkCtx || currentCmd == VK_NULL_HANDLE) return;
 
-    // Record ImGui draw commands into the command buffer
+    // ImGui always renders in the main pass (its pipeline matches the main render pass)
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), currentCmd);
 
     vkCmdEndRenderPass(currentCmd);
@@ -921,6 +1014,18 @@ void Renderer::endFrame() {
             vkCtx->getDepthCopySourceImage(),
             vkCtx->getSwapchainExtent(),
             vkCtx->isDepthCopySourceMsaa());
+    }
+
+    // Render water in separate 1x pass after MSAA resolve + scene capture
+    bool waterDeferred = waterRenderer && waterRenderer->hasWater1xPass()
+                         && vkCtx->getMsaaSamples() != VK_SAMPLE_COUNT_1_BIT;
+    if (waterDeferred && camera) {
+        VkExtent2D ext = vkCtx->getSwapchainExtent();
+        uint32_t frame = vkCtx->getCurrentFrame();
+        if (waterRenderer->beginWater1xPass(currentCmd, currentImageIndex, ext)) {
+            waterRenderer->render(currentCmd, perFrameDescSets[frame], *camera, globalTime, true);
+            waterRenderer->endWater1xPass(currentCmd);
+        }
     }
 
     // Submit and present
@@ -3140,7 +3245,10 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
     }
 
     // Water (transparent, after all opaques)
-    if (waterRenderer && camera) {
+    // When MSAA is on and 1x pass is available, water renders after main pass ends
+    bool waterDeferred = waterRenderer && waterRenderer->hasWater1xPass()
+                         && vkCtx->getMsaaSamples() != VK_SAMPLE_COUNT_1_BIT;
+    if (waterRenderer && camera && !waterDeferred) {
         waterRenderer->render(currentCmd, perFrameSet, *camera, globalTime);
     }
 
@@ -3244,6 +3352,8 @@ bool Renderer::loadTestTerrain(pipeline::AssetManager* assetManager, const std::
         if (!waterRenderer->initialize(vkCtx, perFrameSetLayout)) {
             LOG_ERROR("Failed to initialize water renderer");
             waterRenderer.reset();
+        } else if (vkCtx->getMsaaSamples() != VK_SAMPLE_COUNT_1_BIT) {
+            setupWater1xPass();
         }
     }
 
@@ -3688,6 +3798,87 @@ glm::mat4 Renderer::computeLightSpaceMatrix() {
     return lightProj * lightView;
 }
 
+void Renderer::setupWater1xPass() {
+    if (!waterRenderer || !vkCtx) return;
+    VkImageView depthView = vkCtx->getDepthResolveImageView();
+    if (!depthView) {
+        LOG_WARNING("No depth resolve image available - cannot create 1x water pass");
+        return;
+    }
+
+    waterRenderer->createWater1xPass(vkCtx->getSwapchainFormat(), vkCtx->getDepthFormat());
+    waterRenderer->createWater1xFramebuffers(
+        vkCtx->getSwapchainImageViews(), depthView, vkCtx->getSwapchainExtent());
+}
+
+void Renderer::renderReflectionPass() {
+    if (!waterRenderer || !camera || !waterRenderer->hasReflectionPass() || !waterRenderer->hasSurfaces()) return;
+    if (currentCmd == VK_NULL_HANDLE || !reflPerFrameUBOMapped) return;
+
+    // Reflection pass uses 1x MSAA. Scene pipelines must be render-pass-compatible,
+    // which requires matching sample counts. Only render scene into reflection when MSAA is off.
+    bool canRenderScene = (vkCtx->getMsaaSamples() == VK_SAMPLE_COUNT_1_BIT);
+
+    // Find dominant water height near camera
+    auto waterH = waterRenderer->getDominantWaterHeight(camera->getPosition());
+    if (!waterH) return;
+
+    float waterHeight = *waterH;
+
+    // Skip reflection if camera is underwater (Z is up)
+    if (camera->getPosition().z < waterHeight + 0.5f) return;
+
+    // Compute reflected view and oblique projection
+    glm::mat4 reflView = WaterRenderer::computeReflectedView(*camera, waterHeight);
+    glm::mat4 reflProj = WaterRenderer::computeObliqueProjection(
+        camera->getProjectionMatrix(), reflView, waterHeight);
+
+    // Update water renderer's reflection UBO with the reflected viewProj
+    waterRenderer->updateReflectionUBO(reflProj * reflView);
+
+    // Fill the reflection per-frame UBO (same as normal but with reflected matrices)
+    GPUPerFrameData reflData = currentFrameData;
+    reflData.view = reflView;
+    reflData.projection = reflProj;
+    // Reflected camera position (Z is up)
+    glm::vec3 reflPos = camera->getPosition();
+    reflPos.z = 2.0f * waterHeight - reflPos.z;
+    reflData.viewPos = glm::vec4(reflPos, 1.0f);
+    std::memcpy(reflPerFrameUBOMapped, &reflData, sizeof(GPUPerFrameData));
+
+    // Begin reflection render pass (clears to black; scene rendered if pipeline-compatible)
+    if (!waterRenderer->beginReflectionPass(currentCmd)) return;
+
+    if (canRenderScene) {
+        // Render scene into reflection texture (sky + terrain + WMO only for perf)
+        if (skySystem) {
+            rendering::SkyParams skyParams;
+            skyParams.timeOfDay = (skySystem->getSkybox()) ? skySystem->getSkybox()->getTimeOfDay() : 12.0f;
+            if (lightingManager) {
+                const auto& lp = lightingManager->getLightingParams();
+                skyParams.directionalDir = lp.directionalDir;
+                skyParams.sunColor = lp.diffuseColor;
+                skyParams.skyTopColor = lp.skyTopColor;
+                skyParams.skyMiddleColor = lp.skyMiddleColor;
+                skyParams.skyBand1Color = lp.skyBand1Color;
+                skyParams.skyBand2Color = lp.skyBand2Color;
+                skyParams.cloudDensity = lp.cloudDensity;
+                skyParams.fogDensity = lp.fogDensity;
+                skyParams.horizonGlow = lp.horizonGlow;
+            }
+            skySystem->render(currentCmd, reflPerFrameDescSet, *camera, skyParams);
+        }
+        if (terrainRenderer && terrainEnabled) {
+            terrainRenderer->render(currentCmd, reflPerFrameDescSet, *camera);
+        }
+        if (wmoRenderer) {
+            wmoRenderer->render(currentCmd, reflPerFrameDescSet, *camera);
+        }
+    }
+
+    waterRenderer->endReflectionPass(currentCmd);
+}
+
 void Renderer::renderShadowPass() {
     if (!shadowsEnabled || shadowDepthImage == VK_NULL_HANDLE) return;
     if (currentCmd == VK_NULL_HANDLE) return;
@@ -3698,7 +3889,8 @@ void Renderer::renderShadowPass() {
     auto* ubo = reinterpret_cast<GPUPerFrameData*>(perFrameUBOMapped[frame]);
     if (ubo) {
         ubo->lightSpaceMatrix = lightSpaceMatrix;
-        ubo->shadowParams = glm::vec4(shadowsEnabled ? 1.0f : 0.0f, 0.8f, 0.0f, 0.0f);
+        ubo->shadowParams.x = shadowsEnabled ? 1.0f : 0.0f;
+        ubo->shadowParams.y = 0.8f;
     }
 
     // Barrier 1: transition shadow map into writable depth layout.

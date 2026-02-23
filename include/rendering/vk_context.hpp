@@ -85,6 +85,8 @@ public:
         return (depthResolveImage == VK_NULL_HANDLE) && (msaaSamples_ > VK_SAMPLE_COUNT_1_BIT);
     }
     VkFormat getDepthFormat() const { return depthFormat; }
+    VkImageView getDepthResolveImageView() const { return depthResolveImageView; }
+    VkImageView getDepthImageView() const { return depthImageView; }
 
     // UI texture upload: creates a Vulkan texture from RGBA data and returns
     // a VkDescriptorSet suitable for use as ImTextureID.

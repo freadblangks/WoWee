@@ -18,6 +18,7 @@ layout(push_constant) uniform Push {
     float waveAmp;
     float waveFreq;
     float waveSpeed;
+    float liquidBasicType;
 } push;
 
 layout(set = 1, binding = 0) uniform WaterMaterial {
@@ -29,6 +30,10 @@ layout(set = 1, binding = 0) uniform WaterMaterial {
 
 layout(set = 2, binding = 0) uniform sampler2D SceneColor;
 layout(set = 2, binding = 1) uniform sampler2D SceneDepth;
+layout(set = 2, binding = 2) uniform sampler2D ReflectionColor;
+layout(set = 2, binding = 3) uniform ReflectionData {
+    mat4 reflViewProj;
+};
 
 layout(location = 0) in vec3 FragPos;
 layout(location = 1) in vec3 Normal;
@@ -38,85 +43,286 @@ layout(location = 4) in vec2 ScreenUV;
 
 layout(location = 0) out vec4 outColor;
 
+// ============================================================
+// Dual-scroll detail normals (multi-octave ripple overlay)
+// ============================================================
 vec3 dualScrollWaveNormal(vec2 p, float time) {
-    // Two independently scrolling octaves (normal-map style layering).
     vec2 d1 = normalize(vec2(0.86, 0.51));
     vec2 d2 = normalize(vec2(-0.47, 0.88));
-    float f1 = 0.19;
-    float f2 = 0.43;
-    float s1 = 0.95;
-    float s2 = 1.73;
-    float a1 = 0.26;
-    float a2 = 0.12;
+    vec2 d3 = normalize(vec2(0.32, -0.95));
+    float f1 = 0.19, f2 = 0.43, f3 = 0.72;
+    float s1 = 0.95, s2 = 1.73, s3 = 2.40;
+    float a1 = 0.22, a2 = 0.10, a3 = 0.05;
 
     vec2 p1 = p + d1 * (time * s1 * 4.0);
     vec2 p2 = p + d2 * (time * s2 * 4.0);
+    vec2 p3 = p + d3 * (time * s3 * 4.0);
 
-    float ph1 = dot(p1, d1) * f1;
-    float ph2 = dot(p2, d2) * f2;
+    float c1 = cos(dot(p1, d1) * f1);
+    float c2 = cos(dot(p2, d2) * f2);
+    float c3 = cos(dot(p3, d3) * f3);
 
-    float c1 = cos(ph1);
-    float c2 = cos(ph2);
+    float dHx = c1 * d1.x * f1 * a1 + c2 * d2.x * f2 * a2 + c3 * d3.x * f3 * a3;
+    float dHy = c1 * d1.y * f1 * a1 + c2 * d2.y * f2 * a2 + c3 * d3.y * f3 * a3;
 
-    float dHx = c1 * d1.x * f1 * a1 + c2 * d2.x * f2 * a2;
-    float dHz = c1 * d1.y * f1 * a1 + c2 * d2.y * f2 * a2;
+    return normalize(vec3(-dHx, -dHy, 1.0));
+}
 
-    return normalize(vec3(-dHx, 1.0, -dHz));
+// ============================================================
+// GGX/Cook-Torrance BRDF
+// ============================================================
+float DistributionGGX(vec3 N, vec3 H, float roughness) {
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float NdotH = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH * NdotH;
+    float denom = NdotH2 * (a2 - 1.0) + 1.0;
+    return a2 / (3.14159265 * denom * denom + 1e-7);
+}
+
+float GeometrySmith(float NdotV, float NdotL, float roughness) {
+    float r = roughness + 1.0;
+    float k = (r * r) / 8.0;
+    float ggx1 = NdotV / (NdotV * (1.0 - k) + k);
+    float ggx2 = NdotL / (NdotL * (1.0 - k) + k);
+    return ggx1 * ggx2;
+}
+
+vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
+    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+// ============================================================
+// Linearize depth
+// ============================================================
+float linearizeDepth(float d, float near, float far) {
+    return near * far / (far - d * (far - near));
+}
+
+// ============================================================
+// Noise functions for foam
+// ============================================================
+float hash21(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+float hash22x(vec2 p) {
+    return fract(sin(dot(p, vec2(269.5, 183.3))) * 43758.5453);
+}
+
+float noiseValue(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash21(i);
+    float b = hash21(i + vec2(1.0, 0.0));
+    float c = hash21(i + vec2(0.0, 1.0));
+    float d = hash21(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+float fbmNoise(vec2 p, float time) {
+    float v = 0.0;
+    v += noiseValue(p * 3.0 + time * 0.3) * 0.5;
+    v += noiseValue(p * 6.0 - time * 0.5) * 0.25;
+    v += noiseValue(p * 12.0 + time * 0.7) * 0.125;
+    return v;
+}
+
+// Voronoi-like cellular noise for foam particles
+float cellularFoam(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    float minDist = 1.0;
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            vec2 neighbor = vec2(float(x), float(y));
+            vec2 point = vec2(hash21(i + neighbor), hash22x(i + neighbor));
+            float d = length(neighbor + point - f);
+            minDist = min(minDist, d);
+        }
+    }
+    return minDist;
 }
 
 void main() {
     float time = fogParams.z;
+    float basicType = push.liquidBasicType;
+
+    vec2 screenUV = gl_FragCoord.xy / vec2(textureSize(SceneColor, 0));
+
+    // --- Normal computation ---
     vec3 meshNorm = normalize(Normal);
-    vec3 waveNorm = dualScrollWaveNormal(FragPos.xz, time);
-    vec3 norm = normalize(mix(meshNorm, waveNorm, 0.82));
+    vec3 detailNorm = dualScrollWaveNormal(FragPos.xy, time);
+    vec3 norm = normalize(mix(meshNorm, detailNorm, 0.55));
+
+    // Player interaction ripple normal perturbation
+    vec2 playerPos = vec2(shadowParams.z, shadowParams.w);
+    float rippleStrength = fogParams.w;
+    float d = length(FragPos.xy - playerPos);
+    float rippleEnv = rippleStrength * exp(-d * 0.12);
+    if (rippleEnv > 0.001) {
+        vec2 radialDir = (FragPos.xy - playerPos) / max(d, 0.01);
+        float dHdr = rippleEnv * 0.12 * (-0.12 * sin(d * 2.5 - time * 6.0) + 2.5 * cos(d * 2.5 - time * 6.0));
+        norm = normalize(norm + vec3(-radialDir * dHdr, 0.0));
+    }
 
     vec3 viewDir = normalize(viewPos.xyz - FragPos);
     vec3 ldir = normalize(-lightDir.xyz);
-    float ndotv = max(dot(norm, viewDir), 0.0);
+    float NdotV = max(dot(norm, viewDir), 0.001);
+    float NdotL = max(dot(norm, ldir), 0.0);
 
-    float diff = max(dot(norm, ldir), 0.0);
-    vec3 halfDir = normalize(ldir + viewDir);
-    float spec = pow(max(dot(norm, halfDir), 0.0), 96.0);
-    float sparkle = sin(FragPos.x * 20.0 + time * 3.0) * sin(FragPos.z * 20.0 + time * 2.5);
-    sparkle = max(0.0, sparkle) * shimmerStrength;
-
-    float crest = smoothstep(0.3, 1.0, WaveOffset) * 0.15;
     float dist = length(viewPos.xyz - FragPos);
 
-    // Beer-Lambert style approximation from view distance.
-    float opticalDepth = 1.0 - exp(-dist * 0.0035);
-    vec3 litTransmission = waterColor.rgb * (ambientColor.rgb * 0.85 + diff * lightColor.rgb * 0.55);
-    vec3 absorbed = mix(litTransmission, waterColor.rgb * 0.52, opticalDepth);
-    absorbed += vec3(crest);
+    // --- Schlick Fresnel ---
+    const vec3 F0 = vec3(0.02);
+    float fresnel = F0.x + (1.0 - F0.x) * pow(1.0 - NdotV, 5.0);
 
-    // Schlick Fresnel with water-like F0.
-    const float F0 = 0.02;
-    float fresnel = F0 + (1.0 - F0) * pow(1.0 - ndotv, 5.0);
-    vec2 refractOffset = norm.xz * (0.012 + 0.02 * fresnel);
-    vec2 refractUV = clamp(ScreenUV + refractOffset, vec2(0.001), vec2(0.999));
+    // ============================================================
+    // Refraction (screen-space from scene history)
+    // ============================================================
+    vec2 refractOffset = norm.xy * (0.02 + 0.03 * fresnel);
+    vec2 refractUV = clamp(screenUV + refractOffset, vec2(0.001), vec2(0.999));
     vec3 sceneRefract = texture(SceneColor, refractUV).rgb;
 
     float sceneDepth = texture(SceneDepth, refractUV).r;
-    float waterDepth = clamp((sceneDepth - gl_FragCoord.z) * 180.0, 0.0, 1.0);
-    float depthBlend = waterDepth;
-    // Fallback when sampled depth does not provide meaningful separation.
-    if (sceneDepth <= gl_FragCoord.z + 1e-4) {
-        depthBlend = 0.45 + opticalDepth * 0.40;
+
+    float near = 0.05;
+    float far = 30000.0;
+    float sceneLinDepth = linearizeDepth(sceneDepth, near, far);
+    float waterLinDepth = linearizeDepth(gl_FragCoord.z, near, far);
+    float depthDiff = max(sceneLinDepth - waterLinDepth, 0.0);
+
+    // ============================================================
+    // Beer-Lambert absorption
+    // ============================================================
+    vec3 absorptionCoeff = vec3(0.46, 0.09, 0.06);
+    if (basicType > 0.5 && basicType < 1.5) {
+        absorptionCoeff = vec3(0.35, 0.06, 0.04);
     }
-    depthBlend = clamp(depthBlend, 0.28, 1.0);
-    vec3 refractedTint = mix(sceneRefract, absorbed, depthBlend);
+    vec3 absorbed = exp(-absorptionCoeff * depthDiff);
 
-    vec3 specular = spec * lightColor.rgb * (0.45 + 0.75 * fresnel)
-                  + sparkle * lightColor.rgb * 0.30;
-    // Add a clear surface reflection lobe at grazing angles.
-    vec3 envReflect = mix(fogColor.rgb, lightColor.rgb, 0.38) * vec3(0.75, 0.86, 1.0);
-    vec3 reflection = envReflect * (0.45 + 0.55 * fresnel) + specular;
-    float reflectWeight = clamp(fresnel * 1.15, 0.0, 0.92);
-    vec3 color = mix(refractedTint, reflection, reflectWeight);
+    vec3 shallowColor = waterColor.rgb * 1.2;
+    vec3 deepColor = waterColor.rgb * vec3(0.3, 0.5, 0.7);
+    float depthFade = 1.0 - exp(-depthDiff * 0.15);
+    vec3 waterBody = mix(shallowColor, deepColor, depthFade);
 
-    float alpha = mix(waterAlpha * 1.05, min(1.0, waterAlpha * 1.30), fresnel) * alphaScale;
+    vec3 refractedColor = mix(sceneRefract * absorbed, waterBody, depthFade * 0.7);
+
+    if (depthDiff < 0.01) {
+        float opticalDepth = 1.0 - exp(-dist * 0.004);
+        refractedColor = mix(sceneRefract, waterBody, opticalDepth * 0.6);
+    }
+
+    vec3 litBase = waterBody * (ambientColor.rgb * 0.7 + NdotL * lightColor.rgb * 0.5);
+    refractedColor = mix(refractedColor, litBase, clamp(depthFade * 0.3, 0.0, 0.5));
+
+    // ============================================================
+    // Planar reflection — subtle, not mirror-like
+    // ============================================================
+    // reflWeight starts at 0; only contributes where we have valid reflection data
+    float reflAmount = 0.0;
+    vec3 envReflect = vec3(0.0);
+
+    vec4 reflClip = reflViewProj * vec4(FragPos, 1.0);
+    if (reflClip.w > 0.1) {
+        vec2 reflUV = reflClip.xy / reflClip.w * 0.5 + 0.5;
+        reflUV.y = 1.0 - reflUV.y;
+        reflUV += norm.xy * 0.015;
+
+        // Wide fade so there's no visible boundary — fully gone well inside the edge
+        float edgeFade = smoothstep(0.0, 0.15, reflUV.x) * smoothstep(1.0, 0.85, reflUV.x)
+                       * smoothstep(0.0, 0.15, reflUV.y) * smoothstep(1.0, 0.85, reflUV.y);
+
+        reflUV = clamp(reflUV, vec2(0.002), vec2(0.998));
+        vec3 texReflect = texture(ReflectionColor, reflUV).rgb;
+
+        float reflBrightness = dot(texReflect, vec3(0.299, 0.587, 0.114));
+        float reflValidity = smoothstep(0.002, 0.05, reflBrightness) * edgeFade;
+
+        envReflect = texReflect * 0.5;
+        reflAmount = reflValidity * 0.4;
+    }
+
+    // ============================================================
+    // GGX Specular
+    // ============================================================
+    float roughness = 0.18;
+    vec3 halfDir = normalize(ldir + viewDir);
+    float D = DistributionGGX(norm, halfDir, roughness);
+    float G = GeometrySmith(NdotV, NdotL, roughness);
+    vec3 F = fresnelSchlickRoughness(max(dot(halfDir, viewDir), 0.0), F0, roughness);
+    vec3 specular = (D * G * F) / (4.0 * NdotV * NdotL + 0.001) * lightColor.rgb * NdotL;
+    specular = min(specular, vec3(2.0));
+
+    // Noise-based sparkle
+    float sparkleNoise = fbmNoise(FragPos.xy * 4.0 + time * 0.5, time * 1.5);
+    float sparkle = pow(max(sparkleNoise - 0.55, 0.0) / 0.45, 3.0) * shimmerStrength * 0.10;
+    specular += sparkle * lightColor.rgb;
+
+    // ============================================================
+    // Subsurface scattering
+    // ============================================================
+    float sssBase = pow(max(dot(viewDir, -ldir), 0.0), 4.0);
+    float sss = sssBase * max(0.0, WaveOffset * 3.0) * 0.25;
+    vec3 sssColor = vec3(0.05, 0.55, 0.35) * sss * lightColor.rgb;
+
+    // ============================================================
+    // Combine — reflection only where valid, no dark fallback
+    // ============================================================
+    // reflAmount is 0 where no valid reflection data exists — no dark arc
+    float reflectWeight = clamp(fresnel * reflAmount, 0.0, 0.30);
+    vec3 color = mix(refractedColor, envReflect, reflectWeight);
+    color += specular + sssColor;
+
+    float crest = smoothstep(0.5, 1.0, WaveOffset) * 0.04;
+    color += vec3(crest);
+
+    // ============================================================
+    // Shoreline foam — scattered particles, not smooth bands
+    // ============================================================
+    if (basicType < 1.5 && depthDiff > 0.01) {
+        float foamDepthMask = 1.0 - smoothstep(0.0, 1.8, depthDiff);
+
+        // Fine scattered particles
+        float cells1 = cellularFoam(FragPos.xy * 14.0 + time * vec2(0.15, 0.08));
+        float foam1 = (1.0 - smoothstep(0.0, 0.10, cells1)) * 0.5;
+
+        // Tiny spray dots
+        float cells2 = cellularFoam(FragPos.xy * 30.0 + time * vec2(-0.12, 0.22));
+        float foam2 = (1.0 - smoothstep(0.0, 0.06, cells2)) * 0.35;
+
+        // Micro specks
+        float cells3 = cellularFoam(FragPos.xy * 55.0 + time * vec2(0.25, -0.1));
+        float foam3 = (1.0 - smoothstep(0.0, 0.04, cells3)) * 0.2;
+
+        // Noise breakup for clumping
+        float noiseMask = noiseValue(FragPos.xy * 3.0 + time * 0.15);
+        float foam = (foam1 + foam2 + foam3) * foamDepthMask * smoothstep(0.3, 0.6, noiseMask);
+
+        foam *= smoothstep(0.0, 0.1, depthDiff);
+        color = mix(color, vec3(0.92, 0.95, 0.98), clamp(foam, 0.0, 0.45));
+    }
+
+    // ============================================================
+    // Wave crest foam (ocean only) — particle-based
+    // ============================================================
+    if (basicType > 0.5 && basicType < 1.5) {
+        float crestMask = smoothstep(0.5, 1.0, WaveOffset);
+        float crestCells = cellularFoam(FragPos.xy * 6.0 + time * vec2(0.12, 0.08));
+        float crestFoam = (1.0 - smoothstep(0.0, 0.18, crestCells)) * crestMask;
+        float crestNoise = noiseValue(FragPos.xy * 3.0 - time * 0.3);
+        crestFoam *= smoothstep(0.3, 0.6, crestNoise);
+        color = mix(color, vec3(0.92, 0.95, 0.98), crestFoam * 0.35);
+    }
+
+    // ============================================================
+    // Alpha and fog
+    // ============================================================
+    float baseAlpha = mix(waterAlpha, min(1.0, waterAlpha * 1.5), depthFade);
+    float alpha = mix(baseAlpha, min(1.0, baseAlpha * 1.3), fresnel) * alphaScale;
     alpha *= smoothstep(1600.0, 350.0, dist);
-    alpha = clamp(alpha, 0.50, 1.0);
+    alpha = clamp(alpha, 0.15, 0.92);
 
     float fogFactor = clamp((fogParams.y - dist) / (fogParams.y - fogParams.x), 0.0, 1.0);
     color = mix(fogColor.rgb, color, fogFactor);

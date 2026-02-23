@@ -18,6 +18,7 @@ layout(push_constant) uniform Push {
     float waveAmp;
     float waveFreq;
     float waveSpeed;
+    float liquidBasicType; // 0=water, 1=ocean, 2=magma, 3=slime
 } push;
 
 layout(location = 0) in vec3 aPos;
@@ -29,32 +30,132 @@ layout(location = 2) out vec2 TexCoord;
 layout(location = 3) out float WaveOffset;
 layout(location = 4) out vec2 ScreenUV;
 
-float hashGrid(vec2 p) {
-    return fract(sin(dot(floor(p), vec2(127.1, 311.7))) * 43758.5453);
+// --- Gerstner wave ---
+// Coordinate system: X,Y = horizontal plane, Z = up (height)
+// displacement.xy = horizontal, displacement.z = vertical
+struct GerstnerResult {
+    vec3 displacement;
+    vec3 tangent;   // along X
+    vec3 binormal;  // along Y
+    float waveHeight; // raw wave height for foam
+};
+
+GerstnerResult evaluateGerstnerWaves(vec2 pos, float time, float amp, float freq, float spd, float basicType) {
+    GerstnerResult r;
+    r.displacement = vec3(0.0);
+    r.tangent = vec3(1.0, 0.0, 0.0);
+    r.binormal = vec3(0.0, 1.0, 0.0);
+    r.waveHeight = 0.0;
+
+    // Magma/slime: simple slow undulation
+    if (basicType >= 1.5) {
+        float wave = sin(pos.x * freq * 0.5 + time * spd * 0.3) * 0.4
+                   + sin(pos.y * freq * 0.3 + time * spd * 0.5) * 0.3;
+        r.displacement.z = wave * amp * 0.5;
+        float dx = cos(pos.x * freq * 0.5 + time * spd * 0.3) * freq * 0.5 * amp * 0.5 * 0.4;
+        float dy = cos(pos.y * freq * 0.3 + time * spd * 0.5) * freq * 0.3 * amp * 0.5 * 0.3;
+        r.tangent = vec3(1.0, 0.0, dx);
+        r.binormal = vec3(0.0, 1.0, dy);
+        r.waveHeight = wave;
+        return r;
+    }
+
+    // 6 wave directions for more chaotic, natural-looking water
+    // Spread across many angles to avoid visible patterns
+    vec2 dirs[6] = vec2[6](
+        normalize(vec2(0.86, 0.51)),
+        normalize(vec2(-0.47, 0.88)),
+        normalize(vec2(0.32, -0.95)),
+        normalize(vec2(-0.93, -0.37)),
+        normalize(vec2(0.67, -0.29)),
+        normalize(vec2(-0.15, 0.74))
+    );
+    float amps[6];
+    float freqs[6];
+    float spds_arr[6];
+    float steepness[6];
+
+    if (basicType > 0.5) {
+        // Ocean: broader range of wave scales for realistic chop
+        amps[0] = amp * 1.0;   amps[1] = amp * 0.55;  amps[2] = amp * 0.30;
+        amps[3] = amp * 0.18;  amps[4] = amp * 0.10;  amps[5] = amp * 0.06;
+        freqs[0] = freq * 0.7; freqs[1] = freq * 1.3;  freqs[2] = freq * 2.1;
+        freqs[3] = freq * 3.4; freqs[4] = freq * 5.0;  freqs[5] = freq * 7.5;
+        spds_arr[0] = spd * 0.8; spds_arr[1] = spd * 1.0; spds_arr[2] = spd * 1.3;
+        spds_arr[3] = spd * 1.6; spds_arr[4] = spd * 2.0; spds_arr[5] = spd * 2.5;
+        steepness[0] = 0.35; steepness[1] = 0.30; steepness[2] = 0.25;
+        steepness[3] = 0.20; steepness[4] = 0.15; steepness[5] = 0.10;
+    } else {
+        // Inland water: gentle but multi-scale ripples
+        amps[0] = amp * 0.5;   amps[1] = amp * 0.25;  amps[2] = amp * 0.15;
+        amps[3] = amp * 0.08;  amps[4] = amp * 0.05;  amps[5] = amp * 0.03;
+        freqs[0] = freq * 1.0; freqs[1] = freq * 1.8;  freqs[2] = freq * 3.0;
+        freqs[3] = freq * 4.5; freqs[4] = freq * 7.0;  freqs[5] = freq * 10.0;
+        spds_arr[0] = spd * 0.6; spds_arr[1] = spd * 0.9; spds_arr[2] = spd * 1.2;
+        spds_arr[3] = spd * 1.5; spds_arr[4] = spd * 1.9; spds_arr[5] = spd * 2.3;
+        steepness[0] = 0.20; steepness[1] = 0.18; steepness[2] = 0.15;
+        steepness[3] = 0.12; steepness[4] = 0.10; steepness[5] = 0.08;
+    }
+
+    float totalWave = 0.0;
+    for (int i = 0; i < 6; i++) {
+        float w = freqs[i];
+        float A = amps[i];
+        float phi = spds_arr[i] * w; // phase speed
+        float Q = steepness[i] / (w * A * 6.0);
+        Q = clamp(Q, 0.0, 1.0);
+
+        float phase = w * dot(dirs[i], pos) + phi * time;
+        float s = sin(phase);
+        float c = cos(phase);
+
+        // Gerstner displacement: xy = horizontal, z = vertical (up)
+        r.displacement.x += Q * A * dirs[i].x * c;
+        r.displacement.y += Q * A * dirs[i].y * c;
+        r.displacement.z += A * s;
+
+        // Tangent/binormal accumulation for analytical normal
+        float WA = w * A;
+        r.tangent.x -= Q * dirs[i].x * dirs[i].x * WA * s;
+        r.tangent.y -= Q * dirs[i].x * dirs[i].y * WA * s;
+        r.tangent.z += dirs[i].x * WA * c;
+
+        r.binormal.x -= Q * dirs[i].x * dirs[i].y * WA * s;
+        r.binormal.y -= Q * dirs[i].y * dirs[i].y * WA * s;
+        r.binormal.z += dirs[i].y * WA * c;
+
+        totalWave += A * s;
+    }
+
+    r.waveHeight = totalWave;
+    return r;
 }
 
 void main() {
     float time = fogParams.z;
     vec4 worldPos = push.model * vec4(aPos, 1.0);
-    float px = worldPos.x;
-    float py = worldPos.z;
-    float dist = length(worldPos.xyz - viewPos.xyz);
-    float blend = smoothstep(150.0, 400.0, dist);
 
-    float seamless = sin(px * push.waveFreq + time * push.waveSpeed) * 0.6
-                   + sin(py * push.waveFreq * 0.7 + time * push.waveSpeed * 1.3) * 0.3
-                   + sin((px + py) * push.waveFreq * 0.5 + time * push.waveSpeed * 0.7) * 0.1;
+    // Evaluate Gerstner waves using X,Y horizontal plane
+    GerstnerResult waves = evaluateGerstnerWaves(
+        vec2(worldPos.x, worldPos.y), time,
+        push.waveAmp, push.waveFreq, push.waveSpeed, push.liquidBasicType
+    );
 
-    float gridWave = sin(px * push.waveFreq + time * push.waveSpeed + hashGrid(vec2(px, py) * 0.01) * 6.28) * 0.5
-                   + sin(py * push.waveFreq * 0.8 + time * push.waveSpeed * 1.1 + hashGrid(vec2(py, px) * 0.01) * 6.28) * 0.5;
+    // Apply displacement: xy = horizontal, z = vertical (up)
+    worldPos.x += waves.displacement.x;
+    worldPos.y += waves.displacement.y;
+    worldPos.z += waves.displacement.z;
+    WaveOffset = waves.waveHeight; // raw wave height for fragment shader foam
 
-    float wave = mix(seamless, gridWave, blend);
-    worldPos.y += wave * push.waveAmp;
-    WaveOffset = wave;
+    // Player interaction ripples — concentric waves emanating from player position
+    vec2 playerPos = vec2(shadowParams.z, shadowParams.w);
+    float rippleStrength = fogParams.w;
+    float d = length(worldPos.xy - playerPos);
+    float ripple = rippleStrength * 0.12 * exp(-d * 0.12) * sin(d * 2.5 - time * 6.0);
+    worldPos.z += ripple;
 
-    float dx = cos(px * push.waveFreq + time * push.waveSpeed) * push.waveFreq * push.waveAmp;
-    float dz = cos(py * push.waveFreq * 0.7 + time * push.waveSpeed * 1.3) * push.waveFreq * 0.7 * push.waveAmp;
-    Normal = normalize(vec3(-dx, 1.0, -dz));
+    // Analytical normal from Gerstner tangent/binormal (cross product gives Z-up normal)
+    Normal = normalize(cross(waves.binormal, waves.tangent));
 
     FragPos = worldPos.xyz;
     TexCoord = aTexCoord;

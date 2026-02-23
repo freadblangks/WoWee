@@ -4,6 +4,7 @@
 #include <memory>
 #include <optional>
 #include <cstdint>
+#include <functional>
 #include <vulkan/vulkan.h>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
@@ -61,7 +62,8 @@ struct WaterSurface {
 };
 
 /**
- * Water renderer (Vulkan)
+ * Water renderer (Vulkan) with planar reflections, Gerstner waves,
+ * GGX specular, shoreline foam, and subsurface scattering.
  */
 class WaterRenderer {
 public:
@@ -81,12 +83,43 @@ public:
 
     void recreatePipelines();
 
-    void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera, float time);
+    // Separate 1x pass for MSAA mode — water rendered after MSAA resolve
+    bool createWater1xPass(VkFormat colorFormat, VkFormat depthFormat);
+    void createWater1xFramebuffers(const std::vector<VkImageView>& swapViews,
+                                    VkImageView depthView, VkExtent2D extent);
+    void destroyWater1xResources();
+    bool beginWater1xPass(VkCommandBuffer cmd, uint32_t imageIndex, VkExtent2D extent);
+    void endWater1xPass(VkCommandBuffer cmd);
+    bool hasWater1xPass() const { return water1xRenderPass != VK_NULL_HANDLE; }
+    VkRenderPass getWater1xRenderPass() const { return water1xRenderPass; }
+
+    void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera, float time, bool use1x = false);
     void captureSceneHistory(VkCommandBuffer cmd,
                              VkImage srcColorImage,
                              VkImage srcDepthImage,
                              VkExtent2D srcExtent,
                              bool srcDepthIsMsaa);
+
+    // --- Planar reflection pass ---
+    // Call sequence: beginReflectionPass → [render scene] → endReflectionPass
+    bool beginReflectionPass(VkCommandBuffer cmd);
+    void endReflectionPass(VkCommandBuffer cmd);
+
+    // Get the dominant water height near a position (for reflection plane)
+    std::optional<float> getDominantWaterHeight(const glm::vec3& cameraPos) const;
+
+    // Compute reflected view matrix for a given water height
+    static glm::mat4 computeReflectedView(const Camera& camera, float waterHeight);
+    // Compute oblique clip projection to clip below-water geometry in reflection
+    static glm::mat4 computeObliqueProjection(const glm::mat4& proj, const glm::mat4& view, float waterHeight);
+
+    // Update the reflection UBO with reflected viewProj matrix
+    void updateReflectionUBO(const glm::mat4& reflViewProj);
+
+    VkRenderPass getReflectionRenderPass() const { return reflectionRenderPass; }
+    VkExtent2D getReflectionExtent() const { return {REFLECTION_WIDTH, REFLECTION_HEIGHT}; }
+    bool hasReflectionPass() const { return reflectionRenderPass != VK_NULL_HANDLE; }
+    bool hasSurfaces() const { return !surfaces.empty(); }
 
     void setEnabled(bool enabled) { renderingEnabled = enabled; }
     bool isEnabled() const { return renderingEnabled; }
@@ -107,6 +140,10 @@ private:
     VkDescriptorSet allocateMaterialSet();
     void createSceneHistoryResources(VkExtent2D extent, VkFormat colorFormat, VkFormat depthFormat);
     void destroySceneHistoryResources();
+
+    // Reflection pass resources
+    void createReflectionResources();
+    void destroyReflectionResources();
 
     VkContext* vkCtx = nullptr;
 
@@ -130,6 +167,30 @@ private:
     VkImageView sceneDepthView = VK_NULL_HANDLE;
     VkExtent2D sceneHistoryExtent = {0, 0};
     bool sceneHistoryReady = false;
+
+    // Planar reflection resources
+    static constexpr uint32_t REFLECTION_WIDTH = 512;
+    static constexpr uint32_t REFLECTION_HEIGHT = 512;
+    VkRenderPass reflectionRenderPass = VK_NULL_HANDLE;
+    VkFramebuffer reflectionFramebuffer = VK_NULL_HANDLE;
+    VkImage reflectionColorImage = VK_NULL_HANDLE;
+    VmaAllocation reflectionColorAlloc = VK_NULL_HANDLE;
+    VkImageView reflectionColorView = VK_NULL_HANDLE;
+    VkImage reflectionDepthImage = VK_NULL_HANDLE;
+    VmaAllocation reflectionDepthAlloc = VK_NULL_HANDLE;
+    VkImageView reflectionDepthView = VK_NULL_HANDLE;
+    VkSampler reflectionSampler = VK_NULL_HANDLE;
+    VkImageLayout reflectionColorLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    // Reflection UBO (mat4 reflViewProj)
+    ::VkBuffer reflectionUBO = VK_NULL_HANDLE;
+    VmaAllocation reflectionUBOAlloc = VK_NULL_HANDLE;
+    void* reflectionUBOMapped = nullptr;
+
+    // Separate 1x water pass (used when MSAA is active)
+    VkRenderPass water1xRenderPass = VK_NULL_HANDLE;
+    VkPipeline water1xPipeline = VK_NULL_HANDLE;
+    std::vector<VkFramebuffer> water1xFramebuffers;
 
     std::vector<WaterSurface> surfaces;
     bool renderingEnabled = true;

@@ -64,6 +64,7 @@ public:
 
     // Multisampling
     PipelineBuilder& setMultisample(VkSampleCountFlagBits samples);
+    PipelineBuilder& setAlphaToCoverage(bool enable);
 
     // Pipeline layout
     PipelineBuilder& setLayout(VkPipelineLayout layout);
@@ -80,6 +81,7 @@ public:
     // Common blend states
     static VkPipelineColorBlendAttachmentState blendDisabled();
     static VkPipelineColorBlendAttachmentState blendAlpha();
+    static VkPipelineColorBlendAttachmentState blendPremultiplied();
     static VkPipelineColorBlendAttachmentState blendAdditive();
 
 private:
@@ -98,6 +100,7 @@ private:
     float depthBiasConstant_ = 0.0f;
     float depthBiasSlope_ = 0.0f;
     VkSampleCountFlagBits msaaSamples_ = VK_SAMPLE_COUNT_1_BIT;
+    bool alphaToCoverage_ = false;
     std::vector<VkPipelineColorBlendAttachmentState> colorBlendAttachments_;
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
     VkRenderPass renderPass_ = VK_NULL_HANDLE;

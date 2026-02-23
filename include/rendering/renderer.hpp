@@ -386,9 +386,17 @@ private:
     GPUPerFrameData currentFrameData{};
     float globalTime = 0.0f;
 
+    // Per-frame reflection UBO (mirrors camera for planar reflections)
+    VkBuffer reflPerFrameUBO = VK_NULL_HANDLE;
+    VmaAllocation reflPerFrameUBOAlloc = VK_NULL_HANDLE;
+    void* reflPerFrameUBOMapped = nullptr;
+    VkDescriptorSet reflPerFrameDescSet = VK_NULL_HANDLE;
+
     bool createPerFrameResources();
     void destroyPerFrameResources();
     void updatePerFrameUBO();
+    void setupWater1xPass();
+    void renderReflectionPass();
 
     // Active character previews for off-screen rendering
     std::vector<CharacterPreview*> activePreviews_;

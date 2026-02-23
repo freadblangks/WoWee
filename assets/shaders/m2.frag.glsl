@@ -37,6 +37,18 @@ layout(location = 4) in float ModelHeight;
 
 layout(location = 0) out vec4 outColor;
 
+const float SHADOW_TEXEL = 1.0 / 4096.0;
+
+float sampleShadowPCF(sampler2DShadow smap, vec3 coords) {
+    float shadow = 0.0;
+    for (int x = -1; x <= 1; ++x) {
+        for (int y = -1; y <= 1; ++y) {
+            shadow += texture(smap, vec3(coords.xy + vec2(x, y) * SHADOW_TEXEL, coords.z));
+        }
+    }
+    return shadow / 9.0;
+}
+
 // 4x4 Bayer dither matrix (normalized to 0..1)
 float bayerDither4x4(ivec2 p) {
     int idx = (p.x & 3) + (p.y & 3) * 4;
@@ -126,14 +138,16 @@ void main() {
             spec = pow(max(dot(norm, halfDir), 0.0), 32.0) * specularIntensity;
 
             if (shadowParams.x > 0.5) {
-                vec4 lsPos = lightSpaceMatrix * vec4(FragPos, 1.0);
+                float normalOffset = SHADOW_TEXEL * 2.0 * (1.0 - abs(dot(norm, ldir)));
+                vec3 biasedPos = FragPos + norm * normalOffset;
+                vec4 lsPos = lightSpaceMatrix * vec4(biasedPos, 1.0);
                 vec3 proj = lsPos.xyz / lsPos.w;
                 proj.xy = proj.xy * 0.5 + 0.5;
                 if (proj.x >= 0.0 && proj.x <= 1.0 &&
                     proj.y >= 0.0 && proj.y <= 1.0 &&
                     proj.z >= 0.0 && proj.z <= 1.0) {
                     float bias = max(0.0005 * (1.0 - abs(dot(norm, ldir))), 0.00005);
-                    shadow = texture(uShadowMap, vec3(proj.xy, proj.z - bias));
+                    shadow = sampleShadowPCF(uShadowMap, vec3(proj.xy, proj.z - bias));
                 }
                 shadow = mix(1.0, shadow, shadowParams.y);
             }

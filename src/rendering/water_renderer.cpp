@@ -691,30 +691,39 @@ void WaterRenderer::loadFromWMO([[maybe_unused]] const pipeline::WMOLiquid& liqu
     const int gridWidth = static_cast<int>(surface.width) + 1;
     const int gridHeight = static_cast<int>(surface.height) + 1;
     const int vertexCount = gridWidth * gridHeight;
-    surface.heights.assign(vertexCount, surface.origin.z);
-    surface.minHeight = surface.origin.z;
-    surface.maxHeight = surface.origin.z;
 
-    // Stormwind WMO water lowering
-    int tilePosX = static_cast<int>(std::floor((32.0f - surface.origin.x / 533.33333f)));
-    int tilePosY = static_cast<int>(std::floor((32.0f - surface.origin.y / 533.33333f)));
-    bool isStormwindArea = (tilePosX >= 28 && tilePosX <= 50 && tilePosY >= 28 && tilePosY <= 52);
-    if (isStormwindArea && surface.origin.z > 94.0f) {
-        glm::vec3 moonwellPos(-8755.9f, 1108.9f, 96.1f);
-        float distToMoonwell = glm::distance(glm::vec2(surface.origin.x, surface.origin.y),
-                                              glm::vec2(moonwellPos.x, moonwellPos.y));
-        if (distToMoonwell > 20.0f) {
-            for (float& h : surface.heights) h -= 1.0f;
-            surface.minHeight -= 1.0f;
-            surface.maxHeight -= 1.0f;
-        }
-    }
+    // WMO liquid base heights sit ~2 units above the visual waterline.
+    // Lower them to match surrounding terrain water and prevent clipping
+    // at bridge edges and walkways.
+    constexpr float WMO_WATER_Z_OFFSET = -1.0f;
+    float adjustedZ = surface.origin.z + WMO_WATER_Z_OFFSET;
+    surface.heights.assign(vertexCount, adjustedZ);
+    surface.minHeight = adjustedZ;
+    surface.maxHeight = adjustedZ;
+    surface.origin.z = adjustedZ;
+    surface.position.z = adjustedZ;
+
 
     if (surface.origin.z > 300.0f || surface.origin.z < -100.0f) return;
 
+    // Build tile mask from MLIQ flags — tiles with (flag & 0x0F) == 0x0F have no liquid
     size_t tileCount = static_cast<size_t>(surface.width) * static_cast<size_t>(surface.height);
     size_t maskBytes = (tileCount + 7) / 8;
-    surface.mask.assign(maskBytes, 0xFF);
+    surface.mask.assign(maskBytes, 0x00);
+    for (size_t t = 0; t < tileCount; t++) {
+        bool hasLiquid = true;
+        if (t < liquid.flags.size()) {
+            // In WoW MLIQ format, (flags & 0x0F) == 0x0F means "no liquid" for this tile
+            if ((liquid.flags[t] & 0x0F) == 0x0F) {
+                hasLiquid = false;
+            }
+        }
+        if (hasLiquid) {
+            size_t byteIdx = t / 8;
+            size_t bitIdx = t % 8;
+            surface.mask[byteIdx] |= (1 << bitIdx);
+        }
+    }
 
     createWaterMesh(surface);
     if (surface.indexCount > 0) {
@@ -768,9 +777,12 @@ void WaterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
         if (surface.vertexBuffer == VK_NULL_HANDLE || surface.indexCount == 0) continue;
         if (!surface.materialSet) continue;
 
-        bool canalProfile = (surface.wmoId != 0) || (surface.liquidType == 5);
+        bool isWmoWater = (surface.wmoId != 0);
+        bool canalProfile = isWmoWater || (surface.liquidType == 5);
         uint8_t basicType = (surface.liquidType == 0) ? 0 : ((surface.liquidType - 1) % 4);
-        float waveAmp = canalProfile ? 0.10f : (basicType == 1 ? 0.35f : 0.18f);
+        // WMO water gets no wave displacement — prevents visible slosh at
+        // geometry edges (bridges, docks) where water is far below the surface.
+        float waveAmp = isWmoWater ? 0.0f : (basicType == 1 ? 0.35f : 0.18f);
         float waveFreq = canalProfile ? 0.35f : (basicType == 1 ? 0.20f : 0.30f);
         float waveSpeed = canalProfile ? 1.00f : (basicType == 1 ? 1.20f : 1.40f);
 
@@ -1121,6 +1133,76 @@ std::optional<float> WaterRenderer::getWaterHeightAt(float glX, float glY) const
     return best;
 }
 
+std::optional<float> WaterRenderer::getNearestWaterHeightAt(float glX, float glY, float queryZ, float maxAbove) const {
+    std::optional<float> best;
+    float bestDist = 1e9f;
+
+    for (const auto& surface : surfaces) {
+        glm::vec2 rel(glX - surface.origin.x, glY - surface.origin.y);
+        glm::vec2 sX(surface.stepX.x, surface.stepX.y);
+        glm::vec2 sY(surface.stepY.x, surface.stepY.y);
+        float lenSqX = glm::dot(sX, sX);
+        float lenSqY = glm::dot(sY, sY);
+        if (lenSqX < 1e-6f || lenSqY < 1e-6f) continue;
+        float gx = glm::dot(rel, sX) / lenSqX;
+        float gy = glm::dot(rel, sY) / lenSqY;
+
+        if (gx < 0.0f || gx > static_cast<float>(surface.width) ||
+            gy < 0.0f || gy > static_cast<float>(surface.height)) continue;
+
+        int gridWidth = surface.width + 1;
+        int ix = static_cast<int>(gx);
+        int iy = static_cast<int>(gy);
+        float fx = gx - ix;
+        float fy = gy - iy;
+
+        if (ix >= surface.width) { ix = surface.width - 1; fx = 1.0f; }
+        if (iy >= surface.height) { iy = surface.height - 1; fy = 1.0f; }
+        if (ix < 0 || iy < 0) continue;
+
+        if (!surface.mask.empty()) {
+            int tileIndex;
+            if (surface.wmoId == 0 && surface.mask.size() >= 8) {
+                tileIndex = (static_cast<int>(surface.yOffset) + iy) * 8 +
+                            (static_cast<int>(surface.xOffset) + ix);
+            } else {
+                tileIndex = iy * surface.width + ix;
+            }
+            int byteIndex = tileIndex / 8;
+            int bitIndex = tileIndex % 8;
+            if (byteIndex < static_cast<int>(surface.mask.size())) {
+                uint8_t maskByte = surface.mask[byteIndex];
+                bool renderTile = (maskByte & (1 << bitIndex)) || (maskByte & (1 << (7 - bitIndex)));
+                if (!renderTile) continue;
+            }
+        }
+
+        int idx00 = iy * gridWidth + ix;
+        int idx10 = idx00 + 1;
+        int idx01 = idx00 + gridWidth;
+        int idx11 = idx01 + 1;
+
+        int total = static_cast<int>(surface.heights.size());
+        if (idx11 >= total) continue;
+
+        float h00 = surface.heights[idx00], h10 = surface.heights[idx10];
+        float h01 = surface.heights[idx01], h11 = surface.heights[idx11];
+        float h = h00*(1-fx)*(1-fy) + h10*fx*(1-fy) + h01*(1-fx)*fy + h11*fx*fy;
+
+        // Only consider water that's above queryZ but not too far above
+        if (h < queryZ - 2.0f) continue;  // water below camera, skip
+        if (h > queryZ + maxAbove) continue;  // water way above camera, skip
+
+        float dist = std::abs(h - queryZ);
+        if (!best || dist < bestDist) {
+            best = h;
+            bestDist = dist;
+        }
+    }
+
+    return best;
+}
+
 std::optional<uint16_t> WaterRenderer::getWaterTypeAt(float glX, float glY) const {
     std::optional<float> bestHeight;
     std::optional<uint16_t> bestType;
@@ -1169,6 +1251,24 @@ std::optional<uint16_t> WaterRenderer::getWaterTypeAt(float glX, float glY) cons
     }
 
     return bestType;
+}
+
+bool WaterRenderer::isWmoWaterAt(float glX, float glY) const {
+    for (const auto& surface : surfaces) {
+        if (surface.wmoId == 0) continue;
+        glm::vec2 rel(glX - surface.origin.x, glY - surface.origin.y);
+        glm::vec2 sX(surface.stepX.x, surface.stepX.y);
+        glm::vec2 sY(surface.stepY.x, surface.stepY.y);
+        float lenSqX = glm::dot(sX, sX);
+        float lenSqY = glm::dot(sY, sY);
+        if (lenSqX < 1e-6f || lenSqY < 1e-6f) continue;
+        float gx = glm::dot(rel, sX) / lenSqX;
+        float gy = glm::dot(rel, sY) / lenSqY;
+        if (gx >= 0.0f && gx <= static_cast<float>(surface.width) &&
+            gy >= 0.0f && gy <= static_cast<float>(surface.height))
+            return true;
+    }
+    return false;
 }
 
 glm::vec4 WaterRenderer::getLiquidColor(uint16_t liquidType) const {

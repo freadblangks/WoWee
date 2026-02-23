@@ -193,6 +193,13 @@ void main() {
     float waterLinDepth = linearizeDepth(gl_FragCoord.z, near, far);
     float depthDiff = max(sceneLinDepth - waterLinDepth, 0.0);
 
+    // Convert screen-space depth difference to approximate vertical water depth.
+    // depthDiff is along the view ray; multiply by the vertical component of
+    // the view direction so grazing angles don't falsely trigger shoreline foam
+    // on occluding geometry (bridges, posts) that isn't at the waterline.
+    float verticalFactor = abs(viewDir.z);  // 1.0 looking straight down, ~0 at grazing
+    float verticalDepth = depthDiff * max(verticalFactor, 0.05);
+
     // ============================================================
     // Beer-Lambert absorption
     // ============================================================
@@ -200,18 +207,24 @@ void main() {
     if (basicType > 0.5 && basicType < 1.5) {
         absorptionCoeff = vec3(0.35, 0.06, 0.04);
     }
-    vec3 absorbed = exp(-absorptionCoeff * depthDiff);
+    vec3 absorbed = exp(-absorptionCoeff * verticalDepth);
+
+    // Underwater blue fog — geometry below the waterline fades to a blue haze
+    // with depth, masking occlusion edge artifacts and giving a natural look.
+    vec3 underwaterFogColor = waterColor.rgb * 0.5 + vec3(0.04, 0.10, 0.20);
+    float underwaterFogFade = 1.0 - exp(-verticalDepth * 0.35);
+    vec3 foggedScene = mix(sceneRefract, underwaterFogColor, underwaterFogFade);
 
     vec3 shallowColor = waterColor.rgb * 1.2;
     vec3 deepColor = waterColor.rgb * vec3(0.3, 0.5, 0.7);
-    float depthFade = 1.0 - exp(-depthDiff * 0.15);
+    float depthFade = 1.0 - exp(-verticalDepth * 0.15);
     vec3 waterBody = mix(shallowColor, deepColor, depthFade);
 
-    vec3 refractedColor = mix(sceneRefract * absorbed, waterBody, depthFade * 0.7);
+    vec3 refractedColor = mix(foggedScene * absorbed, waterBody, depthFade * 0.7);
 
-    if (depthDiff < 0.01) {
+    if (verticalDepth < 0.01) {
         float opticalDepth = 1.0 - exp(-dist * 0.004);
-        refractedColor = mix(sceneRefract, waterBody, opticalDepth * 0.6);
+        refractedColor = mix(foggedScene, waterBody, opticalDepth * 0.6);
     }
 
     vec3 litBase = waterBody * (ambientColor.rgb * 0.7 + NdotL * lightColor.rgb * 0.5);
@@ -280,9 +293,11 @@ void main() {
 
     // ============================================================
     // Shoreline foam — scattered particles, not smooth bands
+    // Only on terrain water (waveAmp > 0); WMO water (canals, indoor)
+    // has waveAmp == 0 and should not show shoreline interaction.
     // ============================================================
-    if (basicType < 1.5 && depthDiff > 0.01) {
-        float foamDepthMask = 1.0 - smoothstep(0.0, 1.8, depthDiff);
+    if (basicType < 1.5 && verticalDepth > 0.01 && push.waveAmp > 0.0) {
+        float foamDepthMask = 1.0 - smoothstep(0.0, 1.8, verticalDepth);
 
         // Fine scattered particles
         float cells1 = cellularFoam(FragPos.xy * 14.0 + time * vec2(0.15, 0.08));
@@ -300,14 +315,14 @@ void main() {
         float noiseMask = noiseValue(FragPos.xy * 3.0 + time * 0.15);
         float foam = (foam1 + foam2 + foam3) * foamDepthMask * smoothstep(0.3, 0.6, noiseMask);
 
-        foam *= smoothstep(0.0, 0.1, depthDiff);
+        foam *= smoothstep(0.0, 0.1, verticalDepth);
         color = mix(color, vec3(0.92, 0.95, 0.98), clamp(foam, 0.0, 0.45));
     }
 
     // ============================================================
     // Wave crest foam (ocean only) — particle-based
     // ============================================================
-    if (basicType > 0.5 && basicType < 1.5) {
+    if (basicType > 0.5 && basicType < 1.5 && push.waveAmp > 0.0) {
         float crestMask = smoothstep(0.5, 1.0, WaveOffset);
         float crestCells = cellularFoam(FragPos.xy * 6.0 + time * vec2(0.12, 0.08));
         float crestFoam = (1.0 - smoothstep(0.0, 0.18, crestCells)) * crestMask;

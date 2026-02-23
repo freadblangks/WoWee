@@ -125,7 +125,12 @@ public:
     bool isEnabled() const { return renderingEnabled; }
 
     std::optional<float> getWaterHeightAt(float glX, float glY) const;
+    /// Like getWaterHeightAt but only returns water surfaces whose height is
+    /// close to the query Z (within maxAbove units above). Avoids false
+    /// underwater detection from elevated WMO water far above the camera.
+    std::optional<float> getNearestWaterHeightAt(float glX, float glY, float queryZ, float maxAbove = 15.0f) const;
     std::optional<uint16_t> getWaterTypeAt(float glX, float glY) const;
+    bool isWmoWaterAt(float glX, float glY) const;
 
     int getSurfaceCount() const { return static_cast<int>(surfaces.size()); }
 

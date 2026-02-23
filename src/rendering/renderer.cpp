@@ -584,6 +584,23 @@ void Renderer::updatePerFrameUBO() {
         currentFrameData.fogColor = glm::vec4(lp.fogColor, 1.0f);
         currentFrameData.fogParams.x = lp.fogStart;
         currentFrameData.fogParams.y = lp.fogEnd;
+
+        // Shift fog to blue when camera is significantly underwater (terrain water only).
+        if (waterRenderer && camera) {
+            glm::vec3 camPos = camera->getPosition();
+            auto waterH = waterRenderer->getNearestWaterHeightAt(camPos.x, camPos.y, camPos.z);
+            constexpr float MIN_SUBMERSION = 2.0f;
+            if (waterH && camPos.z < (*waterH - MIN_SUBMERSION)
+                       && !waterRenderer->isWmoWaterAt(camPos.x, camPos.y)) {
+                float depth = *waterH - camPos.z - MIN_SUBMERSION;
+                float blend = glm::clamp(1.0f - std::exp(-depth * 0.08f), 0.0f, 0.7f);
+                glm::vec3 underwaterFog(0.03f, 0.09f, 0.18f);
+                glm::vec3 blendedFog = glm::mix(lp.fogColor, underwaterFog, blend);
+                currentFrameData.fogColor = glm::vec4(blendedFog, 1.0f);
+                currentFrameData.fogParams.x = glm::mix(lp.fogStart, 20.0f, blend);
+                currentFrameData.fogParams.y = glm::mix(lp.fogEnd, 200.0f, blend);
+            }
+        }
     }
 
     currentFrameData.shadowParams = glm::vec4(shadowsEnabled ? 1.0f : 0.0f, 0.5f, 0.0f, 0.0f);
@@ -3293,22 +3310,27 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
         questMarkerRenderer->render(currentCmd, perFrameSet, *camera);
     }
 
-    // Underwater tint overlay — detect camera position relative to water surface
-    if (overlayPipeline && cameraController && cameraController->isSwimming()
-            && waterRenderer && camera) {
+    // Underwater blue fog overlay — only for terrain water, not WMO water.
+    if (overlayPipeline && waterRenderer && camera) {
         glm::vec3 camPos = camera->getPosition();
-        auto waterH = waterRenderer->getWaterHeightAt(camPos.x, camPos.y);
-        constexpr float UNDERWATER_EPS = 1.10f;
-        constexpr float MAX_DEPTH = 12.0f;
-        if (waterH && camPos.z < (*waterH - UNDERWATER_EPS)
-                   && (*waterH - camPos.z) <= MAX_DEPTH) {
-            // Check for canal (liquid type 5, 13, 17) vs open water
+        auto waterH = waterRenderer->getNearestWaterHeightAt(camPos.x, camPos.y, camPos.z);
+        constexpr float MIN_SUBMERSION_OVERLAY = 1.5f;
+        if (waterH && camPos.z < (*waterH - MIN_SUBMERSION_OVERLAY)
+                   && !waterRenderer->isWmoWaterAt(camPos.x, camPos.y)) {
+            float depth = *waterH - camPos.z - MIN_SUBMERSION_OVERLAY;
+
+            // Check for canal (liquid type 5, 13, 17) — denser/darker fog
             bool canal = false;
             if (auto lt = waterRenderer->getWaterTypeAt(camPos.x, camPos.y))
                 canal = (*lt == 5 || *lt == 13 || *lt == 17);
+
+            // Fog opacity increases with depth: thin at surface, thick deep down
+            float fogStrength = 1.0f - std::exp(-depth * (canal ? 0.25f : 0.12f));
+            fogStrength = glm::clamp(fogStrength, 0.0f, 0.75f);
+
             glm::vec4 tint = canal
-                ? glm::vec4(0.01f, 0.05f, 0.11f, 0.50f)
-                : glm::vec4(0.02f, 0.08f, 0.15f, 0.30f);
+                ? glm::vec4(0.01f, 0.04f, 0.10f, fogStrength)
+                : glm::vec4(0.03f, 0.09f, 0.18f, fogStrength);
             renderOverlay(tint);
         }
     }

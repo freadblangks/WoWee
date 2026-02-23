@@ -597,7 +597,17 @@ bool WMOLoader::loadGroup(const std::vector<uint8_t>& groupData,
                         group.liquid.heights.clear();
                         group.liquid.flags.clear();
 
-                        if (vertexCount > 0 && bytesRemaining >= vertexCount * sizeof(float)) {
+                        // MLIQ vertex data: each vertex is 8 bytes —
+                        // 4 bytes flow/unknown data + 4 bytes float height.
+                        const size_t VERTEX_STRIDE = 8; // bytes per vertex
+                        if (vertexCount > 0 && bytesRemaining >= vertexCount * VERTEX_STRIDE) {
+                            group.liquid.heights.resize(vertexCount);
+                            for (size_t i = 0; i < vertexCount; i++) {
+                                parseOffset += 4; // skip flow/unknown data
+                                group.liquid.heights[i] = read<float>(groupData, parseOffset);
+                            }
+                        } else if (vertexCount > 0 && bytesRemaining >= vertexCount * sizeof(float)) {
+                            // Fallback: try reading as plain floats if stride doesn't fit
                             group.liquid.heights.resize(vertexCount);
                             for (size_t i = 0; i < vertexCount; i++) {
                                 group.liquid.heights[i] = read<float>(groupData, parseOffset);

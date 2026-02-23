@@ -31,14 +31,13 @@ void main() {
     float disc = smoothstep(0.42, 0.35, dist);
 
     // Soft glow that fades to zero well within quad bounds
-    // At dist=0.5 (quad edge), this should be negligible
-    float glow = exp(-dist * dist * 18.0) * 0.5;
+    float glow = exp(-dist * dist * 32.0) * 0.5;
 
     // Combine disc and glow
     float alpha = max(disc, glow) * push.intensity;
 
     // Fade to zero well before quad edges
-    float edgeFade = 1.0 - smoothstep(0.35, 0.48, dist);
+    float edgeFade = 1.0 - smoothstep(0.30, 0.38, dist);
     alpha *= edgeFade;
 
     vec3 color = push.celestialColor.rgb;
@@ -56,7 +55,7 @@ void main() {
     float phaseShadow = smoothstep(-0.1, 0.1, phaseX);
     alpha *= mix(phaseShadow, 1.0, step(0.5, push.intensity));
 
-    if (alpha < 0.003) discard;
+    if (alpha < 0.01) discard;
     // Pre-multiply for additive blending: RGB is the light contribution
     outColor = vec4(color * alpha, alpha);
 }

@@ -196,6 +196,16 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     float prevAlpha = ImGui::GetStyle().Alpha;
     ImGui::GetStyle().Alpha = uiOpacity_;
 
+    // Sync minimap opacity with UI opacity
+    {
+        auto* renderer = core::Application::getInstance().getRenderer();
+        if (renderer) {
+            if (auto* minimap = renderer->getMinimap()) {
+                minimap->setOpacity(uiOpacity_);
+            }
+        }
+    }
+
     // Apply initial settings when renderer becomes available
     if (!minimapSettingsApplied_) {
         auto* renderer = core::Application::getInstance().getRenderer();
@@ -6144,7 +6154,7 @@ void GameScreen::renderSettingsWindow() {
                 }
                 ImGui::Separator();
 
-                if (ImGui::Checkbox("Original Soundtrack", &pendingUseOriginalSoundtrack)) {
+                if (ImGui::Checkbox("Enable WoWee Music", &pendingUseOriginalSoundtrack)) {
                     if (renderer) {
                         if (auto* zm = renderer->getZoneManager()) {
                             zm->setUseOriginalSoundtrack(pendingUseOriginalSoundtrack);
@@ -6153,7 +6163,7 @@ void GameScreen::renderSettingsWindow() {
                     saveSettings();
                 }
                 if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("Include original music tracks in zone music rotation");
+                    ImGui::SetTooltip("Include WoWee music tracks in zone music rotation");
                 ImGui::Separator();
 
                 ImGui::Text("Music");

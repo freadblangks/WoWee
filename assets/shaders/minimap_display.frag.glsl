@@ -9,6 +9,7 @@ layout(push_constant) uniform Push {
     float arrowRotation;
     float zoomRadius;
     int squareShape;
+    float opacity;
 } push;
 
 layout(location = 0) in vec2 TexCoord;
@@ -63,5 +64,5 @@ void main() {
         mapColor.rgb *= 1.0 - border * 0.7;
     }
 
-    outColor = mapColor;
+    outColor = vec4(mapColor.rgb, mapColor.a * push.opacity);
 }

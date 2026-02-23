@@ -53,6 +53,8 @@ public:
     void zoomIn() { viewRadius = std::max(100.0f, viewRadius - 50.0f); }
     void zoomOut() { viewRadius = std::min(800.0f, viewRadius + 50.0f); }
 
+    void setOpacity(float opacity) { opacity_ = opacity; }
+
     // Public accessors for WorldMap
     VkTexture* getOrLoadTileTexture(int tileX, int tileY);
     void ensureTRSParsed() { if (!trsParsed) parseTRS(); }
@@ -103,6 +105,7 @@ private:
     bool enabled = true;
     bool rotateWithCamera = false;
     bool squareShape = false;
+    float opacity_ = 1.0f;
 
     // Throttling
     float updateIntervalSec = 0.25f;

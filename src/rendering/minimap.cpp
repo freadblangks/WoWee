@@ -30,7 +30,8 @@ struct MinimapDisplayPush {
     float arrowRotation;
     float zoomRadius;
     int32_t squareShape;
-};  // 40 bytes
+    float opacity;
+};  // 44 bytes
 
 Minimap::Minimap() = default;
 
@@ -529,6 +530,7 @@ void Minimap::render(VkCommandBuffer cmd, const Camera& playerCamera,
     push.arrowRotation = arrowRotation;
     push.zoomRadius = zoomRadius;
     push.squareShape = squareShape ? 1 : 0;
+    push.opacity = opacity_;
 
     vkCmdPushConstants(cmd, displayPipelineLayout,
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,

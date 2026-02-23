@@ -3975,7 +3975,7 @@ void Renderer::renderShadowPass() {
         wmoRenderer->renderShadow(currentCmd, lightSpaceMatrix);
     }
     if (m2Renderer) {
-        m2Renderer->renderShadow(currentCmd, lightSpaceMatrix);
+        m2Renderer->renderShadow(currentCmd, lightSpaceMatrix, globalTime);
     }
     if (characterRenderer) {
         characterRenderer->renderShadow(currentCmd, lightSpaceMatrix);

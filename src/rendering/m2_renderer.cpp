@@ -401,7 +401,7 @@ bool M2Renderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout
         VkPushConstantRange pushRange{};
         pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
         pushRange.offset = 0;
-        pushRange.size = 80; // mat4(64) + vec2(8) + int(4) + int(4)
+        pushRange.size = 84; // mat4(64) + vec2(8) + int(4) + int(4) + int(4)
 
         VkPipelineLayoutCreateInfo ci{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
         ci.setLayoutCount = 3;
@@ -2109,6 +2109,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
         glm::vec2 uvOffset;
         int texCoordSet;
         int useBones;
+        int isFoliage;
     };
 
     // Bind per-frame descriptor set (set 0) — shared across all draws
@@ -2382,6 +2383,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
             pc.uvOffset = uvOffset;
             pc.texCoordSet = static_cast<int>(batch.textureUnit);
             pc.useBones = useBones ? 1 : 0;
+            pc.isFoliage = model.shadowWindFoliage ? 1 : 0;
             vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
 
             vkCmdDrawIndexed(cmd, batch.indexCount, 1, batch.indexStart, 0, 0);
@@ -2625,46 +2627,72 @@ bool M2Renderer::initializeShadow(VkRenderPass shadowRenderPass) {
     return true;
 }
 
-void M2Renderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMatrix) {
+void M2Renderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMatrix, float globalTime) {
     if (!shadowPipeline_ || !shadowParamsSet_) return;
     if (instances.empty() || models.empty()) return;
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline_);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipelineLayout_,
-        0, 1, &shadowParamsSet_, 0, nullptr);
-
     struct ShadowPush { glm::mat4 lightSpaceMatrix; glm::mat4 model; };
 
-    uint32_t currentModelId = UINT32_MAX;
-    const M2ModelGPU* currentModel = nullptr;
+    // Helper lambda to draw instances with a given foliageSway setting
+    auto drawPass = [&](bool foliagePass) {
+        // Update ShadowParams UBO for this pass
+        struct ShadowParamsUBO {
+            int32_t useBones = 0;
+            int32_t useTexture = 0;
+            int32_t alphaTest = 0;
+            int32_t foliageSway = 0;
+            float windTime = 0.0f;
+            float foliageMotionDamp = 1.0f;
+        };
+        ShadowParamsUBO params{};
+        params.foliageSway = foliagePass ? 1 : 0;
+        params.windTime = globalTime;
+        params.foliageMotionDamp = 1.0f;
 
-    for (const auto& instance : instances) {
-        auto modelIt = models.find(instance.modelId);
-        if (modelIt == models.end()) continue;
-        const M2ModelGPU& model = modelIt->second;
-        if (!model.isValid() || model.isSmoke || model.isInvisibleTrap) continue;
+        VmaAllocationInfo allocInfo{};
+        vmaGetAllocationInfo(vkCtx_->getAllocator(), shadowParamsAlloc_, &allocInfo);
+        std::memcpy(allocInfo.pMappedData, &params, sizeof(params));
 
-        // Bind vertex/index buffers when model changes
-        if (instance.modelId != currentModelId) {
-            currentModelId = instance.modelId;
-            currentModel = &model;
-            VkDeviceSize offset = 0;
-            vkCmdBindVertexBuffers(cmd, 0, 1, &currentModel->vertexBuffer, &offset);
-            vkCmdBindIndexBuffer(cmd, currentModel->indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline_);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipelineLayout_,
+            0, 1, &shadowParamsSet_, 0, nullptr);
+
+        uint32_t currentModelId = UINT32_MAX;
+        const M2ModelGPU* currentModel = nullptr;
+
+        for (const auto& instance : instances) {
+            auto modelIt = models.find(instance.modelId);
+            if (modelIt == models.end()) continue;
+            const M2ModelGPU& model = modelIt->second;
+            if (!model.isValid() || model.isSmoke || model.isInvisibleTrap) continue;
+
+            // Filter: only draw foliage models in foliage pass, non-foliage in non-foliage pass
+            if (model.shadowWindFoliage != foliagePass) continue;
+
+            // Bind vertex/index buffers when model changes
+            if (instance.modelId != currentModelId) {
+                currentModelId = instance.modelId;
+                currentModel = &model;
+                VkDeviceSize offset = 0;
+                vkCmdBindVertexBuffers(cmd, 0, 1, &currentModel->vertexBuffer, &offset);
+                vkCmdBindIndexBuffer(cmd, currentModel->indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+            }
+
+            ShadowPush push{lightSpaceMatrix, instance.modelMatrix};
+            vkCmdPushConstants(cmd, shadowPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT,
+                               0, 128, &push);
+
+            for (const auto& batch : model.batches) {
+                if (batch.submeshLevel > 0) continue;
+                vkCmdDrawIndexed(cmd, batch.indexCount, 1, batch.indexStart, 0, 0);
+            }
         }
+    };
 
-        ShadowPush push{lightSpaceMatrix, instance.modelMatrix};
-        vkCmdPushConstants(cmd, shadowPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT,
-                           0, 128, &push);
-
-        // Draw all batches in shadow pass.
-        // Blend-mode filtering was excluding many valid world casters after
-        // Vulkan material path changes (trees/buildings losing shadows).
-        for (const auto& batch : model.batches) {
-            if (batch.submeshLevel > 0) continue; // skip LOD submeshes
-            vkCmdDrawIndexed(cmd, batch.indexCount, 1, batch.indexStart, 0, 0);
-        }
-    }
+    // Pass 1: non-foliage (no wind displacement)
+    drawPass(false);
+    // Pass 2: foliage (wind displacement enabled)
+    drawPass(true);
 }
 
 // --- M2 Particle Emitter Helpers ---

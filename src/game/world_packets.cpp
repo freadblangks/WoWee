@@ -950,9 +950,8 @@ bool UpdateObjectParser::parseMovementBlock(network::Packet& packet, UpdateBlock
                 /*float endPointX =*/ packet.readFloat();
                 /*float endPointY =*/ packet.readFloat();
                 /*float endPointZ =*/ packet.readFloat();
-                LOG_DEBUG("  Spline pointCount=", pointCount);
-            }
-
+                LOG_DEBUG("  Spline pointCount=", pointCount, " (legacy)");
+            } else {
             // Legacy pointCount looks invalid; try compact WotLK layout as recovery.
             // This keeps malformed/variant packets from desyncing the whole update block.
             packet.setReadPos(legacyStart);
@@ -996,6 +995,7 @@ bool UpdateObjectParser::parseMovementBlock(network::Packet& packet, UpdateBlock
                 if (!bytesAvailable(compactPayloadBytes)) return false;
                 packet.setReadPos(packet.getReadPos() + compactPayloadBytes);
             }
+            } // end else (compact fallback)
         }
     }
     else if (updateFlags & UPDATEFLAG_POSITION) {

@@ -24,6 +24,7 @@ public:
     void update(const Camera& camera, const CameraController& cc,
                 const WaterRenderer& water, float deltaTime);
     void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet);
+    void spawnFootSplash(const glm::vec3& footPos, float waterH);
 
 private:
     struct Particle {

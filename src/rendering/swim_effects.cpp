@@ -345,6 +345,27 @@ void SwimEffects::spawnRipple(const glm::vec3& pos, const glm::vec3& moveDir, fl
     ripples.push_back(p);
 }
 
+void SwimEffects::spawnFootSplash(const glm::vec3& footPos, float waterH) {
+    // Small burst of splash droplets at foot position (for wading)
+    constexpr int splashCount = 5;
+    for (int i = 0; i < splashCount; ++i) {
+        if (static_cast<int>(ripples.size()) >= MAX_RIPPLE_PARTICLES) break;
+        Particle p;
+        float ox = randFloat(-0.4f, 0.4f);
+        float oy = randFloat(-0.4f, 0.4f);
+        p.position = glm::vec3(footPos.x + ox, footPos.y + oy, waterH + 0.1f);
+        // Small upward spray in random horizontal direction
+        float angle = randFloat(0.0f, 6.2832f);
+        float speed = randFloat(0.8f, 2.0f);
+        p.velocity = glm::vec3(std::cos(angle) * speed, std::sin(angle) * speed, randFloat(1.0f, 2.5f));
+        p.lifetime = 0.0f;
+        p.maxLifetime = randFloat(0.3f, 0.6f);
+        p.size = randFloat(2.0f, 4.0f);
+        p.alpha = randFloat(0.4f, 0.7f);
+        ripples.push_back(p);
+    }
+}
+
 void SwimEffects::spawnBubble(const glm::vec3& pos, float /*waterH*/) {
     if (static_cast<int>(bubbles.size()) >= MAX_BUBBLE_PARTICLES) return;
 

@@ -2590,7 +2590,20 @@ void Renderer::update(float deltaTime) {
             float animDurationMs = 0.0f;
             if (characterRenderer->getAnimationState(characterInstanceId, animId, animTimeMs, animDurationMs) &&
                 shouldTriggerFootstepEvent(animId, animTimeMs, animDurationMs)) {
-                footstepManager->playFootstep(resolveFootstepSurface(), cameraController->isSprinting());
+                auto surface = resolveFootstepSurface();
+                footstepManager->playFootstep(surface, cameraController->isSprinting());
+                // Play additional splash sound and spawn foot splash particles when wading
+                if (surface == audio::FootstepSurface::WATER) {
+                    if (movementSoundManager) {
+                        movementSoundManager->playWaterFootstep(audio::MovementSoundManager::CharacterSize::MEDIUM);
+                    }
+                    if (swimEffects && waterRenderer) {
+                        auto wh = waterRenderer->getWaterHeightAt(characterPosition.x, characterPosition.y);
+                        if (wh) {
+                            swimEffects->spawnFootSplash(characterPosition, *wh);
+                        }
+                    }
+                }
             }
             mountFootstepNormInitialized = false;
         } else {

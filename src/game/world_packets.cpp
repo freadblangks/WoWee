@@ -11,6 +11,16 @@
 #include <iomanip>
 #include <zlib.h>
 
+namespace {
+    inline uint32_t bswap32(uint32_t v) {
+        return ((v & 0xFF000000u) >> 24) | ((v & 0x00FF0000u) >> 8)
+             | ((v & 0x0000FF00u) << 8)  | ((v & 0x000000FFu) << 24);
+    }
+    inline uint16_t bswap16(uint16_t v) {
+        return static_cast<uint16_t>(((v & 0xFF00u) >> 8) | ((v & 0x00FFu) << 8));
+    }
+}
+
 namespace wowee {
 namespace game {
 
@@ -3744,10 +3754,10 @@ bool TalentsInfoParser::parse(network::Packet& packet, TalentsInfoData& data) {
 
     // These two counts are big-endian (network byte order)
     uint32_t talentCountBE = packet.readUInt32();
-    uint32_t talentCount = __builtin_bswap32(talentCountBE);
+    uint32_t talentCount = bswap32(talentCountBE);
 
     uint16_t entryCountBE = packet.readUInt16();
-    uint16_t entryCount = __builtin_bswap16(entryCountBE);
+    uint16_t entryCount = bswap16(entryCountBE);
 
     // Sanity check: prevent corrupt packets from allocating excessive memory
     if (entryCount > 64) {

@@ -2,6 +2,9 @@
 #include "core/logger.hpp"
 #include "rendering/vk_context.hpp"
 #include <SDL2/SDL_vulkan.h>
+#ifdef _WIN32
+#include <cstdlib>
+#endif
 
 namespace wowee {
 namespace core {
@@ -26,6 +29,33 @@ bool Window::initialize() {
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
         LOG_ERROR("Failed to initialize SDL: ", SDL_GetError());
+        return false;
+    }
+
+    // Explicitly load the Vulkan library before creating the window.
+    // SDL_CreateWindow with SDL_WINDOW_VULKAN fails on some platforms/drivers
+    // if the Vulkan loader hasn't been located yet; calling this first gives a
+    // clear error and avoids the misleading "not configured in SDL" message.
+    // SDL 2.28+ uses LoadLibraryExW(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS) which does
+    // not search System32, so fall back to the explicit path on Windows if needed.
+    bool vulkanLoaded = (SDL_Vulkan_LoadLibrary(nullptr) == 0);
+#ifdef _WIN32
+    if (!vulkanLoaded) {
+        const char* sysRoot = std::getenv("SystemRoot");
+        if (sysRoot && *sysRoot) {
+            std::string fallbackPath = std::string(sysRoot) + "\\System32\\vulkan-1.dll";
+            vulkanLoaded = (SDL_Vulkan_LoadLibrary(fallbackPath.c_str()) == 0);
+            if (vulkanLoaded) {
+                LOG_INFO("Loaded Vulkan library via explicit path: ", fallbackPath);
+            }
+        }
+    }
+#endif
+    if (!vulkanLoaded) {
+        LOG_ERROR("Failed to load Vulkan library: ", SDL_GetError());
+        LOG_ERROR("Ensure the Vulkan runtime (vulkan-1.dll) is installed. "
+                  "Install the latest GPU drivers or the Vulkan Runtime from https://vulkan.lunarg.com/");
+        SDL_Quit();
         return false;
     }
 
@@ -74,6 +104,7 @@ void Window::shutdown() {
         window = nullptr;
     }
 
+    SDL_Vulkan_UnloadLibrary();
     SDL_Quit();
     LOG_INFO("Window shutdown complete");
 }

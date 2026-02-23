@@ -182,6 +182,7 @@ void WardenMemory::patchRuntimeGlobals() {
     //   uint32 dwAllocationGranularity
     //   uint16 wProcessorLevel
     //   uint16 wProcessorRevision
+#pragma pack(push, 1)
     struct {
         uint16_t wProcessorArchitecture;
         uint16_t wReserved;
@@ -194,7 +195,7 @@ void WardenMemory::patchRuntimeGlobals() {
         uint32_t dwAllocationGranularity;
         uint16_t wProcessorLevel;
         uint16_t wProcessorRevision;
-    } __attribute__((packed)) sysInfo = {
+    } sysInfo = {
         0,          // x86
         0,
         4096,       // 4K page size
@@ -207,6 +208,7 @@ void WardenMemory::patchRuntimeGlobals() {
         6,          // P6 family
         0x3A09      // revision
     };
+#pragma pack(pop)
     static_assert(sizeof(sysInfo) == 36, "SYSTEM_INFO must be 36 bytes");
     uint32_t rva = sysInfoAddr - imageBase_;
     if (rva + 36 <= imageSize_) {

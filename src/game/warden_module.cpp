@@ -8,6 +8,10 @@
 #include <openssl/rsa.h>
 #include <openssl/bn.h>
 #include <openssl/sha.h>
+#include <openssl/evp.h>
+#include <openssl/pem.h>
+#include <openssl/param_build.h>
+#include <openssl/core_names.h>
 
 #ifdef _WIN32
     #ifndef WIN32_LEAN_AND_MEAN
@@ -342,37 +346,47 @@ bool WardenModule::verifyRSASignature(const std::vector<uint8_t>& data) {
 
     std::vector<uint8_t> expectedHash = auth::Crypto::sha1(dataToHash);
 
-    // Create RSA public key structure
-    RSA* rsa = RSA_new();
-    if (!rsa) {
-        std::cerr << "[WardenModule] Failed to create RSA structure" << '\n';
-        return false;
-    }
-
+    // Create RSA public key using EVP_PKEY_fromdata (OpenSSL 3.0 compatible)
     BIGNUM* n = BN_bin2bn(modulus, 256, nullptr);
     BIGNUM* e = BN_new();
     BN_set_word(e, exponent);
 
-    #if OPENSSL_VERSION_NUMBER >= 0x10100000L
-        // OpenSSL 1.1.0+
-        RSA_set0_key(rsa, n, e, nullptr);
-    #else
-        // OpenSSL 1.0.x
-        rsa->n = n;
-        rsa->e = e;
-    #endif
-
-    // Decrypt signature using public key
+    EVP_PKEY* pkey = nullptr;
+    EVP_PKEY_CTX* ctx = nullptr;
     std::vector<uint8_t> decryptedSig(256);
-    int decryptedLen = RSA_public_decrypt(
-        256,
-        signature.data(),
-        decryptedSig.data(),
-        rsa,
-        RSA_NO_PADDING
-    );
+    int decryptedLen = -1;
 
-    RSA_free(rsa);
+    {
+        OSSL_PARAM_BLD* bld = OSSL_PARAM_BLD_new();
+        OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_RSA_N, n);
+        OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_RSA_E, e);
+        OSSL_PARAM* params = OSSL_PARAM_BLD_to_param(bld);
+        OSSL_PARAM_BLD_free(bld);
+
+        EVP_PKEY_CTX* fromCtx = EVP_PKEY_CTX_new_from_name(nullptr, "RSA", nullptr);
+        if (fromCtx && EVP_PKEY_fromdata_init(fromCtx) > 0) {
+            EVP_PKEY_fromdata(fromCtx, &pkey, EVP_PKEY_PUBLIC_KEY, params);
+        }
+        if (fromCtx) EVP_PKEY_CTX_free(fromCtx);
+        OSSL_PARAM_free(params);
+
+        if (pkey) {
+            ctx = EVP_PKEY_CTX_new(pkey, nullptr);
+            if (ctx && EVP_PKEY_verify_recover_init(ctx) > 0 &&
+                EVP_PKEY_CTX_set_rsa_padding(ctx, RSA_NO_PADDING) > 0) {
+                size_t outLen = decryptedSig.size();
+                if (EVP_PKEY_verify_recover(ctx, decryptedSig.data(), &outLen,
+                                            signature.data(), 256) > 0) {
+                    decryptedLen = static_cast<int>(outLen);
+                }
+            }
+        }
+    }
+
+    BN_free(n);
+    BN_free(e);
+    if (ctx) EVP_PKEY_CTX_free(ctx);
+    if (pkey) EVP_PKEY_free(pkey);
 
     if (decryptedLen < 0) {
         std::cerr << "[WardenModule] RSA public decrypt failed" << '\n';

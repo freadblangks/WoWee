@@ -28,8 +28,11 @@ bool TCPSocket::connect(const std::string& host, uint16_t port) {
     net::setNonBlocking(sockfd);
 
     // Resolve host
-    struct hostent* server = gethostbyname(host.c_str());
-    if (server == nullptr) {
+    struct addrinfo hints{};
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    struct addrinfo* res = nullptr;
+    if (getaddrinfo(host.c_str(), nullptr, &hints, &res) != 0 || res == nullptr) {
         LOG_ERROR("Failed to resolve host: ", host);
         net::closeSocket(sockfd);
         sockfd = INVALID_SOCK;
@@ -40,8 +43,9 @@ bool TCPSocket::connect(const std::string& host, uint16_t port) {
     struct sockaddr_in serverAddr;
     memset(&serverAddr, 0, sizeof(serverAddr));
     serverAddr.sin_family = AF_INET;
-    memcpy(&serverAddr.sin_addr.s_addr, server->h_addr, server->h_length);
+    serverAddr.sin_addr = reinterpret_cast<struct sockaddr_in*>(res->ai_addr)->sin_addr;
     serverAddr.sin_port = htons(port);
+    freeaddrinfo(res);
 
     int result = ::connect(sockfd, (struct sockaddr*)&serverAddr, sizeof(serverAddr));
     if (result < 0) {

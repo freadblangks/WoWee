@@ -251,7 +251,8 @@ public:
     /**
      * Render depth-only pass for shadow casting
      */
-    void renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMatrix, float globalTime = 0.0f);
+    void renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMatrix, float globalTime = 0.0f,
+                      const glm::vec3& shadowCenter = glm::vec3(0), float shadowRadius = 1e9f);
 
     /**
      * Render M2 particle emitters (point sprites)

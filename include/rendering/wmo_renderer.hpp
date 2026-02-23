@@ -152,7 +152,8 @@ public:
     /**
      * Render depth-only for shadow casting
      */
-    void renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMatrix);
+    void renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMatrix,
+                      const glm::vec3& shadowCenter = glm::vec3(0), float shadowRadius = 1e9f);
 
     /**
      * Get number of loaded models

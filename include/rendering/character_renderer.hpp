@@ -63,7 +63,8 @@ public:
     void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera);
     void recreatePipelines();
     bool initializeShadow(VkRenderPass shadowRenderPass);
-    void renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMatrix);
+    void renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMatrix,
+                      const glm::vec3& shadowCenter = glm::vec3(0), float shadowRadius = 1e9f);
 
     void setInstancePosition(uint32_t instanceId, const glm::vec3& position);
     void setInstanceRotation(uint32_t instanceId, const glm::vec3& rotation);

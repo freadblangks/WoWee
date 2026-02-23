@@ -3907,14 +3907,15 @@ void Renderer::renderShadowPass() {
     vkCmdSetScissor(currentCmd, 0, 1, &sc);
 
     // Phase 7/8: render shadow casters
+    constexpr float kShadowCullRadius = 180.0f;  // match kShadowHalfExtent
     if (wmoRenderer) {
-        wmoRenderer->renderShadow(currentCmd, lightSpaceMatrix);
+        wmoRenderer->renderShadow(currentCmd, lightSpaceMatrix, shadowCenter, kShadowCullRadius);
     }
     if (m2Renderer) {
-        m2Renderer->renderShadow(currentCmd, lightSpaceMatrix, globalTime);
+        m2Renderer->renderShadow(currentCmd, lightSpaceMatrix, globalTime, shadowCenter, kShadowCullRadius);
     }
     if (characterRenderer) {
-        characterRenderer->renderShadow(currentCmd, lightSpaceMatrix);
+        characterRenderer->renderShadow(currentCmd, lightSpaceMatrix, shadowCenter, kShadowCullRadius);
     }
 
     vkCmdEndRenderPass(currentCmd);

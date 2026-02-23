@@ -3735,10 +3735,14 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
         }
 
         // Load skin file (only for WotLK M2s - vanilla has embedded skin)
-        std::string skinPath = m2Path.substr(0, m2Path.size() - 3) + "00.skin";
-        auto skinData = assetManager->readFile(skinPath);
-        if (!skinData.empty() && model.version >= 264) {
-            pipeline::M2Loader::loadSkin(skinData, model);
+        if (model.version >= 264) {
+            std::string skinPath = m2Path.substr(0, m2Path.size() - 3) + "00.skin";
+            auto skinData = assetManager->readFile(skinPath);
+            if (!skinData.empty()) {
+                pipeline::M2Loader::loadSkin(skinData, model);
+            } else {
+                LOG_WARNING("Missing skin file for WotLK creature M2: ", skinPath);
+            }
         }
 
         // Load external .anim files for sequences without flag 0x20
@@ -5951,10 +5955,14 @@ void Application::processPendingMount() {
         }
 
         // Load skin file (only for WotLK M2s - vanilla has embedded skin)
-        std::string skinPath = m2Path.substr(0, m2Path.size() - 3) + "00.skin";
-        auto skinData = assetManager->readFile(skinPath);
-        if (!skinData.empty() && model.version >= 264) {
-            pipeline::M2Loader::loadSkin(skinData, model);
+        if (model.version >= 264) {
+            std::string skinPath = m2Path.substr(0, m2Path.size() - 3) + "00.skin";
+            auto skinData = assetManager->readFile(skinPath);
+            if (!skinData.empty()) {
+                pipeline::M2Loader::loadSkin(skinData, model);
+            } else {
+                LOG_WARNING("Missing skin file for WotLK mount M2: ", skinPath);
+            }
         }
 
         // Load external .anim files (only idle + run needed for mounts)

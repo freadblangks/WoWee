@@ -226,7 +226,7 @@ private:
     std::unique_ptr<audio::MovementSoundManager> movementSoundManager;
     std::unique_ptr<game::ZoneManager> zoneManager;
     // Shadow mapping (Vulkan)
-    static constexpr uint32_t SHADOW_MAP_SIZE = 2048;
+    static constexpr uint32_t SHADOW_MAP_SIZE = 4096;
     VkImage shadowDepthImage = VK_NULL_HANDLE;
     VmaAllocation shadowDepthAlloc = VK_NULL_HANDLE;
     VkImageView shadowDepthView = VK_NULL_HANDLE;

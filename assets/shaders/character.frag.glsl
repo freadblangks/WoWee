@@ -23,18 +23,96 @@ layout(set = 1, binding = 1) uniform CharMaterial {
     float emissiveBoost;
     vec3 emissiveTint;
     float specularIntensity;
+    int enableNormalMap;
+    int enablePOM;
+    float pomScale;
+    int pomMaxSamples;
+    float heightMapVariance;
+    float normalMapStrength;
 };
+
+layout(set = 1, binding = 2) uniform sampler2D uNormalHeightMap;
 
 layout(set = 0, binding = 1) uniform sampler2DShadow uShadowMap;
 
 layout(location = 0) in vec3 FragPos;
 layout(location = 1) in vec3 Normal;
 layout(location = 2) in vec2 TexCoord;
+layout(location = 3) in vec3 Tangent;
+layout(location = 4) in vec3 Bitangent;
 
 layout(location = 0) out vec4 outColor;
 
+// LOD factor from screen-space UV derivatives
+float computeLodFactor() {
+    vec2 dx = dFdx(TexCoord);
+    vec2 dy = dFdy(TexCoord);
+    float texelDensity = max(dot(dx, dx), dot(dy, dy));
+    return smoothstep(0.0001, 0.005, texelDensity);
+}
+
+// Parallax Occlusion Mapping with angle-adaptive sampling
+vec2 parallaxOcclusionMap(vec2 uv, vec3 viewDirTS, float lodFactor) {
+    float VdotN = abs(viewDirTS.z);
+
+    if (VdotN < 0.15) return uv;
+
+    float angleFactor = clamp(VdotN, 0.15, 1.0);
+    int maxS = pomMaxSamples;
+    int minS = max(maxS / 4, 4);
+    int numSamples = int(mix(float(minS), float(maxS), angleFactor));
+    numSamples = int(mix(float(minS), float(numSamples), 1.0 - lodFactor));
+
+    float layerDepth = 1.0 / float(numSamples);
+    float currentLayerDepth = 0.0;
+
+    vec2 P = viewDirTS.xy / max(VdotN, 0.15) * pomScale;
+    float maxOffset = pomScale * 3.0;
+    P = clamp(P, vec2(-maxOffset), vec2(maxOffset));
+    vec2 deltaUV = P / float(numSamples);
+
+    vec2 currentUV = uv;
+    float currentDepthMapValue = 1.0 - texture(uNormalHeightMap, currentUV).a;
+
+    for (int i = 0; i < 64; i++) {
+        if (i >= numSamples || currentLayerDepth >= currentDepthMapValue) break;
+        currentUV -= deltaUV;
+        currentDepthMapValue = 1.0 - texture(uNormalHeightMap, currentUV).a;
+        currentLayerDepth += layerDepth;
+    }
+
+    vec2 prevUV = currentUV + deltaUV;
+    float afterDepth = currentDepthMapValue - currentLayerDepth;
+    float beforeDepth = (1.0 - texture(uNormalHeightMap, prevUV).a) - currentLayerDepth + layerDepth;
+    float weight = afterDepth / (afterDepth - beforeDepth + 0.0001);
+    vec2 result = mix(currentUV, prevUV, weight);
+
+    float fadeFactor = smoothstep(0.15, 0.35, VdotN);
+    return mix(uv, result, fadeFactor);
+}
+
 void main() {
-    vec4 texColor = texture(uTexture, TexCoord);
+    float lodFactor = computeLodFactor();
+
+    vec3 vertexNormal = normalize(Normal);
+    if (!gl_FrontFacing) vertexNormal = -vertexNormal;
+
+    vec2 finalUV = TexCoord;
+
+    // Build TBN matrix
+    vec3 T = normalize(Tangent);
+    vec3 B = normalize(Bitangent);
+    vec3 N = vertexNormal;
+    mat3 TBN = mat3(T, B, N);
+
+    if (enablePOM != 0 && heightMapVariance > 0.001 && lodFactor < 0.99) {
+        mat3 TBN_inv = transpose(TBN);
+        vec3 viewDirWorld = normalize(viewPos.xyz - FragPos);
+        vec3 viewDirTS = TBN_inv * viewDirWorld;
+        finalUV = parallaxOcclusionMap(TexCoord, viewDirTS, lodFactor);
+    }
+
+    vec4 texColor = texture(uTexture, finalUV);
 
     if (alphaTest != 0 && texColor.a < 0.5) discard;
     if (colorKeyBlack != 0) {
@@ -44,8 +122,17 @@ void main() {
         if (texColor.a < 0.01) discard;
     }
 
-    vec3 norm = normalize(Normal);
-    if (!gl_FrontFacing) norm = -norm;
+    // Compute normal (with normal mapping if enabled)
+    vec3 norm = vertexNormal;
+    if (enableNormalMap != 0 && lodFactor < 0.99 && normalMapStrength > 0.001) {
+        vec3 mapNormal = texture(uNormalHeightMap, finalUV).rgb * 2.0 - 1.0;
+        mapNormal.xy *= normalMapStrength;
+        mapNormal = normalize(mapNormal);
+        vec3 worldNormal = normalize(TBN * mapNormal);
+        if (!gl_FrontFacing) worldNormal = -worldNormal;
+        float blendFactor = max(lodFactor, 1.0 - normalMapStrength);
+        norm = normalize(mix(worldNormal, vertexNormal, blendFactor));
+    }
 
     vec3 result;
 

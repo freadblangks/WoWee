@@ -85,8 +85,24 @@ struct CharMaterialUBO {
     float emissiveBoost;
     float emissiveTintR, emissiveTintG, emissiveTintB;
     float specularIntensity;
-    float _pad[3]; // pad to 48 bytes
+    int32_t enableNormalMap;
+    int32_t enablePOM;
+    float pomScale;
+    int32_t pomMaxSamples;
+    float heightMapVariance;
+    float normalMapStrength;
+    float _pad[2]; // pad to 64 bytes
 };
+
+// GPU vertex struct with tangent (expanded from M2Vertex for normal mapping)
+struct CharVertexGPU {
+    glm::vec3 position;      // 12 bytes, offset 0
+    uint8_t boneWeights[4];  // 4 bytes,  offset 12
+    uint8_t boneIndices[4];  // 4 bytes,  offset 16
+    glm::vec3 normal;        // 12 bytes, offset 20
+    glm::vec2 texCoords;     // 8 bytes,  offset 32
+    glm::vec4 tangent;       // 16 bytes, offset 40 (xyz=dir, w=handedness)
+};  // 56 bytes total
 
 CharacterRenderer::CharacterRenderer() {
 }
@@ -116,9 +132,9 @@ bool CharacterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFram
 
     // --- Descriptor set layouts ---
 
-    // Material set layout (set 1): binding 0 = sampler2D, binding 1 = CharMaterial UBO
+    // Material set layout (set 1): binding 0 = sampler2D, binding 1 = CharMaterial UBO, binding 2 = normal/height map
     {
-        VkDescriptorSetLayoutBinding bindings[2] = {};
+        VkDescriptorSetLayoutBinding bindings[3] = {};
         bindings[0].binding = 0;
         bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         bindings[0].descriptorCount = 1;
@@ -127,9 +143,13 @@ bool CharacterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFram
         bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         bindings[1].descriptorCount = 1;
         bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[2].binding = 2;
+        bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[2].descriptorCount = 1;
+        bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
         VkDescriptorSetLayoutCreateInfo ci{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-        ci.bindingCount = 2;
+        ci.bindingCount = 3;
         ci.pBindings = bindings;
         vkCreateDescriptorSetLayout(device, &ci, nullptr, &materialSetLayout_);
     }
@@ -153,7 +173,7 @@ bool CharacterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFram
     // pools so we can reset safely each frame slot without exhausting descriptors.
     for (int i = 0; i < 2; i++) {
         VkDescriptorPoolSize sizes[] = {
-            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_MATERIAL_SETS},
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_MATERIAL_SETS * 2},  // diffuse + normal/height
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, MAX_MATERIAL_SETS},
         };
         VkDescriptorPoolCreateInfo ci{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
@@ -207,19 +227,20 @@ bool CharacterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFram
     VkSampleCountFlagBits samples = renderPassOverride_ ? VK_SAMPLE_COUNT_1_BIT : vkCtx_->getMsaaSamples();
 
     // --- Vertex input ---
-    // M2Vertex: vec3 pos(12) + uint8[4] boneWeights(4) + uint8[4] boneIndices(4) +
-    //           vec3 normal(12) + vec2[2] texCoords(16) = 48 bytes
+    // CharVertexGPU: vec3 pos(12) + uint8[4] boneWeights(4) + uint8[4] boneIndices(4) +
+    //               vec3 normal(12) + vec2 texCoords(8) + vec4 tangent(16) = 56 bytes
     VkVertexInputBindingDescription charBinding{};
     charBinding.binding = 0;
-    charBinding.stride = sizeof(pipeline::M2Vertex);
+    charBinding.stride = sizeof(CharVertexGPU);
     charBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
     std::vector<VkVertexInputAttributeDescription> charAttrs = {
-        {0, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<uint32_t>(offsetof(pipeline::M2Vertex, position))},
-        {1, 0, VK_FORMAT_R8G8B8A8_UNORM,   static_cast<uint32_t>(offsetof(pipeline::M2Vertex, boneWeights))},
-        {2, 0, VK_FORMAT_R8G8B8A8_UINT,     static_cast<uint32_t>(offsetof(pipeline::M2Vertex, boneIndices))},
-        {3, 0, VK_FORMAT_R32G32B32_SFLOAT,  static_cast<uint32_t>(offsetof(pipeline::M2Vertex, normal))},
-        {4, 0, VK_FORMAT_R32G32_SFLOAT,     static_cast<uint32_t>(offsetof(pipeline::M2Vertex, texCoords))},
+        {0, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<uint32_t>(offsetof(CharVertexGPU, position))},
+        {1, 0, VK_FORMAT_R8G8B8A8_UNORM,   static_cast<uint32_t>(offsetof(CharVertexGPU, boneWeights))},
+        {2, 0, VK_FORMAT_R8G8B8A8_UINT,     static_cast<uint32_t>(offsetof(CharVertexGPU, boneIndices))},
+        {3, 0, VK_FORMAT_R32G32B32_SFLOAT,  static_cast<uint32_t>(offsetof(CharVertexGPU, normal))},
+        {4, 0, VK_FORMAT_R32G32_SFLOAT,     static_cast<uint32_t>(offsetof(CharVertexGPU, texCoords))},
+        {5, 0, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<uint32_t>(offsetof(CharVertexGPU, tangent))},
     };
 
     // --- Build pipelines ---
@@ -264,6 +285,14 @@ bool CharacterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFram
         transparentTexture_->createSampler(device, VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_REPEAT);
     }
 
+    // --- Create flat normal placeholder texture (128,128,255,128) = neutral normal, 0.5 height ---
+    {
+        uint8_t flatNormal[] = {128, 128, 255, 128};
+        flatNormalTexture_ = std::make_unique<VkTexture>();
+        flatNormalTexture_->upload(*vkCtx_, flatNormal, 1, 1, VK_FORMAT_R8G8B8A8_UNORM, false);
+        flatNormalTexture_->createSampler(device, VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    }
+
     // Diagnostics-only: cache lifetime is currently tied to renderer lifetime.
     textureCacheBudgetBytes_ = envSizeMBOrDefault("WOWEE_CHARACTER_TEX_CACHE_MB", 1024) * 1024ull * 1024ull;
     LOG_INFO("Character texture cache budget: ", textureCacheBudgetBytes_ / (1024 * 1024), " MB");
@@ -305,6 +334,7 @@ void CharacterRenderer::shutdown() {
 
     whiteTexture_.reset();
     transparentTexture_.reset();
+    flatNormalTexture_.reset();
 
     models.clear();
     instances.clear();
@@ -374,6 +404,88 @@ void CharacterRenderer::destroyInstanceBones(CharacterInstance& inst) {
             inst.boneMapped[i] = nullptr;
         }
     }
+}
+
+std::unique_ptr<VkTexture> CharacterRenderer::generateNormalHeightMap(
+        const uint8_t* pixels, uint32_t width, uint32_t height, float& outVariance) {
+    if (!vkCtx_ || width == 0 || height == 0) return nullptr;
+
+    const uint32_t totalPixels = width * height;
+
+    // Step 1: Compute height from luminance
+    std::vector<float> heightMap(totalPixels);
+    double sumH = 0.0, sumH2 = 0.0;
+    for (uint32_t i = 0; i < totalPixels; i++) {
+        float r = pixels[i * 4 + 0] / 255.0f;
+        float g = pixels[i * 4 + 1] / 255.0f;
+        float b = pixels[i * 4 + 2] / 255.0f;
+        float h = 0.299f * r + 0.587f * g + 0.114f * b;
+        heightMap[i] = h;
+        sumH += h;
+        sumH2 += h * h;
+    }
+    double mean = sumH / totalPixels;
+    outVariance = static_cast<float>(sumH2 / totalPixels - mean * mean);
+
+    // Step 1.5: Box blur the height map to reduce noise from diffuse textures
+    auto wrapSample = [&](const std::vector<float>& map, int x, int y) -> float {
+        x = ((x % (int)width) + (int)width) % (int)width;
+        y = ((y % (int)height) + (int)height) % (int)height;
+        return map[y * width + x];
+    };
+
+    std::vector<float> blurredHeight(totalPixels);
+    for (uint32_t y = 0; y < height; y++) {
+        for (uint32_t x = 0; x < width; x++) {
+            int ix = static_cast<int>(x), iy = static_cast<int>(y);
+            float sum = 0.0f;
+            for (int dy = -1; dy <= 1; dy++)
+                for (int dx = -1; dx <= 1; dx++)
+                    sum += wrapSample(heightMap, ix + dx, iy + dy);
+            blurredHeight[y * width + x] = sum / 9.0f;
+        }
+    }
+
+    // Step 2: Sobel 3x3 → normal map (crisp detail from original, blurred for POM alpha)
+    const float strength = 2.0f;
+    std::vector<uint8_t> output(totalPixels * 4);
+
+    auto sampleH = [&](int x, int y) -> float {
+        x = ((x % (int)width) + (int)width) % (int)width;
+        y = ((y % (int)height) + (int)height) % (int)height;
+        return heightMap[y * width + x];
+    };
+
+    for (uint32_t y = 0; y < height; y++) {
+        for (uint32_t x = 0; x < width; x++) {
+            int ix = static_cast<int>(x);
+            int iy = static_cast<int>(y);
+            float gx = -sampleH(ix-1, iy-1) - 2.0f*sampleH(ix-1, iy) - sampleH(ix-1, iy+1)
+                       + sampleH(ix+1, iy-1) + 2.0f*sampleH(ix+1, iy) + sampleH(ix+1, iy+1);
+            float gy = -sampleH(ix-1, iy-1) - 2.0f*sampleH(ix, iy-1) - sampleH(ix+1, iy-1)
+                       + sampleH(ix-1, iy+1) + 2.0f*sampleH(ix, iy+1) + sampleH(ix+1, iy+1);
+
+            float nx = -gx * strength;
+            float ny = -gy * strength;
+            float nz = 1.0f;
+            float len = std::sqrt(nx*nx + ny*ny + nz*nz);
+            if (len > 0.0f) { nx /= len; ny /= len; nz /= len; }
+
+            uint32_t idx = (y * width + x) * 4;
+            output[idx + 0] = static_cast<uint8_t>(std::clamp((nx * 0.5f + 0.5f) * 255.0f, 0.0f, 255.0f));
+            output[idx + 1] = static_cast<uint8_t>(std::clamp((ny * 0.5f + 0.5f) * 255.0f, 0.0f, 255.0f));
+            output[idx + 2] = static_cast<uint8_t>(std::clamp((nz * 0.5f + 0.5f) * 255.0f, 0.0f, 255.0f));
+            output[idx + 3] = static_cast<uint8_t>(std::clamp(blurredHeight[y * width + x] * 255.0f, 0.0f, 255.0f));
+        }
+    }
+
+    auto tex = std::make_unique<VkTexture>();
+    if (!tex->upload(*vkCtx_, output.data(), width, height, VK_FORMAT_R8G8B8A8_UNORM, true)) {
+        return nullptr;
+    }
+    tex->createSampler(vkCtx_->getDevice(), VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+                        VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    return tex;
 }
 
 VkTexture* CharacterRenderer::loadTexture(const std::string& path) {
@@ -467,6 +579,16 @@ VkTexture* CharacterRenderer::loadTexture(const std::string& path) {
     e.lastUse = ++textureCacheCounter_;
     e.hasAlpha = hasAlpha;
     e.colorKeyBlack = colorKeyBlackHint;
+
+    // Generate normal/height map from diffuse texture
+    float nhVariance = 0.0f;
+    auto nhMap = generateNormalHeightMap(blpImage.data.data(), blpImage.width, blpImage.height, nhVariance);
+    if (nhMap) {
+        e.heightMapVariance = nhVariance;
+        e.approxBytes += approxTextureBytesWithMips(blpImage.width, blpImage.height);
+        e.normalHeightMap = std::move(nhMap);
+    }
+
     textureCacheBytes_ += e.approxBytes;
     textureHasAlphaByPtr_[texPtr] = hasAlpha;
     textureColorKeyBlackByPtr_[texPtr] = colorKeyBlackHint;
@@ -1018,23 +1140,85 @@ void CharacterRenderer::setupModelBuffers(M2ModelGPU& gpuModel) {
 
     if (model.vertices.empty() || model.indices.empty()) return;
 
-    // Upload vertex buffer
+    const size_t vertCount = model.vertices.size();
+    const size_t idxCount = model.indices.size();
+
+    // Build expanded GPU vertex buffer with tangents (Lengyel's method)
+    std::vector<CharVertexGPU> gpuVerts(vertCount);
+    std::vector<glm::vec3> tanAccum(vertCount, glm::vec3(0.0f));
+    std::vector<glm::vec3> bitanAccum(vertCount, glm::vec3(0.0f));
+
+    // Copy base vertex data
+    for (size_t i = 0; i < vertCount; i++) {
+        const auto& src = model.vertices[i];
+        auto& dst = gpuVerts[i];
+        dst.position = src.position;
+        std::memcpy(dst.boneWeights, src.boneWeights, 4);
+        std::memcpy(dst.boneIndices, src.boneIndices, 4);
+        dst.normal = src.normal;
+        dst.texCoords = src.texCoords[0]; // Use first UV set
+        dst.tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f); // default
+    }
+
+    // Accumulate tangent/bitangent per triangle
+    for (size_t i = 0; i + 2 < idxCount; i += 3) {
+        uint16_t i0 = model.indices[i], i1 = model.indices[i+1], i2 = model.indices[i+2];
+        if (i0 >= vertCount || i1 >= vertCount || i2 >= vertCount) continue;
+
+        const glm::vec3& p0 = gpuVerts[i0].position;
+        const glm::vec3& p1 = gpuVerts[i1].position;
+        const glm::vec3& p2 = gpuVerts[i2].position;
+        const glm::vec2& uv0 = gpuVerts[i0].texCoords;
+        const glm::vec2& uv1 = gpuVerts[i1].texCoords;
+        const glm::vec2& uv2 = gpuVerts[i2].texCoords;
+
+        glm::vec3 edge1 = p1 - p0;
+        glm::vec3 edge2 = p2 - p0;
+        glm::vec2 duv1 = uv1 - uv0;
+        glm::vec2 duv2 = uv2 - uv0;
+
+        float det = duv1.x * duv2.y - duv2.x * duv1.y;
+        if (std::abs(det) < 1e-8f) continue;
+        float invDet = 1.0f / det;
+
+        glm::vec3 t = (edge1 * duv2.y - edge2 * duv1.y) * invDet;
+        glm::vec3 b = (edge2 * duv1.x - edge1 * duv2.x) * invDet;
+
+        tanAccum[i0] += t; tanAccum[i1] += t; tanAccum[i2] += t;
+        bitanAccum[i0] += b; bitanAccum[i1] += b; bitanAccum[i2] += b;
+    }
+
+    // Orthogonalize and compute handedness
+    for (size_t i = 0; i < vertCount; i++) {
+        const glm::vec3& n = gpuVerts[i].normal;
+        const glm::vec3& t = tanAccum[i];
+        if (glm::dot(t, t) < 1e-8f) {
+            gpuVerts[i].tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
+            continue;
+        }
+        // Gram-Schmidt orthogonalize
+        glm::vec3 tOrtho = glm::normalize(t - n * glm::dot(n, t));
+        float w = (glm::dot(glm::cross(n, t), bitanAccum[i]) < 0.0f) ? -1.0f : 1.0f;
+        gpuVerts[i].tangent = glm::vec4(tOrtho, w);
+    }
+
+    // Upload vertex buffer (CharVertexGPU, 56 bytes per vertex)
     auto vb = uploadBuffer(*vkCtx_,
-        model.vertices.data(),
-        model.vertices.size() * sizeof(pipeline::M2Vertex),
+        gpuVerts.data(),
+        gpuVerts.size() * sizeof(CharVertexGPU),
         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
     gpuModel.vertexBuffer = vb.buffer;
     gpuModel.vertexAlloc = vb.allocation;
-    gpuModel.vertexCount = static_cast<uint32_t>(model.vertices.size());
+    gpuModel.vertexCount = static_cast<uint32_t>(vertCount);
 
     // Upload index buffer
     auto ib = uploadBuffer(*vkCtx_,
         model.indices.data(),
-        model.indices.size() * sizeof(uint16_t),
+        idxCount * sizeof(uint16_t),
         VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
     gpuModel.indexBuffer = ib.buffer;
     gpuModel.indexAlloc = ib.allocation;
-    gpuModel.indexCount = static_cast<uint32_t>(model.indices.size());
+    gpuModel.indexCount = static_cast<uint32_t>(idxCount);
 }
 
 void CharacterRenderer::calculateBindPose(M2ModelGPU& gpuModel) {
@@ -1809,6 +1993,24 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                     }
                 }
 
+                // Resolve normal/height map for this texture
+                VkTexture* normalMap = flatNormalTexture_.get();
+                float batchHeightVariance = 0.0f;
+                if (texPtr && texPtr != whiteTexture_.get()) {
+                    for (const auto& ce : textureCache) {
+                        if (ce.second.texture.get() == texPtr && ce.second.normalHeightMap) {
+                            normalMap = ce.second.normalHeightMap.get();
+                            batchHeightVariance = ce.second.heightMapVariance;
+                            break;
+                        }
+                    }
+                }
+
+                // POM quality → sample count
+                int pomSamples = 32;
+                if (pomQuality_ == 0) pomSamples = 16;
+                else if (pomQuality_ == 2) pomSamples = 64;
+
                 // Create per-batch material UBO
                 CharMaterialUBO matData{};
                 matData.opacity = instance.opacity;
@@ -1820,6 +2022,12 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                 matData.emissiveTintG = emissiveTint.g;
                 matData.emissiveTintB = emissiveTint.b;
                 matData.specularIntensity = 0.5f;
+                matData.enableNormalMap = normalMappingEnabled_ ? 1 : 0;
+                matData.enablePOM = pomEnabled_ ? 1 : 0;
+                matData.pomScale = 0.03f;
+                matData.pomMaxSamples = pomSamples;
+                matData.heightMapVariance = batchHeightVariance;
+                matData.normalMapStrength = normalMapStrength_;
 
                 // Create a small UBO for this batch's material
                 VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
@@ -1836,15 +2044,16 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                     memcpy(allocInfo.pMappedData, &matData, sizeof(CharMaterialUBO));
                 }
 
-                // Write descriptor set: binding 0 = texture, binding 1 = material UBO
+                // Write descriptor set: binding 0 = texture, binding 1 = material UBO, binding 2 = normal/height map
                 VkTexture* bindTex = (texPtr && texPtr->isValid()) ? texPtr : whiteTexture_.get();
                 VkDescriptorImageInfo imgInfo = bindTex->descriptorInfo();
                 VkDescriptorBufferInfo bufInfo{};
                 bufInfo.buffer = matUBO;
                 bufInfo.offset = 0;
                 bufInfo.range = sizeof(CharMaterialUBO);
+                VkDescriptorImageInfo nhImgInfo = normalMap->descriptorInfo();
 
-                VkWriteDescriptorSet writes[2] = {};
+                VkWriteDescriptorSet writes[3] = {};
                 writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
                 writes[0].dstSet = materialSet;
                 writes[0].dstBinding = 0;
@@ -1859,7 +2068,14 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                 writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
                 writes[1].pBufferInfo = &bufInfo;
 
-                vkUpdateDescriptorSets(vkCtx_->getDevice(), 2, writes, 0, nullptr);
+                writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                writes[2].dstSet = materialSet;
+                writes[2].dstBinding = 2;
+                writes[2].descriptorCount = 1;
+                writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                writes[2].pImageInfo = &nhImgInfo;
+
+                vkUpdateDescriptorSets(vkCtx_->getDevice(), 3, writes, 0, nullptr);
 
                 // Bind material descriptor set (set 1)
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -1886,6 +2102,11 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                 }
             }
 
+            // POM quality → sample count
+            int pomSamples2 = 32;
+            if (pomQuality_ == 0) pomSamples2 = 16;
+            else if (pomQuality_ == 2) pomSamples2 = 64;
+
             CharMaterialUBO matData{};
             matData.opacity = instance.opacity;
             matData.alphaTest = 0;
@@ -1896,6 +2117,12 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
             matData.emissiveTintG = 1.0f;
             matData.emissiveTintB = 1.0f;
             matData.specularIntensity = 0.5f;
+            matData.enableNormalMap = normalMappingEnabled_ ? 1 : 0;
+            matData.enablePOM = pomEnabled_ ? 1 : 0;
+            matData.pomScale = 0.03f;
+            matData.pomMaxSamples = pomSamples2;
+            matData.heightMapVariance = 0.0f;
+            matData.normalMapStrength = normalMapStrength_;
 
             VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
             bci.size = sizeof(CharMaterialUBO);
@@ -1916,8 +2143,9 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
             bufInfo.buffer = matUBO;
             bufInfo.offset = 0;
             bufInfo.range = sizeof(CharMaterialUBO);
+            VkDescriptorImageInfo nhImgInfo2 = flatNormalTexture_->descriptorInfo();
 
-            VkWriteDescriptorSet writes[2] = {};
+            VkWriteDescriptorSet writes[3] = {};
             writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             writes[0].dstSet = materialSet;
             writes[0].dstBinding = 0;
@@ -1932,7 +2160,14 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
             writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
             writes[1].pBufferInfo = &bufInfo;
 
-            vkUpdateDescriptorSets(vkCtx_->getDevice(), 2, writes, 0, nullptr);
+            writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[2].dstSet = materialSet;
+            writes[2].dstBinding = 2;
+            writes[2].descriptorCount = 1;
+            writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[2].pImageInfo = &nhImgInfo2;
+
+            vkUpdateDescriptorSets(vkCtx_->getDevice(), 3, writes, 0, nullptr);
 
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     pipelineLayout_, 1, 1, &materialSet, 0, nullptr);
@@ -2066,20 +2301,20 @@ bool CharacterRenderer::initializeShadow(VkRenderPass shadowRenderPass) {
         return false;
     }
 
-    // Character vertex format (M2Vertex): stride = 48 bytes
+    // Character vertex format (CharVertexGPU): stride = 56 bytes
     // loc 0: vec3 aPos          (R32G32B32_SFLOAT, offset 0)
     // loc 1: vec4 aBoneWeights  (R8G8B8A8_UNORM,   offset 12)
     // loc 2: ivec4 aBoneIndices (R8G8B8A8_UINT,    offset 16)
     // loc 3: vec2 aTexCoord     (R32G32_SFLOAT,    offset 32)
     VkVertexInputBindingDescription vertBind{};
     vertBind.binding = 0;
-    vertBind.stride = static_cast<uint32_t>(sizeof(pipeline::M2Vertex));
+    vertBind.stride = static_cast<uint32_t>(sizeof(CharVertexGPU));
     vertBind.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
     std::vector<VkVertexInputAttributeDescription> vertAttrs = {
-        {0, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<uint32_t>(offsetof(pipeline::M2Vertex, position))},
-        {1, 0, VK_FORMAT_R8G8B8A8_UNORM,   static_cast<uint32_t>(offsetof(pipeline::M2Vertex, boneWeights))},
-        {2, 0, VK_FORMAT_R8G8B8A8_UINT,    static_cast<uint32_t>(offsetof(pipeline::M2Vertex, boneIndices))},
-        {3, 0, VK_FORMAT_R32G32_SFLOAT,    static_cast<uint32_t>(offsetof(pipeline::M2Vertex, texCoords))},
+        {0, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<uint32_t>(offsetof(CharVertexGPU, position))},
+        {1, 0, VK_FORMAT_R8G8B8A8_UNORM,   static_cast<uint32_t>(offsetof(CharVertexGPU, boneWeights))},
+        {2, 0, VK_FORMAT_R8G8B8A8_UINT,    static_cast<uint32_t>(offsetof(CharVertexGPU, boneIndices))},
+        {3, 0, VK_FORMAT_R32G32_SFLOAT,    static_cast<uint32_t>(offsetof(CharVertexGPU, texCoords))},
     };
 
     shadowPipeline_ = PipelineBuilder()
@@ -2755,15 +2990,16 @@ void CharacterRenderer::recreatePipelines() {
     // --- Vertex input ---
     VkVertexInputBindingDescription charBinding{};
     charBinding.binding = 0;
-    charBinding.stride = sizeof(pipeline::M2Vertex);
+    charBinding.stride = sizeof(CharVertexGPU);
     charBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
     std::vector<VkVertexInputAttributeDescription> charAttrs = {
-        {0, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<uint32_t>(offsetof(pipeline::M2Vertex, position))},
-        {1, 0, VK_FORMAT_R8G8B8A8_UNORM,   static_cast<uint32_t>(offsetof(pipeline::M2Vertex, boneWeights))},
-        {2, 0, VK_FORMAT_R8G8B8A8_UINT,     static_cast<uint32_t>(offsetof(pipeline::M2Vertex, boneIndices))},
-        {3, 0, VK_FORMAT_R32G32B32_SFLOAT,  static_cast<uint32_t>(offsetof(pipeline::M2Vertex, normal))},
-        {4, 0, VK_FORMAT_R32G32_SFLOAT,     static_cast<uint32_t>(offsetof(pipeline::M2Vertex, texCoords))},
+        {0, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<uint32_t>(offsetof(CharVertexGPU, position))},
+        {1, 0, VK_FORMAT_R8G8B8A8_UNORM,   static_cast<uint32_t>(offsetof(CharVertexGPU, boneWeights))},
+        {2, 0, VK_FORMAT_R8G8B8A8_UINT,     static_cast<uint32_t>(offsetof(CharVertexGPU, boneIndices))},
+        {3, 0, VK_FORMAT_R32G32B32_SFLOAT,  static_cast<uint32_t>(offsetof(CharVertexGPU, normal))},
+        {4, 0, VK_FORMAT_R32G32_SFLOAT,     static_cast<uint32_t>(offsetof(CharVertexGPU, texCoords))},
+        {5, 0, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<uint32_t>(offsetof(CharVertexGPU, tangent))},
     };
 
     auto buildCharPipeline = [&](VkPipelineColorBlendAttachmentState blendState, bool depthWrite) -> VkPipeline {

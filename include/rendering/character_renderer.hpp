@@ -99,6 +99,12 @@ public:
 
     size_t getInstanceCount() const { return instances.size(); }
 
+    // Normal mapping / POM settings
+    void setNormalMappingEnabled(bool enabled) { normalMappingEnabled_ = enabled; }
+    void setNormalMapStrength(float strength) { normalMapStrength_ = strength; }
+    void setPOMEnabled(bool enabled) { pomEnabled_ = enabled; }
+    void setPOMQuality(int quality) { pomQuality_ = quality; }
+
     // Fog/lighting/shadow are now in per-frame UBO — keep stubs for callers that haven't been updated
     void setFog(const glm::vec3&, float, float) {}
     void setLighting(const float[3], const float[3], const float[3]) {}
@@ -247,6 +253,8 @@ private:
     // Texture cache
     struct TextureCacheEntry {
         std::unique_ptr<VkTexture> texture;
+        std::unique_ptr<VkTexture> normalHeightMap;
+        float heightMapVariance = 0.0f;
         size_t approxBytes = 0;
         uint64_t lastUse = 0;
         bool hasAlpha = false;
@@ -263,11 +271,22 @@ private:
     uint32_t textureBudgetRejectWarnings_ = 0;
     std::unique_ptr<VkTexture> whiteTexture_;
     std::unique_ptr<VkTexture> transparentTexture_;
+    std::unique_ptr<VkTexture> flatNormalTexture_;
 
     std::unordered_map<uint32_t, M2ModelGPU> models;
     std::unordered_map<uint32_t, CharacterInstance> instances;
 
     uint32_t nextInstanceId = 1;
+
+    // Normal map generation (same algorithm as WMO renderer)
+    std::unique_ptr<VkTexture> generateNormalHeightMap(
+        const uint8_t* pixels, uint32_t width, uint32_t height, float& outVariance);
+
+    // Normal mapping / POM settings
+    bool normalMappingEnabled_ = true;
+    float normalMapStrength_ = 0.8f;
+    bool pomEnabled_ = true;
+    int pomQuality_ = 1;  // 0=Low(16), 1=Medium(32), 2=High(64)
 
     // Maximum bones supported
     static constexpr int MAX_BONES = 240;

@@ -26,10 +26,13 @@ layout(location = 1) in vec4 aBoneWeights;
 layout(location = 2) in ivec4 aBoneIndices;
 layout(location = 3) in vec3 aNormal;
 layout(location = 4) in vec2 aTexCoord;
+layout(location = 5) in vec4 aTangent;
 
 layout(location = 0) out vec3 FragPos;
 layout(location = 1) out vec3 Normal;
 layout(location = 2) out vec2 TexCoord;
+layout(location = 3) out vec3 Tangent;
+layout(location = 4) out vec3 Bitangent;
 
 void main() {
     mat4 skinMat = bones[aBoneIndices.x] * aBoneWeights.x
@@ -39,11 +42,22 @@ void main() {
 
     vec4 skinnedPos = skinMat * vec4(aPos, 1.0);
     vec3 skinnedNorm = mat3(skinMat) * aNormal;
+    vec3 skinnedTan = mat3(skinMat) * aTangent.xyz;
 
     vec4 worldPos = push.model * skinnedPos;
+    mat3 modelMat3 = mat3(push.model);
     FragPos = worldPos.xyz;
-    Normal = mat3(push.model) * skinnedNorm;
+    Normal = modelMat3 * skinnedNorm;
     TexCoord = aTexCoord;
+
+    // Gram-Schmidt re-orthogonalize tangent w.r.t. normal
+    vec3 N = normalize(Normal);
+    vec3 T = normalize(modelMat3 * skinnedTan);
+    T = normalize(T - dot(T, N) * N);
+    vec3 B = cross(N, T) * aTangent.w;
+
+    Tangent = T;
+    Bitangent = B;
 
     gl_Position = projection * view * worldPos;
 }

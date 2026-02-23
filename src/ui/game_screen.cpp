@@ -287,6 +287,12 @@ void GameScreen::render(game::GameHandler& gameHandler) {
                 wr->setNormalMapStrength(pendingNormalMapStrength);
                 wr->setPOMEnabled(pendingPOM);
                 wr->setPOMQuality(pendingPOMQuality);
+                if (auto* cr = renderer->getCharacterRenderer()) {
+                    cr->setNormalMappingEnabled(pendingNormalMapping);
+                    cr->setNormalMapStrength(pendingNormalMapStrength);
+                    cr->setPOMEnabled(pendingPOM);
+                    cr->setPOMQuality(pendingPOMQuality);
+                }
                 normalMapSettingsApplied_ = true;
             }
         }
@@ -5914,6 +5920,9 @@ void GameScreen::renderSettingsWindow() {
                         if (auto* wr = renderer->getWMORenderer()) {
                             wr->setNormalMappingEnabled(pendingNormalMapping);
                         }
+                        if (auto* cr = renderer->getCharacterRenderer()) {
+                            cr->setNormalMappingEnabled(pendingNormalMapping);
+                        }
                     }
                     saveSettings();
                 }
@@ -5922,6 +5931,9 @@ void GameScreen::renderSettingsWindow() {
                         if (renderer) {
                             if (auto* wr = renderer->getWMORenderer()) {
                                 wr->setNormalMapStrength(pendingNormalMapStrength);
+                            }
+                            if (auto* cr = renderer->getCharacterRenderer()) {
+                                cr->setNormalMapStrength(pendingNormalMapStrength);
                             }
                         }
                         saveSettings();
@@ -5932,6 +5944,9 @@ void GameScreen::renderSettingsWindow() {
                         if (auto* wr = renderer->getWMORenderer()) {
                             wr->setPOMEnabled(pendingPOM);
                         }
+                        if (auto* cr = renderer->getCharacterRenderer()) {
+                            cr->setPOMEnabled(pendingPOM);
+                        }
                     }
                     saveSettings();
                 }
@@ -5941,6 +5956,9 @@ void GameScreen::renderSettingsWindow() {
                         if (renderer) {
                             if (auto* wr = renderer->getWMORenderer()) {
                                 wr->setPOMQuality(pendingPOMQuality);
+                            }
+                            if (auto* cr = renderer->getCharacterRenderer()) {
+                                cr->setPOMQuality(pendingPOMQuality);
                             }
                         }
                         saveSettings();
@@ -5990,6 +6008,12 @@ void GameScreen::renderSettingsWindow() {
                             wr->setNormalMapStrength(pendingNormalMapStrength);
                             wr->setPOMEnabled(pendingPOM);
                             wr->setPOMQuality(pendingPOMQuality);
+                        }
+                        if (auto* cr = renderer->getCharacterRenderer()) {
+                            cr->setNormalMappingEnabled(pendingNormalMapping);
+                            cr->setNormalMapStrength(pendingNormalMapStrength);
+                            cr->setPOMEnabled(pendingPOM);
+                            cr->setPOMQuality(pendingPOMQuality);
                         }
                     }
                     saveSettings();

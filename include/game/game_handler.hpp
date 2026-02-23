@@ -593,6 +593,9 @@ public:
     using GameObjectDespawnCallback = std::function<void(uint64_t guid)>;
     void setGameObjectDespawnCallback(GameObjectDespawnCallback cb) { gameObjectDespawnCallback_ = std::move(cb); }
 
+    using GameObjectCustomAnimCallback = std::function<void(uint64_t guid, uint32_t animId)>;
+    void setGameObjectCustomAnimCallback(GameObjectCustomAnimCallback cb) { gameObjectCustomAnimCallback_ = std::move(cb); }
+
     // Faction hostility map (populated from FactionTemplate.dbc by Application)
     void setFactionHostileMap(std::unordered_map<uint32_t, bool> map) { factionHostileMap_ = std::move(map); }
 
@@ -1401,6 +1404,7 @@ private:
     GameObjectSpawnCallback gameObjectSpawnCallback_;
     GameObjectMoveCallback gameObjectMoveCallback_;
     GameObjectDespawnCallback gameObjectDespawnCallback_;
+    GameObjectCustomAnimCallback gameObjectCustomAnimCallback_;
 
     // Transport tracking
     struct TransportAttachment {

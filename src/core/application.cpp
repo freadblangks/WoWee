@@ -1548,6 +1548,18 @@ void Application::setupUICallbacks() {
         despawnOnlineGameObject(guid);
     });
 
+    // GameObject custom animation callback (e.g. chest opening)
+    gameHandler->setGameObjectCustomAnimCallback([this](uint64_t guid, uint32_t /*animId*/) {
+        auto it = gameObjectInstances_.find(guid);
+        if (it == gameObjectInstances_.end() || !renderer) return;
+        auto& info = it->second;
+        if (!info.isWmo) {
+            if (auto* m2r = renderer->getM2Renderer()) {
+                m2r->setInstanceAnimationFrozen(info.instanceId, false);
+            }
+        }
+    });
+
     // Charge callback — warrior rushes toward target
     gameHandler->setChargeCallback([this](uint64_t targetGuid, float tx, float ty, float tz) {
         if (!renderer || !renderer->getCameraController() || !gameHandler) return;

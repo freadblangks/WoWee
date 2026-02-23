@@ -2259,6 +2259,16 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_GAMEOBJECT_PAGETEXT:
             handleGameObjectPageText(packet);
             break;
+        case Opcode::SMSG_GAMEOBJECT_CUSTOM_ANIM: {
+            if (packet.getSize() >= 12) {
+                uint64_t guid = packet.readUInt64();
+                uint32_t animId = packet.readUInt32();
+                if (gameObjectCustomAnimCallback_) {
+                    gameObjectCustomAnimCallback_(guid, animId);
+                }
+            }
+            break;
+        }
         case Opcode::SMSG_PAGE_TEXT_QUERY_RESPONSE:
             handlePageTextQueryResponse(packet);
             break;

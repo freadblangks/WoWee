@@ -310,6 +310,8 @@ private:
         int32_t unlit;
         int32_t isInterior;
         float specularIntensity;
+        int32_t isWindow;
+        float pad[2];  // pad to 32 bytes
     };
 
     /**
@@ -346,6 +348,7 @@ private:
             bool alphaTest = false;
             bool unlit = false;
             bool isTransparent = false;     // blendMode >= 2
+            bool isWindow = false;          // F_SIDN or F_WINDOW material
             // For multi-draw: store index ranges
             struct DrawRange { uint32_t firstIndex; uint32_t indexCount; };
             std::vector<DrawRange> draws;
@@ -558,6 +561,7 @@ private:
     // Vulkan pipelines
     VkPipeline opaquePipeline_ = VK_NULL_HANDLE;
     VkPipeline transparentPipeline_ = VK_NULL_HANDLE;
+    VkPipeline glassPipeline_ = VK_NULL_HANDLE;      // alpha blend + depth write (windows)
     VkPipeline wireframePipeline_ = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
 

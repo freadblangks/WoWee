@@ -213,6 +213,21 @@ bool WMORenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayou
         core::Logger::getInstance().warning("WMORenderer: transparent pipeline not available");
     }
 
+    // --- Build glass pipeline (alpha blend WITH depth write for windows) ---
+    glassPipeline_ = PipelineBuilder()
+        .setShaders(vertShader.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                    fragShader.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+        .setVertexInput({ vertexBinding }, vertexAttribs)
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+        .setDepthTest(true, true, VK_COMPARE_OP_LESS_OR_EQUAL)
+        .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+        .setMultisample(vkCtx_->getMsaaSamples())
+        .setLayout(pipelineLayout_)
+        .setRenderPass(mainPass)
+        .setDynamicStates({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR })
+        .build(device);
+
     // --- Build wireframe pipeline ---
     wireframePipeline_ = PipelineBuilder()
         .setShaders(vertShader.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
@@ -299,6 +314,7 @@ void WMORenderer::shutdown() {
     // Destroy pipelines
     if (opaquePipeline_) { vkDestroyPipeline(device, opaquePipeline_, nullptr); opaquePipeline_ = VK_NULL_HANDLE; }
     if (transparentPipeline_) { vkDestroyPipeline(device, transparentPipeline_, nullptr); transparentPipeline_ = VK_NULL_HANDLE; }
+    if (glassPipeline_) { vkDestroyPipeline(device, glassPipeline_, nullptr); glassPipeline_ = VK_NULL_HANDLE; }
     if (wireframePipeline_) { vkDestroyPipeline(device, wireframePipeline_, nullptr); wireframePipeline_ = VK_NULL_HANDLE; }
     if (pipelineLayout_) { vkDestroyPipelineLayout(device, pipelineLayout_, nullptr); pipelineLayout_ = VK_NULL_HANDLE; }
     if (materialDescPool_) { vkDestroyDescriptorPool(device, materialDescPool_, nullptr); materialDescPool_ = VK_NULL_HANDLE; }
@@ -511,9 +527,9 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
                 unlit = (matFlags & 0x01) != 0;
             }
 
-            // Skip materials that are sky/window panes (render as grey curtains if drawn opaque)
-            // 0x20 = F_SIDN (night sky window), 0x40 = F_WINDOW
-            if (matFlags & 0x60) continue;
+            // Window materials (F_SIDN=0x20, F_WINDOW=0x40) render as
+            // slightly transparent reflective glass.
+            bool isWindow = (matFlags & 0x60) != 0;
 
             BatchKey key{ reinterpret_cast<uintptr_t>(tex), alphaTest, unlit };
             auto& mb = batchMap[key];
@@ -523,6 +539,7 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
                 mb.alphaTest = alphaTest;
                 mb.unlit = unlit;
                 mb.isTransparent = (blendMode >= 2);
+                mb.isWindow = isWindow;
             }
             GroupResources::MergedBatch::DrawRange dr;
             dr.firstIndex = batch.startIndex;
@@ -552,6 +569,7 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
             matData.unlit = mb.unlit ? 1 : 0;
             matData.isInterior = isInterior ? 1 : 0;
             matData.specularIntensity = 0.5f;
+            matData.isWindow = mb.isWindow ? 1 : 0;
             if (matBuf.info.pMappedData) {
                 memcpy(matBuf.info.pMappedData, &matData, sizeof(matData));
             }
@@ -1276,7 +1294,8 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_,
                              0, 1, &perFrameSet, 0, nullptr);
 
-    bool inTransparentPipeline = false;
+    // Track which pipeline is currently bound: 0=opaque, 1=transparent, 2=glass
+    int currentPipelineKind = 0;
 
     for (const auto& dl : drawLists) {
         if (dl.instanceIndex >= instances.size()) continue;
@@ -1307,21 +1326,26 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
             for (const auto& mb : group.mergedBatches) {
                 if (!mb.materialSet) continue;
 
-                // Switch pipeline for transparent batches
-                if (mb.isTransparent && !inTransparentPipeline && transparentPipeline_) {
-                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, transparentPipeline_);
+                // Determine which pipeline this batch needs
+                int neededPipeline = 0; // opaque
+                if (mb.isWindow && glassPipeline_) {
+                    neededPipeline = 2; // glass (alpha blend + depth write)
+                } else if (mb.isTransparent && transparentPipeline_) {
+                    neededPipeline = 1; // transparent (alpha blend, no depth write)
+                }
+
+                // Switch pipeline if needed
+                if (neededPipeline != currentPipelineKind) {
+                    VkPipeline targetPipeline = activePipeline;
+                    if (neededPipeline == 1) targetPipeline = transparentPipeline_;
+                    else if (neededPipeline == 2) targetPipeline = glassPipeline_;
+
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, targetPipeline);
                     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_,
                                              0, 1, &perFrameSet, 0, nullptr);
                     vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT,
                                         0, sizeof(GPUPushConstants), &push);
-                    inTransparentPipeline = true;
-                } else if (!mb.isTransparent && inTransparentPipeline) {
-                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, activePipeline);
-                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_,
-                                             0, 1, &perFrameSet, 0, nullptr);
-                    vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT,
-                                        0, sizeof(GPUPushConstants), &push);
-                    inTransparentPipeline = false;
+                    currentPipelineKind = neededPipeline;
                 }
 
                 // Bind material descriptor set (set 1)
@@ -2969,6 +2993,7 @@ void WMORenderer::recreatePipelines() {
     // Destroy old main-pass pipelines (NOT shadow, NOT pipeline layout)
     if (opaquePipeline_)      { vkDestroyPipeline(device, opaquePipeline_, nullptr); opaquePipeline_ = VK_NULL_HANDLE; }
     if (transparentPipeline_) { vkDestroyPipeline(device, transparentPipeline_, nullptr); transparentPipeline_ = VK_NULL_HANDLE; }
+    if (glassPipeline_)       { vkDestroyPipeline(device, glassPipeline_, nullptr); glassPipeline_ = VK_NULL_HANDLE; }
     if (wireframePipeline_)   { vkDestroyPipeline(device, wireframePipeline_, nullptr); wireframePipeline_ = VK_NULL_HANDLE; }
 
     // --- Load shaders ---
@@ -3025,6 +3050,20 @@ void WMORenderer::recreatePipelines() {
         .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
         .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
         .setDepthTest(true, false, VK_COMPARE_OP_LESS_OR_EQUAL)
+        .setColorBlendAttachment(PipelineBuilder::blendAlpha())
+        .setMultisample(vkCtx_->getMsaaSamples())
+        .setLayout(pipelineLayout_)
+        .setRenderPass(mainPass)
+        .setDynamicStates({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR })
+        .build(device);
+
+    glassPipeline_ = PipelineBuilder()
+        .setShaders(vertShader.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                    fragShader.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+        .setVertexInput({ vertexBinding }, vertexAttribs)
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+        .setDepthTest(true, true, VK_COMPARE_OP_LESS_OR_EQUAL)
         .setColorBlendAttachment(PipelineBuilder::blendAlpha())
         .setMultisample(vkCtx_->getMsaaSamples())
         .setLayout(pipelineLayout_)

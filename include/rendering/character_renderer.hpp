@@ -230,7 +230,6 @@ private:
     VkContext* vkCtx_ = nullptr;
     VkRenderPass renderPassOverride_ = VK_NULL_HANDLE;
     pipeline::AssetManager* assetManager = nullptr;
-    int renderLogCounter_ = 0; // per-instance debug counter
 
     // Vulkan pipelines (one per blend mode)
     VkPipeline opaquePipeline_ = VK_NULL_HANDLE;

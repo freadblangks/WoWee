@@ -2012,8 +2012,6 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
         return;
     }
 
-    auto renderStartTime = std::chrono::high_resolution_clock::now();
-
     // Debug: log once when we start rendering
     static bool loggedOnce = false;
     if (!loggedOnce) {
@@ -2091,16 +2089,11 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
     std::stable_sort(sortedVisible_.begin(), sortedVisible_.end(),
                      [](const VisibleEntry& a, const VisibleEntry& b) { return a.modelId < b.modelId; });
 
-    auto cullingSortTime = std::chrono::high_resolution_clock::now();
-    double cullingSortMs = std::chrono::duration<double, std::milli>(cullingSortTime - renderStartTime).count();
-
     uint32_t currentModelId = UINT32_MAX;
     const M2ModelGPU* currentModel = nullptr;
 
     // State tracking
     VkPipeline currentPipeline = VK_NULL_HANDLE;
-    uint32_t boneMatrixUploads = 0;
-    uint32_t totalBatchesDrawn = 0;
     uint32_t frameIndex = vkCtx_->getCurrentFrame();
 
     // Push constants struct matching m2.vert.glsl push_constant block
@@ -2190,7 +2183,6 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                 int numBones = std::min(static_cast<int>(instance.boneMatrices.size()), 128);
                 memcpy(instance.boneMapped[frameIndex], instance.boneMatrices.data(),
                        numBones * sizeof(glm::mat4));
-                boneMatrixUploads++;
             }
 
             // Bind bone descriptor set (set 2)
@@ -2387,7 +2379,6 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
             vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
 
             vkCmdDrawIndexed(cmd, batch.indexCount, 1, batch.indexStart, 0, 0);
-            totalBatchesDrawn++;
             lastDrawCallCount++;
         }
     }
@@ -2446,17 +2437,6 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
         vkCmdDraw(cmd, static_cast<uint32_t>(uploadCount), 1, 0, 0);
     }
 
-    auto renderEndTime = std::chrono::high_resolution_clock::now();
-    double totalMs = std::chrono::duration<double, std::milli>(renderEndTime - renderStartTime).count();
-    double drawLoopMs = std::chrono::duration<double, std::milli>(renderEndTime - cullingSortTime).count();
-
-    static int frameCounter = 0;
-    if (++frameCounter >= 120) {
-        frameCounter = 0;
-        LOG_DEBUG("M2 Render: ", totalMs, " ms (culling/sort: ", cullingSortMs,
-                 " ms, draw: ", drawLoopMs, " ms) | ", sortedVisible_.size(), " visible | ",
-                 totalBatchesDrawn, " batches | ", boneMatrixUploads, " bone uploads");
-    }
 }
 
 bool M2Renderer::initializeShadow(VkRenderPass shadowRenderPass) {

@@ -1621,13 +1621,6 @@ glm::mat4 CharacterRenderer::getBoneTransform(const pipeline::M2Bone& bone, floa
 // --- Rendering ---
 
 void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera) {
-    // Periodic instance count log (every ~10s at 30fps)
-    if (!renderPassOverride_) {
-        renderLogCounter_++;
-        if (renderLogCounter_ % 300 == 1) {
-            LOG_INFO("CharRenderer[WORLD]::render instances=", instances.size());
-        }
-    }
     if (instances.empty() || !opaquePipeline_) {
         return;
     }
@@ -1837,34 +1830,6 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
             };
 
             // One-time debug dump of rendered batches per model
-            static std::unordered_set<uint32_t> dumpedModels;
-            if (dumpedModels.find(instance.modelId) == dumpedModels.end()) {
-                dumpedModels.insert(instance.modelId);
-                int bIdx = 0;
-                int rendered = 0, skipped = 0;
-                for (const auto& b : gpuModel.data.batches) {
-                    bool filtered = applyGeosetFilter &&
-                        (b.submeshId / 100 != 0) &&
-                        instance.activeGeosets.find(b.submeshId) == instance.activeGeosets.end();
-
-                    VkTexture* resolvedTex = resolveBatchTexture(instance, gpuModel, b);
-                    std::string texInfo = resolvedTex ? "VkTex" : "null";
-
-                    if (filtered) skipped++; else rendered++;
-                    LOG_DEBUG("Batch ", bIdx, ": submesh=", b.submeshId,
-                              " level=", b.submeshLevel,
-                              " idxStart=", b.indexStart, " idxCount=", b.indexCount,
-                              " tex=", texInfo,
-                              filtered ? " [SKIP]" : " [RENDER]");
-                    bIdx++;
-                }
-                LOG_DEBUG("Batch summary: ", rendered, " rendered, ", skipped, " skipped, ",
-                          gpuModel.textureIds.size(), " textures loaded, ",
-                          gpuModel.data.textureLookup.size(), " in lookup table");
-                for (size_t t = 0; t < gpuModel.data.textures.size(); t++) {
-                }
-            }
-
             // Draw batches (submeshes) with per-batch textures
             for (const auto& batch : gpuModel.data.batches) {
                 if (applyGeosetFilter) {

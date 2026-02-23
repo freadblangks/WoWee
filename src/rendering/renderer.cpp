@@ -3359,6 +3359,9 @@ bool Renderer::loadTestTerrain(pipeline::AssetManager* assetManager, const std::
     if (!m2Renderer) {
         m2Renderer = std::make_unique<M2Renderer>();
         m2Renderer->initialize(vkCtx, perFrameSetLayout, assetManager);
+        if (swimEffects) {
+            swimEffects->setM2Renderer(m2Renderer.get());
+        }
     }
     if (!wmoRenderer) {
         wmoRenderer = std::make_unique<WMORenderer>();

@@ -130,20 +130,26 @@ float fbmNoise(vec2 p, float time) {
 }
 
 // Voronoi-like cellular noise for foam particles
-float cellularFoam(vec2 p) {
+// jitter parameter controls how much cell points deviate from grid centers
+// (0.0 = regular grid, 1.0 = fully random within cell)
+float cellularFoam(vec2 p, float jitter) {
     vec2 i = floor(p);
     vec2 f = fract(p);
     float minDist = 1.0;
     for (int y = -1; y <= 1; y++) {
         for (int x = -1; x <= 1; x++) {
             vec2 neighbor = vec2(float(x), float(y));
-            vec2 point = vec2(hash21(i + neighbor), hash22x(i + neighbor));
+            vec2 cellId = i + neighbor;
+            // Jittered cell point — higher jitter = more irregular placement
+            vec2 point = vec2(hash21(cellId), hash22x(cellId)) * jitter
+                       + vec2(0.5) * (1.0 - jitter);
             float d = length(neighbor + point - f);
             minDist = min(minDist, d);
         }
     }
     return minDist;
 }
+float cellularFoam(vec2 p) { return cellularFoam(p, 1.0); }
 
 void main() {
     float time = fogParams.z;
@@ -299,24 +305,32 @@ void main() {
     if (basicType < 1.5 && verticalDepth > 0.01 && push.waveAmp > 0.0) {
         float foamDepthMask = 1.0 - smoothstep(0.0, 1.8, verticalDepth);
 
+        // Warp UV coords with noise to break up cellular regularity
+        vec2 warpOffset = vec2(
+            noiseValue(FragPos.xy * 2.5 + time * 0.08) - 0.5,
+            noiseValue(FragPos.xy * 2.5 + vec2(37.0) + time * 0.06) - 0.5
+        ) * 1.6;
+        vec2 foamUV = FragPos.xy + warpOffset;
+
         // Fine scattered particles
-        float cells1 = cellularFoam(FragPos.xy * 14.0 + time * vec2(0.15, 0.08));
-        float foam1 = (1.0 - smoothstep(0.0, 0.10, cells1)) * 0.5;
+        float cells1 = cellularFoam(foamUV * 14.0 + time * vec2(0.15, 0.08));
+        float foam1 = (1.0 - smoothstep(0.0, 0.12, cells1)) * 0.45;
 
         // Tiny spray dots
-        float cells2 = cellularFoam(FragPos.xy * 30.0 + time * vec2(-0.12, 0.22));
-        float foam2 = (1.0 - smoothstep(0.0, 0.06, cells2)) * 0.35;
+        float cells2 = cellularFoam(foamUV * 28.0 + time * vec2(-0.12, 0.22));
+        float foam2 = (1.0 - smoothstep(0.0, 0.07, cells2)) * 0.3;
 
         // Micro specks
-        float cells3 = cellularFoam(FragPos.xy * 55.0 + time * vec2(0.25, -0.1));
-        float foam3 = (1.0 - smoothstep(0.0, 0.04, cells3)) * 0.2;
+        float cells3 = cellularFoam(foamUV * 50.0 + time * vec2(0.25, -0.1));
+        float foam3 = (1.0 - smoothstep(0.0, 0.05, cells3)) * 0.18;
 
         // Noise breakup for clumping
         float noiseMask = noiseValue(FragPos.xy * 3.0 + time * 0.15);
         float foam = (foam1 + foam2 + foam3) * foamDepthMask * smoothstep(0.3, 0.6, noiseMask);
 
         foam *= smoothstep(0.0, 0.1, verticalDepth);
-        color = mix(color, vec3(0.92, 0.95, 0.98), clamp(foam, 0.0, 0.45));
+        // Bluer foam tint instead of near-white
+        color = mix(color, vec3(0.68, 0.78, 0.88), clamp(foam, 0.0, 0.40));
     }
 
     // ============================================================
@@ -324,11 +338,15 @@ void main() {
     // ============================================================
     if (basicType > 0.5 && basicType < 1.5 && push.waveAmp > 0.0) {
         float crestMask = smoothstep(0.5, 1.0, WaveOffset);
-        float crestCells = cellularFoam(FragPos.xy * 6.0 + time * vec2(0.12, 0.08));
+        vec2 crestWarp = vec2(
+            noiseValue(FragPos.xy * 1.8 + time * 0.1) - 0.5,
+            noiseValue(FragPos.xy * 1.8 + vec2(53.0) + time * 0.07) - 0.5
+        ) * 2.0;
+        float crestCells = cellularFoam((FragPos.xy + crestWarp) * 6.0 + time * vec2(0.12, 0.08));
         float crestFoam = (1.0 - smoothstep(0.0, 0.18, crestCells)) * crestMask;
         float crestNoise = noiseValue(FragPos.xy * 3.0 - time * 0.3);
         crestFoam *= smoothstep(0.3, 0.6, crestNoise);
-        color = mix(color, vec3(0.92, 0.95, 0.98), crestFoam * 0.35);
+        color = mix(color, vec3(0.68, 0.78, 0.88), crestFoam * 0.30);
     }
 
     // ============================================================

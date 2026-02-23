@@ -1105,6 +1105,19 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
     // Spell effect models: particle-dominated with minimal geometry (e.g. LevelUp.m2)
     gpuModel.isSpellEffect = hasParticles && model.vertices.size() <= 200 &&
                               model.particleEmitters.size() >= 3;
+    // Water vegetation: cattails, reeds, bulrushes, kelp, seaweed, lilypad near water
+    gpuModel.isWaterVegetation =
+        (lowerName.find("cattail") != std::string::npos) ||
+        (lowerName.find("reed") != std::string::npos) ||
+        (lowerName.find("bulrush") != std::string::npos) ||
+        (lowerName.find("seaweed") != std::string::npos) ||
+        (lowerName.find("kelp") != std::string::npos) ||
+        (lowerName.find("lilypad") != std::string::npos);
+    // Firefly effect models: particle-based ambient glow (exempt from dampeners)
+    gpuModel.isFireflyEffect =
+        (lowerName.find("firefly") != std::string::npos) ||
+        (lowerName.find("fireflies") != std::string::npos) ||
+        (lowerName.find("fireflys") != std::string::npos);
 
     // Build collision mesh + spatial grid from M2 bounding geometry
     gpuModel.collision.vertices = model.collisionVertices;
@@ -2803,6 +2816,20 @@ glm::vec3 M2Renderer::interpFBlockVec3(const pipeline::M2FBlock& fb, float lifeR
     return fb.vec3Values.back();
 }
 
+std::vector<glm::vec3> M2Renderer::getWaterVegetationPositions(const glm::vec3& camPos, float maxDist) const {
+    std::vector<glm::vec3> result;
+    float maxDistSq = maxDist * maxDist;
+    for (const auto& inst : instances) {
+        auto it = models.find(inst.modelId);
+        if (it == models.end() || !it->second.isWaterVegetation) continue;
+        glm::vec3 diff = inst.position - camPos;
+        if (glm::dot(diff, diff) <= maxDistSq) {
+            result.push_back(inst.position);
+        }
+    }
+    return result;
+}
+
 void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt) {
     if (inst.emitterAccumulators.size() != gpu.particleEmitters.size()) {
         inst.emitterAccumulators.resize(gpu.particleEmitters.size(), 0.0f);
@@ -2867,11 +2894,20 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
             // particles pile up at the same position. Give them a drift so they
             // spread outward like a mist/spray effect instead of clustering.
             if (std::abs(speed) < 0.01f) {
-                p.velocity = rotMat * glm::vec3(
-                    distN(particleRng_) * 1.0f,
-                    distN(particleRng_) * 1.0f,
-                    -dist01(particleRng_) * 0.5f
-                );
+                if (gpu.isFireflyEffect) {
+                    // Fireflies: gentle random drift in all directions
+                    p.velocity = rotMat * glm::vec3(
+                        distN(particleRng_) * 0.6f,
+                        distN(particleRng_) * 0.6f,
+                        distN(particleRng_) * 0.3f
+                    );
+                } else {
+                    p.velocity = rotMat * glm::vec3(
+                        distN(particleRng_) * 1.0f,
+                        distN(particleRng_) * 1.0f,
+                        -dist01(particleRng_) * 0.5f
+                    );
+                }
             }
 
             const uint32_t tilesX = std::max<uint16_t>(em.textureCols, 1);
@@ -2917,7 +2953,8 @@ void M2Renderer::updateParticles(M2Instance& inst, float dt) {
                                       gpu.sequences, gpu.globalSequenceDurations);
             // When M2 gravity is 0, apply default gravity so particles arc downward.
             // Many fountain M2s rely on bone animation (.anim files) we don't load yet.
-            if (grav == 0.0f) {
+            // Firefly/ambient glow particles intentionally have zero gravity — skip fallback.
+            if (grav == 0.0f && !gpu.isFireflyEffect) {
                 float emSpeed = interpFloat(pem.emissionSpeed,
                                              inst.animTime, inst.currentSequenceIndex,
                                              gpu.sequences, gpu.globalSequenceDurations);
@@ -2985,12 +3022,12 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
             float alpha = std::min(interpFBlockFloat(em.particleAlpha, lifeRatio), 1.0f);
             float rawScale = interpFBlockFloat(em.particleScale, lifeRatio);
 
-            if (!gpu.isSpellEffect) {
+            if (!gpu.isSpellEffect && !gpu.isFireflyEffect) {
                 color = glm::mix(color, glm::vec3(1.0f), 0.7f);
                 if (rawScale > 2.0f) alpha *= 0.02f;
                 if (em.blendingType == 3 || em.blendingType == 4) alpha *= 0.05f;
             }
-            float scale = gpu.isSpellEffect ? rawScale : std::min(rawScale, 1.5f);
+            float scale = (gpu.isSpellEffect || gpu.isFireflyEffect) ? rawScale : std::min(rawScale, 1.5f);
 
             VkTexture* tex = whiteTexture_.get();
             if (p.emitterIndex < static_cast<int>(gpu.particleTextures.size())) {

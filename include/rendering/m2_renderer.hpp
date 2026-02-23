@@ -76,6 +76,8 @@ struct M2ModelGPU {
     bool isSmallFoliage = false;  // Small foliage (bushes, grass, plants) - skip during taxi
     bool isInvisibleTrap = false; // Invisible trap objects (don't render, no collision)
     bool isGroundDetail = false;  // Ground clutter/detail doodads (special fallback render path)
+    bool isWaterVegetation = false; // Cattails, reeds, kelp etc. near water (insect spawning)
+    bool isFireflyEffect = false;   // Firefly/fireflies M2 (exempt from particle dampeners)
 
     // Collision mesh with spatial grid (from M2 bounding geometry)
     struct CollisionMesh {
@@ -306,6 +308,8 @@ public:
 
     void setInsideInterior(bool inside) { insideInterior = inside; }
     void setOnTaxi(bool onTaxi) { onTaxi_ = onTaxi; }
+
+    std::vector<glm::vec3> getWaterVegetationPositions(const glm::vec3& camPos, float maxDist) const;
 
 private:
     bool initialized_ = false;

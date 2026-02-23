@@ -28,9 +28,8 @@ bool ActivitySoundManager::initialize(pipeline::AssetManager* assets) {
     assetManager = assets;
     if (!assetManager) return false;
 
-    rebuildJumpClipsForProfile("Human", "Human", true);
-    rebuildSwimLoopClipsForProfile("Human", "Human", true);
-    rebuildHardLandClipsForProfile("Human", "Human", true);
+    // Voice profile clips (jump, swim, hardLand, combat vocals) are set at
+    // character spawn via setCharacterVoiceProfile() with the correct race/gender.
 
     preloadCandidates(splashEnterClips, {
         "Sound\\Character\\Footsteps\\EnterWaterSplash\\EnterWaterSmallA.wav",
@@ -162,6 +161,11 @@ void ActivitySoundManager::rebuildJumpClipsForProfile(const std::string& raceFol
         prefix + stem + "\\" + stem + "Jump01.wav",
         prefix + stem + "\\" + stem + "Jump02.wav",
     });
+    if (jumpClips.empty()) {
+        LOG_WARNING("No jump clips found for ", stem, " (tried exert prefix: ", exertPrefix, ")");
+    } else {
+        LOG_INFO("Loaded ", jumpClips.size(), " jump clips for ", stem);
+    }
 }
 
 void ActivitySoundManager::rebuildSwimLoopClipsForProfile(const std::string& raceFolder, const std::string& raceBase, bool male) {
@@ -385,6 +389,24 @@ void ActivitySoundManager::setCharacterVoiceProfile(const std::string& modelName
     rebuildHardLandClipsForProfile(folder, base, male);
     rebuildCombatVocalClipsForProfile(folder, base, male);
     core::Logger::getInstance().info("Activity SFX voice profile: ", voiceProfileKey,
+                                     " jump clips=", jumpClips.size(),
+                                     " swim clips=", swimLoopClips.size(),
+                                     " hardLand clips=", hardLandClips.size(),
+                                     " attackGrunt clips=", attackGruntClips.size(),
+                                     " wound clips=", woundClips.size(),
+                                     " death clips=", deathClips.size());
+}
+
+void ActivitySoundManager::setCharacterVoiceProfile(const std::string& raceFolder, const std::string& raceBase, bool male) {
+    if (!assetManager) return;
+    std::string key = raceFolder + "|" + raceBase + "|" + (male ? "M" : "F");
+    if (key == voiceProfileKey) return;
+    voiceProfileKey = key;
+    rebuildJumpClipsForProfile(raceFolder, raceBase, male);
+    rebuildSwimLoopClipsForProfile(raceFolder, raceBase, male);
+    rebuildHardLandClipsForProfile(raceFolder, raceBase, male);
+    rebuildCombatVocalClipsForProfile(raceFolder, raceBase, male);
+    core::Logger::getInstance().info("Activity SFX voice profile (explicit): ", voiceProfileKey,
                                      " jump clips=", jumpClips.size(),
                                      " swim clips=", swimLoopClips.size(),
                                      " hardLand clips=", hardLandClips.size(),

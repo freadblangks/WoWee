@@ -271,11 +271,11 @@ void LoadingScreen::render() {
             ImVec2(0, 0), ImVec2(screenW, screenH));
     }
 
-    // Progress bar
+    // Progress bar (top of screen)
     {
         const float barWidthFrac = 0.6f;
         const float barHeight = 6.0f;
-        const float barY = screenH * 0.91f;
+        const float barY = screenH * 0.06f;
         float barX = screenW * (0.5f - barWidthFrac * 0.5f);
         float barW = screenW * barWidthFrac;
 
@@ -306,20 +306,20 @@ void LoadingScreen::render() {
     {
         char pctBuf[32];
         snprintf(pctBuf, sizeof(pctBuf), "%d%%", static_cast<int>(loadProgress * 100.0f));
-        float barCenterY = screenH * 0.91f;
+        float barCenterY = screenH * 0.06f;
         float textY = barCenterY - 20.0f;
 
         ImVec2 pctSize = ImGui::CalcTextSize(pctBuf);
         ImGui::SetCursorPos(ImVec2((screenW - pctSize.x) * 0.5f, textY));
-        ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "%s", pctBuf);
+        ImGui::TextColored(ImVec4(0.0f, 0.0f, 0.0f, 1.0f), "%s", pctBuf);
     }
 
     // Status text below bar
     {
-        float statusY = screenH * 0.91f + 14.0f;
+        float statusY = screenH * 0.06f + 14.0f;
         ImVec2 statusSize = ImGui::CalcTextSize(statusText.c_str());
         ImGui::SetCursorPos(ImVec2((screenW - statusSize.x) * 0.5f, statusY));
-        ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "%s", statusText.c_str());
+        ImGui::TextColored(ImVec4(0.0f, 0.0f, 0.0f, 1.0f), "%s", statusText.c_str());
     }
 
     ImGui::End();

@@ -27,6 +27,7 @@ public:
     void playLanding(FootstepSurface surface, bool hardLanding);
     void setSwimmingState(bool swimming, bool moving);
     void setCharacterVoiceProfile(const std::string& modelName);
+    void setCharacterVoiceProfile(const std::string& raceFolder, const std::string& raceBase, bool male);
     void playWaterEnter();
     void playWaterExit();
     void playMeleeSwing();

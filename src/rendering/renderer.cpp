@@ -2452,12 +2452,6 @@ void Renderer::update(float deltaTime) {
         }
 
         characterRenderer->setInstancePosition(characterInstanceId, characterPosition);
-        if (activitySoundManager) {
-            std::string modelName;
-            if (characterRenderer->getInstanceModelName(characterInstanceId, modelName)) {
-                activitySoundManager->setCharacterVoiceProfile(modelName);
-            }
-        }
 
         // Movement-facing comes from camera controller and is decoupled from LMB orbit.
         // During taxi flights, orientation is controlled by the flight path (not player input)

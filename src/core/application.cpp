@@ -2545,6 +2545,32 @@ void Application::spawnPlayerCharacter() {
                 static_cast<int>(spawnPos.z), ")");
         playerCharacterSpawned = true;
 
+        // Set voice profile to match character race/gender
+        if (auto* asm_ = renderer->getActivitySoundManager()) {
+            const char* raceFolder = "Human";
+            const char* raceBase = "Human";
+            switch (playerRace_) {
+                case game::Race::HUMAN:    raceFolder = "Human"; raceBase = "Human"; break;
+                case game::Race::ORC:      raceFolder = "Orc"; raceBase = "Orc"; break;
+                case game::Race::DWARF:    raceFolder = "Dwarf"; raceBase = "Dwarf"; break;
+                case game::Race::NIGHT_ELF: raceFolder = "NightElf"; raceBase = "NightElf"; break;
+                case game::Race::UNDEAD:    raceFolder = "Scourge"; raceBase = "Scourge"; break;
+                case game::Race::TAUREN:    raceFolder = "Tauren"; raceBase = "Tauren"; break;
+                case game::Race::GNOME:     raceFolder = "Gnome"; raceBase = "Gnome"; break;
+                case game::Race::TROLL:     raceFolder = "Troll"; raceBase = "Troll"; break;
+                case game::Race::BLOOD_ELF: raceFolder = "BloodElf"; raceBase = "BloodElf"; break;
+                case game::Race::DRAENEI:   raceFolder = "Draenei"; raceBase = "Draenei"; break;
+                default: break;
+            }
+            bool useFemaleVoice = (playerGender_ == game::Gender::FEMALE);
+            if (playerGender_ == game::Gender::NONBINARY && gameHandler) {
+                if (const game::Character* ch = gameHandler->getActiveCharacter()) {
+                    useFemaleVoice = ch->useFemaleModel;
+                }
+            }
+            asm_->setCharacterVoiceProfile(std::string(raceFolder), std::string(raceBase), !useFemaleVoice);
+        }
+
         // Track which character's appearance this instance represents so we can
         // respawn if the user logs into a different character without restarting.
         spawnedPlayerGuid_ = gameHandler ? gameHandler->getActiveCharacterGuid() : 0;

@@ -5970,7 +5970,7 @@ void GameScreen::renderSettingsWindow() {
                     pendingGroundClutterDensity = kDefaultGroundClutterDensity;
                     pendingAntiAliasing = 0;
                     pendingNormalMapping = true;
-                    pendingNormalMapStrength = 1.0f;
+                    pendingNormalMapStrength = 0.8f;
                     pendingPOM = false;
                     pendingPOMQuality = 1;
                     pendingResIndex = defaultResIndex;

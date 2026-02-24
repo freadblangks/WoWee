@@ -84,6 +84,12 @@ sudo pacman -S sdl2 glm openssl \
                ffmpeg zlib cmake base-devel libx11 \
                unicorn                    # optional: Warden module execution
                # StormLib: install from AUR for asset_extract tool
+
+# macOS (Homebrew)
+brew install cmake pkg-config sdl2 glew glm openssl@3 zlib ffmpeg \
+             vulkan-loader vulkan-headers shaderc \
+             unicorn \                    # optional: Warden module execution
+             stormlib                     # optional: asset_extract tool
 ```
 
 ### Container build

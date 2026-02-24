@@ -65,8 +65,18 @@ Supports `classic`, `tbc`, `wotlk` targets (auto-detected if omitted).
 
 ### Install Dependencies
 
+Vulkan on macOS is provided via MoltenVK (a Vulkan-to-Metal translation layer),
+which is included in the `vulkan-loader` Homebrew package.
+
 ```bash
-brew install cmake pkg-config sdl2 glew glm openssl@3 zlib ffmpeg unicorn stormlib
+brew install cmake pkg-config sdl2 glew glm openssl@3 zlib ffmpeg unicorn \
+  stormlib vulkan-loader vulkan-headers shaderc
+```
+
+Optional (for creating redistributable `.app` bundles):
+
+```bash
+brew install dylibbundler
 ```
 
 ### Clone & Build
@@ -76,7 +86,7 @@ git clone --recurse-submodules https://github.com/Kelsidavis/WoWee.git
 cd WoWee
 
 BREW=$(brew --prefix)
-export PKG_CONFIG_PATH="$BREW/lib/pkgconfig:$(brew --prefix ffmpeg)/lib/pkgconfig:$(brew --prefix openssl@3)/lib/pkgconfig"
+export PKG_CONFIG_PATH="$BREW/lib/pkgconfig:$(brew --prefix ffmpeg)/lib/pkgconfig:$(brew --prefix openssl@3)/lib/pkgconfig:$(brew --prefix vulkan-loader)/lib/pkgconfig:$(brew --prefix shaderc)/lib/pkgconfig"
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_PREFIX_PATH="$BREW" \
   -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"

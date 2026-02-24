@@ -63,10 +63,19 @@ fi
 # --- Build asset_extract if needed ---
 if [ ! -f "$BINARY" ]; then
     # --- Check for StormLib (only required to build) ---
-    if ! ldconfig -p 2>/dev/null | grep -qi stormlib; then
+    STORMLIB_FOUND=false
+    if ldconfig -p 2>/dev/null | grep -qi stormlib; then
+        STORMLIB_FOUND=true
+    elif pkg-config --exists stormlib 2>/dev/null; then
+        STORMLIB_FOUND=true
+    elif [ -f "$(brew --prefix 2>/dev/null)/lib/libstorm.dylib" ] 2>/dev/null; then
+        STORMLIB_FOUND=true
+    fi
+    if [ "$STORMLIB_FOUND" = false ]; then
         echo "Error: StormLib not found."
-        echo "Install it with: sudo apt install libstormlib-dev"
-        echo "  or build from source: https://github.com/ladislav-zezula/StormLib"
+        echo "  Ubuntu/Debian: sudo apt install libstormlib-dev"
+        echo "  macOS:         brew install stormlib"
+        echo "  From source:   https://github.com/ladislav-zezula/StormLib"
         exit 1
     fi
 
@@ -74,7 +83,8 @@ if [ ! -f "$BINARY" ]; then
     if [ ! -d "$BUILD_DIR" ]; then
         cmake -S "$SCRIPT_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release
     fi
-    cmake --build "$BUILD_DIR" --target asset_extract -- -j"$(nproc)"
+    NPROC=$(nproc 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null || echo 4)
+    cmake --build "$BUILD_DIR" --target asset_extract -- -j"$NPROC"
     echo ""
 fi
 

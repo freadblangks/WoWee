@@ -35,7 +35,30 @@ endif()
 
 # Find required packages
 find_package(SDL2 REQUIRED)
-find_package(Vulkan REQUIRED)
+find_package(Vulkan QUIET)
+if(NOT Vulkan_FOUND)
+    # Fallback: some distros / CMake versions need pkg-config to locate Vulkan.
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(VULKAN_PKG vulkan)
+        if(VULKAN_PKG_FOUND)
+            add_library(Vulkan::Vulkan INTERFACE IMPORTED)
+            set_target_properties(Vulkan::Vulkan PROPERTIES
+                INTERFACE_INCLUDE_DIRECTORIES "${VULKAN_PKG_INCLUDE_DIRS}"
+                INTERFACE_LINK_LIBRARIES "${VULKAN_PKG_LIBRARIES}"
+            )
+            if(VULKAN_PKG_LIBRARY_DIRS)
+                set_property(TARGET Vulkan::Vulkan APPEND PROPERTY
+                    INTERFACE_LINK_DIRECTORIES "${VULKAN_PKG_LIBRARY_DIRS}")
+            endif()
+            set(Vulkan_FOUND TRUE)
+            message(STATUS "Found Vulkan via pkg-config: ${VULKAN_PKG_LIBRARIES}")
+        endif()
+    endif()
+    if(NOT Vulkan_FOUND)
+        message(FATAL_ERROR "Could not find Vulkan. Install libvulkan-dev (Linux), vulkan-loader (macOS), or the Vulkan SDK (Windows).")
+    endif()
+endif()
 # GL/GLEW kept temporarily for unconverted sub-renderers during Vulkan migration.
 # These files compile against GL types but their code is never called — the Vulkan
 # path is the only active rendering backend. Remove in Phase 7 when all renderers

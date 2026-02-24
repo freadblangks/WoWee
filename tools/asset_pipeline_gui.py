@@ -1800,7 +1800,8 @@ class AssetPipelineGUI:
             self._browser_stop_audio()
             try:
                 import multiprocessing
-                self._audio_proc = multiprocessing.Process(
+                ctx = multiprocessing.get_context("spawn")
+                self._audio_proc = ctx.Process(
                     target=_audio_subprocess, args=(str(file_path),), daemon=True)
                 self._audio_proc.start()
                 self._audio_status_var.set("Playing...")
@@ -1818,7 +1819,10 @@ class AssetPipelineGUI:
         proc = getattr(self, "_audio_proc", None)
         if proc and proc.is_alive():
             proc.terminate()
-            proc.join(timeout=1)
+            proc.join(timeout=0.5)
+            if proc.is_alive():
+                proc.kill()
+                proc.join(timeout=0.5)
         self._audio_proc = None
 
     # ── Hex Dump Preview ──

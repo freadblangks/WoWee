@@ -10,7 +10,13 @@ This document provides platform-specific build instructions for WoWee.
 
 ```bash
 sudo apt update
-sudo apt install -y   build-essential cmake pkg-config git   libsdl2-dev libglew-dev libglm-dev   libssl-dev zlib1g-dev   libavcodec-dev libavformat-dev libavutil-dev libswscale-dev   libunicorn-dev   libstorm-dev
+sudo apt install -y \
+  build-essential cmake pkg-config git \
+  libsdl2-dev libglew-dev libglm-dev \
+  libssl-dev zlib1g-dev \
+  libvulkan-dev vulkan-tools glslc \
+  libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
+  libunicorn-dev libstorm-dev libx11-dev
 ```
 
 ---
@@ -20,7 +26,11 @@ sudo apt install -y   build-essential cmake pkg-config git   libsdl2-dev libglew
 ### Install Dependencies
 
 ```bash
-sudo pacman -S --needed   base-devel cmake pkgconf git   sdl2 glew glm   openssl zlib   ffmpeg   unicorn   stormlib
+sudo pacman -S --needed \
+  base-devel cmake pkgconf git \
+  sdl2 glew glm openssl zlib \
+  vulkan-devel vulkan-tools shaderc \
+  ffmpeg unicorn stormlib
 ```
 
 ---

@@ -95,9 +95,14 @@ cmake --build build -j"$(sysctl -n hw.logicalcpu)"
 
 ### Asset Extraction (macOS)
 
+The script will auto-build `asset_extract` if needed (requires `stormlib`).
+It automatically detects Homebrew and passes the correct paths to CMake.
+
 ```bash
 ./extract_assets.sh /path/to/WoW/Data wotlk
 ```
+
+Supports `classic`, `tbc`, `wotlk` targets (auto-detected if omitted).
 
 ---
 

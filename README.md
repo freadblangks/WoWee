@@ -88,8 +88,10 @@ sudo pacman -S sdl2 glm openssl \
 # macOS (Homebrew)
 brew install cmake pkg-config sdl2 glew glm openssl@3 zlib ffmpeg \
              vulkan-loader vulkan-headers shaderc \
-             unicorn \                    # optional: Warden module execution
-             stormlib                     # optional: asset_extract tool
+             unicorn \
+             stormlib
+# unicorn is optional (Warden module execution)
+# stormlib is optional (asset_extract tool)
 ```
 
 ### Container build

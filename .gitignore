@@ -42,11 +42,12 @@ wowee
 *~
 .DS_Store
 
-# External dependencies (except submodules)
+# External dependencies (except submodules and vendored headers)
 extern/*
 !extern/.gitkeep
 !extern/imgui
 !extern/vk-bootstrap
+!extern/vk_mem_alloc.h
 
 # ImGui state
 imgui.ini

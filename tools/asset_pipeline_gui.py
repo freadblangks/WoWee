@@ -41,6 +41,20 @@ PIPELINE_DIR = ROOT_DIR / "asset_pipeline"
 STATE_FILE = PIPELINE_DIR / "state.json"
 
 
+def _audio_subprocess(file_path: str) -> None:
+    """Play an audio file using pygame.mixer in a subprocess."""
+    try:
+        import pygame
+        pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=2048)
+        pygame.mixer.music.load(file_path)
+        pygame.mixer.music.play()
+        while pygame.mixer.music.get_busy():
+            pygame.time.wait(100)
+        pygame.mixer.quit()
+    except Exception:
+        pass
+
+
 @dataclass
 class PackInfo:
     pack_id: str
@@ -487,6 +501,7 @@ class AssetPipelineGUI:
 
     def _build_browser_tab(self) -> None:
         self._browser_manifest: dict[str, dict] = {}
+        self._browser_manifest_lc: dict[str, str] = {}
         self._browser_manifest_list: list[str] = []
         self._browser_tree_populated: set[str] = set()
         self._browser_photo: Any = None  # prevent GC of PhotoImage
@@ -586,6 +601,11 @@ class AssetPipelineGUI:
             self._browser_manifest[display_path] = val
         self._browser_manifest_list = sorted(self._browser_manifest.keys(), key=str.lower)
         self._browser_count_var.set(f"{len(self._browser_manifest)} entries")
+
+        # Build case-insensitive lookup: lowercase forward-slash path -> actual manifest path
+        self._browser_manifest_lc: dict[str, str] = {}
+        for p in self._browser_manifest:
+            self._browser_manifest_lc[p.lower()] = p
 
         # Build directory tree indices: one full, one filtered
         # Single O(N) pass so tree operations are O(1) lookups
@@ -851,7 +871,147 @@ class AssetPipelineGUI:
         except Exception as exc:
             ttk.Label(self._browser_preview_frame, text=f"Image load error: {exc}").pack(expand=True)
 
-    # ── M2 Wireframe Preview ──
+    # ── M2 Preview (wireframe + textures + animations) ──
+
+    # Common animation ID names
+    _ANIM_NAMES: dict[int, str] = {
+        0: "Stand", 1: "Death", 2: "Spell", 3: "Stop", 4: "Walk", 5: "Run",
+        6: "Dead", 7: "Rise", 8: "StandWound", 9: "CombatWound", 10: "CombatCritical",
+        11: "ShuffleLeft", 12: "ShuffleRight", 13: "Walkbackwards", 14: "Stun",
+        15: "HandsClosed", 16: "AttackUnarmed", 17: "Attack1H", 18: "Attack2H",
+        19: "Attack2HL", 20: "ParryUnarmed", 21: "Parry1H", 22: "Parry2H",
+        23: "Parry2HL", 24: "ShieldBlock", 25: "ReadyUnarmed", 26: "Ready1H",
+        27: "Ready2H", 28: "Ready2HL", 29: "ReadyBow", 30: "Dodge",
+        31: "SpellPrecast", 32: "SpellCast", 33: "SpellCastArea",
+        34: "NPCWelcome", 35: "NPCGoodbye", 36: "Block", 37: "JumpStart",
+        38: "Jump", 39: "JumpEnd", 40: "Fall", 41: "SwimIdle", 42: "Swim",
+        43: "SwimLeft", 44: "SwimRight", 45: "SwimBackwards",
+        60: "SpellChannelDirected", 61: "SpellChannelOmni",
+        69: "CombatAbility", 70: "CombatAbility2H",
+        94: "Kneel", 113: "Loot",
+        135: "ReadyRifle", 138: "Fly", 143: "CustomSpell01",
+        157: "EmoteTalk", 185: "FlyIdle",
+    }
+
+    # Texture type names for non-filename textures
+    _TEX_TYPE_NAMES: dict[int, str] = {
+        0: "Filename", 1: "Body/Skin", 2: "Object Skin", 3: "Weapon Blade",
+        4: "Weapon Handle", 5: "Environment", 6: "Hair", 7: "Facial Hair",
+        8: "Skin Extra", 9: "UI Skin", 10: "Tauren Mane", 11: "Monster Skin 1",
+        12: "Monster Skin 2", 13: "Monster Skin 3", 14: "Item Icon",
+    }
+
+    def _browser_parse_m2_textures(self, data: bytes, version: int) -> list[dict]:
+        """Parse M2 texture definitions. Returns list of {type, flags, filename}."""
+        if version <= 256:
+            ofs = 92
+        else:
+            ofs = 80
+
+        if len(data) < ofs + 8:
+            return []
+
+        n_tex, ofs_tex = struct.unpack_from("<II", data, ofs)
+        if n_tex == 0 or n_tex > 1000 or ofs_tex + n_tex * 16 > len(data):
+            return []
+
+        textures = []
+        for i in range(n_tex):
+            base = ofs_tex + i * 16
+            tex_type, tex_flags = struct.unpack_from("<II", data, base)
+            name_len, name_ofs = struct.unpack_from("<II", data, base + 8)
+            filename = ""
+            if tex_type == 0 and name_len > 1 and name_ofs + name_len <= len(data):
+                raw = data[name_ofs:name_ofs + name_len]
+                filename = raw.split(b"\x00", 1)[0].decode("ascii", errors="replace")
+            textures.append({"type": tex_type, "flags": tex_flags, "filename": filename})
+        return textures
+
+    def _browser_parse_m2_animations(self, data: bytes, version: int) -> list[dict]:
+        """Parse M2 animation sequences. Returns list of {id, variation, duration, speed, flags}."""
+        if len(data) < 36:
+            return []
+
+        n_anim, ofs_anim = struct.unpack_from("<II", data, 28)
+        if n_anim == 0 or n_anim > 5000:
+            return []
+
+        seq_size = 68 if version <= 256 else 64
+        if ofs_anim + n_anim * seq_size > len(data):
+            return []
+
+        anims = []
+        for i in range(n_anim):
+            base = ofs_anim + i * seq_size
+            anim_id, variation = struct.unpack_from("<HH", data, base)
+            if version <= 256:
+                # Vanilla: startTimestamp(4) + endTimestamp(4), duration = end - start
+                start_ts, end_ts = struct.unpack_from("<II", data, base + 4)
+                duration = end_ts - start_ts
+                speed = struct.unpack_from("<f", data, base + 12)[0]
+                flags = struct.unpack_from("<I", data, base + 16)[0]
+            else:
+                duration = struct.unpack_from("<I", data, base + 4)[0]
+                speed = struct.unpack_from("<f", data, base + 8)[0]
+                flags = struct.unpack_from("<I", data, base + 12)[0]
+            anims.append({
+                "id": anim_id, "variation": variation,
+                "duration": duration, "speed": speed, "flags": flags,
+            })
+        return anims
+
+    def _browser_resolve_blp_path(self, blp_name: str) -> Path | None:
+        """Resolve a BLP filename from M2 texture to a filesystem path, case-insensitively."""
+        # Normalize: backslash -> forward slash
+        normalized = blp_name.replace("\\", "/")
+        lc = normalized.lower()
+
+        # Try direct manifest lookup
+        actual = self._browser_manifest_lc.get(lc)
+        if actual:
+            return self._browser_resolve_path(actual)
+
+        # Try without leading slash
+        if lc.startswith("/"):
+            actual = self._browser_manifest_lc.get(lc[1:])
+            if actual:
+                return self._browser_resolve_path(actual)
+
+        return None
+
+    def _browser_load_blp_thumbnail(self, blp_path: Path, size: int = 64) -> Any:
+        """Convert BLP to PNG and return a PhotoImage thumbnail, or None."""
+        if not HAS_PILLOW:
+            return None
+
+        blp_convert = ROOT_DIR / "build" / "bin" / "blp_convert"
+        if not blp_convert.exists():
+            return None
+
+        cache_dir = PIPELINE_DIR / "preview_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_key = hashlib.md5(str(blp_path).encode()).hexdigest()
+        cached_png = cache_dir / f"{cache_key}.png"
+
+        if not cached_png.exists():
+            try:
+                result = subprocess.run(
+                    [str(blp_convert), "--to-png", str(blp_path)],
+                    capture_output=True, text=True, timeout=10,
+                )
+                output_png = blp_path.with_suffix(".png")
+                if result.returncode != 0 or not output_png.exists():
+                    return None
+                shutil.move(str(output_png), cached_png)
+            except Exception:
+                return None
+
+        try:
+            img = Image.open(cached_png)
+            img.thumbnail((size, size), Image.LANCZOS)
+            return ImageTk.PhotoImage(img)
+        except Exception:
+            return None
 
     def _browser_preview_m2(self, path: str, entry: dict) -> None:
         file_path = self._browser_resolve_path(path)
@@ -872,10 +1032,7 @@ class AssetPipelineGUI:
 
             version = struct.unpack_from("<I", data, 4)[0]
 
-            # Parse vertex info from header
-            # Header layout: magic(4)+ver(4)+name(8)+flags(4)+globalSeq(8)+anim(8)+animLookup(8) = 44 bytes
-            # Then bones(8)+keyBone(8)+nVerts(4)+ofsVerts(4)
-            # Vanilla inserts playableAnimLookup(8) before bones, shifting everything +8
+            # Parse vertices
             if version <= 256:
                 n_verts, ofs_verts = struct.unpack_from("<II", data, 68)
             else:
@@ -891,16 +1048,62 @@ class AssetPipelineGUI:
                 x, y, z = struct.unpack_from("<fff", data, off)
                 verts.append((x, y, z))
 
-            # Try to find .skin file for indices
+            # Parse skin triangles
             tris: list[tuple[int, int, int]] = []
             skin_path = file_path.with_name(file_path.stem + "00.skin")
             if skin_path.exists():
                 tris = self._parse_skin_triangles(skin_path.read_bytes())
-
             if not tris:
-                # No skin or no triangles — create point cloud edges from sequential vertices
                 for i in range(0, len(verts) - 1, 2):
                     tris.append((i, i + 1, i + 1))
+
+            # Parse textures and animations
+            textures = self._browser_parse_m2_textures(data, version)
+            animations = self._browser_parse_m2_animations(data, version)
+
+            # --- Layout ---
+            # Top bar: info label + 3D viewer button
+            top_bar = ttk.Frame(self._browser_preview_frame)
+            top_bar.pack(fill="x", pady=(4, 2))
+
+            info = f"M2 v{version}  |  {n_verts} verts, {len(tris)} tris  |  {len(textures)} textures, {len(animations)} anims"
+            ttk.Label(top_bar, text=info).pack(side="left", fill="x", expand=True)
+
+            def _open_3d_viewer(fp=file_path, tex_list=textures):
+                blp_convert = ROOT_DIR / "build" / "bin" / "blp_convert"
+                if not blp_convert.exists():
+                    messagebox.showerror("Error", "blp_convert not found in build/bin/")
+                    return
+                # Resolve BLP paths for type-0 textures
+                blp_map: dict[str, str] = {}
+                for tex in tex_list:
+                    if tex["type"] == 0 and tex["filename"]:
+                        fname = tex["filename"]
+                        resolved = self._browser_resolve_blp_path(fname)
+                        if resolved:
+                            norm = fname.replace("\\", "/")
+                            blp_map[norm] = str(resolved)
+                            blp_map[norm.lower()] = str(resolved)
+                try:
+                    from tools.m2_viewer import launch_m2_viewer
+                    launch_m2_viewer(str(fp), blp_map, str(blp_convert))
+                except ImportError:
+                    # Try relative import for when run as script
+                    try:
+                        from m2_viewer import launch_m2_viewer as lmv
+                        lmv(str(fp), blp_map, str(blp_convert))
+                    except ImportError:
+                        messagebox.showerror("Error", "m2_viewer.py not found. Requires pygame, PyOpenGL, numpy, Pillow.")
+
+            ttk.Button(top_bar, text="Open 3D Viewer", command=_open_3d_viewer).pack(side="right", padx=4)
+
+            # Main area: wireframe (left) + sidebar (right)
+            main_pane = ttk.PanedWindow(self._browser_preview_frame, orient="horizontal")
+            main_pane.pack(fill="both", expand=True)
+
+            # Left: wireframe canvas
+            left_frame = ttk.Frame(main_pane)
+            main_pane.add(left_frame, weight=3)
 
             self._browser_wireframe_verts = verts
             self._browser_wireframe_tris = tris
@@ -908,9 +1111,103 @@ class AssetPipelineGUI:
             self._browser_el = 0.3
             self._browser_zoom = 1.0
 
-            info = f"M2 v{version}: {n_verts} vertices, {len(tris)} triangles"
-            ttk.Label(self._browser_preview_frame, text=info).pack(pady=(4, 2))
-            self._browser_create_wireframe_canvas()
+            canvas = tk.Canvas(left_frame, bg="#1a1a2e", highlightthickness=0)
+            canvas.pack(fill="both", expand=True)
+            self._browser_canvas = canvas
+
+            canvas.bind("<Button-1>", self._browser_wf_mouse_down)
+            canvas.bind("<B1-Motion>", self._browser_wf_mouse_drag)
+            canvas.bind("<MouseWheel>", self._browser_wf_scroll)
+            canvas.bind("<Button-4>", lambda e: self._browser_wf_scroll_linux(e, 1))
+            canvas.bind("<Button-5>", lambda e: self._browser_wf_scroll_linux(e, -1))
+            canvas.bind("<Configure>", lambda e: self._browser_wf_render())
+            self.root.after(50, self._browser_wf_render)
+
+            # Right: textures + animations sidebar
+            right_frame = ttk.Frame(main_pane)
+            main_pane.add(right_frame, weight=1)
+
+            # --- Textures section ---
+            ttk.Label(right_frame, text="Textures", font=("", 10, "bold")).pack(anchor="w", pady=(4, 2))
+
+            # Keep references to thumbnail PhotoImages to prevent GC
+            self._browser_m2_thumbs: list[Any] = []
+
+            if textures:
+                tex_frame = ttk.Frame(right_frame)
+                tex_frame.pack(fill="x", padx=2)
+
+                for i, tex in enumerate(textures):
+                    row_frame = ttk.Frame(tex_frame)
+                    row_frame.pack(fill="x", pady=1)
+
+                    tex_type = tex["type"]
+                    filename = tex["filename"]
+
+                    if tex_type == 0 and filename:
+                        # Try to load BLP thumbnail
+                        display_name = filename.replace("\\", "/").split("/")[-1]
+                        blp_fs_path = self._browser_resolve_blp_path(filename)
+                        thumb = None
+                        if blp_fs_path:
+                            thumb = self._browser_load_blp_thumbnail(blp_fs_path)
+
+                        if thumb:
+                            self._browser_m2_thumbs.append(thumb)
+                            lbl_img = ttk.Label(row_frame, image=thumb)
+                            lbl_img.pack(side="left", padx=(0, 4))
+
+                        lbl_text = ttk.Label(row_frame, text=display_name, wraplength=180)
+                        lbl_text.pack(side="left", fill="x")
+                    else:
+                        type_name = self._TEX_TYPE_NAMES.get(tex_type, f"Type {tex_type}")
+                        lbl = ttk.Label(row_frame, text=f"[{type_name}]", foreground="#888")
+                        lbl.pack(side="left")
+            else:
+                ttk.Label(right_frame, text="(none)", foreground="#888").pack(anchor="w")
+
+            # --- Separator ---
+            ttk.Separator(right_frame, orient="horizontal").pack(fill="x", pady=6)
+
+            # --- Animations section ---
+            ttk.Label(right_frame, text="Animations", font=("", 10, "bold")).pack(anchor="w", pady=(0, 2))
+
+            if animations:
+                anim_frame = ttk.Frame(right_frame)
+                anim_frame.pack(fill="both", expand=True)
+
+                anim_scroll = ttk.Scrollbar(anim_frame, orient="vertical")
+                anim_tree = ttk.Treeview(
+                    anim_frame, columns=("id", "name", "var", "dur", "spd"),
+                    show="headings", height=8,
+                    yscrollcommand=anim_scroll.set,
+                )
+                anim_scroll.config(command=anim_tree.yview)
+
+                anim_tree.heading("id", text="ID")
+                anim_tree.heading("name", text="Name")
+                anim_tree.heading("var", text="Var")
+                anim_tree.heading("dur", text="Dur(ms)")
+                anim_tree.heading("spd", text="Speed")
+
+                anim_tree.column("id", width=35, minwidth=30)
+                anim_tree.column("name", width=90, minwidth=60)
+                anim_tree.column("var", width=30, minwidth=25)
+                anim_tree.column("dur", width=55, minwidth=40)
+                anim_tree.column("spd", width=45, minwidth=35)
+
+                for anim in animations:
+                    aid = anim["id"]
+                    name = self._ANIM_NAMES.get(aid, "")
+                    anim_tree.insert("", "end", values=(
+                        aid, name, anim["variation"],
+                        anim["duration"], f"{anim['speed']:.1f}",
+                    ))
+
+                anim_tree.pack(side="left", fill="both", expand=True)
+                anim_scroll.pack(side="right", fill="y")
+            else:
+                ttk.Label(right_frame, text="(none)", foreground="#888").pack(anchor="w")
 
         except Exception as exc:
             ttk.Label(self._browser_preview_frame, text=f"M2 parse error: {exc}").pack(expand=True)
@@ -995,8 +1292,74 @@ class AssetPipelineGUI:
             self._browser_el = 0.3
             self._browser_zoom = 1.0
 
+            top_bar = ttk.Frame(self._browser_preview_frame)
+            top_bar.pack(fill="x", pady=(4, 2))
+
             info = f"WMO: {len(verts)} vertices, {len(tris)} triangles"
-            ttk.Label(self._browser_preview_frame, text=info).pack(pady=(4, 2))
+            ttk.Label(top_bar, text=info).pack(side="left", fill="x", expand=True)
+
+            def _open_wmo_viewer(fp=file_path, ig=is_group):
+                blp_convert = ROOT_DIR / "build" / "bin" / "blp_convert"
+                if not blp_convert.exists():
+                    messagebox.showerror("Error", "blp_convert not found in build/bin/")
+                    return
+                # Determine root and group files
+                if ig:
+                    stem = fp.stem
+                    root_stem = stem.rsplit("_", 1)[0]
+                    root_path = fp.parent / f"{root_stem}.wmo"
+                    groups = sorted(fp.parent.glob(f"{root_stem}_*.wmo"))
+                else:
+                    root_path = fp
+                    groups = sorted(fp.parent.glob(f"{fp.stem}_*.wmo"))
+                # Parse root for texture names, resolve BLP paths
+                blp_map: dict[str, str] = {}
+                if root_path.exists():
+                    import struct as _st
+                    rdata = root_path.read_bytes()
+                    pos = 0
+                    while pos + 8 <= len(rdata):
+                        cid = rdata[pos:pos + 4]
+                        csz = _st.unpack_from("<I", rdata, pos + 4)[0]
+                        cs = pos + 8
+                        ce = cs + csz
+                        if ce > len(rdata):
+                            break
+                        tag = cid if cid[:1].isupper() else cid[::-1]
+                        if tag == b"MOTX":
+                            off = 0
+                            while off < csz:
+                                end = rdata.find(b"\x00", cs + off, ce)
+                                if end < 0:
+                                    break
+                                s = rdata[cs + off:end].decode("ascii", errors="replace")
+                                if s:
+                                    resolved = self._browser_resolve_blp_path(s)
+                                    if resolved:
+                                        norm = s.replace("\\", "/")
+                                        blp_map[norm] = str(resolved)
+                                        blp_map[norm.lower()] = str(resolved)
+                                    off = end - cs + 1
+                                else:
+                                    off += 1
+                            break
+                        pos = ce
+                try:
+                    from tools.m2_viewer import launch_wmo_viewer
+                    launch_wmo_viewer(
+                        str(root_path) if root_path.exists() else "",
+                        [str(g) for g in groups],
+                        blp_map, str(blp_convert))
+                except ImportError:
+                    try:
+                        from m2_viewer import launch_wmo_viewer as lwv
+                        lwv(str(root_path) if root_path.exists() else "",
+                            [str(g) for g in groups], blp_map, str(blp_convert))
+                    except ImportError:
+                        messagebox.showerror("Error", "m2_viewer.py not found. Requires pygame, PyOpenGL, numpy, Pillow.")
+
+            ttk.Button(top_bar, text="Open 3D Viewer", command=_open_wmo_viewer).pack(side="right", padx=4)
+
             self._browser_create_wireframe_canvas()
 
         except Exception as exc:
@@ -1423,7 +1786,40 @@ class AssetPipelineGUI:
 
         text = "\n".join(info_lines)
         lbl = ttk.Label(self._browser_preview_frame, text=text, justify="left", anchor="nw")
-        lbl.pack(expand=True, padx=20, pady=20)
+        lbl.pack(padx=20, pady=(20, 8))
+
+        # Audio playback controls
+        btn_frame = ttk.Frame(self._browser_preview_frame)
+        btn_frame.pack(padx=20, pady=4)
+
+        self._audio_status_var = tk.StringVar(value="Stopped")
+        status_lbl = ttk.Label(self._browser_preview_frame, textvariable=self._audio_status_var)
+        status_lbl.pack(padx=20, pady=(4, 0))
+
+        def _play_audio():
+            self._browser_stop_audio()
+            try:
+                import multiprocessing
+                self._audio_proc = multiprocessing.Process(
+                    target=_audio_subprocess, args=(str(file_path),), daemon=True)
+                self._audio_proc.start()
+                self._audio_status_var.set("Playing...")
+            except Exception as exc:
+                self._audio_status_var.set(f"Error: {exc}")
+
+        def _stop_audio():
+            self._browser_stop_audio()
+            self._audio_status_var.set("Stopped")
+
+        ttk.Button(btn_frame, text="Play", command=_play_audio).pack(side="left", padx=4)
+        ttk.Button(btn_frame, text="Stop", command=_stop_audio).pack(side="left", padx=4)
+
+    def _browser_stop_audio(self):
+        proc = getattr(self, "_audio_proc", None)
+        if proc and proc.is_alive():
+            proc.terminate()
+            proc.join(timeout=1)
+        self._audio_proc = None
 
     # ── Hex Dump Preview ──
 

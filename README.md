@@ -106,6 +106,9 @@ This project requires WoW client data that you extract from your own legally obt
 
 Wowee loads assets via an extracted loose-file tree indexed by `manifest.json` (it does not read MPQs at runtime).
 
+For a cross-platform GUI workflow (extraction + texture pack management + active override state), see:
+- [Asset Pipeline GUI](docs/asset-pipeline-gui.md)
+
 #### 1) Extract MPQs into `./Data/`
 
 ```bash
@@ -196,6 +199,7 @@ make -j$(nproc)
 - [Project Status](docs/status.md) -- Current code state, limitations, and near-term direction
 - [Quick Start](docs/quickstart.md) -- Installation and first steps
 - [Build Instructions](BUILD_INSTRUCTIONS.md) -- Detailed dependency, build, and run guide
+- [Asset Pipeline GUI](docs/asset-pipeline-gui.md) -- Python GUI for extraction, pack installs, ordering, and override rebuilds
 
 ### Technical Documentation
 - [Architecture](docs/architecture.md) -- System design and module overview

@@ -521,7 +521,11 @@ class AssetPipelineGUI:
         type_combo.pack(side="left", padx=(4, 8))
 
         ttk.Button(top_bar, text="Search", command=self._browser_do_search).pack(side="left", padx=(0, 4))
-        ttk.Button(top_bar, text="Reset", command=self._browser_reset_search).pack(side="left")
+        ttk.Button(top_bar, text="Reset", command=self._browser_reset_search).pack(side="left", padx=(0, 8))
+
+        self._browser_hide_anim_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(top_bar, text="Hide .anim/.skin", variable=self._browser_hide_anim_var,
+                        command=self._browser_reset_search).pack(side="left")
 
         self._browser_count_var = tk.StringVar(value="")
         ttk.Label(top_bar, textvariable=self._browser_count_var).pack(side="right")
@@ -583,28 +587,42 @@ class AssetPipelineGUI:
         self._browser_manifest_list = sorted(self._browser_manifest.keys(), key=str.lower)
         self._browser_count_var.set(f"{len(self._browser_manifest)} entries")
 
-        # Build directory tree index: dir_path -> ({subdirs}, [files])
+        # Build directory tree indices: one full, one filtered
         # Single O(N) pass so tree operations are O(1) lookups
-        self._browser_dir_index: dict[str, tuple[set[str], list[str]]] = {}
-        for path in self._browser_manifest_list:
+        _hidden_exts = {".anim", ".skin"}
+        self._browser_dir_index_full = self._build_dir_index(self._browser_manifest_list)
+        filtered = [p for p in self._browser_manifest_list
+                    if os.path.splitext(p)[1].lower() not in _hidden_exts]
+        self._browser_dir_index_filtered = self._build_dir_index(filtered)
+
+        self._browser_populate_tree_root()
+
+    @staticmethod
+    def _build_dir_index(paths: list[str]) -> dict[str, tuple[set[str], list[str]]]:
+        index: dict[str, tuple[set[str], list[str]]] = {}
+        for path in paths:
             parts = path.split("/")
             for depth in range(len(parts)):
                 dir_key = "/".join(parts[:depth]) if depth > 0 else ""
-                if dir_key not in self._browser_dir_index:
-                    self._browser_dir_index[dir_key] = (set(), [])
-                idx_entry = self._browser_dir_index[dir_key]
+                if dir_key not in index:
+                    index[dir_key] = (set(), [])
+                entry = index[dir_key]
                 if depth < len(parts) - 1:
-                    idx_entry[0].add(parts[depth])
+                    entry[0].add(parts[depth])
                 else:
-                    idx_entry[1].append(parts[depth])
+                    entry[1].append(parts[depth])
+        return index
 
-        self._browser_populate_tree_root()
+    def _browser_active_index(self) -> dict[str, tuple[set[str], list[str]]]:
+        if self._browser_hide_anim_var.get():
+            return self._browser_dir_index_filtered
+        return self._browser_dir_index_full
 
     def _browser_populate_tree_root(self) -> None:
         self._browser_tree.delete(*self._browser_tree.get_children())
         self._browser_tree_populated.clear()
 
-        root_entry = self._browser_dir_index.get("", (set(), []))
+        root_entry = self._browser_active_index().get("", (set(), []))
         subdirs, files = root_entry
 
         for name in sorted(subdirs, key=str.lower):
@@ -625,7 +643,7 @@ class AssetPipelineGUI:
         if self._browser_tree.exists(dummy):
             self._browser_tree.delete(dummy)
 
-        dir_entry = self._browser_dir_index.get(node, (set(), []))
+        dir_entry = self._browser_active_index().get(node, (set(), []))
         child_dirs, child_files = dir_entry
 
         for d in sorted(child_dirs, key=str.lower):
@@ -665,13 +683,15 @@ class AssetPipelineGUI:
             "Text": {".xml", ".lua", ".json", ".html", ".toc", ".txt", ".wtf"},
         }
 
+        hidden_exts = {".anim", ".skin"} if self._browser_hide_anim_var.get() else set()
         results: list[str] = []
         exts = type_exts.get(type_filter)
         for path in self._browser_manifest_list:
-            if exts:
-                ext = os.path.splitext(path)[1].lower()
-                if ext not in exts:
-                    continue
+            ext = os.path.splitext(path)[1].lower()
+            if ext in hidden_exts:
+                continue
+            if exts and ext not in exts:
+                continue
             if query and query not in path.lower():
                 continue
             results.append(path)
@@ -791,22 +811,17 @@ class AssetPipelineGUI:
         cached_png = cache_dir / f"{cache_key}.png"
 
         if not cached_png.exists():
-            # Convert BLP to PNG
+            # blp_convert outputs PNG alongside source: foo.blp -> foo.png
             try:
-                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-                    tmp_path = tmp.name
                 result = subprocess.run(
-                    [str(blp_convert), "--to-png", str(file_path), tmp_path],
+                    [str(blp_convert), "--to-png", str(file_path)],
                     capture_output=True, text=True, timeout=10
                 )
-                if result.returncode != 0:
+                output_png = file_path.with_suffix(".png")
+                if result.returncode != 0 or not output_png.exists():
                     ttk.Label(self._browser_preview_frame, text=f"blp_convert failed:\n{result.stderr[:500]}").pack(expand=True)
-                    try:
-                        os.unlink(tmp_path)
-                    except OSError:
-                        pass
                     return
-                shutil.move(tmp_path, cached_png)
+                shutil.move(str(output_png), cached_png)
             except Exception as exc:
                 ttk.Label(self._browser_preview_frame, text=f"Conversion error: {exc}").pack(expand=True)
                 return
@@ -858,12 +873,13 @@ class AssetPipelineGUI:
             version = struct.unpack_from("<I", data, 4)[0]
 
             # Parse vertex info from header
+            # Header layout: magic(4)+ver(4)+name(8)+flags(4)+globalSeq(8)+anim(8)+animLookup(8) = 44 bytes
+            # Then bones(8)+keyBone(8)+nVerts(4)+ofsVerts(4)
+            # Vanilla inserts playableAnimLookup(8) before bones, shifting everything +8
             if version <= 256:
-                # Vanilla: header has extra fields, offsets shifted +20
-                n_verts, ofs_verts = struct.unpack_from("<II", data, 80 + 20)
+                n_verts, ofs_verts = struct.unpack_from("<II", data, 68)
             else:
-                # TBC/WotLK
-                n_verts, ofs_verts = struct.unpack_from("<II", data, 80)
+                n_verts, ofs_verts = struct.unpack_from("<II", data, 60)
 
             if n_verts == 0 or n_verts > 500000 or ofs_verts + n_verts * 48 > len(data):
                 ttk.Label(self._browser_preview_frame, text=f"M2: {n_verts} vertices (no preview)").pack(expand=True)

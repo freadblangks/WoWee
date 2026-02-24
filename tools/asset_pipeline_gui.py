@@ -568,13 +568,35 @@ class AssetPipelineGUI:
         try:
             doc = json.loads(manifest_path.read_text(encoding="utf-8"))
             entries = doc.get("entries", {})
-            if isinstance(entries, dict):
-                self._browser_manifest = entries
-                self._browser_manifest_list = sorted(entries.keys(), key=str.lower)
-                self._browser_count_var.set(f"{len(entries)} entries")
+            if not isinstance(entries, dict):
+                self._browser_count_var.set("Invalid manifest format")
+                return
         except (OSError, ValueError, TypeError) as exc:
             self._browser_count_var.set(f"Manifest error: {exc}")
             return
+
+        # Re-key manifest by the 'p' field (forward-slash paths) for tree display
+        self._browser_manifest = {}
+        for _key, val in entries.items():
+            display_path = val.get("p", _key).replace("\\", "/")
+            self._browser_manifest[display_path] = val
+        self._browser_manifest_list = sorted(self._browser_manifest.keys(), key=str.lower)
+        self._browser_count_var.set(f"{len(self._browser_manifest)} entries")
+
+        # Build directory tree index: dir_path -> ({subdirs}, [files])
+        # Single O(N) pass so tree operations are O(1) lookups
+        self._browser_dir_index: dict[str, tuple[set[str], list[str]]] = {}
+        for path in self._browser_manifest_list:
+            parts = path.split("/")
+            for depth in range(len(parts)):
+                dir_key = "/".join(parts[:depth]) if depth > 0 else ""
+                if dir_key not in self._browser_dir_index:
+                    self._browser_dir_index[dir_key] = (set(), [])
+                idx_entry = self._browser_dir_index[dir_key]
+                if depth < len(parts) - 1:
+                    idx_entry[0].add(parts[depth])
+                else:
+                    idx_entry[1].append(parts[depth])
 
         self._browser_populate_tree_root()
 
@@ -582,24 +604,15 @@ class AssetPipelineGUI:
         self._browser_tree.delete(*self._browser_tree.get_children())
         self._browser_tree_populated.clear()
 
-        # Build top-level directories
-        top_dirs: set[str] = set()
-        for path in self._browser_manifest_list:
-            parts = path.split("/")
-            if len(parts) > 1:
-                top_dirs.add(parts[0])
-            else:
-                top_dirs.add(path)
+        root_entry = self._browser_dir_index.get("", (set(), []))
+        subdirs, files = root_entry
 
-        for name in sorted(top_dirs, key=str.lower):
-            # Check if this is a directory (has children) or a file
-            is_dir = any(p.startswith(name + "/") for p in self._browser_manifest_list)
-            if is_dir:
-                node = self._browser_tree.insert("", "end", iid=name, text=name, open=False)
-                # Insert dummy child for lazy loading
-                self._browser_tree.insert(node, "end", iid=name + "/__dummy__", text="")
-            else:
-                self._browser_tree.insert("", "end", iid=name, text=name)
+        for name in sorted(subdirs, key=str.lower):
+            node = self._browser_tree.insert("", "end", iid=name, text=name, open=False)
+            self._browser_tree.insert(node, "end", iid=name + "/__dummy__", text="")
+
+        for name in sorted(files, key=str.lower):
+            self._browser_tree.insert("", "end", iid=name, text=name)
 
     def _browser_on_expand(self, event: Any) -> None:
         node = self._browser_tree.focus()
@@ -612,29 +625,17 @@ class AssetPipelineGUI:
         if self._browser_tree.exists(dummy):
             self._browser_tree.delete(dummy)
 
-        prefix = node + "/"
-        # Collect immediate children
-        child_dirs: set[str] = set()
-        child_files: list[str] = []
-
-        for path in self._browser_manifest_list:
-            if not path.startswith(prefix):
-                continue
-            remainder = path[len(prefix):]
-            parts = remainder.split("/")
-            if len(parts) > 1:
-                child_dirs.add(parts[0])
-            else:
-                child_files.append(parts[0])
+        dir_entry = self._browser_dir_index.get(node, (set(), []))
+        child_dirs, child_files = dir_entry
 
         for d in sorted(child_dirs, key=str.lower):
-            child_id = prefix + d
+            child_id = node + "/" + d
             if not self._browser_tree.exists(child_id):
                 n = self._browser_tree.insert(node, "end", iid=child_id, text=d, open=False)
                 self._browser_tree.insert(n, "end", iid=child_id + "/__dummy__", text="")
 
         for f in sorted(child_files, key=str.lower):
-            child_id = prefix + f
+            child_id = node + "/" + f
             if not self._browser_tree.exists(child_id):
                 self._browser_tree.insert(node, "end", iid=child_id, text=f)
 

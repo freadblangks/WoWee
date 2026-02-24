@@ -46,6 +46,7 @@ wowee
 extern/*
 !extern/.gitkeep
 !extern/imgui
+!extern/vk-bootstrap
 
 # ImGui state
 imgui.ini

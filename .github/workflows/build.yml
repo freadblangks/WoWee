@@ -189,8 +189,11 @@ jobs:
             mingw-w64-clang-aarch64-vulkan-loader
             mingw-w64-clang-aarch64-vulkan-headers
             mingw-w64-clang-aarch64-shaderc
-            mingw-w64-clang-aarch64-stormlib
             git
+
+      - name: Install optional packages
+        shell: msys2 {0}
+        run: pacman -S --noconfirm --needed mingw-w64-clang-aarch64-stormlib || true
 
       - name: Configure
         shell: msys2 {0}
@@ -248,9 +251,12 @@ jobs:
             mingw-w64-x86_64-vulkan-loader
             mingw-w64-x86_64-vulkan-headers
             mingw-w64-x86_64-shaderc
-            mingw-w64-x86_64-stormlib
             mingw-w64-x86_64-nsis
             git
+
+      - name: Install optional packages
+        shell: msys2 {0}
+        run: pacman -S --noconfirm --needed mingw-w64-x86_64-stormlib || true
 
       - name: Configure
         shell: msys2 {0}

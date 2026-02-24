@@ -64,7 +64,7 @@ cache/
 saves/
 wowee_[0-9][0-9][0-9][0-9]
 
-# Extracted assets (run ./extract_assets.sh to generate)
+# Extracted assets (run ./extract_assets.sh or .\extract_assets.ps1 to generate)
 Data/db/
 Data/character/
 Data/creature/

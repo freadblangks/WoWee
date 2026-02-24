@@ -592,12 +592,18 @@ add_custom_command(TARGET wowee POST_BUILD
 # which does NOT include System32. Copy vulkan-1.dll into the output directory so
 # SDL_Vulkan_LoadLibrary can locate it without needing a full system PATH search.
 if(WIN32)
-    add_custom_command(TARGET wowee POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "$ENV{SystemRoot}/System32/vulkan-1.dll"
-            "$<TARGET_FILE_DIR:wowee>/vulkan-1.dll"
-        COMMENT "Copying vulkan-1.dll to output directory"
-    )
+    find_file(VULKAN_DLL vulkan-1.dll
+        PATHS "$ENV{SystemRoot}/System32" "$ENV{VULKAN_SDK}/Bin"
+        NO_DEFAULT_PATH)
+    if(VULKAN_DLL)
+        add_custom_command(TARGET wowee POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${VULKAN_DLL}" "$<TARGET_FILE_DIR:wowee>/vulkan-1.dll"
+            COMMENT "Copying vulkan-1.dll to output directory"
+        )
+    else()
+        message(STATUS "  vulkan-1.dll not found — skipping copy (MSYS2 provides it via PATH)")
+    endif()
 endif()
 
 # Install targets
@@ -659,7 +665,14 @@ if(STORMLIB_LIBRARY AND STORMLIB_INCLUDE_DIR)
         Threads::Threads
     )
     if(WIN32)
-        target_link_libraries(asset_extract PRIVATE wininet bz2)
+        find_library(WININET_LIB wininet)
+        find_library(BZ2_LIB bz2)
+        if(WININET_LIB)
+            target_link_libraries(asset_extract PRIVATE ${WININET_LIB})
+        endif()
+        if(BZ2_LIB)
+            target_link_libraries(asset_extract PRIVATE ${BZ2_LIB})
+        endif()
     endif()
     set_target_properties(asset_extract PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin

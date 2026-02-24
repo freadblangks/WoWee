@@ -249,7 +249,9 @@ jobs:
 
       - name: Install optional packages
         shell: msys2 {0}
-        run: pacman -S --noconfirm --needed ${{ matrix.prefix }}-stormlib || true
+        run: |
+          pacman -S --noconfirm --needed ${{ matrix.prefix }}-stormlib || true
+          pacman -S --noconfirm --needed zip
 
       - name: Configure
         shell: msys2 {0}
@@ -292,8 +294,14 @@ jobs:
           cp tools/asset_pipeline_gui.py "${STAGING}/"
 
           # Assets (exclude proprietary music)
-          rsync -a --exclude='Original Music' build/bin/assets/ "${STAGING}/assets/" || \
-            cp -r build/bin/assets "${STAGING}/assets"
+          mkdir -p "${STAGING}/assets"
+          for d in build/bin/assets/*/; do
+            dirname="$(basename "$d")"
+            [ "$dirname" = "Original Music" ] && continue
+            cp -r "$d" "${STAGING}/assets/"
+          done
+          # Copy top-level asset files
+          cp build/bin/assets/* "${STAGING}/assets/" 2>/dev/null || true
 
           # Data directory (git-tracked files only)
           git ls-files Data/ | while read -r f; do
@@ -301,9 +309,8 @@ jobs:
             cp "$f" "${STAGING}/$f"
           done
 
-          # Create ZIP using 7z (available in MSYS2)
-          7z a -tzip "${STAGING}.zip" "${STAGING}" || \
-            (cd "${STAGING}" && zip -r "../${STAGING}.zip" .)
+          # Create ZIP
+          zip -r "${STAGING}.zip" "${STAGING}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

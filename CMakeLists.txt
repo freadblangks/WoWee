@@ -469,6 +469,9 @@ endif()
 target_include_directories(wowee PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+# Vendored headers as SYSTEM to suppress third-party warnings
+target_include_directories(wowee SYSTEM PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/extern
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/vk-bootstrap/src
 )
@@ -543,7 +546,7 @@ endif()
 if(MSVC)
     target_compile_options(wowee PRIVATE /W4)
 else()
-    target_compile_options(wowee PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(wowee PRIVATE -Wall -Wextra -Wpedantic -Wno-missing-field-initializers)
 endif()
 
 # Debug build flags

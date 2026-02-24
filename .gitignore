@@ -89,6 +89,9 @@ Data/expansions/*/overlay/
 Data/hd/
 ingest/
 
+# Asset pipeline state and texture packs
+asset_pipeline/
+
 # Local texture dumps / extracted art should never be committed
 assets/textures/
 node_modules/

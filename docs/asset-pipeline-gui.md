@@ -30,6 +30,7 @@ The app uses Python's built-in `tkinter` module. If `tkinter` is missing, instal
 - Lets users activate/deactivate packs and reorder active pack priority
 - Rebuilds `Data/override` from active pack order (runs in background thread)
 - Shows current data state (`manifest.json`, entry count, override file count, last runs)
+- Browses extracted assets with inline previews (images, 3D wireframes, data tables, text, hex dumps)
 
 ## Configuration Tab
 
@@ -104,6 +105,55 @@ Supported pack layouts:
 
 When multiple active packs contain the same file path, **later packs in active order win**.
 
+## Asset Browser Tab
+
+Browse and preview every extracted asset visually. Requires a completed extraction with a `manifest.json` in the output directory.
+
+### Layout
+
+- **Top bar**: Search entry, file type filter dropdown, Search/Reset buttons, result count
+- **Left panel** (~30%): Directory tree built lazily from `manifest.json`
+- **Right panel** (~70%): Preview area that adapts to the selected file type
+- **Bottom bar**: File path, size, and CRC from manifest
+
+### Search and Filtering
+
+Type a substring into the search box and/or pick a file type from the dropdown, then click **Search**. The tree repopulates with matching results (capped at 5000 entries). Click **Reset** to restore the full tree.
+
+File type filters: All, BLP, M2, WMO, DBC, ADT, Audio, Text.
+
+### Preview Types
+
+| Type | What You See |
+|------|--------------|
+| **BLP** | Converted to PNG via `blp_convert --to-png`, displayed as an image. Cached in `asset_pipeline/preview_cache/`. |
+| **M2** | Wireframe rendering of model vertices and triangles on a Canvas. Drag to rotate, scroll to zoom. |
+| **WMO** | Wireframe of group geometry (MOVT/MOVI chunks). Root WMOs auto-load the `_000` group file. |
+| **CSV** (DBC exports) | Scrollable table with column names from `dbc_layouts.json`. First 500 rows loaded, click "Load more" for the rest. |
+| **ADT** | Colored heightmap grid parsed from MCNK chunks. |
+| **Text** (XML, LUA, JSON, HTML, TOC) | Syntax-highlighted scrollable text view. |
+| **Audio** (WAV, MP3, OGG) | Metadata display — format, channels, sample rate, duration (WAV). |
+| **Other** | Hex dump of the first 512 bytes. |
+
+### Wireframe Controls
+
+- **Left-click drag**: Rotate the model (azimuth + elevation)
+- **Scroll wheel**: Zoom in/out
+- Depth coloring: closer geometry renders brighter
+
+### Optional Dependencies
+
+| Dependency | Required For | Fallback |
+|------------|-------------|----------|
+| [Pillow](https://pypi.org/project/Pillow/) (`pip install Pillow`) | BLP image preview | Shows install instructions |
+| `blp_convert` (built with project) | BLP → PNG conversion | Shows "not found" message |
+
+All other previews (wireframe, table, text, hex) work without any extra dependencies.
+
+### Cache
+
+BLP previews are cached as PNG files in `asset_pipeline/preview_cache/` keyed by path and file size. Delete this directory to clear the cache.
+
 ## Current State Tab
 
 Shows a summary of pipeline state:
@@ -126,6 +176,7 @@ All extraction output, override rebuild messages, cancellations, and errors stre
 |------|-------------|
 | `asset_pipeline/state.json` | All configuration, pack metadata, and extraction history |
 | `asset_pipeline/packs/<pack-id>/` | Installed pack contents (one directory per pack) |
+| `asset_pipeline/preview_cache/` | Cached BLP → PNG conversions for the Asset Browser |
 | `<Output Data>/override/` | Merged output from active packs |
 
 The `asset_pipeline/` directory is gitignored.
@@ -139,4 +190,5 @@ The `asset_pipeline/` directory is gitignored.
 5. Select the pack and click **Activate**.
 6. (Optional) Install more packs, activate them, and use **Move Up/Down** to set priority.
 7. Click **Rebuild Override** — the status bar shows progress, and the result appears in Logs.
-8. Run wowee — it loads override textures on top of the extracted base assets.
+8. (Optional) Switch to **Asset Browser** to explore extracted files — preview textures, inspect models, browse DBC tables.
+9. Run wowee — it loads override textures on top of the extracted base assets.

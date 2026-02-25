@@ -379,6 +379,7 @@ void CameraController::update(float deltaTime) {
     if (thirdPerson && followTarget) {
         // Move the follow target (character position) instead of the camera
         glm::vec3 targetPos = *followTarget;
+        const glm::vec3 prevTargetPos = *followTarget;
         if (!externalFollow_) {
             if (wmoRenderer) {
                 wmoRenderer->setCollisionFocus(targetPos, COLLISION_FOCUS_RADIUS_THIRD_PERSON);
@@ -422,6 +423,68 @@ void CameraController::update(float deltaTime) {
                     float depthFromFeet = (*waterH - targetPos.z);
                     inWater = (floorH && ((*waterH - *floorH) >= MIN_SWIM_WATER_DEPTH)) ||
                               (!floorH && (depthFromFeet >= MIN_SWIM_WATER_DEPTH));
+
+                    // Ramp exit assist: when swimming forward near the surface toward a
+                    // reachable floor (dock/shore ramp), switch to walking sooner.
+                    if (swimming && inWater && floorH && nowForward) {
+                        float floorDelta = *floorH - targetPos.z;
+                        float waterOverFloor = *waterH - *floorH;
+                        bool nearSurface = depthFromFeet <= 1.45f;
+                        bool reachableRamp = (floorDelta >= -0.30f && floorDelta <= 1.10f);
+                        bool shallowRampWater = waterOverFloor <= 1.55f;
+                        bool notDiving = forward3D.z > -0.20f;
+                        if (nearSurface && reachableRamp && shallowRampWater && notDiving) {
+                            inWater = false;
+                        }
+                    }
+
+                    // Forward plank/ramp assist: sample structure floors ahead so water exit
+                    // can happen when the ramp is in front of us (not only under our feet).
+                    if (swimming && inWater && nowForward && forward3D.z > -0.20f) {
+                        auto queryFloorAt = [&](float x, float y, float probeZ) -> std::optional<float> {
+                            std::optional<float> best;
+                            if (terrainManager) {
+                                best = terrainManager->getHeightAt(x, y);
+                            }
+                            if (wmoRenderer) {
+                                float nz = 1.0f;
+                                auto wh = wmoRenderer->getFloorHeight(x, y, probeZ, &nz);
+                                if (wh && nz >= 0.40f && (!best || *wh > *best)) best = wh;
+                            }
+                            if (m2Renderer && !externalFollow_) {
+                                float nz = 1.0f;
+                                auto mh = m2Renderer->getFloorHeight(x, y, probeZ, &nz);
+                                if (mh && nz >= 0.35f && (!best || *mh > *best)) best = mh;
+                            }
+                            return best;
+                        };
+
+                        glm::vec2 fwd2(forward.x, forward.y);
+                        float fwdLen = glm::length(fwd2);
+                        if (fwdLen > 1e-4f) {
+                            fwd2 /= fwdLen;
+                            std::optional<float> aheadFloor;
+                            const float probeZ = targetPos.z + 2.0f;
+                            const float dists[] = {0.45f, 0.90f, 1.25f};
+                            for (float d : dists) {
+                                float sx = targetPos.x + fwd2.x * d;
+                                float sy = targetPos.y + fwd2.y * d;
+                                auto h = queryFloorAt(sx, sy, probeZ);
+                                if (h && (!aheadFloor || *h > *aheadFloor)) aheadFloor = h;
+                            }
+
+                            if (aheadFloor) {
+                                float floorDelta = *aheadFloor - targetPos.z;
+                                float waterOverFloor = *waterH - *aheadFloor;
+                                bool nearSurface = depthFromFeet <= 1.65f;
+                                bool reachableRamp = (floorDelta >= -0.35f && floorDelta <= 1.25f);
+                                bool shallowRampWater = waterOverFloor <= 1.75f;
+                                if (nearSurface && reachableRamp && shallowRampWater) {
+                                    inWater = false;
+                                }
+                            }
+                        }
+                    }
                 }
             }
             // Keep swimming through water-data gaps at chunk boundaries.
@@ -505,17 +568,42 @@ void CameraController::update(float deltaTime) {
             if (updateFloorCache) {
                 floorQueryFrameCounter = 0;
                 lastFloorQueryPos = targetPos;
+                constexpr float MAX_SWIM_FLOOR_ABOVE_FEET = 0.25f;
+                constexpr float MIN_SWIM_CEILING_ABOVE_FEET = 0.30f;
+                constexpr float MAX_SWIM_CEILING_ABOVE_FEET = 1.80f;
+                std::optional<float> ceilingH;
+                auto considerFloor = [&](const std::optional<float>& h) {
+                    if (!h) return;
+                    // Swim-floor guard: only accept surfaces at or very slightly above feet.
+                    if (*h <= targetPos.z + MAX_SWIM_FLOOR_ABOVE_FEET) {
+                        if (!floorH || *h > *floorH) floorH = h;
+                    }
+                    // Swim-ceiling guard: detect structures just above feet so upward swim
+                    // can't clip through docks/platform undersides.
+                    float dz = *h - targetPos.z;
+                    if (dz >= MIN_SWIM_CEILING_ABOVE_FEET && dz <= MAX_SWIM_CEILING_ABOVE_FEET) {
+                        if (!ceilingH || *h < *ceilingH) ceilingH = h;
+                    }
+                };
 
                 if (terrainManager) {
-                    floorH = terrainManager->getHeightAt(targetPos.x, targetPos.y);
+                    considerFloor(terrainManager->getHeightAt(targetPos.x, targetPos.y));
                 }
                 if (wmoRenderer) {
                     auto wh = wmoRenderer->getFloorHeight(targetPos.x, targetPos.y, targetPos.z + 2.0f);
-                    if (wh && (!floorH || *wh > *floorH)) floorH = wh;
+                    considerFloor(wh);
                 }
                 if (m2Renderer && !externalFollow_) {
-                    auto mh = m2Renderer->getFloorHeight(targetPos.x, targetPos.y, targetPos.z);
-                    if (mh && (!floorH || *mh > *floorH)) floorH = mh;
+                    auto mh = m2Renderer->getFloorHeight(targetPos.x, targetPos.y, targetPos.z + 2.0f);
+                    considerFloor(mh);
+                }
+
+                if (ceilingH && verticalVelocity > 0.0f) {
+                    float ceilingLimit = *ceilingH - 0.35f;
+                    if (targetPos.z > ceilingLimit) {
+                        targetPos.z = ceilingLimit;
+                        verticalVelocity = 0.0f;
+                    }
                 }
 
                 cachedFloorHeight = floorH;
@@ -680,6 +768,7 @@ void CameraController::update(float deltaTime) {
             // WMO tunnel/bridge ramps are often steeper than outdoor terrain ramps.
             constexpr float MIN_WALKABLE_NORMAL_TERRAIN = 0.7f; // ~45°
             constexpr float MIN_WALKABLE_NORMAL_WMO = 0.45f;    // allow tunnel ramps
+            constexpr float MIN_WALKABLE_NORMAL_M2 = 0.45f;     // allow bridge/deck ramps
 
             std::optional<float> groundH;
             std::optional<float> centerTerrainH;
@@ -720,7 +809,7 @@ void CameraController::update(float deltaTime) {
                     if (m2Renderer && !externalFollow_) {
                         float m2NormalZ = 1.0f;
                         m2H = m2Renderer->getFloorHeight(targetPos.x, targetPos.y, wmoProbeZ, &m2NormalZ);
-                        if (m2H && m2NormalZ < MIN_WALKABLE_NORMAL_TERRAIN) {
+                        if (m2H && m2NormalZ < MIN_WALKABLE_NORMAL_M2) {
                             m2H = std::nullopt;
                         }
                     }
@@ -796,7 +885,21 @@ void CameraController::update(float deltaTime) {
             // of terrain/WMO center surfaces when it is still near the player.
             // This avoids dropping into void gaps at terrain<->WMO seams.
             const bool nearWmoSpace = cachedInsideWMO || centerWmoH.has_value();
-            const bool nearStructureSpace = nearWmoSpace || centerM2H.has_value();
+            bool nearStructureSpace = nearWmoSpace || centerM2H.has_value();
+            if (!nearStructureSpace && hasRealGround_) {
+                // Plank-gap hint: center probes can miss sparse bridge segments.
+                // Probe once around last known ground before allowing a full drop.
+                if (wmoRenderer) {
+                    auto whHint = wmoRenderer->getFloorHeight(targetPos.x, targetPos.y, lastGroundZ + 1.5f);
+                    if (whHint && std::abs(*whHint - lastGroundZ) <= 2.0f) nearStructureSpace = true;
+                }
+                if (!nearStructureSpace && m2Renderer && !externalFollow_) {
+                    float nz = 1.0f;
+                    auto mhHint = m2Renderer->getFloorHeight(targetPos.x, targetPos.y, lastGroundZ + 1.5f, &nz);
+                    if (mhHint && nz >= MIN_WALKABLE_NORMAL_M2 &&
+                        std::abs(*mhHint - lastGroundZ) <= 2.0f) nearStructureSpace = true;
+                }
+            }
             if (!groundH) {
                 auto highestCenter = selectHighestFloor(centerTerrainH, centerWmoH, centerM2H);
                 if (highestCenter) {
@@ -840,6 +943,16 @@ void CameraController::update(float deltaTime) {
                 }
             }
 
+            // Structure continuity guard: if a floor query suddenly jumps far below
+            // recent support while near dock/bridge geometry, keep a conservative
+            // support height to avoid dropping through sparse collision seams.
+            if (groundH && hasRealGround_ && nearStructureSpace && !nowJump) {
+                float dropFromLast = lastGroundZ - *groundH;
+                if (dropFromLast > 1.0f && verticalVelocity > -6.0f) {
+                    *groundH = std::max(*groundH, lastGroundZ - 0.20f);
+                }
+            }
+
             // 1b. Multi-sample WMO floors when in/near WMO space to avoid
             // falling through narrow board/plank gaps where center ray misses.
             if (wmoRenderer && nearWmoSpace) {
@@ -865,7 +978,7 @@ void CameraController::update(float deltaTime) {
 
                     // Keep to nearby, walkable steps only.
                     if (*wh > targetPos.z + stepUpBudget) continue;
-                    if (*wh < targetPos.z - 2.5f) continue;
+                    if (*wh < lastGroundZ - 3.5f) continue;
 
                     if (!groundH || *wh > *groundH) {
                         groundH = wh;
@@ -876,7 +989,7 @@ void CameraController::update(float deltaTime) {
             // WMO recovery probe: when no floor is found while descending, do a wider
             // footprint sample around the player to catch narrow plank/stair misses.
             if (!groundH && wmoRenderer && hasRealGround_ && verticalVelocity <= 0.0f) {
-                constexpr float RESCUE_FOOTPRINT = 0.55f;
+                constexpr float RESCUE_FOOTPRINT = 0.65f;
                 const glm::vec2 rescueOffsets[] = {
                     {0.0f, 0.0f},
                     { RESCUE_FOOTPRINT, 0.0f}, {-RESCUE_FOOTPRINT, 0.0f},
@@ -894,7 +1007,7 @@ void CameraController::update(float deltaTime) {
                     if (!wh) continue;
                     if (nz < MIN_WALKABLE_NORMAL_WMO) continue;
                     if (*wh > lastGroundZ + stepUpBudget + 0.75f) continue;
-                    if (*wh < targetPos.z - 4.0f) continue;
+                    if (*wh < lastGroundZ - 6.0f) continue;
                     if (!rescueFloor || *wh > *rescueFloor) {
                         rescueFloor = wh;
                     }
@@ -907,7 +1020,7 @@ void CameraController::update(float deltaTime) {
             // M2 recovery probe: Booty Bay-style wooden platforms can be represented
             // as M2 collision where center probes intermittently miss.
             if (!groundH && m2Renderer && !externalFollow_ && hasRealGround_ && verticalVelocity <= 0.0f) {
-                constexpr float RESCUE_FOOTPRINT = 0.60f;
+                constexpr float RESCUE_FOOTPRINT = 0.75f;
                 const glm::vec2 rescueOffsets[] = {
                     {0.0f, 0.0f},
                     { RESCUE_FOOTPRINT, 0.0f}, {-RESCUE_FOOTPRINT, 0.0f},
@@ -923,9 +1036,9 @@ void CameraController::update(float deltaTime) {
                     float nz = 1.0f;
                     auto mh = m2Renderer->getFloorHeight(targetPos.x + o.x, targetPos.y + o.y, rescueProbeZ, &nz);
                     if (!mh) continue;
-                    if (nz < MIN_WALKABLE_NORMAL_TERRAIN) continue;
+                    if (nz < MIN_WALKABLE_NORMAL_M2) continue;
                     if (*mh > lastGroundZ + stepUpBudget + 0.90f) continue;
-                    if (*mh < targetPos.z - 4.0f) continue;
+                    if (*mh < lastGroundZ - 6.0f) continue;
                     if (!rescueFloor || *mh > *rescueFloor) {
                         rescueFloor = mh;
                     }
@@ -935,14 +1048,50 @@ void CameraController::update(float deltaTime) {
                 }
             }
 
+            // Path recovery probe: sample structure floors along the movement segment
+            // (prev -> current) to catch narrow plank gaps missed at endpoints.
+            if (!groundH && hasRealGround_ && (wmoRenderer || (m2Renderer && !externalFollow_))) {
+                std::optional<float> segmentFloor;
+                const float probeZ = std::max(lastGroundZ, targetPos.z) + stepUpBudget + 1.2f;
+                const float ts[] = {0.25f, 0.5f, 0.75f};
+                for (float t : ts) {
+                    float sx = prevTargetPos.x + (targetPos.x - prevTargetPos.x) * t;
+                    float sy = prevTargetPos.y + (targetPos.y - prevTargetPos.y) * t;
+
+                    if (wmoRenderer) {
+                        float nz = 1.0f;
+                        auto wh = wmoRenderer->getFloorHeight(sx, sy, probeZ, &nz);
+                        if (wh && nz >= MIN_WALKABLE_NORMAL_WMO &&
+                            *wh <= lastGroundZ + stepUpBudget + 0.9f &&
+                            *wh >= lastGroundZ - 3.0f) {
+                            if (!segmentFloor || *wh > *segmentFloor) segmentFloor = wh;
+                        }
+                    }
+                    if (m2Renderer && !externalFollow_) {
+                        float nz = 1.0f;
+                        auto mh = m2Renderer->getFloorHeight(sx, sy, probeZ, &nz);
+                        if (mh && nz >= MIN_WALKABLE_NORMAL_M2 &&
+                            *mh <= lastGroundZ + stepUpBudget + 0.9f &&
+                            *mh >= lastGroundZ - 3.0f) {
+                            if (!segmentFloor || *mh > *segmentFloor) segmentFloor = mh;
+                        }
+                    }
+                }
+                if (segmentFloor) {
+                    groundH = segmentFloor;
+                }
+            }
+
             // 2. Multi-sample for M2 objects (rugs, planks, bridges, ships) —
             //    these are narrow and need offset probes to detect reliably.
             if (m2Renderer && !externalFollow_) {
-                constexpr float FOOTPRINT = 0.4f;
+                constexpr float FOOTPRINT = 0.6f;
                 const glm::vec2 offsets[] = {
                     {0.0f, 0.0f},
                     {FOOTPRINT, 0.0f}, {-FOOTPRINT, 0.0f},
-                    {0.0f, FOOTPRINT}, {0.0f, -FOOTPRINT}
+                    {0.0f, FOOTPRINT}, {0.0f, -FOOTPRINT},
+                    {FOOTPRINT, FOOTPRINT}, {FOOTPRINT, -FOOTPRINT},
+                    {-FOOTPRINT, FOOTPRINT}, {-FOOTPRINT, -FOOTPRINT}
                 };
                 float m2ProbeZ = std::max(targetPos.z, lastGroundZ) + 6.0f;
                 for (const auto& o : offsets) {
@@ -1016,6 +1165,12 @@ void CameraController::update(float deltaTime) {
                             verticalVelocity = -1.5f;
                         }
                         grounded = false;
+                    } else if (nearStructureSpace && noGroundTimer_ < 1.20f && dropFromLastGround <= 4.0f && !nowJump) {
+                        // Extended adhesion for sparse dock/bridge collision: keep us on the
+                        // last valid support long enough for adjacent structure probes to hit.
+                        targetPos.z = std::max(targetPos.z, lastGroundZ - 0.10f);
+                        if (verticalVelocity < -0.5f) verticalVelocity = -0.5f;
+                        grounded = true;
                     } else {
                         grounded = false;
                     }

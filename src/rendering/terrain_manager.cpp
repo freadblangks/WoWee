@@ -1296,6 +1296,32 @@ void TerrainManager::unloadAll() {
     }
 }
 
+void TerrainManager::softReset() {
+    // Clear queues (workers may still be running — they'll find empty queues)
+    {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        loadQueue.clear();
+        while (!readyQueue.empty()) readyQueue.pop();
+    }
+    pendingTiles.clear();
+    finalizingTiles_.clear();
+    placedDoodadIds.clear();
+
+    LOG_INFO("Soft-resetting terrain (clearing tiles + water, workers stay alive)");
+    loadedTiles.clear();
+    failedTiles.clear();
+
+    currentTile = {-1, -1};
+    lastStreamTile = {-1, -1};
+
+    if (terrainRenderer) {
+        terrainRenderer->clear();
+    }
+    if (waterRenderer) {
+        waterRenderer->clear();
+    }
+}
+
 TileCoord TerrainManager::worldToTile(float glX, float glY) const {
     auto [tileX, tileY] = core::coords::worldToTile(glX, glY);
     return {tileX, tileY};

@@ -661,9 +661,10 @@ void Application::logoutToLogin() {
         if (auto* m2 = renderer->getM2Renderer()) {
             m2->clear();
         }
-        // Unload all terrain tiles + water surfaces so next world entry starts fresh
+        // Clear terrain tile tracking + water surfaces so next world entry starts fresh.
+        // Use softReset() instead of unloadAll() to avoid blocking on worker thread joins.
         if (auto* terrain = renderer->getTerrainManager()) {
-            terrain->unloadAll();
+            terrain->softReset();
         }
         if (auto* questMarkers = renderer->getQuestMarkerRenderer()) {
             questMarkers->clear();

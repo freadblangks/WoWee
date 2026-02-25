@@ -212,6 +212,7 @@ public:
      * Unload all tiles
      */
     void unloadAll();
+    void softReset();  // Clear tile data without stopping worker threads (non-blocking)
 
     /**
      * Precache a set of tiles (for taxi routes, etc.)

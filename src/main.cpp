@@ -38,7 +38,7 @@ static wowee::core::LogLevel readLogLevelFromEnv() {
     if (level == "debug") return wowee::core::LogLevel::DEBUG;
     if (level == "info") return wowee::core::LogLevel::INFO;
     if (level == "warn" || level == "warning") return wowee::core::LogLevel::WARNING;
-    if (level == "error") return wowee::core::LogLevel::ERROR;
+    if (level == "error") return wowee::core::kLogLevelError;
     if (level == "fatal") return wowee::core::LogLevel::FATAL;
     return wowee::core::LogLevel::WARNING;
 }

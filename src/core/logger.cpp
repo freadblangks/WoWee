@@ -49,7 +49,7 @@ void Logger::ensureFile() {
         if (v == "debug") setLogLevel(LogLevel::DEBUG);
         else if (v == "info") setLogLevel(LogLevel::INFO);
         else if (v == "warn" || v == "warning") setLogLevel(LogLevel::WARNING);
-        else if (v == "error") setLogLevel(LogLevel::ERROR);
+        else if (v == "error") setLogLevel(kLogLevelError);
         else if (v == "fatal") setLogLevel(LogLevel::FATAL);
     }
     std::error_code ec;
@@ -83,7 +83,7 @@ void Logger::emitLineLocked(LogLevel level, const std::string& message) {
         case LogLevel::DEBUG:   line << "DEBUG"; break;
         case LogLevel::INFO:    line << "INFO "; break;
         case LogLevel::WARNING: line << "WARN "; break;
-        case LogLevel::ERROR:   line << "ERROR"; break;
+        case kLogLevelError:    line << "ERROR"; break;
         case LogLevel::FATAL:   line << "FATAL"; break;
     }
 

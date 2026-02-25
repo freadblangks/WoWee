@@ -26,6 +26,10 @@ enum class LogLevel {
     FATAL
 };
 
+// Avoid direct token use of `ERROR` at call sites because Windows headers
+// define `ERROR` as a macro.
+inline constexpr LogLevel kLogLevelError = LogLevel::ERROR;
+
 class Logger {
 public:
     static Logger& getInstance();
@@ -128,7 +132,7 @@ private:
 
 #define LOG_ERROR(...) do { \
     auto& _wowee_logger = wowee::core::Logger::getInstance(); \
-    if (_wowee_logger.shouldLog(wowee::core::LogLevel::ERROR)) { \
+    if (_wowee_logger.shouldLog(wowee::core::kLogLevelError)) { \
         _wowee_logger.error(__VA_ARGS__); \
     } \
 } while (0)

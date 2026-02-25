@@ -786,7 +786,7 @@ void Application::update(float deltaTime) {
             if (gameHandler) {
                 static float creatureResyncTimer = 0.0f;
                 creatureResyncTimer += deltaTime;
-                if (creatureResyncTimer >= 1.0f) {
+                if (creatureResyncTimer >= 3.0f) {
                     creatureResyncTimer = 0.0f;
 
                     glm::vec3 playerPos(0.0f);

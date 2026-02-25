@@ -244,7 +244,7 @@ private:
         float x, y, z, orientation;
     };
     std::vector<PendingCreatureSpawn> pendingCreatureSpawns_;
-    static constexpr int MAX_SPAWNS_PER_FRAME = 8;
+    static constexpr int MAX_SPAWNS_PER_FRAME = 3;
     static constexpr int MAX_NEW_CREATURE_MODELS_PER_FRAME = 1;
     static constexpr uint16_t MAX_CREATURE_SPAWN_RETRIES = 300;
     std::unordered_set<uint64_t> pendingCreatureSpawnGuids_;

@@ -2081,8 +2081,10 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
 
     lastDrawCallCount = 0;
 
-    // Adaptive render distance: balanced for performance without excessive pop-in
-    const float maxRenderDistance = (instances.size() > 2000) ? 350.0f : 1000.0f;
+    // Adaptive render distance: tiered by instance density to cap draw calls
+    const float maxRenderDistance = (instances.size() > 2000) ? 300.0f
+                                  : (instances.size() > 1000) ? 500.0f
+                                  : 1000.0f;
     const float maxRenderDistanceSq = maxRenderDistance * maxRenderDistance;
     const float fadeStartFraction = 0.75f;
     const glm::vec3 camPos = camera.getPosition();

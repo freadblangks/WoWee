@@ -126,6 +126,8 @@ void CameraController::update(float deltaTime) {
     if (!enabled || !camera) {
         return;
     }
+    // Keep physics integration stable during render hitches to avoid floor tunneling.
+    const float physicsDeltaTime = std::min(deltaTime, 1.0f / 30.0f);
 
     // During taxi flights, skip movement logic but keep camera orbit/zoom controls.
     if (externalFollow_) {
@@ -442,7 +444,7 @@ void CameraController::update(float deltaTime) {
 
             if (glm::length(swimMove) > 0.001f) {
                 swimMove = glm::normalize(swimMove);
-                targetPos += swimMove * swimSpeed * deltaTime;
+                targetPos += swimMove * swimSpeed * physicsDeltaTime;
             }
 
             // Spacebar = swim up (continuous, not a jump)
@@ -451,7 +453,7 @@ void CameraController::update(float deltaTime) {
                 verticalVelocity = SWIM_BUOYANCY;
             } else {
                 // Gentle sink when not pressing space
-                verticalVelocity += SWIM_GRAVITY * deltaTime;
+                verticalVelocity += SWIM_GRAVITY * physicsDeltaTime;
                 if (verticalVelocity < SWIM_SINK_SPEED) {
                     verticalVelocity = SWIM_SINK_SPEED;
                 }
@@ -459,15 +461,15 @@ void CameraController::update(float deltaTime) {
                 // you afloat unless you're intentionally diving.
                 if (!diveIntent) {
                     float surfaceErr = (waterSurfaceZ - targetPos.z);
-                    verticalVelocity += surfaceErr * 7.0f * deltaTime;
-                    verticalVelocity *= std::max(0.0f, 1.0f - 3.2f * deltaTime);
+                    verticalVelocity += surfaceErr * 7.0f * physicsDeltaTime;
+                    verticalVelocity *= std::max(0.0f, 1.0f - 3.2f * physicsDeltaTime);
                     if (std::abs(surfaceErr) < 0.06f && std::abs(verticalVelocity) < 0.35f) {
                         verticalVelocity = 0.0f;
                     }
                 }
             }
 
-            targetPos.z += verticalVelocity * deltaTime;
+            targetPos.z += verticalVelocity * physicsDeltaTime;
 
             // Don't rise above water surface
             if (waterH && targetPos.z > *waterH - WATER_SURFACE_OFFSET) {
@@ -557,7 +559,7 @@ void CameraController::update(float deltaTime) {
 
             if (glm::length(movement) > 0.001f) {
                 movement = glm::normalize(movement);
-                targetPos += movement * speed * deltaTime;
+                targetPos += movement * speed * physicsDeltaTime;
             }
 
             // Jump with input buffering and coyote time
@@ -572,12 +574,12 @@ void CameraController::update(float deltaTime) {
                 coyoteTimer = 0.0f;
             }
 
-            jumpBufferTimer -= deltaTime;
-            coyoteTimer -= deltaTime;
+            jumpBufferTimer -= physicsDeltaTime;
+            coyoteTimer -= physicsDeltaTime;
 
             // Apply gravity
-            verticalVelocity += gravity * deltaTime;
-            targetPos.z += verticalVelocity * deltaTime;
+            verticalVelocity += gravity * physicsDeltaTime;
+            targetPos.z += verticalVelocity * physicsDeltaTime;
             }
         } else {
             // External follow (e.g., taxi): trust server position without grounding.
@@ -589,14 +591,21 @@ void CameraController::update(float deltaTime) {
         // Refresh inside-WMO state before collision/grounding so we don't use stale
         // terrain-first caches while entering enclosed tunnel/building spaces.
         if (wmoRenderer && !externalFollow_) {
-            bool prevInside = cachedInsideWMO;
-            bool prevInsideInterior = cachedInsideInteriorWMO;
-            cachedInsideWMO = wmoRenderer->isInsideWMO(targetPos.x, targetPos.y, targetPos.z + 1.0f, nullptr);
-            cachedInsideInteriorWMO = wmoRenderer->isInsideInteriorWMO(targetPos.x, targetPos.y, targetPos.z + 1.0f);
-            if (cachedInsideWMO != prevInside || cachedInsideInteriorWMO != prevInsideInterior) {
-                hasCachedFloor_ = false;
-                hasCachedCamFloor = false;
-                cachedPivotLift_ = 0.0f;
+            const float insideDist = glm::length(targetPos - lastInsideStateCheckPos_);
+            if (++insideStateCheckCounter_ >= 2 || insideDist > 0.35f) {
+                insideStateCheckCounter_ = 0;
+                lastInsideStateCheckPos_ = targetPos;
+
+                bool prevInside = cachedInsideWMO;
+                bool prevInsideInterior = cachedInsideInteriorWMO;
+                cachedInsideWMO = wmoRenderer->isInsideWMO(targetPos.x, targetPos.y, targetPos.z + 1.0f, nullptr);
+                cachedInsideInteriorWMO = cachedInsideWMO &&
+                    wmoRenderer->isInsideInteriorWMO(targetPos.x, targetPos.y, targetPos.z + 1.0f);
+                if (cachedInsideWMO != prevInside || cachedInsideInteriorWMO != prevInsideInterior) {
+                    hasCachedFloor_ = false;
+                    hasCachedCamFloor = false;
+                    cachedPivotLift_ = 0.0f;
+                }
             }
         }
 
@@ -662,7 +671,7 @@ void CameraController::update(float deltaTime) {
                 // Collision cache: skip expensive checks if barely moved (15cm threshold)
                 float distMoved = glm::length(glm::vec2(targetPos.x, targetPos.y) -
                                              glm::vec2(lastCollisionCheckPos_.x, lastCollisionCheckPos_.y));
-                bool useCached = hasCachedFloor_ && distMoved < COLLISION_CACHE_DISTANCE;
+                bool useCached = grounded && hasCachedFloor_ && distMoved < COLLISION_CACHE_DISTANCE;
                 if (useCached) {
                     // Never trust cached ground while actively descending or when
                     // vertical drift from cached floor is meaningful.
@@ -759,13 +768,14 @@ void CameraController::update(float deltaTime) {
             // Transition safety: if no reachable floor was selected, choose the higher
             // of terrain/WMO center surfaces when it is still near the player.
             // This avoids dropping into void gaps at terrain<->WMO seams.
+            const bool nearWmoSpace = cachedInsideWMO || centerWmoH.has_value();
             if (!groundH) {
                 auto highestCenter = selectHighestFloor(centerTerrainH, centerWmoH, std::nullopt);
                 if (highestCenter) {
                     float dz = targetPos.z - *highestCenter;
                     // Keep this fallback narrow: only for WMO seam cases, or very short
                     // transient misses while still almost touching the last floor.
-                    bool allowFallback = cachedInsideWMO || (noGroundTimer_ < 0.10f && dz < 0.6f);
+                    bool allowFallback = nearWmoSpace || (noGroundTimer_ < 0.10f && dz < 0.6f);
                     if (allowFallback && dz >= -0.5f && dz < 2.0f) {
                         groundH = highestCenter;
                     }
@@ -774,7 +784,7 @@ void CameraController::update(float deltaTime) {
 
             // Continuity guard only for WMO seam overlap: avoid instantly switching to a
             // much lower floor sample at tunnel mouths (bad WMO ramp chains into void).
-            if (groundH && hasRealGround_ && cachedInsideWMO && !cachedInsideInteriorWMO) {
+            if (groundH && hasRealGround_ && nearWmoSpace && !cachedInsideInteriorWMO) {
                 float dropFromLast = lastGroundZ - *groundH;
                 if (dropFromLast > 1.5f) {
                     if (centerTerrainH && *centerTerrainH > *groundH + 1.5f) {
@@ -785,7 +795,7 @@ void CameraController::update(float deltaTime) {
 
             // Seam stability: while overlapping WMO shells, cap how fast floor height can
             // step downward in a single frame to avoid following bad ramp samples into void.
-            if (groundH && cachedInsideWMO && !cachedInsideInteriorWMO && lastGroundZ > 1.0f) {
+            if (groundH && nearWmoSpace && !cachedInsideInteriorWMO && lastGroundZ > 1.0f) {
                 float maxDropPerFrame = (verticalVelocity < -8.0f) ? 2.0f : 0.60f;
                 float minAllowed = lastGroundZ - maxDropPerFrame;
                 // Extra seam guard: outside interior groups, avoid accepting floors that
@@ -804,7 +814,7 @@ void CameraController::update(float deltaTime) {
 
             // 1b. Multi-sample WMO floors when in/near WMO space to avoid
             // falling through narrow board/plank gaps where center ray misses.
-            if (wmoRenderer && cachedInsideWMO) {
+            if (wmoRenderer && nearWmoSpace) {
                 constexpr float WMO_FOOTPRINT = 0.35f;
                 const glm::vec2 wmoOffsets[] = {
                     {0.0f, 0.0f},
@@ -832,6 +842,37 @@ void CameraController::update(float deltaTime) {
                     if (!groundH || *wh > *groundH) {
                         groundH = wh;
                     }
+                }
+            }
+
+            // WMO recovery probe: when no floor is found while descending, do a wider
+            // footprint sample around the player to catch narrow plank/stair misses.
+            if (!groundH && wmoRenderer && hasRealGround_ && verticalVelocity <= 0.0f) {
+                constexpr float RESCUE_FOOTPRINT = 0.55f;
+                const glm::vec2 rescueOffsets[] = {
+                    {0.0f, 0.0f},
+                    { RESCUE_FOOTPRINT, 0.0f}, {-RESCUE_FOOTPRINT, 0.0f},
+                    {0.0f,  RESCUE_FOOTPRINT}, {0.0f, -RESCUE_FOOTPRINT},
+                    { RESCUE_FOOTPRINT,  RESCUE_FOOTPRINT},
+                    { RESCUE_FOOTPRINT, -RESCUE_FOOTPRINT},
+                    {-RESCUE_FOOTPRINT,  RESCUE_FOOTPRINT},
+                    {-RESCUE_FOOTPRINT, -RESCUE_FOOTPRINT}
+                };
+                float rescueProbeZ = std::max(lastGroundZ, targetPos.z) + stepUpBudget + 1.2f;
+                std::optional<float> rescueFloor;
+                for (const auto& o : rescueOffsets) {
+                    float nz = 1.0f;
+                    auto wh = wmoRenderer->getFloorHeight(targetPos.x + o.x, targetPos.y + o.y, rescueProbeZ, &nz);
+                    if (!wh) continue;
+                    if (nz < MIN_WALKABLE_NORMAL_WMO) continue;
+                    if (*wh > lastGroundZ + stepUpBudget + 0.75f) continue;
+                    if (*wh < targetPos.z - 4.0f) continue;
+                    if (!rescueFloor || *wh > *rescueFloor) {
+                        rescueFloor = wh;
+                    }
+                }
+                if (rescueFloor) {
+                    groundH = rescueFloor;
                 }
             }
 
@@ -895,14 +936,15 @@ void CameraController::update(float deltaTime) {
                 }
                 } else {
                     hasRealGround_ = false;
-                    noGroundTimer_ += deltaTime;
+                    noGroundTimer_ += physicsDeltaTime;
 
                     float dropFromLastGround = lastGroundZ - targetPos.z;
-                    bool seamSizedGap = dropFromLastGround <= 0.35f;
+                    bool seamSizedGap = dropFromLastGround <= (nearWmoSpace ? 1.0f : 0.35f);
                     if (noGroundTimer_ < NO_GROUND_GRACE && seamSizedGap) {
                         // Micro-gap grace only: keep continuity for tiny seam misses,
                         // but never convert air into persistent ground.
-                        targetPos.z = std::max(targetPos.z, lastGroundZ - 0.10f);
+                        float maxSlip = nearWmoSpace ? 0.25f : 0.10f;
+                        targetPos.z = std::max(targetPos.z, lastGroundZ - maxSlip);
                         grounded = false;
                     } else {
                         grounded = false;
@@ -918,7 +960,7 @@ void CameraController::update(float deltaTime) {
             // Player is safely on real geometry — save periodically
             continuousFallTime_ = 0.0f;
             autoUnstuckFired_ = false;
-            safePosSaveTimer_ += deltaTime;
+            safePosSaveTimer_ += physicsDeltaTime;
             if (safePosSaveTimer_ >= SAFE_POS_SAVE_INTERVAL) {
                 safePosSaveTimer_ = 0.0f;
                 lastSafePos_ = targetPos;
@@ -926,7 +968,7 @@ void CameraController::update(float deltaTime) {
             }
         } else if (!grounded && !swimming && !externalFollow_) {
             // Falling (or standing on nothing past grace period) — accumulate fall time
-            continuousFallTime_ += deltaTime;
+            continuousFallTime_ += physicsDeltaTime;
             if (continuousFallTime_ >= AUTO_UNSTUCK_FALL_TIME && !autoUnstuckFired_) {
                 autoUnstuckFired_ = true;
                 if (autoUnstuckCallback_) {
@@ -1179,27 +1221,27 @@ void CameraController::update(float deltaTime) {
 
             if (glm::length(movement) > 0.001f) {
                 movement = glm::normalize(movement);
-                newPos += movement * swimSpeed * deltaTime;
+                newPos += movement * swimSpeed * physicsDeltaTime;
             }
 
             if (nowJump) {
                 verticalVelocity = SWIM_BUOYANCY;
             } else {
-                verticalVelocity += SWIM_GRAVITY * deltaTime;
+                verticalVelocity += SWIM_GRAVITY * physicsDeltaTime;
                 if (verticalVelocity < SWIM_SINK_SPEED) {
                     verticalVelocity = SWIM_SINK_SPEED;
                 }
                 if (!diveIntent) {
                     float surfaceErr = (waterSurfaceCamZ - newPos.z);
-                    verticalVelocity += surfaceErr * 7.0f * deltaTime;
-                    verticalVelocity *= std::max(0.0f, 1.0f - 3.2f * deltaTime);
+                    verticalVelocity += surfaceErr * 7.0f * physicsDeltaTime;
+                    verticalVelocity *= std::max(0.0f, 1.0f - 3.2f * physicsDeltaTime);
                     if (std::abs(surfaceErr) < 0.06f && std::abs(verticalVelocity) < 0.35f) {
                         verticalVelocity = 0.0f;
                     }
                 }
             }
 
-            newPos.z += verticalVelocity * deltaTime;
+            newPos.z += verticalVelocity * physicsDeltaTime;
 
             // Don't rise above water surface (feet at water level)
             if (waterH && (newPos.z - eyeHeight) > *waterH - WATER_SURFACE_OFFSET) {
@@ -1213,7 +1255,7 @@ void CameraController::update(float deltaTime) {
 
             if (glm::length(movement) > 0.001f) {
                 movement = glm::normalize(movement);
-                newPos += movement * speed * deltaTime;
+                newPos += movement * speed * physicsDeltaTime;
             }
 
             // Jump with input buffering and coyote time
@@ -1227,12 +1269,12 @@ void CameraController::update(float deltaTime) {
                 coyoteTimer = 0.0f;
             }
 
-            jumpBufferTimer -= deltaTime;
-            coyoteTimer -= deltaTime;
+            jumpBufferTimer -= physicsDeltaTime;
+            coyoteTimer -= physicsDeltaTime;
 
             // Apply gravity
-            verticalVelocity += gravity * deltaTime;
-            newPos.z += verticalVelocity * deltaTime;
+            verticalVelocity += gravity * physicsDeltaTime;
+            newPos.z += verticalVelocity * physicsDeltaTime;
         }
 
         // Wall sweep collision before grounding (skip when stationary).

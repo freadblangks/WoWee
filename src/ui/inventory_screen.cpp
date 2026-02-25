@@ -1428,11 +1428,12 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
                      " bagIndex=", bagIndex, " bagSlotIndex=", bagSlotIndex,
                      " vendorMode=", vendorMode_,
                      " bankOpen=", gameHandler_->isBankOpen());
-            if (gameHandler_->isBankOpen() && kind == SlotKind::BACKPACK && backpackIndex >= 0) {
-                // Deposit backpack item into bank: bag=0xFF, slot=23+index
+            // Bank deposit: only for non-equippable, non-usable items (materials, etc.)
+            // Equippable items should equip; usable items should be used.
+            bool bankDeposit = gameHandler_->isBankOpen() && item.inventoryType == 0;
+            if (bankDeposit && kind == SlotKind::BACKPACK && backpackIndex >= 0) {
                 gameHandler_->depositItem(0xFF, static_cast<uint8_t>(23 + backpackIndex));
-            } else if (gameHandler_->isBankOpen() && kind == SlotKind::BACKPACK && isBagSlot) {
-                // Deposit bag item into bank: bag=19+bagIndex, slot=slotIndex
+            } else if (bankDeposit && kind == SlotKind::BACKPACK && isBagSlot) {
                 gameHandler_->depositItem(static_cast<uint8_t>(19 + bagIndex), static_cast<uint8_t>(bagSlotIndex));
             } else if (vendorMode_ && kind == SlotKind::BACKPACK && backpackIndex >= 0) {
                 gameHandler_->sellItemBySlot(backpackIndex);

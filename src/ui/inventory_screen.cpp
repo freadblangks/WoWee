@@ -543,6 +543,25 @@ bool InventoryScreen::dropHeldItemToEquipSlot(game::Inventory& inv, game::EquipS
     return !holdingItem;
 }
 
+void InventoryScreen::dropIntoBankSlot(game::GameHandler& /*gh*/, uint8_t dstBag, uint8_t dstSlot) {
+    if (!holdingItem || !gameHandler_) return;
+    uint8_t srcBag = 0xFF;
+    uint8_t srcSlot = 0;
+    if (heldSource == HeldSource::BACKPACK && heldBackpackIndex >= 0) {
+        srcSlot = static_cast<uint8_t>(23 + heldBackpackIndex);
+    } else if (heldSource == HeldSource::BAG) {
+        srcBag = static_cast<uint8_t>(19 + heldBagIndex);
+        srcSlot = static_cast<uint8_t>(heldBagSlotIndex);
+    } else if (heldSource == HeldSource::EQUIPMENT) {
+        srcSlot = static_cast<uint8_t>(heldEquipSlot);
+    } else {
+        return;
+    }
+    gameHandler_->swapContainerItems(srcBag, srcSlot, dstBag, dstSlot);
+    holdingItem = false;
+    inventoryDirty = true;
+}
+
 bool InventoryScreen::beginPickupFromEquipSlot(game::Inventory& inv, game::EquipSlot slot) {
     if (holdingItem) return false;
     const auto& eq = inv.getEquipSlot(slot);

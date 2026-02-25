@@ -173,6 +173,8 @@ public:
     /// Drop the currently held item into a specific equipment slot.
     /// Returns true if the drop was accepted and consumed.
     bool dropHeldItemToEquipSlot(game::Inventory& inv, game::EquipSlot slot);
+    /// Drop the currently held item into a bank slot via CMSG_SWAP_ITEM.
+    void dropIntoBankSlot(game::GameHandler& gh, uint8_t dstBag, uint8_t dstSlot);
 };
 
 } // namespace ui

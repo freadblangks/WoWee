@@ -7472,13 +7472,24 @@ void GameScreen::renderBankWindow(game::GameHandler& gameHandler) {
     // Main bank slots (28 = 7 columns × 4 rows)
     ImGui::Text("Bank Slots");
     ImGui::Separator();
+    bool isHolding = inventoryScreen.isHoldingItem();
     for (int i = 0; i < game::Inventory::BANK_SLOTS; i++) {
         if (i % 7 != 0) ImGui::SameLine();
         const auto& slot = inv.getBankSlot(i);
 
         ImGui::PushID(i + 1000);
         if (slot.empty()) {
+            // Highlight as drop target when holding an item
+            if (isHolding) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.08f, 0.20f, 0.08f, 0.8f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.35f, 0.0f, 0.9f));
+            }
             ImGui::Button("##bank", ImVec2(42, 42));
+            if (isHolding) ImGui::PopStyleColor(2);
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && isHolding) {
+                // Drop held item into empty bank slot
+                inventoryScreen.dropIntoBankSlot(gameHandler, 0xFF, static_cast<uint8_t>(39 + i));
+            }
         } else {
             ImVec4 qc = InventoryScreen::getQualityColor(slot.item.quality);
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(qc.x * 0.3f, qc.y * 0.3f, qc.z * 0.3f, 0.8f));
@@ -7486,13 +7497,17 @@ void GameScreen::renderBankWindow(game::GameHandler& gameHandler) {
 
             std::string label = std::to_string(slot.item.stackCount > 1 ? slot.item.stackCount : 0);
             if (slot.item.stackCount <= 1) label = "##b" + std::to_string(i);
-            if (ImGui::Button(label.c_str(), ImVec2(42, 42))) {
-                // Right-click to withdraw: bag=0xFF means bank, slot=i
-                // Use CMSG_AUTOSTORE_BANK_ITEM with bank container
-                // WoW bank slots are inventory slots 39-66 (BANK_SLOT_1 = 39)
-                gameHandler.withdrawItem(0xFF, static_cast<uint8_t>(39 + i));
-            }
+            ImGui::Button(label.c_str(), ImVec2(42, 42));
             ImGui::PopStyleColor(2);
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
+                if (isHolding) {
+                    // Swap held item with bank slot
+                    inventoryScreen.dropIntoBankSlot(gameHandler, 0xFF, static_cast<uint8_t>(39 + i));
+                } else {
+                    // Withdraw on click
+                    gameHandler.withdrawItem(0xFF, static_cast<uint8_t>(39 + i));
+                }
+            }
             if (ImGui::IsItemHovered()) {
                 ImGui::BeginTooltip();
                 ImGui::TextColored(qc, "%s", slot.item.name.c_str());
@@ -7537,17 +7552,29 @@ void GameScreen::renderBankWindow(game::GameHandler& gameHandler) {
             const auto& slot = inv.getBankBagSlot(bagIdx, s);
             ImGui::PushID(3000 + bagIdx * 100 + s);
             if (slot.empty()) {
+                if (isHolding) {
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.08f, 0.20f, 0.08f, 0.8f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.35f, 0.0f, 0.9f));
+                }
                 ImGui::Button("##bb", ImVec2(42, 42));
+                if (isHolding) ImGui::PopStyleColor(2);
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && isHolding) {
+                    inventoryScreen.dropIntoBankSlot(gameHandler, static_cast<uint8_t>(67 + bagIdx), static_cast<uint8_t>(s));
+                }
             } else {
                 ImVec4 qc = InventoryScreen::getQualityColor(slot.item.quality);
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(qc.x * 0.3f, qc.y * 0.3f, qc.z * 0.3f, 0.8f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(qc.x * 0.5f, qc.y * 0.5f, qc.z * 0.5f, 0.9f));
                 std::string lbl = slot.item.stackCount > 1 ? std::to_string(slot.item.stackCount) : ("##bb" + std::to_string(bagIdx * 100 + s));
-                if (ImGui::Button(lbl.c_str(), ImVec2(42, 42))) {
-                    // Withdraw from bank bag: bank bag container indices start at 67
-                    gameHandler.withdrawItem(static_cast<uint8_t>(67 + bagIdx), static_cast<uint8_t>(s));
-                }
+                ImGui::Button(lbl.c_str(), ImVec2(42, 42));
                 ImGui::PopStyleColor(2);
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
+                    if (isHolding) {
+                        inventoryScreen.dropIntoBankSlot(gameHandler, static_cast<uint8_t>(67 + bagIdx), static_cast<uint8_t>(s));
+                    } else {
+                        gameHandler.withdrawItem(static_cast<uint8_t>(67 + bagIdx), static_cast<uint8_t>(s));
+                    }
+                }
                 if (ImGui::IsItemHovered()) {
                     ImGui::BeginTooltip();
                     ImGui::TextColored(qc, "%s", slot.item.name.c_str());

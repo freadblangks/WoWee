@@ -8052,8 +8052,8 @@ void GameScreen::renderAuctionHouseWindow(game::GameHandler& gameHandler) {
 
         auto doSearch = [&](uint32_t offset) {
             auctionBrowseOffset_ = offset;
-            auctionLevelMin_ = std::clamp(auctionLevelMin_, 0, 80);
-            auctionLevelMax_ = std::clamp(auctionLevelMax_, 0, 80);
+            if (auctionLevelMin_ < 0) auctionLevelMin_ = 0;
+            if (auctionLevelMax_ < 0) auctionLevelMax_ = 0;
             uint32_t q = auctionQuality_ > 0 ? static_cast<uint32_t>(auctionQuality_ - 1) : 0xFFFFFFFF;
             gameHandler.auctionSearch(auctionSearchName_,
                 static_cast<uint8_t>(auctionLevelMin_),

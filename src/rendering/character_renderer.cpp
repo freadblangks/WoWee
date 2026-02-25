@@ -812,10 +812,10 @@ VkTexture* CharacterRenderer::compositeTextures(const std::vector<std::string>& 
         }
     }
 
-    // Debug: dump composite to /tmp for visual inspection
+    // Debug: dump composite to temp dir for visual inspection
     {
-        std::string dumpPath = "/tmp/wowee_composite_debug_" +
-            std::to_string(width) + "x" + std::to_string(height) + ".raw";
+        std::string dumpPath = (std::filesystem::temp_directory_path() / ("wowee_composite_debug_" +
+            std::to_string(width) + "x" + std::to_string(height) + ".raw")).string();
         std::ofstream dump(dumpPath, std::ios::binary);
         if (dump) {
             dump.write(reinterpret_cast<const char*>(composite.data()),

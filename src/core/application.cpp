@@ -578,25 +578,100 @@ void Application::reloadExpansionData() {
 
 void Application::logoutToLogin() {
     LOG_INFO("Logout requested");
+
+    // Disconnect TransportManager from WMORenderer before tearing down
+    if (gameHandler && gameHandler->getTransportManager()) {
+        gameHandler->getTransportManager()->setWMORenderer(nullptr);
+    }
+
     if (gameHandler) {
         gameHandler->disconnect();
     }
+
+    // --- Per-session flags ---
     npcsSpawned = false;
     playerCharacterSpawned = false;
     weaponsSheathed_ = false;
     wasAutoAttacking_ = false;
     loadedMapId_ = 0xFFFFFFFF;
+    lastTaxiFlight_ = false;
+    taxiLandingClampTimer_ = 0.0f;
+    worldEntryMovementGraceTimer_ = 0.0f;
+    facingSendCooldown_ = 0.0f;
+    lastSentCanonicalYaw_ = 1000.0f;
+    taxiStreamCooldown_ = 0.0f;
+    idleYawned_ = false;
+
+    // --- Charge state ---
+    chargeActive_ = false;
+    chargeTimer_ = 0.0f;
+    chargeDuration_ = 0.0f;
+    chargeTargetGuid_ = 0;
+
+    // --- Player identity ---
+    spawnedPlayerGuid_ = 0;
+    spawnedAppearanceBytes_ = 0;
+    spawnedFacialFeatures_ = 0;
+
+    // --- Mount state ---
+    mountInstanceId_ = 0;
+    mountModelId_ = 0;
+    pendingMountDisplayId_ = 0;
+
+    // --- Creature instance tracking ---
+    creatureInstances_.clear();
+    creatureModelIds_.clear();
+    creatureRenderPosCache_.clear();
+    creatureWeaponsAttached_.clear();
+    creatureWeaponAttachAttempts_.clear();
+    deadCreatureGuids_.clear();
     nonRenderableCreatureDisplayIds_.clear();
+    creaturePermanentFailureGuids_.clear();
+
+    // --- Creature spawn queues ---
+    pendingCreatureSpawns_.clear();
+    pendingCreatureSpawnGuids_.clear();
+    creatureSpawnRetryCounts_.clear();
+
+    // --- Player instance tracking ---
+    playerInstances_.clear();
+    onlinePlayerAppearance_.clear();
+    pendingOnlinePlayerEquipment_.clear();
+    deferredEquipmentQueue_.clear();
+    pendingPlayerSpawns_.clear();
+    pendingPlayerSpawnGuids_.clear();
+
+    // --- GameObject instance tracking ---
+    gameObjectInstances_.clear();
+    pendingGameObjectSpawns_.clear();
+    pendingTransportMoves_.clear();
+    pendingTransportDoodadBatches_.clear();
+
     world.reset();
+
     if (renderer) {
         // Remove old player model so it doesn't persist into next session
         if (auto* charRenderer = renderer->getCharacterRenderer()) {
             charRenderer->removeInstance(1);
         }
+        // Clear all world geometry renderers
+        if (auto* wmo = renderer->getWMORenderer()) {
+            wmo->clearInstances();
+        }
+        if (auto* m2 = renderer->getM2Renderer()) {
+            m2->clear();
+        }
+        // TerrainManager will be re-initialized on next world entry
+        if (auto* questMarkers = renderer->getQuestMarkerRenderer()) {
+            questMarkers->clear();
+        }
+        renderer->clearMount();
+        renderer->setCharacterFollow(0);
         if (auto* music = renderer->getMusicManager()) {
             music->stopMusic(0.0f);
         }
     }
+
     // Clear stale realm/character selection so switching servers starts fresh
     if (uiManager) {
         uiManager->getRealmScreen().reset();

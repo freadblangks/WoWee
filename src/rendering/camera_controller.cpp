@@ -939,12 +939,23 @@ void CameraController::update(float deltaTime) {
                     noGroundTimer_ += physicsDeltaTime;
 
                     float dropFromLastGround = lastGroundZ - targetPos.z;
-                    bool seamSizedGap = dropFromLastGround <= (nearWmoSpace ? 1.0f : 0.35f);
+                    bool seamSizedGap = dropFromLastGround <= (nearWmoSpace ? 2.5f : 0.35f);
                     if (noGroundTimer_ < NO_GROUND_GRACE && seamSizedGap) {
-                        // Micro-gap grace only: keep continuity for tiny seam misses,
-                        // but never convert air into persistent ground.
-                        float maxSlip = nearWmoSpace ? 0.25f : 0.10f;
+                        // Near WMO floors, prefer continuity over falling on transient
+                        // floor-query misses (stairs/planks/portal seams).
+                        float maxSlip = nearWmoSpace ? 1.0f : 0.10f;
                         targetPos.z = std::max(targetPos.z, lastGroundZ - maxSlip);
+                        if (nearWmoSpace && verticalVelocity < -2.0f) {
+                            verticalVelocity = -2.0f;
+                        }
+                        grounded = false;
+                    } else if (nearWmoSpace && noGroundTimer_ < 1.0f && dropFromLastGround <= 3.0f) {
+                        // Extended WMO rescue window: hold close to last valid floor so we
+                        // do not tunnel through walkable geometry during short hitches.
+                        targetPos.z = std::max(targetPos.z, lastGroundZ - 0.35f);
+                        if (verticalVelocity < -1.5f) {
+                            verticalVelocity = -1.5f;
+                        }
                         grounded = false;
                     } else {
                         grounded = false;

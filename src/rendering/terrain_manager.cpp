@@ -705,7 +705,15 @@ bool TerrainManager::advanceFinalization(FinalizingTile& ft) {
         // Load water immediately after terrain (same frame) — water is now
         // deduplicated to ~1-2 merged surfaces per tile, so this is fast.
         if (waterRenderer) {
+            size_t beforeSurfaces = waterRenderer->getSurfaceCount();
             waterRenderer->loadFromTerrain(pending->terrain, true, x, y);
+            size_t afterSurfaces = waterRenderer->getSurfaceCount();
+            if (afterSurfaces > beforeSurfaces) {
+                LOG_INFO("Water: tile [", x, ",", y, "] added ", afterSurfaces - beforeSurfaces,
+                         " surfaces (total: ", afterSurfaces, ")");
+            }
+        } else {
+            LOG_WARNING("Water: waterRenderer is null during tile [", x, ",", y, "] finalization!");
         }
 
         // Ensure M2 renderer has asset manager

@@ -172,6 +172,7 @@ private:
     VkImageView sceneDepthView = VK_NULL_HANDLE;
     VkExtent2D sceneHistoryExtent = {0, 0};
     bool sceneHistoryReady = false;
+    mutable uint32_t renderDiagCounter_ = 0;
 
     // Planar reflection resources
     static constexpr uint32_t REFLECTION_WIDTH = 512;

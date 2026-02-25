@@ -76,6 +76,7 @@ bool WaterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLay
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
     poolInfo.maxSets = MAX_WATER_SETS;
     poolInfo.poolSizeCount = 1;
     poolInfo.pPoolSizes = &poolSize;
@@ -541,6 +542,8 @@ void WaterRenderer::updateMaterialUBO(WaterSurface& surface) {
         write.pBufferInfo = &bufInfo;
 
         vkUpdateDescriptorSets(vkCtx->getDevice(), 1, &write, 0, nullptr);
+    } else {
+        LOG_WARNING("Water: failed to allocate material descriptor set (pool exhaustion?)");
     }
 }
 
@@ -802,8 +805,10 @@ void WaterRenderer::loadFromTerrain(const pipeline::ADTTerrain& terrain, bool ap
         totalSurfaces++;
     }
 
-    LOG_DEBUG("Water: Loaded ", totalSurfaces, " surfaces from tile [", tileX, ",", tileY,
-              "] (", mergeGroups.size(), " groups), total surfaces: ", surfaces.size());
+    if (totalSurfaces > 0) {
+        LOG_INFO("Water: Loaded ", totalSurfaces, " surfaces from tile [", tileX, ",", tileY,
+                 "] (", mergeGroups.size(), " groups), total surfaces: ", surfaces.size());
+    }
 }
 
 void WaterRenderer::removeTile(int tileX, int tileY) {
@@ -936,8 +941,21 @@ void WaterRenderer::clear() {
 void WaterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                             const Camera& /*camera*/, float /*time*/, bool use1x) {
     VkPipeline pipeline = (use1x && water1xPipeline) ? water1xPipeline : waterPipeline;
-    if (!renderingEnabled || surfaces.empty() || !pipeline) return;
-    if (!sceneSet) return;
+    if (!renderingEnabled || surfaces.empty() || !pipeline) {
+        if (renderDiagCounter_++ % 300 == 0 && !surfaces.empty()) {
+            LOG_WARNING("Water: render skipped — enabled=", renderingEnabled,
+                        " surfaces=", surfaces.size(),
+                        " pipeline=", (pipeline ? "ok" : "null"),
+                        " use1x=", use1x);
+        }
+        return;
+    }
+    if (!sceneSet) {
+        if (renderDiagCounter_++ % 300 == 0) {
+            LOG_WARNING("Water: render skipped — sceneSet is null, surfaces=", surfaces.size());
+        }
+        return;
+    }
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
@@ -1250,6 +1268,9 @@ void WaterRenderer::destroyWaterMesh(WaterSurface& surface) {
         AllocatedBuffer ab{}; ab.buffer = surface.materialUBO; ab.allocation = surface.materialAlloc;
         destroyBuffer(allocator, ab);
         surface.materialUBO = VK_NULL_HANDLE;
+    }
+    if (surface.materialSet && materialDescPool) {
+        vkFreeDescriptorSets(vkCtx->getDevice(), materialDescPool, 1, &surface.materialSet);
     }
     surface.materialSet = VK_NULL_HANDLE;
 }

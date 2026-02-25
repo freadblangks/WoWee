@@ -661,7 +661,10 @@ void Application::logoutToLogin() {
         if (auto* m2 = renderer->getM2Renderer()) {
             m2->clear();
         }
-        // TerrainManager will be re-initialized on next world entry
+        // Unload all terrain tiles + water surfaces so next world entry starts fresh
+        if (auto* terrain = renderer->getTerrainManager()) {
+            terrain->unloadAll();
+        }
         if (auto* questMarkers = renderer->getQuestMarkerRenderer()) {
             questMarkers->clear();
         }

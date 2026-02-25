@@ -269,9 +269,11 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
         return nullptr;
     }
 
-    // Parse ADT
-    pipeline::ADTTerrain terrain = pipeline::ADTLoader::load(adtData);
-    if (!terrain.isLoaded()) {
+    // Parse ADT — allocate on heap to avoid stack overflow on macOS
+    // (ADTTerrain contains std::array<MapChunk,256> ≈ 280 KB; macOS worker
+    //  threads default to 512 KB stack, so two on-stack copies would overflow)
+    auto terrainPtr = std::make_unique<pipeline::ADTTerrain>(pipeline::ADTLoader::load(adtData));
+    if (!terrainPtr->isLoaded()) {
         LOG_ERROR("Failed to parse ADT terrain: ", adtPath);
         return nullptr;
     }
@@ -282,47 +284,47 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
                           std::to_string(coord.x) + "_" + std::to_string(coord.y) + "_obj0.adt";
     auto objData = assetManager->readFile(objPath);
     if (!objData.empty()) {
-        pipeline::ADTTerrain objTerrain = pipeline::ADTLoader::load(objData);
-        if (objTerrain.isLoaded()) {
-            const uint32_t doodadNameBase = static_cast<uint32_t>(terrain.doodadNames.size());
-            const uint32_t wmoNameBase = static_cast<uint32_t>(terrain.wmoNames.size());
+        auto objTerrain = std::make_unique<pipeline::ADTTerrain>(pipeline::ADTLoader::load(objData));
+        if (objTerrain->isLoaded()) {
+            const uint32_t doodadNameBase = static_cast<uint32_t>(terrainPtr->doodadNames.size());
+            const uint32_t wmoNameBase = static_cast<uint32_t>(terrainPtr->wmoNames.size());
 
-            terrain.doodadNames.insert(terrain.doodadNames.end(),
-                                       objTerrain.doodadNames.begin(), objTerrain.doodadNames.end());
-            terrain.wmoNames.insert(terrain.wmoNames.end(),
-                                    objTerrain.wmoNames.begin(), objTerrain.wmoNames.end());
+            terrainPtr->doodadNames.insert(terrainPtr->doodadNames.end(),
+                                       objTerrain->doodadNames.begin(), objTerrain->doodadNames.end());
+            terrainPtr->wmoNames.insert(terrainPtr->wmoNames.end(),
+                                    objTerrain->wmoNames.begin(), objTerrain->wmoNames.end());
 
             std::unordered_set<uint32_t> existingDoodadUniqueIds;
-            existingDoodadUniqueIds.reserve(terrain.doodadPlacements.size());
-            for (const auto& p : terrain.doodadPlacements) {
+            existingDoodadUniqueIds.reserve(terrainPtr->doodadPlacements.size());
+            for (const auto& p : terrainPtr->doodadPlacements) {
                 if (p.uniqueId != 0) existingDoodadUniqueIds.insert(p.uniqueId);
             }
 
             size_t mergedDoodads = 0;
-            for (auto placement : objTerrain.doodadPlacements) {
-                if (placement.nameId >= objTerrain.doodadNames.size()) continue;
+            for (auto placement : objTerrain->doodadPlacements) {
+                if (placement.nameId >= objTerrain->doodadNames.size()) continue;
                 placement.nameId += doodadNameBase;
                 if (placement.uniqueId != 0 && !existingDoodadUniqueIds.insert(placement.uniqueId).second) {
                     continue;
                 }
-                terrain.doodadPlacements.push_back(placement);
+                terrainPtr->doodadPlacements.push_back(placement);
                 mergedDoodads++;
             }
 
             std::unordered_set<uint32_t> existingWmoUniqueIds;
-            existingWmoUniqueIds.reserve(terrain.wmoPlacements.size());
-            for (const auto& p : terrain.wmoPlacements) {
+            existingWmoUniqueIds.reserve(terrainPtr->wmoPlacements.size());
+            for (const auto& p : terrainPtr->wmoPlacements) {
                 if (p.uniqueId != 0) existingWmoUniqueIds.insert(p.uniqueId);
             }
 
             size_t mergedWmos = 0;
-            for (auto placement : objTerrain.wmoPlacements) {
-                if (placement.nameId >= objTerrain.wmoNames.size()) continue;
+            for (auto placement : objTerrain->wmoPlacements) {
+                if (placement.nameId >= objTerrain->wmoNames.size()) continue;
                 placement.nameId += wmoNameBase;
                 if (placement.uniqueId != 0 && !existingWmoUniqueIds.insert(placement.uniqueId).second) {
                     continue;
                 }
-                terrain.wmoPlacements.push_back(placement);
+                terrainPtr->wmoPlacements.push_back(placement);
                 mergedWmos++;
             }
 
@@ -334,11 +336,11 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
     }
 
     // Set tile coordinates so mesh knows where to position this tile in world
-    terrain.coord.x = x;
-    terrain.coord.y = y;
+    terrainPtr->coord.x = x;
+    terrainPtr->coord.y = y;
 
     // Generate mesh
-    pipeline::TerrainMesh mesh = pipeline::TerrainMeshGenerator::generate(terrain);
+    pipeline::TerrainMesh mesh = pipeline::TerrainMeshGenerator::generate(*terrainPtr);
     if (mesh.validChunkCount == 0) {
         LOG_ERROR("Failed to generate terrain mesh: ", adtPath);
         return nullptr;
@@ -346,7 +348,7 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
 
     auto pending = std::make_shared<PendingTile>();
     pending->coord = coord;
-    pending->terrain = std::move(terrain);
+    pending->terrain = std::move(*terrainPtr);
     pending->mesh = std::move(mesh);
 
     std::unordered_set<uint32_t> preparedModelIds;

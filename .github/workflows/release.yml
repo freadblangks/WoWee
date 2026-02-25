@@ -54,7 +54,7 @@ jobs:
             libavutil-dev \
             libunicorn-dev \
             libx11-dev
-          sudo apt-get install -y libstormlib-dev || true
+          sudo apt-get install -y libstorm-dev || true
 
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -250,8 +250,18 @@ jobs:
       - name: Install optional packages
         shell: msys2 {0}
         run: |
-          pacman -S --noconfirm --needed ${{ matrix.prefix }}-stormlib || true
           pacman -S --noconfirm --needed zip
+
+      - name: Build StormLib from source
+        shell: msys2 {0}
+        run: |
+          git clone --depth 1 https://github.com/ladislav-zezula/StormLib.git /tmp/StormLib
+          cmake -S /tmp/StormLib -B /tmp/StormLib/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$MINGW_PREFIX" \
+            -DBUILD_SHARED_LIBS=OFF
+          cmake --build /tmp/StormLib/build --parallel $(nproc)
+          cmake --install /tmp/StormLib/build
 
       - name: Configure
         shell: msys2 {0}

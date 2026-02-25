@@ -3512,16 +3512,19 @@ void GameHandler::handleWardenData(network::Packet& packet) {
     // Decrypt the payload
     std::vector<uint8_t> decrypted = wardenCrypto_->decrypt(data);
 
-    // Log decrypted data
-    {
+    // Avoid expensive hex formatting when DEBUG logs are disabled.
+    if (core::Logger::getInstance().shouldLog(core::LogLevel::DEBUG)) {
         std::string hex;
         size_t logSize = std::min(decrypted.size(), size_t(256));
         hex.reserve(logSize * 3);
         for (size_t i = 0; i < logSize; ++i) {
-            char b[4]; snprintf(b, sizeof(b), "%02x ", decrypted[i]); hex += b;
+            char b[4];
+            snprintf(b, sizeof(b), "%02x ", decrypted[i]);
+            hex += b;
         }
-        if (decrypted.size() > 64)
+        if (decrypted.size() > 64) {
             hex += "... (" + std::to_string(decrypted.size() - 64) + " more)";
+        }
         LOG_DEBUG("Warden: Decrypted (", decrypted.size(), " bytes): ", hex);
     }
 

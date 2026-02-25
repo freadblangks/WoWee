@@ -121,6 +121,8 @@ private:
     bool musicInitAttempted = false;
     bool musicPlaying = false;
     bool missingIntroTracksLogged_ = false;
+    bool introTracksScanned_ = false;
+    std::vector<std::string> introTracks_;
     bool loginMusicVolumeAdjusted_ = false;
     int savedMusicVolume_ = 30;
 };

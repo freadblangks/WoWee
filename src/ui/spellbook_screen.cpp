@@ -156,9 +156,18 @@ void SpellbookScreen::loadSkillLineDBCs(pipeline::AssetManager* assetManager) {
 void SpellbookScreen::categorizeSpells(const std::unordered_set<uint32_t>& knownSpells) {
     spellTabs.clear();
 
-    static constexpr uint32_t SKILLLINE_CATEGORY_CLASS = 7;
+    // SkillLine.dbc category IDs
+    static constexpr uint32_t CAT_CLASS       = 7;   // Class abilities (spec trees)
+    static constexpr uint32_t CAT_PROFESSION  = 11;  // Primary professions
+    static constexpr uint32_t CAT_SECONDARY   = 9;   // Secondary professions (Cooking, First Aid, Fishing, Riding)
 
-    std::map<uint32_t, std::vector<const SpellInfo*>> specialtySpells;
+    // Riding skill line ID — mount spells are linked here via SkillLineAbility
+    static constexpr uint32_t SKILLLINE_RIDING = 762;
+
+    // Buckets
+    std::map<uint32_t, std::vector<const SpellInfo*>> specSpells;       // skillLineId -> spells (class specs)
+    std::map<uint32_t, std::vector<const SpellInfo*>> profSpells;       // skillLineId -> spells (professions)
+    std::vector<const SpellInfo*> mountSpells;
     std::vector<const SpellInfo*> generalSpells;
 
     for (uint32_t spellId : knownSpells) {
@@ -170,10 +179,34 @@ void SpellbookScreen::categorizeSpells(const std::unordered_set<uint32_t>& known
         auto slIt = spellToSkillLine.find(spellId);
         if (slIt != spellToSkillLine.end()) {
             uint32_t skillLineId = slIt->second;
-            auto catIt = skillLineCategories.find(skillLineId);
-            if (catIt != skillLineCategories.end() && catIt->second == SKILLLINE_CATEGORY_CLASS) {
-                specialtySpells[skillLineId].push_back(info);
+
+            // Mounts: spells linked to Riding skill line (762)
+            if (skillLineId == SKILLLINE_RIDING) {
+                mountSpells.push_back(info);
                 continue;
+            }
+
+            auto catIt = skillLineCategories.find(skillLineId);
+            if (catIt != skillLineCategories.end()) {
+                uint32_t cat = catIt->second;
+
+                // Class spec abilities
+                if (cat == CAT_CLASS) {
+                    specSpells[skillLineId].push_back(info);
+                    continue;
+                }
+
+                // Primary professions (Alchemy, Blacksmithing, etc.)
+                if (cat == CAT_PROFESSION) {
+                    profSpells[skillLineId].push_back(info);
+                    continue;
+                }
+
+                // Secondary professions (Cooking, First Aid, Fishing — but NOT Riding, already handled)
+                if (cat == CAT_SECONDARY) {
+                    profSpells[skillLineId].push_back(info);
+                    continue;
+                }
             }
         }
 
@@ -182,23 +215,48 @@ void SpellbookScreen::categorizeSpells(const std::unordered_set<uint32_t>& known
 
     auto byName = [](const SpellInfo* a, const SpellInfo* b) { return a->name < b->name; };
 
-    std::vector<std::pair<std::string, std::vector<const SpellInfo*>>> named;
-    for (auto& [skillLineId, spells] : specialtySpells) {
-        auto nameIt = skillLineNames.find(skillLineId);
-        std::string tabName = (nameIt != skillLineNames.end()) ? nameIt->second : "Specialty";
-        std::sort(spells.begin(), spells.end(), byName);
-        named.push_back({std::move(tabName), std::move(spells)});
+    // 1. Class spec tabs (sorted alphabetically by spec name)
+    {
+        std::vector<std::pair<std::string, std::vector<const SpellInfo*>>> named;
+        for (auto& [skillLineId, spells] : specSpells) {
+            auto nameIt = skillLineNames.find(skillLineId);
+            std::string tabName = (nameIt != skillLineNames.end()) ? nameIt->second : "Spec";
+            std::sort(spells.begin(), spells.end(), byName);
+            named.push_back({std::move(tabName), std::move(spells)});
+        }
+        std::sort(named.begin(), named.end(),
+            [](const auto& a, const auto& b) { return a.first < b.first; });
+        for (auto& [name, spells] : named) {
+            spellTabs.push_back({std::move(name), std::move(spells)});
+        }
     }
-    std::sort(named.begin(), named.end(),
-        [](const auto& a, const auto& b) { return a.first < b.first; });
 
-    for (auto& [name, spells] : named) {
-        spellTabs.push_back({std::move(name), std::move(spells)});
-    }
-
+    // 2. General tab (everything not in a specific category)
     if (!generalSpells.empty()) {
         std::sort(generalSpells.begin(), generalSpells.end(), byName);
         spellTabs.push_back({"General", std::move(generalSpells)});
+    }
+
+    // 3. Professions tabs (primary + secondary, each skill line gets its own tab)
+    {
+        std::vector<std::pair<std::string, std::vector<const SpellInfo*>>> named;
+        for (auto& [skillLineId, spells] : profSpells) {
+            auto nameIt = skillLineNames.find(skillLineId);
+            std::string tabName = (nameIt != skillLineNames.end()) ? nameIt->second : "Profession";
+            std::sort(spells.begin(), spells.end(), byName);
+            named.push_back({std::move(tabName), std::move(spells)});
+        }
+        std::sort(named.begin(), named.end(),
+            [](const auto& a, const auto& b) { return a.first < b.first; });
+        for (auto& [name, spells] : named) {
+            spellTabs.push_back({std::move(name), std::move(spells)});
+        }
+    }
+
+    // 4. Mounts tab
+    if (!mountSpells.empty()) {
+        std::sort(mountSpells.begin(), mountSpells.end(), byName);
+        spellTabs.push_back({"Mounts", std::move(mountSpells)});
     }
 
     lastKnownSpellCount = knownSpells.size();

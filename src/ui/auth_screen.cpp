@@ -206,7 +206,8 @@ void AuthScreen::render(auth::AuthHandler& authHandler) {
             }
         }
     }
-    if (renderer) {
+    // Login screen music disabled
+    if (false && renderer) {
         auto* music = renderer->getMusicManager();
         if (music) {
             if (!loginMusicVolumeAdjusted_) {

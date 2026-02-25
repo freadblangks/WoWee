@@ -1402,13 +1402,20 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
             }
         }
 
-        // Right-click: vendor sell (if vendor mode) or auto-equip/use
+        // Right-click: bank deposit (if bank open), vendor sell (if vendor mode), or auto-equip/use
         if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && !holdingItem && gameHandler_) {
             LOG_INFO("Right-click slot: kind=", (int)kind,
                      " backpackIndex=", backpackIndex,
                      " bagIndex=", bagIndex, " bagSlotIndex=", bagSlotIndex,
-                     " vendorMode=", vendorMode_);
-            if (vendorMode_ && kind == SlotKind::BACKPACK && backpackIndex >= 0) {
+                     " vendorMode=", vendorMode_,
+                     " bankOpen=", gameHandler_->isBankOpen());
+            if (gameHandler_->isBankOpen() && kind == SlotKind::BACKPACK && backpackIndex >= 0) {
+                // Deposit backpack item into bank: bag=0xFF, slot=23+index
+                gameHandler_->depositItem(0xFF, static_cast<uint8_t>(23 + backpackIndex));
+            } else if (gameHandler_->isBankOpen() && kind == SlotKind::BACKPACK && isBagSlot) {
+                // Deposit bag item into bank: bag=19+bagIndex, slot=slotIndex
+                gameHandler_->depositItem(static_cast<uint8_t>(19 + bagIndex), static_cast<uint8_t>(bagSlotIndex));
+            } else if (vendorMode_ && kind == SlotKind::BACKPACK && backpackIndex >= 0) {
                 gameHandler_->sellItemBySlot(backpackIndex);
             } else if (vendorMode_ && kind == SlotKind::BACKPACK && isBagSlot) {
                 gameHandler_->sellItemInBag(bagIndex, bagSlotIndex);

@@ -263,7 +263,10 @@ void AuthScreen::render(auth::AuthHandler& authHandler) {
                     LOG_INFO("AuthScreen: Playing login intro track: ", path);
                     musicPlaying = music->isPlaying();
                 } else {
-                    LOG_WARNING("AuthScreen: No login intro tracks found in assets/");
+                    if (!missingIntroTracksLogged_) {
+                        LOG_WARNING("AuthScreen: No login intro tracks found in assets/");
+                        missingIntroTracksLogged_ = true;
+                    }
                 }
             }
         }

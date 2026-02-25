@@ -122,12 +122,9 @@ network::Packet LogonChallengePacket::build(const std::string& account, const Cl
             packet.writeUInt8(localIp[1]);
             packet.writeUInt8(localIp[2]);
             packet.writeUInt8(localIp[3]);
-            LOG_DEBUG("LOGON_CHALLENGE client IP=", static_cast<int>(localIp[0]), ".",
-                      static_cast<int>(localIp[1]), ".", static_cast<int>(localIp[2]), ".",
-                      static_cast<int>(localIp[3]));
         } else {
             packet.writeUInt32(0);
-            LOG_WARNING("LOGON_CHALLENGE client IP detection failed; falling back to 0.0.0.0");
+            LOG_DEBUG("LOGON_CHALLENGE client IP detection failed; using 0.0.0.0 fallback");
         }
     }
 

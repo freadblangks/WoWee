@@ -65,6 +65,13 @@ public:
     }
 
 private:
+    static constexpr int kDefaultMinLevelValue =
+#if defined(NDEBUG) || defined(WOWEE_RELEASE_LOGGING)
+        static_cast<int>(LogLevel::WARNING);
+#else
+        static_cast<int>(LogLevel::INFO);
+#endif
+
     Logger() = default;
     ~Logger() = default;
     Logger(const Logger&) = delete;
@@ -77,13 +84,21 @@ private:
         return oss.str();
     }
 
-    std::atomic<int> minLevel_{static_cast<int>(LogLevel::INFO)};
+    std::atomic<int> minLevel_{kDefaultMinLevelValue};
     std::mutex mutex;
     std::ofstream fileStream;
     bool fileReady = false;
     bool echoToStdout_ = true;
     std::chrono::steady_clock::time_point lastFlushTime_{};
     uint32_t flushIntervalMs_ = 250;
+    bool dedupeEnabled_ = true;
+    uint32_t dedupeWindowMs_ = 250;
+    LogLevel lastLevel_ = LogLevel::DEBUG;
+    std::string lastMessage_;
+    std::chrono::steady_clock::time_point lastMessageTime_{};
+    uint64_t suppressedCount_ = 0;
+    void emitLineLocked(LogLevel level, const std::string& message);
+    void flushSuppressedLocked();
     void ensureFile();
 };
 

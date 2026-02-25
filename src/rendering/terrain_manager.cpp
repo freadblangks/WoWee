@@ -981,14 +981,13 @@ void TerrainManager::processReadyTiles() {
         }
     }
 
-    // Drive incremental finalization within time budget
+    // Finalize one complete tile per iteration, check budget between tiles.
+    // Each tile runs through all phases before moving to the next — this
+    // avoids subtle state issues from spreading GPU uploads across frames.
     while (!finalizingTiles_.empty()) {
         auto& ft = finalizingTiles_.front();
-        bool done = advanceFinalization(ft);
-
-        if (done) {
-            finalizingTiles_.pop_front();
-        }
+        while (!advanceFinalization(ft)) {}
+        finalizingTiles_.pop_front();
 
         auto now = std::chrono::high_resolution_clock::now();
         float elapsedMs = std::chrono::duration<float, std::milli>(now - startTime).count();

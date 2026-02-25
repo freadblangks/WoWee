@@ -856,12 +856,28 @@ public:
     int getSelectedMailIndex() const { return selectedMailIndex_; }
     void setSelectedMailIndex(int idx) { selectedMailIndex_ = idx; }
     bool isMailComposeOpen() const { return showMailCompose_; }
-    void openMailCompose() { showMailCompose_ = true; }
-    void closeMailCompose() { showMailCompose_ = false; }
+    void openMailCompose() { showMailCompose_ = true; clearMailAttachments(); }
+    void closeMailCompose() { showMailCompose_ = false; clearMailAttachments(); }
     bool hasNewMail() const { return hasNewMail_; }
     void closeMailbox();
     void sendMail(const std::string& recipient, const std::string& subject,
                   const std::string& body, uint32_t money, uint32_t cod = 0);
+
+    // Mail attachments (max 12 per WotLK)
+    static constexpr int MAIL_MAX_ATTACHMENTS = 12;
+    struct MailAttachSlot {
+        uint64_t itemGuid = 0;
+        game::ItemDef item;
+        uint8_t srcBag = 0xFF;   // source container for return
+        uint8_t srcSlot = 0;
+        bool occupied() const { return itemGuid != 0; }
+    };
+    bool attachItemFromBackpack(int backpackIndex);
+    bool attachItemFromBag(int bagIndex, int slotIndex);
+    bool detachMailAttachment(int attachIndex);
+    void clearMailAttachments();
+    const std::array<MailAttachSlot, 12>& getMailAttachments() const { return mailAttachments_; }
+    int getMailAttachmentCount() const;
     void mailTakeMoney(uint32_t mailId);
     void mailTakeItem(uint32_t mailId, uint32_t itemIndex);
     void mailDelete(uint32_t mailId);
@@ -1568,6 +1584,7 @@ private:
     int selectedMailIndex_ = -1;
     bool showMailCompose_ = false;
     bool hasNewMail_ = false;
+    std::array<MailAttachSlot, MAIL_MAX_ATTACHMENTS> mailAttachments_{};
 
     // Bank
     bool bankOpen_ = false;

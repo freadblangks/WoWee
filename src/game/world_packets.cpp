@@ -3939,7 +3939,8 @@ network::Packet GetMailListPacket::build(uint64_t mailboxGuid) {
 
 network::Packet SendMailPacket::build(uint64_t mailboxGuid, const std::string& recipient,
                                       const std::string& subject, const std::string& body,
-                                      uint32_t money, uint32_t cod) {
+                                      uint32_t money, uint32_t cod,
+                                      const std::vector<uint64_t>& itemGuids) {
     // WotLK 3.3.5a format
     network::Packet packet(wireOpcode(Opcode::CMSG_SEND_MAIL));
     packet.writeUInt64(mailboxGuid);
@@ -3948,7 +3949,12 @@ network::Packet SendMailPacket::build(uint64_t mailboxGuid, const std::string& r
     packet.writeString(body);
     packet.writeUInt32(0);       // stationery
     packet.writeUInt32(0);       // unknown
-    packet.writeUInt8(0);        // attachment count (0 = no attachments)
+    uint8_t attachCount = static_cast<uint8_t>(itemGuids.size());
+    packet.writeUInt8(attachCount);
+    for (uint8_t i = 0; i < attachCount; ++i) {
+        packet.writeUInt8(i);            // attachment slot index
+        packet.writeUInt64(itemGuids[i]);
+    }
     packet.writeUInt32(money);
     packet.writeUInt32(cod);
     return packet;

@@ -1428,7 +1428,11 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
                      " bagIndex=", bagIndex, " bagSlotIndex=", bagSlotIndex,
                      " vendorMode=", vendorMode_,
                      " bankOpen=", gameHandler_->isBankOpen());
-            if (gameHandler_->isBankOpen() && kind == SlotKind::BACKPACK && backpackIndex >= 0) {
+            if (gameHandler_->isMailComposeOpen() && kind == SlotKind::BACKPACK && backpackIndex >= 0) {
+                gameHandler_->attachItemFromBackpack(backpackIndex);
+            } else if (gameHandler_->isMailComposeOpen() && kind == SlotKind::BACKPACK && isBagSlot) {
+                gameHandler_->attachItemFromBag(bagIndex, bagSlotIndex);
+            } else if (gameHandler_->isBankOpen() && kind == SlotKind::BACKPACK && backpackIndex >= 0) {
                 gameHandler_->depositItem(0xFF, static_cast<uint8_t>(23 + backpackIndex));
             } else if (gameHandler_->isBankOpen() && kind == SlotKind::BACKPACK && isBagSlot) {
                 gameHandler_->depositItem(static_cast<uint8_t>(19 + bagIndex), static_cast<uint8_t>(bagSlotIndex));

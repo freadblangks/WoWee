@@ -2290,7 +2290,8 @@ class SendMailPacket {
 public:
     static network::Packet build(uint64_t mailboxGuid, const std::string& recipient,
                                  const std::string& subject, const std::string& body,
-                                 uint32_t money, uint32_t cod);
+                                 uint32_t money, uint32_t cod,
+                                 const std::vector<uint64_t>& itemGuids = {});
 };
 
 /** CMSG_MAIL_TAKE_MONEY packet builder */

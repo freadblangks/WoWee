@@ -728,7 +728,8 @@ network::Packet ClassicPacketParsers::buildSendMail(uint64_t mailboxGuid,
                                                      const std::string& recipient,
                                                      const std::string& subject,
                                                      const std::string& body,
-                                                     uint32_t money, uint32_t cod) {
+                                                     uint32_t money, uint32_t cod,
+                                                     const std::vector<uint64_t>& itemGuids) {
     network::Packet packet(wireOpcode(Opcode::CMSG_SEND_MAIL));
     packet.writeUInt64(mailboxGuid);
     packet.writeString(recipient);
@@ -736,7 +737,9 @@ network::Packet ClassicPacketParsers::buildSendMail(uint64_t mailboxGuid,
     packet.writeString(body);
     packet.writeUInt32(0);       // stationery
     packet.writeUInt32(0);       // unknown
-    packet.writeUInt64(0);       // item GUID (0 = no attachment, single item only in Vanilla)
+    // Vanilla supports only one item attachment (single uint64 GUID)
+    uint64_t singleItemGuid = itemGuids.empty() ? 0 : itemGuids[0];
+    packet.writeUInt64(singleItemGuid);
     packet.writeUInt32(money);
     packet.writeUInt32(cod);
     packet.writeUInt64(0);       // unk3 (clients > 1.9.4)

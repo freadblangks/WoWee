@@ -7384,8 +7384,8 @@ void GameScreen::renderMailComposeWindow(game::GameHandler& gameHandler) {
     float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
     float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
 
-    ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 175, screenH / 2 - 200), ImGuiCond_Appearing);
-    ImGui::SetNextWindowSize(ImVec2(380, 400), ImGuiCond_Appearing);
+    ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 190, screenH / 2 - 250), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(ImVec2(400, 500), ImGuiCond_Appearing);
 
     bool open = true;
     if (ImGui::Begin("Send Mail", &open)) {
@@ -7401,8 +7401,56 @@ void GameScreen::renderMailComposeWindow(game::GameHandler& gameHandler) {
 
         ImGui::Text("Body:");
         ImGui::InputTextMultiline("##MailBody", mailBodyBuffer_, sizeof(mailBodyBuffer_),
-                                   ImVec2(-1, 150));
+                                   ImVec2(-1, 120));
 
+        // Attachments section
+        int attachCount = gameHandler.getMailAttachmentCount();
+        ImGui::Text("Attachments (%d/12):", attachCount);
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Right-click items in bags to attach");
+
+        const auto& attachments = gameHandler.getMailAttachments();
+        // Show attachment slots in a grid (6 per row)
+        for (int i = 0; i < game::GameHandler::MAIL_MAX_ATTACHMENTS; ++i) {
+            if (i % 6 != 0) ImGui::SameLine();
+            ImGui::PushID(i + 5000);
+            const auto& att = attachments[i];
+            if (att.occupied()) {
+                // Show item with quality color border
+                ImVec4 qualColor = ui::InventoryScreen::getQualityColor(att.item.quality);
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(qualColor.x * 0.3f, qualColor.y * 0.3f, qualColor.z * 0.3f, 0.8f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(qualColor.x * 0.5f, qualColor.y * 0.5f, qualColor.z * 0.5f, 0.9f));
+
+                // Try to show icon
+                VkDescriptorSet icon = inventoryScreen.getItemIcon(att.item.displayInfoId);
+                bool clicked = false;
+                if (icon) {
+                    clicked = ImGui::ImageButton("##att", (ImTextureID)icon, ImVec2(30, 30));
+                } else {
+                    // Truncate name to fit
+                    std::string label = att.item.name.substr(0, 4);
+                    clicked = ImGui::Button(label.c_str(), ImVec2(36, 36));
+                }
+                ImGui::PopStyleColor(2);
+
+                if (clicked) {
+                    gameHandler.detachMailAttachment(i);
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::BeginTooltip();
+                    ImGui::TextColored(qualColor, "%s", att.item.name.c_str());
+                    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Click to remove");
+                    ImGui::EndTooltip();
+                }
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.15f, 0.15f, 0.5f));
+                ImGui::Button("##empty", ImVec2(36, 36));
+                ImGui::PopStyleColor();
+            }
+            ImGui::PopID();
+        }
+
+        ImGui::Spacing();
         ImGui::Text("Money:");
         ImGui::SameLine(60);
         ImGui::SetNextItemWidth(60);
@@ -7429,7 +7477,8 @@ void GameScreen::renderMailComposeWindow(game::GameHandler& gameHandler) {
                               static_cast<uint32_t>(mailComposeMoney_[1]) * 100 +
                               static_cast<uint32_t>(mailComposeMoney_[2]);
 
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Sending cost: 30c");
+        uint32_t sendCost = attachCount > 0 ? static_cast<uint32_t>(30 * attachCount) : 30u;
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Sending cost: %uc", sendCost);
 
         ImGui::Spacing();
         bool canSend = (strlen(mailRecipientBuffer_) > 0);

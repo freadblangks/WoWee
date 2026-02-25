@@ -657,9 +657,9 @@ private:
     bool wireframeMode = false;
     bool frustumCulling = true;
     bool portalCulling = false;  // Disabled by default - needs debugging
-    bool distanceCulling = false;  // Disabled - causes ground to disappear
-    float maxGroupDistance = 500.0f;
-    float maxGroupDistanceSq = 250000.0f;  // maxGroupDistance^2
+    bool distanceCulling = true;   // Enabled with active-group exemption to prevent floor disappearing
+    float maxGroupDistance = 800.0f;
+    float maxGroupDistanceSq = 640000.0f;  // maxGroupDistance^2
     uint32_t lastDrawCalls = 0;
     mutable uint32_t lastPortalCulledGroups = 0;
     mutable uint32_t lastDistanceCulledGroups = 0;

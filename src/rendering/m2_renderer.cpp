@@ -767,6 +767,38 @@ VkDescriptorSet M2Renderer::allocateBoneSet() {
     return set;
 }
 
+void M2Renderer::preallocateBoneBuffers(M2Instance& instance) {
+    if (!vkCtx_) return;
+    for (int fi = 0; fi < 2; fi++) {
+        if (instance.boneBuffer[fi]) continue; // already allocated
+        VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+        bci.size = 128 * sizeof(glm::mat4); // max 128 bones
+        bci.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        VmaAllocationCreateInfo aci{};
+        aci.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+        aci.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        VmaAllocationInfo allocInfo{};
+        vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci,
+                        &instance.boneBuffer[fi], &instance.boneAlloc[fi], &allocInfo);
+        instance.boneMapped[fi] = allocInfo.pMappedData;
+
+        instance.boneSet[fi] = allocateBoneSet();
+        if (instance.boneSet[fi]) {
+            VkDescriptorBufferInfo bufInfo{};
+            bufInfo.buffer = instance.boneBuffer[fi];
+            bufInfo.offset = 0;
+            bufInfo.range = bci.size;
+            VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            write.dstSet = instance.boneSet[fi];
+            write.dstBinding = 0;
+            write.descriptorCount = 1;
+            write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            write.pBufferInfo = &bufInfo;
+            vkUpdateDescriptorSets(vkCtx_->getDevice(), 1, &write, 0, nullptr);
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // M2 collision mesh: build spatial grid + classify triangles
 // ---------------------------------------------------------------------------
@@ -1615,6 +1647,11 @@ uint32_t M2Renderer::createInstance(uint32_t modelId, const glm::vec3& position,
         instance.variationTimer = 3000.0f + static_cast<float>(rand() % 8000);
     }
 
+    // Pre-allocate bone SSBOs so first render frame doesn't hitch
+    if (mdlRef.hasAnimation && !mdlRef.disableAnimation) {
+        preallocateBoneBuffers(instance);
+    }
+
     instances.push_back(instance);
     size_t idx = instances.size() - 1;
     instanceIndexById[instance.id] = idx;
@@ -1648,6 +1685,8 @@ uint32_t M2Renderer::createInstanceWithMatrix(uint32_t modelId, const glm::mat4&
         }
     }
 
+    const auto& mdlRef = models[modelId];
+
     M2Instance instance;
     instance.id = nextInstanceId++;
     instance.modelId = modelId;
@@ -1657,18 +1696,22 @@ uint32_t M2Renderer::createInstanceWithMatrix(uint32_t modelId, const glm::mat4&
     instance.modelMatrix = modelMatrix;
     instance.invModelMatrix = glm::inverse(modelMatrix);
     glm::vec3 localMin, localMax;
-    getTightCollisionBounds(models[modelId], localMin, localMax);
+    getTightCollisionBounds(mdlRef, localMin, localMax);
     transformAABB(instance.modelMatrix, localMin, localMax, instance.worldBoundsMin, instance.worldBoundsMax);
     // Initialize animation
-    const auto& mdl2 = models[modelId];
-    if (mdl2.hasAnimation && !mdl2.disableAnimation && !mdl2.sequences.empty()) {
+    if (mdlRef.hasAnimation && !mdlRef.disableAnimation && !mdlRef.sequences.empty()) {
         instance.currentSequenceIndex = 0;
         instance.idleSequenceIndex = 0;
-        instance.animDuration = static_cast<float>(mdl2.sequences[0].duration);
-        instance.animTime = static_cast<float>(rand() % std::max(1u, mdl2.sequences[0].duration));
+        instance.animDuration = static_cast<float>(mdlRef.sequences[0].duration);
+        instance.animTime = static_cast<float>(rand() % std::max(1u, mdlRef.sequences[0].duration));
         instance.variationTimer = 3000.0f + static_cast<float>(rand() % 8000);
     } else {
         instance.animTime = static_cast<float>(rand()) / RAND_MAX * 10000.0f;
+    }
+
+    // Pre-allocate bone SSBOs so first render frame doesn't hitch
+    if (mdlRef.hasAnimation && !mdlRef.disableAnimation) {
+        preallocateBoneBuffers(instance);
     }
 
     instances.push_back(instance);
@@ -1811,7 +1854,11 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
 
     // Cache camera state for frustum-culling bone computation
     cachedCamPos_ = cameraPos;
-    const float maxRenderDistance = (instances.size() > 2000) ? 800.0f : 2800.0f;
+    const size_t animInstCount = instances.size();
+    const float maxRenderDistance = (animInstCount > 3000) ? 600.0f
+                                 : (animInstCount > 2000) ? 800.0f
+                                 : (animInstCount > 1000) ? 1400.0f
+                                 :                          2800.0f;
     cachedMaxRenderDistSq_ = maxRenderDistance * maxRenderDistance;
 
     // Build frustum for culling bones
@@ -2081,8 +2128,12 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
 
     lastDrawCallCount = 0;
 
-    // Adaptive render distance: balanced for performance without excessive pop-in
-    const float maxRenderDistance = (instances.size() > 2000) ? 350.0f : 1000.0f;
+    // Adaptive render distance: tiered for performance without excessive pop-in
+    const size_t instCount = instances.size();
+    const float maxRenderDistance = (instCount > 3000) ? 250.0f
+                                 : (instCount > 2000) ? 400.0f
+                                 : (instCount > 1000) ? 600.0f
+                                 :                      1000.0f;
     const float maxRenderDistanceSq = maxRenderDistance * maxRenderDistance;
     const float fadeStartFraction = 0.75f;
     const glm::vec3 camPos = camera.getPosition();

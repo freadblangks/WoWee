@@ -226,7 +226,9 @@ bool TerrainManager::loadTile(int x, int y) {
         return false;
     }
 
-    finalizeTile(pending);
+    FinalizingTile ft;
+    ft.pending = std::move(pending);
+    while (!advanceFinalization(ft)) {}
     return true;
 }
 
@@ -648,176 +650,160 @@ void TerrainManager::logMissingAdtOnce(const std::string& adtPath) {
     }
 }
 
-void TerrainManager::finalizeTile(const std::shared_ptr<PendingTile>& pending) {
+bool TerrainManager::advanceFinalization(FinalizingTile& ft) {
+    auto& pending = ft.pending;
     int x = pending->coord.x;
     int y = pending->coord.y;
     TileCoord coord = pending->coord;
 
-    LOG_DEBUG("Finalizing tile [", x, ",", y, "] (GPU upload)");
+    switch (ft.phase) {
 
-    // Check if tile was already loaded (race condition guard) or failed
-    if (loadedTiles.find(coord) != loadedTiles.end()) {
-        return;
-    }
-    if (failedTiles.find(coord) != failedTiles.end()) {
-        return;
-    }
-
-    // Upload pre-loaded textures to the GL cache so loadTerrain avoids file I/O
-    if (!pending->preloadedTextures.empty()) {
-        terrainRenderer->uploadPreloadedTextures(pending->preloadedTextures);
-    }
-
-    // Upload terrain to GPU
-    if (!terrainRenderer->loadTerrain(pending->mesh, pending->terrain.textures, x, y)) {
-        LOG_ERROR("Failed to upload terrain to GPU for tile [", x, ",", y, "]");
-        failedTiles[coord] = true;
-        return;
-    }
-
-    // Load water
-    if (waterRenderer) {
-        waterRenderer->loadFromTerrain(pending->terrain, true, x, y);
-    }
-
-    // Register water surface ambient sound emitters
-    if (ambientSoundManager) {
-        // Scan ADT water data for water surfaces
-        int waterEmitterCount = 0;
-        for (size_t chunkIdx = 0; chunkIdx < pending->terrain.waterData.size(); chunkIdx++) {
-            const auto& chunkWater = pending->terrain.waterData[chunkIdx];
-            if (!chunkWater.hasWater()) continue;
-
-            // Calculate chunk position in world coordinates
-            int chunkX = chunkIdx % 16;
-            int chunkY = chunkIdx / 16;
-
-            // WoW coordinates: Each ADT tile is 533.33 units, each chunk is 533.33/16 = 33.333 units
-            // Tile origin in GL space
-            float tileOriginX = (32.0f - x) * 533.33333f;
-            float tileOriginY = (32.0f - y) * 533.33333f;
-
-            // Chunk center position
-            float chunkCenterX = tileOriginX + (chunkX + 0.5f) * 33.333333f;
-            float chunkCenterY = tileOriginY + (chunkY + 0.5f) * 33.333333f;
-
-            // Use first layer for height and type detection
-            if (!chunkWater.layers.empty()) {
-                const auto& layer = chunkWater.layers[0];
-                float waterHeight = layer.minHeight;
-
-                // Determine water type and register appropriate emitter
-                // liquidType: 0=water/lake, 1=ocean, 2=magma, 3=slime
-                if (layer.liquidType == 0) {
-                    // Lake/river water - add water surface emitter every 32 chunks to avoid spam
-                    if (chunkIdx % 32 == 0) {
-                        PendingTile::AmbientEmitter emitter;
-                        emitter.position = glm::vec3(chunkCenterX, chunkCenterY, waterHeight);
-                        emitter.type = 4;  // WATER_SURFACE
-                        pending->ambientEmitters.push_back(emitter);
-                        waterEmitterCount++;
-                    }
-                } else if (layer.liquidType == 1) {
-                    // Ocean - add ocean emitter every 64 chunks (oceans are very large)
-                    if (chunkIdx % 64 == 0) {
-                        PendingTile::AmbientEmitter emitter;
-                        emitter.position = glm::vec3(chunkCenterX, chunkCenterY, waterHeight);
-                        emitter.type = 4;  // WATER_SURFACE (could add separate OCEAN type later)
-                        pending->ambientEmitters.push_back(emitter);
-                        waterEmitterCount++;
-                    }
-                }
-                // Skip magma and slime for now (no ambient sounds for those)
+    case FinalizationPhase::TERRAIN: {
+        // Check if tile was already loaded or failed
+        if (loadedTiles.find(coord) != loadedTiles.end() || failedTiles.find(coord) != failedTiles.end()) {
+            {
+                std::lock_guard<std::mutex> lock(queueMutex);
+                pendingTiles.erase(coord);
             }
+            ft.phase = FinalizationPhase::DONE;
+            return true;
         }
-        if (waterEmitterCount > 0) {
+
+        LOG_DEBUG("Finalizing tile [", x, ",", y, "] (incremental)");
+
+        // Upload pre-loaded textures
+        if (!pending->preloadedTextures.empty()) {
+            terrainRenderer->uploadPreloadedTextures(pending->preloadedTextures);
         }
+
+        // Upload terrain mesh to GPU
+        if (!terrainRenderer->loadTerrain(pending->mesh, pending->terrain.textures, x, y)) {
+            LOG_ERROR("Failed to upload terrain to GPU for tile [", x, ",", y, "]");
+            failedTiles[coord] = true;
+            {
+                std::lock_guard<std::mutex> lock(queueMutex);
+                pendingTiles.erase(coord);
+            }
+            ft.phase = FinalizationPhase::DONE;
+            return true;
+        }
+
+        // Load water immediately after terrain (same frame) — water vertex positions
+        // depend on terrain chunk data and must be uploaded before the terrain renders
+        // without water, otherwise vertices appear at origin.
+        if (waterRenderer) {
+            waterRenderer->loadFromTerrain(pending->terrain, true, x, y);
+        }
+
+        // Ensure M2 renderer has asset manager
+        if (m2Renderer && assetManager) {
+            m2Renderer->initialize(nullptr, VK_NULL_HANDLE, assetManager);
+        }
+
+        ft.phase = FinalizationPhase::M2_MODELS;
+        return false;
     }
 
-    std::vector<uint32_t> m2InstanceIds;
-    std::vector<uint32_t> wmoInstanceIds;
-    std::vector<uint32_t> tileUniqueIds;
-    std::vector<uint32_t> tileWmoUniqueIds;
-
-    // Upload M2 models to GPU and create instances
-    if (m2Renderer && assetManager) {
-        // Always pass the latest asset manager. initialize() is idempotent and updates
-        // the pointer even when the renderer was initialized earlier without assets.
-        m2Renderer->initialize(nullptr, VK_NULL_HANDLE, assetManager);
-
-        // Upload M2 models immediately (batching was causing hangs)
-        // The 5ms time budget in processReadyTiles() limits the spike
-        std::unordered_set<uint32_t> uploadedModelIds;
-        for (auto& m2Ready : pending->m2Models) {
+    case FinalizationPhase::M2_MODELS: {
+        // Upload ONE M2 model per call
+        if (m2Renderer && ft.m2ModelIndex < pending->m2Models.size()) {
+            auto& m2Ready = pending->m2Models[ft.m2ModelIndex];
             if (m2Renderer->loadModel(m2Ready.model, m2Ready.modelId)) {
-                uploadedModelIds.insert(m2Ready.modelId);
+                ft.uploadedM2ModelIds.insert(m2Ready.modelId);
+            }
+            ft.m2ModelIndex++;
+            // Stay in this phase until all models uploaded
+            if (ft.m2ModelIndex < pending->m2Models.size()) {
+                return false;
             }
         }
-        if (!uploadedModelIds.empty()) {
-            LOG_DEBUG("  Uploaded ", uploadedModelIds.size(), " M2 models for tile [", x, ",", y, "]");
+        if (!ft.uploadedM2ModelIds.empty()) {
+            LOG_DEBUG("  Uploaded ", ft.uploadedM2ModelIds.size(), " M2 models for tile [", x, ",", y, "]");
         }
-
-        // Create instances (deduplicate by uniqueId across tile boundaries)
-        int loadedDoodads = 0;
-        int skippedDedup = 0;
-        for (const auto& p : pending->m2Placements) {
-            // Skip if this doodad was already placed by a neighboring tile
-            if (p.uniqueId != 0 && placedDoodadIds.count(p.uniqueId)) {
-                skippedDedup++;
-                continue;
-            }
-            uint32_t instId = m2Renderer->createInstance(p.modelId, p.position, p.rotation, p.scale);
-            if (instId) {
-                m2InstanceIds.push_back(instId);
-                if (p.uniqueId != 0) {
-                    placedDoodadIds.insert(p.uniqueId);
-                    tileUniqueIds.push_back(p.uniqueId);
-                }
-                loadedDoodads++;
-            }
-        }
-
-        LOG_DEBUG("  Loaded doodads for tile [", x, ",", y, "]: ",
-                 loadedDoodads, " instances (", uploadedModelIds.size(), " new models, ",
-                 skippedDedup, " dedup skipped)");
+        ft.phase = FinalizationPhase::M2_INSTANCES;
+        return false;
     }
 
-    // Upload WMO models to GPU and create instances
-    if (wmoRenderer && assetManager) {
-        // WMORenderer may be initialized before assets are ready; always re-pass assets.
-        wmoRenderer->initialize(nullptr, VK_NULL_HANDLE, assetManager);
-
-        int loadedWMOs = 0;
-        int loadedLiquids = 0;
-        int skippedWmoDedup = 0;
-        for (auto& wmoReady : pending->wmoModels) {
-            // Deduplicate by placement uniqueId when available.
-            // Some ADTs use uniqueId=0, which is not safe for dedup.
-            if (wmoReady.uniqueId != 0 && placedWmoIds.count(wmoReady.uniqueId)) {
-                skippedWmoDedup++;
-                continue;
+    case FinalizationPhase::M2_INSTANCES: {
+        // Create all M2 instances (lightweight struct allocation, no GPU work)
+        if (m2Renderer) {
+            int loadedDoodads = 0;
+            int skippedDedup = 0;
+            for (const auto& p : pending->m2Placements) {
+                if (p.uniqueId != 0 && placedDoodadIds.count(p.uniqueId)) {
+                    skippedDedup++;
+                    continue;
+                }
+                uint32_t instId = m2Renderer->createInstance(p.modelId, p.position, p.rotation, p.scale);
+                if (instId) {
+                    ft.m2InstanceIds.push_back(instId);
+                    if (p.uniqueId != 0) {
+                        placedDoodadIds.insert(p.uniqueId);
+                        ft.tileUniqueIds.push_back(p.uniqueId);
+                    }
+                    loadedDoodads++;
+                }
             }
+            LOG_DEBUG("  Loaded doodads for tile [", x, ",", y, "]: ",
+                     loadedDoodads, " instances (", ft.uploadedM2ModelIds.size(), " new models, ",
+                     skippedDedup, " dedup skipped)");
+        }
+        ft.phase = FinalizationPhase::WMO_MODELS;
+        return false;
+    }
 
-            if (wmoRenderer->loadModel(wmoReady.model, wmoReady.modelId)) {
+    case FinalizationPhase::WMO_MODELS: {
+        // Upload ONE WMO model per call
+        if (wmoRenderer && assetManager) {
+            wmoRenderer->initialize(nullptr, VK_NULL_HANDLE, assetManager);
+
+            if (ft.wmoModelIndex < pending->wmoModels.size()) {
+                auto& wmoReady = pending->wmoModels[ft.wmoModelIndex];
+                // Deduplicate
+                if (wmoReady.uniqueId != 0 && placedWmoIds.count(wmoReady.uniqueId)) {
+                    // Skip this one, advance
+                    ft.wmoModelIndex++;
+                    if (ft.wmoModelIndex < pending->wmoModels.size()) return false;
+                } else {
+                    wmoRenderer->loadModel(wmoReady.model, wmoReady.modelId);
+                    ft.wmoModelIndex++;
+                    if (ft.wmoModelIndex < pending->wmoModels.size()) return false;
+                }
+            }
+        }
+        ft.wmoModelIndex = 0; // Reset for WMO_INSTANCES phase iteration
+        ft.phase = FinalizationPhase::WMO_INSTANCES;
+        return false;
+    }
+
+    case FinalizationPhase::WMO_INSTANCES: {
+        // Create all WMO instances + load WMO liquids
+        if (wmoRenderer) {
+            int loadedWMOs = 0;
+            int loadedLiquids = 0;
+            int skippedWmoDedup = 0;
+            for (auto& wmoReady : pending->wmoModels) {
+                if (wmoReady.uniqueId != 0 && placedWmoIds.count(wmoReady.uniqueId)) {
+                    skippedWmoDedup++;
+                    continue;
+                }
+
                 uint32_t wmoInstId = wmoRenderer->createInstance(wmoReady.modelId, wmoReady.position, wmoReady.rotation);
                 if (wmoInstId) {
-                    wmoInstanceIds.push_back(wmoInstId);
+                    ft.wmoInstanceIds.push_back(wmoInstId);
                     if (wmoReady.uniqueId != 0) {
                         placedWmoIds.insert(wmoReady.uniqueId);
-                        tileWmoUniqueIds.push_back(wmoReady.uniqueId);
+                        ft.tileWmoUniqueIds.push_back(wmoReady.uniqueId);
                     }
                     loadedWMOs++;
 
                     // Load WMO liquids (canals, pools, etc.)
                     if (waterRenderer) {
-                        // Compute the same model matrix as WMORenderer uses
                         glm::mat4 modelMatrix = glm::mat4(1.0f);
                         modelMatrix = glm::translate(modelMatrix, wmoReady.position);
                         modelMatrix = glm::rotate(modelMatrix, wmoReady.rotation.z, glm::vec3(0.0f, 0.0f, 1.0f));
                         modelMatrix = glm::rotate(modelMatrix, wmoReady.rotation.y, glm::vec3(0.0f, 1.0f, 0.0f));
                         modelMatrix = glm::rotate(modelMatrix, wmoReady.rotation.x, glm::vec3(1.0f, 0.0f, 0.0f));
-
-                        // Load liquids from each WMO group
                         for (const auto& group : wmoReady.model.groups) {
                             if (group.liquid.hasLiquid()) {
                                 waterRenderer->loadFromWMO(group.liquid, modelMatrix, wmoInstId);
@@ -827,57 +813,109 @@ void TerrainManager::finalizeTile(const std::shared_ptr<PendingTile>& pending) {
                     }
                 }
             }
+            if (loadedWMOs > 0 || skippedWmoDedup > 0) {
+                LOG_DEBUG("  Loaded WMOs for tile [", x, ",", y, "]: ",
+                         loadedWMOs, " instances, ", skippedWmoDedup, " dedup skipped");
+            }
+            if (loadedLiquids > 0) {
+                LOG_DEBUG("  Loaded WMO liquids for tile [", x, ",", y, "]: ", loadedLiquids);
+            }
         }
-        if (loadedWMOs > 0 || skippedWmoDedup > 0) {
-            LOG_DEBUG("  Loaded WMOs for tile [", x, ",", y, "]: ",
-                     loadedWMOs, " instances, ", skippedWmoDedup, " dedup skipped");
-        }
-        if (loadedLiquids > 0) {
-            LOG_DEBUG("  Loaded WMO liquids for tile [", x, ",", y, "]: ", loadedLiquids);
-        }
+        ft.phase = FinalizationPhase::WMO_DOODADS;
+        return false;
+    }
 
-        // Upload WMO doodad M2 models
-        if (m2Renderer) {
-            for (auto& doodad : pending->wmoDoodads) {
-                m2Renderer->loadModel(doodad.model, doodad.modelId);
-                uint32_t wmoDoodadInstId = m2Renderer->createInstanceWithMatrix(
-                    doodad.modelId, doodad.modelMatrix, doodad.worldPosition);
-                if (wmoDoodadInstId) m2InstanceIds.push_back(wmoDoodadInstId);
+    case FinalizationPhase::WMO_DOODADS: {
+        // Upload ONE WMO doodad M2 per call
+        if (m2Renderer && ft.wmoDoodadIndex < pending->wmoDoodads.size()) {
+            auto& doodad = pending->wmoDoodads[ft.wmoDoodadIndex];
+            m2Renderer->loadModel(doodad.model, doodad.modelId);
+            uint32_t wmoDoodadInstId = m2Renderer->createInstanceWithMatrix(
+                doodad.modelId, doodad.modelMatrix, doodad.worldPosition);
+            if (wmoDoodadInstId) ft.m2InstanceIds.push_back(wmoDoodadInstId);
+            ft.wmoDoodadIndex++;
+            if (ft.wmoDoodadIndex < pending->wmoDoodads.size()) return false;
+        }
+        ft.phase = FinalizationPhase::WATER;
+        return false;
+    }
+
+    case FinalizationPhase::WATER: {
+        // Terrain water was already loaded in TERRAIN phase.
+        // Generate water ambient emitters here.
+        if (ambientSoundManager) {
+            for (size_t chunkIdx = 0; chunkIdx < pending->terrain.waterData.size(); chunkIdx++) {
+                const auto& chunkWater = pending->terrain.waterData[chunkIdx];
+                if (!chunkWater.hasWater()) continue;
+
+                int chunkX = chunkIdx % 16;
+                int chunkY = chunkIdx / 16;
+                float tileOriginX = (32.0f - x) * 533.33333f;
+                float tileOriginY = (32.0f - y) * 533.33333f;
+                float chunkCenterX = tileOriginX + (chunkX + 0.5f) * 33.333333f;
+                float chunkCenterY = tileOriginY + (chunkY + 0.5f) * 33.333333f;
+
+                if (!chunkWater.layers.empty()) {
+                    const auto& layer = chunkWater.layers[0];
+                    float waterHeight = layer.minHeight;
+                    if (layer.liquidType == 0 && chunkIdx % 32 == 0) {
+                        PendingTile::AmbientEmitter emitter;
+                        emitter.position = glm::vec3(chunkCenterX, chunkCenterY, waterHeight);
+                        emitter.type = 4;
+                        pending->ambientEmitters.push_back(emitter);
+                    } else if (layer.liquidType == 1 && chunkIdx % 64 == 0) {
+                        PendingTile::AmbientEmitter emitter;
+                        emitter.position = glm::vec3(chunkCenterX, chunkCenterY, waterHeight);
+                        emitter.type = 4;
+                        pending->ambientEmitters.push_back(emitter);
+                    }
+                }
             }
         }
 
-        if (loadedWMOs > 0) {
-            LOG_DEBUG("  Loaded WMOs for tile [", x, ",", y, "]: ", loadedWMOs);
-        }
+        ft.phase = FinalizationPhase::AMBIENT;
+        return false;
     }
 
-    // Register ambient sound emitters with ambient sound manager
-    if (ambientSoundManager && !pending->ambientEmitters.empty()) {
-        for (const auto& emitter : pending->ambientEmitters) {
-            // Cast uint32_t type to AmbientSoundManager::AmbientType enum
-            auto type = static_cast<audio::AmbientSoundManager::AmbientType>(emitter.type);
-            ambientSoundManager->addEmitter(emitter.position, type);
+    case FinalizationPhase::AMBIENT: {
+        // Register ambient sound emitters
+        if (ambientSoundManager && !pending->ambientEmitters.empty()) {
+            for (const auto& emitter : pending->ambientEmitters) {
+                auto type = static_cast<audio::AmbientSoundManager::AmbientType>(emitter.type);
+                ambientSoundManager->addEmitter(emitter.position, type);
+            }
         }
+
+        // Commit tile to loadedTiles
+        auto tile = std::make_unique<TerrainTile>();
+        tile->coord = coord;
+        tile->terrain = std::move(pending->terrain);
+        tile->mesh = std::move(pending->mesh);
+        tile->loaded = true;
+        tile->m2InstanceIds = std::move(ft.m2InstanceIds);
+        tile->wmoInstanceIds = std::move(ft.wmoInstanceIds);
+        tile->wmoUniqueIds = std::move(ft.tileWmoUniqueIds);
+        tile->doodadUniqueIds = std::move(ft.tileUniqueIds);
+        getTileBounds(coord, tile->minX, tile->minY, tile->maxX, tile->maxY);
+        loadedTiles[coord] = std::move(tile);
+        putCachedTile(pending);
+
+        // Now safe to remove from pendingTiles (tile is in loadedTiles)
+        {
+            std::lock_guard<std::mutex> lock(queueMutex);
+            pendingTiles.erase(coord);
+        }
+
+        LOG_DEBUG("  Finalized tile [", x, ",", y, "]");
+
+        ft.phase = FinalizationPhase::DONE;
+        return true;
     }
 
-    // Create tile entry
-    auto tile = std::make_unique<TerrainTile>();
-    tile->coord = coord;
-    tile->terrain = std::move(pending->terrain);
-    tile->mesh = std::move(pending->mesh);
-    tile->loaded = true;
-    tile->m2InstanceIds = std::move(m2InstanceIds);
-    tile->wmoInstanceIds = std::move(wmoInstanceIds);
-    tile->wmoUniqueIds = std::move(tileWmoUniqueIds);
-    tile->doodadUniqueIds = std::move(tileUniqueIds);
-
-    // Calculate world bounds
-    getTileBounds(coord, tile->minX, tile->minY, tile->maxX, tile->maxY);
-
-    loadedTiles[coord] = std::move(tile);
-    putCachedTile(pending);
-
-    LOG_DEBUG("  Finalized tile [", x, ",", y, "]");
+    case FinalizationPhase::DONE:
+        return true;
+    }
+    return true;
 }
 
 void TerrainManager::workerLoop() {
@@ -927,79 +965,59 @@ void TerrainManager::processReadyTiles() {
     // Taxi mode gets a slightly larger budget to avoid visible late-pop terrain/models.
     const float timeBudgetMs = taxiStreamingMode_ ? 8.0f : 5.0f;
     auto startTime = std::chrono::high_resolution_clock::now();
-    int processed = 0;
 
-    while (true) {
-        std::shared_ptr<PendingTile> pending;
-
-        {
-            std::lock_guard<std::mutex> lock(queueMutex);
-            if (readyQueue.empty()) {
-                break;
-            }
-            pending = readyQueue.front();
+    // Move newly ready tiles into the finalizing deque.
+    // Keep them in pendingTiles so streamTiles() won't re-enqueue them.
+    {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        while (!readyQueue.empty()) {
+            auto pending = readyQueue.front();
             readyQueue.pop();
-        }
-
-        if (pending) {
-            TileCoord coord = pending->coord;
-
-            finalizeTile(pending);
-
-            auto now = std::chrono::high_resolution_clock::now();
-
-            {
-                std::lock_guard<std::mutex> lock(queueMutex);
-                pendingTiles.erase(coord);
-            }
-            processed++;
-
-            // Check if we've exceeded time budget
-            float elapsedMs = std::chrono::duration<float, std::milli>(now - startTime).count();
-            if (elapsedMs >= timeBudgetMs) {
-                if (processed > 1) {
-                    LOG_DEBUG("Processed ", processed, " tiles in ", elapsedMs, "ms (budget: ", timeBudgetMs, "ms)");
-                }
-                break;
+            if (pending) {
+                FinalizingTile ft;
+                ft.pending = std::move(pending);
+                finalizingTiles_.push_back(std::move(ft));
             }
         }
     }
-}
 
-void TerrainManager::processM2UploadQueue() {
-    // Upload up to MAX_M2_UPLOADS_PER_FRAME models per frame
-    int uploaded = 0;
-    while (!m2UploadQueue_.empty() && uploaded < MAX_M2_UPLOADS_PER_FRAME) {
-        auto& upload = m2UploadQueue_.front();
-        if (m2Renderer) {
-            m2Renderer->loadModel(upload.model, upload.modelId);
+    // Drive incremental finalization within time budget
+    while (!finalizingTiles_.empty()) {
+        auto& ft = finalizingTiles_.front();
+        bool done = advanceFinalization(ft);
+
+        if (done) {
+            finalizingTiles_.pop_front();
         }
-        m2UploadQueue_.pop();
-        uploaded++;
-    }
 
-    if (uploaded > 0) {
-        LOG_DEBUG("Uploaded ", uploaded, " M2 models (", m2UploadQueue_.size(), " remaining in queue)");
+        auto now = std::chrono::high_resolution_clock::now();
+        float elapsedMs = std::chrono::duration<float, std::milli>(now - startTime).count();
+        if (elapsedMs >= timeBudgetMs) {
+            break;
+        }
     }
 }
 
 void TerrainManager::processAllReadyTiles() {
-    while (true) {
-        std::shared_ptr<PendingTile> pending;
-        {
-            std::lock_guard<std::mutex> lock(queueMutex);
-            if (readyQueue.empty()) break;
-            pending = readyQueue.front();
+    // Move all ready tiles into finalizing deque
+    // Keep in pendingTiles until committed (same as processReadyTiles)
+    {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        while (!readyQueue.empty()) {
+            auto pending = readyQueue.front();
             readyQueue.pop();
-        }
-        if (pending) {
-            TileCoord coord = pending->coord;
-            finalizeTile(pending);
-            {
-                std::lock_guard<std::mutex> lock(queueMutex);
-                pendingTiles.erase(coord);
+            if (pending) {
+                FinalizingTile ft;
+                ft.pending = std::move(pending);
+                finalizingTiles_.push_back(std::move(ft));
             }
         }
+    }
+    // Finalize all tiles completely (no time budget — used for loading screens)
+    while (!finalizingTiles_.empty()) {
+        auto& ft = finalizingTiles_.front();
+        while (!advanceFinalization(ft)) {}
+        finalizingTiles_.pop_front();
     }
 }
 
@@ -1099,6 +1117,31 @@ void TerrainManager::unloadTile(int x, int y) {
         pendingTiles.erase(coord);
     }
 
+    // Remove from finalizingTiles_ if it's being incrementally finalized.
+    // Water may have already been loaded in TERRAIN phase, so clean it up.
+    for (auto fit = finalizingTiles_.begin(); fit != finalizingTiles_.end(); ++fit) {
+        if (fit->pending && fit->pending->coord == coord) {
+            // If past TERRAIN phase, water was already loaded — remove it
+            if (fit->phase != FinalizationPhase::TERRAIN && waterRenderer) {
+                waterRenderer->removeTile(x, y);
+            }
+            // Clean up any M2/WMO instances that were already created
+            if (m2Renderer && !fit->m2InstanceIds.empty()) {
+                m2Renderer->removeInstances(fit->m2InstanceIds);
+            }
+            if (wmoRenderer && !fit->wmoInstanceIds.empty()) {
+                for (uint32_t id : fit->wmoInstanceIds) {
+                    if (waterRenderer) waterRenderer->removeWMO(id);
+                }
+                wmoRenderer->removeInstances(fit->wmoInstanceIds);
+            }
+            for (uint32_t uid : fit->tileUniqueIds) placedDoodadIds.erase(uid);
+            for (uint32_t uid : fit->tileWmoUniqueIds) placedWmoIds.erase(uid);
+            finalizingTiles_.erase(fit);
+            return;
+        }
+    }
+
     auto it = loadedTiles.find(coord);
     if (it == loadedTiles.end()) {
         return;
@@ -1167,6 +1210,7 @@ void TerrainManager::unloadAll() {
         while (!readyQueue.empty()) readyQueue.pop();
     }
     pendingTiles.clear();
+    finalizingTiles_.clear();
     placedDoodadIds.clear();
 
     LOG_INFO("Unloading all terrain tiles");

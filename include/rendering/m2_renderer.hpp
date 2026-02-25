@@ -478,6 +478,7 @@ private:
     // Helper to allocate descriptor sets
     VkDescriptorSet allocateMaterialSet();
     VkDescriptorSet allocateBoneSet();
+    void preallocateBoneBuffers(M2Instance& instance);
 
     // Helper to destroy model GPU resources
     void destroyModelGPU(M2ModelGPU& model);

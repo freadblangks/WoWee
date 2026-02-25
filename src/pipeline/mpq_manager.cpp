@@ -458,12 +458,27 @@ bool MPQManager::loadPatchArchives() {
         {"patch.MPQ", 150},
     };
 
+    // Build a case-insensitive lookup of files in the data directory so that
+    // Patch-A.MPQ, patch-a.mpq, PATCH-A.MPQ, etc. all resolve correctly on
+    // case-sensitive filesystems (Linux).
+    std::unordered_map<std::string, std::string> lowerToActual;  // lowercase name → actual path
+    if (std::filesystem::is_directory(dataPath)) {
+        for (const auto& entry : std::filesystem::directory_iterator(dataPath)) {
+            if (!entry.is_regular_file()) continue;
+            std::string fname = entry.path().filename().string();
+            std::string lower = toLowerCopy(fname);
+            lowerToActual[lower] = entry.path().string();
+        }
+    }
+
     int loadedPatches = 0;
     for (const auto& [archive, priority] : patchArchives) {
+        // Classify letter vs numeric patch for the disable flags
+        std::string lowerArchive = toLowerCopy(archive);
         const bool isLetterPatch =
-            (archive.size() >= 10) &&
-            (toLowerCopy(archive).rfind("patch-", 0) != 0) && // not patch-*.MPQ
-            (toLowerCopy(archive).rfind("patch.", 0) != 0);  // not patch.MPQ
+            (lowerArchive.size() >= 11) &&                     // "patch-X.mpq" = 11 chars
+            (lowerArchive.rfind("patch-", 0) == 0) &&          // starts with "patch-"
+            (lowerArchive[6] >= 'a' && lowerArchive[6] <= 'z'); // letter after dash
         if (isLetterPatch && disableLetterPatches) {
             continue;
         }
@@ -471,9 +486,10 @@ bool MPQManager::loadPatchArchives() {
             continue;
         }
 
-        std::string fullPath = dataPath + "/" + archive;
-        if (std::filesystem::exists(fullPath)) {
-            if (loadArchive(fullPath, priority)) {
+        // Case-insensitive file lookup
+        auto it = lowerToActual.find(lowerArchive);
+        if (it != lowerToActual.end()) {
+            if (loadArchive(it->second, priority)) {
                 loadedPatches++;
             }
         }

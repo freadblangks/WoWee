@@ -1272,28 +1272,8 @@ void CameraController::update(float deltaTime) {
         // Find max safe distance using raycast + sphere radius
         collisionDistance = currentDistance;
 
-        // WMO raycast collision: zoom in when camera would clip through walls/floors
-        if (wmoRenderer && currentDistance > MIN_DISTANCE) {
-            glm::vec3 camRayOrigin = pivot;
-            glm::vec3 camRayDir = camDir;
-            float wmoHitDist = wmoRenderer->raycastBoundingBoxes(camRayOrigin, camRayDir, currentDistance);
-            if (wmoHitDist < currentDistance) {
-                // Hit WMO geometry — pull camera in to avoid clipping
-                constexpr float CAM_RADIUS = 0.3f;
-                collisionDistance = std::max(MIN_DISTANCE, wmoHitDist - CAM_RADIUS);
-            }
-        }
-
-        // M2 raycast collision: zoom in when camera would clip through doodads
-        if (m2Renderer && !externalFollow_ && currentDistance > MIN_DISTANCE) {
-            glm::vec3 camRayOrigin = pivot;
-            glm::vec3 camRayDir = camDir;
-            float m2HitDist = m2Renderer->raycastBoundingBoxes(camRayOrigin, camRayDir, currentDistance);
-            if (m2HitDist < collisionDistance) {
-                constexpr float CAM_RADIUS = 0.3f;
-                collisionDistance = std::max(MIN_DISTANCE, m2HitDist - CAM_RADIUS);
-            }
-        }
+        // WMO/M2 camera collision disabled — was pulling camera through
+        // geometry at doorway transitions and causing erratic zoom behaviour.
 
         // Camera collision: terrain-only floor clamping
         auto getTerrainFloorAt = [&](float x, float y) -> std::optional<float> {

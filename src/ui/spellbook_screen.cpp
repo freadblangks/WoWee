@@ -9,8 +9,28 @@
 #include "core/logger.hpp"
 #include <algorithm>
 #include <map>
+#include <cctype>
 
 namespace wowee { namespace ui {
+
+// Case-insensitive substring match
+static bool containsCI(const std::string& haystack, const char* needle) {
+    if (!needle || !needle[0]) return true;
+    size_t needleLen = strlen(needle);
+    if (needleLen > haystack.size()) return false;
+    for (size_t i = 0; i <= haystack.size() - needleLen; i++) {
+        bool match = true;
+        for (size_t j = 0; j < needleLen; j++) {
+            if (std::tolower(static_cast<unsigned char>(haystack[i + j])) !=
+                std::tolower(static_cast<unsigned char>(needle[j]))) {
+                match = false;
+                break;
+            }
+        }
+        if (match) return true;
+    }
+    return false;
+}
 
 void SpellbookScreen::loadSpellDBC(pipeline::AssetManager* assetManager) {
     if (dbcLoadAttempted) return;
@@ -30,12 +50,11 @@ void SpellbookScreen::loadSpellDBC(pipeline::AssetManager* assetManager) {
         return;
     }
 
-    // Try expansion-specific layout first, then fall back to WotLK hardcoded indices
-    // if the DBC is from WotLK MPQs but the active expansion uses different field offsets.
     const auto* spellL = pipeline::getActiveDBCLayout() ? pipeline::getActiveDBCLayout()->getLayout("Spell") : nullptr;
 
     auto tryLoad = [&](uint32_t idField, uint32_t attrField, uint32_t iconField,
-                       uint32_t nameField, uint32_t rankField, const char* label) {
+                       uint32_t nameField, uint32_t rankField, uint32_t tooltipField,
+                       const char* label) {
         spellData.clear();
         uint32_t count = dbc->getRecordCount();
         for (uint32_t i = 0; i < count; ++i) {
@@ -48,6 +67,7 @@ void SpellbookScreen::loadSpellDBC(pipeline::AssetManager* assetManager) {
             info.iconId = dbc->getUInt32(i, iconField);
             info.name = dbc->getString(i, nameField);
             info.rank = dbc->getString(i, rankField);
+            info.description = dbc->getString(i, tooltipField);
 
             if (!info.name.empty()) {
                 spellData[spellId] = std::move(info);
@@ -56,17 +76,17 @@ void SpellbookScreen::loadSpellDBC(pipeline::AssetManager* assetManager) {
         LOG_INFO("Spellbook: Loaded ", spellData.size(), " spells from Spell.dbc (", label, ")");
     };
 
-    // Try active expansion layout
     if (spellL) {
+        uint32_t tooltipField = 139;
+        // Try to get Tooltip field from layout, fall back to 139
+        try { tooltipField = (*spellL)["Tooltip"]; } catch (...) {}
         tryLoad((*spellL)["ID"], (*spellL)["Attributes"], (*spellL)["IconID"],
-                (*spellL)["Name"], (*spellL)["Rank"], "expansion layout");
+                (*spellL)["Name"], (*spellL)["Rank"], tooltipField, "expansion layout");
     }
 
-    // If layout failed or loaded 0 spells, try WotLK hardcoded indices
-    // (binary DBC may be from WotLK MPQs regardless of active expansion)
     if (spellData.empty() && fieldCount >= 200) {
         LOG_INFO("Spellbook: Retrying with WotLK field indices (DBC has ", fieldCount, " fields)");
-        tryLoad(0, 4, 133, 136, 153, "WotLK fallback");
+        tryLoad(0, 4, 133, 136, 153, 139, "WotLK fallback");
     }
 
     dbcLoaded = !spellData.empty();
@@ -88,10 +108,7 @@ void SpellbookScreen::loadSpellIconDBC(pipeline::AssetManager* assetManager) {
     if (!assetManager || !assetManager->isInitialized()) return;
 
     auto dbc = assetManager->loadDBC("SpellIcon.dbc");
-    if (!dbc || !dbc->isLoaded()) {
-        LOG_WARNING("Spellbook: Could not load SpellIcon.dbc");
-        return;
-    }
+    if (!dbc || !dbc->isLoaded()) return;
 
     const auto* iconL = pipeline::getActiveDBCLayout() ? pipeline::getActiveDBCLayout()->getLayout("SpellIcon") : nullptr;
     for (uint32_t i = 0; i < dbc->getRecordCount(); i++) {
@@ -101,8 +118,6 @@ void SpellbookScreen::loadSpellIconDBC(pipeline::AssetManager* assetManager) {
             spellIconPaths[id] = path;
         }
     }
-
-    LOG_INFO("Spellbook: Loaded ", spellIconPaths.size(), " spell icon paths");
 }
 
 void SpellbookScreen::loadSkillLineDBCs(pipeline::AssetManager* assetManager) {
@@ -111,7 +126,6 @@ void SpellbookScreen::loadSkillLineDBCs(pipeline::AssetManager* assetManager) {
 
     if (!assetManager || !assetManager->isInitialized()) return;
 
-    // Load SkillLine.dbc: field 0 = ID, field 1 = categoryID, field 3 = name_enUS
     auto skillLineDbc = assetManager->loadDBC("SkillLine.dbc");
     const auto* slL = pipeline::getActiveDBCLayout() ? pipeline::getActiveDBCLayout()->getLayout("SkillLine") : nullptr;
     if (skillLineDbc && skillLineDbc->isLoaded()) {
@@ -124,12 +138,8 @@ void SpellbookScreen::loadSkillLineDBCs(pipeline::AssetManager* assetManager) {
                 skillLineCategories[id] = category;
             }
         }
-        LOG_INFO("Spellbook: Loaded ", skillLineNames.size(), " skill lines");
-    } else {
-        LOG_WARNING("Spellbook: Could not load SkillLine.dbc");
     }
 
-    // Load SkillLineAbility.dbc: field 0 = ID, field 1 = skillLineID, field 2 = spellID
     auto slaDbc = assetManager->loadDBC("SkillLineAbility.dbc");
     const auto* slaL = pipeline::getActiveDBCLayout() ? pipeline::getActiveDBCLayout()->getLayout("SkillLineAbility") : nullptr;
     if (slaDbc && slaDbc->isLoaded()) {
@@ -140,17 +150,12 @@ void SpellbookScreen::loadSkillLineDBCs(pipeline::AssetManager* assetManager) {
                 spellToSkillLine[spellId] = skillLineId;
             }
         }
-        LOG_INFO("Spellbook: Loaded ", spellToSkillLine.size(), " skill line abilities");
-    } else {
-        LOG_WARNING("Spellbook: Could not load SkillLineAbility.dbc");
     }
 }
 
 void SpellbookScreen::categorizeSpells(const std::unordered_set<uint32_t>& knownSpells) {
     spellTabs.clear();
 
-    // Only SkillLine category 7 ("Class") gets its own tab (the 3 specialties).
-    // Everything else (weapons, professions, racials, general utilities) → General.
     static constexpr uint32_t SKILLLINE_CATEGORY_CLASS = 7;
 
     std::map<uint32_t, std::vector<const SpellInfo*>> specialtySpells;
@@ -177,12 +182,10 @@ void SpellbookScreen::categorizeSpells(const std::unordered_set<uint32_t>& known
 
     auto byName = [](const SpellInfo* a, const SpellInfo* b) { return a->name < b->name; };
 
-    // Specialty tabs sorted alphabetically by skill line name
     std::vector<std::pair<std::string, std::vector<const SpellInfo*>>> named;
     for (auto& [skillLineId, spells] : specialtySpells) {
         auto nameIt = skillLineNames.find(skillLineId);
-        std::string tabName = (nameIt != skillLineNames.end()) ? nameIt->second
-                              : "Specialty";
+        std::string tabName = (nameIt != skillLineNames.end()) ? nameIt->second : "Specialty";
         std::sort(spells.begin(), spells.end(), byName);
         named.push_back({std::move(tabName), std::move(spells)});
     }
@@ -193,7 +196,6 @@ void SpellbookScreen::categorizeSpells(const std::unordered_set<uint32_t>& known
         spellTabs.push_back({std::move(name), std::move(spells)});
     }
 
-    // General tab last
     if (!generalSpells.empty()) {
         std::sort(generalSpells.begin(), generalSpells.end(), byName);
         spellTabs.push_back({"General", std::move(generalSpells)});
@@ -244,6 +246,47 @@ const SpellInfo* SpellbookScreen::getSpellInfo(uint32_t spellId) const {
     return (it != spellData.end()) ? &it->second : nullptr;
 }
 
+void SpellbookScreen::renderSpellTooltip(const SpellInfo* info, game::GameHandler& gameHandler) {
+    ImGui::BeginTooltip();
+    ImGui::PushTextWrapPos(320.0f);
+
+    // Spell name in yellow
+    ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "%s", info->name.c_str());
+
+    // Rank in gray
+    if (!info->rank.empty()) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "(%s)", info->rank.c_str());
+    }
+
+    // Passive indicator
+    if (info->isPassive()) {
+        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Passive");
+    }
+
+    // Cooldown if active
+    float cd = gameHandler.getSpellCooldown(info->spellId);
+    if (cd > 0.0f) {
+        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Cooldown: %.1fs", cd);
+    }
+
+    // Description
+    if (!info->description.empty()) {
+        ImGui::Spacing();
+        ImGui::TextWrapped("%s", info->description.c_str());
+    }
+
+    // Usage hints
+    if (!info->isPassive()) {
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Drag to action bar");
+        ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Double-click to cast");
+    }
+
+    ImGui::PopTextWrapPos();
+    ImGui::EndTooltip();
+}
+
 void SpellbookScreen::render(game::GameHandler& gameHandler, pipeline::AssetManager* assetManager) {
     // P key toggle (edge-triggered)
     bool wantsTextInput = ImGui::GetIO().WantTextInput;
@@ -272,88 +315,156 @@ void SpellbookScreen::render(game::GameHandler& gameHandler, pipeline::AssetMana
     float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
     float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
 
-    float bookW = 360.0f;
-    float bookH = std::min(520.0f, screenH - 120.0f);
+    float bookW = 380.0f;
+    float bookH = std::min(560.0f, screenH - 100.0f);
     float bookX = screenW - bookW - 10.0f;
     float bookY = 80.0f;
 
     ImGui::SetNextWindowPos(ImVec2(bookX, bookY), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(bookW, bookH), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSizeConstraints(ImVec2(280, 200), ImVec2(screenW, screenH));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(300, 250), ImVec2(screenW, screenH));
 
     bool windowOpen = open;
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));
     if (ImGui::Begin("Spellbook", &windowOpen)) {
-        // Clamp window position to stay on screen
-        ImVec2 winPos = ImGui::GetWindowPos();
-        ImVec2 winSize = ImGui::GetWindowSize();
-        float clampedX = std::max(0.0f, std::min(winPos.x, screenW - winSize.x));
-        float clampedY = std::max(0.0f, std::min(winPos.y, screenH - winSize.y));
-        if (clampedX != winPos.x || clampedY != winPos.y) {
-            ImGui::SetWindowPos(ImVec2(clampedX, clampedY));
-        }
+        // Search bar
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputTextWithHint("##search", "Search spells...", searchFilter_, sizeof(searchFilter_));
+
+        ImGui::Spacing();
 
         // Tab bar
         if (ImGui::BeginTabBar("SpellbookTabs")) {
             for (size_t tabIdx = 0; tabIdx < spellTabs.size(); tabIdx++) {
                 const auto& tab = spellTabs[tabIdx];
 
-                char tabLabel[64];
-                snprintf(tabLabel, sizeof(tabLabel), "%s (%zu)",
-                    tab.name.c_str(), tab.spells.size());
+                // Count visible spells (respecting search filter)
+                int visibleCount = 0;
+                for (const SpellInfo* info : tab.spells) {
+                    if (containsCI(info->name, searchFilter_)) visibleCount++;
+                }
+
+                char tabLabel[128];
+                snprintf(tabLabel, sizeof(tabLabel), "%s (%d)###sbtab%zu",
+                         tab.name.c_str(), visibleCount, tabIdx);
 
                 if (ImGui::BeginTabItem(tabLabel)) {
-                    if (tab.spells.empty()) {
-                        ImGui::TextDisabled("No spells in this category.");
+                    if (visibleCount == 0) {
+                        if (searchFilter_[0])
+                            ImGui::TextDisabled("No matching spells.");
+                        else
+                            ImGui::TextDisabled("No spells in this category.");
                     }
 
                     ImGui::BeginChild("SpellList", ImVec2(0, 0), true);
 
-                    float iconSize = 32.0f;
+                    const float iconSize = 36.0f;
+                    const float rowHeight = iconSize + 4.0f;
 
                     for (const SpellInfo* info : tab.spells) {
+                        // Apply search filter
+                        if (!containsCI(info->name, searchFilter_)) continue;
+
                         ImGui::PushID(static_cast<int>(info->spellId));
 
                         float cd = gameHandler.getSpellCooldown(info->spellId);
                         bool onCooldown = cd > 0.0f;
                         bool isPassive = info->isPassive();
-                        bool isDim = isPassive || onCooldown;
 
                         VkDescriptorSet iconTex = getSpellIcon(info->iconId, assetManager);
 
-                        // Selectable consumes clicks properly (prevents window drag)
+                        // Row selectable
                         ImGui::Selectable("##row", false,
-                            ImGuiSelectableFlags_AllowDoubleClick, ImVec2(0, iconSize));
+                            ImGuiSelectableFlags_AllowDoubleClick, ImVec2(0, rowHeight));
                         bool rowHovered = ImGui::IsItemHovered();
                         bool rowClicked = ImGui::IsItemClicked(0);
                         ImVec2 rMin = ImGui::GetItemRectMin();
+                        ImVec2 rMax = ImGui::GetItemRectMax();
                         auto* dl = ImGui::GetWindowDrawList();
 
-                        // Draw icon on top of selectable
+                        // Hover highlight
+                        if (rowHovered) {
+                            dl->AddRectFilled(rMin, rMax, IM_COL32(255, 255, 255, 15), 3.0f);
+                        }
+
+                        // Icon background
+                        ImVec2 iconMin = rMin;
+                        ImVec2 iconMax(rMin.x + iconSize, rMin.y + iconSize);
+                        dl->AddRectFilled(iconMin, iconMax, IM_COL32(25, 25, 35, 200), 3.0f);
+
+                        // Icon
                         if (iconTex) {
+                            ImU32 tint = (isPassive || onCooldown) ? IM_COL32(150, 150, 150, 255) : IM_COL32(255, 255, 255, 255);
                             dl->AddImage((ImTextureID)(uintptr_t)iconTex,
-                                rMin, ImVec2(rMin.x + iconSize, rMin.y + iconSize));
-                        } else {
-                            dl->AddRectFilled(rMin,
-                                ImVec2(rMin.x + iconSize, rMin.y + iconSize),
-                                IM_COL32(60, 60, 80, 255));
+                                ImVec2(iconMin.x + 1, iconMin.y + 1),
+                                ImVec2(iconMax.x - 1, iconMax.y - 1),
+                                ImVec2(0, 0), ImVec2(1, 1), tint);
                         }
 
-                        // Draw name and rank text
-                        ImU32 textCol = isDim ? IM_COL32(153, 153, 153, 255)
-                                              : ImGui::GetColorU32(ImGuiCol_Text);
-                        ImU32 dimCol = ImGui::GetColorU32(ImGuiCol_TextDisabled);
-                        float textX = rMin.x + iconSize + 4.0f;
-                        dl->AddText(ImVec2(textX, rMin.y), textCol, info->name.c_str());
-                        if (!info->rank.empty()) {
-                            dl->AddText(ImVec2(textX, rMin.y + ImGui::GetTextLineHeight()),
-                                dimCol, info->rank.c_str());
+                        // Icon border
+                        ImU32 borderCol;
+                        if (isPassive) {
+                            borderCol = IM_COL32(180, 180, 50, 200);  // Yellow for passive
                         } else if (onCooldown) {
-                            char cdBuf[32];
-                            snprintf(cdBuf, sizeof(cdBuf), "%.1fs cooldown", cd);
-                            dl->AddText(ImVec2(textX, rMin.y + ImGui::GetTextLineHeight()),
-                                dimCol, cdBuf);
+                            borderCol = IM_COL32(120, 40, 40, 200);   // Red for cooldown
+                        } else {
+                            borderCol = IM_COL32(100, 100, 120, 200); // Default border
+                        }
+                        dl->AddRect(iconMin, iconMax, borderCol, 3.0f, 0, 1.5f);
+
+                        // Cooldown overlay on icon
+                        if (onCooldown) {
+                            // Darkened sweep
+                            dl->AddRectFilled(iconMin, iconMax, IM_COL32(0, 0, 0, 120), 3.0f);
+                            // Cooldown text centered on icon
+                            char cdBuf[16];
+                            snprintf(cdBuf, sizeof(cdBuf), "%.0f", cd);
+                            ImVec2 cdSize = ImGui::CalcTextSize(cdBuf);
+                            ImVec2 cdPos(iconMin.x + (iconSize - cdSize.x) * 0.5f,
+                                         iconMin.y + (iconSize - cdSize.y) * 0.5f);
+                            dl->AddText(ImVec2(cdPos.x + 1, cdPos.y + 1), IM_COL32(0, 0, 0, 255), cdBuf);
+                            dl->AddText(cdPos, IM_COL32(255, 80, 80, 255), cdBuf);
                         }
 
+                        // Spell name
+                        float textX = rMin.x + iconSize + 8.0f;
+                        float nameY = rMin.y + 2.0f;
+
+                        ImU32 nameCol;
+                        if (isPassive) {
+                            nameCol = IM_COL32(255, 255, 130, 255);  // Yellow-ish for passive
+                        } else if (onCooldown) {
+                            nameCol = IM_COL32(150, 150, 150, 255);
+                        } else {
+                            nameCol = IM_COL32(255, 255, 255, 255);
+                        }
+                        dl->AddText(ImVec2(textX, nameY), nameCol, info->name.c_str());
+
+                        // Second line: rank or passive/cooldown indicator
+                        float subY = nameY + ImGui::GetTextLineHeight() + 1.0f;
+                        if (!info->rank.empty()) {
+                            dl->AddText(ImVec2(textX, subY),
+                                IM_COL32(150, 150, 150, 255), info->rank.c_str());
+                        }
+                        if (isPassive) {
+                            float afterRank = textX;
+                            if (!info->rank.empty()) {
+                                afterRank += ImGui::CalcTextSize(info->rank.c_str()).x + 8.0f;
+                            }
+                            dl->AddText(ImVec2(afterRank, subY),
+                                IM_COL32(200, 200, 80, 200), "Passive");
+                        } else if (onCooldown) {
+                            float afterRank = textX;
+                            if (!info->rank.empty()) {
+                                afterRank += ImGui::CalcTextSize(info->rank.c_str()).x + 8.0f;
+                            }
+                            char cdText[32];
+                            snprintf(cdText, sizeof(cdText), "%.1fs", cd);
+                            dl->AddText(ImVec2(afterRank, subY),
+                                IM_COL32(255, 100, 100, 200), cdText);
+                        }
+
+                        // Interaction
                         if (rowHovered) {
                             // Start drag on click (not passive)
                             if (rowClicked && !isPassive) {
@@ -362,31 +473,18 @@ void SpellbookScreen::render(game::GameHandler& gameHandler, pipeline::AssetMana
                                 dragSpellIconTex_ = iconTex;
                             }
 
+                            // Double-click to cast
                             if (ImGui::IsMouseDoubleClicked(0) && !isPassive && !onCooldown) {
                                 draggingSpell_ = false;
                                 dragSpellId_ = 0;
-                                dragSpellIconTex_ = 0;
+                                dragSpellIconTex_ = VK_NULL_HANDLE;
                                 uint64_t target = gameHandler.hasTarget() ? gameHandler.getTargetGuid() : 0;
                                 gameHandler.castSpell(info->spellId, target);
                             }
 
                             // Tooltip (only when not dragging)
                             if (!draggingSpell_) {
-                                ImGui::BeginTooltip();
-                                ImGui::Text("%s", info->name.c_str());
-                                if (!info->rank.empty()) {
-                                    ImGui::TextDisabled("%s", info->rank.c_str());
-                                }
-                                ImGui::TextDisabled("Spell ID: %u", info->spellId);
-                                if (isPassive) {
-                                    ImGui::TextDisabled("Passive");
-                                } else {
-                                    ImGui::TextDisabled("Drag to action bar to assign");
-                                    if (!onCooldown) {
-                                        ImGui::TextDisabled("Double-click to cast");
-                                    }
-                                }
-                                ImGui::EndTooltip();
+                                renderSpellTooltip(info, gameHandler);
                             }
                         }
 
@@ -402,6 +500,7 @@ void SpellbookScreen::render(game::GameHandler& gameHandler, pipeline::AssetMana
         }
     }
     ImGui::End();
+    ImGui::PopStyleVar();
 
     if (!windowOpen) {
         open = false;
@@ -410,7 +509,7 @@ void SpellbookScreen::render(game::GameHandler& gameHandler, pipeline::AssetMana
     // Render dragged spell icon at cursor
     if (draggingSpell_ && dragSpellId_ != 0) {
         ImVec2 mousePos = ImGui::GetMousePos();
-        float dragSize = 32.0f;
+        float dragSize = 36.0f;
         if (dragSpellIconTex_) {
             ImGui::GetForegroundDrawList()->AddImage(
                 (ImTextureID)(uintptr_t)dragSpellIconTex_,
@@ -420,14 +519,13 @@ void SpellbookScreen::render(game::GameHandler& gameHandler, pipeline::AssetMana
             ImGui::GetForegroundDrawList()->AddRectFilled(
                 ImVec2(mousePos.x - dragSize * 0.5f, mousePos.y - dragSize * 0.5f),
                 ImVec2(mousePos.x + dragSize * 0.5f, mousePos.y + dragSize * 0.5f),
-                IM_COL32(80, 80, 120, 180));
+                IM_COL32(80, 80, 120, 180), 3.0f);
         }
 
-        // Cancel drag on mouse release (action bar consumes it before this if dropped on a slot)
         if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
             draggingSpell_ = false;
             dragSpellId_ = 0;
-            dragSpellIconTex_ = 0;
+            dragSpellIconTex_ = VK_NULL_HANDLE;
         }
     }
 }

@@ -20,8 +20,11 @@ public:
 
 private:
     void renderTalentTrees(game::GameHandler& gameHandler);
-    void renderTalentTree(game::GameHandler& gameHandler, uint32_t tabId);
-    void renderTalent(game::GameHandler& gameHandler, const game::GameHandler::TalentEntry& talent);
+    void renderTalentTree(game::GameHandler& gameHandler, uint32_t tabId,
+                          const std::string& bgFile);
+    void renderTalent(game::GameHandler& gameHandler,
+                      const game::GameHandler::TalentEntry& talent,
+                      uint32_t pointsInTree);
 
     void loadSpellDBC(pipeline::AssetManager* assetManager);
     void loadSpellIconDBC(pipeline::AssetManager* assetManager);
@@ -33,10 +36,11 @@ private:
     // DBC caches
     bool spellDbcLoaded = false;
     bool iconDbcLoaded = false;
-    std::unordered_map<uint32_t, uint32_t> spellIconIds;  // spellId -> iconId
+    std::unordered_map<uint32_t, uint32_t> spellIconIds;       // spellId -> iconId
     std::unordered_map<uint32_t, std::string> spellIconPaths;  // iconId -> path
     std::unordered_map<uint32_t, VkDescriptorSet> spellIconCache;  // iconId -> texture
-    std::unordered_map<uint32_t, std::string> spellTooltips;  // spellId -> description
+    std::unordered_map<uint32_t, std::string> spellTooltips;   // spellId -> description
+    std::unordered_map<uint32_t, VkDescriptorSet> bgTextureCache_;  // tabId -> bg texture
 };
 
 } // namespace ui

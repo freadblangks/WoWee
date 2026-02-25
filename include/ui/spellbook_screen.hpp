@@ -18,8 +18,13 @@ struct SpellInfo {
     uint32_t spellId = 0;
     std::string name;
     std::string rank;
-    uint32_t iconId = 0;       // SpellIconID
-    uint32_t attributes = 0;   // Spell attributes (field 75)
+    std::string description;     // Tooltip/description text from Spell.dbc
+    uint32_t iconId = 0;         // SpellIconID
+    uint32_t attributes = 0;     // Spell attributes (field 4)
+    uint32_t castTimeMs = 0;     // Cast time in ms (0 = instant)
+    uint32_t manaCost = 0;       // Mana cost
+    uint32_t powerType = 0;      // 0=mana, 1=rage, 2=focus, 3=energy
+    uint32_t rangeIndex = 0;     // Range index from SpellRange.dbc
     bool isPassive() const { return (attributes & 0x40) != 0; }
 };
 
@@ -55,18 +60,20 @@ private:
     // Icon data (loaded from SpellIcon.dbc)
     bool iconDbLoaded = false;
     std::unordered_map<uint32_t, std::string> spellIconPaths; // SpellIconID -> path
-    std::unordered_map<uint32_t, VkDescriptorSet> spellIconCache;      // SpellIconID -> GL texture
+    std::unordered_map<uint32_t, VkDescriptorSet> spellIconCache; // SpellIconID -> texture
 
     // Skill line data (loaded from SkillLine.dbc + SkillLineAbility.dbc)
     bool skillLineDbLoaded = false;
-    std::unordered_map<uint32_t, std::string> skillLineNames;    // skillLineID -> name
-    std::unordered_map<uint32_t, uint32_t> skillLineCategories;  // skillLineID -> categoryID
-    std::unordered_map<uint32_t, uint32_t> spellToSkillLine;     // spellID -> skillLineID
+    std::unordered_map<uint32_t, std::string> skillLineNames;
+    std::unordered_map<uint32_t, uint32_t> skillLineCategories;
+    std::unordered_map<uint32_t, uint32_t> spellToSkillLine;
 
-    // Categorized spell tabs (rebuilt when spell list changes)
-    // ordered map so tabs appear in consistent order
+    // Categorized spell tabs
     std::vector<SpellTabInfo> spellTabs;
     size_t lastKnownSpellCount = 0;
+
+    // Search filter
+    char searchFilter_[128] = "";
 
     // Drag-and-drop from spellbook to action bar
     bool draggingSpell_ = false;
@@ -79,6 +86,9 @@ private:
     void categorizeSpells(const std::unordered_set<uint32_t>& knownSpells);
     VkDescriptorSet getSpellIcon(uint32_t iconId, pipeline::AssetManager* assetManager);
     const SpellInfo* getSpellInfo(uint32_t spellId) const;
+
+    // Tooltip rendering helper
+    void renderSpellTooltip(const SpellInfo* info, game::GameHandler& gameHandler);
 };
 
 } // namespace ui

@@ -390,12 +390,18 @@ private:
         std::vector<std::vector<uint32_t>> cellTriangles;
 
         // Pre-classified triangle lists per cell (built at load time)
-        std::vector<std::vector<uint32_t>> cellFloorTriangles;  // abs(normal.z) >= 0.45
-        std::vector<std::vector<uint32_t>> cellWallTriangles;   // abs(normal.z) < 0.55
+        std::vector<std::vector<uint32_t>> cellFloorTriangles;  // abs(normal.z) >= 0.35
+        std::vector<std::vector<uint32_t>> cellWallTriangles;   // abs(normal.z) < 0.35
 
         // Pre-computed per-triangle Z bounds for fast vertical reject
         struct TriBounds { float minZ; float maxZ; };
         std::vector<TriBounds> triBounds;  // indexed by triStart/3
+
+        // Pre-computed per-triangle normals (unit length, indexed by triStart/3)
+        std::vector<glm::vec3> triNormals;
+
+        // Scratch bitset for deduplicating triangle queries (sized to numTriangles)
+        mutable std::vector<uint8_t> triVisited;
 
         // Build the spatial grid from collision geometry
         void buildCollisionGrid();
@@ -675,7 +681,7 @@ private:
     std::unordered_map<GridCell, std::vector<uint32_t>, GridCellHash> spatialGrid;
     std::unordered_map<uint32_t, size_t> instanceIndexById;
     mutable std::vector<size_t> candidateScratch;
-    mutable std::vector<uint32_t> wallTriScratch;  // Scratch for wall collision grid queries
+    mutable std::vector<uint32_t> triScratch_;  // Scratch for collision grid queries
     mutable std::unordered_set<uint32_t> candidateIdScratch;
 
     // Parallel visibility culling

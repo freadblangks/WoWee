@@ -1263,6 +1263,8 @@ void WMORenderer::gatherCandidates(const glm::vec3& queryMin, const glm::vec3& q
 }
 
 void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera) {
+    ++currentFrameId;
+
     if (!opaquePipeline_ || instances.empty()) {
         lastDrawCalls = 0;
         return;
@@ -2474,6 +2476,8 @@ void WMORenderer::GroupResources::buildCollisionGrid() {
 
     size_t numTriangles = collisionIndices.size() / 3;
     triBounds.resize(numTriangles);
+    triNormals.resize(numTriangles);
+    triVisited.resize(numTriangles, 0);
 
     float invCellW = gridCellsX / std::max(0.01f, extentX);
     float invCellH = gridCellsY / std::max(0.01f, extentY);
@@ -2494,16 +2498,23 @@ void WMORenderer::GroupResources::buildCollisionGrid() {
         float triMaxZ = std::max({v0.z, v1.z, v2.z});
         triBounds[i / 3] = { triMinZ, triMaxZ };
 
-        // Classify floor vs wall by normal.
-        // Wall threshold matches MAX_WALK_SLOPE_DOT (cos 50° ≈ 0.6428) so that
-        // surfaces too steep to walk on are always tested for wall collision.
+        // Precompute and store unit normal
         glm::vec3 edge1 = v1 - v0;
         glm::vec3 edge2 = v2 - v0;
         glm::vec3 normal = glm::cross(edge1, edge2);
         float normalLen = glm::length(normal);
-        float absNz = (normalLen > 0.001f) ? std::abs(normal.z / normalLen) : 0.0f;
+        if (normalLen > 0.001f) {
+            normal /= normalLen;
+        } else {
+            normal = glm::vec3(0.0f, 0.0f, 1.0f);
+        }
+        triNormals[i / 3] = normal;
+
+        // Classify floor vs wall by normal.
+        // Wall threshold matches the runtime skip in checkWallCollision (absNz >= 0.35).
+        float absNz = std::abs(normal.z);
         bool isFloor = (absNz >= 0.35f);  // ~70° max slope (relaxed for steep stairs)
-        bool isWall = (absNz < 0.65f);  // Matches walkable slope threshold
+        bool isWall = (absNz < 0.35f);    // Matches checkWallCollision skip threshold
 
         int cellMinX = std::max(0, static_cast<int>((triMinX - gridOrigin.x) * invCellW));
         int cellMinY = std::max(0, static_cast<int>((triMinY - gridOrigin.y) * invCellH));
@@ -2556,18 +2567,30 @@ void WMORenderer::GroupResources::getTrianglesInRange(
 
     if (cellMinX > cellMaxX || cellMinY > cellMaxY) return;
 
-    // Collect unique triangle indices from all overlapping cells
-    for (int cy = cellMinY; cy <= cellMaxY; ++cy) {
-        for (int cx = cellMinX; cx <= cellMaxX; ++cx) {
-            const auto& cell = cellTriangles[cy * gridCellsX + cx];
-            out.insert(out.end(), cell.begin(), cell.end());
+    // Collect unique triangle indices using visited bitset (O(n) dedup)
+    bool multiCell = (cellMinX != cellMaxX || cellMinY != cellMaxY);
+    if (multiCell && !triVisited.empty()) {
+        for (int cy = cellMinY; cy <= cellMaxY; ++cy) {
+            for (int cx = cellMinX; cx <= cellMaxX; ++cx) {
+                const auto& cell = cellTriangles[cy * gridCellsX + cx];
+                for (uint32_t tri : cell) {
+                    uint32_t idx = tri / 3;
+                    if (!triVisited[idx]) {
+                        triVisited[idx] = 1;
+                        out.push_back(tri);
+                    }
+                }
+            }
         }
-    }
-
-    // Remove duplicates (triangles spanning multiple cells)
-    if (cellMinX != cellMaxX || cellMinY != cellMaxY) {
-        std::sort(out.begin(), out.end());
-        out.erase(std::unique(out.begin(), out.end()), out.end());
+        // Clear visited bits
+        for (uint32_t tri : out) triVisited[tri / 3] = 0;
+    } else {
+        for (int cy = cellMinY; cy <= cellMaxY; ++cy) {
+            for (int cx = cellMinX; cx <= cellMaxX; ++cx) {
+                const auto& cell = cellTriangles[cy * gridCellsX + cx];
+                out.insert(out.end(), cell.begin(), cell.end());
+            }
+        }
     }
 }
 
@@ -2589,16 +2612,28 @@ void WMORenderer::GroupResources::getFloorTrianglesInRange(
 
     if (cellMinX > cellMaxX || cellMinY > cellMaxY) return;
 
-    for (int cy = cellMinY; cy <= cellMaxY; ++cy) {
-        for (int cx = cellMinX; cx <= cellMaxX; ++cx) {
-            const auto& cell = cellFloorTriangles[cy * gridCellsX + cx];
-            out.insert(out.end(), cell.begin(), cell.end());
+    bool multiCell = (cellMinX != cellMaxX || cellMinY != cellMaxY);
+    if (multiCell && !triVisited.empty()) {
+        for (int cy = cellMinY; cy <= cellMaxY; ++cy) {
+            for (int cx = cellMinX; cx <= cellMaxX; ++cx) {
+                const auto& cell = cellFloorTriangles[cy * gridCellsX + cx];
+                for (uint32_t tri : cell) {
+                    uint32_t idx = tri / 3;
+                    if (!triVisited[idx]) {
+                        triVisited[idx] = 1;
+                        out.push_back(tri);
+                    }
+                }
+            }
         }
-    }
-
-    if (cellMinX != cellMaxX || cellMinY != cellMaxY) {
-        std::sort(out.begin(), out.end());
-        out.erase(std::unique(out.begin(), out.end()), out.end());
+        for (uint32_t tri : out) triVisited[tri / 3] = 0;
+    } else {
+        for (int cy = cellMinY; cy <= cellMaxY; ++cy) {
+            for (int cx = cellMinX; cx <= cellMaxX; ++cx) {
+                const auto& cell = cellFloorTriangles[cy * gridCellsX + cx];
+                out.insert(out.end(), cell.begin(), cell.end());
+            }
+        }
     }
 }
 
@@ -2620,22 +2655,35 @@ void WMORenderer::GroupResources::getWallTrianglesInRange(
 
     if (cellMinX > cellMaxX || cellMinY > cellMaxY) return;
 
-    for (int cy = cellMinY; cy <= cellMaxY; ++cy) {
-        for (int cx = cellMinX; cx <= cellMaxX; ++cx) {
-            const auto& cell = cellWallTriangles[cy * gridCellsX + cx];
-            out.insert(out.end(), cell.begin(), cell.end());
+    bool multiCell = (cellMinX != cellMaxX || cellMinY != cellMaxY);
+    if (multiCell && !triVisited.empty()) {
+        for (int cy = cellMinY; cy <= cellMaxY; ++cy) {
+            for (int cx = cellMinX; cx <= cellMaxX; ++cx) {
+                const auto& cell = cellWallTriangles[cy * gridCellsX + cx];
+                for (uint32_t tri : cell) {
+                    uint32_t idx = tri / 3;
+                    if (!triVisited[idx]) {
+                        triVisited[idx] = 1;
+                        out.push_back(tri);
+                    }
+                }
+            }
         }
-    }
-
-    if (cellMinX != cellMaxX || cellMinY != cellMaxY) {
-        std::sort(out.begin(), out.end());
-        out.erase(std::unique(out.begin(), out.end()), out.end());
+        for (uint32_t tri : out) triVisited[tri / 3] = 0;
+    } else {
+        for (int cy = cellMinY; cy <= cellMaxY; ++cy) {
+            for (int cx = cellMinX; cx <= cellMaxX; ++cx) {
+                const auto& cell = cellWallTriangles[cy * gridCellsX + cx];
+                out.insert(out.end(), cell.begin(), cell.end());
+            }
+        }
     }
 }
 
 std::optional<float> WMORenderer::getFloorHeight(float glX, float glY, float glZ, float* outNormalZ) const {
-    // All floor caching disabled - even per-frame cache can return stale results
-    // when player Z changes between queries, causing fall-through at stairs.
+    // Per-frame cache disabled: camera and player query the same (x,y) at
+    // different Z within a single frame. The allowAbove filter depends on glZ,
+    // so caching by (x,y) alone returns wrong floors across Z contexts.
 
     QueryTimer timer(&queryTimeMs, &queryCallCount);
     std::optional<float> bestFloor;
@@ -2660,9 +2708,9 @@ std::optional<float> WMORenderer::getFloorHeight(float glX, float glY, float glZ
         group.getTrianglesInRange(
             localOrigin.x - 1.0f, localOrigin.y - 1.0f,
             localOrigin.x + 1.0f, localOrigin.y + 1.0f,
-            wallTriScratch);
+            triScratch_);
 
-        for (uint32_t triStart : wallTriScratch) {
+        for (uint32_t triStart : triScratch_) {
             const glm::vec3& v0 = verts[indices[triStart]];
             const glm::vec3& v1 = verts[indices[triStart + 1]];
             const glm::vec3& v2 = verts[indices[triStart + 2]];
@@ -2676,23 +2724,20 @@ std::optional<float> WMORenderer::getFloorHeight(float glX, float glY, float glZ
                 glm::vec3 hitLocal = localOrigin + localDir * t;
                 glm::vec3 hitWorld = glm::vec3(instance.modelMatrix * glm::vec4(hitLocal, 1.0f));
 
-                float allowAbove = model.isLowPlatform ? 12.0f : 2.0f;
-                if (hitWorld.z <= glZ + allowAbove) {
+                // Accept floors at or below glZ (the caller already elevates
+                // glZ by stepUpBudget to handle step-up range).  Among those,
+                // pick the highest (closest to feet).
+                if (hitWorld.z <= glZ) {
                     if (!bestFloor || hitWorld.z > *bestFloor) {
                         bestFloor = hitWorld.z;
                         bestFromLowPlatform = model.isLowPlatform;
 
-                        // Compute local normal and transform to world space
-                        glm::vec3 localNormal = glm::cross(v1 - v0, v2 - v0);
-                        float len = glm::length(localNormal);
-                        if (len > 0.001f) {
-                            localNormal /= len;
-                            // Ensure normal points upward
-                            if (localNormal.z < 0.0f) localNormal = -localNormal;
-                            glm::vec3 worldNormal = glm::normalize(
-                                glm::vec3(instance.modelMatrix * glm::vec4(localNormal, 0.0f)));
-                            bestNormalZ = std::abs(worldNormal.z);
-                        }
+                        // Use precomputed normal, ensure upward, transform to world
+                        glm::vec3 localNormal = group.triNormals[triStart / 3];
+                        if (localNormal.z < 0.0f) localNormal = -localNormal;
+                        glm::vec3 worldNormal = glm::normalize(
+                            glm::vec3(instance.modelMatrix * glm::vec4(localNormal, 0.0f)));
+                        bestNormalZ = std::abs(worldNormal.z);
                     }
                 }
             }
@@ -2735,8 +2780,8 @@ std::optional<float> WMORenderer::getFloorHeight(float glX, float glY, float glZ
         }
     }
 
-    // Full scan: test all instances (active group fast path removed to fix
-    // bridge clipping where early-return missed other WMO instances)
+    // Full scan: test all instances (active group result above is not
+    // early-returned because overlapping WMO instances need full coverage).
     glm::vec3 queryMin(glX - 2.0f, glY - 2.0f, glZ - 8.0f);
     glm::vec3 queryMax(glX + 2.0f, glY + 2.0f, glZ + 10.0f);
     gatherCandidates(queryMin, queryMax, candidateScratch);
@@ -2898,9 +2943,9 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
             float rangeMinY = std::min(localFrom.y, localTo.y) - PLAYER_RADIUS - 1.5f;
             float rangeMaxX = std::max(localFrom.x, localTo.x) + PLAYER_RADIUS + 1.5f;
             float rangeMaxY = std::max(localFrom.y, localTo.y) + PLAYER_RADIUS + 1.5f;
-            group.getWallTrianglesInRange(rangeMinX, rangeMinY, rangeMaxX, rangeMaxY, wallTriScratch);
+            group.getWallTrianglesInRange(rangeMinX, rangeMinY, rangeMaxX, rangeMaxY, triScratch_);
 
-            for (uint32_t triStart : wallTriScratch) {
+            for (uint32_t triStart : triScratch_) {
                 // Use pre-computed Z bounds for fast vertical reject
                 const auto& tb = group.triBounds[triStart / 3];
 
@@ -2919,13 +2964,9 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
                 const glm::vec3& v1 = verts[indices[triStart + 1]];
                 const glm::vec3& v2 = verts[indices[triStart + 2]];
 
-                // Triangle normal for swept test and push fallback
-                glm::vec3 edge1 = v1 - v0;
-                glm::vec3 edge2 = v2 - v0;
-                glm::vec3 normal = glm::cross(edge1, edge2);
-                float normalLen = glm::length(normal);
-                if (normalLen < 0.001f) continue;
-                normal /= normalLen;
+                // Use precomputed normal for swept test and push fallback
+                glm::vec3 normal = group.triNormals[triStart / 3];
+                if (glm::dot(normal, normal) < 0.5f) continue;  // degenerate
 
                 // Recompute plane distances with current (possibly pushed) localTo
                 float fromDist = glm::dot(localFrom - v0, normal);
@@ -3268,19 +3309,15 @@ float WMORenderer::raycastBoundingBoxes(const glm::vec3& origin, const glm::vec3
             float rMinY = std::min(localOrigin.y, localEnd.y) - 1.0f;
             float rMaxX = std::max(localOrigin.x, localEnd.x) + 1.0f;
             float rMaxY = std::max(localOrigin.y, localEnd.y) + 1.0f;
-            group.getWallTrianglesInRange(rMinX, rMinY, rMaxX, rMaxY, wallTriScratch);
+            group.getWallTrianglesInRange(rMinX, rMinY, rMaxX, rMaxY, triScratch_);
 
-            for (uint32_t triStart : wallTriScratch) {
+            for (uint32_t triStart : triScratch_) {
                 const glm::vec3& v0 = verts[indices[triStart]];
                 const glm::vec3& v1 = verts[indices[triStart + 1]];
                 const glm::vec3& v2 = verts[indices[triStart + 2]];
-                glm::vec3 triNormal = glm::cross(v1 - v0, v2 - v0);
-                float normalLenSq = glm::dot(triNormal, triNormal);
-                if (normalLenSq < 1e-8f) {
-                    continue;
-                }
-                triNormal /= std::sqrt(normalLenSq);
-                // Wall list pre-filters at 0.55; apply stricter camera threshold
+                glm::vec3 triNormal = group.triNormals[triStart / 3];
+                if (glm::dot(triNormal, triNormal) < 0.5f) continue;  // degenerate
+                // Wall list pre-filters at 0.35; apply stricter camera threshold
                 if (std::abs(triNormal.z) > MAX_WALKABLE_ABS_NORMAL_Z) {
                     continue;
                 }

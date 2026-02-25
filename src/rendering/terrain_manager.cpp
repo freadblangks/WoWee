@@ -1238,13 +1238,35 @@ void TerrainManager::unloadTile(int x, int y) {
 }
 
 void TerrainManager::unloadAll() {
-    // Stop worker threads
+    // Signal worker threads to stop and wait briefly for them to finish.
+    // Workers may be mid-prepareTile (reading MPQ / parsing ADT) which can
+    // take seconds, so use a short deadline and detach any stragglers.
     if (workerRunning.load()) {
         workerRunning.store(false);
         queueCV.notify_all();
+
+        auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
         for (auto& t : workerThreads) {
-            if (t.joinable()) {
-                t.join();
+            if (!t.joinable()) continue;
+            // Try a timed wait via polling — std::thread has no timed join.
+            bool joined = false;
+            while (std::chrono::steady_clock::now() < deadline) {
+                // Check if thread finished by trying a native timed join
+                #ifdef __linux__
+                struct timespec ts;
+                clock_gettime(CLOCK_REALTIME, &ts);
+                ts.tv_nsec += 50000000; // 50ms
+                if (ts.tv_nsec >= 1000000000) { ts.tv_sec++; ts.tv_nsec -= 1000000000; }
+                if (pthread_timedjoin_np(t.native_handle(), nullptr, &ts) == 0) {
+                    joined = true;
+                    break;
+                }
+                #else
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                #endif
+            }
+            if (!joined && t.joinable()) {
+                t.detach();
             }
         }
         workerThreads.clear();

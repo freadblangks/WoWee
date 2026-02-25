@@ -65,6 +65,23 @@ std::optional<float> selectClosestFloor(const std::optional<float>& a,
     return std::nullopt;
 }
 
+std::optional<float> selectReachableFloor3(const std::optional<float>& a,
+                                           const std::optional<float>& b,
+                                           const std::optional<float>& c,
+                                           float refZ,
+                                           float maxStepUp) {
+    std::optional<float> best;
+    auto consider = [&](const std::optional<float>& h) {
+        if (!h) return;
+        if (*h > refZ + maxStepUp) return;
+        if (!best || *h > *best) best = *h;
+    };
+    consider(a);
+    consider(b);
+    consider(c);
+    return best;
+}
+
 } // namespace
 
 CameraController::CameraController(Camera* cam) : camera(cam) {
@@ -667,6 +684,7 @@ void CameraController::update(float deltaTime) {
             std::optional<float> groundH;
             std::optional<float> centerTerrainH;
             std::optional<float> centerWmoH;
+            std::optional<float> centerM2H;
             {
                 // Collision cache: skip expensive checks if barely moved (15cm threshold)
                 float distMoved = glm::length(glm::vec2(targetPos.x, targetPos.y) -
@@ -687,6 +705,7 @@ void CameraController::update(float deltaTime) {
                     // Full collision check
                     std::optional<float> terrainH;
                     std::optional<float> wmoH;
+                    std::optional<float> m2H;
                     if (terrainManager) {
                         terrainH = terrainManager->getHeightAt(targetPos.x, targetPos.y);
                     }
@@ -697,6 +716,13 @@ void CameraController::update(float deltaTime) {
                     float wmoNormalZ = 1.0f;
                     if (wmoRenderer) {
                         wmoH = wmoRenderer->getFloorHeight(targetPos.x, targetPos.y, wmoProbeZ, &wmoNormalZ);
+                    }
+                    if (m2Renderer && !externalFollow_) {
+                        float m2NormalZ = 1.0f;
+                        m2H = m2Renderer->getFloorHeight(targetPos.x, targetPos.y, wmoProbeZ, &m2NormalZ);
+                        if (m2H && m2NormalZ < MIN_WALKABLE_NORMAL_TERRAIN) {
+                            m2H = std::nullopt;
+                        }
                     }
 
                     // Reject steep WMO slopes
@@ -713,6 +739,7 @@ void CameraController::update(float deltaTime) {
                     }
                     centerTerrainH = terrainH;
                     centerWmoH = wmoH;
+                    centerM2H = m2H;
 
                     // Guard against extremely bad WMO void ramps, but keep normal tunnel
                     // transitions valid. Only reject when the WMO sample is implausibly far
@@ -748,10 +775,10 @@ void CameraController::update(float deltaTime) {
                             // to avoid oscillating between top terrain and deep WMO floors.
                             groundH = selectClosestFloor(terrainH, wmoH, targetPos.z);
                         } else {
-                            groundH = selectReachableFloor(terrainH, wmoH, targetPos.z, stepUpBudget);
+                            groundH = selectReachableFloor3(terrainH, wmoH, m2H, targetPos.z, stepUpBudget);
                         }
                     } else {
-                        groundH = selectReachableFloor(terrainH, wmoH, targetPos.z, stepUpBudget);
+                        groundH = selectReachableFloor3(terrainH, wmoH, m2H, targetPos.z, stepUpBudget);
                     }
 
                     // Update cache
@@ -769,13 +796,14 @@ void CameraController::update(float deltaTime) {
             // of terrain/WMO center surfaces when it is still near the player.
             // This avoids dropping into void gaps at terrain<->WMO seams.
             const bool nearWmoSpace = cachedInsideWMO || centerWmoH.has_value();
+            const bool nearStructureSpace = nearWmoSpace || centerM2H.has_value();
             if (!groundH) {
-                auto highestCenter = selectHighestFloor(centerTerrainH, centerWmoH, std::nullopt);
+                auto highestCenter = selectHighestFloor(centerTerrainH, centerWmoH, centerM2H);
                 if (highestCenter) {
                     float dz = targetPos.z - *highestCenter;
                     // Keep this fallback narrow: only for WMO seam cases, or very short
                     // transient misses while still almost touching the last floor.
-                    bool allowFallback = nearWmoSpace || (noGroundTimer_ < 0.10f && dz < 0.6f);
+                    bool allowFallback = nearStructureSpace || (noGroundTimer_ < 0.10f && dz < 0.6f);
                     if (allowFallback && dz >= -0.5f && dz < 2.0f) {
                         groundH = highestCenter;
                     }
@@ -876,6 +904,37 @@ void CameraController::update(float deltaTime) {
                 }
             }
 
+            // M2 recovery probe: Booty Bay-style wooden platforms can be represented
+            // as M2 collision where center probes intermittently miss.
+            if (!groundH && m2Renderer && !externalFollow_ && hasRealGround_ && verticalVelocity <= 0.0f) {
+                constexpr float RESCUE_FOOTPRINT = 0.60f;
+                const glm::vec2 rescueOffsets[] = {
+                    {0.0f, 0.0f},
+                    { RESCUE_FOOTPRINT, 0.0f}, {-RESCUE_FOOTPRINT, 0.0f},
+                    {0.0f,  RESCUE_FOOTPRINT}, {0.0f, -RESCUE_FOOTPRINT},
+                    { RESCUE_FOOTPRINT,  RESCUE_FOOTPRINT},
+                    { RESCUE_FOOTPRINT, -RESCUE_FOOTPRINT},
+                    {-RESCUE_FOOTPRINT,  RESCUE_FOOTPRINT},
+                    {-RESCUE_FOOTPRINT, -RESCUE_FOOTPRINT}
+                };
+                float rescueProbeZ = std::max(lastGroundZ, targetPos.z) + stepUpBudget + 1.4f;
+                std::optional<float> rescueFloor;
+                for (const auto& o : rescueOffsets) {
+                    float nz = 1.0f;
+                    auto mh = m2Renderer->getFloorHeight(targetPos.x + o.x, targetPos.y + o.y, rescueProbeZ, &nz);
+                    if (!mh) continue;
+                    if (nz < MIN_WALKABLE_NORMAL_TERRAIN) continue;
+                    if (*mh > lastGroundZ + stepUpBudget + 0.90f) continue;
+                    if (*mh < targetPos.z - 4.0f) continue;
+                    if (!rescueFloor || *mh > *rescueFloor) {
+                        rescueFloor = mh;
+                    }
+                }
+                if (rescueFloor) {
+                    groundH = rescueFloor;
+                }
+            }
+
             // 2. Multi-sample for M2 objects (rugs, planks, bridges, ships) —
             //    these are narrow and need offset probes to detect reliably.
             if (m2Renderer && !externalFollow_) {
@@ -939,17 +998,17 @@ void CameraController::update(float deltaTime) {
                     noGroundTimer_ += physicsDeltaTime;
 
                     float dropFromLastGround = lastGroundZ - targetPos.z;
-                    bool seamSizedGap = dropFromLastGround <= (nearWmoSpace ? 2.5f : 0.35f);
+                    bool seamSizedGap = dropFromLastGround <= (nearStructureSpace ? 2.5f : 0.35f);
                     if (noGroundTimer_ < NO_GROUND_GRACE && seamSizedGap) {
                         // Near WMO floors, prefer continuity over falling on transient
                         // floor-query misses (stairs/planks/portal seams).
-                        float maxSlip = nearWmoSpace ? 1.0f : 0.10f;
+                        float maxSlip = nearStructureSpace ? 1.0f : 0.10f;
                         targetPos.z = std::max(targetPos.z, lastGroundZ - maxSlip);
-                        if (nearWmoSpace && verticalVelocity < -2.0f) {
+                        if (nearStructureSpace && verticalVelocity < -2.0f) {
                             verticalVelocity = -2.0f;
                         }
                         grounded = false;
-                    } else if (nearWmoSpace && noGroundTimer_ < 1.0f && dropFromLastGround <= 3.0f) {
+                    } else if (nearStructureSpace && noGroundTimer_ < 1.0f && dropFromLastGround <= 3.0f) {
                         // Extended WMO rescue window: hold close to last valid floor so we
                         // do not tunnel through walkable geometry during short hitches.
                         targetPos.z = std::max(targetPos.z, lastGroundZ - 0.35f);

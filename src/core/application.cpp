@@ -3065,6 +3065,7 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
     // --- Loading screen for online mode ---
     rendering::LoadingScreen loadingScreen;
     loadingScreen.setVkContext(window->getVkContext());
+    loadingScreen.setSDLWindow(window->getSDLWindow());
     bool loadingScreenOk = loadingScreen.initialize();
 
     auto showProgress = [&](const char* msg, float progress) {

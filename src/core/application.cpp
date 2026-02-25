@@ -55,6 +55,12 @@
 #include <set>
 #include <filesystem>
 
+#include <thread>
+#ifdef __linux__
+#include <sched.h>
+#include <pthread.h>
+#endif
+
 namespace wowee {
 namespace core {
 
@@ -230,6 +236,26 @@ bool Application::initialize() {
 
 void Application::run() {
     LOG_INFO("Starting main loop");
+
+    // Pin main thread to a dedicated CPU core to reduce scheduling jitter
+#ifdef __linux__
+    {
+        int numCores = static_cast<int>(std::thread::hardware_concurrency());
+        if (numCores >= 2) {
+            // Use core 0 for the main thread (typically the highest-clocked core)
+            cpu_set_t cpuset;
+            CPU_ZERO(&cpuset);
+            CPU_SET(0, &cpuset);
+            int rc = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+            if (rc == 0) {
+                LOG_INFO("Main thread pinned to CPU core 0 (", numCores, " cores available)");
+            } else {
+                LOG_WARNING("Failed to pin main thread to CPU core 0 (error ", rc, ")");
+            }
+        }
+    }
+#endif
+
     const bool frameProfileEnabled = envFlagEnabled("WOWEE_FRAME_PROFILE", false);
     if (frameProfileEnabled) {
         LOG_INFO("Frame timing profile enabled (WOWEE_FRAME_PROFILE=1)");

@@ -355,6 +355,11 @@ public:
     void acceptGuildInvite();
     void declineGuildInvite();
     void queryGuildInfo(uint32_t guildId);
+    void createGuild(const std::string& guildName);
+    void addGuildRank(const std::string& rankName);
+    void deleteGuildRank();
+    void requestPetitionShowlist(uint64_t npcGuid);
+    void buyPetition(uint64_t npcGuid, const std::string& guildName);
 
     // Guild state accessors
     bool isInGuild() const {
@@ -369,6 +374,13 @@ public:
     bool hasPendingGuildInvite() const { return pendingGuildInvite_; }
     const std::string& getPendingGuildInviterName() const { return pendingGuildInviterName_; }
     const std::string& getPendingGuildInviteGuildName() const { return pendingGuildInviteGuildName_; }
+    const GuildInfoData& getGuildInfoData() const { return guildInfoData_; }
+    const GuildQueryResponseData& getGuildQueryData() const { return guildQueryData_; }
+    bool hasGuildInfoData() const { return guildInfoData_.isValid(); }
+    bool hasPetitionShowlist() const { return showPetitionDialog_; }
+    void clearPetitionDialog() { showPetitionDialog_ = false; }
+    uint32_t getPetitionCost() const { return petitionCost_; }
+    uint64_t getPetitionNpcGuid() const { return petitionNpcGuid_; }
 
     // Ready check
     void initiateReadyCheck();
@@ -1123,6 +1135,8 @@ private:
     void handleGuildEvent(network::Packet& packet);
     void handleGuildInvite(network::Packet& packet);
     void handleGuildCommandResult(network::Packet& packet);
+    void handlePetitionShowlist(network::Packet& packet);
+    void handleTurnInPetitionResults(network::Packet& packet);
 
     // ---- Character creation handler ----
     void handleCharCreateResponse(network::Packet& packet);
@@ -1467,10 +1481,15 @@ private:
     std::string guildName_;
     std::vector<std::string> guildRankNames_;
     GuildRosterData guildRoster_;
+    GuildInfoData guildInfoData_;
+    GuildQueryResponseData guildQueryData_;
     bool hasGuildRoster_ = false;
     bool pendingGuildInvite_ = false;
     std::string pendingGuildInviterName_;
     std::string pendingGuildInviteGuildName_;
+    bool showPetitionDialog_ = false;
+    uint32_t petitionCost_ = 0;
+    uint64_t petitionNpcGuid_ = 0;
 
     uint64_t activeCharacterGuid_ = 0;
     Race playerRace_ = Race::HUMAN;
@@ -1607,6 +1626,18 @@ private:
     AuctionListResult auctionBidderResults_;
     int auctionActiveTab_ = 0;  // 0=Browse, 1=Bids, 2=Auctions
     float auctionSearchDelayTimer_ = 0.0f;
+    // Last search params for re-query (pagination, auto-refresh after bid/buyout)
+    struct AuctionSearchParams {
+        std::string name;
+        uint8_t levelMin = 0, levelMax = 0;
+        uint32_t quality = 0xFFFFFFFF;
+        uint32_t itemClass = 0xFFFFFFFF;
+        uint32_t itemSubClass = 0xFFFFFFFF;
+        uint32_t invTypeMask = 0;
+        uint8_t usableOnly = 0;
+        uint32_t offset = 0;
+    };
+    AuctionSearchParams lastAuctionSearch_;
     // Routing: which result vector to populate from next SMSG_AUCTION_LIST_RESULT
     enum class AuctionResultTarget { BROWSE, OWNER, BIDDER };
     AuctionResultTarget pendingAuctionTarget_ = AuctionResultTarget::BROWSE;

@@ -1050,6 +1050,60 @@ public:
     static network::Packet build();
 };
 
+/** CMSG_GUILD_CREATE packet builder */
+class GuildCreatePacket {
+public:
+    static network::Packet build(const std::string& guildName);
+};
+
+/** CMSG_GUILD_ADD_RANK packet builder */
+class GuildAddRankPacket {
+public:
+    static network::Packet build(const std::string& rankName);
+};
+
+/** CMSG_GUILD_DEL_RANK packet builder (empty body) */
+class GuildDelRankPacket {
+public:
+    static network::Packet build();
+};
+
+/** CMSG_PETITION_SHOWLIST packet builder */
+class PetitionShowlistPacket {
+public:
+    static network::Packet build(uint64_t npcGuid);
+};
+
+/** CMSG_PETITION_BUY packet builder */
+class PetitionBuyPacket {
+public:
+    static network::Packet build(uint64_t npcGuid, const std::string& guildName);
+};
+
+/** SMSG_PETITION_SHOWLIST data */
+struct PetitionShowlistData {
+    uint64_t npcGuid = 0;
+    uint32_t itemId = 0;
+    uint32_t displayId = 0;
+    uint32_t cost = 0;
+    uint32_t charterType = 0;
+    uint32_t requiredSigs = 0;
+
+    bool isValid() const { return npcGuid != 0; }
+};
+
+/** SMSG_PETITION_SHOWLIST parser */
+class PetitionShowlistParser {
+public:
+    static bool parse(network::Packet& packet, PetitionShowlistData& data);
+};
+
+/** SMSG_TURN_IN_PETITION_RESULTS parser */
+class TurnInPetitionResultsParser {
+public:
+    static bool parse(network::Packet& packet, uint32_t& result);
+};
+
 // Guild event type constants
 namespace GuildEvent {
     constexpr uint8_t PROMOTION      = 0;

@@ -1843,6 +1843,85 @@ network::Packet GuildDeclineInvitationPacket::build() {
     return packet;
 }
 
+network::Packet GuildCreatePacket::build(const std::string& guildName) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_GUILD_CREATE));
+    packet.writeString(guildName);
+    LOG_DEBUG("Built CMSG_GUILD_CREATE: ", guildName);
+    return packet;
+}
+
+network::Packet GuildAddRankPacket::build(const std::string& rankName) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_GUILD_ADD_RANK));
+    packet.writeString(rankName);
+    LOG_DEBUG("Built CMSG_GUILD_ADD_RANK: ", rankName);
+    return packet;
+}
+
+network::Packet GuildDelRankPacket::build() {
+    network::Packet packet(wireOpcode(Opcode::CMSG_GUILD_DEL_RANK));
+    LOG_DEBUG("Built CMSG_GUILD_DEL_RANK");
+    return packet;
+}
+
+network::Packet PetitionShowlistPacket::build(uint64_t npcGuid) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_PETITION_SHOWLIST));
+    packet.writeUInt64(npcGuid);
+    LOG_DEBUG("Built CMSG_PETITION_SHOWLIST: guid=", npcGuid);
+    return packet;
+}
+
+network::Packet PetitionBuyPacket::build(uint64_t npcGuid, const std::string& guildName) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_PETITION_BUY));
+    packet.writeUInt64(npcGuid);          // NPC GUID
+    packet.writeUInt32(0);                // unk
+    packet.writeUInt64(0);                // unk
+    packet.writeString(guildName);        // guild name
+    packet.writeUInt32(0);                // body text (empty)
+    packet.writeUInt32(0);                // min sigs
+    packet.writeUInt32(0);                // max sigs
+    packet.writeUInt32(0);                // unk
+    packet.writeUInt32(0);                // unk
+    packet.writeUInt32(0);                // unk
+    packet.writeUInt32(0);                // unk
+    packet.writeUInt16(0);                // unk
+    packet.writeUInt32(0);                // unk
+    packet.writeUInt32(0);                // unk index
+    packet.writeUInt32(0);                // unk
+    LOG_DEBUG("Built CMSG_PETITION_BUY: npcGuid=", npcGuid, " name=", guildName);
+    return packet;
+}
+
+bool PetitionShowlistParser::parse(network::Packet& packet, PetitionShowlistData& data) {
+    if (packet.getSize() < 12) {
+        LOG_ERROR("SMSG_PETITION_SHOWLIST too small: ", packet.getSize());
+        return false;
+    }
+    data.npcGuid = packet.readUInt64();
+    uint32_t count = packet.readUInt32();
+    if (count > 0) {
+        data.itemId = packet.readUInt32();
+        data.displayId = packet.readUInt32();
+        data.cost = packet.readUInt32();
+        // Skip unused fields if present
+        if ((packet.getSize() - packet.getReadPos()) >= 8) {
+            data.charterType = packet.readUInt32();
+            data.requiredSigs = packet.readUInt32();
+        }
+    }
+    LOG_INFO("Parsed SMSG_PETITION_SHOWLIST: npcGuid=", data.npcGuid, " cost=", data.cost);
+    return true;
+}
+
+bool TurnInPetitionResultsParser::parse(network::Packet& packet, uint32_t& result) {
+    if (packet.getSize() < 4) {
+        LOG_ERROR("SMSG_TURN_IN_PETITION_RESULTS too small: ", packet.getSize());
+        return false;
+    }
+    result = packet.readUInt32();
+    LOG_INFO("Parsed SMSG_TURN_IN_PETITION_RESULTS: result=", result);
+    return true;
+}
+
 bool GuildQueryResponseParser::parse(network::Packet& packet, GuildQueryResponseData& data) {
     if (packet.getSize() < 8) {
         LOG_ERROR("SMSG_GUILD_QUERY_RESPONSE too small: ", packet.getSize());

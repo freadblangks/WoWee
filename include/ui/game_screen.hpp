@@ -68,6 +68,12 @@ private:
     bool showGuildNoteEdit_ = false;
     bool editingOfficerNote_ = false;
     char guildNoteEditBuffer_[256] = {0};
+    int guildRosterTab_ = 0;  // 0=Roster, 1=Guild Info
+    char guildMotdEditBuffer_[256] = {0};
+    bool showMotdEdit_ = false;
+    char petitionNameBuffer_[64] = {0};
+    char addRankNameBuffer_[64] = {0};
+    bool showAddRankModal_ = false;
     bool refocusChatInput = false;
     bool vendorBagsOpened_ = false;  // Track if bags were auto-opened for current vendor session
     bool chatWindowLocked = true;
@@ -284,6 +290,10 @@ private:
     int auctionSellBid_[3] = {0, 0, 0};     // gold, silver, copper
     int auctionSellBuyout_[3] = {0, 0, 0};  // gold, silver, copper
     int auctionSelectedItem_ = -1;
+    int auctionSellSlotIndex_ = -1;          // Selected backpack slot for selling
+    uint32_t auctionBrowseOffset_ = 0;       // Pagination offset for browse results
+    int auctionItemClass_ = -1;              // Item class filter (-1 = All)
+    int auctionItemSubClass_ = -1;           // Item subclass filter (-1 = All)
 
     // Guild bank money input
     int guildBankMoneyInput_[3] = {0, 0, 0};  // gold, silver, copper

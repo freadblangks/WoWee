@@ -2357,6 +2357,24 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                 return;
             }
 
+            // /gcreate command
+            if (cmdLower == "gcreate" || cmdLower == "guildcreate") {
+                if (spacePos != std::string::npos) {
+                    std::string guildName = command.substr(spacePos + 1);
+                    gameHandler.createGuild(guildName);
+                    chatInputBuffer[0] = '\0';
+                    return;
+                }
+
+                game::MessageChatData msg;
+                msg.type = game::ChatType::SYSTEM;
+                msg.language = game::ChatLanguage::UNIVERSAL;
+                msg.message = "Usage: /gcreate <guild name>";
+                gameHandler.addLocalChatMessage(msg);
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
             // /gdisband command
             if (cmdLower == "gdisband" || cmdLower == "guilddisband") {
                 gameHandler.disbandGuild();
@@ -4300,10 +4318,49 @@ void GameScreen::renderGuildRoster(game::GameHandler& gameHandler) {
                 }
             }
             gameHandler.requestGuildRoster();
+            gameHandler.requestGuildInfo();
         }
     }
 
+    // Petition creation dialog (shown when NPC sends SMSG_PETITION_SHOWLIST)
+    if (gameHandler.hasPetitionShowlist()) {
+        ImGui::OpenPopup("CreateGuildPetition");
+        gameHandler.clearPetitionDialog();
+    }
+    if (ImGui::BeginPopupModal("CreateGuildPetition", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Create Guild Charter");
+        ImGui::Separator();
+        uint32_t cost = gameHandler.getPetitionCost();
+        uint32_t gold = cost / 10000;
+        uint32_t silver = (cost % 10000) / 100;
+        uint32_t copper = cost % 100;
+        ImGui::Text("Cost: %ug %us %uc", gold, silver, copper);
+        ImGui::Spacing();
+        ImGui::Text("Guild Name:");
+        ImGui::InputText("##petitionname", petitionNameBuffer_, sizeof(petitionNameBuffer_));
+        ImGui::Spacing();
+        if (ImGui::Button("Create", ImVec2(120, 0))) {
+            if (petitionNameBuffer_[0] != '\0') {
+                gameHandler.buyPetition(gameHandler.getPetitionNpcGuid(), petitionNameBuffer_);
+                petitionNameBuffer_[0] = '\0';
+                ImGui::CloseCurrentPopup();
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+            petitionNameBuffer_[0] = '\0';
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
     if (!showGuildRoster_) return;
+
+    // Get zone manager for name lookup
+    game::ZoneManager* zoneManager = nullptr;
+    if (auto* renderer = core::Application::getInstance().getRenderer()) {
+        zoneManager = renderer->getZoneManager();
+    }
 
     auto* window = core::Application::getInstance().getWindow();
     float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
@@ -4312,164 +4369,311 @@ void GameScreen::renderGuildRoster(game::GameHandler& gameHandler) {
     ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 375, screenH / 2 - 250), ImGuiCond_Once);
     ImGui::SetNextWindowSize(ImVec2(750, 500), ImGuiCond_Once);
 
-    std::string title = gameHandler.isInGuild() ? (gameHandler.getGuildName() + " - Roster") : "Guild Roster";
+    std::string title = gameHandler.isInGuild() ? (gameHandler.getGuildName() + " - Guild") : "Guild";
     bool open = showGuildRoster_;
     if (ImGui::Begin(title.c_str(), &open, ImGuiWindowFlags_NoCollapse)) {
-        if (!gameHandler.hasGuildRoster()) {
-            ImGui::Text("Loading roster...");
-        } else {
-            const auto& roster = gameHandler.getGuildRoster();
+        // Tab bar: Roster | Guild Info
+        if (ImGui::BeginTabBar("GuildTabs")) {
+            if (ImGui::BeginTabItem("Roster")) {
+                guildRosterTab_ = 0;
+                if (!gameHandler.hasGuildRoster()) {
+                    ImGui::Text("Loading roster...");
+                } else {
+                    const auto& roster = gameHandler.getGuildRoster();
 
-            // MOTD
-            if (!roster.motd.empty()) {
-                ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "MOTD: %s", roster.motd.c_str());
-                ImGui::Separator();
-            }
-
-            // Count online
-            int onlineCount = 0;
-            for (const auto& m : roster.members) {
-                if (m.online) ++onlineCount;
-            }
-            ImGui::Text("%d members (%d online)", (int)roster.members.size(), onlineCount);
-            ImGui::Separator();
-
-            const auto& rankNames = gameHandler.getGuildRankNames();
-
-            // Table
-            if (ImGui::BeginTable("GuildRoster", 7,
-                    ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV |
-                    ImGuiTableFlags_Sortable)) {
-                ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_DefaultSort);
-                ImGui::TableSetupColumn("Rank");
-                ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthFixed, 40.0f);
-                ImGui::TableSetupColumn("Class", ImGuiTableColumnFlags_WidthFixed, 70.0f);
-                ImGui::TableSetupColumn("Zone", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-                ImGui::TableSetupColumn("Note");
-                ImGui::TableSetupColumn("Officer Note");
-                ImGui::TableHeadersRow();
-
-                // Online members first, then offline
-                auto sortedMembers = roster.members;
-                std::sort(sortedMembers.begin(), sortedMembers.end(), [](const auto& a, const auto& b) {
-                    if (a.online != b.online) return a.online > b.online;
-                    return a.name < b.name;
-                });
-
-                static const char* classNames[] = {
-                    "Unknown", "Warrior", "Paladin", "Hunter", "Rogue",
-                    "Priest", "Death Knight", "Shaman", "Mage", "Warlock",
-                    "", "Druid"
-                };
-
-                for (const auto& m : sortedMembers) {
-                    ImGui::TableNextRow();
-                    ImVec4 textColor = m.online ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f)
-                                                : ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
-
-                    ImGui::TableNextColumn();
-                    ImGui::TextColored(textColor, "%s", m.name.c_str());
-
-                    // Right-click context menu
-                    if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
-                        selectedGuildMember_ = m.name;
-                        ImGui::OpenPopup("GuildMemberContext");
+                    // MOTD
+                    if (!roster.motd.empty()) {
+                        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "MOTD: %s", roster.motd.c_str());
+                        ImGui::Separator();
                     }
 
-                    ImGui::TableNextColumn();
-                    // Show rank name instead of index
-                    if (m.rankIndex < rankNames.size()) {
-                        ImGui::TextColored(textColor, "%s", rankNames[m.rankIndex].c_str());
-                    } else {
-                        ImGui::TextColored(textColor, "Rank %u", m.rankIndex);
+                    // Count online
+                    int onlineCount = 0;
+                    for (const auto& m : roster.members) {
+                        if (m.online) ++onlineCount;
                     }
+                    ImGui::Text("%d members (%d online)", (int)roster.members.size(), onlineCount);
+                    ImGui::Separator();
 
-                    ImGui::TableNextColumn();
-                    ImGui::TextColored(textColor, "%u", m.level);
+                    const auto& rankNames = gameHandler.getGuildRankNames();
 
-                    ImGui::TableNextColumn();
-                    const char* className = (m.classId < 12) ? classNames[m.classId] : "Unknown";
-                    ImGui::TextColored(textColor, "%s", className);
+                    // Table
+                    if (ImGui::BeginTable("GuildRoster", 7,
+                            ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV |
+                            ImGuiTableFlags_Sortable)) {
+                        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_DefaultSort);
+                        ImGui::TableSetupColumn("Rank");
+                        ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthFixed, 40.0f);
+                        ImGui::TableSetupColumn("Class", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+                        ImGui::TableSetupColumn("Zone", ImGuiTableColumnFlags_WidthFixed, 120.0f);
+                        ImGui::TableSetupColumn("Note");
+                        ImGui::TableSetupColumn("Officer Note");
+                        ImGui::TableHeadersRow();
 
-                    ImGui::TableNextColumn();
-                    ImGui::TextColored(textColor, "%u", m.zoneId);
+                        // Online members first, then offline
+                        auto sortedMembers = roster.members;
+                        std::sort(sortedMembers.begin(), sortedMembers.end(), [](const auto& a, const auto& b) {
+                            if (a.online != b.online) return a.online > b.online;
+                            return a.name < b.name;
+                        });
 
-                    ImGui::TableNextColumn();
-                    ImGui::TextColored(textColor, "%s", m.publicNote.c_str());
+                        static const char* classNames[] = {
+                            "Unknown", "Warrior", "Paladin", "Hunter", "Rogue",
+                            "Priest", "Death Knight", "Shaman", "Mage", "Warlock",
+                            "", "Druid"
+                        };
 
-                    ImGui::TableNextColumn();
-                    ImGui::TextColored(textColor, "%s", m.officerNote.c_str());
-                }
-                ImGui::EndTable();
-            }
+                        for (const auto& m : sortedMembers) {
+                            ImGui::TableNextRow();
+                            ImVec4 textColor = m.online ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f)
+                                                        : ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
 
-            // Context menu popup
-            if (ImGui::BeginPopup("GuildMemberContext")) {
-                ImGui::Text("%s", selectedGuildMember_.c_str());
-                ImGui::Separator();
-                if (ImGui::MenuItem("Promote")) {
-                    gameHandler.promoteGuildMember(selectedGuildMember_);
-                }
-                if (ImGui::MenuItem("Demote")) {
-                    gameHandler.demoteGuildMember(selectedGuildMember_);
-                }
-                if (ImGui::MenuItem("Kick")) {
-                    gameHandler.kickGuildMember(selectedGuildMember_);
-                }
-                ImGui::Separator();
-                if (ImGui::MenuItem("Set Public Note...")) {
-                    showGuildNoteEdit_ = true;
-                    editingOfficerNote_ = false;
-                    guildNoteEditBuffer_[0] = '\0';
-                    // Pre-fill with existing note
-                    for (const auto& mem : roster.members) {
-                        if (mem.name == selectedGuildMember_) {
-                            snprintf(guildNoteEditBuffer_, sizeof(guildNoteEditBuffer_), "%s", mem.publicNote.c_str());
-                            break;
+                            ImGui::TableNextColumn();
+                            ImGui::TextColored(textColor, "%s", m.name.c_str());
+
+                            // Right-click context menu
+                            if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                                selectedGuildMember_ = m.name;
+                                ImGui::OpenPopup("GuildMemberContext");
+                            }
+
+                            ImGui::TableNextColumn();
+                            // Show rank name instead of index
+                            if (m.rankIndex < rankNames.size()) {
+                                ImGui::TextColored(textColor, "%s", rankNames[m.rankIndex].c_str());
+                            } else {
+                                ImGui::TextColored(textColor, "Rank %u", m.rankIndex);
+                            }
+
+                            ImGui::TableNextColumn();
+                            ImGui::TextColored(textColor, "%u", m.level);
+
+                            ImGui::TableNextColumn();
+                            const char* className = (m.classId < 12) ? classNames[m.classId] : "Unknown";
+                            ImGui::TextColored(textColor, "%s", className);
+
+                            ImGui::TableNextColumn();
+                            // Zone name lookup
+                            if (zoneManager) {
+                                const auto* zoneInfo = zoneManager->getZoneInfo(m.zoneId);
+                                if (zoneInfo && !zoneInfo->name.empty()) {
+                                    ImGui::TextColored(textColor, "%s", zoneInfo->name.c_str());
+                                } else {
+                                    ImGui::TextColored(textColor, "%u", m.zoneId);
+                                }
+                            } else {
+                                ImGui::TextColored(textColor, "%u", m.zoneId);
+                            }
+
+                            ImGui::TableNextColumn();
+                            ImGui::TextColored(textColor, "%s", m.publicNote.c_str());
+
+                            ImGui::TableNextColumn();
+                            ImGui::TextColored(textColor, "%s", m.officerNote.c_str());
                         }
+                        ImGui::EndTable();
                     }
-                }
-                if (ImGui::MenuItem("Set Officer Note...")) {
-                    showGuildNoteEdit_ = true;
-                    editingOfficerNote_ = true;
-                    guildNoteEditBuffer_[0] = '\0';
-                    for (const auto& mem : roster.members) {
-                        if (mem.name == selectedGuildMember_) {
-                            snprintf(guildNoteEditBuffer_, sizeof(guildNoteEditBuffer_), "%s", mem.officerNote.c_str());
-                            break;
+
+                    // Context menu popup
+                    if (ImGui::BeginPopup("GuildMemberContext")) {
+                        ImGui::Text("%s", selectedGuildMember_.c_str());
+                        ImGui::Separator();
+                        if (ImGui::MenuItem("Promote")) {
+                            gameHandler.promoteGuildMember(selectedGuildMember_);
                         }
+                        if (ImGui::MenuItem("Demote")) {
+                            gameHandler.demoteGuildMember(selectedGuildMember_);
+                        }
+                        if (ImGui::MenuItem("Kick")) {
+                            gameHandler.kickGuildMember(selectedGuildMember_);
+                        }
+                        ImGui::Separator();
+                        if (ImGui::MenuItem("Set Public Note...")) {
+                            showGuildNoteEdit_ = true;
+                            editingOfficerNote_ = false;
+                            guildNoteEditBuffer_[0] = '\0';
+                            // Pre-fill with existing note
+                            for (const auto& mem : roster.members) {
+                                if (mem.name == selectedGuildMember_) {
+                                    snprintf(guildNoteEditBuffer_, sizeof(guildNoteEditBuffer_), "%s", mem.publicNote.c_str());
+                                    break;
+                                }
+                            }
+                        }
+                        if (ImGui::MenuItem("Set Officer Note...")) {
+                            showGuildNoteEdit_ = true;
+                            editingOfficerNote_ = true;
+                            guildNoteEditBuffer_[0] = '\0';
+                            for (const auto& mem : roster.members) {
+                                if (mem.name == selectedGuildMember_) {
+                                    snprintf(guildNoteEditBuffer_, sizeof(guildNoteEditBuffer_), "%s", mem.officerNote.c_str());
+                                    break;
+                                }
+                            }
+                        }
+                        ImGui::Separator();
+                        if (ImGui::MenuItem("Set as Leader")) {
+                            gameHandler.setGuildLeader(selectedGuildMember_);
+                        }
+                        ImGui::EndPopup();
+                    }
+
+                    // Note edit modal
+                    if (showGuildNoteEdit_) {
+                        ImGui::OpenPopup("EditGuildNote");
+                        showGuildNoteEdit_ = false;
+                    }
+                    if (ImGui::BeginPopupModal("EditGuildNote", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                        ImGui::Text("%s %s for %s:",
+                            editingOfficerNote_ ? "Officer" : "Public", "Note", selectedGuildMember_.c_str());
+                        ImGui::InputText("##guildnote", guildNoteEditBuffer_, sizeof(guildNoteEditBuffer_));
+                        if (ImGui::Button("Save")) {
+                            if (editingOfficerNote_) {
+                                gameHandler.setGuildOfficerNote(selectedGuildMember_, guildNoteEditBuffer_);
+                            } else {
+                                gameHandler.setGuildPublicNote(selectedGuildMember_, guildNoteEditBuffer_);
+                            }
+                            ImGui::CloseCurrentPopup();
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::Button("Cancel")) {
+                            ImGui::CloseCurrentPopup();
+                        }
+                        ImGui::EndPopup();
                     }
                 }
-                ImGui::Separator();
-                if (ImGui::MenuItem("Set as Leader")) {
-                    gameHandler.setGuildLeader(selectedGuildMember_);
-                }
-                ImGui::EndPopup();
+                ImGui::EndTabItem();
             }
 
-            // Note edit modal
-            if (showGuildNoteEdit_) {
-                ImGui::OpenPopup("EditGuildNote");
-                showGuildNoteEdit_ = false;
-            }
-            if (ImGui::BeginPopupModal("EditGuildNote", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-                ImGui::Text("%s %s for %s:",
-                    editingOfficerNote_ ? "Officer" : "Public", "Note", selectedGuildMember_.c_str());
-                ImGui::InputText("##guildnote", guildNoteEditBuffer_, sizeof(guildNoteEditBuffer_));
-                if (ImGui::Button("Save")) {
-                    if (editingOfficerNote_) {
-                        gameHandler.setGuildOfficerNote(selectedGuildMember_, guildNoteEditBuffer_);
-                    } else {
-                        gameHandler.setGuildPublicNote(selectedGuildMember_, guildNoteEditBuffer_);
+            if (ImGui::BeginTabItem("Guild Info")) {
+                guildRosterTab_ = 1;
+                const auto& infoData = gameHandler.getGuildInfoData();
+                const auto& queryData = gameHandler.getGuildQueryData();
+                const auto& roster = gameHandler.getGuildRoster();
+                const auto& rankNames = gameHandler.getGuildRankNames();
+
+                // Guild name (large, gold)
+                ImGui::PushFont(nullptr);  // default font
+                ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 1.0f), "<%s>", gameHandler.getGuildName().c_str());
+                ImGui::PopFont();
+                ImGui::Separator();
+
+                // Creation date
+                if (infoData.isValid()) {
+                    ImGui::Text("Created: %u/%u/%u", infoData.creationDay, infoData.creationMonth, infoData.creationYear);
+                    ImGui::Text("Members: %u  |  Accounts: %u", infoData.numMembers, infoData.numAccounts);
+                }
+                ImGui::Spacing();
+
+                // Guild description / info text
+                if (!roster.guildInfo.empty()) {
+                    ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "Description:");
+                    ImGui::TextWrapped("%s", roster.guildInfo.c_str());
+                }
+                ImGui::Spacing();
+
+                // MOTD with edit button
+                ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "MOTD:");
+                ImGui::SameLine();
+                if (!roster.motd.empty()) {
+                    ImGui::TextWrapped("%s", roster.motd.c_str());
+                } else {
+                    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "(not set)");
+                }
+                if (ImGui::Button("Set MOTD")) {
+                    showMotdEdit_ = true;
+                    snprintf(guildMotdEditBuffer_, sizeof(guildMotdEditBuffer_), "%s", roster.motd.c_str());
+                }
+                ImGui::Spacing();
+
+                // MOTD edit modal
+                if (showMotdEdit_) {
+                    ImGui::OpenPopup("EditMotd");
+                    showMotdEdit_ = false;
+                }
+                if (ImGui::BeginPopupModal("EditMotd", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                    ImGui::Text("Set Message of the Day:");
+                    ImGui::InputText("##motdinput", guildMotdEditBuffer_, sizeof(guildMotdEditBuffer_));
+                    if (ImGui::Button("Save", ImVec2(120, 0))) {
+                        gameHandler.setGuildMotd(guildMotdEditBuffer_);
+                        ImGui::CloseCurrentPopup();
                     }
-                    ImGui::CloseCurrentPopup();
+                    ImGui::SameLine();
+                    if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::EndPopup();
+                }
+
+                // Emblem info
+                if (queryData.isValid()) {
+                    ImGui::Separator();
+                    ImGui::Text("Emblem: Style %u, Color %u  |  Border: Style %u, Color %u  |  BG: %u",
+                        queryData.emblemStyle, queryData.emblemColor,
+                        queryData.borderStyle, queryData.borderColor, queryData.backgroundColor);
+                }
+
+                // Rank list
+                ImGui::Separator();
+                ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 1.0f), "Ranks:");
+                for (size_t i = 0; i < rankNames.size(); ++i) {
+                    if (rankNames[i].empty()) continue;
+                    // Show rank permission summary from roster data
+                    if (i < roster.ranks.size()) {
+                        uint32_t rights = roster.ranks[i].rights;
+                        std::string perms;
+                        if (rights & 0x01) perms += "Invite ";
+                        if (rights & 0x02) perms += "Remove ";
+                        if (rights & 0x40) perms += "Promote ";
+                        if (rights & 0x80) perms += "Demote ";
+                        if (rights & 0x04) perms += "OChat ";
+                        if (rights & 0x10) perms += "MOTD ";
+                        ImGui::Text("  %zu. %s", i + 1, rankNames[i].c_str());
+                        if (!perms.empty()) {
+                            ImGui::SameLine();
+                            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "[%s]", perms.c_str());
+                        }
+                    } else {
+                        ImGui::Text("  %zu. %s", i + 1, rankNames[i].c_str());
+                    }
+                }
+
+                // Rank management buttons
+                ImGui::Spacing();
+                if (ImGui::Button("Add Rank")) {
+                    showAddRankModal_ = true;
+                    addRankNameBuffer_[0] = '\0';
                 }
                 ImGui::SameLine();
-                if (ImGui::Button("Cancel")) {
-                    ImGui::CloseCurrentPopup();
+                if (ImGui::Button("Delete Last Rank")) {
+                    gameHandler.deleteGuildRank();
                 }
-                ImGui::EndPopup();
+
+                // Add rank modal
+                if (showAddRankModal_) {
+                    ImGui::OpenPopup("AddGuildRank");
+                    showAddRankModal_ = false;
+                }
+                if (ImGui::BeginPopupModal("AddGuildRank", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                    ImGui::Text("New Rank Name:");
+                    ImGui::InputText("##rankname", addRankNameBuffer_, sizeof(addRankNameBuffer_));
+                    if (ImGui::Button("Add", ImVec2(120, 0))) {
+                        if (addRankNameBuffer_[0] != '\0') {
+                            gameHandler.addGuildRank(addRankNameBuffer_);
+                            ImGui::CloseCurrentPopup();
+                        }
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::EndPopup();
+                }
+
+                ImGui::EndTabItem();
             }
+
+            ImGui::EndTabBar();
         }
     }
     ImGui::End();
@@ -7793,8 +7997,74 @@ void GameScreen::renderAuctionHouseWindow(game::GameHandler& gameHandler) {
 
     if (tab == 0) {
         // Browse tab - Search filters
+
+        // --- Helper: resolve current UI filter state into wire-format search params ---
+        // WoW 3.3.5a item class IDs:
+        //   0=Consumable, 1=Container, 2=Weapon, 3=Gem, 4=Armor,
+        //   7=Projectile/TradeGoods, 9=Recipe, 11=Quiver, 15=Miscellaneous
+        struct AHClassMapping { const char* label; uint32_t classId; };
+        static const AHClassMapping classMappings[] = {
+            {"All",         0xFFFFFFFF},
+            {"Weapon",      2},
+            {"Armor",       4},
+            {"Container",   1},
+            {"Consumable",  0},
+            {"Trade Goods", 7},
+            {"Gem",         3},
+            {"Recipe",      9},
+            {"Quiver",      11},
+            {"Miscellaneous", 15},
+        };
+        static constexpr int NUM_CLASSES = 10;
+
+        // Weapon subclass IDs (WoW 3.3.5a)
+        struct AHSubMapping { const char* label; uint32_t subId; };
+        static const AHSubMapping weaponSubs[] = {
+            {"All", 0xFFFFFFFF}, {"Axe (1H)", 0}, {"Axe (2H)", 1}, {"Bow", 2},
+            {"Gun", 3}, {"Mace (1H)", 4}, {"Mace (2H)", 5}, {"Polearm", 6},
+            {"Sword (1H)", 7}, {"Sword (2H)", 8}, {"Staff", 10},
+            {"Fist Weapon", 13}, {"Dagger", 15}, {"Thrown", 16},
+            {"Crossbow", 18}, {"Wand", 19},
+        };
+        static constexpr int NUM_WEAPON_SUBS = 16;
+
+        // Armor subclass IDs
+        static const AHSubMapping armorSubs[] = {
+            {"All", 0xFFFFFFFF}, {"Cloth", 1}, {"Leather", 2}, {"Mail", 3},
+            {"Plate", 4}, {"Shield", 6}, {"Miscellaneous", 0},
+        };
+        static constexpr int NUM_ARMOR_SUBS = 7;
+
+        auto getSearchClassId = [&]() -> uint32_t {
+            if (auctionItemClass_ < 0 || auctionItemClass_ >= NUM_CLASSES) return 0xFFFFFFFF;
+            return classMappings[auctionItemClass_].classId;
+        };
+
+        auto getSearchSubClassId = [&]() -> uint32_t {
+            if (auctionItemSubClass_ < 0) return 0xFFFFFFFF;
+            uint32_t cid = getSearchClassId();
+            if (cid == 2 && auctionItemSubClass_ < NUM_WEAPON_SUBS)
+                return weaponSubs[auctionItemSubClass_].subId;
+            if (cid == 4 && auctionItemSubClass_ < NUM_ARMOR_SUBS)
+                return armorSubs[auctionItemSubClass_].subId;
+            return 0xFFFFFFFF;
+        };
+
+        auto doSearch = [&](uint32_t offset) {
+            auctionBrowseOffset_ = offset;
+            auctionLevelMin_ = std::clamp(auctionLevelMin_, 0, 80);
+            auctionLevelMax_ = std::clamp(auctionLevelMax_, 0, 80);
+            uint32_t q = auctionQuality_ > 0 ? static_cast<uint32_t>(auctionQuality_ - 1) : 0xFFFFFFFF;
+            gameHandler.auctionSearch(auctionSearchName_,
+                static_cast<uint8_t>(auctionLevelMin_),
+                static_cast<uint8_t>(auctionLevelMax_),
+                q, getSearchClassId(), getSearchSubClassId(), 0, 0, offset);
+        };
+
+        // Row 1: Name + Level range
         ImGui::SetNextItemWidth(200);
-        ImGui::InputText("Name", auctionSearchName_, sizeof(auctionSearchName_));
+        bool enterPressed = ImGui::InputText("Name", auctionSearchName_, sizeof(auctionSearchName_),
+                                              ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(50);
         ImGui::InputInt("Min Lv", &auctionLevelMin_, 0);
@@ -7802,23 +8072,49 @@ void GameScreen::renderAuctionHouseWindow(game::GameHandler& gameHandler) {
         ImGui::SetNextItemWidth(50);
         ImGui::InputInt("Max Lv", &auctionLevelMax_, 0);
 
+        // Row 2: Quality + Category + Subcategory + Search button
         const char* qualities[] = {"All", "Poor", "Common", "Uncommon", "Rare", "Epic", "Legendary"};
         ImGui::SetNextItemWidth(100);
         ImGui::Combo("Quality", &auctionQuality_, qualities, 7);
 
         ImGui::SameLine();
+        // Build class label list from mappings
+        const char* classLabels[NUM_CLASSES];
+        for (int c = 0; c < NUM_CLASSES; c++) classLabels[c] = classMappings[c].label;
+        ImGui::SetNextItemWidth(120);
+        int classIdx = auctionItemClass_ < 0 ? 0 : auctionItemClass_;
+        if (ImGui::Combo("Category", &classIdx, classLabels, NUM_CLASSES)) {
+            if (classIdx != auctionItemClass_) auctionItemSubClass_ = -1;
+            auctionItemClass_ = classIdx;
+        }
+
+        // Subcategory (only for Weapon and Armor)
+        uint32_t curClassId = getSearchClassId();
+        if (curClassId == 2 || curClassId == 4) {
+            const AHSubMapping* subs = (curClassId == 2) ? weaponSubs : armorSubs;
+            int numSubs = (curClassId == 2) ? NUM_WEAPON_SUBS : NUM_ARMOR_SUBS;
+            const char* subLabels[20];
+            for (int s = 0; s < numSubs && s < 20; s++) subLabels[s] = subs[s].label;
+            int subIdx = auctionItemSubClass_ + 1;  // -1 → 0 ("All")
+            if (subIdx < 0 || subIdx >= numSubs) subIdx = 0;
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(110);
+            if (ImGui::Combo("Subcat", &subIdx, subLabels, numSubs)) {
+                auctionItemSubClass_ = subIdx - 1;  // 0 → -1 ("All")
+            }
+        }
+
+        ImGui::SameLine();
         float delay = gameHandler.getAuctionSearchDelay();
         if (delay > 0.0f) {
+            char delayBuf[32];
+            snprintf(delayBuf, sizeof(delayBuf), "Search (%.0fs)", delay);
             ImGui::BeginDisabled();
-            ImGui::Button("Search...");
+            ImGui::Button(delayBuf);
             ImGui::EndDisabled();
         } else {
-            if (ImGui::Button("Search")) {
-                uint32_t q = auctionQuality_ > 0 ? static_cast<uint32_t>(auctionQuality_ - 1) : 0xFFFFFFFF;
-                gameHandler.auctionSearch(auctionSearchName_,
-                    static_cast<uint8_t>(auctionLevelMin_),
-                    static_cast<uint8_t>(auctionLevelMax_),
-                    q, 0xFFFFFFFF, 0xFFFFFFFF, 0, 0);
+            if (ImGui::Button("Search") || enterPressed) {
+                doSearch(0);
             }
         }
 
@@ -7826,9 +8122,34 @@ void GameScreen::renderAuctionHouseWindow(game::GameHandler& gameHandler) {
 
         // Results table
         const auto& results = gameHandler.getAuctionBrowseResults();
+        constexpr uint32_t AH_PAGE_SIZE = 50;
         ImGui::Text("%zu results (of %u total)", results.auctions.size(), results.totalCount);
 
-        if (ImGui::BeginChild("AuctionResults", ImVec2(0, -80), true)) {
+        // Pagination
+        if (results.totalCount > AH_PAGE_SIZE) {
+            ImGui::SameLine();
+            uint32_t page = auctionBrowseOffset_ / AH_PAGE_SIZE + 1;
+            uint32_t totalPages = (results.totalCount + AH_PAGE_SIZE - 1) / AH_PAGE_SIZE;
+
+            if (auctionBrowseOffset_ == 0) ImGui::BeginDisabled();
+            if (ImGui::SmallButton("< Prev")) {
+                uint32_t newOff = (auctionBrowseOffset_ >= AH_PAGE_SIZE) ? auctionBrowseOffset_ - AH_PAGE_SIZE : 0;
+                doSearch(newOff);
+            }
+            if (auctionBrowseOffset_ == 0) ImGui::EndDisabled();
+
+            ImGui::SameLine();
+            ImGui::Text("Page %u/%u", page, totalPages);
+
+            ImGui::SameLine();
+            if (auctionBrowseOffset_ + AH_PAGE_SIZE >= results.totalCount) ImGui::BeginDisabled();
+            if (ImGui::SmallButton("Next >")) {
+                doSearch(auctionBrowseOffset_ + AH_PAGE_SIZE);
+            }
+            if (auctionBrowseOffset_ + AH_PAGE_SIZE >= results.totalCount) ImGui::EndDisabled();
+        }
+
+        if (ImGui::BeginChild("AuctionResults", ImVec2(0, -110), true)) {
             if (ImGui::BeginTable("AuctionTable", 6, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
                 ImGui::TableSetupColumn("Item", ImGuiTableColumnFlags_WidthStretch);
                 ImGui::TableSetupColumn("Qty", ImGuiTableColumnFlags_WidthFixed, 40);
@@ -7847,7 +8168,47 @@ void GameScreen::renderAuctionHouseWindow(game::GameHandler& gameHandler) {
 
                     ImGui::TableNextRow();
                     ImGui::TableSetColumnIndex(0);
+                    // Item icon
+                    if (info && info->valid && info->displayInfoId != 0) {
+                        VkDescriptorSet iconTex = inventoryScreen.getItemIcon(info->displayInfoId);
+                        if (iconTex) {
+                            ImGui::Image((void*)(intptr_t)iconTex, ImVec2(16, 16));
+                            ImGui::SameLine();
+                        }
+                    }
                     ImGui::TextColored(qc, "%s", name.c_str());
+                    // Item tooltip on hover
+                    if (ImGui::IsItemHovered() && info && info->valid) {
+                        ImGui::BeginTooltip();
+                        ImGui::TextColored(qc, "%s", info->name.c_str());
+                        if (info->inventoryType > 0) {
+                            if (!info->subclassName.empty())
+                                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1), "%s", info->subclassName.c_str());
+                        }
+                        if (info->armor > 0) ImGui::Text("%d Armor", info->armor);
+                        if (info->damageMax > 0.0f && info->delayMs > 0) {
+                            float speed = static_cast<float>(info->delayMs) / 1000.0f;
+                            ImGui::Text("%.0f - %.0f Damage  Speed %.2f", info->damageMin, info->damageMax, speed);
+                        }
+                        ImVec4 green(0.0f, 1.0f, 0.0f, 1.0f);
+                        std::string bonusLine;
+                        auto appendStat = [](std::string& out, int32_t val, const char* n) {
+                            if (val <= 0) return;
+                            if (!out.empty()) out += "  ";
+                            out += "+" + std::to_string(val) + " " + n;
+                        };
+                        appendStat(bonusLine, info->strength, "Str");
+                        appendStat(bonusLine, info->agility, "Agi");
+                        appendStat(bonusLine, info->stamina, "Sta");
+                        appendStat(bonusLine, info->intellect, "Int");
+                        appendStat(bonusLine, info->spirit, "Spi");
+                        if (!bonusLine.empty()) ImGui::TextColored(green, "%s", bonusLine.c_str());
+                        if (info->sellPrice > 0) {
+                            ImGui::TextColored(ImVec4(1, 0.84f, 0, 1), "Sell: %ug %us %uc",
+                                info->sellPrice / 10000, (info->sellPrice / 100) % 100, info->sellPrice % 100);
+                        }
+                        ImGui::EndTooltip();
+                    }
 
                     ImGui::TableSetColumnIndex(1);
                     ImGui::Text("%u", auction.stackCount);
@@ -7894,8 +8255,52 @@ void GameScreen::renderAuctionHouseWindow(game::GameHandler& gameHandler) {
 
         // Sell section
         ImGui::Separator();
-        ImGui::Text("Sell:");
-        ImGui::SameLine();
+        ImGui::Text("Sell Item:");
+
+        // Item picker from backpack
+        {
+            auto& inv = gameHandler.getInventory();
+            // Build list of non-empty backpack slots
+            std::string preview = (auctionSellSlotIndex_ >= 0)
+                ? ([&]() -> std::string {
+                    const auto& slot = inv.getBackpackSlot(auctionSellSlotIndex_);
+                    if (!slot.empty()) {
+                        std::string s = slot.item.name;
+                        if (slot.item.stackCount > 1) s += " x" + std::to_string(slot.item.stackCount);
+                        return s;
+                    }
+                    return "Select item...";
+                })()
+                : "Select item...";
+
+            ImGui::SetNextItemWidth(250);
+            if (ImGui::BeginCombo("##sellitem", preview.c_str())) {
+                for (int i = 0; i < game::Inventory::BACKPACK_SLOTS; i++) {
+                    const auto& slot = inv.getBackpackSlot(i);
+                    if (slot.empty()) continue;
+                    ImGui::PushID(i + 9000);
+                    // Item icon
+                    if (slot.item.displayInfoId != 0) {
+                        VkDescriptorSet sIcon = inventoryScreen.getItemIcon(slot.item.displayInfoId);
+                        if (sIcon) {
+                            ImGui::Image((void*)(intptr_t)sIcon, ImVec2(16, 16));
+                            ImGui::SameLine();
+                        }
+                    }
+                    std::string label = slot.item.name;
+                    if (slot.item.stackCount > 1) label += " x" + std::to_string(slot.item.stackCount);
+                    ImVec4 iqc = InventoryScreen::getQualityColor(slot.item.quality);
+                    ImGui::PushStyleColor(ImGuiCol_Text, iqc);
+                    if (ImGui::Selectable(label.c_str(), auctionSellSlotIndex_ == i)) {
+                        auctionSellSlotIndex_ = i;
+                    }
+                    ImGui::PopStyleColor();
+                    ImGui::PopID();
+                }
+                ImGui::EndCombo();
+            }
+        }
+
         ImGui::Text("Bid:");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(50);
@@ -7907,7 +8312,7 @@ void GameScreen::renderAuctionHouseWindow(game::GameHandler& gameHandler) {
         ImGui::SetNextItemWidth(35);
         ImGui::InputInt("##sbc", &auctionSellBid_[2], 0); ImGui::SameLine(); ImGui::Text("c");
 
-        ImGui::Text("     "); ImGui::SameLine();
+        ImGui::SameLine(0, 20);
         ImGui::Text("Buyout:");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(50);
@@ -7920,31 +8325,92 @@ void GameScreen::renderAuctionHouseWindow(game::GameHandler& gameHandler) {
         ImGui::InputInt("##sboc", &auctionSellBuyout_[2], 0); ImGui::SameLine(); ImGui::Text("c");
 
         const char* durations[] = {"12 hours", "24 hours", "48 hours"};
-        ImGui::SameLine();
         ImGui::SetNextItemWidth(90);
         ImGui::Combo("##dur", &auctionSellDuration_, durations, 3);
+        ImGui::SameLine();
+
+        // Create Auction button
+        bool canCreate = auctionSellSlotIndex_ >= 0 &&
+                         !gameHandler.getInventory().getBackpackSlot(auctionSellSlotIndex_).empty() &&
+                         (auctionSellBid_[0] > 0 || auctionSellBid_[1] > 0 || auctionSellBid_[2] > 0);
+        if (!canCreate) ImGui::BeginDisabled();
+        if (ImGui::Button("Create Auction")) {
+            uint32_t bidCopper = static_cast<uint32_t>(auctionSellBid_[0]) * 10000
+                               + static_cast<uint32_t>(auctionSellBid_[1]) * 100
+                               + static_cast<uint32_t>(auctionSellBid_[2]);
+            uint32_t buyoutCopper = static_cast<uint32_t>(auctionSellBuyout_[0]) * 10000
+                                  + static_cast<uint32_t>(auctionSellBuyout_[1]) * 100
+                                  + static_cast<uint32_t>(auctionSellBuyout_[2]);
+            const uint32_t durationMins[] = {720, 1440, 2880};
+            uint32_t dur = durationMins[auctionSellDuration_];
+            uint64_t itemGuid = gameHandler.getBackpackItemGuid(auctionSellSlotIndex_);
+            const auto& slot = gameHandler.getInventory().getBackpackSlot(auctionSellSlotIndex_);
+            uint32_t stackCount = slot.item.stackCount;
+            if (itemGuid != 0) {
+                gameHandler.auctionSellItem(itemGuid, stackCount, bidCopper, buyoutCopper, dur);
+                // Clear sell inputs
+                auctionSellSlotIndex_ = -1;
+                auctionSellBid_[0] = auctionSellBid_[1] = auctionSellBid_[2] = 0;
+                auctionSellBuyout_[0] = auctionSellBuyout_[1] = auctionSellBuyout_[2] = 0;
+            }
+        }
+        if (!canCreate) ImGui::EndDisabled();
 
     } else if (tab == 1) {
         // Bids tab
         const auto& results = gameHandler.getAuctionBidderResults();
         ImGui::Text("Your Bids: %zu items", results.auctions.size());
 
-        if (ImGui::BeginTable("BidTable", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+        if (ImGui::BeginTable("BidTable", 6, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
             ImGui::TableSetupColumn("Item", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("Qty", ImGuiTableColumnFlags_WidthFixed, 40);
             ImGui::TableSetupColumn("Your Bid", ImGuiTableColumnFlags_WidthFixed, 90);
             ImGui::TableSetupColumn("Buyout", ImGuiTableColumnFlags_WidthFixed, 90);
             ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed, 60);
+            ImGui::TableSetupColumn("##act", ImGuiTableColumnFlags_WidthFixed, 60);
             ImGui::TableHeadersRow();
 
-            for (const auto& a : results.auctions) {
+            for (size_t bi = 0; bi < results.auctions.size(); bi++) {
+                const auto& a = results.auctions[bi];
                 auto* info = gameHandler.getItemInfo(a.itemEntry);
                 std::string name = info ? info->name : ("Item #" + std::to_string(a.itemEntry));
                 game::ItemQuality quality = info ? static_cast<game::ItemQuality>(info->quality) : game::ItemQuality::COMMON;
+                ImVec4 bqc = InventoryScreen::getQualityColor(quality);
 
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
-                ImGui::TextColored(InventoryScreen::getQualityColor(quality), "%s", name.c_str());
+                if (info && info->valid && info->displayInfoId != 0) {
+                    VkDescriptorSet bIcon = inventoryScreen.getItemIcon(info->displayInfoId);
+                    if (bIcon) {
+                        ImGui::Image((void*)(intptr_t)bIcon, ImVec2(16, 16));
+                        ImGui::SameLine();
+                    }
+                }
+                ImGui::TextColored(bqc, "%s", name.c_str());
+                // Tooltip
+                if (ImGui::IsItemHovered() && info && info->valid) {
+                    ImGui::BeginTooltip();
+                    ImGui::TextColored(bqc, "%s", info->name.c_str());
+                    if (info->armor > 0) ImGui::Text("%d Armor", info->armor);
+                    if (info->damageMax > 0.0f && info->delayMs > 0) {
+                        float speed = static_cast<float>(info->delayMs) / 1000.0f;
+                        ImGui::Text("%.0f - %.0f Damage  Speed %.2f", info->damageMin, info->damageMax, speed);
+                    }
+                    std::string bl;
+                    auto appS = [](std::string& o, int32_t v, const char* n) {
+                        if (v <= 0) return;
+                        if (!o.empty()) o += "  ";
+                        o += "+" + std::to_string(v) + " " + n;
+                    };
+                    appS(bl, info->strength, "Str"); appS(bl, info->agility, "Agi");
+                    appS(bl, info->stamina, "Sta"); appS(bl, info->intellect, "Int");
+                    appS(bl, info->spirit, "Spi");
+                    if (!bl.empty()) ImGui::TextColored(ImVec4(0,1,0,1), "%s", bl.c_str());
+                    if (info->sellPrice > 0)
+                        ImGui::TextColored(ImVec4(1,0.84f,0,1), "Sell: %ug %us %uc",
+                            info->sellPrice/10000, (info->sellPrice/100)%100, info->sellPrice%100);
+                    ImGui::EndTooltip();
+                }
                 ImGui::TableSetColumnIndex(1);
                 ImGui::Text("%u", a.stackCount);
                 ImGui::TableSetColumnIndex(2);
@@ -7959,6 +8425,20 @@ void GameScreen::renderAuctionHouseWindow(game::GameHandler& gameHandler) {
                 if (mins > 720) ImGui::Text("Long");
                 else if (mins > 120) ImGui::Text("Medium");
                 else ImGui::TextColored(ImVec4(1, 0.3f, 0.3f, 1), "Short");
+
+                ImGui::TableSetColumnIndex(5);
+                ImGui::PushID(static_cast<int>(bi) + 7500);
+                if (a.buyoutPrice > 0 && ImGui::SmallButton("Buy")) {
+                    gameHandler.auctionBuyout(a.auctionId, a.buyoutPrice);
+                }
+                if (a.buyoutPrice > 0) ImGui::SameLine();
+                if (ImGui::SmallButton("Bid")) {
+                    uint32_t bidAmt = a.currentBid > 0
+                        ? a.currentBid + a.minBidIncrement
+                        : a.startBid;
+                    gameHandler.auctionPlaceBid(a.auctionId, bidAmt);
+                }
+                ImGui::PopID();
             }
             ImGui::EndTable();
         }
@@ -7984,7 +8464,38 @@ void GameScreen::renderAuctionHouseWindow(game::GameHandler& gameHandler) {
 
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
-                ImGui::TextColored(InventoryScreen::getQualityColor(quality), "%s", name.c_str());
+                ImVec4 oqc = InventoryScreen::getQualityColor(quality);
+                if (info && info->valid && info->displayInfoId != 0) {
+                    VkDescriptorSet oIcon = inventoryScreen.getItemIcon(info->displayInfoId);
+                    if (oIcon) {
+                        ImGui::Image((void*)(intptr_t)oIcon, ImVec2(16, 16));
+                        ImGui::SameLine();
+                    }
+                }
+                ImGui::TextColored(oqc, "%s", name.c_str());
+                if (ImGui::IsItemHovered() && info && info->valid) {
+                    ImGui::BeginTooltip();
+                    ImGui::TextColored(oqc, "%s", info->name.c_str());
+                    if (info->armor > 0) ImGui::Text("%d Armor", info->armor);
+                    if (info->damageMax > 0.0f && info->delayMs > 0) {
+                        float speed = static_cast<float>(info->delayMs) / 1000.0f;
+                        ImGui::Text("%.0f - %.0f Damage  Speed %.2f", info->damageMin, info->damageMax, speed);
+                    }
+                    std::string ol;
+                    auto appO = [](std::string& o, int32_t v, const char* n) {
+                        if (v <= 0) return;
+                        if (!o.empty()) o += "  ";
+                        o += "+" + std::to_string(v) + " " + n;
+                    };
+                    appO(ol, info->strength, "Str"); appO(ol, info->agility, "Agi");
+                    appO(ol, info->stamina, "Sta"); appO(ol, info->intellect, "Int");
+                    appO(ol, info->spirit, "Spi");
+                    if (!ol.empty()) ImGui::TextColored(ImVec4(0,1,0,1), "%s", ol.c_str());
+                    if (info->sellPrice > 0)
+                        ImGui::TextColored(ImVec4(1,0.84f,0,1), "Sell: %ug %us %uc",
+                            info->sellPrice/10000, (info->sellPrice/100)%100, info->sellPrice%100);
+                    ImGui::EndTooltip();
+                }
                 ImGui::TableSetColumnIndex(1);
                 ImGui::Text("%u", a.stackCount);
                 ImGui::TableSetColumnIndex(2);

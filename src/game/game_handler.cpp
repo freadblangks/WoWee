@@ -1774,6 +1774,12 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_GUILD_COMMAND_RESULT:
             handleGuildCommandResult(packet);
             break;
+        case Opcode::SMSG_PETITION_SHOWLIST:
+            handlePetitionShowlist(packet);
+            break;
+        case Opcode::SMSG_TURN_IN_PETITION_RESULTS:
+            handleTurnInPetitionResults(packet);
+            break;
 
         // ---- Phase 5: Loot/Gossip/Vendor ----
         case Opcode::SMSG_LOOT_RESPONSE:
@@ -2781,11 +2787,36 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_AUCTION_COMMAND_RESULT:
             handleAuctionCommandResult(packet);
             break;
-        case Opcode::SMSG_AUCTION_OWNER_NOTIFICATION:
-        case Opcode::SMSG_AUCTION_BIDDER_NOTIFICATION:
-            // Auction notification payloads are informational; ignore until UI support lands.
+        case Opcode::SMSG_AUCTION_OWNER_NOTIFICATION: {
+            // auctionId(u32) + action(u32) + error(u32) + itemEntry(u32) + ...
+            if (packet.getSize() - packet.getReadPos() >= 16) {
+                uint32_t auctionId = packet.readUInt32();
+                uint32_t action = packet.readUInt32();
+                uint32_t error = packet.readUInt32();
+                uint32_t itemEntry = packet.readUInt32();
+                (void)auctionId; (void)action; (void)error;
+                ensureItemInfo(itemEntry);
+                auto* info = getItemInfo(itemEntry);
+                std::string itemName = info ? info->name : ("Item #" + std::to_string(itemEntry));
+                addSystemChatMessage("Your auction of " + itemName + " has sold!");
+            }
             packet.setReadPos(packet.getSize());
             break;
+        }
+        case Opcode::SMSG_AUCTION_BIDDER_NOTIFICATION: {
+            // auctionId(u32) + itemEntry(u32) + ...
+            if (packet.getSize() - packet.getReadPos() >= 8) {
+                uint32_t auctionId = packet.readUInt32();
+                uint32_t itemEntry = packet.readUInt32();
+                (void)auctionId;
+                ensureItemInfo(itemEntry);
+                auto* info = getItemInfo(itemEntry);
+                std::string itemName = info ? info->name : ("Item #" + std::to_string(itemEntry));
+                addSystemChatMessage("You have been outbid on " + itemName + ".");
+            }
+            packet.setReadPos(packet.getSize());
+            break;
+        }
         case Opcode::SMSG_TAXINODE_STATUS:
             // Node status cache not implemented yet.
             packet.setReadPos(packet.getSize());
@@ -9568,10 +9599,72 @@ void GameHandler::queryGuildInfo(uint32_t guildId) {
     LOG_INFO("Querying guild info: guildId=", guildId);
 }
 
+void GameHandler::createGuild(const std::string& guildName) {
+    if (state != WorldState::IN_WORLD || !socket) return;
+    auto packet = GuildCreatePacket::build(guildName);
+    socket->send(packet);
+    LOG_INFO("Creating guild: ", guildName);
+}
+
+void GameHandler::addGuildRank(const std::string& rankName) {
+    if (state != WorldState::IN_WORLD || !socket) return;
+    auto packet = GuildAddRankPacket::build(rankName);
+    socket->send(packet);
+    LOG_INFO("Adding guild rank: ", rankName);
+    // Refresh roster to update rank list
+    requestGuildRoster();
+}
+
+void GameHandler::deleteGuildRank() {
+    if (state != WorldState::IN_WORLD || !socket) return;
+    auto packet = GuildDelRankPacket::build();
+    socket->send(packet);
+    LOG_INFO("Deleting last guild rank");
+    // Refresh roster to update rank list
+    requestGuildRoster();
+}
+
+void GameHandler::requestPetitionShowlist(uint64_t npcGuid) {
+    if (state != WorldState::IN_WORLD || !socket) return;
+    auto packet = PetitionShowlistPacket::build(npcGuid);
+    socket->send(packet);
+}
+
+void GameHandler::buyPetition(uint64_t npcGuid, const std::string& guildName) {
+    if (state != WorldState::IN_WORLD || !socket) return;
+    auto packet = PetitionBuyPacket::build(npcGuid, guildName);
+    socket->send(packet);
+    LOG_INFO("Buying guild petition: ", guildName);
+}
+
+void GameHandler::handlePetitionShowlist(network::Packet& packet) {
+    PetitionShowlistData data;
+    if (!PetitionShowlistParser::parse(packet, data)) return;
+
+    petitionNpcGuid_ = data.npcGuid;
+    petitionCost_ = data.cost;
+    showPetitionDialog_ = true;
+    LOG_INFO("Petition showlist: cost=", data.cost);
+}
+
+void GameHandler::handleTurnInPetitionResults(network::Packet& packet) {
+    uint32_t result = 0;
+    if (!TurnInPetitionResultsParser::parse(packet, result)) return;
+
+    switch (result) {
+        case 0: addSystemChatMessage("Guild created successfully!"); break;
+        case 1: addSystemChatMessage("Guild creation failed: already in a guild."); break;
+        case 2: addSystemChatMessage("Guild creation failed: not enough signatures."); break;
+        case 3: addSystemChatMessage("Guild creation failed: name already taken."); break;
+        default: addSystemChatMessage("Guild creation failed (error " + std::to_string(result) + ")."); break;
+    }
+}
+
 void GameHandler::handleGuildInfo(network::Packet& packet) {
     GuildInfoData data;
     if (!GuildInfoParser::parse(packet, data)) return;
 
+    guildInfoData_ = data;
     addSystemChatMessage("Guild: " + data.guildName + " (" +
                          std::to_string(data.numMembers) + " members, " +
                          std::to_string(data.numAccounts) + " accounts)");
@@ -9591,6 +9684,7 @@ void GameHandler::handleGuildQueryResponse(network::Packet& packet) {
     if (!packetParsers_->parseGuildQueryResponse(packet, data)) return;
 
     guildName_ = data.guildName;
+    guildQueryData_ = data;
     guildRankNames_.clear();
     for (uint32_t i = 0; i < 10; ++i) {
         guildRankNames_.push_back(data.rankNames[i]);
@@ -13305,6 +13399,8 @@ void GameHandler::auctionSearch(const std::string& name, uint8_t levelMin, uint8
         addSystemChatMessage("Please wait before searching again.");
         return;
     }
+    // Save search params for pagination and auto-refresh
+    lastAuctionSearch_ = {name, levelMin, levelMax, quality, itemClass, itemSubClass, invTypeMask, usableOnly, offset};
     pendingAuctionTarget_ = AuctionResultTarget::BROWSE;
     auto pkt = AuctionListItemsPacket::build(auctioneerGuid_, offset, name,
                                               levelMin, levelMax, invTypeMask,
@@ -13437,9 +13533,16 @@ void GameHandler::handleAuctionCommandResult(network::Packet& packet) {
     if (result.errorCode == 0) {
         std::string msg = std::string("Auction ") + actionName + " successful.";
         addSystemChatMessage(msg);
-        // Refresh appropriate list
-        if (result.action == 0) auctionListOwnerItems();
-        else if (result.action == 1) auctionListOwnerItems();
+        // Refresh appropriate lists
+        if (result.action == 0) auctionListOwnerItems();       // create
+        else if (result.action == 1) auctionListOwnerItems();  // cancel
+        else if (result.action == 2 || result.action == 3) {   // bid or buyout
+            auctionListBidderItems();
+            // Re-query browse results with the same filters the user last searched with
+            const auto& s = lastAuctionSearch_;
+            auctionSearch(s.name, s.levelMin, s.levelMax, s.quality,
+                          s.itemClass, s.itemSubClass, s.invTypeMask, s.usableOnly, s.offset);
+        }
     } else {
         const char* errors[] = {"OK", "Inventory", "Not enough money", "Item not found",
                                 "Higher bid", "Increment", "Not enough items",

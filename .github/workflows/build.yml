@@ -195,10 +195,14 @@ jobs:
         shell: msys2 {0}
         run: |
           git clone --depth 1 https://github.com/ladislav-zezula/StormLib.git /tmp/StormLib
+          # Disable x86 inline asm in bundled libtomcrypt (bswapl/movl) —
+          # __MINGW32__ is defined on CLANGARM64 which incorrectly enables x86 asm
           cmake -S /tmp/StormLib -B /tmp/StormLib/build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX="$MINGW_PREFIX" \
-            -DBUILD_SHARED_LIBS=OFF
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_C_FLAGS="-DLTC_NO_BSWAP" \
+            -DCMAKE_CXX_FLAGS="-DLTC_NO_BSWAP"
           cmake --build /tmp/StormLib/build --parallel $(nproc)
           cmake --install /tmp/StormLib/build
 

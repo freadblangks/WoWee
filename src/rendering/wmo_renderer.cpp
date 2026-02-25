@@ -1319,9 +1319,6 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
     bool doFrustumCull = false; // Temporarily disabled: can over-cull world WMOs
     bool doDistanceCull = distanceCulling;
 
-    // Cache active group info for distance-cull exemption (player's current WMO group)
-    const auto activeGroupCopy = activeGroup_;
-
     auto cullInstance = [&](size_t instIdx) -> InstanceDrawList {
         if (instIdx >= instances.size()) return InstanceDrawList{};
         const auto& instance = instances[instIdx];
@@ -1331,9 +1328,6 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
 
         InstanceDrawList result;
         result.instanceIndex = instIdx;
-
-        // Check if this instance is the one the player is standing in
-        bool isActiveInstance = activeGroupCopy.isValid() && activeGroupCopy.instanceIdx == instIdx;
 
         // Portal-based visibility
         std::unordered_set<uint32_t> portalVisibleGroups;
@@ -1355,24 +1349,11 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
                 const auto& [gMin, gMax] = instance.worldGroupBounds[gi];
 
                 if (doDistanceCull) {
-                    // Never cull the group the player is standing in or its portal neighbors
-                    bool isExempt = false;
-                    if (isActiveInstance) {
-                        if (static_cast<int32_t>(gi) == activeGroupCopy.groupIdx) {
-                            isExempt = true;
-                        } else {
-                            for (uint32_t ng : activeGroupCopy.neighborGroups) {
-                                if (ng == static_cast<uint32_t>(gi)) { isExempt = true; break; }
-                            }
-                        }
-                    }
-                    if (!isExempt) {
-                        glm::vec3 closestPoint = glm::clamp(camPos, gMin, gMax);
-                        float distSq = glm::dot(closestPoint - camPos, closestPoint - camPos);
-                        if (distSq > maxGroupDistanceSq) {
-                            result.distanceCulled++;
-                            continue;
-                        }
+                    glm::vec3 closestPoint = glm::clamp(camPos, gMin, gMax);
+                    float distSq = glm::dot(closestPoint - camPos, closestPoint - camPos);
+                    if (distSq > 250000.0f) {
+                        result.distanceCulled++;
+                        continue;
                     }
                 }
 

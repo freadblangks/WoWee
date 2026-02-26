@@ -24,7 +24,7 @@ struct WorldMapZone {
     float locLeft = 0, locRight = 0, locTop = 0, locBottom = 0;
     uint32_t displayMapID = 0;
     uint32_t parentWorldMapID = 0;
-    uint32_t exploreFlag = 0;
+    std::vector<uint32_t> exploreBits;  // all AreaBit indices (zone + subzones)
 
     // Per-zone cached textures (owned by WorldMap::zoneTextures)
     VkTexture* tileTextures[12] = {};

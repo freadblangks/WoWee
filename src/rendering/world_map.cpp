@@ -276,13 +276,18 @@ void WorldMap::loadZonesFromDBC() {
     }
 
     const auto* atL = activeLayout ? activeLayout->getLayout("AreaTable") : nullptr;
+    // Map areaID → its own AreaBit, and parentAreaID → list of child AreaBits
     std::unordered_map<uint32_t, uint32_t> exploreFlagByAreaId;
+    std::unordered_map<uint32_t, std::vector<uint32_t>> childBitsByParent;
     auto areaDbc = assetManager->loadDBC("AreaTable.dbc");
     if (areaDbc && areaDbc->isLoaded() && areaDbc->getFieldCount() > 3) {
+        const uint32_t parentField = atL ? (*atL)["ParentAreaNum"] : 2;
         for (uint32_t i = 0; i < areaDbc->getRecordCount(); i++) {
             const uint32_t areaId = areaDbc->getUInt32(i, atL ? (*atL)["ID"] : 0);
             const uint32_t exploreFlag = areaDbc->getUInt32(i, atL ? (*atL)["ExploreFlag"] : 3);
+            const uint32_t parentArea = areaDbc->getUInt32(i, parentField);
             if (areaId != 0) exploreFlagByAreaId[areaId] = exploreFlag;
+            if (parentArea != 0) childBitsByParent[parentArea].push_back(exploreFlag);
         }
     }
 
@@ -308,9 +313,15 @@ void WorldMap::loadZonesFromDBC() {
         zone.locBottom = wmaDbc->getFloat(i, wmaL ? (*wmaL)["LocBottom"] : 7);
         zone.displayMapID = wmaDbc->getUInt32(i, wmaL ? (*wmaL)["DisplayMapID"] : 8);
         zone.parentWorldMapID = wmaDbc->getUInt32(i, wmaL ? (*wmaL)["ParentWorldMapID"] : 10);
+        // Collect the zone's own AreaBit plus all subzone AreaBits
         auto exploreIt = exploreFlagByAreaId.find(zone.areaID);
         if (exploreIt != exploreFlagByAreaId.end())
-            zone.exploreFlag = exploreIt->second;
+            zone.exploreBits.push_back(exploreIt->second);
+        auto childIt = childBitsByParent.find(zone.areaID);
+        if (childIt != childBitsByParent.end()) {
+            for (uint32_t bit : childIt->second)
+                zone.exploreBits.push_back(bit);
+        }
 
         int idx = static_cast<int>(zones.size());
 
@@ -730,16 +741,11 @@ glm::vec2 WorldMap::renderPosToMapUV(const glm::vec3& renderPos, int zoneIdx) co
 // --------------------------------------------------------
 
 void WorldMap::updateExploration(const glm::vec3& playerRenderPos) {
-    auto isExploreFlagSet = [this](uint32_t flag) -> bool {
-        if (!hasServerExplorationMask || serverExplorationMask.empty() || flag == 0) return false;
-        const auto isSet = [this](uint32_t bitIndex) -> bool {
-            const size_t word = bitIndex / 32;
-            if (word >= serverExplorationMask.size()) return false;
-            return (serverExplorationMask[word] & (1u << (bitIndex % 32))) != 0;
-        };
-        if (isSet(flag)) return true;
-        if (flag > 0 && isSet(flag - 1)) return true;
-        return false;
+    auto isBitSet = [this](uint32_t bitIndex) -> bool {
+        if (!hasServerExplorationMask || serverExplorationMask.empty()) return false;
+        const size_t word = bitIndex / 32;
+        if (word >= serverExplorationMask.size()) return false;
+        return (serverExplorationMask[word] & (1u << (bitIndex % 32))) != 0;
     };
 
     bool markedAny = false;
@@ -747,10 +753,13 @@ void WorldMap::updateExploration(const glm::vec3& playerRenderPos) {
         exploredZones.clear();
         for (int i = 0; i < static_cast<int>(zones.size()); i++) {
             const auto& z = zones[i];
-            if (z.areaID == 0 || z.exploreFlag == 0) continue;
-            if (isExploreFlagSet(z.exploreFlag)) {
-                exploredZones.insert(i);
-                markedAny = true;
+            if (z.areaID == 0 || z.exploreBits.empty()) continue;
+            for (uint32_t bit : z.exploreBits) {
+                if (isBitSet(bit)) {
+                    exploredZones.insert(i);
+                    markedAny = true;
+                    break;
+                }
             }
         }
     }

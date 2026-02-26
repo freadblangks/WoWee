@@ -441,6 +441,9 @@ public:
     void castSpell(uint32_t spellId, uint64_t targetGuid = 0);
     void cancelCast();
     void cancelAura(uint32_t spellId);
+    void dismissPet();
+    bool hasPet() const { return petGuid_ != 0; }
+    uint64_t getPetGuid() const { return petGuid_; }
     const std::unordered_set<uint32_t>& getKnownSpells() const { return knownSpells; }
     bool isCasting() const { return casting; }
     bool isGameObjectInteractionCasting() const {
@@ -1137,6 +1140,7 @@ private:
     void handleGuildInvite(network::Packet& packet);
     void handleGuildCommandResult(network::Packet& packet);
     void handlePetitionShowlist(network::Packet& packet);
+    void handlePetSpells(network::Packet& packet);
     void handleTurnInPetitionResults(network::Packet& packet);
 
     // ---- Character creation handler ----
@@ -1475,6 +1479,7 @@ private:
     std::array<ActionBarSlot, 12> actionBar{};
     std::vector<AuraSlot> playerAuras;
     std::vector<AuraSlot> targetAuras;
+    uint64_t petGuid_ = 0;
 
     // ---- Phase 4: Group ----
     GroupListData partyData;

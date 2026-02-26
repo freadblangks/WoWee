@@ -4720,14 +4720,13 @@ void GameScreen::renderGuildRoster(game::GameHandler& gameHandler) {
 
 void GameScreen::renderBuffBar(game::GameHandler& gameHandler) {
     const auto& auras = gameHandler.getPlayerAuras();
-    if (auras.empty()) return;
 
     // Count non-empty auras
     int activeCount = 0;
     for (const auto& a : auras) {
         if (!a.isEmpty()) activeCount++;
     }
-    if (activeCount == 0) return;
+    if (activeCount == 0 && !gameHandler.hasPet()) return;
 
     auto* assetMgr = core::Application::getInstance().getAssetManager();
 
@@ -4812,6 +4811,16 @@ void GameScreen::renderBuffBar(game::GameHandler& gameHandler) {
 
             ImGui::PopID();
             shown++;
+        }
+        // Dismiss Pet button
+        if (gameHandler.hasPet()) {
+            if (shown > 0) ImGui::Spacing();
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.2f, 0.2f, 0.9f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.3f, 0.3f, 1.0f));
+            if (ImGui::Button("Dismiss Pet", ImVec2(-1, 0))) {
+                gameHandler.dismissPet();
+            }
+            ImGui::PopStyleColor(2);
         }
     }
     ImGui::End();

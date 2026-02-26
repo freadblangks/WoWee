@@ -1698,6 +1698,12 @@ public:
     static network::Packet build(uint32_t spellId);
 };
 
+/** CMSG_PET_ACTION packet builder */
+class PetActionPacket {
+public:
+    static network::Packet build(uint64_t petGuid, uint32_t action);
+};
+
 /** SMSG_CAST_FAILED data */
 struct CastFailedData {
     uint8_t castCount = 0;

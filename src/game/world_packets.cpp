@@ -2890,6 +2890,13 @@ network::Packet CancelAuraPacket::build(uint32_t spellId) {
     return packet;
 }
 
+network::Packet PetActionPacket::build(uint64_t petGuid, uint32_t action) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_PET_ACTION));
+    packet.writeUInt64(petGuid);
+    packet.writeUInt32(action);
+    return packet;
+}
+
 bool CastFailedParser::parse(network::Packet& packet, CastFailedData& data) {
     data.castCount = packet.readUInt8();
     data.spellId = packet.readUInt32();

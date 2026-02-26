@@ -1836,6 +1836,9 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_GUILD_COMMAND_RESULT:
             handleGuildCommandResult(packet);
             break;
+        case Opcode::SMSG_PET_SPELLS:
+            handlePetSpells(packet);
+            break;
         case Opcode::SMSG_PETITION_SHOWLIST:
             handlePetitionShowlist(packet);
             break;
@@ -3322,6 +3325,7 @@ void GameHandler::selectCharacter(uint64_t characterGuid) {
     actionBar = {};
     playerAuras.clear();
     targetAuras.clear();
+    petGuid_ = 0;
     playerXp_ = 0;
     playerNextLevelXp_ = 0;
     serverPlayerLevel_ = 1;
@@ -9258,6 +9262,18 @@ void GameHandler::cancelCast() {
 void GameHandler::cancelAura(uint32_t spellId) {
     if (state != WorldState::IN_WORLD || !socket) return;
     auto packet = CancelAuraPacket::build(spellId);
+    socket->send(packet);
+}
+
+void GameHandler::handlePetSpells(network::Packet& packet) {
+    if (packet.getSize() - packet.getReadPos() < 8) return;
+    petGuid_ = packet.readUInt64();
+    LOG_DEBUG("SMSG_PET_SPELLS: petGuid=0x", std::hex, petGuid_, std::dec);
+}
+
+void GameHandler::dismissPet() {
+    if (petGuid_ == 0 || state != WorldState::IN_WORLD || !socket) return;
+    auto packet = PetActionPacket::build(petGuid_, 0x07000000);
     socket->send(packet);
 }
 

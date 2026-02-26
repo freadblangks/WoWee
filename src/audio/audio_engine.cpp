@@ -224,6 +224,7 @@ void AudioEngine::setListenerOrientation(const glm::vec3& forward, const glm::ve
 bool AudioEngine::playSound2D(const std::vector<uint8_t>& wavData, float volume, float pitch) {
     (void)pitch;
     if (!initialized_ || !engine_ || wavData.empty()) return false;
+    if (masterVolume_ <= 0.0f) return false;
 
     DecodedWavCacheEntry decoded;
     if (!decodeWavCached(wavData, decoded) || !decoded.pcmData || decoded.frames == 0) {
@@ -308,6 +309,7 @@ bool AudioEngine::playSound2D(const std::string& mpqPath, float volume, float pi
 bool AudioEngine::playSound3D(const std::vector<uint8_t>& wavData, const glm::vec3& position,
                               float volume, float pitch, float maxDistance) {
     if (!initialized_ || !engine_ || wavData.empty()) return false;
+    if (masterVolume_ <= 0.0f) return false;
 
     DecodedWavCacheEntry decoded;
     if (!decodeWavCached(wavData, decoded) || !decoded.pcmData || decoded.frames == 0) {

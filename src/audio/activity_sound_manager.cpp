@@ -203,6 +203,7 @@ void ActivitySoundManager::rebuildHardLandClipsForProfile(const std::string& rac
 bool ActivitySoundManager::playOneShot(const std::vector<Sample>& clips, float volume, float pitchLo, float pitchHi) {
     if (clips.empty()) return false;
     if (volumeScale <= 0.0001f || volume <= 0.0001f) return true; // Intentionally muted
+    if (AudioEngine::instance().getMasterVolume() <= 0.0f) return true; // Global mute
     reapProcesses();
     if (oneShotPid != INVALID_PROCESS) return false;
 

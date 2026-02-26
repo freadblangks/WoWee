@@ -710,10 +710,14 @@ void WaterRenderer::loadFromTerrain(const pipeline::ADTTerrain& terrain, bool ap
         const int gridH = MERGED_W + 1;
         surface.heights.resize(gridW * gridH, groupHeight);
 
-        // Initialize mask (128×128 sub-tiles, all masked OUT)
+        // Initialize mask (128×128 sub-tiles)
         // Mask uses LSB bit order: tileIndex = row * 128 + col
         const int maskBytes = (MERGED_W * MERGED_W + 7) / 8;
-        surface.mask.resize(maskBytes, 0);
+        // For ocean water (basicType 1) at sea level, fill the entire tile.
+        // Depth testing against terrain handles land occlusion naturally.
+        uint8_t basicType = (key.liquidType == 0) ? 0 : ((key.liquidType - 1) % 4);
+        bool isOcean = (basicType == 1) && (std::abs(groupHeight) < 1.0f);
+        surface.mask.resize(maskBytes, isOcean ? 0xFF : 0x00);
 
         // ── Fill from each contributing chunk ──
         for (const auto& info : chunkLayers) {

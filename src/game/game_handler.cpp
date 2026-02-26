@@ -7436,15 +7436,10 @@ void GameHandler::handleInspectResults(network::Packet& packet) {
 
 uint64_t GameHandler::resolveOnlineItemGuid(uint32_t itemId) const {
     if (itemId == 0) return 0;
-    uint64_t found = 0;
     for (const auto& [guid, info] : onlineItems_) {
-        if (info.entry != itemId) continue;
-        if (found != 0) {
-            return 0; // Ambiguous
-        }
-        found = guid;
+        if (info.entry == itemId) return guid;
     }
-    return found;
+    return 0;
 }
 
 void GameHandler::detectInventorySlotBases(const std::map<uint16_t, uint32_t>& fields) {
@@ -9309,6 +9304,14 @@ void GameHandler::handleLearnedSpell(network::Packet& packet) {
             }
         }
     }
+
+    // Show chat message for non-talent spells
+    const std::string& name = getSpellName(spellId);
+    if (!name.empty()) {
+        addSystemChatMessage("You have learned a new spell: " + name + ".");
+    } else {
+        addSystemChatMessage("You have learned a new spell.");
+    }
 }
 
 void GameHandler::handleRemovedSpell(network::Packet& packet) {
@@ -10673,29 +10676,33 @@ void GameHandler::destroyItem(uint8_t bag, uint8_t slot, uint8_t count) {
 void GameHandler::useItemBySlot(int backpackIndex) {
     if (backpackIndex < 0 || backpackIndex >= inventory.getBackpackSize()) return;
     const auto& slot = inventory.getBackpackSlot(backpackIndex);
-    if (slot.empty()) {
-        LOG_WARNING("useItemBySlot: slot ", backpackIndex, " is empty");
-        return;
-    }
-
-    LOG_INFO("useItemBySlot: backpackIndex=", backpackIndex, " itemId=", slot.item.itemId,
-             " wowSlot=", 23 + backpackIndex);
+    if (slot.empty()) return;
 
     uint64_t itemGuid = backpackSlotGuids_[backpackIndex];
     if (itemGuid == 0) {
         itemGuid = resolveOnlineItemGuid(slot.item.itemId);
     }
-    LOG_INFO("useItemBySlot: itemGuid=0x", std::hex, itemGuid, std::dec);
 
     if (itemGuid != 0 && state == WorldState::IN_WORLD && socket) {
+        // Find the item's on-use spell ID from cached item info
+        uint32_t useSpellId = 0;
+        if (auto* info = getItemInfo(slot.item.itemId)) {
+            for (const auto& sp : info->spells) {
+                // SpellTrigger: 0=Use, 5=Learn
+                if (sp.spellId != 0 && (sp.spellTrigger == 0 || sp.spellTrigger == 5)) {
+                    useSpellId = sp.spellId;
+                    break;
+                }
+            }
+        }
+
         // WoW inventory: equipment 0-18, bags 19-22, backpack 23-38
         auto packet = packetParsers_
-            ? packetParsers_->buildUseItem(0xFF, static_cast<uint8_t>(23 + backpackIndex), itemGuid)
-            : UseItemPacket::build(0xFF, static_cast<uint8_t>(23 + backpackIndex), itemGuid);
-        LOG_INFO("useItemBySlot: sending CMSG_USE_ITEM, packetSize=", packet.getSize());
+            ? packetParsers_->buildUseItem(0xFF, static_cast<uint8_t>(23 + backpackIndex), itemGuid, useSpellId)
+            : UseItemPacket::build(0xFF, static_cast<uint8_t>(23 + backpackIndex), itemGuid, useSpellId);
         socket->send(packet);
     } else if (itemGuid == 0) {
-        LOG_WARNING("Use item failed: missing item GUID for slot ", backpackIndex);
+        addSystemChatMessage("Cannot use that item right now.");
     }
 }
 
@@ -10722,17 +10729,29 @@ void GameHandler::useItemInBag(int bagIndex, int slotIndex) {
              " itemGuid=0x", std::hex, itemGuid, std::dec);
 
     if (itemGuid != 0 && state == WorldState::IN_WORLD && socket) {
+        // Find the item's on-use spell ID
+        uint32_t useSpellId = 0;
+        if (auto* info = getItemInfo(slot.item.itemId)) {
+            for (const auto& sp : info->spells) {
+                if (sp.spellId != 0 && (sp.spellTrigger == 0 || sp.spellTrigger == 5)) {
+                    useSpellId = sp.spellId;
+                    break;
+                }
+            }
+        }
+
         // WoW bag addressing: bagIndex = equip slot of bag container (19-22)
         // For CMSG_USE_ITEM: bag = 19+bagIndex, slot = slot within bag
         uint8_t wowBag = static_cast<uint8_t>(19 + bagIndex);
         auto packet = packetParsers_
-            ? packetParsers_->buildUseItem(wowBag, static_cast<uint8_t>(slotIndex), itemGuid)
-            : UseItemPacket::build(wowBag, static_cast<uint8_t>(slotIndex), itemGuid);
+            ? packetParsers_->buildUseItem(wowBag, static_cast<uint8_t>(slotIndex), itemGuid, useSpellId)
+            : UseItemPacket::build(wowBag, static_cast<uint8_t>(slotIndex), itemGuid, useSpellId);
         LOG_INFO("useItemInBag: sending CMSG_USE_ITEM, bag=", (int)wowBag, " slot=", slotIndex,
                  " packetSize=", packet.getSize());
         socket->send(packet);
     } else if (itemGuid == 0) {
         LOG_WARNING("Use item in bag failed: missing item GUID for bag ", bagIndex, " slot ", slotIndex);
+        addSystemChatMessage("Cannot use that item right now.");
     }
 }
 

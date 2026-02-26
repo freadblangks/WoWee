@@ -648,6 +648,11 @@ void InventoryScreen::render(game::Inventory& inventory, uint64_t moneyCopper) {
         cancelPickup(inventory);
     }
 
+    // Cancel pending pickup if mouse released before threshold
+    if (pickupPending_ && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        pickupPending_ = false;
+    }
+
     if (separateBags_) {
         renderSeparateBags(inventory, moneyCopper);
     } else {
@@ -1341,7 +1346,9 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
 
         ImGui::InvisibleButton("slot", ImVec2(size, size));
 
-        if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && holdingItem && validDrop) {
+        // Drop held item on mouse release over empty slot
+        if (ImGui::IsItemHovered() && holdingItem && validDrop &&
+            ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
             if (kind == SlotKind::BACKPACK && backpackIndex >= 0) {
                 placeInBackpack(inventory, backpackIndex);
             } else if (kind == SlotKind::BACKPACK && isBagSlot) {
@@ -1400,17 +1407,44 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
 
         ImGui::InvisibleButton("slot", ImVec2(size, size));
 
-        // Left-click: pickup or place/swap
-        if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
-            if (!holdingItem) {
-                if (kind == SlotKind::BACKPACK && backpackIndex >= 0) {
-                    pickupFromBackpack(inventory, backpackIndex);
-                } else if (kind == SlotKind::BACKPACK && isBagSlot) {
-                    pickupFromBag(inventory, bagIndex, bagSlotIndex);
-                } else if (kind == SlotKind::EQUIPMENT) {
-                    pickupFromEquipment(inventory, equipSlot);
+        // Left mouse: hold to pick up, release to drop/swap
+        if (!holdingItem) {
+            // Start pickup tracking on mouse press
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
+                pickupPending_ = true;
+                pickupPressTime_ = ImGui::GetTime();
+                pickupSlotKind_ = kind;
+                pickupBackpackIndex_ = backpackIndex;
+                pickupBagIndex_ = bagIndex;
+                pickupBagSlotIndex_ = bagSlotIndex;
+                pickupEquipSlot_ = equipSlot;
+            }
+            // Check if held long enough to pick up
+            if (pickupPending_ && ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
+                (ImGui::GetTime() - pickupPressTime_) >= kPickupHoldThreshold) {
+                // Verify this is the same slot that was pressed
+                bool sameSlot = (pickupSlotKind_ == kind);
+                if (kind == SlotKind::BACKPACK && !isBagSlot)
+                    sameSlot = sameSlot && (pickupBackpackIndex_ == backpackIndex);
+                else if (kind == SlotKind::BACKPACK && isBagSlot)
+                    sameSlot = sameSlot && (pickupBagIndex_ == bagIndex) && (pickupBagSlotIndex_ == bagSlotIndex);
+                else if (kind == SlotKind::EQUIPMENT)
+                    sameSlot = sameSlot && (pickupEquipSlot_ == equipSlot);
+
+                if (sameSlot && ImGui::IsItemHovered()) {
+                    pickupPending_ = false;
+                    if (kind == SlotKind::BACKPACK && backpackIndex >= 0) {
+                        pickupFromBackpack(inventory, backpackIndex);
+                    } else if (kind == SlotKind::BACKPACK && isBagSlot) {
+                        pickupFromBag(inventory, bagIndex, bagSlotIndex);
+                    } else if (kind == SlotKind::EQUIPMENT) {
+                        pickupFromEquipment(inventory, equipSlot);
+                    }
                 }
-            } else {
+            }
+        } else {
+            // Drop/swap on mouse release over a filled slot
+            if (ImGui::IsItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
                 if (kind == SlotKind::BACKPACK && backpackIndex >= 0) {
                     placeInBackpack(inventory, backpackIndex);
                 } else if (kind == SlotKind::BACKPACK && isBagSlot) {
@@ -1422,12 +1456,14 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
         }
 
         // Right-click: bank deposit (if bank open), vendor sell (if vendor mode), or auto-equip/use
-        if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && !holdingItem && gameHandler_) {
-            LOG_INFO("Right-click slot: kind=", (int)kind,
+        // Note: InvisibleButton only tracks left-click by default, so use IsItemHovered+IsMouseClicked
+        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !holdingItem && gameHandler_) {
+            LOG_WARNING("Right-click slot: kind=", (int)kind,
                      " backpackIndex=", backpackIndex,
                      " bagIndex=", bagIndex, " bagSlotIndex=", bagSlotIndex,
                      " vendorMode=", vendorMode_,
-                     " bankOpen=", gameHandler_->isBankOpen());
+                     " bankOpen=", gameHandler_->isBankOpen(),
+                     " item='", item.name, "' invType=", (int)item.inventoryType);
             if (gameHandler_->isMailComposeOpen() && kind == SlotKind::BACKPACK && backpackIndex >= 0) {
                 gameHandler_->attachItemFromBackpack(backpackIndex);
             } else if (gameHandler_->isMailComposeOpen() && kind == SlotKind::BACKPACK && isBagSlot) {
@@ -1444,12 +1480,18 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
                 LOG_INFO("UI unequip request: equipSlot=", (int)equipSlot);
                 gameHandler_->unequipToBackpack(equipSlot);
             } else if (kind == SlotKind::BACKPACK && backpackIndex >= 0) {
+                LOG_INFO("Right-click backpack item: name='", item.name,
+                         "' inventoryType=", (int)item.inventoryType,
+                         " itemId=", item.itemId);
                 if (item.inventoryType > 0) {
                     gameHandler_->autoEquipItemBySlot(backpackIndex);
                 } else {
                     gameHandler_->useItemBySlot(backpackIndex);
                 }
             } else if (kind == SlotKind::BACKPACK && isBagSlot) {
+                LOG_INFO("Right-click bag item: name='", item.name,
+                         "' inventoryType=", (int)item.inventoryType,
+                         " bagIndex=", bagIndex, " slotIndex=", bagSlotIndex);
                 if (item.inventoryType > 0) {
                     gameHandler_->autoEquipItemInBag(bagIndex, bagSlotIndex);
                 } else {

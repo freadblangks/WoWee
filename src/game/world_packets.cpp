@@ -2398,94 +2398,62 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
     data.containerSlots = packet.readUInt32();
 
     uint32_t statsCount = packet.readUInt32();
-    // Server always sends 10 stat pairs; statsCount tells how many are meaningful
-    for (uint32_t i = 0; i < 10; i++) {
+    // Server sends exactly statsCount stat pairs (not always 10).
+    uint32_t statsToRead = std::min(statsCount, 10u);
+    for (uint32_t i = 0; i < statsToRead; i++) {
         uint32_t statType = packet.readUInt32();
         int32_t statValue = static_cast<int32_t>(packet.readUInt32());
-        if (i < statsCount) {
-            switch (statType) {
-                case 3: data.agility = statValue; break;
-                case 4: data.strength = statValue; break;
-                case 5: data.intellect = statValue; break;
-                case 6: data.spirit = statValue; break;
-                case 7: data.stamina = statValue; break;
-                default: break;
-            }
+        switch (statType) {
+            case 3: data.agility = statValue; break;
+            case 4: data.strength = statValue; break;
+            case 5: data.intellect = statValue; break;
+            case 6: data.spirit = statValue; break;
+            case 7: data.stamina = statValue; break;
+            default: break;
         }
     }
 
     packet.readUInt32(); // ScalingStatDistribution
     packet.readUInt32(); // ScalingStatValue
 
-    const size_t preDamagePos = packet.getReadPos();
-    struct DamageParseResult {
-        float damageMin = 0.0f;
-        float damageMax = 0.0f;
-        int32_t armor = 0;
-        uint32_t delayMs = 0;
-        bool ok = false;
-    };
-    auto parseDamageBlock = [&](int damageEntries) -> DamageParseResult {
-        DamageParseResult r;
-        packet.setReadPos(preDamagePos);
-        bool haveWeaponDamage = false;
-        for (int i = 0; i < damageEntries; i++) {
-            float dmgMin = packet.readFloat();
-            float dmgMax = packet.readFloat();
-            uint32_t damageType = packet.readUInt32();
-            if (!haveWeaponDamage && dmgMax > 0.0f) {
-                if (damageType == 0 || r.damageMax <= 0.0f) {
-                    r.damageMin = dmgMin;
-                    r.damageMax = dmgMax;
-                    haveWeaponDamage = (damageType == 0);
-                }
+    // WotLK 3.3.5a: MAX_ITEM_PROTO_DAMAGES = 2
+    bool haveWeaponDamage = false;
+    for (int i = 0; i < 2; i++) {
+        float dmgMin = packet.readFloat();
+        float dmgMax = packet.readFloat();
+        uint32_t damageType = packet.readUInt32();
+        if (!haveWeaponDamage && dmgMax > 0.0f) {
+            if (damageType == 0 || data.damageMax <= 0.0f) {
+                data.damageMin = dmgMin;
+                data.damageMax = dmgMax;
+                haveWeaponDamage = (damageType == 0);
             }
         }
-
-        r.armor = static_cast<int32_t>(packet.readUInt32());
-        if (packet.getSize() - packet.getReadPos() >= 28) {
-            packet.readUInt32(); // HolyRes
-            packet.readUInt32(); // FireRes
-            packet.readUInt32(); // NatureRes
-            packet.readUInt32(); // FrostRes
-            packet.readUInt32(); // ShadowRes
-            packet.readUInt32(); // ArcaneRes
-            r.delayMs = packet.readUInt32();
-            r.ok = true;
-        }
-        return r;
-    };
-
-    // All WoW versions (Classic, TBC, WotLK) use exactly 5 damage entries in
-    // SMSG_ITEM_QUERY_SINGLE_RESPONSE. Default to 5. Fall back to 2 only if
-    // the 5-entry parse fails or yields clearly implausible results for weapons.
-    DamageParseResult parsed2 = parseDamageBlock(2);
-    DamageParseResult parsed5 = parseDamageBlock(5);
-
-    auto looksWeaponItem = [&](const DamageParseResult& r) {
-        return (data.itemClass == 2) && (r.damageMax > 0.0f) && (r.delayMs > 0);
-    };
-
-    const DamageParseResult* chosen = &parsed5;
-    if (parsed5.ok && parsed2.ok) {
-        // Only prefer parsed2 if it identifies as a weapon and parsed5 doesn't.
-        // This handles non-standard 2-entry servers for weapon items.
-        if (looksWeaponItem(parsed2) && !looksWeaponItem(parsed5)) chosen = &parsed2;
-    } else if (!parsed5.ok && parsed2.ok) {
-        chosen = &parsed2;
     }
-    int chosenDamageEntries = (chosen == &parsed5) ? 5 : 2;
 
-    data.damageMin = chosen->damageMin;
-    data.damageMax = chosen->damageMax;
-    data.armor = chosen->armor;
-    data.delayMs = chosen->delayMs;
+    data.armor = static_cast<int32_t>(packet.readUInt32());
+    packet.readUInt32(); // HolyRes
+    packet.readUInt32(); // FireRes
+    packet.readUInt32(); // NatureRes
+    packet.readUInt32(); // FrostRes
+    packet.readUInt32(); // ShadowRes
+    packet.readUInt32(); // ArcaneRes
+    data.delayMs = packet.readUInt32();
+    packet.readUInt32(); // AmmoType
+    packet.readFloat();  // RangedModRange
+
+    // 5 item spells: SpellId, SpellTrigger, SpellCharges, SpellCooldown, SpellCategory, SpellCategoryCooldown
+    for (int i = 0; i < 5; i++) {
+        if (packet.getReadPos() + 24 > packet.getSize()) break;
+        data.spells[i].spellId = packet.readUInt32();
+        data.spells[i].spellTrigger = packet.readUInt32();
+        packet.readUInt32(); // SpellCharges
+        packet.readUInt32(); // SpellCooldown
+        packet.readUInt32(); // SpellCategory
+        packet.readUInt32(); // SpellCategoryCooldown
+    }
 
     data.valid = !data.name.empty();
-    LOG_INFO("Item query: '", data.name, "' class=", data.itemClass,
-             " invType=", data.inventoryType, " quality=", data.quality,
-             " armor=", data.armor, " dmgEntries=", chosenDamageEntries,
-             " statsCount=", statsCount, " sellPrice=", data.sellPrice);
     return true;
 }
 
@@ -3142,13 +3110,13 @@ network::Packet AutostoreLootItemPacket::build(uint8_t slotIndex) {
     return packet;
 }
 
-network::Packet UseItemPacket::build(uint8_t bagIndex, uint8_t slotIndex, uint64_t itemGuid) {
+network::Packet UseItemPacket::build(uint8_t bagIndex, uint8_t slotIndex, uint64_t itemGuid, uint32_t spellId) {
     network::Packet packet(wireOpcode(Opcode::CMSG_USE_ITEM));
     packet.writeUInt8(bagIndex);
     packet.writeUInt8(slotIndex);
     packet.writeUInt8(0);  // cast count
-    packet.writeUInt32(0); // spell id
-    packet.writeUInt64(itemGuid);
+    packet.writeUInt32(spellId); // spell id from item data
+    packet.writeUInt64(itemGuid); // full 8-byte GUID
     packet.writeUInt32(0); // glyph index
     packet.writeUInt8(0);  // cast flags
     // SpellCastTargets: self

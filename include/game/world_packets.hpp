@@ -1512,6 +1512,12 @@ struct ItemQueryResponseData {
     int32_t spirit = 0;
     uint32_t sellPrice = 0;
     std::string subclassName;
+    // Item spells (up to 5)
+    struct ItemSpell {
+        uint32_t spellId = 0;
+        uint32_t spellTrigger = 0; // 0=Use, 1=Equip, 2=ChanceOnHit, 5=Learn
+    };
+    std::array<ItemSpell, 5> spells{};
     bool valid = false;
 };
 
@@ -1879,7 +1885,7 @@ public:
 /** CMSG_USE_ITEM packet builder */
 class UseItemPacket {
 public:
-    static network::Packet build(uint8_t bagIndex, uint8_t slotIndex, uint64_t itemGuid);
+    static network::Packet build(uint8_t bagIndex, uint8_t slotIndex, uint64_t itemGuid, uint32_t spellId = 0);
 };
 
 /** CMSG_AUTOEQUIP_ITEM packet builder */

@@ -133,11 +133,17 @@ void SpellbookScreen::loadSkillLineDBCs(pipeline::AssetManager* assetManager) {
             uint32_t id = skillLineDbc->getUInt32(i, slL ? (*slL)["ID"] : 0);
             uint32_t category = skillLineDbc->getUInt32(i, slL ? (*slL)["Category"] : 1);
             std::string name = skillLineDbc->getString(i, slL ? (*slL)["Name"] : 3);
-            if (id > 0 && !name.empty()) {
-                skillLineNames[id] = name;
+            if (id > 0) {
+                if (!name.empty()) {
+                    skillLineNames[id] = name;
+                }
                 skillLineCategories[id] = category;
             }
         }
+        LOG_INFO("Spellbook: Loaded ", skillLineNames.size(), " skill line names, ",
+                 skillLineCategories.size(), " categories from SkillLine.dbc");
+    } else {
+        LOG_WARNING("Spellbook: Could not load SkillLine.dbc");
     }
 
     auto slaDbc = assetManager->loadDBC("SkillLineAbility.dbc");
@@ -147,9 +153,12 @@ void SpellbookScreen::loadSkillLineDBCs(pipeline::AssetManager* assetManager) {
             uint32_t skillLineId = slaDbc->getUInt32(i, slaL ? (*slaL)["SkillLineID"] : 1);
             uint32_t spellId = slaDbc->getUInt32(i, slaL ? (*slaL)["SpellID"] : 2);
             if (spellId > 0 && skillLineId > 0) {
-                spellToSkillLine[spellId] = skillLineId;
+                spellToSkillLine.emplace(spellId, skillLineId);
             }
         }
+        LOG_INFO("Spellbook: Loaded ", spellToSkillLine.size(), " spell-to-skillline mappings from SkillLineAbility.dbc");
+    } else {
+        LOG_WARNING("Spellbook: Could not load SkillLineAbility.dbc");
     }
 }
 
@@ -161,9 +170,10 @@ void SpellbookScreen::categorizeSpells(const std::unordered_set<uint32_t>& known
     static constexpr uint32_t CAT_PROFESSION  = 11;  // Primary professions
     static constexpr uint32_t CAT_SECONDARY   = 9;   // Secondary skills (Cooking, First Aid, Fishing, Riding, Companions)
 
-    // Special skill line IDs within category 9 that get their own tabs
-    static constexpr uint32_t SKILLLINE_RIDING     = 762;  // Mounts
-    static constexpr uint32_t SKILLLINE_COMPANIONS = 778;  // Vanity/companion pets
+    // Special skill line IDs that get their own tabs
+    static constexpr uint32_t SKILLLINE_MOUNTS     = 777;  // Mount summon spells (category 7)
+    static constexpr uint32_t SKILLLINE_RIDING     = 762;  // Riding skill ranks (category 9)
+    static constexpr uint32_t SKILLLINE_COMPANIONS = 778;  // Vanity/companion pets (category 7)
 
     // Buckets
     std::map<uint32_t, std::vector<const SpellInfo*>> specSpells;  // class spec trees
@@ -178,47 +188,72 @@ void SpellbookScreen::categorizeSpells(const std::unordered_set<uint32_t>& known
 
         const SpellInfo* info = &it->second;
 
-        auto slIt = spellToSkillLine.find(spellId);
-        if (slIt != spellToSkillLine.end()) {
+        // Check all skill lines this spell belongs to, prefer class (cat 7) > profession > secondary > special
+        auto range = spellToSkillLine.equal_range(spellId);
+        bool categorized = false;
+
+        uint32_t bestSkillLine = 0;
+        int bestPriority = -1; // 4=class, 3=profession, 2=secondary, 1=mount/companion
+
+        for (auto slIt = range.first; slIt != range.second; ++slIt) {
             uint32_t skillLineId = slIt->second;
 
-            // Mounts: Riding skill line (762)
-            if (skillLineId == SKILLLINE_RIDING) {
-                mountSpells.push_back(info);
+            if (skillLineId == SKILLLINE_MOUNTS || skillLineId == SKILLLINE_RIDING) {
+                if (bestPriority < 1) { bestPriority = 1; bestSkillLine = SKILLLINE_MOUNTS; }
                 continue;
             }
-
-            // Companions: vanity pets skill line (778)
             if (skillLineId == SKILLLINE_COMPANIONS) {
-                companionSpells.push_back(info);
+                if (bestPriority < 1) { bestPriority = 1; bestSkillLine = skillLineId; }
                 continue;
             }
 
             auto catIt = skillLineCategories.find(skillLineId);
             if (catIt != skillLineCategories.end()) {
                 uint32_t cat = catIt->second;
-
-                // Class spec abilities
-                if (cat == CAT_CLASS) {
-                    specSpells[skillLineId].push_back(info);
-                    continue;
-                }
-
-                // Primary professions
-                if (cat == CAT_PROFESSION) {
-                    profSpells[skillLineId].push_back(info);
-                    continue;
-                }
-
-                // Secondary skills (Cooking, First Aid, Fishing)
-                if (cat == CAT_SECONDARY) {
-                    profSpells[skillLineId].push_back(info);
-                    continue;
+                if (cat == CAT_CLASS && bestPriority < 4) {
+                    bestPriority = 4; bestSkillLine = skillLineId;
+                } else if (cat == CAT_PROFESSION && bestPriority < 3) {
+                    bestPriority = 3; bestSkillLine = skillLineId;
+                } else if (cat == CAT_SECONDARY && bestPriority < 2) {
+                    bestPriority = 2; bestSkillLine = skillLineId;
                 }
             }
         }
 
-        generalSpells.push_back(info);
+        if (bestSkillLine > 0) {
+            if (bestSkillLine == SKILLLINE_MOUNTS) {
+                mountSpells.push_back(info);
+                categorized = true;
+            } else if (bestSkillLine == SKILLLINE_COMPANIONS) {
+                companionSpells.push_back(info);
+                categorized = true;
+            } else {
+                auto catIt = skillLineCategories.find(bestSkillLine);
+                if (catIt != skillLineCategories.end()) {
+                    uint32_t cat = catIt->second;
+                    if (cat == CAT_CLASS) {
+                        specSpells[bestSkillLine].push_back(info);
+                        categorized = true;
+                    } else if (cat == CAT_PROFESSION || cat == CAT_SECONDARY) {
+                        profSpells[bestSkillLine].push_back(info);
+                        categorized = true;
+                    }
+                }
+            }
+        }
+
+        if (!categorized) {
+            generalSpells.push_back(info);
+        }
+    }
+
+    LOG_INFO("Spellbook categorize: ", specSpells.size(), " spec groups, ",
+             generalSpells.size(), " general, ", profSpells.size(), " prof groups, ",
+             mountSpells.size(), " mounts, ", companionSpells.size(), " companions");
+    for (const auto& [slId, spells] : specSpells) {
+        auto nameIt = skillLineNames.find(slId);
+        LOG_INFO("  Spec tab: skillLine=", slId, " name='",
+                 (nameIt != skillLineNames.end() ? nameIt->second : "?"), "' spells=", spells.size());
     }
 
     auto byName = [](const SpellInfo* a, const SpellInfo* b) { return a->name < b->name; };

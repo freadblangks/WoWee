@@ -305,7 +305,7 @@ network::Packet ClassicPacketParsers::buildCastSpell(uint32_t spellId, uint64_t 
 // Vanilla 1.12.x: bag(u8) + slot(u8) + spellIndex(u8) + SpellCastTargets(u16)
 // NO spellId, itemGuid, glyphIndex, or castFlags fields (those are WotLK)
 // ============================================================================
-network::Packet ClassicPacketParsers::buildUseItem(uint8_t bagIndex, uint8_t slotIndex, uint64_t /*itemGuid*/) {
+network::Packet ClassicPacketParsers::buildUseItem(uint8_t bagIndex, uint8_t slotIndex, uint64_t /*itemGuid*/, uint32_t /*spellId*/) {
     network::Packet packet(wireOpcode(LogicalOpcode::CMSG_USE_ITEM));
     packet.writeUInt8(bagIndex);
     packet.writeUInt8(slotIndex);

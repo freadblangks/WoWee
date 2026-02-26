@@ -66,7 +66,7 @@ private:
     bool skillLineDbLoaded = false;
     std::unordered_map<uint32_t, std::string> skillLineNames;
     std::unordered_map<uint32_t, uint32_t> skillLineCategories;
-    std::unordered_map<uint32_t, uint32_t> spellToSkillLine;
+    std::unordered_multimap<uint32_t, uint32_t> spellToSkillLine;
 
     // Categorized spell tabs
     std::vector<SpellTabInfo> spellTabs;

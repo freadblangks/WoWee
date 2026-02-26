@@ -125,6 +125,19 @@ private:
     int heldBagSlotIndex = -1;
     game::EquipSlot heldEquipSlot = game::EquipSlot::NUM_SLOTS;
 
+    // Slot rendering with interaction support
+    enum class SlotKind { BACKPACK, EQUIPMENT };
+
+    // Click-and-hold pickup tracking
+    bool pickupPending_ = false;
+    float pickupPressTime_ = 0.0f;
+    SlotKind pickupSlotKind_ = SlotKind::BACKPACK;
+    int pickupBackpackIndex_ = -1;
+    int pickupBagIndex_ = -1;
+    int pickupBagSlotIndex_ = -1;
+    game::EquipSlot pickupEquipSlot_ = game::EquipSlot::NUM_SLOTS;
+    static constexpr float kPickupHoldThreshold = 0.12f; // seconds
+
     void renderSeparateBags(game::Inventory& inventory, uint64_t moneyCopper);
     void renderAggregateBags(game::Inventory& inventory, uint64_t moneyCopper);
     void renderBagWindow(const char* title, bool& isOpen, game::Inventory& inventory,
@@ -133,8 +146,6 @@ private:
     void renderBackpackPanel(game::Inventory& inventory, bool collapseEmptySections = false);
     void renderStatsPanel(game::Inventory& inventory, uint32_t playerLevel, int32_t serverArmor = 0);
 
-    // Slot rendering with interaction support
-    enum class SlotKind { BACKPACK, EQUIPMENT };
     void renderItemSlot(game::Inventory& inventory, const game::ItemSlot& slot,
                         float size, const char* label,
                         SlotKind kind, int backpackIndex,

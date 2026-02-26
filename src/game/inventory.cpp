@@ -105,6 +105,13 @@ bool Inventory::setBankBagSlot(int bagIndex, int slotIndex, const ItemDef& item)
     return true;
 }
 
+bool Inventory::clearBankBagSlot(int bagIndex, int slotIndex) {
+    if (bagIndex < 0 || bagIndex >= BANK_BAG_SLOTS) return false;
+    if (slotIndex < 0 || slotIndex >= bankBags_[bagIndex].size) return false;
+    bankBags_[bagIndex].slots[slotIndex].item = ItemDef{};
+    return true;
+}
+
 int Inventory::getBankBagSize(int bagIndex) const {
     if (bagIndex < 0 || bagIndex >= BANK_BAG_SLOTS) return 0;
     return bankBags_[bagIndex].size;
@@ -113,6 +120,17 @@ int Inventory::getBankBagSize(int bagIndex) const {
 void Inventory::setBankBagSize(int bagIndex, int size) {
     if (bagIndex < 0 || bagIndex >= BANK_BAG_SLOTS) return;
     bankBags_[bagIndex].size = std::min(size, MAX_BAG_SIZE);
+}
+
+const ItemSlot& Inventory::getBankBagItem(int bagIndex) const {
+    static const ItemSlot EMPTY_SLOT;
+    if (bagIndex < 0 || bagIndex >= BANK_BAG_SLOTS) return EMPTY_SLOT;
+    return bankBags_[bagIndex].bagItem;
+}
+
+void Inventory::setBankBagItem(int bagIndex, const ItemDef& item) {
+    if (bagIndex < 0 || bagIndex >= BANK_BAG_SLOTS) return;
+    bankBags_[bagIndex].bagItem.item = item;
 }
 
 void Inventory::swapBagContents(int bagA, int bagB) {

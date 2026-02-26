@@ -94,19 +94,22 @@ bool Window::initialize() {
 }
 
 void Window::shutdown() {
+    LOG_WARNING("Window::shutdown - vkContext...");
     if (vkContext) {
         vkContext->shutdown();
         vkContext.reset();
     }
 
+    LOG_WARNING("Window::shutdown - SDL_DestroyWindow...");
     if (window) {
         SDL_DestroyWindow(window);
         window = nullptr;
     }
 
+    LOG_WARNING("Window::shutdown - SDL_Quit...");
     SDL_Vulkan_UnloadLibrary();
     SDL_Quit();
-    LOG_INFO("Window shutdown complete");
+    LOG_WARNING("Window shutdown complete");
 }
 
 void Window::pollEvents() {

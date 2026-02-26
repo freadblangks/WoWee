@@ -5233,6 +5233,8 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         }
                         else if (ufPBytes2 != 0xFFFF && key == ufPBytes2) {
                             uint8_t bankBagSlots = static_cast<uint8_t>((val >> 16) & 0xFF);
+                            LOG_WARNING("PLAYER_BYTES_2 (CREATE): raw=0x", std::hex, val, std::dec,
+                                       " bankBagSlots=", static_cast<int>(bankBagSlots));
                             inventory.setPurchasedBankBagSlots(bankBagSlots);
                         }
                         // Do not synthesize quest-log entries from raw update-field slots.
@@ -5535,6 +5537,8 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             }
                             else if (ufPBytes2v != 0xFFFF && key == ufPBytes2v) {
                                 uint8_t bankBagSlots = static_cast<uint8_t>((val >> 16) & 0xFF);
+                                LOG_WARNING("PLAYER_BYTES_2 (VALUES): raw=0x", std::hex, val, std::dec,
+                                           " bankBagSlots=", static_cast<int>(bankBagSlots));
                                 inventory.setPurchasedBankBagSlots(bankBagSlots);
                             }
                             else if (key == ufPlayerFlags) {
@@ -7707,7 +7711,9 @@ void GameHandler::extractContainerFields(uint64_t containerGuid, const std::map<
 
 void GameHandler::rebuildOnlineInventory() {
 
+    uint8_t savedBankBagSlots = inventory.getPurchasedBankBagSlots();
     inventory = Inventory();
+    inventory.setPurchasedBankBagSlots(savedBankBagSlots);
 
     // Equipment slots
     for (int i = 0; i < 23; i++) {
@@ -7910,14 +7916,31 @@ void GameHandler::rebuildOnlineInventory() {
         if (contIt != containerContents_.end()) {
             numSlots = static_cast<int>(contIt->second.numSlots);
         }
-        if (numSlots <= 0) {
-            auto bagItemIt = onlineItems_.find(bagGuid);
-            if (bagItemIt != onlineItems_.end()) {
+
+        // Populate the bag item itself (for icon/name in the bank bag equip slot)
+        auto bagItemIt = onlineItems_.find(bagGuid);
+        if (bagItemIt != onlineItems_.end()) {
+            if (numSlots <= 0) {
                 auto bagInfoIt = itemInfoCache_.find(bagItemIt->second.entry);
                 if (bagInfoIt != itemInfoCache_.end()) {
                     numSlots = bagInfoIt->second.containerSlots;
                 }
             }
+            ItemDef bagDef;
+            bagDef.itemId = bagItemIt->second.entry;
+            bagDef.stackCount = 1;
+            bagDef.inventoryType = 18; // bag
+            auto bagInfoIt = itemInfoCache_.find(bagItemIt->second.entry);
+            if (bagInfoIt != itemInfoCache_.end()) {
+                bagDef.name = bagInfoIt->second.name;
+                bagDef.quality = static_cast<ItemQuality>(bagInfoIt->second.quality);
+                bagDef.displayInfoId = bagInfoIt->second.displayInfoId;
+                bagDef.bagSlots = bagInfoIt->second.containerSlots;
+            } else {
+                bagDef.name = "Bag";
+                queryItemInfo(bagDef.itemId, bagGuid);
+            }
+            inventory.setBankBagItem(bagIdx, bagDef);
         }
         if (numSlots <= 0) continue;
 
@@ -13673,7 +13696,12 @@ void GameHandler::closeBank() {
 }
 
 void GameHandler::buyBankSlot() {
-    if (!isConnected() || !bankOpen_) return;
+    if (!isConnected() || !bankOpen_) {
+        LOG_WARNING("buyBankSlot: not connected or bank not open");
+        return;
+    }
+    LOG_WARNING("buyBankSlot: sending CMSG_BUY_BANK_SLOT banker=0x", std::hex, bankerGuid_, std::dec,
+             " purchased=", static_cast<int>(inventory.getPurchasedBankBagSlots()));
     auto pkt = BuyBankSlotPacket::build(bankerGuid_);
     socket->send(pkt);
 }
@@ -13698,17 +13726,33 @@ void GameHandler::handleShowBank(network::Packet& packet) {
     // Bank items are already tracked via update fields (bank slot GUIDs)
     // Trigger rebuild to populate bank slots in inventory
     rebuildOnlineInventory();
-    LOG_INFO("SMSG_SHOW_BANK: banker=0x", std::hex, bankerGuid_, std::dec);
+    // Count bank bags that actually have items/containers
+    int filledBags = 0;
+    for (int i = 0; i < effectiveBankBagSlots_; i++) {
+        if (inventory.getBankBagSize(i) > 0) filledBags++;
+    }
+    LOG_WARNING("SMSG_SHOW_BANK: banker=0x", std::hex, bankerGuid_, std::dec,
+             " purchased=", static_cast<int>(inventory.getPurchasedBankBagSlots()),
+             " filledBags=", filledBags,
+             " effectiveBankBagSlots=", effectiveBankBagSlots_);
 }
 
 void GameHandler::handleBuyBankSlotResult(network::Packet& packet) {
     if (packet.getSize() - packet.getReadPos() < 4) return;
     uint32_t result = packet.readUInt32();
-    if (result == 0) {
+    LOG_WARNING("SMSG_BUY_BANK_SLOT_RESULT: result=", result);
+    // AzerothCore/TrinityCore: 0=TOO_MANY, 1=INSUFFICIENT_FUNDS, 2=NOT_BANKER, 3=OK
+    if (result == 3) {
         addSystemChatMessage("Bank slot purchased.");
         inventory.setPurchasedBankBagSlots(inventory.getPurchasedBankBagSlots() + 1);
+    } else if (result == 1) {
+        addSystemChatMessage("Not enough gold to purchase bank slot.");
+    } else if (result == 0) {
+        addSystemChatMessage("No more bank slots available.");
+    } else if (result == 2) {
+        addSystemChatMessage("You must be at a banker to purchase bank slots.");
     } else {
-        addSystemChatMessage("Cannot purchase bank slot.");
+        addSystemChatMessage("Cannot purchase bank slot (error " + std::to_string(result) + ").");
     }
 }
 

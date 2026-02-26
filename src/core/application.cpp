@@ -421,34 +421,43 @@ void Application::run() {
 }
 
 void Application::shutdown() {
-    LOG_INFO("Shutting down application");
+    LOG_WARNING("Shutting down application...");
 
     // Save floor cache before renderer is destroyed
     if (renderer && renderer->getWMORenderer()) {
         size_t cacheSize = renderer->getWMORenderer()->getFloorCacheSize();
         if (cacheSize > 0) {
-            LOG_INFO("Saving WMO floor cache (", cacheSize, " entries)...");
+            LOG_WARNING("Saving WMO floor cache (", cacheSize, " entries)...");
             renderer->getWMORenderer()->saveFloorCache();
+            LOG_WARNING("Floor cache saved.");
         }
     }
 
     // Explicitly shut down the renderer before destroying it — this ensures
     // all sub-renderers free their VMA allocations in the correct order,
     // before VkContext::shutdown() calls vmaDestroyAllocator().
+    LOG_WARNING("Shutting down renderer...");
     if (renderer) {
         renderer->shutdown();
     }
+    LOG_WARNING("Renderer shutdown complete, resetting...");
     renderer.reset();
 
+    LOG_WARNING("Resetting world...");
     world.reset();
+    LOG_WARNING("Resetting gameHandler...");
     gameHandler.reset();
+    LOG_WARNING("Resetting authHandler...");
     authHandler.reset();
+    LOG_WARNING("Resetting assetManager...");
     assetManager.reset();
+    LOG_WARNING("Resetting uiManager...");
     uiManager.reset();
+    LOG_WARNING("Resetting window...");
     window.reset();
 
     running = false;
-    LOG_INFO("Application shutdown complete");
+    LOG_WARNING("Application shutdown complete");
 }
 
 void Application::setState(AppState newState) {
@@ -3335,8 +3344,8 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
 
         auto startTime = std::chrono::high_resolution_clock::now();
         auto lastProgressTime = startTime;
-        const float maxWaitSeconds = 20.0f;
-        const float stallSeconds = 5.0f;
+        const float maxWaitSeconds = 60.0f;
+        const float stallSeconds = 10.0f;
         int initialRemaining = terrainMgr->getRemainingTileCount();
         if (initialRemaining < 1) initialRemaining = 1;
         int lastRemaining = initialRemaining;
@@ -3362,28 +3371,43 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
                 }
             }
 
-            // Trigger new streaming and process ALL ready tiles (not just 2)
+            // Trigger new streaming — enqueue tiles for background workers
             terrainMgr->update(*camera, 0.016f);
-            terrainMgr->processAllReadyTiles();
+
+            // Process ONE tile per iteration so loading screen updates after each
+            terrainMgr->processOneReadyTile();
+
+            int remaining = terrainMgr->getRemainingTileCount();
+            int loaded = terrainMgr->getLoadedTileCount();
+            int total = loaded + remaining;
+            if (total < 1) total = 1;
+            float tileProgress = static_cast<float>(loaded) / static_cast<float>(total);
+            float progress = 0.35f + tileProgress * 0.50f;
+
+            auto now = std::chrono::high_resolution_clock::now();
+            float elapsedSec = std::chrono::duration<float>(now - startTime).count();
+
+            char buf[192];
+            if (loaded > 0 && remaining > 0) {
+                float tilesPerSec = static_cast<float>(loaded) / std::max(elapsedSec, 0.1f);
+                float etaSec = static_cast<float>(remaining) / std::max(tilesPerSec, 0.1f);
+                snprintf(buf, sizeof(buf), "Loading terrain... %d / %d tiles (%.0f tiles/s, ~%.0fs remaining)",
+                         loaded, total, tilesPerSec, etaSec);
+            } else {
+                snprintf(buf, sizeof(buf), "Loading terrain... %d / %d tiles",
+                         loaded, total);
+            }
 
             if (loadingScreenOk) {
-                int remaining = terrainMgr->getRemainingTileCount();
-                int loaded = terrainMgr->getLoadedTileCount();
-                float tileProgress = static_cast<float>(initialRemaining - remaining) / initialRemaining;
-                if (tileProgress < 0.0f) tileProgress = 0.0f;
-                float progress = 0.35f + tileProgress * 0.50f;
-                char buf[128];
-                snprintf(buf, sizeof(buf), "Loading terrain... %d tiles loaded, %d remaining",
-                         loaded, remaining);
                 loadingScreen.setStatus(buf);
                 loadingScreen.setProgress(progress);
                 loadingScreen.render();
                 window->swapBuffers();
+            }
 
-                if (remaining != lastRemaining) {
-                    lastRemaining = remaining;
-                    lastProgressTime = std::chrono::high_resolution_clock::now();
-                }
+            if (remaining != lastRemaining) {
+                lastRemaining = remaining;
+                lastProgressTime = now;
             }
 
             auto elapsed = std::chrono::high_resolution_clock::now() - startTime;
@@ -3398,7 +3422,10 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
                 break;
             }
 
-            SDL_Delay(16);
+            // Don't sleep if there are more tiles to finalize — keep processing
+            if (remaining > 0 && terrainMgr->getReadyQueueCount() == 0) {
+                SDL_Delay(16);
+            }
         }
 
         LOG_INFO("Online terrain streaming complete: ", terrainMgr->getLoadedTileCount(), " tiles loaded");
@@ -3406,8 +3433,11 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
         // Load/precompute collision cache
         if (renderer->getWMORenderer()) {
             showProgress("Building collision cache...", 0.88f);
+            if (loadingScreenOk) { loadingScreen.render(); window->swapBuffers(); }
             renderer->getWMORenderer()->loadFloorCache();
             if (renderer->getWMORenderer()->getFloorCacheSize() == 0) {
+                showProgress("Computing walkable surfaces...", 0.90f);
+                if (loadingScreenOk) { loadingScreen.render(); window->swapBuffers(); }
                 renderer->getWMORenderer()->precomputeFloorCache();
             }
         }

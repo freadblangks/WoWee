@@ -50,10 +50,12 @@ bool VkContext::initialize(SDL_Window* window) {
 }
 
 void VkContext::shutdown() {
+    LOG_WARNING("VkContext::shutdown - vkDeviceWaitIdle...");
     if (device) {
         vkDeviceWaitIdle(device);
     }
 
+    LOG_WARNING("VkContext::shutdown - destroyImGuiResources...");
     destroyImGuiResources();
 
     // Destroy sync objects
@@ -68,9 +70,16 @@ void VkContext::shutdown() {
     if (immFence) { vkDestroyFence(device, immFence, nullptr); immFence = VK_NULL_HANDLE; }
     if (immCommandPool) { vkDestroyCommandPool(device, immCommandPool, nullptr); immCommandPool = VK_NULL_HANDLE; }
 
+    LOG_WARNING("VkContext::shutdown - destroySwapchain...");
     destroySwapchain();
 
-    if (allocator) { vmaDestroyAllocator(allocator); allocator = VK_NULL_HANDLE; }
+    // Skip vmaDestroyAllocator — it walks every allocation to free it, which
+    // takes many seconds with thousands of loaded textures/models.  The driver
+    // reclaims all device memory when we destroy the device, and the OS reclaims
+    // everything on process exit.  Skipping this makes shutdown instant.
+    allocator = VK_NULL_HANDLE;
+
+    LOG_WARNING("VkContext::shutdown - vkDestroyDevice...");
     if (device) { vkDestroyDevice(device, nullptr); device = VK_NULL_HANDLE; }
     if (surface) { vkDestroySurfaceKHR(instance, surface, nullptr); surface = VK_NULL_HANDLE; }
 
@@ -83,7 +92,7 @@ void VkContext::shutdown() {
 
     if (instance) { vkDestroyInstance(instance, nullptr); instance = VK_NULL_HANDLE; }
 
-    LOG_INFO("Vulkan context shutdown");
+    LOG_WARNING("Vulkan context shutdown complete");
 }
 
 bool VkContext::createInstance(SDL_Window* window) {

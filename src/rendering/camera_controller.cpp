@@ -1756,15 +1756,47 @@ void CameraController::reset() {
         return h;
     };
 
+    // In online mode, try to snap to a nearby floor but fall back to the server
+    // position when no WMO floor is found (e.g. WMO not loaded yet in cities).
+    // This prevents spawning under WMO cities like Stormwind.
+    if (onlineMode) {
+        auto h = evalFloorAt(spawnPos.x, spawnPos.y, spawnPos.z);
+        if (h && std::abs(*h - spawnPos.z) < 16.0f) {
+            spawnPos.z = *h + 0.05f;
+        }
+        // else: keep server Z as-is
+        lastGroundZ = spawnPos.z - 0.05f;
+
+        camera->setRotation(yaw, pitch);
+        glm::vec3 forward3D = camera->getForward();
+
+        if (thirdPerson && followTarget) {
+            *followTarget = spawnPos;
+            currentDistance = userTargetDistance;
+            collisionDistance = currentDistance;
+            float mountedOffset = mounted_ ? mountHeightOffset_ : 0.0f;
+            glm::vec3 pivot = spawnPos + glm::vec3(0.0f, 0.0f, PIVOT_HEIGHT + mountedOffset);
+            glm::vec3 camDir = -forward3D;
+            glm::vec3 camPos = pivot + camDir * currentDistance;
+            smoothedCamPos = camPos;
+            camera->setPosition(camPos);
+        } else {
+            spawnPos.z += eyeHeight;
+            smoothedCamPos = spawnPos;
+            camera->setPosition(spawnPos);
+        }
+
+        LOG_INFO("Camera reset to server position (online mode)");
+        return;
+    }
+
     // Search nearby for a stable, non-steep spawn floor to avoid waterfall/ledge spawns.
-    // In online mode, use a tight search radius since the server dictates position.
     float bestScore = std::numeric_limits<float>::max();
     glm::vec3 bestPos = spawnPos;
     bool foundBest = false;
     constexpr float radiiOffline[] = {0.0f, 6.0f, 12.0f, 18.0f, 24.0f, 32.0f};
-    constexpr float radiiOnline[] = {0.0f, 2.0f};
-    const float* radii = onlineMode ? radiiOnline : radiiOffline;
-    const int radiiCount = onlineMode ? 2 : 6;
+    const float* radii = radiiOffline;
+    const int radiiCount = 6;
     constexpr int ANGLES = 16;
     constexpr float PI = 3.14159265f;
     for (int ri = 0; ri < radiiCount; ri++) {

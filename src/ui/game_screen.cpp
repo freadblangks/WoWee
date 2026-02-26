@@ -7764,57 +7764,132 @@ void GameScreen::renderBankWindow(game::GameHandler& gameHandler) {
     }
 
     auto& inv = gameHandler.getInventory();
+    bool isHolding = inventoryScreen.isHoldingItem();
+    constexpr float SLOT_SIZE = 42.0f;
+    static constexpr float kBankPickupHold = 0.10f; // seconds
+    // Persistent pickup tracking for bank (mirrors inventory_screen's pickupPending_)
+    static bool bankPickupPending = false;
+    static float bankPickupPressTime = 0.0f;
+    static int bankPickupType = 0; // 0=main bank, 1=bank bag slot, 2=bank bag equip slot
+    static int bankPickupIndex = -1;
+    static int bankPickupBagIndex = -1;
+    static int bankPickupBagSlotIndex = -1;
+
+    // Helper: render a bank item slot with icon, click-and-hold pickup, drop, tooltip
+    auto renderBankItemSlot = [&](const game::ItemSlot& slot, int pickType, int mainIdx,
+                                   int bagIdx, int bagSlotIdx, uint8_t dstBag, uint8_t dstSlot) {
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        ImVec2 pos = ImGui::GetCursorScreenPos();
+
+        if (slot.empty()) {
+            ImU32 bgCol = IM_COL32(30, 30, 30, 200);
+            ImU32 borderCol = IM_COL32(60, 60, 60, 200);
+            if (isHolding) {
+                bgCol = IM_COL32(20, 50, 20, 200);
+                borderCol = IM_COL32(0, 180, 0, 200);
+            }
+            drawList->AddRectFilled(pos, ImVec2(pos.x + SLOT_SIZE, pos.y + SLOT_SIZE), bgCol);
+            drawList->AddRect(pos, ImVec2(pos.x + SLOT_SIZE, pos.y + SLOT_SIZE), borderCol);
+            ImGui::InvisibleButton("slot", ImVec2(SLOT_SIZE, SLOT_SIZE));
+            if (isHolding && ImGui::IsItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                inventoryScreen.dropIntoBankSlot(gameHandler, dstBag, dstSlot);
+            }
+        } else {
+            const auto& item = slot.item;
+            ImVec4 qc = InventoryScreen::getQualityColor(item.quality);
+            ImU32 borderCol = ImGui::ColorConvertFloat4ToU32(qc);
+            VkDescriptorSet iconTex = inventoryScreen.getItemIcon(item.displayInfoId);
+
+            if (iconTex) {
+                drawList->AddImage((ImTextureID)(uintptr_t)iconTex, pos,
+                                   ImVec2(pos.x + SLOT_SIZE, pos.y + SLOT_SIZE));
+                drawList->AddRect(pos, ImVec2(pos.x + SLOT_SIZE, pos.y + SLOT_SIZE),
+                                  borderCol, 0.0f, 0, 2.0f);
+            } else {
+                ImU32 bgCol = IM_COL32(40, 35, 30, 220);
+                drawList->AddRectFilled(pos, ImVec2(pos.x + SLOT_SIZE, pos.y + SLOT_SIZE), bgCol);
+                drawList->AddRect(pos, ImVec2(pos.x + SLOT_SIZE, pos.y + SLOT_SIZE),
+                                  borderCol, 0.0f, 0, 2.0f);
+                if (!item.name.empty()) {
+                    char abbr[3] = { item.name[0], item.name.size() > 1 ? item.name[1] : '\0', '\0' };
+                    float tw = ImGui::CalcTextSize(abbr).x;
+                    drawList->AddText(ImVec2(pos.x + (SLOT_SIZE - tw) * 0.5f, pos.y + 2.0f),
+                                      ImGui::ColorConvertFloat4ToU32(qc), abbr);
+                }
+            }
+
+            if (item.stackCount > 1) {
+                char countStr[16];
+                snprintf(countStr, sizeof(countStr), "%u", item.stackCount);
+                float cw = ImGui::CalcTextSize(countStr).x;
+                drawList->AddText(ImVec2(pos.x + SLOT_SIZE - cw - 2.0f, pos.y + SLOT_SIZE - 14.0f),
+                                  IM_COL32(255, 255, 255, 220), countStr);
+            }
+
+            ImGui::InvisibleButton("slot", ImVec2(SLOT_SIZE, SLOT_SIZE));
+
+            if (!isHolding) {
+                // Start pickup tracking on mouse press
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
+                    bankPickupPending = true;
+                    bankPickupPressTime = ImGui::GetTime();
+                    bankPickupType = pickType;
+                    bankPickupIndex = mainIdx;
+                    bankPickupBagIndex = bagIdx;
+                    bankPickupBagSlotIndex = bagSlotIdx;
+                }
+                // Check if held long enough to pick up
+                if (bankPickupPending && ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
+                    (ImGui::GetTime() - bankPickupPressTime) >= kBankPickupHold) {
+                    bool sameSlot = (bankPickupType == pickType);
+                    if (pickType == 0)
+                        sameSlot = sameSlot && (bankPickupIndex == mainIdx);
+                    else if (pickType == 1)
+                        sameSlot = sameSlot && (bankPickupBagIndex == bagIdx) && (bankPickupBagSlotIndex == bagSlotIdx);
+                    else if (pickType == 2)
+                        sameSlot = sameSlot && (bankPickupIndex == mainIdx);
+
+                    if (sameSlot && ImGui::IsItemHovered()) {
+                        bankPickupPending = false;
+                        if (pickType == 0) {
+                            inventoryScreen.pickupFromBank(inv, mainIdx);
+                        } else if (pickType == 1) {
+                            inventoryScreen.pickupFromBankBag(inv, bagIdx, bagSlotIdx);
+                        } else if (pickType == 2) {
+                            inventoryScreen.pickupFromBankBagEquip(inv, mainIdx);
+                        }
+                    }
+                }
+            } else {
+                // Drop/swap on mouse release
+                if (ImGui::IsItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                    inventoryScreen.dropIntoBankSlot(gameHandler, dstBag, dstSlot);
+                }
+            }
+
+            // Tooltip
+            if (ImGui::IsItemHovered() && !isHolding) {
+                ImGui::BeginTooltip();
+                ImGui::TextColored(qc, "%s", item.name.c_str());
+                if (item.stackCount > 1) ImGui::Text("Count: %u", item.stackCount);
+                ImGui::EndTooltip();
+            }
+        }
+    };
 
     // Main bank slots (24 for Classic, 28 for TBC/WotLK)
     int bankSlotCount = gameHandler.getEffectiveBankSlots();
     int bankBagCount = gameHandler.getEffectiveBankBagSlots();
     ImGui::Text("Bank Slots");
     ImGui::Separator();
-    bool isHolding = inventoryScreen.isHoldingItem();
     for (int i = 0; i < bankSlotCount; i++) {
         if (i % 7 != 0) ImGui::SameLine();
-        const auto& slot = inv.getBankSlot(i);
-
         ImGui::PushID(i + 1000);
-        if (slot.empty()) {
-            // Highlight as drop target when holding an item
-            if (isHolding) {
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.08f, 0.20f, 0.08f, 0.8f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.35f, 0.0f, 0.9f));
-            }
-            ImGui::Button("##bank", ImVec2(42, 42));
-            if (isHolding) ImGui::PopStyleColor(2);
-            if (ImGui::IsItemHovered() && isHolding && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-                // Drop held item into empty bank slot
-                inventoryScreen.dropIntoBankSlot(gameHandler, 0xFF, static_cast<uint8_t>(39 + i));
-            }
-        } else {
-            ImVec4 qc = InventoryScreen::getQualityColor(slot.item.quality);
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(qc.x * 0.3f, qc.y * 0.3f, qc.z * 0.3f, 0.8f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(qc.x * 0.5f, qc.y * 0.5f, qc.z * 0.5f, 0.9f));
-
-            std::string label = std::to_string(slot.item.stackCount > 1 ? slot.item.stackCount : 0);
-            if (slot.item.stackCount <= 1) label = "##b" + std::to_string(i);
-            ImGui::Button(label.c_str(), ImVec2(42, 42));
-            ImGui::PopStyleColor(2);
-            if (isHolding && ImGui::IsItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-                // Drop held item into occupied bank slot (swap)
-                inventoryScreen.dropIntoBankSlot(gameHandler, 0xFF, static_cast<uint8_t>(39 + i));
-            } else if (!isHolding && ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
-                // Withdraw on click
-                gameHandler.withdrawItem(0xFF, static_cast<uint8_t>(39 + i));
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::BeginTooltip();
-                ImGui::TextColored(qc, "%s", slot.item.name.c_str());
-                if (slot.item.stackCount > 1) ImGui::Text("Count: %u", slot.item.stackCount);
-                ImGui::EndTooltip();
-            }
-        }
+        renderBankItemSlot(inv.getBankSlot(i), 0, i, -1, -1, 0xFF, static_cast<uint8_t>(39 + i));
         ImGui::PopID();
     }
 
-    // Bank bag slots
+    // Bank bag equip slots — show bag icon with pickup/drop, or "Buy Slot"
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Text("Bank Bags");
@@ -7824,12 +7899,12 @@ void GameScreen::renderBankWindow(game::GameHandler& gameHandler) {
         ImGui::PushID(i + 2000);
 
         int bagSize = inv.getBankBagSize(i);
-        if (i < static_cast<int>(purchased) || bagSize > 0) {
-            if (ImGui::Button(bagSize > 0 ? std::to_string(bagSize).c_str() : "Empty", ImVec2(50, 30))) {
-                // Could open bag contents
-            }
+        if (i < purchased || bagSize > 0) {
+            const auto& bagSlot = inv.getBankBagItem(i);
+            // Render as an item slot: icon with pickup/drop (pickType=2 for bag equip)
+            renderBankItemSlot(bagSlot, 2, i, -1, -1, 0xFF, static_cast<uint8_t>(67 + i));
         } else {
-            if (ImGui::Button("Buy", ImVec2(50, 30))) {
+            if (ImGui::Button("Buy Slot", ImVec2(50, 30))) {
                 gameHandler.buyBankSlot();
             }
         }
@@ -7845,37 +7920,9 @@ void GameScreen::renderBankWindow(game::GameHandler& gameHandler) {
         ImGui::Text("Bank Bag %d (%d slots)", bagIdx + 1, bagSize);
         for (int s = 0; s < bagSize; s++) {
             if (s % 7 != 0) ImGui::SameLine();
-            const auto& slot = inv.getBankBagSlot(bagIdx, s);
             ImGui::PushID(3000 + bagIdx * 100 + s);
-            if (slot.empty()) {
-                if (isHolding) {
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.08f, 0.20f, 0.08f, 0.8f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.35f, 0.0f, 0.9f));
-                }
-                ImGui::Button("##bb", ImVec2(42, 42));
-                if (isHolding) ImGui::PopStyleColor(2);
-                if (isHolding && ImGui::IsItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-                    inventoryScreen.dropIntoBankSlot(gameHandler, static_cast<uint8_t>(67 + bagIdx), static_cast<uint8_t>(s));
-                }
-            } else {
-                ImVec4 qc = InventoryScreen::getQualityColor(slot.item.quality);
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(qc.x * 0.3f, qc.y * 0.3f, qc.z * 0.3f, 0.8f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(qc.x * 0.5f, qc.y * 0.5f, qc.z * 0.5f, 0.9f));
-                std::string lbl = slot.item.stackCount > 1 ? std::to_string(slot.item.stackCount) : ("##bb" + std::to_string(bagIdx * 100 + s));
-                ImGui::Button(lbl.c_str(), ImVec2(42, 42));
-                ImGui::PopStyleColor(2);
-                if (isHolding && ImGui::IsItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-                    inventoryScreen.dropIntoBankSlot(gameHandler, static_cast<uint8_t>(67 + bagIdx), static_cast<uint8_t>(s));
-                } else if (!isHolding && ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
-                    gameHandler.withdrawItem(static_cast<uint8_t>(67 + bagIdx), static_cast<uint8_t>(s));
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::BeginTooltip();
-                    ImGui::TextColored(qc, "%s", slot.item.name.c_str());
-                    if (slot.item.stackCount > 1) ImGui::Text("Count: %u", slot.item.stackCount);
-                    ImGui::EndTooltip();
-                }
-            }
+            renderBankItemSlot(inv.getBankBagSlot(bagIdx, s), 1, -1, bagIdx, s,
+                               static_cast<uint8_t>(67 + bagIdx), static_cast<uint8_t>(s));
             ImGui::PopID();
         }
     }

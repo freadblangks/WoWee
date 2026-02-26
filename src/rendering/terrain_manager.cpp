@@ -129,17 +129,7 @@ TerrainManager::TerrainManager() {
 }
 
 TerrainManager::~TerrainManager() {
-    // Stop worker thread before cleanup (containers clean up via destructors)
-    if (workerRunning.load()) {
-        workerRunning.store(false);
-        queueCV.notify_all();
-        for (auto& t : workerThreads) {
-            if (t.joinable()) {
-                t.join();
-            }
-        }
-        workerThreads.clear();
-    }
+    stopWorkers();
 }
 
 bool TerrainManager::initialize(pipeline::AssetManager* assets, TerrainRenderer* renderer) {
@@ -276,6 +266,9 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
 
     LOG_DEBUG("Preparing tile [", x, ",", y, "] (CPU work)");
 
+    // Early-exit check — worker should bail fast during shutdown
+    if (!workerRunning.load()) return nullptr;
+
     // Load ADT file
     std::string adtPath = getADTPath(coord);
     auto adtData = assetManager->readFile(adtPath);
@@ -293,6 +286,8 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
         LOG_ERROR("Failed to parse ADT terrain: ", adtPath);
         return nullptr;
     }
+
+    if (!workerRunning.load()) return nullptr;
 
     // WotLK split ADTs can store placements in *_obj0.adt.
     // Merge object chunks so doodads/WMOs (including ground clutter) are available.
@@ -362,6 +357,8 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
         return nullptr;
     }
 
+    if (!workerRunning.load()) return nullptr;
+
     auto pending = std::make_shared<PendingTile>();
     pending->coord = coord;
     pending->terrain = std::move(*terrainPtr);
@@ -412,6 +409,7 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
     // Pre-load M2 doodads (CPU: read files, parse models)
     int skippedNameId = 0, skippedFileNotFound = 0, skippedInvalid = 0, skippedSkinNotFound = 0;
     for (const auto& placement : pending->terrain.doodadPlacements) {
+        if (!workerRunning.load()) return nullptr;
         if (placement.nameId >= pending->terrain.doodadNames.size()) {
             skippedNameId++;
             continue;
@@ -460,9 +458,12 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
     ensureGroundEffectTablesLoaded();
     generateGroundClutterPlacements(pending, preparedModelIds);
 
+    if (!workerRunning.load()) return nullptr;
+
     // Pre-load WMOs (CPU: read files, parse models and groups)
     if (!pending->terrain.wmoPlacements.empty()) {
         for (const auto& placement : pending->terrain.wmoPlacements) {
+            if (!workerRunning.load()) return nullptr;
             if (placement.nameId >= pending->terrain.wmoNames.size()) continue;
 
             const std::string& wmoPath = pending->terrain.wmoNames[placement.nameId];
@@ -513,6 +514,7 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
                 );
 
                 // Pre-load WMO doodads (M2 models inside WMO)
+                if (!workerRunning.load()) return nullptr;
                 if (!wmoModel.doodadSets.empty() && !wmoModel.doodads.empty()) {
                     glm::mat4 wmoMatrix(1.0f);
                     wmoMatrix = glm::translate(wmoMatrix, pos);
@@ -635,6 +637,8 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
             }
         }
     }
+
+    if (!workerRunning.load()) return nullptr;
 
     // Pre-load terrain texture BLP data on background thread so finalizeTile
     // doesn't block the main thread with file I/O.
@@ -1068,6 +1072,28 @@ void TerrainManager::processAllReadyTiles() {
     }
 }
 
+void TerrainManager::processOneReadyTile() {
+    // Move ready tiles into finalizing deque
+    {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        while (!readyQueue.empty()) {
+            auto pending = readyQueue.front();
+            readyQueue.pop();
+            if (pending) {
+                FinalizingTile ft;
+                ft.pending = std::move(pending);
+                finalizingTiles_.push_back(std::move(ft));
+            }
+        }
+    }
+    // Finalize ONE tile completely, then return so caller can update the screen
+    if (!finalizingTiles_.empty()) {
+        auto& ft = finalizingTiles_.front();
+        while (!advanceFinalization(ft)) {}
+        finalizingTiles_.pop_front();
+    }
+}
+
 std::shared_ptr<PendingTile> TerrainManager::getCachedTile(const TileCoord& coord) {
     std::lock_guard<std::mutex> lock(tileCacheMutex_);
     auto it = tileCache_.find(coord);
@@ -1237,6 +1263,29 @@ void TerrainManager::unloadTile(int x, int y) {
     loadedTiles.erase(it);
 }
 
+void TerrainManager::stopWorkers() {
+    if (!workerRunning.load()) {
+        LOG_WARNING("stopWorkers: already stopped");
+        return;
+    }
+    LOG_WARNING("stopWorkers: signaling ", workerThreads.size(), " workers to stop...");
+    workerRunning.store(false);
+    queueCV.notify_all();
+
+    // Workers check workerRunning at each I/O point in prepareTile() and bail
+    // out quickly.  Use plain join() which is safe with std::thread — no
+    // pthread_timedjoin_np (which silently joins the pthread but leaves the
+    // std::thread object thinking it's still joinable → std::terminate on dtor).
+    for (size_t i = 0; i < workerThreads.size(); i++) {
+        if (workerThreads[i].joinable()) {
+            LOG_WARNING("stopWorkers: joining worker ", i, "...");
+            workerThreads[i].join();
+        }
+    }
+    workerThreads.clear();
+    LOG_WARNING("stopWorkers: done");
+}
+
 void TerrainManager::unloadAll() {
     // Signal worker threads to stop and wait briefly for them to finish.
     // Workers may be mid-prepareTile (reading MPQ / parsing ADT) which can
@@ -1245,29 +1294,8 @@ void TerrainManager::unloadAll() {
         workerRunning.store(false);
         queueCV.notify_all();
 
-        auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
         for (auto& t : workerThreads) {
-            if (!t.joinable()) continue;
-            // Try a timed wait via polling — std::thread has no timed join.
-            bool joined = false;
-            while (std::chrono::steady_clock::now() < deadline) {
-                // Check if thread finished by trying a native timed join
-                #ifdef __linux__
-                struct timespec ts;
-                clock_gettime(CLOCK_REALTIME, &ts);
-                ts.tv_nsec += 50000000; // 50ms
-                if (ts.tv_nsec >= 1000000000) { ts.tv_sec++; ts.tv_nsec -= 1000000000; }
-                if (pthread_timedjoin_np(t.native_handle(), nullptr, &ts) == 0) {
-                    joined = true;
-                    break;
-                }
-                #else
-                std::this_thread::sleep_for(std::chrono::milliseconds(50));
-                #endif
-            }
-            if (!joined && t.joinable()) {
-                t.detach();
-            }
+            if (t.joinable()) t.join();
         }
         workerThreads.clear();
     }

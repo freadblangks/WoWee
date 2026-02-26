@@ -726,31 +726,38 @@ bool Renderer::initialize(core::Window* win) {
 }
 
 void Renderer::shutdown() {
+    LOG_WARNING("Renderer::shutdown - terrainManager stopWorkers...");
     if (terrainManager) {
-        terrainManager->unloadAll();
+        terrainManager->stopWorkers();
+        LOG_WARNING("Renderer::shutdown - terrainManager reset...");
         terrainManager.reset();
     }
 
+    LOG_WARNING("Renderer::shutdown - terrainRenderer...");
     if (terrainRenderer) {
         terrainRenderer->shutdown();
         terrainRenderer.reset();
     }
 
+    LOG_WARNING("Renderer::shutdown - waterRenderer...");
     if (waterRenderer) {
         waterRenderer->shutdown();
         waterRenderer.reset();
     }
 
+    LOG_WARNING("Renderer::shutdown - minimap...");
     if (minimap) {
         minimap->shutdown();
         minimap.reset();
     }
 
+    LOG_WARNING("Renderer::shutdown - worldMap...");
     if (worldMap) {
         worldMap->shutdown();
         worldMap.reset();
     }
 
+    LOG_WARNING("Renderer::shutdown - skySystem...");
     if (skySystem) {
         skySystem->shutdown();
         skySystem.reset();
@@ -772,34 +779,41 @@ void Renderer::shutdown() {
         swimEffects.reset();
     }
 
+    LOG_WARNING("Renderer::shutdown - characterRenderer...");
     if (characterRenderer) {
         characterRenderer->shutdown();
         characterRenderer.reset();
     }
 
+    LOG_WARNING("Renderer::shutdown - wmoRenderer...");
     if (wmoRenderer) {
         wmoRenderer->shutdown();
         wmoRenderer.reset();
     }
 
+    LOG_WARNING("Renderer::shutdown - m2Renderer...");
     if (m2Renderer) {
         m2Renderer->shutdown();
         m2Renderer.reset();
     }
 
+    LOG_WARNING("Renderer::shutdown - musicManager...");
     if (musicManager) {
         musicManager->shutdown();
         musicManager.reset();
     }
+    LOG_WARNING("Renderer::shutdown - footstepManager...");
     if (footstepManager) {
         footstepManager->shutdown();
         footstepManager.reset();
     }
+    LOG_WARNING("Renderer::shutdown - activitySoundManager...");
     if (activitySoundManager) {
         activitySoundManager->shutdown();
         activitySoundManager.reset();
     }
 
+    LOG_WARNING("Renderer::shutdown - AudioEngine...");
     // Shutdown AudioEngine singleton
     audio::AudioEngine::instance().shutdown();
 

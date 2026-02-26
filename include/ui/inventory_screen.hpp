@@ -118,11 +118,14 @@ private:
     // Drag-and-drop held item state
     bool holdingItem = false;
     game::ItemDef heldItem;
-    enum class HeldSource { NONE, BACKPACK, BAG, EQUIPMENT };
+    enum class HeldSource { NONE, BACKPACK, BAG, EQUIPMENT, BANK, BANK_BAG, BANK_BAG_EQUIP };
     HeldSource heldSource = HeldSource::NONE;
     int heldBackpackIndex = -1;
     int heldBagIndex = -1;
     int heldBagSlotIndex = -1;
+    int heldBankIndex = -1;
+    int heldBankBagIndex = -1;
+    int heldBankBagSlotIndex = -1;
     game::EquipSlot heldEquipSlot = game::EquipSlot::NUM_SLOTS;
 
     // Slot rendering with interaction support
@@ -136,7 +139,7 @@ private:
     int pickupBagIndex_ = -1;
     int pickupBagSlotIndex_ = -1;
     game::EquipSlot pickupEquipSlot_ = game::EquipSlot::NUM_SLOTS;
-    static constexpr float kPickupHoldThreshold = 0.12f; // seconds
+    static constexpr float kPickupHoldThreshold = 0.10f; // seconds
 
     void renderSeparateBags(game::Inventory& inventory, uint64_t moneyCopper);
     void renderAggregateBags(game::Inventory& inventory, uint64_t moneyCopper);
@@ -186,6 +189,12 @@ public:
     bool dropHeldItemToEquipSlot(game::Inventory& inv, game::EquipSlot slot);
     /// Drop the currently held item into a bank slot via CMSG_SWAP_ITEM.
     void dropIntoBankSlot(game::GameHandler& gh, uint8_t dstBag, uint8_t dstSlot);
+    /// Pick up an item from main bank slot (click-and-hold from bank window).
+    void pickupFromBank(game::Inventory& inv, int bankIndex);
+    /// Pick up an item from a bank bag slot (click-and-hold from bank window).
+    void pickupFromBankBag(game::Inventory& inv, int bagIndex, int slotIndex);
+    /// Pick up a bag from a bank bag equip slot (click-and-hold from bank window).
+    void pickupFromBankBagEquip(game::Inventory& inv, int bagIndex);
 };
 
 } // namespace ui

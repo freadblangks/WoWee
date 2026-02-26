@@ -89,8 +89,11 @@ public:
 
     const ItemSlot& getBankBagSlot(int bagIndex, int slotIndex) const;
     bool setBankBagSlot(int bagIndex, int slotIndex, const ItemDef& item);
+    bool clearBankBagSlot(int bagIndex, int slotIndex);
     int getBankBagSize(int bagIndex) const;
     void setBankBagSize(int bagIndex, int size);
+    const ItemSlot& getBankBagItem(int bagIndex) const;
+    void setBankBagItem(int bagIndex, const ItemDef& item);
 
     uint8_t getPurchasedBankBagSlots() const { return purchasedBankBagSlots_; }
     void setPurchasedBankBagSlots(uint8_t count) { purchasedBankBagSlots_ = count; }
@@ -111,6 +114,7 @@ private:
 
     struct BagData {
         int size = 0;
+        ItemSlot bagItem;  // The bag item itself (for icon/name/tooltip)
         std::array<ItemSlot, MAX_BAG_SIZE> slots{};
     };
     std::array<BagData, NUM_BAG_SLOTS> bags{};

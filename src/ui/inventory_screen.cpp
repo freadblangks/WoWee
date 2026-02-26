@@ -304,6 +304,57 @@ void InventoryScreen::pickupFromEquipment(game::Inventory& inv, game::EquipSlot 
     inventoryDirty = true;
 }
 
+void InventoryScreen::pickupFromBank(game::Inventory& inv, int bankIndex) {
+    const auto& slot = inv.getBankSlot(bankIndex);
+    if (slot.empty()) return;
+    holdingItem = true;
+    heldItem = slot.item;
+    heldSource = HeldSource::BANK;
+    heldBankIndex = bankIndex;
+    heldBackpackIndex = -1;
+    heldBagIndex = -1;
+    heldBagSlotIndex = -1;
+    heldBankBagIndex = -1;
+    heldBankBagSlotIndex = -1;
+    heldEquipSlot = game::EquipSlot::NUM_SLOTS;
+    inv.clearBankSlot(bankIndex);
+    inventoryDirty = true;
+}
+
+void InventoryScreen::pickupFromBankBag(game::Inventory& inv, int bagIndex, int slotIndex) {
+    const auto& slot = inv.getBankBagSlot(bagIndex, slotIndex);
+    if (slot.empty()) return;
+    holdingItem = true;
+    heldItem = slot.item;
+    heldSource = HeldSource::BANK_BAG;
+    heldBankBagIndex = bagIndex;
+    heldBankBagSlotIndex = slotIndex;
+    heldBankIndex = -1;
+    heldBackpackIndex = -1;
+    heldBagIndex = -1;
+    heldBagSlotIndex = -1;
+    heldEquipSlot = game::EquipSlot::NUM_SLOTS;
+    inv.clearBankBagSlot(bagIndex, slotIndex);
+    inventoryDirty = true;
+}
+
+void InventoryScreen::pickupFromBankBagEquip(game::Inventory& inv, int bagIndex) {
+    const auto& slot = inv.getBankBagItem(bagIndex);
+    if (slot.empty()) return;
+    holdingItem = true;
+    heldItem = slot.item;
+    heldSource = HeldSource::BANK_BAG_EQUIP;
+    heldBankBagIndex = bagIndex;
+    heldBankBagSlotIndex = -1;
+    heldBankIndex = -1;
+    heldBackpackIndex = -1;
+    heldBagIndex = -1;
+    heldBagSlotIndex = -1;
+    heldEquipSlot = game::EquipSlot::NUM_SLOTS;
+    inv.setBankBagItem(bagIndex, game::ItemDef{});
+    inventoryDirty = true;
+}
+
 void InventoryScreen::placeInBackpack(game::Inventory& inv, int index) {
     if (!holdingItem) return;
     if (gameHandler_) {
@@ -319,6 +370,13 @@ void InventoryScreen::placeInBackpack(game::Inventory& inv, int index) {
             srcSlot = static_cast<uint8_t>(heldBagSlotIndex);
         } else if (heldSource == HeldSource::EQUIPMENT) {
             srcSlot = static_cast<uint8_t>(heldEquipSlot);
+        } else if (heldSource == HeldSource::BANK && heldBankIndex >= 0) {
+            srcSlot = static_cast<uint8_t>(39 + heldBankIndex);
+        } else if (heldSource == HeldSource::BANK_BAG && heldBankBagIndex >= 0) {
+            srcBag = static_cast<uint8_t>(67 + heldBankBagIndex);
+            srcSlot = static_cast<uint8_t>(heldBankBagSlotIndex);
+        } else if (heldSource == HeldSource::BANK_BAG_EQUIP && heldBankBagIndex >= 0) {
+            srcSlot = static_cast<uint8_t>(67 + heldBankBagIndex);
         } else {
             cancelPickup(inv);
             return;
@@ -357,6 +415,13 @@ void InventoryScreen::placeInBag(game::Inventory& inv, int bagIndex, int slotInd
             srcSlot = static_cast<uint8_t>(heldBagSlotIndex);
         } else if (heldSource == HeldSource::EQUIPMENT) {
             srcSlot = static_cast<uint8_t>(heldEquipSlot);
+        } else if (heldSource == HeldSource::BANK && heldBankIndex >= 0) {
+            srcSlot = static_cast<uint8_t>(39 + heldBankIndex);
+        } else if (heldSource == HeldSource::BANK_BAG && heldBankBagIndex >= 0) {
+            srcBag = static_cast<uint8_t>(67 + heldBankBagIndex);
+            srcSlot = static_cast<uint8_t>(heldBankBagSlotIndex);
+        } else if (heldSource == HeldSource::BANK_BAG_EQUIP && heldBankBagIndex >= 0) {
+            srcSlot = static_cast<uint8_t>(67 + heldBankBagIndex);
         } else {
             cancelPickup(inv);
             return;
@@ -417,6 +482,11 @@ void InventoryScreen::placeInEquipment(game::Inventory& inv, game::EquipSlot slo
             srcSlot = static_cast<uint8_t>(heldBagSlotIndex);
         } else if (heldSource == HeldSource::EQUIPMENT && heldEquipSlot != game::EquipSlot::NUM_SLOTS) {
             srcSlot = static_cast<uint8_t>(heldEquipSlot);
+        } else if (heldSource == HeldSource::BANK && heldBankIndex >= 0) {
+            srcSlot = static_cast<uint8_t>(39 + heldBankIndex);
+        } else if (heldSource == HeldSource::BANK_BAG && heldBankBagIndex >= 0) {
+            srcBag = static_cast<uint8_t>(67 + heldBankBagIndex);
+            srcSlot = static_cast<uint8_t>(heldBankBagSlotIndex);
         } else {
             cancelPickup(inv);
             return;
@@ -483,6 +553,24 @@ void InventoryScreen::cancelPickup(game::Inventory& inv) {
         if (inv.getEquipSlot(heldEquipSlot).empty()) {
             inv.setEquipSlot(heldEquipSlot, heldItem);
             equipmentDirty = true;
+        } else {
+            inv.addItem(heldItem);
+        }
+    } else if (heldSource == HeldSource::BANK && heldBankIndex >= 0) {
+        if (inv.getBankSlot(heldBankIndex).empty()) {
+            inv.setBankSlot(heldBankIndex, heldItem);
+        } else {
+            inv.addItem(heldItem);
+        }
+    } else if (heldSource == HeldSource::BANK_BAG && heldBankBagIndex >= 0 && heldBankBagSlotIndex >= 0) {
+        if (inv.getBankBagSlot(heldBankBagIndex, heldBankBagSlotIndex).empty()) {
+            inv.setBankBagSlot(heldBankBagIndex, heldBankBagSlotIndex, heldItem);
+        } else {
+            inv.addItem(heldItem);
+        }
+    } else if (heldSource == HeldSource::BANK_BAG_EQUIP && heldBankBagIndex >= 0) {
+        if (inv.getBankBagItem(heldBankBagIndex).empty()) {
+            inv.setBankBagItem(heldBankBagIndex, heldItem);
         } else {
             inv.addItem(heldItem);
         }
@@ -554,7 +642,20 @@ void InventoryScreen::dropIntoBankSlot(game::GameHandler& /*gh*/, uint8_t dstBag
         srcSlot = static_cast<uint8_t>(heldBagSlotIndex);
     } else if (heldSource == HeldSource::EQUIPMENT) {
         srcSlot = static_cast<uint8_t>(heldEquipSlot);
+    } else if (heldSource == HeldSource::BANK && heldBankIndex >= 0) {
+        srcSlot = static_cast<uint8_t>(39 + heldBankIndex);
+    } else if (heldSource == HeldSource::BANK_BAG && heldBankBagIndex >= 0) {
+        srcBag = static_cast<uint8_t>(67 + heldBankBagIndex);
+        srcSlot = static_cast<uint8_t>(heldBankBagSlotIndex);
+    } else if (heldSource == HeldSource::BANK_BAG_EQUIP && heldBankBagIndex >= 0) {
+        srcSlot = static_cast<uint8_t>(67 + heldBankBagIndex);
     } else {
+        return;
+    }
+    // Same source and dest — just cancel pickup (restore item locally).
+    // Server ignores same-slot swaps so no rebuild would run, losing the item data.
+    if (srcBag == dstBag && srcSlot == dstSlot) {
+        cancelPickup(gameHandler_->getInventory());
         return;
     }
     gameHandler_->swapContainerItems(srcBag, srcSlot, dstBag, dstSlot);

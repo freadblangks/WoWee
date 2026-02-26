@@ -7765,11 +7765,13 @@ void GameScreen::renderBankWindow(game::GameHandler& gameHandler) {
 
     auto& inv = gameHandler.getInventory();
 
-    // Main bank slots (28 = 7 columns × 4 rows)
+    // Main bank slots (24 for Classic, 28 for TBC/WotLK)
+    int bankSlotCount = gameHandler.getEffectiveBankSlots();
+    int bankBagCount = gameHandler.getEffectiveBankBagSlots();
     ImGui::Text("Bank Slots");
     ImGui::Separator();
     bool isHolding = inventoryScreen.isHoldingItem();
-    for (int i = 0; i < game::Inventory::BANK_SLOTS; i++) {
+    for (int i = 0; i < bankSlotCount; i++) {
         if (i % 7 != 0) ImGui::SameLine();
         const auto& slot = inv.getBankSlot(i);
 
@@ -7817,7 +7819,7 @@ void GameScreen::renderBankWindow(game::GameHandler& gameHandler) {
     ImGui::Separator();
     ImGui::Text("Bank Bags");
     uint8_t purchased = inv.getPurchasedBankBagSlots();
-    for (int i = 0; i < game::Inventory::BANK_BAG_SLOTS; i++) {
+    for (int i = 0; i < bankBagCount; i++) {
         if (i > 0) ImGui::SameLine();
         ImGui::PushID(i + 2000);
 
@@ -7835,7 +7837,7 @@ void GameScreen::renderBankWindow(game::GameHandler& gameHandler) {
     }
 
     // Show expanded bank bag contents
-    for (int bagIdx = 0; bagIdx < game::Inventory::BANK_BAG_SLOTS; bagIdx++) {
+    for (int bagIdx = 0; bagIdx < bankBagCount; bagIdx++) {
         int bagSize = inv.getBankBagSize(bagIdx);
         if (bagSize <= 0) continue;
 

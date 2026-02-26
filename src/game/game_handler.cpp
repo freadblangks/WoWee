@@ -5213,6 +5213,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     const uint16_t ufPlayerLevel = fieldIndex(UF::UNIT_FIELD_LEVEL);
                     const uint16_t ufCoinage = fieldIndex(UF::PLAYER_FIELD_COINAGE);
                     const uint16_t ufArmor = fieldIndex(UF::UNIT_FIELD_RESISTANCES);
+                    const uint16_t ufPBytes2 = fieldIndex(UF::PLAYER_BYTES_2);
                     for (const auto& [key, val] : block.fields) {
                         if (key == ufPlayerXp) { playerXp_ = val; }
                         else if (key == ufPlayerNextXp) { playerNextLevelXp_ = val; }
@@ -5229,6 +5230,10 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         else if (ufArmor != 0xFFFF && key == ufArmor) {
                             playerArmorRating_ = static_cast<int32_t>(val);
                             LOG_DEBUG("Armor rating from update fields: ", playerArmorRating_);
+                        }
+                        else if (ufPBytes2 != 0xFFFF && key == ufPBytes2) {
+                            uint8_t bankBagSlots = static_cast<uint8_t>((val >> 16) & 0xFF);
+                            inventory.setPurchasedBankBagSlots(bankBagSlots);
                         }
                         // Do not synthesize quest-log entries from raw update-field slots.
                         // Slot layouts differ on some classic-family realms and can produce
@@ -5501,6 +5506,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         const uint16_t ufCoinage = fieldIndex(UF::PLAYER_FIELD_COINAGE);
                         const uint16_t ufPlayerFlags = fieldIndex(UF::PLAYER_FLAGS);
                         const uint16_t ufArmor = fieldIndex(UF::UNIT_FIELD_RESISTANCES);
+                        const uint16_t ufPBytes2v = fieldIndex(UF::PLAYER_BYTES_2);
                         for (const auto& [key, val] : block.fields) {
                             if (key == ufPlayerXp) {
                                 playerXp_ = val;
@@ -5526,6 +5532,10 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             }
                             else if (ufArmor != 0xFFFF && key == ufArmor) {
                                 playerArmorRating_ = static_cast<int32_t>(val);
+                            }
+                            else if (ufPBytes2v != 0xFFFF && key == ufPBytes2v) {
+                                uint8_t bankBagSlots = static_cast<uint8_t>((val >> 16) & 0xFF);
+                                inventory.setPurchasedBankBagSlots(bankBagSlots);
                             }
                             else if (key == ufPlayerFlags) {
                                 constexpr uint32_t PLAYER_FLAGS_GHOST = 0x00000010;
@@ -7632,10 +7642,16 @@ bool GameHandler::applyInventoryFields(const std::map<uint16_t, uint32_t>& field
             }
         }
 
-        // Bank slots: 28 slots × 2 fields = 56 fields starting at PLAYER_FIELD_BANK_SLOT_1
+        // Bank slots starting at PLAYER_FIELD_BANK_SLOT_1
         int bankBase = static_cast<int>(fieldIndex(UF::PLAYER_FIELD_BANK_SLOT_1));
+        int bankBagBase = static_cast<int>(fieldIndex(UF::PLAYER_FIELD_BANKBAG_SLOT_1));
+        // Derive slot counts from field gap (Classic=24/6, TBC/WotLK=28/7)
+        if (bankBase != 0xFFFF && bankBagBase != 0xFFFF) {
+            effectiveBankSlots_ = std::min((bankBagBase - bankBase) / 2, 28);
+            effectiveBankBagSlots_ = (effectiveBankSlots_ <= 24) ? 6 : 7;
+        }
         if (bankBase != 0xFFFF && key >= static_cast<uint16_t>(bankBase) &&
-            key <= static_cast<uint16_t>(bankBase) + (game::Inventory::BANK_SLOTS * 2 - 1)) {
+            key <= static_cast<uint16_t>(bankBase) + (effectiveBankSlots_ * 2 - 1)) {
             int slotIndex = (key - bankBase) / 2;
             bool isLow = ((key - bankBase) % 2 == 0);
             if (slotIndex < static_cast<int>(bankSlotGuids_.size())) {
@@ -7646,10 +7662,9 @@ bool GameHandler::applyInventoryFields(const std::map<uint16_t, uint32_t>& field
             }
         }
 
-        // Bank bag slots: 7 slots × 2 fields = 14 fields starting at PLAYER_FIELD_BANKBAG_SLOT_1
-        int bankBagBase = static_cast<int>(fieldIndex(UF::PLAYER_FIELD_BANKBAG_SLOT_1));
+        // Bank bag slots starting at PLAYER_FIELD_BANKBAG_SLOT_1
         if (bankBagBase != 0xFFFF && key >= static_cast<uint16_t>(bankBagBase) &&
-            key <= static_cast<uint16_t>(bankBagBase) + (game::Inventory::BANK_BAG_SLOTS * 2 - 1)) {
+            key <= static_cast<uint16_t>(bankBagBase) + (effectiveBankBagSlots_ * 2 - 1)) {
             int slotIndex = (key - bankBagBase) / 2;
             bool isLow = ((key - bankBagBase) % 2 == 0);
             if (slotIndex < static_cast<int>(bankBagSlotGuids_.size())) {
@@ -7845,8 +7860,8 @@ void GameHandler::rebuildOnlineInventory() {
         }
     }
 
-    // Bank slots (28 main slots)
-    for (int i = 0; i < 28; i++) {
+    // Bank slots (24 for Classic, 28 for TBC/WotLK)
+    for (int i = 0; i < effectiveBankSlots_; i++) {
         uint64_t guid = bankSlotGuids_[i];
         if (guid == 0) { inventory.clearBankSlot(i); continue; }
 
@@ -7885,8 +7900,8 @@ void GameHandler::rebuildOnlineInventory() {
         inventory.setBankSlot(i, def);
     }
 
-    // Bank bag contents (7 bank bag slots)
-    for (int bagIdx = 0; bagIdx < 7; bagIdx++) {
+    // Bank bag contents (6 for Classic, 7 for TBC/WotLK)
+    for (int bagIdx = 0; bagIdx < effectiveBankBagSlots_; bagIdx++) {
         uint64_t bagGuid = bankBagSlotGuids_[bagIdx];
         if (bagGuid == 0) { inventory.setBankBagSize(bagIdx, 0); continue; }
 
@@ -9275,9 +9290,14 @@ void GameHandler::cancelAura(uint32_t spellId) {
 }
 
 void GameHandler::handlePetSpells(network::Packet& packet) {
-    if (packet.getSize() - packet.getReadPos() < 8) return;
+    if (packet.getSize() - packet.getReadPos() < 8) {
+        // Empty packet = pet dismissed/died
+        petGuid_ = 0;
+        LOG_INFO("SMSG_PET_SPELLS: pet cleared (empty packet)");
+        return;
+    }
     petGuid_ = packet.readUInt64();
-    LOG_DEBUG("SMSG_PET_SPELLS: petGuid=0x", std::hex, petGuid_, std::dec);
+    LOG_INFO("SMSG_PET_SPELLS: petGuid=0x", std::hex, petGuid_, std::dec);
 }
 
 void GameHandler::dismissPet() {

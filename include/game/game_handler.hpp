@@ -907,6 +907,8 @@ public:
     void withdrawItem(uint8_t srcBag, uint8_t srcSlot);
     bool isBankOpen() const { return bankOpen_; }
     uint64_t getBankerGuid() const { return bankerGuid_; }
+    int getEffectiveBankSlots() const { return effectiveBankSlots_; }
+    int getEffectiveBankBagSlots() const { return effectiveBankBagSlots_; }
 
     // Guild Bank
     void openGuildBank(uint64_t guid);
@@ -1619,6 +1621,8 @@ private:
     uint64_t bankerGuid_ = 0;
     std::array<uint64_t, 28> bankSlotGuids_{};
     std::array<uint64_t, 7> bankBagSlotGuids_{};
+    int effectiveBankSlots_ = 28;     // 24 for Classic, 28 for TBC/WotLK
+    int effectiveBankBagSlots_ = 7;   // 6 for Classic, 7 for TBC/WotLK
 
     // Guild Bank
     bool guildBankOpen_ = false;

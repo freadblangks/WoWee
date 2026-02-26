@@ -935,10 +935,11 @@ void Application::update(float deltaTime) {
                 }
                 if (renderer && renderer->getTerrainManager()) {
                 renderer->getTerrainManager()->setStreamingEnabled(true);
-                // Keep taxi streaming responsive so flight paths don't outrun terrain/model uploads.
-                renderer->getTerrainManager()->setUpdateInterval(onTaxi ? 0.1f : 0.1f);
-                renderer->getTerrainManager()->setLoadRadius(onTaxi ? 3 : 4);
-                renderer->getTerrainManager()->setUnloadRadius(onTaxi ? 6 : 7);
+                // Taxi flights move fast (32 u/s) — load further ahead so terrain is ready
+                // before the camera arrives.  Keep updates frequent to spot new tiles early.
+                renderer->getTerrainManager()->setUpdateInterval(onTaxi ? 0.033f : 0.033f);
+                renderer->getTerrainManager()->setLoadRadius(onTaxi ? 6 : 4);
+                renderer->getTerrainManager()->setUnloadRadius(onTaxi ? 9 : 7);
                 renderer->getTerrainManager()->setTaxiStreamingMode(onTaxi);
                 }
                 lastTaxiFlight_ = onTaxi;

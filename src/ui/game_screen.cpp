@@ -3590,7 +3590,7 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
                 gameHandler.setActionBarSlot(i, game::ActionBarSlot::SPELL,
                     spellbookScreen.getDragSpellId());
                 spellbookScreen.consumeDragSpell();
-            } else if (clicked && inventoryScreen.isHoldingItem()) {
+            } else if (hoveredOnRelease && inventoryScreen.isHoldingItem()) {
                 // Drop held item from inventory onto action bar
                 const auto& held = inventoryScreen.getHeldItem();
                 gameHandler.setActionBarSlot(i, game::ActionBarSlot::ITEM, held.itemId);
@@ -7739,7 +7739,7 @@ void GameScreen::renderBankWindow(game::GameHandler& gameHandler) {
             }
             ImGui::Button("##bank", ImVec2(42, 42));
             if (isHolding) ImGui::PopStyleColor(2);
-            if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && isHolding) {
+            if (ImGui::IsItemHovered() && isHolding && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
                 // Drop held item into empty bank slot
                 inventoryScreen.dropIntoBankSlot(gameHandler, 0xFF, static_cast<uint8_t>(39 + i));
             }
@@ -7752,14 +7752,12 @@ void GameScreen::renderBankWindow(game::GameHandler& gameHandler) {
             if (slot.item.stackCount <= 1) label = "##b" + std::to_string(i);
             ImGui::Button(label.c_str(), ImVec2(42, 42));
             ImGui::PopStyleColor(2);
-            if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
-                if (isHolding) {
-                    // Swap held item with bank slot
-                    inventoryScreen.dropIntoBankSlot(gameHandler, 0xFF, static_cast<uint8_t>(39 + i));
-                } else {
-                    // Withdraw on click
-                    gameHandler.withdrawItem(0xFF, static_cast<uint8_t>(39 + i));
-                }
+            if (isHolding && ImGui::IsItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                // Drop held item into occupied bank slot (swap)
+                inventoryScreen.dropIntoBankSlot(gameHandler, 0xFF, static_cast<uint8_t>(39 + i));
+            } else if (!isHolding && ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
+                // Withdraw on click
+                gameHandler.withdrawItem(0xFF, static_cast<uint8_t>(39 + i));
             }
             if (ImGui::IsItemHovered()) {
                 ImGui::BeginTooltip();
@@ -7811,7 +7809,7 @@ void GameScreen::renderBankWindow(game::GameHandler& gameHandler) {
                 }
                 ImGui::Button("##bb", ImVec2(42, 42));
                 if (isHolding) ImGui::PopStyleColor(2);
-                if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && isHolding) {
+                if (isHolding && ImGui::IsItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
                     inventoryScreen.dropIntoBankSlot(gameHandler, static_cast<uint8_t>(67 + bagIdx), static_cast<uint8_t>(s));
                 }
             } else {
@@ -7821,12 +7819,10 @@ void GameScreen::renderBankWindow(game::GameHandler& gameHandler) {
                 std::string lbl = slot.item.stackCount > 1 ? std::to_string(slot.item.stackCount) : ("##bb" + std::to_string(bagIdx * 100 + s));
                 ImGui::Button(lbl.c_str(), ImVec2(42, 42));
                 ImGui::PopStyleColor(2);
-                if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
-                    if (isHolding) {
-                        inventoryScreen.dropIntoBankSlot(gameHandler, static_cast<uint8_t>(67 + bagIdx), static_cast<uint8_t>(s));
-                    } else {
-                        gameHandler.withdrawItem(static_cast<uint8_t>(67 + bagIdx), static_cast<uint8_t>(s));
-                    }
+                if (isHolding && ImGui::IsItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                    inventoryScreen.dropIntoBankSlot(gameHandler, static_cast<uint8_t>(67 + bagIdx), static_cast<uint8_t>(s));
+                } else if (!isHolding && ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
+                    gameHandler.withdrawItem(static_cast<uint8_t>(67 + bagIdx), static_cast<uint8_t>(s));
                 }
                 if (ImGui::IsItemHovered()) {
                     ImGui::BeginTooltip();

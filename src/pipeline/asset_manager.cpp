@@ -251,20 +251,21 @@ std::shared_ptr<DBCFile> AssetManager::loadDBC(const std::string& name) {
 
     std::vector<uint8_t> dbcData;
 
-    // Some visual DBC CSV exports are known to be malformed in community datasets
+    // Some DBC CSV exports are known to be malformed in community datasets
     // (string columns shifted, missing numeric ID field). Force binary MPQ data for
-    // these tables to keep model/texture mappings correct.
-    const bool forceBinaryForVisualDbc =
+    // these tables to keep mappings correct.
+    const bool forceBinaryDbc =
         (name == "CreatureDisplayInfo.dbc" ||
          name == "CreatureDisplayInfoExtra.dbc" ||
          name == "ItemDisplayInfo.dbc" ||
          name == "CreatureModelData.dbc" ||
          name == "GroundEffectTexture.dbc" ||
-         name == "GroundEffectDoodad.dbc");
+         name == "GroundEffectDoodad.dbc" ||
+         name == "SkillLine.dbc");
 
     // Try expansion-specific CSV first (e.g. Data/expansions/wotlk/db/Spell.csv)
     bool loadedFromCSV = false;
-    if (!forceBinaryForVisualDbc && !expansionDataPath_.empty()) {
+    if (!forceBinaryDbc && !expansionDataPath_.empty()) {
         // Derive CSV name from DBC name: "Spell.dbc" -> "Spell.csv"
         std::string baseName = name;
         auto dot = baseName.rfind('.');
@@ -286,7 +287,7 @@ std::shared_ptr<DBCFile> AssetManager::loadDBC(const std::string& name) {
             }
         }
     }
-    if (forceBinaryForVisualDbc && !expansionDataPath_.empty()) {
+    if (forceBinaryDbc && !expansionDataPath_.empty()) {
         LOG_INFO("Skipping CSV override for visual DBC, using binary: ", name);
     }
 
@@ -296,10 +297,10 @@ std::shared_ptr<DBCFile> AssetManager::loadDBC(const std::string& name) {
         dbcData = readFile(dbcPath);
     }
 
-    // If binary DBC not found and we skipped CSV earlier (forceBinaryForVisualDbc),
+    // If binary DBC not found and we skipped CSV earlier (forceBinaryDbc),
     // try CSV as a last resort — better than no data at all (e.g. Classic expansion
     // where binary DBCs come from MPQ extraction the user may not have done).
-    if (dbcData.empty() && forceBinaryForVisualDbc && !expansionDataPath_.empty()) {
+    if (dbcData.empty() && forceBinaryDbc && !expansionDataPath_.empty()) {
         std::string baseName = name;
         auto dot = baseName.rfind('.');
         if (dot != std::string::npos) {

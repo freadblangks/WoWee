@@ -291,6 +291,31 @@ bool DBCFile::loadCSV(const std::vector<uint8_t>& csvData) {
                     stringBlock.push_back(0); // null terminator
                     row.fields[col] = offset;
                 }
+            } else if (pos < line.size() && line[pos] == '"') {
+                // Quoted value in numeric field — skip quotes, try to parse content
+                pos++; // skip opening quote
+                std::string str;
+                while (pos < line.size()) {
+                    if (line[pos] == '"') {
+                        if (pos + 1 < line.size() && line[pos + 1] == '"') {
+                            str += '"';
+                            pos += 2;
+                        } else {
+                            pos++; // closing quote
+                            break;
+                        }
+                    } else {
+                        str += line[pos++];
+                    }
+                }
+                if (pos < line.size() && line[pos] == ',') pos++;
+                if (!str.empty()) {
+                    try {
+                        row.fields[col] = static_cast<uint32_t>(std::stoul(str));
+                    } catch (...) {
+                        row.fields[col] = 0;
+                    }
+                }
             } else {
                 // Numeric field — read until comma or end of line
                 size_t end = line.find(',', pos);

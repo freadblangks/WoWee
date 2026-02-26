@@ -519,8 +519,8 @@ void CameraController::update(float deltaTime) {
             glm::vec3 swimMove(0.0f);
             if (nowForward) swimMove += swimForward;
             if (nowBackward) swimMove -= swimForward;
-            if (nowStrafeLeft) swimMove -= swimRight;
-            if (nowStrafeRight) swimMove += swimRight;
+            if (nowStrafeLeft) swimMove += swimRight;
+            if (nowStrafeRight) swimMove -= swimRight;
 
             if (glm::length(swimMove) > 0.001f) {
                 swimMove = glm::normalize(swimMove);

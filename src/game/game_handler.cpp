@@ -4862,6 +4862,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
     }
 
     // Process update blocks
+    bool newItemCreated = false;
     for (const auto& block : data.blocks) {
         switch (block.updateType) {
             case UpdateType::CREATE_OBJECT:
@@ -5178,7 +5179,9 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         OnlineItemInfo info;
                         info.entry = entryIt->second;
                         info.stackCount = (stackIt != block.fields.end()) ? stackIt->second : 1;
+                        bool isNew = (onlineItems_.find(block.guid) == onlineItems_.end());
                         onlineItems_[block.guid] = info;
+                        if (isNew) newItemCreated = true;
                         queryItemInfo(info.entry, block.guid);
                     }
                     // Extract container slot GUIDs for bags
@@ -5695,6 +5698,12 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
 
     tabCycleStale = true;
     // Entity count logging disabled
+
+    // Deferred rebuild: if new item objects were created in this packet, rebuild
+    // inventory so that slot GUIDs updated earlier in the same packet can resolve.
+    if (newItemCreated) {
+        rebuildOnlineInventory();
+    }
 
     // Late inventory base detection once items are known
     if (playerGuid != 0 && invSlotBase_ < 0 && !lastPlayerFields_.empty() && !onlineItems_.empty()) {
@@ -7842,7 +7851,7 @@ void GameHandler::rebuildOnlineInventory() {
         if (guid == 0) { inventory.clearBankSlot(i); continue; }
 
         auto itemIt = onlineItems_.find(guid);
-        if (itemIt == onlineItems_.end()) continue;
+        if (itemIt == onlineItems_.end()) { inventory.clearBankSlot(i); continue; }
 
         ItemDef def;
         def.itemId = itemIt->second.entry;

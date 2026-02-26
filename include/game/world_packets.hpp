@@ -399,6 +399,7 @@ enum class MovementFlags : uint32_t {
     ASCENDING           = 0x00400000,
     CAN_FLY             = 0x00800000,
     FLYING              = 0x01000000,
+    HOVER               = 0x02000000,
 };
 
 /**

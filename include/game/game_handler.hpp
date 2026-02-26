@@ -1175,9 +1175,12 @@ private:
     void handleTeleportAck(network::Packet& packet);
     void handleNewWorld(network::Packet& packet);
 
-    // ---- Speed change handler ----
+    // ---- Movement ACK handlers ----
     void handleForceRunSpeedChange(network::Packet& packet);
+    void handleForceSpeedChange(network::Packet& packet, const char* name, Opcode ackOpcode, float* speedStorage);
     void handleForceMoveRootState(network::Packet& packet, bool rooted);
+    void handleForceMoveFlagChange(network::Packet& packet, const char* name, Opcode ackOpcode, uint32_t flag, bool set);
+    void handleMoveKnockBack(network::Packet& packet);
 
     // ---- Arena / Battleground handlers ----
     void handleBattlefieldStatus(network::Packet& packet);
@@ -1759,6 +1762,14 @@ private:
     uint32_t currentMountDisplayId_ = 0;
     uint32_t mountAuraSpellId_ = 0;       // Spell ID of the aura that caused mounting (for CMSG_CANCEL_AURA fallback)
     float serverRunSpeed_ = 7.0f;
+    float serverWalkSpeed_ = 2.5f;
+    float serverRunBackSpeed_ = 4.5f;
+    float serverSwimSpeed_ = 4.722f;
+    float serverSwimBackSpeed_ = 2.5f;
+    float serverFlightSpeed_ = 7.0f;
+    float serverFlightBackSpeed_ = 4.5f;
+    float serverTurnRate_ = 3.14159f;
+    float serverPitchRate_ = 3.14159f;
     bool playerDead_ = false;
     bool releasedSpirit_ = false;
     uint64_t pendingSpiritHealerGuid_ = 0;

@@ -1537,6 +1537,62 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_FORCE_MOVE_UNROOT:
             handleForceMoveRootState(packet, false);
             break;
+
+        // ---- Other force speed changes ----
+        case Opcode::SMSG_FORCE_WALK_SPEED_CHANGE:
+            handleForceSpeedChange(packet, "WALK_SPEED", Opcode::CMSG_FORCE_WALK_SPEED_CHANGE_ACK, &serverWalkSpeed_);
+            break;
+        case Opcode::SMSG_FORCE_RUN_BACK_SPEED_CHANGE:
+            handleForceSpeedChange(packet, "RUN_BACK_SPEED", Opcode::CMSG_FORCE_RUN_BACK_SPEED_CHANGE_ACK, &serverRunBackSpeed_);
+            break;
+        case Opcode::SMSG_FORCE_SWIM_SPEED_CHANGE:
+            handleForceSpeedChange(packet, "SWIM_SPEED", Opcode::CMSG_FORCE_SWIM_SPEED_CHANGE_ACK, &serverSwimSpeed_);
+            break;
+        case Opcode::SMSG_FORCE_SWIM_BACK_SPEED_CHANGE:
+            handleForceSpeedChange(packet, "SWIM_BACK_SPEED", Opcode::CMSG_FORCE_SWIM_BACK_SPEED_CHANGE_ACK, &serverSwimBackSpeed_);
+            break;
+        case Opcode::SMSG_FORCE_FLIGHT_SPEED_CHANGE:
+            handleForceSpeedChange(packet, "FLIGHT_SPEED", Opcode::CMSG_FORCE_FLIGHT_SPEED_CHANGE_ACK, &serverFlightSpeed_);
+            break;
+        case Opcode::SMSG_FORCE_FLIGHT_BACK_SPEED_CHANGE:
+            handleForceSpeedChange(packet, "FLIGHT_BACK_SPEED", Opcode::CMSG_FORCE_FLIGHT_BACK_SPEED_CHANGE_ACK, &serverFlightBackSpeed_);
+            break;
+        case Opcode::SMSG_FORCE_TURN_RATE_CHANGE:
+            handleForceSpeedChange(packet, "TURN_RATE", Opcode::CMSG_FORCE_TURN_RATE_CHANGE_ACK, &serverTurnRate_);
+            break;
+        case Opcode::SMSG_FORCE_PITCH_RATE_CHANGE:
+            handleForceSpeedChange(packet, "PITCH_RATE", Opcode::CMSG_FORCE_PITCH_RATE_CHANGE_ACK, &serverPitchRate_);
+            break;
+
+        // ---- Movement flag toggle ACKs ----
+        case Opcode::SMSG_MOVE_SET_CAN_FLY:
+            handleForceMoveFlagChange(packet, "SET_CAN_FLY", Opcode::CMSG_MOVE_SET_CAN_FLY_ACK,
+                static_cast<uint32_t>(MovementFlags::CAN_FLY), true);
+            break;
+        case Opcode::SMSG_MOVE_UNSET_CAN_FLY:
+            handleForceMoveFlagChange(packet, "UNSET_CAN_FLY", Opcode::CMSG_MOVE_SET_CAN_FLY_ACK,
+                static_cast<uint32_t>(MovementFlags::CAN_FLY), false);
+            break;
+        case Opcode::SMSG_MOVE_FEATHER_FALL:
+            handleForceMoveFlagChange(packet, "FEATHER_FALL", Opcode::CMSG_MOVE_FEATHER_FALL_ACK, 0, true);
+            break;
+        case Opcode::SMSG_MOVE_WATER_WALK:
+            handleForceMoveFlagChange(packet, "WATER_WALK", Opcode::CMSG_MOVE_WATER_WALK_ACK, 0, true);
+            break;
+        case Opcode::SMSG_MOVE_SET_HOVER:
+            handleForceMoveFlagChange(packet, "SET_HOVER", Opcode::CMSG_MOVE_HOVER_ACK,
+                static_cast<uint32_t>(MovementFlags::HOVER), true);
+            break;
+        case Opcode::SMSG_MOVE_UNSET_HOVER:
+            handleForceMoveFlagChange(packet, "UNSET_HOVER", Opcode::CMSG_MOVE_HOVER_ACK,
+                static_cast<uint32_t>(MovementFlags::HOVER), false);
+            break;
+
+        // ---- Knockback ----
+        case Opcode::SMSG_MOVE_KNOCK_BACK:
+            handleMoveKnockBack(packet);
+            break;
+
         case Opcode::SMSG_CLIENT_CONTROL_UPDATE: {
             // Minimal parse: PackedGuid + uint8 allowMovement.
             if (packet.getSize() - packet.getReadPos() < 2) {
@@ -1854,10 +1910,14 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 LOG_WARNING("SMSG_TIME_SYNC_REQ too short");
                 break;
             }
-            uint32_t reason = packet.readUInt32();
-            LOG_DEBUG("Time sync request reason: ", reason);
-            resurrectPending_ = false;
-            resurrectRequestPending_ = false;
+            uint32_t counter = packet.readUInt32();
+            LOG_DEBUG("Time sync request counter: ", counter);
+            if (socket) {
+                network::Packet resp(wireOpcode(Opcode::CMSG_TIME_SYNC_RESP));
+                resp.writeUInt32(counter);
+                resp.writeUInt32(nextMovementTimestampMs());
+                socket->send(resp);
+            }
             break;
         }
         case Opcode::SMSG_LIST_INVENTORY:
@@ -8240,7 +8300,8 @@ void GameHandler::dismount() {
     }
 }
 
-void GameHandler::handleForceRunSpeedChange(network::Packet& packet) {
+void GameHandler::handleForceSpeedChange(network::Packet& packet, const char* name,
+                                          Opcode ackOpcode, float* speedStorage) {
     // Packed GUID
     uint64_t guid = UpdateObjectParser::readPackedGuid(packet);
     // uint32 counter
@@ -8259,19 +8320,18 @@ void GameHandler::handleForceRunSpeedChange(network::Packet& packet) {
     // float newSpeed
     float newSpeed = packet.readFloat();
 
-    LOG_INFO("SMSG_FORCE_RUN_SPEED_CHANGE: guid=0x", std::hex, guid, std::dec,
+    LOG_INFO("SMSG_FORCE_", name, "_CHANGE: guid=0x", std::hex, guid, std::dec,
              " counter=", counter, " speed=", newSpeed);
 
     if (guid != playerGuid) return;
 
     // Always ACK the speed change to prevent server stall.
-    // Packet format mirrors movement packets: packed guid + counter + movement info + new speed.
     if (socket && !isClassicLikeExpansion()) {
-        network::Packet ack(wireOpcode(Opcode::CMSG_FORCE_RUN_SPEED_CHANGE_ACK));
+        network::Packet ack(wireOpcode(ackOpcode));
         const bool legacyGuidAck =
             isActiveExpansion("classic") || isActiveExpansion("tbc") || isActiveExpansion("turtle");
         if (legacyGuidAck) {
-            ack.writeUInt64(playerGuid);  // CMaNGOS expects full GUID for force speed ACKs
+            ack.writeUInt64(playerGuid);
         } else {
             MovementPacket::writePackedGuid(ack, playerGuid);
         }
@@ -8306,16 +8366,20 @@ void GameHandler::handleForceRunSpeedChange(network::Packet& packet) {
 
     // Validate speed - reject garbage/NaN values but still ACK
     if (std::isnan(newSpeed) || newSpeed < 0.1f || newSpeed > 100.0f) {
-        LOG_WARNING("Ignoring invalid run speed: ", newSpeed);
+        LOG_WARNING("Ignoring invalid ", name, " speed: ", newSpeed);
         return;
     }
 
-    serverRunSpeed_ = newSpeed;
+    if (speedStorage) *speedStorage = newSpeed;
+}
+
+void GameHandler::handleForceRunSpeedChange(network::Packet& packet) {
+    handleForceSpeedChange(packet, "RUN_SPEED", Opcode::CMSG_FORCE_RUN_SPEED_CHANGE_ACK, &serverRunSpeed_);
 
     // Server can auto-dismount (e.g. entering no-mount areas) and only send a speed change.
     // Keep client mount visuals in sync with server-authoritative movement speed.
-    if (!onTaxiFlight_ && !taxiMountActive_ && currentMountDisplayId_ != 0 && newSpeed <= 8.5f) {
-        LOG_INFO("Auto-clearing mount from speed change: speed=", newSpeed,
+    if (!onTaxiFlight_ && !taxiMountActive_ && currentMountDisplayId_ != 0 && serverRunSpeed_ <= 8.5f) {
+        LOG_INFO("Auto-clearing mount from speed change: speed=", serverRunSpeed_,
                  " displayId=", currentMountDisplayId_);
         currentMountDisplayId_ = 0;
         if (mountCallback_) {
@@ -8355,6 +8419,115 @@ void GameHandler::handleForceMoveRootState(network::Packet& packet, bool rooted)
         isActiveExpansion("classic") || isActiveExpansion("tbc") || isActiveExpansion("turtle");
     if (legacyGuidAck) {
         ack.writeUInt64(playerGuid);  // CMaNGOS expects full GUID for root/unroot ACKs
+    } else {
+        MovementPacket::writePackedGuid(ack, playerGuid);
+    }
+    ack.writeUInt32(counter);
+
+    MovementInfo wire = movementInfo;
+    wire.time = nextMovementTimestampMs();
+    if (wire.hasFlag(MovementFlags::ONTRANSPORT)) {
+        wire.transportTime = wire.time;
+        wire.transportTime2 = wire.time;
+    }
+    glm::vec3 serverPos = core::coords::canonicalToServer(glm::vec3(wire.x, wire.y, wire.z));
+    wire.x = serverPos.x;
+    wire.y = serverPos.y;
+    wire.z = serverPos.z;
+    if (wire.hasFlag(MovementFlags::ONTRANSPORT)) {
+        glm::vec3 serverTransport =
+            core::coords::canonicalToServer(glm::vec3(wire.transportX, wire.transportY, wire.transportZ));
+        wire.transportX = serverTransport.x;
+        wire.transportY = serverTransport.y;
+        wire.transportZ = serverTransport.z;
+    }
+    if (packetParsers_) packetParsers_->writeMovementPayload(ack, wire);
+    else MovementPacket::writeMovementPayload(ack, wire);
+
+    socket->send(ack);
+}
+
+void GameHandler::handleForceMoveFlagChange(network::Packet& packet, const char* name,
+                                             Opcode ackOpcode, uint32_t flag, bool set) {
+    if (packet.getSize() - packet.getReadPos() < 2) return;
+    uint64_t guid = UpdateObjectParser::readPackedGuid(packet);
+    if (packet.getSize() - packet.getReadPos() < 4) return;
+    uint32_t counter = packet.readUInt32();
+
+    LOG_INFO("SMSG_FORCE_", name, ": guid=0x", std::hex, guid, std::dec, " counter=", counter);
+
+    if (guid != playerGuid) return;
+
+    // Update local movement flags if a flag was specified
+    if (flag != 0) {
+        if (set) {
+            movementInfo.flags |= flag;
+        } else {
+            movementInfo.flags &= ~flag;
+        }
+    }
+
+    if (!socket || isClassicLikeExpansion()) return;
+    uint16_t ackWire = wireOpcode(ackOpcode);
+    if (ackWire == 0xFFFF) return;
+
+    network::Packet ack(ackWire);
+    const bool legacyGuidAck =
+        isActiveExpansion("classic") || isActiveExpansion("tbc") || isActiveExpansion("turtle");
+    if (legacyGuidAck) {
+        ack.writeUInt64(playerGuid);
+    } else {
+        MovementPacket::writePackedGuid(ack, playerGuid);
+    }
+    ack.writeUInt32(counter);
+
+    MovementInfo wire = movementInfo;
+    wire.time = nextMovementTimestampMs();
+    if (wire.hasFlag(MovementFlags::ONTRANSPORT)) {
+        wire.transportTime = wire.time;
+        wire.transportTime2 = wire.time;
+    }
+    glm::vec3 serverPos = core::coords::canonicalToServer(glm::vec3(wire.x, wire.y, wire.z));
+    wire.x = serverPos.x;
+    wire.y = serverPos.y;
+    wire.z = serverPos.z;
+    if (wire.hasFlag(MovementFlags::ONTRANSPORT)) {
+        glm::vec3 serverTransport =
+            core::coords::canonicalToServer(glm::vec3(wire.transportX, wire.transportY, wire.transportZ));
+        wire.transportX = serverTransport.x;
+        wire.transportY = serverTransport.y;
+        wire.transportZ = serverTransport.z;
+    }
+    if (packetParsers_) packetParsers_->writeMovementPayload(ack, wire);
+    else MovementPacket::writeMovementPayload(ack, wire);
+
+    socket->send(ack);
+}
+
+void GameHandler::handleMoveKnockBack(network::Packet& packet) {
+    if (packet.getSize() - packet.getReadPos() < 2) return;
+    uint64_t guid = UpdateObjectParser::readPackedGuid(packet);
+    if (packet.getSize() - packet.getReadPos() < 20) return;  // counter(4) + vcos(4) + vsin(4) + hspeed(4) + vspeed(4)
+    uint32_t counter = packet.readUInt32();
+    [[maybe_unused]] float vcos = packet.readFloat();
+    [[maybe_unused]] float vsin = packet.readFloat();
+    [[maybe_unused]] float hspeed = packet.readFloat();
+    [[maybe_unused]] float vspeed = packet.readFloat();
+
+    LOG_INFO("SMSG_MOVE_KNOCK_BACK: guid=0x", std::hex, guid, std::dec,
+             " counter=", counter, " hspeed=", hspeed, " vspeed=", vspeed);
+
+    if (guid != playerGuid) return;
+
+    if (!socket || isClassicLikeExpansion()) return;
+    uint16_t ackWire = wireOpcode(Opcode::CMSG_MOVE_KNOCK_BACK_ACK);
+    if (ackWire == 0xFFFF) return;
+
+    network::Packet ack(ackWire);
+    const bool legacyGuidAck =
+        isActiveExpansion("classic") || isActiveExpansion("tbc") || isActiveExpansion("turtle");
+    if (legacyGuidAck) {
+        ack.writeUInt64(playerGuid);
     } else {
         MovementPacket::writePackedGuid(ack, playerGuid);
     }

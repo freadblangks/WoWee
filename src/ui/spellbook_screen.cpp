@@ -300,6 +300,7 @@ void SpellbookScreen::categorizeSpells(const std::unordered_set<uint32_t>& known
     }
 
     lastKnownSpellCount = knownSpells.size();
+    categorizedWithSkillLines = !spellToSkillLine.empty();
 }
 
 VkDescriptorSet SpellbookScreen::getSpellIcon(uint32_t iconId, pipeline::AssetManager* assetManager) {
@@ -399,13 +400,18 @@ void SpellbookScreen::render(game::GameHandler& gameHandler, pipeline::AssetMana
     // Lazy-load DBC data on first open
     if (!dbcLoadAttempted) {
         loadSpellDBC(assetManager);
+    }
+    if (!iconDbLoaded) {
         loadSpellIconDBC(assetManager);
+    }
+    if (!skillLineDbLoaded) {
         loadSkillLineDBCs(assetManager);
     }
 
-    // Rebuild categories if spell list changed
+    // Rebuild categories if spell list changed or skill line data became available
     const auto& spells = gameHandler.getKnownSpells();
-    if (spells.size() != lastKnownSpellCount) {
+    bool skillLinesNowAvailable = !spellToSkillLine.empty() && !categorizedWithSkillLines;
+    if (spells.size() != lastKnownSpellCount || skillLinesNowAvailable) {
         categorizeSpells(spells);
     }
 

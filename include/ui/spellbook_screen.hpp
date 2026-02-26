@@ -71,6 +71,7 @@ private:
     // Categorized spell tabs
     std::vector<SpellTabInfo> spellTabs;
     size_t lastKnownSpellCount = 0;
+    bool categorizedWithSkillLines = false;
 
     // Search filter
     char searchFilter_[128] = "";

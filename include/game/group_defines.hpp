@@ -17,6 +17,19 @@ struct GroupMember {
     uint8_t subGroup = 0;      // Raid subgroup (0 for party)
     uint8_t flags = 0;         // Assistant, main tank, etc.
     uint8_t roles = 0;         // LFG roles (3.3.5a)
+
+    // Party member stats (from SMSG_PARTY_MEMBER_STATS)
+    uint32_t curHealth = 0;
+    uint32_t maxHealth = 0;
+    uint8_t powerType = 0;
+    uint16_t curPower = 0;
+    uint16_t maxPower = 0;
+    uint16_t level = 0;
+    uint16_t zoneId = 0;
+    int16_t posX = 0;
+    int16_t posY = 0;
+    uint16_t onlineStatus = 0;   // GROUP_UPDATE_FLAG_STATUS bitmask
+    bool hasPartyStats = false;  // true once we've received stats
 };
 
 /**

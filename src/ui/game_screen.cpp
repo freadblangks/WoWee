@@ -4213,26 +4213,60 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
         for (const auto& member : partyData.members) {
             ImGui::PushID(static_cast<int>(member.guid));
 
+            // Name with level and status info
+            std::string label = member.name;
+            if (member.hasPartyStats && member.level > 0) {
+                label += " [" + std::to_string(member.level) + "]";
+            }
+            if (member.hasPartyStats) {
+                bool isOnline = (member.onlineStatus & 0x0001) != 0;
+                bool isDead = (member.onlineStatus & 0x0020) != 0;
+                bool isGhost = (member.onlineStatus & 0x0010) != 0;
+                if (!isOnline) label += " (offline)";
+                else if (isDead || isGhost) label += " (dead)";
+            }
+
             // Clickable name to target
-            if (ImGui::Selectable(member.name.c_str(), gameHandler.getTargetGuid() == member.guid)) {
+            if (ImGui::Selectable(label.c_str(), gameHandler.getTargetGuid() == member.guid)) {
                 gameHandler.setTarget(member.guid);
             }
 
-            // Try to show health from entity
-            auto entity = gameHandler.getEntityManager().getEntity(member.guid);
-            if (entity && (entity->getType() == game::ObjectType::PLAYER || entity->getType() == game::ObjectType::UNIT)) {
-                auto unit = std::static_pointer_cast<game::Unit>(entity);
-                uint32_t hp = unit->getHealth();
-                uint32_t maxHp = unit->getMaxHealth();
-                if (maxHp > 0) {
-                    float pct = static_cast<float>(hp) / static_cast<float>(maxHp);
-                    ImGui::PushStyleColor(ImGuiCol_PlotHistogram,
-                        pct > 0.5f ? ImVec4(0.2f, 0.8f, 0.2f, 1.0f) :
-                        pct > 0.2f ? ImVec4(0.8f, 0.8f, 0.2f, 1.0f) :
-                                     ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
-                    ImGui::ProgressBar(pct, ImVec2(-1, 12), "");
-                    ImGui::PopStyleColor();
+            // Health bar: prefer party stats, fall back to entity
+            uint32_t hp = 0, maxHp = 0;
+            if (member.hasPartyStats && member.maxHealth > 0) {
+                hp = member.curHealth;
+                maxHp = member.maxHealth;
+            } else {
+                auto entity = gameHandler.getEntityManager().getEntity(member.guid);
+                if (entity && (entity->getType() == game::ObjectType::PLAYER || entity->getType() == game::ObjectType::UNIT)) {
+                    auto unit = std::static_pointer_cast<game::Unit>(entity);
+                    hp = unit->getHealth();
+                    maxHp = unit->getMaxHealth();
                 }
+            }
+            if (maxHp > 0) {
+                float pct = static_cast<float>(hp) / static_cast<float>(maxHp);
+                ImGui::PushStyleColor(ImGuiCol_PlotHistogram,
+                    pct > 0.5f ? ImVec4(0.2f, 0.8f, 0.2f, 1.0f) :
+                    pct > 0.2f ? ImVec4(0.8f, 0.8f, 0.2f, 1.0f) :
+                                 ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
+                ImGui::ProgressBar(pct, ImVec2(-1, 12), "");
+                ImGui::PopStyleColor();
+            }
+
+            // Power bar (mana/rage/energy) from party stats
+            if (member.hasPartyStats && member.maxPower > 0) {
+                float powerPct = static_cast<float>(member.curPower) / static_cast<float>(member.maxPower);
+                ImVec4 powerColor;
+                switch (member.powerType) {
+                    case 0: powerColor = ImVec4(0.2f, 0.2f, 0.9f, 1.0f); break; // Mana (blue)
+                    case 1: powerColor = ImVec4(0.9f, 0.2f, 0.2f, 1.0f); break; // Rage (red)
+                    case 3: powerColor = ImVec4(0.9f, 0.9f, 0.2f, 1.0f); break; // Energy (yellow)
+                    default: powerColor = ImVec4(0.5f, 0.5f, 0.5f, 1.0f); break;
+                }
+                ImGui::PushStyleColor(ImGuiCol_PlotHistogram, powerColor);
+                ImGui::ProgressBar(powerPct, ImVec2(-1, 8), "");
+                ImGui::PopStyleColor();
             }
 
             ImGui::Separator();

@@ -1789,6 +1789,12 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_PARTY_COMMAND_RESULT:
             handlePartyCommandResult(packet);
             break;
+        case Opcode::SMSG_PARTY_MEMBER_STATS:
+            handlePartyMemberStats(packet, false);
+            break;
+        case Opcode::SMSG_PARTY_MEMBER_STATS_FULL:
+            handlePartyMemberStats(packet, true);
+            break;
         case Opcode::MSG_RAID_READY_CHECK:
             // Server ready-check prompt (minimal handling for now).
             packet.setReadPos(packet.getSize());
@@ -9711,6 +9717,174 @@ void GameHandler::handlePartyCommandResult(network::Packet& packet) {
         if (!data.name.empty()) msg.message += " for " + data.name;
         addLocalChatMessage(msg);
     }
+}
+
+void GameHandler::handlePartyMemberStats(network::Packet& packet, bool isFull) {
+    auto remaining = [&]() { return packet.getSize() - packet.getReadPos(); };
+
+    // Classic/TBC use uint16 for health fields and simpler aura format;
+    // WotLK uses uint32 health and uint32+uint8 per aura.
+    const bool isWotLK = isActiveExpansion("wotlk");
+
+    // SMSG_PARTY_MEMBER_STATS_FULL has a leading padding byte
+    if (isFull) {
+        if (remaining() < 1) return;
+        packet.readUInt8();
+    }
+
+    uint64_t memberGuid = UpdateObjectParser::readPackedGuid(packet);
+    if (remaining() < 4) return;
+    uint32_t updateFlags = packet.readUInt32();
+
+    // Find matching group member
+    game::GroupMember* member = nullptr;
+    for (auto& m : partyData.members) {
+        if (m.guid == memberGuid) {
+            member = &m;
+            break;
+        }
+    }
+    if (!member) {
+        packet.setReadPos(packet.getSize());
+        return;
+    }
+
+    // Parse each flag field in order
+    if (updateFlags & 0x0001) { // STATUS
+        if (remaining() >= 2)
+            member->onlineStatus = packet.readUInt16();
+    }
+    if (updateFlags & 0x0002) { // CUR_HP
+        if (isWotLK) {
+            if (remaining() >= 4)
+                member->curHealth = packet.readUInt32();
+        } else {
+            if (remaining() >= 2)
+                member->curHealth = packet.readUInt16();
+        }
+    }
+    if (updateFlags & 0x0004) { // MAX_HP
+        if (isWotLK) {
+            if (remaining() >= 4)
+                member->maxHealth = packet.readUInt32();
+        } else {
+            if (remaining() >= 2)
+                member->maxHealth = packet.readUInt16();
+        }
+    }
+    if (updateFlags & 0x0008) { // POWER_TYPE
+        if (remaining() >= 1)
+            member->powerType = packet.readUInt8();
+    }
+    if (updateFlags & 0x0010) { // CUR_POWER
+        if (remaining() >= 2)
+            member->curPower = packet.readUInt16();
+    }
+    if (updateFlags & 0x0020) { // MAX_POWER
+        if (remaining() >= 2)
+            member->maxPower = packet.readUInt16();
+    }
+    if (updateFlags & 0x0040) { // LEVEL
+        if (remaining() >= 2)
+            member->level = packet.readUInt16();
+    }
+    if (updateFlags & 0x0080) { // ZONE
+        if (remaining() >= 2)
+            member->zoneId = packet.readUInt16();
+    }
+    if (updateFlags & 0x0100) { // POSITION
+        if (remaining() >= 4) {
+            member->posX = static_cast<int16_t>(packet.readUInt16());
+            member->posY = static_cast<int16_t>(packet.readUInt16());
+        }
+    }
+    if (updateFlags & 0x0200) { // AURAS
+        if (remaining() >= 8) {
+            uint64_t auraMask = packet.readUInt64();
+            for (int i = 0; i < 64; ++i) {
+                if (auraMask & (uint64_t(1) << i)) {
+                    if (isWotLK) {
+                        // WotLK: uint32 spellId + uint8 auraFlags
+                        if (remaining() < 5) break;
+                        packet.readUInt32();
+                        packet.readUInt8();
+                    } else {
+                        // Classic/TBC: uint16 spellId only
+                        if (remaining() < 2) break;
+                        packet.readUInt16();
+                    }
+                }
+            }
+        }
+    }
+    if (updateFlags & 0x0400) { // PET_GUID
+        if (remaining() >= 8)
+            packet.readUInt64();
+    }
+    if (updateFlags & 0x0800) { // PET_NAME
+        if (remaining() > 0)
+            packet.readString();
+    }
+    if (updateFlags & 0x1000) { // PET_MODEL_ID
+        if (remaining() >= 2)
+            packet.readUInt16();
+    }
+    if (updateFlags & 0x2000) { // PET_CUR_HP
+        if (isWotLK) {
+            if (remaining() >= 4)
+                packet.readUInt32();
+        } else {
+            if (remaining() >= 2)
+                packet.readUInt16();
+        }
+    }
+    if (updateFlags & 0x4000) { // PET_MAX_HP
+        if (isWotLK) {
+            if (remaining() >= 4)
+                packet.readUInt32();
+        } else {
+            if (remaining() >= 2)
+                packet.readUInt16();
+        }
+    }
+    if (updateFlags & 0x8000) { // PET_POWER_TYPE
+        if (remaining() >= 1)
+            packet.readUInt8();
+    }
+    if (updateFlags & 0x10000) { // PET_CUR_POWER
+        if (remaining() >= 2)
+            packet.readUInt16();
+    }
+    if (updateFlags & 0x20000) { // PET_MAX_POWER
+        if (remaining() >= 2)
+            packet.readUInt16();
+    }
+    if (updateFlags & 0x40000) { // PET_AURAS
+        if (remaining() >= 8) {
+            uint64_t petAuraMask = packet.readUInt64();
+            for (int i = 0; i < 64; ++i) {
+                if (petAuraMask & (uint64_t(1) << i)) {
+                    if (isWotLK) {
+                        if (remaining() < 5) break;
+                        packet.readUInt32();
+                        packet.readUInt8();
+                    } else {
+                        if (remaining() < 2) break;
+                        packet.readUInt16();
+                    }
+                }
+            }
+        }
+    }
+    if (isWotLK && (updateFlags & 0x80000)) { // VEHICLE_SEAT (WotLK only)
+        if (remaining() >= 4)
+            packet.readUInt32();
+    }
+
+    member->hasPartyStats = true;
+    LOG_DEBUG("Party member stats for ", member->name,
+              ": HP=", member->curHealth, "/", member->maxHealth,
+              " Level=", member->level);
 }
 
 // ============================================================

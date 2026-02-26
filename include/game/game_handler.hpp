@@ -1127,6 +1127,7 @@ private:
     void handleGroupList(network::Packet& packet);
     void handleGroupUninvite(network::Packet& packet);
     void handlePartyCommandResult(network::Packet& packet);
+    void handlePartyMemberStats(network::Packet& packet, bool isFull);
 
     // ---- Guild handlers ----
     void handleGuildInfo(network::Packet& packet);

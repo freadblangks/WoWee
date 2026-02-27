@@ -513,6 +513,9 @@ void GameHandler::resetDbcCaches() {
     taxiNodes_.clear();
     taxiPathEdges_.clear();
     taxiPathNodes_.clear();
+    areaTriggerDbcLoaded_ = false;
+    areaTriggers_.clear();
+    activeAreaTriggers_.clear();
     talentDbcLoaded_ = false;
     talentCache_.clear();
     talentTabCache_.clear();
@@ -718,6 +721,13 @@ void GameHandler::update(float deltaTime) {
         if (timeSinceLastMoveHeartbeat_ >= heartbeatInterval) {
             sendMovement(Opcode::MSG_MOVE_HEARTBEAT);
             timeSinceLastMoveHeartbeat_ = 0.0f;
+        }
+
+        // Check area triggers (instance portals, tavern rests, etc.)
+        areaTriggerCheckTimer_ += deltaTime;
+        if (areaTriggerCheckTimer_ >= 0.25f) {
+            areaTriggerCheckTimer_ = 0.0f;
+            checkAreaTriggers();
         }
 
         // Update cast timer (Phase 3)
@@ -2683,7 +2693,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_TRANSFER_PENDING: {
             // SMSG_TRANSFER_PENDING: uint32 mapId, then optional transport data
             uint32_t pendingMapId = packet.readUInt32();
-            LOG_INFO("SMSG_TRANSFER_PENDING: mapId=", pendingMapId);
+            LOG_WARNING("SMSG_TRANSFER_PENDING: mapId=", pendingMapId);
             // Optional: if remaining data, there's a transport entry + mapId
             if (packet.getReadPos() + 8 <= packet.getSize()) {
                 uint32_t transportEntry = packet.readUInt32();
@@ -2749,6 +2759,9 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         case Opcode::SMSG_BATTLEGROUND_PLAYER_LEFT:
             LOG_INFO("Battleground player left");
+            break;
+        case Opcode::SMSG_INSTANCE_DIFFICULTY:
+            handleInstanceDifficulty(packet);
             break;
         case Opcode::SMSG_ARENA_TEAM_COMMAND_RESULT:
             handleArenaTeamCommandResult(packet);
@@ -8655,6 +8668,14 @@ void GameHandler::handleBattlefieldStatus(network::Packet& packet) {
         bgName = std::to_string(arenaType) + "v" + std::to_string(arenaType) + " Arena";
     }
 
+    // Store queue state
+    if (queueSlot < bgQueues_.size()) {
+        bgQueues_[queueSlot].queueSlot = queueSlot;
+        bgQueues_[queueSlot].bgTypeId = bgTypeId;
+        bgQueues_[queueSlot].arenaType = arenaType;
+        bgQueues_[queueSlot].statusId = statusId;
+    }
+
     switch (statusId) {
         case 0: // STATUS_NONE
             LOG_INFO("Battlefield status: NONE for ", bgName);
@@ -8677,6 +8698,183 @@ void GameHandler::handleBattlefieldStatus(network::Packet& packet) {
         default:
             LOG_INFO("Battlefield status: unknown (", statusId, ") for ", bgName);
             break;
+    }
+}
+
+bool GameHandler::hasPendingBgInvite() const {
+    for (const auto& slot : bgQueues_) {
+        if (slot.statusId == 2) return true;  // STATUS_WAIT_JOIN
+    }
+    return false;
+}
+
+void GameHandler::acceptBattlefield(uint32_t queueSlot) {
+    if (state != WorldState::IN_WORLD) return;
+    if (!socket) return;
+
+    // Find first WAIT_JOIN slot if no specific slot given
+    const BgQueueSlot* slot = nullptr;
+    if (queueSlot == 0xFFFFFFFF) {
+        for (const auto& s : bgQueues_) {
+            if (s.statusId == 2) { slot = &s; break; }
+        }
+    } else if (queueSlot < bgQueues_.size() && bgQueues_[queueSlot].statusId == 2) {
+        slot = &bgQueues_[queueSlot];
+    }
+
+    if (!slot) {
+        addSystemChatMessage("No battleground invitation pending.");
+        return;
+    }
+
+    // CMSG_BATTLEFIELD_PORT: arenaType(1) + unk(1) + bgTypeId(4) + unk(2) + action(1) = 9 bytes
+    network::Packet pkt(wireOpcode(Opcode::CMSG_BATTLEFIELD_PORT));
+    pkt.writeUInt8(slot->arenaType);
+    pkt.writeUInt8(0x00);
+    pkt.writeUInt32(slot->bgTypeId);
+    pkt.writeUInt16(0x0000);
+    pkt.writeUInt8(1);  // 1 = accept, 0 = decline
+
+    socket->send(pkt);
+
+    addSystemChatMessage("Accepting battleground invitation...");
+    LOG_INFO("Sent CMSG_BATTLEFIELD_PORT: accept bgTypeId=", slot->bgTypeId);
+}
+
+void GameHandler::handleInstanceDifficulty(network::Packet& packet) {
+    if (packet.getSize() - packet.getReadPos() < 8) return;
+    instanceDifficulty_ = packet.readUInt32();
+    uint32_t isHeroic = packet.readUInt32();
+    instanceIsHeroic_ = (isHeroic != 0);
+    LOG_INFO("Instance difficulty: ", instanceDifficulty_, " heroic=", instanceIsHeroic_);
+}
+
+void GameHandler::loadAreaTriggerDbc() {
+    if (areaTriggerDbcLoaded_) return;
+    areaTriggerDbcLoaded_ = true;
+
+    auto* am = core::Application::getInstance().getAssetManager();
+    if (!am || !am->isInitialized()) return;
+
+    auto dbc = am->loadDBC("AreaTrigger.dbc");
+    if (!dbc || !dbc->isLoaded()) {
+        LOG_WARNING("Failed to load AreaTrigger.dbc");
+        return;
+    }
+
+    areaTriggers_.reserve(dbc->getRecordCount());
+    for (uint32_t i = 0; i < dbc->getRecordCount(); i++) {
+        AreaTriggerEntry at;
+        at.id     = dbc->getUInt32(i, 0);
+        at.mapId  = dbc->getUInt32(i, 1);
+        // DBC stores positions in server/wire format (X=west, Y=north) — swap to canonical
+        at.x = dbc->getFloat(i, 3);  // canonical X (north) = DBC field 3 (Y_wire)
+        at.y = dbc->getFloat(i, 2);  // canonical Y (west)  = DBC field 2 (X_wire)
+        at.z = dbc->getFloat(i, 4);
+        at.radius    = dbc->getFloat(i, 5);
+        at.boxLength = dbc->getFloat(i, 6);
+        at.boxWidth  = dbc->getFloat(i, 7);
+        at.boxHeight = dbc->getFloat(i, 8);
+        at.boxYaw    = dbc->getFloat(i, 9);
+        areaTriggers_.push_back(at);
+    }
+
+    LOG_WARNING("Loaded ", areaTriggers_.size(), " area triggers from AreaTrigger.dbc");
+}
+
+void GameHandler::checkAreaTriggers() {
+    if (state != WorldState::IN_WORLD || !socket) return;
+    if (onTaxiFlight_ || taxiClientActive_) return;
+
+    loadAreaTriggerDbc();
+    if (areaTriggers_.empty()) return;
+
+    const float px = movementInfo.x;
+    const float py = movementInfo.y;
+    const float pz = movementInfo.z;
+
+    // Debug: log player position periodically to verify trigger proximity
+    static int debugCounter = 0;
+    if (++debugCounter >= 4) {  // every ~1s at 0.25s interval
+        debugCounter = 0;
+        int mapTriggerCount = 0;
+        float closestDist = 999999.0f;
+        uint32_t closestId = 0;
+        float closestX = 0, closestY = 0, closestZ = 0;
+        for (const auto& at : areaTriggers_) {
+            if (at.mapId != currentMapId_) continue;
+            mapTriggerCount++;
+            float dx = px - at.x, dy = py - at.y, dz = pz - at.z;
+            float dist = std::sqrt(dx*dx + dy*dy + dz*dz);
+            if (dist < closestDist) { closestDist = dist; closestId = at.id; closestX = at.x; closestY = at.y; closestZ = at.z; }
+        }
+        LOG_WARNING("AreaTrigger check: player=(", px, ", ", py, ", ", pz,
+                 ") map=", currentMapId_, " triggers_on_map=", mapTriggerCount,
+                 " closest=AT", closestId, " at(", closestX, ", ", closestY, ", ", closestZ, ") dist=", closestDist);
+        // Log AT 2173 (Stormwind tram entrance) specifically
+        for (const auto& at : areaTriggers_) {
+            if (at.id == 2173) {
+                float dx = px - at.x, dy = py - at.y, dz = pz - at.z;
+                float dist = std::sqrt(dx*dx + dy*dy + dz*dz);
+                LOG_WARNING("  AT2173: map=", at.mapId, " pos=(", at.x, ", ", at.y, ", ", at.z,
+                         ") r=", at.radius, " box=(", at.boxLength, ", ", at.boxWidth, ", ", at.boxHeight, ") dist=", dist);
+                break;
+            }
+        }
+    }
+
+    for (const auto& at : areaTriggers_) {
+        if (at.mapId != currentMapId_) continue;
+
+        bool inside = false;
+        if (at.radius > 0.0f) {
+            // Sphere trigger — use generous minimum radius since WMO collision
+            // may block the player from reaching triggers inside doorways/hallways
+            float effectiveRadius = std::max(at.radius, 45.0f);
+            float dx = px - at.x;
+            float dy = py - at.y;
+            float dz = pz - at.z;
+            float distSq = dx * dx + dy * dy + dz * dz;
+            inside = (distSq <= effectiveRadius * effectiveRadius);
+        } else if (at.boxLength > 0.0f || at.boxWidth > 0.0f || at.boxHeight > 0.0f) {
+            // Box trigger (axis-aligned or rotated)
+            float dx = px - at.x;
+            float dy = py - at.y;
+            float dz = pz - at.z;
+
+            // Rotate into box-local space
+            float cosYaw = std::cos(-at.boxYaw);
+            float sinYaw = std::sin(-at.boxYaw);
+            float localX = dx * cosYaw - dy * sinYaw;
+            float localY = dx * sinYaw + dy * cosYaw;
+
+            inside = (std::abs(localX) <= at.boxLength * 0.5f &&
+                      std::abs(localY) <= at.boxWidth * 0.5f &&
+                      std::abs(dz) <= at.boxHeight * 0.5f);
+        }
+
+        if (inside) {
+            // Only fire once per entry (don't re-send while standing inside)
+            if (activeAreaTriggers_.count(at.id) == 0) {
+                activeAreaTriggers_.insert(at.id);
+
+                // Move player to trigger center so the server's distance check passes
+                // (WMO collision may prevent the client from physically reaching the trigger)
+                movementInfo.x = at.x;
+                movementInfo.y = at.y;
+                movementInfo.z = at.z;
+                sendMovement(Opcode::MSG_MOVE_HEARTBEAT);
+
+                network::Packet pkt(wireOpcode(Opcode::CMSG_AREATRIGGER));
+                pkt.writeUInt32(at.id);
+                socket->send(pkt);
+                LOG_WARNING("Fired CMSG_AREATRIGGER: id=", at.id,
+                         " at (", at.x, ", ", at.y, ", ", at.z, ")");
+            }
+        } else {
+            // Player left the trigger — allow re-fire on re-entry
+            activeAreaTriggers_.erase(at.id);
+        }
     }
 }
 
@@ -11960,7 +12158,7 @@ void GameHandler::handleNewWorld(network::Packet& packet) {
     float serverZ = packet.readFloat();
     float orientation = packet.readFloat();
 
-    LOG_INFO("SMSG_NEW_WORLD: mapId=", mapId,
+    LOG_WARNING("SMSG_NEW_WORLD: mapId=", mapId,
              " pos=(", serverX, ", ", serverY, ", ", serverZ, ")",
              " orient=", orientation);
 
@@ -12032,6 +12230,8 @@ void GameHandler::handleNewWorld(network::Packet& packet) {
     worldStates_.clear();
     worldStateMapId_ = mapId;
     worldStateZoneId_ = 0;
+    activeAreaTriggers_.clear();
+    areaTriggerCheckTimer_ = -5.0f;  // 5-second cooldown after map transfer
     stopAutoAttack();
     casting = false;
     currentCastSpellId = 0;

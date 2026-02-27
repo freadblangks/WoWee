@@ -2765,6 +2765,12 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                 isChannelCommand = true;
                 switchChatType = 9;
             } else if (cmdLower == "join") {
+                // /join with no args: accept pending BG invite if any
+                if (spacePos == std::string::npos && gameHandler.hasPendingBgInvite()) {
+                    gameHandler.acceptBattlefield();
+                    chatInputBuffer[0] = '\0';
+                    return;
+                }
                 // /join ChannelName [password]
                 if (spacePos != std::string::npos) {
                     std::string rest = command.substr(spacePos + 1);

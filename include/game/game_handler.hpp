@@ -321,6 +321,10 @@ public:
     // Random roll
     void randomRoll(uint32_t minRoll = 1, uint32_t maxRoll = 100);
 
+    // Battleground
+    bool hasPendingBgInvite() const;
+    void acceptBattlefield(uint32_t queueSlot = 0xFFFFFFFF);
+
     // Logout commands
     void requestLogout();
     void cancelLogout();
@@ -1189,8 +1193,13 @@ private:
     void handleForceMoveFlagChange(network::Packet& packet, const char* name, Opcode ackOpcode, uint32_t flag, bool set);
     void handleMoveKnockBack(network::Packet& packet);
 
+    // ---- Area trigger detection ----
+    void loadAreaTriggerDbc();
+    void checkAreaTriggers();
+
     // ---- Arena / Battleground handlers ----
     void handleBattlefieldStatus(network::Packet& packet);
+    void handleInstanceDifficulty(network::Packet& packet);
     void handleArenaTeamCommandResult(network::Packet& packet);
     void handleArenaTeamQueryResponse(network::Packet& packet);
     void handleArenaTeamInvite(network::Packet& packet);
@@ -1477,11 +1486,39 @@ private:
     std::unordered_map<uint32_t, TalentEntry> talentCache_;      // talentId -> entry
     std::unordered_map<uint32_t, TalentTabEntry> talentTabCache_; // tabId -> entry
     bool talentDbcLoaded_ = false;
+
+    // ---- Area trigger detection ----
+    struct AreaTriggerEntry {
+        uint32_t id = 0;
+        uint32_t mapId = 0;
+        float x = 0, y = 0, z = 0;   // canonical WoW coords (converted from DBC)
+        float radius = 0;
+        float boxLength = 0, boxWidth = 0, boxHeight = 0;
+        float boxYaw = 0;
+    };
+    bool areaTriggerDbcLoaded_ = false;
+    std::vector<AreaTriggerEntry> areaTriggers_;
+    std::unordered_set<uint32_t> activeAreaTriggers_;  // triggers player is currently inside
+    float areaTriggerCheckTimer_ = 0.0f;
+
     float castTimeTotal = 0.0f;
     std::array<ActionBarSlot, 12> actionBar{};
     std::vector<AuraSlot> playerAuras;
     std::vector<AuraSlot> targetAuras;
     uint64_t petGuid_ = 0;
+
+    // ---- Battleground queue state ----
+    struct BgQueueSlot {
+        uint32_t queueSlot = 0;
+        uint32_t bgTypeId = 0;
+        uint8_t arenaType = 0;
+        uint32_t statusId = 0;  // 0=none, 1=wait_queue, 2=wait_join, 3=in_progress
+    };
+    std::array<BgQueueSlot, 3> bgQueues_{};
+
+    // Instance difficulty
+    uint32_t instanceDifficulty_ = 0;
+    bool instanceIsHeroic_ = false;
 
     // ---- Phase 4: Group ----
     GroupListData partyData;

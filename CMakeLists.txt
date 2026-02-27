@@ -284,6 +284,7 @@ set(WOWEE_SOURCES
     src/pipeline/m2_loader.cpp
     src/pipeline/wmo_loader.cpp
     src/pipeline/adt_loader.cpp
+    src/pipeline/wdt_loader.cpp
     src/pipeline/dbc_layout.cpp
 
     src/pipeline/terrain_mesh.cpp
@@ -401,6 +402,7 @@ set(WOWEE_HEADERS
     include/pipeline/m2_loader.hpp
     include/pipeline/wmo_loader.hpp
     include/pipeline/adt_loader.hpp
+    include/pipeline/wdt_loader.hpp
     include/pipeline/dbc_loader.hpp
     include/pipeline/terrain_mesh.hpp
 

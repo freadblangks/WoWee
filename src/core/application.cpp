@@ -1349,22 +1349,30 @@ void Application::setupUICallbacks() {
         }
 
         uint32_t realmId = 0;
+        uint16_t realmBuild = 0;
         {
             // WotLK AUTH_SESSION includes a RealmID field; some servers reject if it's wrong/zero.
             const auto& realms = authHandler->getRealms();
             for (const auto& r : realms) {
                 if (r.name == realmName && r.address == realmAddress) {
                     realmId = r.id;
+                    realmBuild = r.build;
                     break;
                 }
             }
-            LOG_INFO("Selected realmId=", realmId);
+            LOG_INFO("Selected realmId=", realmId, " realmBuild=", realmBuild);
         }
 
         uint32_t clientBuild = 12340; // default WotLK
         if (expansionRegistry_) {
             auto* profile = expansionRegistry_->getActive();
             if (profile) clientBuild = profile->worldBuild;
+        }
+        // Prefer realm-reported build when available (e.g. vanilla servers
+        // that report build 5875 in the realm list)
+        if (realmBuild != 0) {
+            clientBuild = realmBuild;
+            LOG_INFO("Using realm-reported build: ", clientBuild);
         }
         if (gameHandler->connect(host, port, sessionKey, accountName, clientBuild, realmId)) {
             LOG_INFO("Connected to world server, transitioning to character selection");

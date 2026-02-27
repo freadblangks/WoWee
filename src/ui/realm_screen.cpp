@@ -179,10 +179,10 @@ void RealmScreen::render(auth::AuthHandler& authHandler) {
                 ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f),
                     " - %d character%s", realm.characters, realm.characters > 1 ? "s" : "");
             }
-            if (realm.hasVersionInfo()) {
+            if (realm.hasVersionInfo() && (realm.majorVersion || realm.build)) {
                 ImGui::SameLine();
-                ImGui::TextDisabled(" v%d.%d.%d",
-                    realm.majorVersion, realm.minorVersion, realm.patchVersion);
+                ImGui::TextDisabled(" v%d.%d.%d (build %d)",
+                    realm.majorVersion, realm.minorVersion, realm.patchVersion, realm.build);
             }
 
             ImGui::Spacing();

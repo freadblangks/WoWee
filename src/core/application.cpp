@@ -3218,9 +3218,9 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
         pendingTransportDoodadBatches_.clear();
 
         if (renderer) {
-            // Clear all world geometry from old map
+            // Clear all world geometry from old map (including textures/models)
             if (auto* wmo = renderer->getWMORenderer()) {
-                wmo->clearInstances();
+                wmo->clearAll();
             }
             if (auto* m2 = renderer->getM2Renderer()) {
                 m2->clear();
@@ -3384,7 +3384,7 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
 
     if (isWMOOnlyMap) {
         // ---- WMO-only map (dungeon/raid/BG): load root WMO directly ----
-        LOG_INFO("WMO-only map detected — loading root WMO: ", wdtInfo.rootWMOPath);
+        LOG_WARNING("WMO-only map detected — loading root WMO: ", wdtInfo.rootWMOPath);
         showProgress("Loading instance geometry...", 0.25f);
 
         // Still call loadTestTerrain with a dummy path to initialize all renderers
@@ -3392,7 +3392,17 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
         auto [tileX, tileY] = core::coords::canonicalToTile(spawnCanonical.x, spawnCanonical.y);
         std::string dummyAdtPath = "World\\Maps\\" + mapName + "\\" + mapName + "_" +
                                    std::to_string(tileX) + "_" + std::to_string(tileY) + ".adt";
+        LOG_WARNING("WMO-only: calling loadTestTerrain with dummy ADT: ", dummyAdtPath);
         renderer->loadTestTerrain(assetManager.get(), dummyAdtPath);
+        LOG_WARNING("WMO-only: loadTestTerrain returned");
+
+        // Set map name on the newly-created WMO renderer (loadTestTerrain creates it)
+        if (renderer->getWMORenderer()) {
+            renderer->getWMORenderer()->setMapName(mapName);
+        }
+        if (renderer->getTerrainManager()) {
+            renderer->getTerrainManager()->setMapName(mapName);
+        }
 
         // Disable terrain streaming — no ADT tiles for WMO-only maps
         if (renderer->getTerrainManager()) {
@@ -3407,10 +3417,14 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
 
         // Load the root WMO
         auto* wmoRenderer = renderer->getWMORenderer();
+        LOG_WARNING("WMO-only: wmoRenderer=", (wmoRenderer ? "valid" : "NULL"));
         if (wmoRenderer) {
+            LOG_WARNING("WMO-only: reading root WMO file: ", wdtInfo.rootWMOPath);
             std::vector<uint8_t> wmoData = assetManager->readFile(wdtInfo.rootWMOPath);
+            LOG_WARNING("WMO-only: root WMO data size=", wmoData.size());
             if (!wmoData.empty()) {
                 pipeline::WMOModel wmoModel = pipeline::WMOLoader::load(wmoData);
+                LOG_WARNING("WMO-only: parsed WMO model, nGroups=", wmoModel.nGroups);
 
                 if (wmoModel.nGroups > 0) {
                     showProgress("Loading instance groups...", 0.35f);

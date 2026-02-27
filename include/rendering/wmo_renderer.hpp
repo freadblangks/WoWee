@@ -137,6 +137,11 @@ public:
     void clearInstances();
 
     /**
+     * Clear all instances, loaded models, and texture cache (for map transitions)
+     */
+    void clearAll();
+
+    /**
      * Render all WMO instances (Vulkan)
      * @param cmd Command buffer to record into
      * @param perFrameSet Per-frame descriptor set (set 0)
@@ -630,7 +635,7 @@ private:
     std::unordered_map<std::string, TextureCacheEntry> textureCache;
     size_t textureCacheBytes_ = 0;
     uint64_t textureCacheCounter_ = 0;
-    size_t textureCacheBudgetBytes_ = 2048ull * 1024 * 1024;  // Default, overridden at init
+    size_t textureCacheBudgetBytes_ = 8192ull * 1024 * 1024;  // 8 GB default, overridden at init
     std::unordered_set<std::string> failedTextureCache_;
     std::unordered_set<std::string> loggedTextureLoadFails_;
     uint32_t textureBudgetRejectWarnings_ = 0;

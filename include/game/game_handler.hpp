@@ -1500,6 +1500,7 @@ private:
     std::vector<AreaTriggerEntry> areaTriggers_;
     std::unordered_set<uint32_t> activeAreaTriggers_;  // triggers player is currently inside
     float areaTriggerCheckTimer_ = 0.0f;
+    bool areaTriggerSuppressFirst_ = false;  // suppress first check after map transfer
 
     float castTimeTotal = 0.0f;
     std::array<ActionBarSlot, 12> actionBar{};

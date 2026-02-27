@@ -25,12 +25,12 @@ float readF32(const uint8_t* data, size_t offset) {
     return v;
 }
 
-// Chunk magic constants (little-endian)
-constexpr uint32_t MVER = 0x5245564D; // "REVM"
-constexpr uint32_t MPHD = 0x4448504D; // "DHPM"
-constexpr uint32_t MAIN = 0x4E49414D; // "NIAM"
-constexpr uint32_t MWMO = 0x4F4D574D; // "OMWM"
-constexpr uint32_t MODF = 0x46444F4D; // "FDOM"
+// Chunk magic constants (big-endian ASCII, same as ADTLoader)
+constexpr uint32_t MVER = 0x4D564552; // "MVER"
+constexpr uint32_t MPHD = 0x4D504844; // "MPHD"
+constexpr uint32_t MAIN = 0x4D41494E; // "MAIN"
+constexpr uint32_t MWMO = 0x4D574D4F; // "MWMO"
+constexpr uint32_t MODF = 0x4D4F4446; // "MODF"
 
 } // anonymous namespace
 

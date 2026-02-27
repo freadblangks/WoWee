@@ -3430,6 +3430,8 @@ void GameHandler::handleLoginVerifyWorld(network::Packet& packet) {
 
     // Initialize movement info with world entry position (server → canonical)
     glm::vec3 canonical = core::coords::serverToCanonical(glm::vec3(data.x, data.y, data.z));
+    LOG_WARNING("LOGIN_VERIFY_WORLD: server=(", data.x, ", ", data.y, ", ", data.z,
+             ") canonical=(", canonical.x, ", ", canonical.y, ", ", canonical.z, ") mapId=", data.mapId);
     movementInfo.x = canonical.x;
     movementInfo.y = canonical.y;
     movementInfo.z = canonical.z;
@@ -8800,27 +8802,31 @@ void GameHandler::checkAreaTriggers() {
         int mapTriggerCount = 0;
         float closestDist = 999999.0f;
         uint32_t closestId = 0;
-        float closestX = 0, closestY = 0, closestZ = 0;
+        float closestR = 0, closestBoxL = 0, closestBoxW = 0, closestBoxH = 0;
+        bool closestActive = false;
         for (const auto& at : areaTriggers_) {
             if (at.mapId != currentMapId_) continue;
             mapTriggerCount++;
             float dx = px - at.x, dy = py - at.y, dz = pz - at.z;
             float dist = std::sqrt(dx*dx + dy*dy + dz*dz);
-            if (dist < closestDist) { closestDist = dist; closestId = at.id; closestX = at.x; closestY = at.y; closestZ = at.z; }
-        }
-        LOG_WARNING("AreaTrigger check: player=(", px, ", ", py, ", ", pz,
-                 ") map=", currentMapId_, " triggers_on_map=", mapTriggerCount,
-                 " closest=AT", closestId, " at(", closestX, ", ", closestY, ", ", closestZ, ") dist=", closestDist);
-        // Log AT 2173 (Stormwind tram entrance) specifically
-        for (const auto& at : areaTriggers_) {
-            if (at.id == 2173) {
-                float dx = px - at.x, dy = py - at.y, dz = pz - at.z;
-                float dist = std::sqrt(dx*dx + dy*dy + dz*dz);
-                LOG_WARNING("  AT2173: map=", at.mapId, " pos=(", at.x, ", ", at.y, ", ", at.z,
-                         ") r=", at.radius, " box=(", at.boxLength, ", ", at.boxWidth, ", ", at.boxHeight, ") dist=", dist);
-                break;
+            if (dist < closestDist) {
+                closestDist = dist; closestId = at.id;
+                closestR = at.radius; closestBoxL = at.boxLength; closestBoxW = at.boxWidth; closestBoxH = at.boxHeight;
+                closestActive = activeAreaTriggers_.count(at.id) > 0;
             }
         }
+        LOG_WARNING("AreaTrigger check: player=(", px, ", ", py, ", ", pz,
+                 ") map=", currentMapId_, " closest=AT", closestId,
+                 " dist=", closestDist, " r=", closestR,
+                 " box=(", closestBoxL, ",", closestBoxW, ",", closestBoxH,
+                 ") active=", closestActive);
+    }
+
+    // On first check after map transfer, just mark which triggers we're inside
+    // without firing them — prevents exit portal from immediately sending us back
+    bool suppressFirst = areaTriggerSuppressFirst_;
+    if (suppressFirst) {
+        areaTriggerSuppressFirst_ = false;
     }
 
     for (const auto& at : areaTriggers_) {
@@ -8837,7 +8843,12 @@ void GameHandler::checkAreaTriggers() {
             float distSq = dx * dx + dy * dy + dz * dz;
             inside = (distSq <= effectiveRadius * effectiveRadius);
         } else if (at.boxLength > 0.0f || at.boxWidth > 0.0f || at.boxHeight > 0.0f) {
-            // Box trigger (axis-aligned or rotated)
+            // Box trigger — use generous minimum dimensions since WMO collision
+            // may block the player from reaching small triggers inside doorways
+            float effLength = std::max(at.boxLength, 90.0f);
+            float effWidth = std::max(at.boxWidth, 90.0f);
+            float effHeight = std::max(at.boxHeight, 90.0f);
+
             float dx = px - at.x;
             float dy = py - at.y;
             float dz = pz - at.z;
@@ -8848,28 +8859,41 @@ void GameHandler::checkAreaTriggers() {
             float localX = dx * cosYaw - dy * sinYaw;
             float localY = dx * sinYaw + dy * cosYaw;
 
-            inside = (std::abs(localX) <= at.boxLength * 0.5f &&
-                      std::abs(localY) <= at.boxWidth * 0.5f &&
-                      std::abs(dz) <= at.boxHeight * 0.5f);
+            inside = (std::abs(localX) <= effLength * 0.5f &&
+                      std::abs(localY) <= effWidth * 0.5f &&
+                      std::abs(dz) <= effHeight * 0.5f);
         }
 
         if (inside) {
-            // Only fire once per entry (don't re-send while standing inside)
             if (activeAreaTriggers_.count(at.id) == 0) {
                 activeAreaTriggers_.insert(at.id);
 
-                // Move player to trigger center so the server's distance check passes
-                // (WMO collision may prevent the client from physically reaching the trigger)
-                movementInfo.x = at.x;
-                movementInfo.y = at.y;
-                movementInfo.z = at.z;
-                sendMovement(Opcode::MSG_MOVE_HEARTBEAT);
+                if (suppressFirst) {
+                    // After map transfer: mark triggers we're inside of, but don't fire them.
+                    // This prevents the exit portal from immediately sending us back.
+                    LOG_WARNING("AreaTrigger suppressed (post-transfer): AT", at.id);
+                } else {
+                    // Temporarily move player to trigger center so the server's distance
+                    // check passes, then restore to actual position so the server doesn't
+                    // persist the fake position on disconnect.
+                    float savedX = movementInfo.x, savedY = movementInfo.y, savedZ = movementInfo.z;
+                    movementInfo.x = at.x;
+                    movementInfo.y = at.y;
+                    movementInfo.z = at.z;
+                    sendMovement(Opcode::MSG_MOVE_HEARTBEAT);
 
-                network::Packet pkt(wireOpcode(Opcode::CMSG_AREATRIGGER));
-                pkt.writeUInt32(at.id);
-                socket->send(pkt);
-                LOG_WARNING("Fired CMSG_AREATRIGGER: id=", at.id,
-                         " at (", at.x, ", ", at.y, ", ", at.z, ")");
+                    network::Packet pkt(wireOpcode(Opcode::CMSG_AREATRIGGER));
+                    pkt.writeUInt32(at.id);
+                    socket->send(pkt);
+                    LOG_WARNING("Fired CMSG_AREATRIGGER: id=", at.id,
+                             " at (", at.x, ", ", at.y, ", ", at.z, ")");
+
+                    // Restore actual player position
+                    movementInfo.x = savedX;
+                    movementInfo.y = savedY;
+                    movementInfo.z = savedZ;
+                    sendMovement(Opcode::MSG_MOVE_HEARTBEAT);
+                }
             }
         } else {
             // Player left the trigger — allow re-fire on re-entry
@@ -12232,6 +12256,7 @@ void GameHandler::handleNewWorld(network::Packet& packet) {
     worldStateZoneId_ = 0;
     activeAreaTriggers_.clear();
     areaTriggerCheckTimer_ = -5.0f;  // 5-second cooldown after map transfer
+    areaTriggerSuppressFirst_ = true;  // first check just marks active triggers, doesn't fire
     stopAutoAttack();
     casting = false;
     currentCastSpellId = 0;

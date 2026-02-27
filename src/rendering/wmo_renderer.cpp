@@ -274,7 +274,7 @@ bool WMORenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayou
     flatNormalTexture_->createSampler(device, VK_FILTER_LINEAR, VK_FILTER_LINEAR,
                                        VK_SAMPLER_ADDRESS_MODE_REPEAT);
     textureCacheBudgetBytes_ =
-        envSizeMBOrDefault("WOWEE_WMO_TEX_CACHE_MB", 4096) * 1024ull * 1024ull;
+        envSizeMBOrDefault("WOWEE_WMO_TEX_CACHE_MB", 8192) * 1024ull * 1024ull;
     modelCacheLimit_ = envSizeMBOrDefault("WOWEE_WMO_MODEL_LIMIT", 4000);
     core::Logger::getInstance().info("WMO texture cache budget: ",
                                      textureCacheBudgetBytes_ / (1024 * 1024), " MB");
@@ -1037,6 +1037,40 @@ void WMORenderer::clearInstances() {
     instanceIndexById.clear();
     precomputedFloorGrid.clear();  // Invalidate floor cache when instances change
     core::Logger::getInstance().info("Cleared all WMO instances");
+}
+
+void WMORenderer::clearAll() {
+    clearInstances();
+
+    if (vkCtx_) {
+        VkDevice device = vkCtx_->getDevice();
+        VmaAllocator allocator = vkCtx_->getAllocator();
+        vkDeviceWaitIdle(device);
+
+        // Free GPU resources for loaded models
+        for (auto& [id, model] : loadedModels) {
+            for (auto& group : model.groups) {
+                destroyGroupGPU(group);
+            }
+        }
+
+        // Free cached textures
+        for (auto& [path, entry] : textureCache) {
+            if (entry.texture) entry.texture->destroy(device, allocator);
+            if (entry.normalHeightMap) entry.normalHeightMap->destroy(device, allocator);
+        }
+    }
+
+    loadedModels.clear();
+    textureCache.clear();
+    textureCacheBytes_ = 0;
+    textureCacheCounter_ = 0;
+    failedTextureCache_.clear();
+    loggedTextureLoadFails_.clear();
+    textureBudgetRejectWarnings_ = 0;
+    precomputedFloorGrid.clear();
+
+    LOG_WARNING("Cleared all WMO models, instances, and texture cache");
 }
 
 void WMORenderer::setCollisionFocus(const glm::vec3& worldPos, float radius) {

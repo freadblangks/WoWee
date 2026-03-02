@@ -6,6 +6,7 @@
 #include "core/logger.hpp"
 #include "core/memory_monitor.hpp"
 #include "rendering/renderer.hpp"
+#include "rendering/vk_context.hpp"
 #include "audio/npc_voice_manager.hpp"
 #include "rendering/camera.hpp"
 #include "rendering/camera_controller.hpp"
@@ -415,6 +416,12 @@ void Application::run() {
         } catch (const std::exception& e) {
             LOG_ERROR("Exception during swapBuffers: ", e.what());
             throw;
+        }
+
+        // Exit gracefully on GPU device lost (unrecoverable)
+        if (renderer && renderer->getVkContext() && renderer->getVkContext()->isDeviceLost()) {
+            LOG_ERROR("GPU device lost — exiting application");
+            window->setShouldClose(true);
         }
     }
 

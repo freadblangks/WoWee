@@ -3430,19 +3430,14 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
         // Initialize renderers if they don't exist yet (first login to a WMO-only map).
         // On map change, renderers already exist from the previous map.
         if (!renderer->getWMORenderer() || !renderer->getTerrainManager()) {
-            auto [tileX, tileY] = core::coords::canonicalToTile(spawnCanonical.x, spawnCanonical.y);
-            std::string dummyAdtPath = "World\\Maps\\" + mapName + "\\" + mapName + "_" +
-                                       std::to_string(tileX) + "_" + std::to_string(tileY) + ".adt";
-            LOG_WARNING("WMO-only: calling loadTestTerrain to create renderers");
-            renderer->loadTestTerrain(assetManager.get(), dummyAdtPath);
+            renderer->initializeRenderers(assetManager.get(), mapName);
         }
 
-        // Set map name on WMO and terrain renderers
+        // Set map name on WMO renderer and disable terrain streaming (no ADT tiles for instances)
         if (renderer->getWMORenderer()) {
             renderer->getWMORenderer()->setMapName(mapName);
         }
         if (renderer->getTerrainManager()) {
-            renderer->getTerrainManager()->setMapName(mapName);
             renderer->getTerrainManager()->setStreamingEnabled(false);
         }
 
@@ -3635,13 +3630,9 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
             LOG_INFO("Online world terrain loading initiated");
         }
 
-        // Set map name on the newly-created WMO/terrain renderers
-        // (loadTestTerrain creates them, so the earlier setMapName at line ~3296 was a no-op)
+        // Set map name on WMO renderer (initializeRenderers handles terrain/minimap/worldMap)
         if (renderer->getWMORenderer()) {
             renderer->getWMORenderer()->setMapName(mapName);
-        }
-        if (renderer->getTerrainManager()) {
-            renderer->getTerrainManager()->setMapName(mapName);
         }
 
         // Character renderer is created inside loadTestTerrain(), so spawn the
@@ -3873,9 +3864,6 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
     // Track which map we actually loaded (used by same-map teleport check).
     loadedMapId_ = mapId;
 
-    // Set game state
-    setState(AppState::IN_GAME);
-
     // Clear loading flag and process any deferred world entry.
     // A deferred entry occurs when SMSG_NEW_WORLD arrived during our warmup
     // (e.g., an area trigger in a dungeon immediately teleporting the player out).
@@ -3887,9 +3875,13 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
         worldEntryMovementGraceTimer_ = 2.0f;
         taxiLandingClampTimer_ = 0.0f;
         lastTaxiFlight_ = false;
-        // Recursive call — sets loadedMapId_ to entry.mapId inside.
+        // Recursive call — sets loadedMapId_ and IN_GAME state for the final map.
         loadOnlineWorldTerrain(entry.mapId, entry.x, entry.y, entry.z);
+        return;  // The recursive call handles setState(IN_GAME).
     }
+
+    // Only enter IN_GAME when this is the final map (no deferred entry pending).
+    setState(AppState::IN_GAME);
 }
 
 void Application::buildCreatureDisplayLookups() {

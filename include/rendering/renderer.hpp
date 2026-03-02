@@ -72,6 +72,12 @@ public:
     bool loadTestTerrain(pipeline::AssetManager* assetManager, const std::string& adtPath);
 
     /**
+     * Initialize all sub-renderers (WMO, M2, Character, terrain, water, minimap, etc.)
+     * without loading any ADT tile.  Used by WMO-only maps (dungeons/raids/BGs).
+     */
+    bool initializeRenderers(pipeline::AssetManager* assetManager, const std::string& mapName);
+
+    /**
      * Enable/disable terrain rendering
      */
     void setTerrainEnabled(bool enabled) { terrainEnabled = enabled; }

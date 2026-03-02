@@ -8795,33 +8795,6 @@ void GameHandler::checkAreaTriggers() {
     const float py = movementInfo.y;
     const float pz = movementInfo.z;
 
-    // Debug: log player position periodically to verify trigger proximity
-    static int debugCounter = 0;
-    if (++debugCounter >= 4) {  // every ~1s at 0.25s interval
-        debugCounter = 0;
-        int mapTriggerCount = 0;
-        float closestDist = 999999.0f;
-        uint32_t closestId = 0;
-        float closestR = 0, closestBoxL = 0, closestBoxW = 0, closestBoxH = 0;
-        bool closestActive = false;
-        for (const auto& at : areaTriggers_) {
-            if (at.mapId != currentMapId_) continue;
-            mapTriggerCount++;
-            float dx = px - at.x, dy = py - at.y, dz = pz - at.z;
-            float dist = std::sqrt(dx*dx + dy*dy + dz*dz);
-            if (dist < closestDist) {
-                closestDist = dist; closestId = at.id;
-                closestR = at.radius; closestBoxL = at.boxLength; closestBoxW = at.boxWidth; closestBoxH = at.boxHeight;
-                closestActive = activeAreaTriggers_.count(at.id) > 0;
-            }
-        }
-        LOG_WARNING("AreaTrigger check: player=(", px, ", ", py, ", ", pz,
-                 ") map=", currentMapId_, " closest=AT", closestId,
-                 " dist=", closestDist, " r=", closestR,
-                 " box=(", closestBoxL, ",", closestBoxW, ",", closestBoxH,
-                 ") active=", closestActive);
-    }
-
     // On first check after map transfer, just mark which triggers we're inside
     // without firing them — prevents exit portal from immediately sending us back
     bool suppressFirst = areaTriggerSuppressFirst_;

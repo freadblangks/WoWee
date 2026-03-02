@@ -3344,13 +3344,13 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
 // initPostProcess(), resizePostProcess(), shutdownPostProcess() removed —
 // post-process pipeline is now handled by Vulkan (Phase 6 cleanup).
 
-bool Renderer::loadTestTerrain(pipeline::AssetManager* assetManager, const std::string& adtPath) {
+bool Renderer::initializeRenderers(pipeline::AssetManager* assetManager, const std::string& mapName) {
     if (!assetManager) {
         LOG_ERROR("Asset manager is null");
         return false;
     }
 
-    LOG_INFO("Loading test terrain: ", adtPath);
+    LOG_INFO("Initializing renderers for map: ", mapName);
 
     // Create terrain renderer if not already created
     if (!terrainRenderer) {
@@ -3466,49 +3466,12 @@ bool Renderer::loadTestTerrain(pipeline::AssetManager* assetManager, const std::
         }
     }
 
-    // Parse tile coordinates from ADT path
-    // Format: World\Maps\{MapName}\{MapName}_{X}_{Y}.adt
-    int tileX = 32, tileY = 49;  // defaults
-    {
-        // Find last path separator
-        size_t lastSep = adtPath.find_last_of("\\/");
-        if (lastSep != std::string::npos) {
-            std::string filename = adtPath.substr(lastSep + 1);
-            // Find first underscore after map name
-            size_t firstUnderscore = filename.find('_');
-            if (firstUnderscore != std::string::npos) {
-                size_t secondUnderscore = filename.find('_', firstUnderscore + 1);
-                if (secondUnderscore != std::string::npos) {
-                    size_t dot = filename.find('.', secondUnderscore);
-                    if (dot != std::string::npos) {
-                        tileX = std::stoi(filename.substr(firstUnderscore + 1, secondUnderscore - firstUnderscore - 1));
-                        tileY = std::stoi(filename.substr(secondUnderscore + 1, dot - secondUnderscore - 1));
-                    }
-                }
-            }
-            // Extract map name
-            std::string mapName = filename.substr(0, firstUnderscore != std::string::npos ? firstUnderscore : filename.size());
-            terrainManager->setMapName(mapName);
-            if (minimap) {
-                minimap->setMapName(mapName);
-            }
-            if (worldMap) {
-                worldMap->setMapName(mapName);
-            }
-        }
-    }
+    // Set map name on sub-renderers
+    if (terrainManager) terrainManager->setMapName(mapName);
+    if (minimap) minimap->setMapName(mapName);
+    if (worldMap) worldMap->setMapName(mapName);
 
-    LOG_INFO("Enqueuing initial tile [", tileX, ",", tileY, "] via terrain manager");
-
-    // Enqueue the initial tile for async loading (avoids long sync stalls)
-    if (!terrainManager->enqueueTile(tileX, tileY)) {
-        LOG_ERROR("Failed to enqueue initial tile [", tileX, ",", tileY, "]");
-        return false;
-    }
-
-    terrainLoaded = true;
-
-    // Initialize music manager with asset manager
+    // Initialize audio managers
     if (musicManager && assetManager && !cachedAssetManager) {
         audio::AudioEngine::instance().setAssetManager(assetManager);
         musicManager->initialize(assetManager);
@@ -3569,10 +3532,68 @@ bool Renderer::loadTestTerrain(pipeline::AssetManager* assetManager, const std::
         cachedAssetManager = assetManager;
     }
 
-    // Snap camera to ground now that terrain is loaded
+    // Snap camera to ground
     if (cameraController) {
         cameraController->reset();
     }
+
+    return true;
+}
+
+bool Renderer::loadTestTerrain(pipeline::AssetManager* assetManager, const std::string& adtPath) {
+    if (!assetManager) {
+        LOG_ERROR("Asset manager is null");
+        return false;
+    }
+
+    LOG_INFO("Loading test terrain: ", adtPath);
+
+    // Extract map name from ADT path for renderer initialization
+    std::string mapName;
+    {
+        size_t lastSep = adtPath.find_last_of("\\/");
+        if (lastSep != std::string::npos) {
+            std::string filename = adtPath.substr(lastSep + 1);
+            size_t firstUnderscore = filename.find('_');
+            mapName = filename.substr(0, firstUnderscore != std::string::npos ? firstUnderscore : filename.size());
+        }
+    }
+
+    // Initialize all sub-renderers
+    if (!initializeRenderers(assetManager, mapName)) {
+        return false;
+    }
+
+    // Parse tile coordinates from ADT path
+    // Format: World\Maps\{MapName}\{MapName}_{X}_{Y}.adt
+    int tileX = 32, tileY = 49;  // defaults
+    {
+        size_t lastSep = adtPath.find_last_of("\\/");
+        if (lastSep != std::string::npos) {
+            std::string filename = adtPath.substr(lastSep + 1);
+            size_t firstUnderscore = filename.find('_');
+            if (firstUnderscore != std::string::npos) {
+                size_t secondUnderscore = filename.find('_', firstUnderscore + 1);
+                if (secondUnderscore != std::string::npos) {
+                    size_t dot = filename.find('.', secondUnderscore);
+                    if (dot != std::string::npos) {
+                        tileX = std::stoi(filename.substr(firstUnderscore + 1, secondUnderscore - firstUnderscore - 1));
+                        tileY = std::stoi(filename.substr(secondUnderscore + 1, dot - secondUnderscore - 1));
+                    }
+                }
+            }
+        }
+    }
+
+    LOG_INFO("Enqueuing initial tile [", tileX, ",", tileY, "] via terrain manager");
+
+    // Enqueue the initial tile for async loading (avoids long sync stalls)
+    if (!terrainManager->enqueueTile(tileX, tileY)) {
+        LOG_ERROR("Failed to enqueue initial tile [", tileX, ",", tileY, "]");
+        return false;
+    }
+
+    terrainLoaded = true;
 
     LOG_INFO("Test terrain loaded successfully!");
     LOG_INFO("  Chunks: ", terrainRenderer->getChunkCount());

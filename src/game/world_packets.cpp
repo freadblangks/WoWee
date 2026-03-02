@@ -1370,17 +1370,38 @@ bool MessageChatParser::parse(network::Packet& packet, MessageChatData& data) {
     switch (data.type) {
         case ChatType::MONSTER_SAY:
         case ChatType::MONSTER_YELL:
-        case ChatType::MONSTER_EMOTE: {
-            // Read sender name length + name
+        case ChatType::MONSTER_EMOTE:
+        case ChatType::MONSTER_WHISPER:
+        case ChatType::MONSTER_PARTY:
+        case ChatType::RAID_BOSS_EMOTE:
+        case ChatType::RAID_BOSS_WHISPER: {
+            // Read sender name (SizedCString: uint32 len including null + chars)
             uint32_t nameLen = packet.readUInt32();
             if (nameLen > 0 && nameLen < 256) {
                 data.senderName.resize(nameLen);
                 for (uint32_t i = 0; i < nameLen; ++i) {
                     data.senderName[i] = static_cast<char>(packet.readUInt8());
                 }
+                // Strip trailing null (server includes it in nameLen)
+                if (!data.senderName.empty() && data.senderName.back() == '\0') {
+                    data.senderName.pop_back();
+                }
             }
-            // Read receiver GUID
+            // Read receiver GUID (NamedGuid: guid + optional name for non-player targets)
             data.receiverGuid = packet.readUInt64();
+            if (data.receiverGuid != 0) {
+                // Non-player, non-pet GUIDs have high type bits set (0xF1xx/0xF0xx range)
+                uint16_t highGuid = static_cast<uint16_t>(data.receiverGuid >> 48);
+                bool isPlayer = (highGuid == 0x0000);
+                bool isPet = ((highGuid & 0xF0FF) == 0xF040) || ((highGuid & 0xF0FF) == 0xF014);
+                if (!isPlayer && !isPet) {
+                    // Read receiver name (SizedCString)
+                    uint32_t recvNameLen = packet.readUInt32();
+                    if (recvNameLen > 0 && recvNameLen < 256) {
+                        packet.setReadPos(packet.getReadPos() + recvNameLen);
+                    }
+                }
+            }
             break;
         }
 

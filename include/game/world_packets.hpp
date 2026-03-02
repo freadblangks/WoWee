@@ -605,7 +605,11 @@ enum class ChatType : uint8_t {
     RAID_LEADER = 27,
     RAID_WARNING = 28,
     ACHIEVEMENT = 29,
-    GUILD_ACHIEVEMENT = 30
+    GUILD_ACHIEVEMENT = 30,
+    MONSTER_WHISPER = 42,
+    RAID_BOSS_WHISPER = 43,
+    RAID_BOSS_EMOTE = 44,
+    MONSTER_PARTY = 50
 };
 
 /**

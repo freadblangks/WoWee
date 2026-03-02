@@ -5967,7 +5967,8 @@ void GameHandler::handleMessageChat(network::Packet& packet) {
     // Trigger chat bubble for SAY/YELL messages from others
     if (chatBubbleCallback_ && data.senderGuid != 0) {
         if (data.type == ChatType::SAY || data.type == ChatType::YELL ||
-            data.type == ChatType::MONSTER_SAY || data.type == ChatType::MONSTER_YELL) {
+            data.type == ChatType::MONSTER_SAY || data.type == ChatType::MONSTER_YELL ||
+            data.type == ChatType::MONSTER_PARTY) {
             bool isYell = (data.type == ChatType::YELL || data.type == ChatType::MONSTER_YELL);
             chatBubbleCallback_(data.senderGuid, data.message, isYell);
         }

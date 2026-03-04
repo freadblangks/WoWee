@@ -34,6 +34,7 @@ layout(location = 1) in vec3 Normal;
 layout(location = 2) in vec2 TexCoord;
 layout(location = 3) flat in vec3 InstanceOrigin;
 layout(location = 4) in float ModelHeight;
+layout(location = 5) in float vFadeAlpha;
 
 layout(location = 0) out vec4 outColor;
 
@@ -175,16 +176,16 @@ void main() {
     float fogFactor = clamp((fogParams.y - dist) / (fogParams.y - fogParams.x), 0.0, 1.0);
     result = mix(fogColor.rgb, result, fogFactor);
 
-    float outAlpha = texColor.a * fadeAlpha;
+    float outAlpha = texColor.a * vFadeAlpha;
     // Cutout materials should not remain partially transparent after discard,
     // otherwise foliage cards look view-dependent.
     if (alphaTest != 0 || colorKeyBlack != 0) {
-        outAlpha = fadeAlpha;
+        outAlpha = vFadeAlpha;
     }
     // Foliage cutout should stay opaque after alpha discard to avoid
     // view-angle translucency artifacts.
     if (alphaTest == 2 || alphaTest == 3) {
-        outAlpha = 1.0 * fadeAlpha;
+        outAlpha = 1.0 * vFadeAlpha;
     }
     outColor = vec4(result, outAlpha);
 }

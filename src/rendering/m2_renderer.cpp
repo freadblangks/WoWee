@@ -401,7 +401,7 @@ bool M2Renderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout
         VkPushConstantRange pushRange{};
         pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
         pushRange.offset = 0;
-        pushRange.size = 84; // mat4(64) + vec2(8) + int(4) + int(4) + int(4)
+        pushRange.size = 88; // mat4(64) + vec2(8) + int(4) + int(4) + int(4) + float(4)
 
         VkPipelineLayoutCreateInfo ci{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
         ci.setLayoutCount = 3;
@@ -591,6 +591,11 @@ bool M2Renderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout
         bci.size = MAX_M2_PARTICLES * 9 * sizeof(float);
         vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci, &m2ParticleVB_, &m2ParticleVBAlloc_, &allocInfo);
         m2ParticleVBMapped_ = allocInfo.pMappedData;
+
+        // Dedicated glow sprite buffer (separate from particle VB to avoid data race)
+        bci.size = MAX_GLOW_SPRITES * 9 * sizeof(float);
+        vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci, &glowVB_, &glowVBAlloc_, &allocInfo);
+        glowVBMapped_ = allocInfo.pMappedData;
     }
 
     // --- Create white fallback texture ---
@@ -689,6 +694,7 @@ void M2Renderer::shutdown() {
     // Clean up particle buffers
     if (smokeVB_) { vmaDestroyBuffer(alloc, smokeVB_, smokeVBAlloc_); smokeVB_ = VK_NULL_HANDLE; }
     if (m2ParticleVB_) { vmaDestroyBuffer(alloc, m2ParticleVB_, m2ParticleVBAlloc_); m2ParticleVB_ = VK_NULL_HANDLE; }
+    if (glowVB_) { vmaDestroyBuffer(alloc, glowVB_, glowVBAlloc_); glowVB_ = VK_NULL_HANDLE; }
     smokeParticles.clear();
 
     // Destroy pipelines
@@ -2104,10 +2110,16 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
 
     lastDrawCallCount = 0;
 
-    // Adaptive render distance: tiered by instance density to cap draw calls
-    const float maxRenderDistance = (instances.size() > 2000) ? 300.0f
-                                  : (instances.size() > 1000) ? 500.0f
-                                  : 1000.0f;
+    // Adaptive render distance: smoothed to prevent pop-in/pop-out flickering
+    const float targetRenderDist = (instances.size() > 2000) ? 300.0f
+                                 : (instances.size() > 1000) ? 500.0f
+                                 : 1000.0f;
+    // Smooth transitions: shrink slowly (avoid popping out nearby objects)
+    const float shrinkRate = 0.005f;  // very slow decrease
+    const float growRate = 0.05f;     // faster increase
+    float blendRate = (targetRenderDist < smoothedRenderDist_) ? shrinkRate : growRate;
+    smoothedRenderDist_ = glm::mix(smoothedRenderDist_, targetRenderDist, blendRate);
+    const float maxRenderDistance = smoothedRenderDist_;
     const float maxRenderDistanceSq = maxRenderDistance * maxRenderDistance;
     const float fadeStartFraction = 0.75f;
     const glm::vec3 camPos = camera.getPosition();
@@ -2127,15 +2139,14 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
     for (uint32_t i = 0; i < static_cast<uint32_t>(instances.size()); ++i) {
         const auto& instance = instances[i];
 
-        // Fast early rejection: skip instances that are definitely too far
         glm::vec3 toCam = instance.position - camPos;
         float distSq = glm::dot(toCam, toCam);
-        if (distSq > maxPossibleDistSq) continue;  // Early out before model lookup
 
         auto it = models.find(instance.modelId);
         if (it == models.end()) continue;
         const M2ModelGPU& model = it->second;
         if (!model.isValid() || model.isSmoke || model.isInvisibleTrap) continue;
+
         float worldRadius = model.boundRadius * instance.scale;
         float cullRadius = worldRadius;
         if (model.disableAnimation) {
@@ -2146,15 +2157,13 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
             effectiveMaxDistSq *= 2.6f;
         }
         if (model.isGroundDetail) {
-            // Keep clutter local so distant grass doesn't overdraw the scene.
             effectiveMaxDistSq *= 0.75f;
         }
-        // Removed aggressive small-object distance caps to prevent city pop-out
-        // Small props (barrels, lanterns, etc.) now use same distance as larger objects
+
+        if (distSq > maxPossibleDistSq) continue;
         if (distSq > effectiveMaxDistSq) continue;
 
-        // Frustum cull with moderate padding to prevent edge pop-out during camera rotation
-        // Reduced from 2.5x to 1.5x for better performance
+        // Frustum cull with padding
         float paddedRadius = std::max(cullRadius * 1.5f, cullRadius + 3.0f);
         if (cullRadius > 0.0f && !frustum.intersectsSphere(instance.position, paddedRadius)) continue;
 
@@ -2179,6 +2188,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
         int texCoordSet;
         int useBones;
         int isFoliage;
+        float fadeAlpha;
     };
 
     // Bind per-frame descriptor set (set 0) — shared across all draws
@@ -2390,10 +2400,10 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                 currentPipeline = desiredPipeline;
             }
 
-            // Update material UBO with per-draw dynamic values (fadeAlpha, interiorDarken)
+            // Update material UBO with per-draw dynamic values (interiorDarken, forceCutout overrides)
+            // Note: fadeAlpha is in push constants (per-draw) to avoid shared-UBO race
             if (batch.materialUBOMapped) {
                 auto* mat = static_cast<M2MaterialUBO*>(batch.materialUBOMapped);
-                mat->fadeAlpha = instanceFadeAlpha;
                 mat->interiorDarken = insideInterior ? 1.0f : 0.0f;
                 if (batch.colorKeyBlack) {
                     mat->colorKeyThreshold = (effectiveBlendMode == 4 || effectiveBlendMode == 5) ? 0.7f : 0.08f;
@@ -2419,6 +2429,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
             pc.texCoordSet = static_cast<int>(batch.textureUnit);
             pc.useBones = useBones ? 1 : 0;
             pc.isFoliage = model.shadowWindFoliage ? 1 : 0;
+            pc.fadeAlpha = instanceFadeAlpha;
             vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
 
             vkCmdDrawIndexed(cmd, batch.indexCount, 1, batch.indexStart, 0, 0);
@@ -2427,7 +2438,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
     }
 
     // Render glow sprites as billboarded additive point lights
-    if (!glowSprites_.empty() && particleAdditivePipeline_ && m2ParticleVB_ && glowTexDescSet_) {
+    if (!glowSprites_.empty() && particleAdditivePipeline_ && glowVB_ && glowTexDescSet_) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, particleAdditivePipeline_);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 particlePipelineLayout_, 0, 1, &perFrameSet, 0, nullptr);
@@ -2454,11 +2465,11 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
             glowData.push_back(0.0f);
         }
 
-        size_t uploadCount = std::min(glowSprites_.size(), MAX_M2_PARTICLES);
-        memcpy(m2ParticleVBMapped_, glowData.data(), uploadCount * 9 * sizeof(float));
+        size_t uploadCount = std::min(glowSprites_.size(), MAX_GLOW_SPRITES);
+        memcpy(glowVBMapped_, glowData.data(), uploadCount * 9 * sizeof(float));
 
         VkDeviceSize offset = 0;
-        vkCmdBindVertexBuffers(cmd, 0, 1, &m2ParticleVB_, &offset);
+        vkCmdBindVertexBuffers(cmd, 0, 1, &glowVB_, &offset);
         vkCmdDraw(cmd, static_cast<uint32_t>(uploadCount), 1, 0, 0);
     }
 

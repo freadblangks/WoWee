@@ -178,6 +178,9 @@ private:
         bool hasOverrideModelMatrix = false;
         glm::mat4 overrideModelMatrix{1.0f};
 
+        // Bone update throttling (skip frames for distant characters)
+        uint32_t boneUpdateCounter = 0;
+
         // Per-instance bone SSBO (double-buffered per frame)
         VkBuffer boneBuffer[2] = {};
         VmaAllocation boneAlloc[2] = {};

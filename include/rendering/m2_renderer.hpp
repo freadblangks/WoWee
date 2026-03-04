@@ -371,6 +371,11 @@ private:
     ::VkBuffer m2ParticleVB_ = VK_NULL_HANDLE;
     VmaAllocation m2ParticleVBAlloc_ = VK_NULL_HANDLE;
     void* m2ParticleVBMapped_ = nullptr;
+    // Dedicated glow sprite vertex buffer (separate from particle VB to avoid data race)
+    static constexpr size_t MAX_GLOW_SPRITES = 2000;
+    ::VkBuffer glowVB_ = VK_NULL_HANDLE;
+    VmaAllocation glowVBAlloc_ = VK_NULL_HANDLE;
+    void* glowVBMapped_ = nullptr;
 
     std::unordered_map<uint32_t, M2ModelGPU> models;
     std::vector<M2Instance> instances;
@@ -477,6 +482,7 @@ private:
     // Cached camera state from update() for frustum-culling bones
     glm::vec3 cachedCamPos_ = glm::vec3(0.0f);
     float cachedMaxRenderDistSq_ = 0.0f;
+    float smoothedRenderDist_ = 1000.0f;  // Smoothed render distance to prevent flickering
 
     // Thread count for parallel bone animation
     uint32_t numAnimThreads_ = 1;

@@ -19,6 +19,7 @@ layout(push_constant) uniform Push {
     int texCoordSet;
     int useBones;
     int isFoliage;
+    float fadeAlpha;
 } push;
 
 layout(set = 2, binding = 0) readonly buffer BoneSSBO {
@@ -37,6 +38,7 @@ layout(location = 1) out vec3 Normal;
 layout(location = 2) out vec2 TexCoord;
 layout(location = 3) flat out vec3 InstanceOrigin;
 layout(location = 4) out float ModelHeight;
+layout(location = 5) out float vFadeAlpha;
 
 void main() {
     vec4 pos = vec4(aPos, 1.0);
@@ -86,6 +88,7 @@ void main() {
 
     InstanceOrigin = push.model[3].xyz;
     ModelHeight = pos.z;
+    vFadeAlpha = push.fadeAlpha;
 
     gl_Position = projection * view * worldPos;
 }

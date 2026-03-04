@@ -1423,20 +1423,53 @@ void CharacterRenderer::update(float deltaTime, const glm::vec3& cameraPos) {
     }
 
     // Only update animations for nearby characters (performance optimization)
-    // Collect instances that need updates
+    // Collect instances that need bone recomputation, with distance-based throttling
     std::vector<std::reference_wrapper<CharacterInstance>> toUpdate;
     toUpdate.reserve(instances.size());
 
     for (auto& pair : instances) {
-        float distSq = glm::distance2(pair.second.position, cameraPos);
-        if (distSq < animUpdateRadiusSq) {
-            toUpdate.push_back(std::ref(pair.second));
+        auto& inst = pair.second;
+
+        // Skip weapon instances — their transforms are set by parent bones
+        if (inst.hasOverrideModelMatrix) continue;
+
+        float distSq = glm::distance2(inst.position, cameraPos);
+        if (distSq >= animUpdateRadiusSq) continue;
+
+        // Always advance animation time (cheap)
+        auto modelIt = models.find(inst.modelId);
+        if (modelIt != models.end() && !modelIt->second.data.sequences.empty()) {
+            if (inst.currentSequenceIndex < 0) {
+                inst.currentSequenceIndex = 0;
+                inst.currentAnimationId = modelIt->second.data.sequences[0].id;
+            }
+            const auto& seq = modelIt->second.data.sequences[inst.currentSequenceIndex];
+            inst.animationTime += deltaTime * 1000.0f;
+            if (seq.duration > 0 && inst.animationTime >= static_cast<float>(seq.duration)) {
+                if (inst.animationLoop) {
+                    inst.animationTime = std::fmod(inst.animationTime, static_cast<float>(seq.duration));
+                } else {
+                    inst.animationTime = static_cast<float>(seq.duration);
+                }
+            }
+        }
+
+        // Distance-tiered bone throttling: near=every frame, mid=every 3rd, far=every 6th
+        uint32_t boneInterval = 1;
+        if (distSq > 60.0f * 60.0f) boneInterval = 6;
+        else if (distSq > 30.0f * 30.0f) boneInterval = 3;
+
+        inst.boneUpdateCounter++;
+        bool needsBones = (inst.boneUpdateCounter >= boneInterval) || inst.boneMatrices.empty();
+        if (needsBones) {
+            inst.boneUpdateCounter = 0;
+            toUpdate.push_back(std::ref(inst));
         }
     }
 
     const size_t updatedCount = toUpdate.size();
 
-    // Thread animation updates in chunks to avoid spawning one task per instance.
+    // Thread bone matrix computation in chunks
     if (updatedCount >= 8 && numAnimThreads_ > 1) {
         static const size_t minAnimWorkPerThread = std::max<size_t>(
             16, envSizeOrDefault("WOWEE_CHAR_ANIM_WORK_PER_THREAD", 64));
@@ -1446,7 +1479,7 @@ void CharacterRenderer::update(float deltaTime, const glm::vec3& cameraPos) {
 
         if (numThreads <= 1) {
             for (auto& instRef : toUpdate) {
-                updateAnimation(instRef.get(), deltaTime);
+                calculateBoneMatrices(instRef.get());
             }
         } else {
             const size_t chunkSize = updatedCount / numThreads;
@@ -1461,9 +1494,9 @@ void CharacterRenderer::update(float deltaTime, const glm::vec3& cameraPos) {
             for (size_t t = 0; t < numThreads; t++) {
                 size_t end = start + chunkSize + (t < remainder ? 1 : 0);
                 animFutures_.push_back(std::async(std::launch::async,
-                    [this, &toUpdate, start, end, deltaTime]() {
+                    [this, &toUpdate, start, end]() {
                         for (size_t i = start; i < end; i++) {
-                            updateAnimation(toUpdate[i].get(), deltaTime);
+                            calculateBoneMatrices(toUpdate[i].get());
                         }
                     }));
                 start = end;
@@ -1474,9 +1507,8 @@ void CharacterRenderer::update(float deltaTime, const glm::vec3& cameraPos) {
             }
         }
     } else {
-        // Sequential for small counts (avoid thread overhead)
         for (auto& instRef : toUpdate) {
-            updateAnimation(instRef.get(), deltaTime);
+            calculateBoneMatrices(instRef.get());
         }
     }
 

@@ -522,10 +522,18 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
                     wmoMatrix = glm::rotate(wmoMatrix, rot.y, glm::vec3(0, 1, 0));
                     wmoMatrix = glm::rotate(wmoMatrix, rot.x, glm::vec3(1, 0, 0));
 
-                    const auto& doodadSet = wmoModel.doodadSets[0];
+                    // Load doodads from set 0 (global) + placement-specific set
+                    std::vector<uint32_t> setsToLoad = {0};
+                    if (placement.doodadSet > 0 && placement.doodadSet < wmoModel.doodadSets.size()) {
+                        setsToLoad.push_back(placement.doodadSet);
+                    }
+                    std::unordered_set<uint32_t> loadedDoodadIndices;
+                    for (uint32_t setIdx : setsToLoad) {
+                        const auto& doodadSet = wmoModel.doodadSets[setIdx];
                     for (uint32_t di = 0; di < doodadSet.count; di++) {
                         uint32_t doodadIdx = doodadSet.startIndex + di;
                         if (doodadIdx >= wmoModel.doodads.size()) break;
+                        if (!loadedDoodadIndices.insert(doodadIdx).second) continue;
 
                         const auto& doodad = wmoModel.doodads[doodadIdx];
                         auto nameIt = wmoModel.doodadNames.find(doodad.nameIndex);
@@ -622,6 +630,7 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
                         doodadReady.worldPosition = worldPos;
                         doodadReady.modelMatrix = worldMatrix;
                         pending->wmoDoodads.push_back(std::move(doodadReady));
+                    }
                     }
                 }
 
@@ -1311,6 +1320,7 @@ void TerrainManager::unloadAll() {
     pendingTiles.clear();
     finalizingTiles_.clear();
     placedDoodadIds.clear();
+    placedWmoIds.clear();
 
     LOG_INFO("Unloading all terrain tiles");
     loadedTiles.clear();
@@ -1358,6 +1368,7 @@ void TerrainManager::softReset() {
     pendingTiles.clear();
     finalizingTiles_.clear();
     placedDoodadIds.clear();
+    placedWmoIds.clear();
 
     // Clear tile cache — keys are (x,y) without map name, so stale entries from
     // a different map with overlapping coordinates would produce wrong geometry.

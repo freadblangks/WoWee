@@ -533,10 +533,8 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
                 // "city01" etc are exterior cityscape shells in large WMOs
                 isCityShell = (lower.find("city") == 0 && lower.size() <= 8);
             }
-            // Flag 0x80 on INDOOR groups in large WMOs = interior cathedral shell
-            bool hasFlag80 = (wmoGroup.flags & 0x80) != 0;
             bool isIndoor = (wmoGroup.flags & 0x2000) != 0;
-            if ((nVerts < 100 && isLargeWmo) || (alwaysDraw && nVerts < 5000) || (isFacade && isLargeWmo) || (isCityShell && isLargeWmo) || (hasFlag80 && isIndoor && isLargeWmo)) {
+            if ((nVerts < 100 && isLargeWmo && !isIndoor) || (alwaysDraw && nVerts < 5000 && isLargeWmo && !isIndoor) || (isFacade && isLargeWmo && !isIndoor) || (isCityShell && !isIndoor && isLargeWmo)) {
                 resources.isLOD = true;
             }
             modelData.groups.push_back(resources);
@@ -954,9 +952,7 @@ void WMORenderer::setInstanceTransform(uint32_t instanceId, const glm::mat4& tra
         }
     }
 
-    // NOTE: Don't rebuild spatial index on every transform update - causes flickering
-    // Spatial grid is only used for collision queries, render iterates all instances
-    // rebuildSpatialIndex();
+    rebuildSpatialIndex();
 }
 
 void WMORenderer::addDoodadToInstance(uint32_t instanceId, uint32_t m2InstanceId, const glm::mat4& localTransform) {
@@ -1228,8 +1224,11 @@ void WMORenderer::precomputeFloorCache() {
 
                 samplesChecked++;
 
-                // getFloorHeight will compute and cache the result
-                getFloorHeight(sampleX, sampleY, refZ);
+                // Query floor height and store result in the precomputed grid
+                auto h = getFloorHeight(sampleX, sampleY, refZ);
+                if (h) {
+                    precomputedFloorGrid[key] = *h;
+                }
             }
         }
     }
@@ -2900,6 +2899,90 @@ std::optional<float> WMORenderer::getFloorHeight(float glX, float glY, float glZ
     }
 
     return bestFloor;
+}
+
+void WMORenderer::debugDumpGroupsAtPosition(float glX, float glY, float glZ) const {
+    LOG_WARNING("=== WMO Floor Debug at render(", glX, ", ", glY, ", ", glZ, ") ===");
+
+    glm::vec3 worldOrigin(glX, glY, glZ + 500.0f);
+    glm::vec3 worldDir(0.0f, 0.0f, -1.0f);
+
+    int totalInstancesChecked = 0;
+    int totalGroupsOverlapping = 0;
+    int totalFloorHits = 0;
+
+    for (const auto& instance : instances) {
+        auto it = loadedModels.find(instance.modelId);
+        if (it == loadedModels.end()) continue;
+        const ModelData& model = it->second;
+
+        // Check instance world bounds
+        if (glX < instance.worldBoundsMin.x || glX > instance.worldBoundsMax.x ||
+            glY < instance.worldBoundsMin.y || glY > instance.worldBoundsMax.y ||
+            glZ < instance.worldBoundsMin.z - 20.0f || glZ > instance.worldBoundsMax.z + 20.0f) {
+            continue;
+        }
+        totalInstancesChecked++;
+        LOG_WARNING("  Instance modelId=", instance.modelId,
+                    " worldBounds=(", instance.worldBoundsMin.x, ",", instance.worldBoundsMin.y, ",", instance.worldBoundsMin.z,
+                    ")-(", instance.worldBoundsMax.x, ",", instance.worldBoundsMax.y, ",", instance.worldBoundsMax.z,
+                    ") groups=", model.groups.size());
+
+        glm::vec3 localOrigin = glm::vec3(instance.invModelMatrix * glm::vec4(worldOrigin, 1.0f));
+        glm::vec3 localDir = glm::normalize(glm::vec3(instance.invModelMatrix * glm::vec4(worldDir, 0.0f)));
+
+        for (size_t gi = 0; gi < model.groups.size(); ++gi) {
+            // Check world-space group bounds
+            if (gi < instance.worldGroupBounds.size()) {
+                const auto& [gMin, gMax] = instance.worldGroupBounds[gi];
+                if (glX < gMin.x || glX > gMax.x ||
+                    glY < gMin.y || glY > gMax.y) {
+                    continue;
+                }
+            }
+            totalGroupsOverlapping++;
+            const auto& group = model.groups[gi];
+
+            // Count floor triangles in this group under the player
+            int floorTris = 0;
+            float bestHitZ = -999999.0f;
+            const auto& verts = group.collisionVertices;
+            const auto& indices = group.collisionIndices;
+            for (size_t ti = 0; ti + 2 < indices.size(); ti += 3) {
+                const glm::vec3& v0 = verts[indices[ti]];
+                const glm::vec3& v1 = verts[indices[ti + 1]];
+                const glm::vec3& v2 = verts[indices[ti + 2]];
+                float t = rayTriangleIntersect(localOrigin, localDir, v0, v1, v2);
+                if (t <= 0.0f) t = rayTriangleIntersect(localOrigin, localDir, v0, v2, v1);
+                if (t > 0.0f) {
+                    glm::vec3 hitLocal = localOrigin + localDir * t;
+                    glm::vec3 hitWorld = glm::vec3(instance.modelMatrix * glm::vec4(hitLocal, 1.0f));
+                    floorTris++;
+                    totalFloorHits++;
+                    if (hitWorld.z > bestHitZ) bestHitZ = hitWorld.z;
+                }
+            }
+
+            glm::vec3 gWorldMin(0), gWorldMax(0);
+            if (gi < instance.worldGroupBounds.size()) {
+                gWorldMin = instance.worldGroupBounds[gi].first;
+                gWorldMax = instance.worldGroupBounds[gi].second;
+            }
+            LOG_WARNING("    Group[", gi, "] flags=0x", std::hex, group.groupFlags, std::dec,
+                        " verts=", group.collisionVertices.size(),
+                        " tris=", group.collisionIndices.size()/3,
+                        " batches=", group.mergedBatches.size(),
+                        " isLOD=", group.isLOD,
+                        " floorHits=", floorTris,
+                        " bestHitZ=", bestHitZ,
+                        " wBounds=(", gWorldMin.x, ",", gWorldMin.y, ",", gWorldMin.z,
+                        ")-(", gWorldMax.x, ",", gWorldMax.y, ",", gWorldMax.z, ")");
+        }
+    }
+
+    LOG_WARNING("=== Total: ", totalInstancesChecked, " instances, ",
+                totalGroupsOverlapping, " overlapping groups, ",
+                totalFloorHits, " floor hits ===");
 }
 
 bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to, glm::vec3& adjustedPos, bool insideWMO) const {

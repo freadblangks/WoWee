@@ -281,6 +281,7 @@ public:
     Inventory& getInventory() { return inventory; }
     const Inventory& getInventory() const { return inventory; }
     bool consumeOnlineEquipmentDirty() { bool d = onlineEquipDirty_; onlineEquipDirty_ = false; return d; }
+    void resetEquipmentDirtyTracking() { lastEquipDisplayIds_ = {}; onlineEquipDirty_ = true; }
     void unequipToBackpack(EquipSlot equipSlot);
 
     // Targeting

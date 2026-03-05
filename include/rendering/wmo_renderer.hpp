@@ -171,6 +171,7 @@ public:
      * Get number of active instances
      */
     uint32_t getInstanceCount() const { return instances.size(); }
+    size_t getLoadedModelCount() const { return loadedModels.size(); }
 
     /**
      * Remove models that have no instances referencing them
@@ -261,6 +262,9 @@ public:
      *                   (1.0 = flat, 0.0 = vertical). Useful for slope walkability checks.
      */
     std::optional<float> getFloorHeight(float glX, float glY, float glZ, float* outNormalZ = nullptr) const;
+
+    /** Dump diagnostic info about WMO groups overlapping a position */
+    void debugDumpGroupsAtPosition(float glX, float glY, float glZ) const;
 
     /**
      * Check wall collision and adjust position

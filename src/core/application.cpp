@@ -86,12 +86,94 @@ bool envFlagEnabled(const char* key, bool defaultValue = false) {
 
 
 const char* Application::mapIdToName(uint32_t mapId) {
+    // Fallback when Map.dbc is unavailable. Names must match WDT directory names
+    // (case-insensitive — AssetManager lowercases all paths).
     switch (mapId) {
+        // Continents
         case 0: return "Azeroth";
         case 1: return "Kalimdor";
-        case 369: return "DeeprunTram";
-        case 530: return "Outland";
+        case 530: return "Expansion01";
         case 571: return "Northrend";
+        // Classic dungeons/raids
+        case 30: return "PVPZone01";
+        case 33: return "Shadowfang";
+        case 34: return "StormwindJail";
+        case 36: return "DeadminesInstance";
+        case 43: return "WailingCaverns";
+        case 47: return "RazserfenKraulInstance";
+        case 48: return "Blackfathom";
+        case 70: return "Uldaman";
+        case 90: return "GnomeragonInstance";
+        case 109: return "SunkenTemple";
+        case 129: return "RazorfenDowns";
+        case 189: return "MonasteryInstances";
+        case 209: return "TanarisInstance";
+        case 229: return "BlackRockSpire";
+        case 230: return "BlackrockDepths";
+        case 249: return "OnyxiaLairInstance";
+        case 289: return "ScholomanceInstance";
+        case 309: return "Zul'Gurub";
+        case 329: return "Stratholme";
+        case 349: return "Mauradon";
+        case 369: return "DeeprunTram";
+        case 389: return "OrgrimmarInstance";
+        case 409: return "MoltenCore";
+        case 429: return "DireMaul";
+        case 469: return "BlackwingLair";
+        case 489: return "PVPZone03";
+        case 509: return "AhnQiraj";
+        case 529: return "PVPZone04";
+        case 531: return "AhnQirajTemple";
+        case 533: return "Stratholme Raid";
+        // TBC
+        case 532: return "Karazahn";
+        case 534: return "HyjalPast";
+        case 540: return "HellfireMilitary";
+        case 542: return "HellfireDemon";
+        case 543: return "HellfireRampart";
+        case 544: return "HellfireRaid";
+        case 545: return "CoilfangPumping";
+        case 546: return "CoilfangMarsh";
+        case 547: return "CoilfangDraenei";
+        case 548: return "CoilfangRaid";
+        case 550: return "TempestKeepRaid";
+        case 552: return "TempestKeepArcane";
+        case 553: return "TempestKeepAtrium";
+        case 554: return "TempestKeepFactory";
+        case 555: return "AuchindounShadow";
+        case 556: return "AuchindounDraenei";
+        case 557: return "AuchindounEthereal";
+        case 558: return "AuchindounDemon";
+        case 560: return "HillsbradPast";
+        case 564: return "BlackTemple";
+        case 565: return "GruulsLair";
+        case 566: return "PVPZone05";
+        case 568: return "ZulAman";
+        case 580: return "SunwellPlateau";
+        case 585: return "Sunwell5ManFix";
+        // WotLK
+        case 574: return "Valgarde70";
+        case 575: return "UtgardePinnacle";
+        case 576: return "Nexus70";
+        case 578: return "Nexus80";
+        case 595: return "StratholmeCOT";
+        case 599: return "Ulduar70";
+        case 600: return "Ulduar80";
+        case 601: return "DrakTheronKeep";
+        case 602: return "GunDrak";
+        case 603: return "UlduarRaid";
+        case 608: return "DalaranPrison";
+        case 615: return "ChamberOfAspectsBlack";
+        case 617: return "DeathKnightStart";
+        case 619: return "Azjol_Uppercity";
+        case 624: return "WintergraspRaid";
+        case 631: return "IcecrownCitadel";
+        case 632: return "IcecrownCitadel5Man";
+        case 649: return "ArgentTournamentRaid";
+        case 650: return "ArgentTournamentDungeon";
+        case 658: return "QuarryOfTears";
+        case 668: return "HallsOfReflection";
+        case 724: return "ChamberOfAspectsRed";
         default: return "";
     }
 }
@@ -377,6 +459,14 @@ void Application::run() {
                     }
                     if (uiManager) {
                         uiManager->getGameScreen().triggerDing(99);
+                    }
+                }
+                // F8: Debug WMO floor at current position
+                else if (event.key.keysym.scancode == SDL_SCANCODE_F8 && event.key.repeat == 0) {
+                    if (renderer && renderer->getWMORenderer()) {
+                        glm::vec3 pos = renderer->getCharacterPosition();
+                        LOG_WARNING("F8: WMO floor debug at render pos (", pos.x, ", ", pos.y, ", ", pos.z, ")");
+                        renderer->getWMORenderer()->debugDumpGroupsAtPosition(pos.x, pos.y, pos.z);
                     }
                 }
             }
@@ -3255,6 +3345,11 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
                 cr->clear();
                 renderer->setCharacterFollow(0);
             }
+            // Reset equipment dirty tracking so composited textures are rebuilt
+            // after spawnPlayerCharacter() recreates the character instance.
+            if (gameHandler) {
+                gameHandler->resetEquipmentDirtyTracking();
+            }
 
             if (auto* terrain = renderer->getTerrainManager()) {
                 terrain->softReset();
@@ -3509,20 +3604,20 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
                     LOG_INFO("Loaded ", loadedGroups, " / ", wmoModel.nGroups, " WMO groups for instance");
                 }
 
-                // WMO-only maps: MODF position is at world origin (always 0,0,0 in practice).
-                // Unlike ADT MODF which uses placement space, WMO-only maps place the WMO
-                // directly in render coordinates with no offset or yaw bias.
+                // WMO-only maps: MODF uses same format as ADT MODF.
+                // Apply the same rotation conversion that outdoor WMOs get
+                // (including the implicit +180° Z yaw), but skip the ZEROPOINT
+                // position offset for zero-position instances (server sends
+                // coordinates relative to the WMO, not relative to map corner).
                 glm::vec3 wmoPos(0.0f);
-                glm::vec3 wmoRot(0.0f);
+                glm::vec3 wmoRot(
+                    -wdtInfo.rotation[2] * 3.14159f / 180.0f,
+                    -wdtInfo.rotation[0] * 3.14159f / 180.0f,
+                    (wdtInfo.rotation[1] + 180.0f) * 3.14159f / 180.0f
+                );
                 if (wdtInfo.position[0] != 0.0f || wdtInfo.position[1] != 0.0f || wdtInfo.position[2] != 0.0f) {
-                    // Non-zero placement — convert from ADT space (rare/never happens, but be safe)
                     wmoPos = core::coords::adtToWorld(
                         wdtInfo.position[0], wdtInfo.position[1], wdtInfo.position[2]);
-                    wmoRot = glm::vec3(
-                        -wdtInfo.rotation[2] * 3.14159f / 180.0f,
-                        -wdtInfo.rotation[0] * 3.14159f / 180.0f,
-                        (wdtInfo.rotation[1] + 180.0f) * 3.14159f / 180.0f
-                    );
                 }
 
                 showProgress("Uploading instance geometry...", 0.70f);
@@ -3530,9 +3625,30 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
                 if (wmoRenderer->loadModel(wmoModel, wmoModelId)) {
                     uint32_t instanceId = wmoRenderer->createInstance(wmoModelId, wmoPos, wmoRot, 1.0f);
                     if (instanceId > 0) {
-                        LOG_INFO("Instance WMO loaded: modelId=", wmoModelId,
-                                " instanceId=", instanceId,
-                                " pos=(", wmoPos.x, ", ", wmoPos.y, ", ", wmoPos.z, ")");
+                        LOG_WARNING("Instance WMO loaded: modelId=", wmoModelId,
+                                " instanceId=", instanceId);
+                        LOG_WARNING("  MOHD bbox local: (",
+                                   wmoModel.boundingBoxMin.x, ", ", wmoModel.boundingBoxMin.y, ", ", wmoModel.boundingBoxMin.z,
+                                   ") to (", wmoModel.boundingBoxMax.x, ", ", wmoModel.boundingBoxMax.y, ", ", wmoModel.boundingBoxMax.z, ")");
+                        LOG_WARNING("  WMO pos: (", wmoPos.x, ", ", wmoPos.y, ", ", wmoPos.z,
+                                   ") rot: (", wmoRot.x, ", ", wmoRot.y, ", ", wmoRot.z, ")");
+                        LOG_WARNING("  Player render pos: (", spawnRender.x, ", ", spawnRender.y, ", ", spawnRender.z, ")");
+                        LOG_WARNING("  Player canonical: (", spawnCanonical.x, ", ", spawnCanonical.y, ", ", spawnCanonical.z, ")");
+                        // Show player position in WMO local space
+                        {
+                            glm::mat4 instMat(1.0f);
+                            instMat = glm::translate(instMat, wmoPos);
+                            instMat = glm::rotate(instMat, wmoRot.z, glm::vec3(0,0,1));
+                            instMat = glm::rotate(instMat, wmoRot.y, glm::vec3(0,1,0));
+                            instMat = glm::rotate(instMat, wmoRot.x, glm::vec3(1,0,0));
+                            glm::mat4 invMat = glm::inverse(instMat);
+                            glm::vec3 localPlayer = glm::vec3(invMat * glm::vec4(spawnRender, 1.0f));
+                            LOG_WARNING("  Player in WMO local: (", localPlayer.x, ", ", localPlayer.y, ", ", localPlayer.z, ")");
+                            bool inside = localPlayer.x >= wmoModel.boundingBoxMin.x && localPlayer.x <= wmoModel.boundingBoxMax.x &&
+                                          localPlayer.y >= wmoModel.boundingBoxMin.y && localPlayer.y <= wmoModel.boundingBoxMax.y &&
+                                          localPlayer.z >= wmoModel.boundingBoxMin.z && localPlayer.z <= wmoModel.boundingBoxMax.z;
+                            LOG_WARNING("  Player inside MOHD bbox: ", inside ? "YES" : "NO");
+                        }
 
                         // Load doodads from the specified doodad set
                         auto* m2Renderer = renderer->getM2Renderer();
@@ -3618,6 +3734,31 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
                 wmoRenderer->precomputeFloorCache();
             }
         }
+
+        // Snap player to WMO floor so they don't fall through on first frame
+        if (wmoRenderer && renderer) {
+            glm::vec3 playerPos = renderer->getCharacterPosition();
+            // Query floor with generous height margin above spawn point
+            auto floor = wmoRenderer->getFloorHeight(playerPos.x, playerPos.y, playerPos.z + 50.0f);
+            if (floor) {
+                playerPos.z = *floor + 0.1f;  // Small offset above floor
+                renderer->getCharacterPosition() = playerPos;
+                if (gameHandler) {
+                    glm::vec3 canonical = core::coords::renderToCanonical(playerPos);
+                    gameHandler->setPosition(canonical.x, canonical.y, canonical.z);
+                }
+                LOG_INFO("Snapped player to instance WMO floor: z=", *floor);
+            } else {
+                LOG_WARNING("Could not find WMO floor at player spawn (",
+                           playerPos.x, ", ", playerPos.y, ", ", playerPos.z, ")");
+            }
+        }
+
+        // Diagnostic: verify WMO renderer state after instance loading
+        LOG_WARNING("=== INSTANCE WMO LOAD COMPLETE ===");
+        LOG_WARNING("  wmoRenderer models loaded: ", wmoRenderer->getLoadedModelCount());
+        LOG_WARNING("  wmoRenderer instances: ", wmoRenderer->getInstanceCount());
+        LOG_WARNING("  wmoRenderer floor cache: ", wmoRenderer->getFloorCacheSize());
 
         terrainOk = true;  // Mark as OK so post-load setup runs
     } else {
@@ -4960,7 +5101,7 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
     // aggressive and can make NPCs invisible (targetable but not rendered).
     // Keep default model geosets for online creatures until this path is made
     // data-accurate per display model.
-    static constexpr bool kEnableNpcHumanoidOverrides = false;
+    static constexpr bool kEnableNpcHumanoidOverrides = true;
 
     // Set geosets for humanoid NPCs based on CreatureDisplayInfoExtra
     if (kEnableNpcHumanoidOverrides &&
@@ -6360,8 +6501,15 @@ void Application::spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_t 
             return;
         }
 
-        // Freeze animation — gameobjects are static until interacted with
-        m2Renderer->setInstanceAnimationFrozen(instanceId, true);
+        // Freeze animation for static gameobjects, but let portals/effects animate
+        std::string lowerPath = modelPath;
+        std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(), ::tolower);
+        bool isAnimatedEffect = (lowerPath.find("instanceportal") != std::string::npos ||
+                                  lowerPath.find("portalfx") != std::string::npos ||
+                                  lowerPath.find("spellportal") != std::string::npos);
+        if (!isAnimatedEffect) {
+            m2Renderer->setInstanceAnimationFrozen(instanceId, true);
+        }
 
         gameObjectInstances_[guid] = {modelId, instanceId, false};
     }

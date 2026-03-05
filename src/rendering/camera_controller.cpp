@@ -659,7 +659,17 @@ void CameraController::update(float deltaTime) {
 
             grounded = false;
             } else {
-            // Exiting water — give a small upward boost to help climb onto shore.
+            // Exiting water — boost upward to help climb onto shore/stairs.
+            if (wasSwimming) {
+                // Anchor lastGroundZ to current position so WMO floor probes
+                // start from a sensible height instead of stale pre-swim values.
+                lastGroundZ = targetPos.z;
+                grounded = true;  // Treat as grounded so step-up budget is full
+                // Small upward boost to clear stair lip geometry
+                if (verticalVelocity < 1.5f) {
+                    verticalVelocity = 1.5f;
+                }
+            }
             swimming = false;
 
             if (glm::length(movement) > 0.001f) {

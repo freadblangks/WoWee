@@ -8814,20 +8814,18 @@ void GameHandler::checkAreaTriggers() {
 
         bool inside = false;
         if (at.radius > 0.0f) {
-            // Sphere trigger — use generous minimum radius since WMO collision
-            // may block the player from reaching triggers inside doorways/hallways
-            float effectiveRadius = std::max(at.radius, 45.0f);
+            // Sphere trigger — small minimum so player must be near the portal
+            float effectiveRadius = std::max(at.radius, 12.0f);
             float dx = px - at.x;
             float dy = py - at.y;
             float dz = pz - at.z;
             float distSq = dx * dx + dy * dy + dz * dz;
             inside = (distSq <= effectiveRadius * effectiveRadius);
         } else if (at.boxLength > 0.0f || at.boxWidth > 0.0f || at.boxHeight > 0.0f) {
-            // Box trigger — use generous minimum dimensions since WMO collision
-            // may block the player from reaching small triggers inside doorways
-            float effLength = std::max(at.boxLength, 90.0f);
-            float effWidth = std::max(at.boxWidth, 90.0f);
-            float effHeight = std::max(at.boxHeight, 90.0f);
+            // Box trigger — small minimum so player must walk into the portal area
+            float effLength = std::max(at.boxLength, 16.0f);
+            float effWidth = std::max(at.boxWidth, 16.0f);
+            float effHeight = std::max(at.boxHeight, 16.0f);
 
             float dx = px - at.x;
             float dy = py - at.y;

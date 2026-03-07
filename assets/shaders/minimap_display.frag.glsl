@@ -40,7 +40,7 @@ void main() {
     float cs = cos(push.rotation);
     float sn = sin(push.rotation);
     vec2 rotated = vec2(center.x * cs - center.y * sn, center.x * sn + center.y * cs);
-    vec2 mapUV = push.playerUV + rotated * push.zoomRadius * 2.0;
+    vec2 mapUV = push.playerUV + vec2(-rotated.x, rotated.y) * push.zoomRadius * 2.0;
 
     vec4 mapColor = texture(uComposite, mapUV);
 
@@ -48,7 +48,7 @@ void main() {
     float acs = cos(push.arrowRotation);
     float asn = sin(push.arrowRotation);
     vec2 ac = center;
-    vec2 arrowPos = vec2(ac.x * acs - ac.y * asn, ac.x * asn + ac.y * acs);
+    vec2 arrowPos = vec2(-(ac.x * acs - ac.y * asn), ac.x * asn + ac.y * acs);
 
     vec2 tip = vec2(0.0, -0.04);
     vec2 left = vec2(-0.02, 0.02);

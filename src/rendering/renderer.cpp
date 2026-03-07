@@ -3766,10 +3766,10 @@ void Renderer::renderHUD() {
 // in createPerFrameResources() as part of the Vulkan shadow infrastructure.
 
 glm::mat4 Renderer::computeLightSpaceMatrix() {
-    constexpr float kShadowHalfExtent = 180.0f;
-    constexpr float kShadowLightDistance = 280.0f;
+    constexpr float kShadowHalfExtent = 60.0f;
+    constexpr float kShadowLightDistance = 200.0f;
     constexpr float kShadowNearPlane = 1.0f;
-    constexpr float kShadowFarPlane = 600.0f;
+    constexpr float kShadowFarPlane = 450.0f;
 
     // Use active lighting direction so shadow projection matches main shading.
     // Fragment shaders derive lighting with `ldir = normalize(-lightDir.xyz)`,
@@ -3920,18 +3920,7 @@ void Renderer::renderShadowPass() {
     if (!shadowsEnabled || shadowDepthImage == VK_NULL_HANDLE) return;
     if (currentCmd == VK_NULL_HANDLE) return;
 
-    const int baseInterval = std::max(1, envIntOrDefault("WOWEE_SHADOW_INTERVAL", 1));
-    const int denseInterval = std::max(baseInterval, envIntOrDefault("WOWEE_SHADOW_INTERVAL_DENSE", 3));
-    const uint32_t denseCharThreshold = static_cast<uint32_t>(std::max(1, envIntOrDefault("WOWEE_DENSE_CHAR_THRESHOLD", 120)));
-    const uint32_t denseM2Threshold = static_cast<uint32_t>(std::max(1, envIntOrDefault("WOWEE_DENSE_M2_THRESHOLD", 900)));
-    const bool denseScene =
-        (characterRenderer && characterRenderer->getInstanceCount() >= denseCharThreshold) ||
-        (m2Renderer && m2Renderer->getInstanceCount() >= denseM2Threshold);
-    const int shadowInterval = denseScene ? denseInterval : baseInterval;
-    if (++shadowFrameCounter_ < static_cast<uint32_t>(shadowInterval)) {
-        return;
-    }
-    shadowFrameCounter_ = 0;
+    // Shadows render every frame — throttling causes visible flicker on player/NPCs
 
     // Compute and store light space matrix; write to per-frame UBO
     lightSpaceMatrix = computeLightSpaceMatrix();
@@ -3984,9 +3973,7 @@ void Renderer::renderShadowPass() {
     vkCmdSetScissor(currentCmd, 0, 1, &sc);
 
     // Phase 7/8: render shadow casters
-    const float baseShadowCullRadius = static_cast<float>(std::max(40, envIntOrDefault("WOWEE_SHADOW_CULL_RADIUS", 180)));
-    const float denseShadowCullRadius = static_cast<float>(std::max(30, envIntOrDefault("WOWEE_SHADOW_CULL_RADIUS_DENSE", 90)));
-    const float shadowCullRadius = denseScene ? std::min(baseShadowCullRadius, denseShadowCullRadius) : baseShadowCullRadius;
+    const float shadowCullRadius = 80.0f;
     if (wmoRenderer) {
         wmoRenderer->renderShadow(currentCmd, lightSpaceMatrix, shadowCenter, shadowCullRadius);
     }

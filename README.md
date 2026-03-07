@@ -22,20 +22,23 @@ Protocol Compatible with **Vanilla (Classic) 1.12 + TBC 2.4.3 + WotLK 3.3.5a**.
 ## Status & Direction (2026-03-07)
 
 - **Compatibility**: **Vanilla (Classic) 1.12 + TBC 2.4.3 + WotLK 3.3.5a** are all supported via expansion profiles and per-expansion packet parsers (`src/game/packet_parsers_classic.cpp`, `src/game/packet_parsers_tbc.cpp`). All three expansions are roughly on par — no single one is significantly more complete than the others.
-- **Tested against**: AzerothCore, TrinityCore, and Mangos.
-- **Current focus**: protocol correctness across server variants, visual accuracy (M2/WMO edge cases, lava/water rendering, equipment textures), and multi-expansion coverage.
+- **Tested against**: AzerothCore, TrinityCore, Mangos, and Turtle WoW (1.17).
+- **Current focus**: instance dungeons, visual accuracy (lava/water, shadow mapping, WMO interiors), and multi-expansion coverage.
 - **Warden**: Full module execution via Unicorn Engine CPU emulation. Decrypts (RC4→RSA→zlib), parses and relocates the PE module, executes via x86 emulation with Windows API interception. Module cache at `~/.local/share/wowee/warden_cache/`.
+- **CI**: GitHub Actions builds for Linux (x86-64, ARM64), Windows (MSYS2), and macOS (ARM64). Security scans via CodeQL, Semgrep, and sanitizers.
 
 ## Features
 
 ### Rendering Engine
-- **Terrain** -- Multi-tile streaming with async loading, texture splatting (4 layers), frustum culling
+- **Terrain** -- Multi-tile streaming with async loading, texture splatting (4 layers), frustum culling, expanded load radius during taxi flights
 - **Atmosphere** -- Procedural clouds (FBM noise), lens flare with chromatic aberration, cloud/fog star occlusion
-- **Characters** -- Skeletal animation with GPU vertex skinning (256 bones), race-aware textures
-- **Buildings** -- WMO renderer with multi-material batches, frustum culling, 160-unit distance culling
-- **Water & Lava** -- Terrain and WMO water with refraction/reflection, magma/slime rendering with fbm noise flow, Beer-Lambert absorption
+- **Characters** -- Skeletal animation with GPU vertex skinning (256 bones), race-aware textures, per-instance NPC hair/skin textures
+- **Buildings** -- WMO renderer with multi-material batches, frustum culling, collision (wall/floor classification, slope sliding), interior glass transparency
+- **Instances** -- WDT parser for WMO-only dungeon maps, area trigger portals with glow/spin effects, seamless zone transitions
+- **Water & Lava** -- Terrain and WMO water with refraction/reflection, magma/slime rendering with multi-octave FBM noise flow, Beer-Lambert absorption, M2 lava waterfalls with UV scroll
 - **Particles** -- M2 particle emitters with WotLK struct parsing, billboarded glow effects, lava steam/splash effects
-- **Lighting** -- Shadow mapping with PCF, interior/exterior light modes, WMO window glass with fresnel reflections
+- **Lighting** -- Shadow mapping with PCF filtering, per-frame shadow updates, AABB-based culling, interior/exterior light modes, WMO window glass with fresnel reflections
+- **Performance** -- Binary keyframe search for animations, incremental spatial index, static doodad skip, hash-free render/shadow culling
 
 ### Asset Pipeline
 - Extracted loose-file **`Data/`** tree indexed by **`manifest.json`** (fast lookup + caching)
@@ -46,21 +49,27 @@ Protocol Compatible with **Vanilla (Classic) 1.12 + TBC 2.4.3 + WotLK 3.3.5a**.
 ### Gameplay Systems
 - **Authentication** -- Full SRP6a implementation with RC4 header encryption
 - **Character System** -- Creation (with nonbinary gender option), selection, 3D preview, stats panel, race/class support
-- **Movement** -- WASD movement, camera orbit, spline path following, transport riding (trams, ships, zeppelins)
-- **Combat** -- Auto-attack, spell casting with cooldowns, damage calculation, death handling
-- **Targeting** -- Tab-cycling, click-to-target, faction-based hostility (using Faction.dbc)
-- **Inventory** -- 23 equipment slots, 16 backpack slots, drag-drop, auto-equip
-- **Spells** -- Spellbook with class specialty tabs, drag-drop to action bar, spell icons
+- **Movement** -- WASD movement, camera orbit, spline path following, transport riding (trams, ships, zeppelins), movement ACK responses
+- **Combat** -- Auto-attack, spell casting with cooldowns, damage calculation, death handling, spirit healer resurrection
+- **Targeting** -- Tab-cycling with hostility filtering, click-to-target, faction-based hostility (using Faction.dbc)
+- **Inventory** -- 23 equipment slots, 16 backpack slots, drag-drop, auto-equip, item tooltips with weapon damage/speed
+- **Bank** -- Full bank support for all expansions, bag slots, drag-drop, right-click deposit (non-equippable items)
+- **Spells** -- Spellbook with specialty, general, profession, mount, and companion tabs; drag-drop to action bar; item use support
+- **Talents** -- Talent tree UI with proper visuals and functionality
 - **Action Bar** -- 12 slots, drag-drop from spellbook/inventory, click-to-cast, keybindings
 - **Trainers** -- Spell trainer UI, buy spells, known/available/unavailable states
-- **Quests** -- Quest markers (! and ?) on NPCs and minimap, quest log, quest details, turn-in flow
+- **Quests** -- Quest markers (! and ?) on NPCs and minimap, quest log, quest details, turn-in flow, quest item progress tracking
+- **Auction House** -- Search with filters, pagination, sell picker with tooltips, bid/buyout
+- **Mail** -- Item attachment support for sending
 - **Vendors** -- Buy, sell, and buyback (most recent sold item), gold tracking, inventory sync
-- **Loot** -- Loot window, gold looting, item pickup
+- **Loot** -- Loot window, gold looting, item pickup, chest/gameobject looting
 - **Gossip** -- NPC interaction, dialogue options
 - **Chat** -- Tabs/channels, emotes, chat bubbles, clickable URLs, clickable item links with tooltips
-- **Party** -- Group invites, party list
+- **Party** -- Group invites, party list, out-of-range member health via SMSG_PARTY_MEMBER_STATS
+- **Pets** -- Pet tracking via SMSG_PET_SPELLS, dismiss pet button
+- **Map Exploration** -- Subzone-level fog-of-war reveal matching retail behavior
 - **Warden** -- Warden anti-cheat module execution via Unicorn Engine x86 emulation (cross-platform, no Wine)
-- **UI** -- Loading screens with progress bar, settings window, minimap with zoom/rotation/square mode, top-right minimap mute speaker, separate bag windows with compact-empty mode (aggregate view)
+- **UI** -- Loading screens with progress bar, settings window (shadow distance slider), minimap with zoom/rotation/square mode, top-right minimap mute speaker, separate bag windows with compact-empty mode (aggregate view)
 
 ## Building
 
@@ -215,6 +224,11 @@ make -j$(nproc)
 - [Realm List](docs/realm-list.md) -- Realm selection system
 - [Warden Quick Reference](docs/WARDEN_QUICK_REFERENCE.md) -- Warden module execution overview and testing
 - [Warden Implementation](docs/WARDEN_IMPLEMENTATION.md) -- Technical details of the implementation
+
+## CI / CD
+
+- GitHub Actions builds on every push: Linux (x86-64, ARM64), Windows (MSYS2), macOS (ARM64)
+- Container build via `container/build-in-container.sh` (Podman)
 
 ## Security
 

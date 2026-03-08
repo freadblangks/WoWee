@@ -1036,10 +1036,9 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
             (lowerName.find("trunk") != std::string::npos) ||
             (lowerName.find("stump") != std::string::npos) ||
             (lowerName.find("log") != std::string::npos);
-        // Only large trees (canopy > 20 model units wide) get trunk collision.
-        // Small/mid trees are walkthrough to avoid getting stuck between them.
-        // Only large trees get trunk collision; all smaller trees are walkthrough.
-        bool treeWithTrunk = treeLike && !hardTreePart && !foliageName && horiz > 40.0f;
+        // Trees with visible trunks get collision. Threshold: canopy wider than 6
+        // model units AND taller than 4 units (filters out small bushes/saplings).
+        bool treeWithTrunk = treeLike && !hardTreePart && !foliageName && horiz > 6.0f && vert > 4.0f;
         bool softTree = treeLike && !hardTreePart && !treeWithTrunk;
         bool forceSolidCurb = gpuModel.collisionSteppedLowPlatform || knownStormwindPlanter || likelyCurbName || gpuModel.collisionPlanter;
         bool narrowVerticalName =

@@ -199,13 +199,25 @@ void TerrainManager::update(const Camera& camera, float deltaTime) {
         currentTile = newTile;
     }
 
-    // Stream tiles if we've moved significantly or initial load
+    // Stream tiles when player crosses a tile boundary
     if (newTile.x != lastStreamTile.x || newTile.y != lastStreamTile.y) {
         LOG_DEBUG("Streaming: cam=(", camPos.x, ",", camPos.y, ",", camPos.z,
                  ") tile=[", newTile.x, ",", newTile.y,
                  "] loaded=", loadedTiles.size());
         streamTiles();
         lastStreamTile = newTile;
+    } else {
+        // Proactive loading: when workers are idle, re-check for unloaded tiles
+        // within range. This catches tiles that weren't queued on the initial
+        // streamTiles pass (e.g. cache eviction, late-arriving ADT availability).
+        bool workersIdle;
+        {
+            std::lock_guard<std::mutex> lock(queueMutex);
+            workersIdle = loadQueue.empty();
+        }
+        if (workersIdle) {
+            streamTiles();
+        }
     }
 }
 
@@ -830,11 +842,19 @@ bool TerrainManager::advanceFinalization(FinalizingTile& ft) {
     }
 
     case FinalizationPhase::M2_MODELS: {
-        // Upload multiple M2 models per call (batched GPU uploads)
+        // Upload multiple M2 models per call (batched GPU uploads).
+        // When no more tiles are queued for background parsing, increase the
+        // per-frame budget so idle workers don't waste time waiting for the
+        // main thread to trickle-upload models.
         if (m2Renderer && ft.m2ModelIndex < pending->m2Models.size()) {
             // Set pre-decoded BLP cache so loadTexture() skips main-thread BLP decode
             m2Renderer->setPredecodedBLPCache(&pending->preloadedM2Textures);
-            constexpr size_t kModelsPerStep = 4;
+            bool workersIdle;
+            {
+                std::lock_guard<std::mutex> lk(queueMutex);
+                workersIdle = loadQueue.empty() && readyQueue.empty();
+            }
+            const size_t kModelsPerStep = workersIdle ? 16 : 4;
             size_t uploaded = 0;
             while (ft.m2ModelIndex < pending->m2Models.size() && uploaded < kModelsPerStep) {
                 auto& m2Ready = pending->m2Models[ft.m2ModelIndex];
@@ -896,7 +916,12 @@ bool TerrainManager::advanceFinalization(FinalizingTile& ft) {
             wmoRenderer->setPredecodedBLPCache(&pending->preloadedWMOTextures);
             wmoRenderer->setDeferNormalMaps(true);
 
-            constexpr size_t kWmosPerStep = 1;
+            bool wmoWorkersIdle;
+            {
+                std::lock_guard<std::mutex> lk(queueMutex);
+                wmoWorkersIdle = loadQueue.empty() && readyQueue.empty();
+            }
+            const size_t kWmosPerStep = wmoWorkersIdle ? 4 : 1;
             size_t uploaded = 0;
             while (ft.wmoModelIndex < pending->wmoModels.size() && uploaded < kWmosPerStep) {
                 auto& wmoReady = pending->wmoModels[ft.wmoModelIndex];

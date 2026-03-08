@@ -687,13 +687,16 @@ VkTexture* CharacterRenderer::loadTexture(const std::string& path) {
     e.hasAlpha = hasAlpha;
     e.colorKeyBlack = colorKeyBlackHint;
 
-    // Generate normal/height map from diffuse texture
-    float nhVariance = 0.0f;
-    auto nhMap = generateNormalHeightMap(blpImage.data.data(), blpImage.width, blpImage.height, nhVariance);
-    if (nhMap) {
-        e.heightMapVariance = nhVariance;
-        e.approxBytes += approxTextureBytesWithMips(blpImage.width, blpImage.height);
-        e.normalHeightMap = std::move(nhMap);
+    // Defer normal/height map generation to avoid stalling loadModel.
+    // Normal maps are generated in processPendingNormalMaps() at a per-frame budget.
+    if (blpImage.width >= 32 && blpImage.height >= 32) {
+        PendingNormalMap pending;
+        pending.cacheKey = key;
+        pending.pixels.assign(blpImage.data.begin(), blpImage.data.end());
+        pending.width = blpImage.width;
+        pending.height = blpImage.height;
+        pendingNormalMaps_.push_back(std::move(pending));
+        e.normalMapPending = true;
     }
 
     textureCacheBytes_ += e.approxBytes;
@@ -703,6 +706,34 @@ VkTexture* CharacterRenderer::loadTexture(const std::string& path) {
 
     core::Logger::getInstance().debug("Loaded character texture: ", path, " (", blpImage.width, "x", blpImage.height, ")");
     return texPtr;
+}
+
+void CharacterRenderer::processPendingNormalMaps(int budget) {
+    if (pendingNormalMaps_.empty() || !vkCtx_) return;
+
+    int processed = 0;
+    while (!pendingNormalMaps_.empty() && processed < budget) {
+        auto pending = std::move(pendingNormalMaps_.front());
+        pendingNormalMaps_.pop_front();
+
+        auto it = textureCache.find(pending.cacheKey);
+        if (it == textureCache.end()) continue;  // texture was evicted
+
+        float nhVariance = 0.0f;
+        vkCtx_->beginUploadBatch();
+        auto nhMap = generateNormalHeightMap(pending.pixels.data(),
+            pending.width, pending.height, nhVariance);
+        vkCtx_->endUploadBatch();
+
+        if (nhMap) {
+            it->second.heightMapVariance = nhVariance;
+            it->second.approxBytes += approxTextureBytesWithMips(pending.width, pending.height);
+            textureCacheBytes_ += approxTextureBytesWithMips(pending.width, pending.height);
+            it->second.normalHeightMap = std::move(nhMap);
+        }
+        it->second.normalMapPending = false;
+        processed++;
+    }
 }
 
 // Alpha-blend overlay onto composite at (dstX, dstY)

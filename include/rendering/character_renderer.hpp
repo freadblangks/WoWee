@@ -12,6 +12,7 @@
 #include <string>
 #include <utility>
 #include <future>
+#include <deque>
 
 namespace wowee {
 namespace pipeline { class AssetManager; }
@@ -278,6 +279,7 @@ private:
         uint64_t lastUse = 0;
         bool hasAlpha = false;
         bool colorKeyBlack = false;
+        bool normalMapPending = false;  // deferred normal map generation
     };
     std::unordered_map<std::string, TextureCacheEntry> textureCache;
     std::unordered_map<VkTexture*, bool> textureHasAlphaByPtr_;
@@ -301,6 +303,17 @@ private:
     // Normal map generation (same algorithm as WMO renderer)
     std::unique_ptr<VkTexture> generateNormalHeightMap(
         const uint8_t* pixels, uint32_t width, uint32_t height, float& outVariance);
+
+    // Deferred normal map generation — avoids stalling loadModel
+    struct PendingNormalMap {
+        std::string cacheKey;
+        std::vector<uint8_t> pixels;  // RGBA pixel data
+        uint32_t width, height;
+    };
+    std::deque<PendingNormalMap> pendingNormalMaps_;
+public:
+    void processPendingNormalMaps(int budget = 2);
+private:
 
     // Normal mapping / POM settings
     bool normalMappingEnabled_ = true;

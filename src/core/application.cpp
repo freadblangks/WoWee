@@ -922,14 +922,20 @@ void Application::update(float deltaTime) {
                 auto t3 = std::chrono::steady_clock::now();
                 processDeferredEquipmentQueue();
                 auto t4 = std::chrono::steady_clock::now();
+                // Process deferred normal maps (2 per frame to spread CPU cost)
+                if (auto* cr = renderer ? renderer->getCharacterRenderer() : nullptr) {
+                    cr->processPendingNormalMaps(2);
+                }
+                auto t5 = std::chrono::steady_clock::now();
                 float pMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
                 float cMs = std::chrono::duration<float, std::milli>(t2 - t1).count();
                 float nMs = std::chrono::duration<float, std::milli>(t3 - t2).count();
                 float eMs = std::chrono::duration<float, std::milli>(t4 - t3).count();
-                float total = pMs + cMs + nMs + eMs;
+                float nmMs = std::chrono::duration<float, std::milli>(t5 - t4).count();
+                float total = pMs + cMs + nMs + eMs + nmMs;
                 if (total > 4.0f) {
                     LOG_WARNING("spawn/equip breakdown: player=", pMs, "ms creature=", cMs,
-                                "ms npcComposite=", nMs, "ms equip=", eMs, "ms");
+                                "ms npcComposite=", nMs, "ms equip=", eMs, "ms normalMaps=", nmMs, "ms");
                 }
             });
             // Self-heal missing creature visuals: if a nearby UNIT exists in
@@ -4250,6 +4256,9 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
             processCreatureSpawnQueue();
             processAsyncNpcCompositeResults();
             processDeferredEquipmentQueue();
+            if (auto* cr = renderer ? renderer->getCharacterRenderer() : nullptr) {
+                cr->processPendingNormalMaps(10);  // higher budget during load screen
+            }
 
             // Process ALL pending game object spawns (no 1-per-frame cap during load screen).
             while (!pendingGameObjectSpawns_.empty()) {

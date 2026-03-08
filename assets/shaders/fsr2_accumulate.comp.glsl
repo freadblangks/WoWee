@@ -133,7 +133,10 @@ void main() {
     vec3 variance = max(m2 / 9.0 - mean * mean, vec3(0.0));
     vec3 stddev = sqrt(variance);
 
-    float gamma = 3.0;
+    // Tighter clamp (gamma 1.5) catches slightly misaligned history that
+    // causes doubling. With jitter-aware blending providing stability,
+    // the clamp can be tight without causing jitter-chasing.
+    float gamma = 1.5;
     vec3 boxMin = mean - gamma * stddev;
     vec3 boxMax = mean + gamma * stddev;
 
@@ -143,9 +146,28 @@ void main() {
 
     float clampDist = length(historyYCoCg - clampedHistory);
 
-    // Uniform 5% blend: ~45 frames for 90% convergence.
-    // Simpler than edge-aware; the anti-ringing bicubic handles edge stability.
-    float blendFactor = 0.05;
+    // Jitter-aware sample weighting: compute how close the current frame's
+    // jittered sample fell to this output pixel. Close samples are high quality
+    // (blend aggressively for fast convergence), distant samples are low quality
+    // (blend minimally to avoid visible jitter).
+    vec2 jitterPx = pc.jitterOffset.xy * 0.5 * pc.internalSize.xy;
+    vec2 internalPos = outUV * pc.internalSize.xy;
+    vec2 subPixelOffset = fract(internalPos) - 0.5;
+    vec2 sampleDelta = subPixelOffset - jitterPx;
+    float dist2 = dot(sampleDelta, sampleDelta);
+    float sampleQuality = exp(-dist2 * 3.0);
+    float baseBlend = mix(0.02, 0.20, sampleQuality);
+
+    // Luminance instability: when current frame differs significantly from
+    // history, it may be aliased/flickering content. Reduce blend to prevent
+    // oscillation, especially for small distant features.
+    float lumCurrent = dot(currentColor, vec3(0.299, 0.587, 0.114));
+    float lumHistory = dot(historyColor, vec3(0.299, 0.587, 0.114));
+    float lumDelta = abs(lumCurrent - lumHistory) / max(max(lumCurrent, lumHistory), 0.01);
+    float stability = 1.0 - clamp(lumDelta * 3.0, 0.0, 0.7);
+    baseBlend *= stability;
+
+    float blendFactor = baseBlend;
 
     // Disocclusion: large clamp distance → rapidly replace stale history
     blendFactor = mix(blendFactor, 0.60, clamp(clampDist * 5.0, 0.0, 1.0));

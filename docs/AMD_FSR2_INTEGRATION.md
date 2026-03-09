@@ -60,6 +60,9 @@ Runtime note:
 - DX12 bridge device preflight toggle:
   - `WOWEE_FSR3_WRAPPER_DX12_VALIDATE_DEVICE=1` (default)
   - `WOWEE_FSR3_WRAPPER_DX12_VALIDATE_DEVICE=0` to skip DXGI/D3D12 device creation probe
+- DX12 bridge preflight also validates Vulkan Win32 interop support:
+  - required device functions: `vkGetMemoryWin32HandleKHR`, `vkImportSemaphoreWin32HandleKHR`, `vkGetSemaphoreWin32HandleKHR`
+  - required device extensions: `VK_KHR_external_memory`, `VK_KHR_external_memory_win32`, `VK_KHR_external_semaphore`, `VK_KHR_external_semaphore_win32`
 - Path B wrapper ABI contract is declared in:
   - `include/rendering/amd_fsr3_wrapper_abi.h`
 - Required wrapper exports:

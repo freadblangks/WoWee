@@ -40,6 +40,24 @@ void writeError(char* outErrorText, uint32_t outErrorTextCapacity, const char* m
 }
 
 #if WOWEE_HAS_AMD_FSR3_FRAMEGEN
+#if defined(_WIN32)
+bool envEnabled(const char* key, bool defaultValue) {
+    const char* val = std::getenv(key);
+    if (!val || !*val) return defaultValue;
+    std::string s(val);
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return !(s == "0" || s == "false" || s == "off" || s == "no");
+}
+
+bool hasExtension(const std::vector<VkExtensionProperties>& extensions, const char* name) {
+    for (const VkExtensionProperties& ext : extensions) {
+        if (std::strcmp(ext.extensionName, name) == 0) return true;
+    }
+    return false;
+}
+#endif
+
 enum class WrapperBackend {
     VulkanRuntime,
     Dx12Bridge
@@ -261,7 +279,7 @@ bool runDx12BridgePreflight(const WoweeFsr3WrapperInitDesc* initDesc, std::strin
         }
     }
 
-    if (!initDesc || !initDesc->device || !initDesc->getDeviceProcAddr) {
+    if (!initDesc || !initDesc->device || !initDesc->getDeviceProcAddr || !initDesc->physicalDevice) {
         missing.emplace_back("valid Vulkan device/getDeviceProcAddr");
     } else {
         const char* requiredVkInteropFns[] = {
@@ -273,6 +291,31 @@ bool runDx12BridgePreflight(const WoweeFsr3WrapperInitDesc* initDesc, std::strin
             PFN_vkVoidFunction fp = initDesc->getDeviceProcAddr(initDesc->device, fn);
             if (!fp) {
                 missing.emplace_back(fn);
+            }
+        }
+
+        uint32_t extCount = 0;
+        VkResult extErr = vkEnumerateDeviceExtensionProperties(initDesc->physicalDevice, nullptr, &extCount, nullptr);
+        if (extErr != VK_SUCCESS || extCount == 0) {
+            missing.emplace_back("vkEnumerateDeviceExtensionProperties");
+        } else {
+            std::vector<VkExtensionProperties> extensions(extCount);
+            extErr = vkEnumerateDeviceExtensionProperties(
+                initDesc->physicalDevice, nullptr, &extCount, extensions.data());
+            if (extErr != VK_SUCCESS) {
+                missing.emplace_back("vkEnumerateDeviceExtensionProperties(data)");
+            } else {
+                const char* requiredVkExtensions[] = {
+                    VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME,
+                    VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME,
+                    VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME,
+                    VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME
+                };
+                for (const char* extName : requiredVkExtensions) {
+                    if (!hasExtension(extensions, extName)) {
+                        missing.emplace_back(extName);
+                    }
+                }
             }
         }
     }
@@ -652,13 +695,3 @@ WOWEE_FSR3_WRAPPER_EXPORT void wowee_fsr3_wrapper_shutdown(WoweeFsr3WrapperConte
     (void)context;
 #endif
 }
-#if defined(_WIN32)
-bool envEnabled(const char* key, bool defaultValue) {
-    const char* val = std::getenv(key);
-    if (!val || !*val) return defaultValue;
-    std::string s(val);
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return !(s == "0" || s == "false" || s == "off" || s == "no");
-}
-#endif

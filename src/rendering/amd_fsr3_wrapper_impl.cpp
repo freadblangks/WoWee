@@ -239,6 +239,7 @@ struct WrapperContext {
     size_t scratchBufferSize = 0;
     void* fsr3ContextStorage = nullptr;
     bool frameGenerationReady = false;
+    bool hdrInput = false;
     std::string lastError{};
 #if defined(_WIN32)
     ID3D12Device* dx12Device = nullptr;
@@ -747,6 +748,7 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_initialize(const WoweeFsr3W
     }
 
     const bool enableFrameGeneration = (initDesc->enableFlags & WOWEE_FSR3_WRAPPER_ENABLE_FRAME_GENERATION) != 0u;
+    ctx->hdrInput = (initDesc->enableFlags & WOWEE_FSR3_WRAPPER_ENABLE_HDR_INPUT) != 0u;
     if (enableFrameGeneration && (!ctx->fns.fsr3ConfigureFrameGeneration || !ctx->fns.fsr3DispatchFrameGeneration)) {
         destroyContext(ctx);
         writeError(outErrorText, outErrorTextCapacity, "backend missing frame generation symbols");
@@ -1127,7 +1129,9 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_framegen(WoweeFsr3
     }
     fgDispatch.numInterpolatedFrames = 1;
     fgDispatch.reset = (dispatchDesc->reset != 0u);
-    fgDispatch.backBufferTransferFunction = FFX_BACKBUFFER_TRANSFER_FUNCTION_SRGB;
+    fgDispatch.backBufferTransferFunction = ctx->hdrInput
+        ? FFX_BACKBUFFER_TRANSFER_FUNCTION_SCRGB
+        : FFX_BACKBUFFER_TRANSFER_FUNCTION_SRGB;
     fgDispatch.minMaxLuminance[0] = 0.0f;
     fgDispatch.minMaxLuminance[1] = 1.0f;
 

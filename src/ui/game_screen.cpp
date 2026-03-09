@@ -326,6 +326,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
             renderer->setFSRQuality(fsrScales[pendingFSRQuality]);
             renderer->setFSRSharpness(pendingFSRSharpness);
             renderer->setFSR2DebugTuning(pendingFSR2JitterSign, pendingFSR2MotionVecScaleX, pendingFSR2MotionVecScaleY);
+            renderer->setAmdFsr3FramegenEnabled(pendingAMDFramegen);
             // Safety fallback: persisted FSR2 can still hang on some systems during startup.
             // Require explicit opt-in for startup FSR2; otherwise fall back to FSR1.
             const bool allowStartupFsr2 = (std::getenv("WOWEE_ALLOW_STARTUP_FSR2") != nullptr);
@@ -6336,6 +6337,20 @@ void GameScreen::renderSettingsWindow() {
                         if (fsrMode == 2 && renderer) {
                             ImGui::TextDisabled("FSR2 backend: %s",
                                 renderer->isAmdFsr2SdkAvailable() ? "AMD FidelityFX SDK" : "Internal fallback");
+                            if (renderer->isAmdFsr3FramegenSdkAvailable()) {
+                                if (ImGui::Checkbox("AMD FSR3 Frame Generation (Experimental)", &pendingAMDFramegen)) {
+                                    renderer->setAmdFsr3FramegenEnabled(pendingAMDFramegen);
+                                    saveSettings();
+                                }
+                                ImGui::TextDisabled("Runtime: %s",
+                                    renderer->isAmdFsr3FramegenRuntimeActive() ? "Active" : "Staged (dispatch not linked yet)");
+                            } else {
+                                ImGui::BeginDisabled();
+                                bool disabledFg = false;
+                                ImGui::Checkbox("AMD FSR3 Frame Generation (Experimental)", &disabledFg);
+                                ImGui::EndDisabled();
+                                ImGui::TextDisabled("Requires FidelityFX-SDK framegen headers.");
+                            }
                         }
                         const char* fsrQualityLabels[] = { "Native (100%)", "Ultra Quality (77%)", "Quality (67%)", "Balanced (59%)" };
                         static const float fsrScaleFactors[] = { 0.77f, 0.67f, 0.59f, 1.00f };
@@ -7493,6 +7508,7 @@ void GameScreen::saveSettings() {
     out << "fsr2_jitter_sign=" << pendingFSR2JitterSign << "\n";
     out << "fsr2_mv_scale_x=" << pendingFSR2MotionVecScaleX << "\n";
     out << "fsr2_mv_scale_y=" << pendingFSR2MotionVecScaleY << "\n";
+    out << "amd_fsr3_framegen=" << (pendingAMDFramegen ? 1 : 0) << "\n";
 
     // Controls
     out << "mouse_sensitivity=" << pendingMouseSensitivity << "\n";
@@ -7592,6 +7608,7 @@ void GameScreen::loadSettings() {
             else if (key == "fsr2_jitter_sign") pendingFSR2JitterSign = std::clamp(std::stof(val), -2.0f, 2.0f);
             else if (key == "fsr2_mv_scale_x") pendingFSR2MotionVecScaleX = std::clamp(std::stof(val), -2.0f, 2.0f);
             else if (key == "fsr2_mv_scale_y") pendingFSR2MotionVecScaleY = std::clamp(std::stof(val), -2.0f, 2.0f);
+            else if (key == "amd_fsr3_framegen") pendingAMDFramegen = (std::stoi(val) != 0);
             // Controls
             else if (key == "mouse_sensitivity") pendingMouseSensitivity = std::clamp(std::stof(val), 0.05f, 1.0f);
             else if (key == "invert_mouse") pendingInvertMouse = (std::stoi(val) != 0);

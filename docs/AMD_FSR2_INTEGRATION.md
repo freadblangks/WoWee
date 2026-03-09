@@ -33,6 +33,11 @@ Detection expects:
   - `1` when FidelityFX-SDK FI/OF/FSR3+VK headers are detected.
   - `0` when headers are missing (probe target disabled).
 
+Runtime note:
+
+- Renderer/UI now expose a persisted experimental framegen toggle.
+- Current runtime status is `staged` (no FI/OF dispatch yet) until FidelityFX-SDK runtime implementation/shader blob linking is completed.
+
 ## Current Status
 
 - AMD FSR2 Vulkan dispatch path is integrated and used when available.

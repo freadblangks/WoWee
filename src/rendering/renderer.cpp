@@ -3740,6 +3740,7 @@ bool Renderer::initFSR2Resources() {
              " -> ", swapExtent.width, "x", swapExtent.height,
              " (scale=", fsr2_.scaleFactor, ")");
     fsr2_.useAmdBackend = false;
+    fsr2_.amdFsr3FramegenRuntimeActive = false;
 #if WOWEE_HAS_AMD_FSR2
     LOG_INFO("FSR2: AMD FidelityFX SDK detected at build time.");
 #else
@@ -3838,6 +3839,14 @@ bool Renderer::initFSR2Resources() {
             if (ctxErr == FFX_OK) {
                 fsr2_.useAmdBackend = true;
                 LOG_INFO("FSR2 AMD: context created successfully.");
+#if WOWEE_HAS_AMD_FSR3_FRAMEGEN
+                if (fsr2_.amdFsr3FramegenEnabled) {
+                    // Runtime dispatch path is staged behind SDK runtime binary integration.
+                    // Keep the user toggle persisted, but report inactive runtime for now.
+                    fsr2_.amdFsr3FramegenRuntimeActive = false;
+                    LOG_WARNING("FSR3 framegen is enabled in settings, but runtime dispatch is not linked yet; running FSR2-only.");
+                }
+#endif
             } else {
                 LOG_WARNING("FSR2 AMD: context creation failed (", static_cast<int>(ctxErr), "), using internal fallback.");
                 std::free(fsr2_.amdScratchBuffer);
@@ -4135,6 +4144,7 @@ void Renderer::destroyFSR2Resources() {
     }
     fsr2_.amdScratchBufferSize = 0;
 #endif
+    fsr2_.amdFsr3FramegenRuntimeActive = false;
 
     if (fsr2_.sharpenPipeline) { vkDestroyPipeline(device, fsr2_.sharpenPipeline, nullptr); fsr2_.sharpenPipeline = VK_NULL_HANDLE; }
     if (fsr2_.sharpenPipelineLayout) { vkDestroyPipelineLayout(device, fsr2_.sharpenPipelineLayout, nullptr); fsr2_.sharpenPipelineLayout = VK_NULL_HANDLE; }
@@ -4395,6 +4405,13 @@ void Renderer::setFSR2Enabled(bool enabled) {
     fsr2_.enabled = enabled;
 
     if (enabled) {
+        static bool initFramegenToggleFromEnv = false;
+        if (!initFramegenToggleFromEnv) {
+            initFramegenToggleFromEnv = true;
+            if (std::getenv("WOWEE_ENABLE_AMD_FSR3_FRAMEGEN_RUNTIME") != nullptr) {
+                fsr2_.amdFsr3FramegenEnabled = true;
+            }
+        }
         // FSR2 replaces both FSR1 and MSAA
         if (fsr_.enabled) {
             fsr_.enabled = false;
@@ -4419,6 +4436,23 @@ void Renderer::setFSR2DebugTuning(float jitterSign, float motionVecScaleX, float
     fsr2_.jitterSign = glm::clamp(jitterSign, -2.0f, 2.0f);
     fsr2_.motionVecScaleX = glm::clamp(motionVecScaleX, -2.0f, 2.0f);
     fsr2_.motionVecScaleY = glm::clamp(motionVecScaleY, -2.0f, 2.0f);
+}
+
+void Renderer::setAmdFsr3FramegenEnabled(bool enabled) {
+    fsr2_.amdFsr3FramegenEnabled = enabled;
+#if WOWEE_HAS_AMD_FSR3_FRAMEGEN
+    if (enabled) {
+        fsr2_.amdFsr3FramegenRuntimeActive = false;
+        LOG_WARNING("FSR3 framegen toggle enabled, but runtime dispatch is not linked yet; running FSR2-only.");
+    } else {
+        fsr2_.amdFsr3FramegenRuntimeActive = false;
+    }
+#else
+    fsr2_.amdFsr3FramegenRuntimeActive = false;
+    if (enabled) {
+        LOG_WARNING("FSR3 framegen requested, but AMD FSR3 framegen SDK headers are unavailable in this build.");
+    }
+#endif
 }
 
 // ========================= End FSR 2.2 =========================

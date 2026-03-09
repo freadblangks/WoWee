@@ -195,6 +195,9 @@ make -j$(nproc)
   - `sdk/src/backends/vk/CMakeShadersOpticalflow.txt`
 - CMake option:
   - `WOWEE_ENABLE_AMD_FSR3_FRAMEGEN=ON` enables a compile-probe target (`wowee_fsr3_framegen_amd_vk_probe`) that validates SDK FI/OF/FSR3/Vulkan interface headers at build time.
+- Runtime toggle:
+  - In settings, `AMD FSR3 Frame Generation (Experimental)` persists to config.
+  - Current state is staging-only (`dispatch not linked yet`) until FidelityFX-SDK runtime component binaries are integrated.
 
 ### Current FSR Defaults
 

@@ -275,6 +275,8 @@ public:
     void setFSR2Enabled(bool enabled);
     bool isFSR2Enabled() const { return fsr2_.enabled; }
     void setFSR2DebugTuning(float jitterSign, float motionVecScaleX, float motionVecScaleY);
+    void setAmdFsr3FramegenEnabled(bool enabled);
+    bool isAmdFsr3FramegenEnabled() const { return fsr2_.amdFsr3FramegenEnabled; }
     float getFSR2JitterSign() const { return fsr2_.jitterSign; }
     float getFSR2MotionVecScaleX() const { return fsr2_.motionVecScaleX; }
     float getFSR2MotionVecScaleY() const { return fsr2_.motionVecScaleY; }
@@ -288,6 +290,7 @@ public:
 #else
     bool isAmdFsr3FramegenSdkAvailable() const { return false; }
 #endif
+    bool isAmdFsr3FramegenRuntimeActive() const { return fsr2_.amdFsr3FramegenRuntimeActive; }
 
     void setWaterRefractionEnabled(bool enabled);
     bool isWaterRefractionEnabled() const;
@@ -434,6 +437,8 @@ private:
         uint32_t frameIndex = 0;
         bool needsHistoryReset = true;
         bool useAmdBackend = false;
+        bool amdFsr3FramegenEnabled = false;
+        bool amdFsr3FramegenRuntimeActive = false;
         float jitterSign = 0.38f;
         float motionVecScaleX = 1.0f;
         float motionVecScaleY = 1.0f;

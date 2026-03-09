@@ -123,6 +123,7 @@ private:
     float pendingFSR2JitterSign = 0.38f;
     float pendingFSR2MotionVecScaleX = 1.0f;
     float pendingFSR2MotionVecScaleY = 1.0f;
+    bool pendingAMDFramegen = false;
     bool fsrSettingsApplied_ = false;
 
     // UI element transparency (0.0 = fully transparent, 1.0 = fully opaque)

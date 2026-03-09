@@ -213,6 +213,9 @@ make -j$(nproc)
       - `WOWEE_FSR3_WRAPPER_BACKEND=dx12_bridge` (default on Windows; bridge dispatch wiring still in progress)
     - DX12 runtime override (for `dx12_bridge`):
       - `WOWEE_FSR3_DX12_RUNTIME_LIB=C:\\path\\to\\amd_fidelityfx_framegeneration_dx12.dll`
+    - DX12 device validation probe (default on):
+      - `WOWEE_FSR3_WRAPPER_DX12_VALIDATE_DEVICE=1`
+      - Set to `0` to skip adapter/device preflight.
   - Path B wrapper libraries must export the clean wrapper ABI (`include/rendering/amd_fsr3_wrapper_abi.h`):
     - `wowee_fsr3_wrapper_get_abi_version`
     - `wowee_fsr3_wrapper_initialize`

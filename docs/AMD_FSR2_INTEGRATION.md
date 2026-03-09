@@ -57,6 +57,9 @@ Runtime note:
   - `WOWEE_FSR3_WRAPPER_BACKEND=dx12_bridge`
 - DX12 bridge runtime override:
   - `WOWEE_FSR3_DX12_RUNTIME_LIB=<path-to-amd_fidelityfx_framegeneration_dx12.dll>`
+- DX12 bridge device preflight toggle:
+  - `WOWEE_FSR3_WRAPPER_DX12_VALIDATE_DEVICE=1` (default)
+  - `WOWEE_FSR3_WRAPPER_DX12_VALIDATE_DEVICE=0` to skip DXGI/D3D12 device creation probe
 - Path B wrapper ABI contract is declared in:
   - `include/rendering/amd_fsr3_wrapper_abi.h`
 - Required wrapper exports:

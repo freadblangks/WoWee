@@ -18,6 +18,8 @@
 
 #if defined(_WIN32)
 #include <windows.h>
+#include <d3d12.h>
+#include <dxgi1_6.h>
 #else
 #include <dlfcn.h>
 #endif
@@ -235,15 +237,28 @@ bool runDx12BridgePreflight(const WoweeFsr3WrapperInitDesc* initDesc, std::strin
     HMODULE d3d12 = LoadLibraryA("d3d12.dll");
     if (!d3d12) {
         missing.emplace_back("d3d12.dll");
-    } else {
-        FreeLibrary(d3d12);
     }
 
     HMODULE dxgi = LoadLibraryA("dxgi.dll");
     if (!dxgi) {
         missing.emplace_back("dxgi.dll");
-    } else {
-        FreeLibrary(dxgi);
+    }
+
+    using PFN_D3D12CreateDeviceLocal = HRESULT(WINAPI*)(IUnknown*, D3D_FEATURE_LEVEL, REFIID, void**);
+    using PFN_CreateDXGIFactory2Local = HRESULT(WINAPI*)(UINT, REFIID, void**);
+    PFN_D3D12CreateDeviceLocal pD3D12CreateDevice = nullptr;
+    PFN_CreateDXGIFactory2Local pCreateDXGIFactory2 = nullptr;
+    if (d3d12) {
+        pD3D12CreateDevice = reinterpret_cast<PFN_D3D12CreateDeviceLocal>(GetProcAddress(d3d12, "D3D12CreateDevice"));
+        if (!pD3D12CreateDevice) {
+            missing.emplace_back("D3D12CreateDevice");
+        }
+    }
+    if (dxgi) {
+        pCreateDXGIFactory2 = reinterpret_cast<PFN_CreateDXGIFactory2Local>(GetProcAddress(dxgi, "CreateDXGIFactory2"));
+        if (!pCreateDXGIFactory2) {
+            missing.emplace_back("CreateDXGIFactory2");
+        }
     }
 
     if (!initDesc || !initDesc->device || !initDesc->getDeviceProcAddr) {
@@ -291,6 +306,43 @@ bool runDx12BridgePreflight(const WoweeFsr3WrapperInitDesc* initDesc, std::strin
     } else if (!foundRequiredApiSymbols) {
         missing.emplace_back("ffxCreateContext/ffxConfigure/ffxDispatch exports");
     }
+
+    // Optional strict probe: attempt creating a DXGI factory and D3D12 device.
+    if (missing.empty() && envEnabled("WOWEE_FSR3_WRAPPER_DX12_VALIDATE_DEVICE", true) &&
+        pCreateDXGIFactory2 && pD3D12CreateDevice) {
+        IDXGIFactory6* factory = nullptr;
+        HRESULT hrFactory = pCreateDXGIFactory2(0, IID_PPV_ARGS(&factory));
+        if (FAILED(hrFactory) || !factory) {
+            missing.emplace_back("DXGI factory creation");
+        } else {
+            IDXGIAdapter1* adapter = nullptr;
+            bool hasHardwareAdapter = false;
+            for (UINT adapterIndex = 0; factory->EnumAdapters1(adapterIndex, &adapter) != DXGI_ERROR_NOT_FOUND; ++adapterIndex) {
+                DXGI_ADAPTER_DESC1 desc{};
+                if (SUCCEEDED(adapter->GetDesc1(&desc)) && !(desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)) {
+                    hasHardwareAdapter = true;
+                    break;
+                }
+                adapter->Release();
+                adapter = nullptr;
+            }
+            if (!hasHardwareAdapter || !adapter) {
+                missing.emplace_back("hardware DXGI adapter");
+            } else {
+                ID3D12Device* d3d12Device = nullptr;
+                HRESULT hrDevice = pD3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&d3d12Device));
+                if (FAILED(hrDevice) || !d3d12Device) {
+                    missing.emplace_back("D3D12 device creation (feature level 12_0)");
+                }
+                if (d3d12Device) d3d12Device->Release();
+                adapter->Release();
+            }
+            factory->Release();
+        }
+    }
+
+    if (dxgi) FreeLibrary(dxgi);
+    if (d3d12) FreeLibrary(d3d12);
 
     if (missing.empty()) return true;
 
@@ -600,3 +652,13 @@ WOWEE_FSR3_WRAPPER_EXPORT void wowee_fsr3_wrapper_shutdown(WoweeFsr3WrapperConte
     (void)context;
 #endif
 }
+#if defined(_WIN32)
+bool envEnabled(const char* key, bool defaultValue) {
+    const char* val = std::getenv(key);
+    if (!val || !*val) return defaultValue;
+    std::string s(val);
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return !(s == "0" || s == "false" || s == "off" || s == "no");
+}
+#endif

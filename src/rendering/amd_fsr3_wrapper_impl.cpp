@@ -792,10 +792,11 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_initialize(const WoweeFsr3W
             &backendShared, ffxDevice, ctx->scratchBuffer, ctx->scratchBufferSize, FFX_FSR3_CONTEXT_COUNT);
     }
     if (ifaceErr != FFX_OK) {
+        const bool wasDx12Backend = (ctx->backend == WrapperBackend::Dx12Bridge);
         destroyContext(ctx);
         writeError(outErrorText, outErrorTextCapacity,
-                   ctx->backend == WrapperBackend::Dx12Bridge ? "ffxGetInterfaceDX12 failed"
-                                                              : "ffxGetInterfaceVK failed");
+                   wasDx12Backend ? "ffxGetInterfaceDX12 failed"
+                                  : "ffxGetInterfaceVK failed");
         return -1;
     }
 

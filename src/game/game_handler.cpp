@@ -3207,6 +3207,76 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
             break;
         }
+        case Opcode::SMSG_SCRIPT_MESSAGE: {
+            // Server-script text message — display in system chat
+            std::string msg = packet.readString();
+            if (!msg.empty()) {
+                addSystemChatMessage(msg);
+                LOG_INFO("SMSG_SCRIPT_MESSAGE: ", msg);
+            }
+            break;
+        }
+        case Opcode::SMSG_ENCHANTMENTLOG: {
+            // uint64 targetGuid + uint64 casterGuid + uint32 spellId + uint32 displayId + uint32 animType
+            if (packet.getSize() - packet.getReadPos() >= 28) {
+                /*uint64_t targetGuid =*/ packet.readUInt64();
+                /*uint64_t casterGuid =*/ packet.readUInt64();
+                uint32_t spellId = packet.readUInt32();
+                /*uint32_t displayId =*/ packet.readUInt32();
+                /*uint32_t animType =*/ packet.readUInt32();
+                LOG_DEBUG("SMSG_ENCHANTMENTLOG: spellId=", spellId);
+            }
+            break;
+        }
+        case Opcode::SMSG_SOCKET_GEMS_RESULT: {
+            // uint64 itemGuid + uint32 result (0 = success)
+            if (packet.getSize() - packet.getReadPos() >= 12) {
+                /*uint64_t itemGuid =*/ packet.readUInt64();
+                uint32_t result = packet.readUInt32();
+                if (result == 0) {
+                    addSystemChatMessage("Gems socketed successfully.");
+                } else {
+                    addSystemChatMessage("Failed to socket gems.");
+                }
+                LOG_DEBUG("SMSG_SOCKET_GEMS_RESULT: result=", result);
+            }
+            break;
+        }
+        case Opcode::SMSG_ITEM_REFUND_RESULT: {
+            // uint64 itemGuid + uint32 result (0=success)
+            if (packet.getSize() - packet.getReadPos() >= 12) {
+                /*uint64_t itemGuid =*/ packet.readUInt64();
+                uint32_t result = packet.readUInt32();
+                if (result == 0) {
+                    addSystemChatMessage("Item returned. Refund processed.");
+                } else {
+                    addSystemChatMessage("Could not return item for refund.");
+                }
+                LOG_DEBUG("SMSG_ITEM_REFUND_RESULT: result=", result);
+            }
+            break;
+        }
+        case Opcode::SMSG_ITEM_TIME_UPDATE: {
+            // uint64 itemGuid + uint32 durationMs — item duration ticking down
+            if (packet.getSize() - packet.getReadPos() >= 12) {
+                /*uint64_t itemGuid =*/ packet.readUInt64();
+                uint32_t durationMs = packet.readUInt32();
+                LOG_DEBUG("SMSG_ITEM_TIME_UPDATE: remainingMs=", durationMs);
+            }
+            break;
+        }
+        case Opcode::SMSG_RESURRECT_FAILED: {
+            // uint32 reason — various resurrection failures
+            if (packet.getSize() - packet.getReadPos() >= 4) {
+                uint32_t reason = packet.readUInt32();
+                const char* msg = (reason == 1) ? "The target cannot be resurrected right now."
+                                : (reason == 2) ? "Cannot resurrect in this area."
+                                : "Resurrection failed.";
+                addSystemChatMessage(msg);
+                LOG_DEBUG("SMSG_RESURRECT_FAILED: reason=", reason);
+            }
+            break;
+        }
         case Opcode::SMSG_GAMEOBJECT_QUERY_RESPONSE:
             handleGameObjectQueryResponse(packet);
             break;

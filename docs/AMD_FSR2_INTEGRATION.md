@@ -1,50 +1,47 @@
 # AMD FSR2 Integration Notes
 
-This project currently has two FSR2 states:
+WoWee supports two FSR2 backends at runtime:
 
-- `AMD FidelityFX SDK` backend (preferred): enabled when SDK sources are present.
-- `Internal fallback` backend: used when SDK is missing.
+- `AMD FidelityFX SDK` backend (preferred when available).
+- `Internal fallback` backend (used when AMD SDK prerequisites are not met).
 
 ## SDK Location
 
-Drop AMD's official FSR2 repo at:
+AMD SDK checkout path:
 
 `extern/FidelityFX-FSR2`
 
-Expected header for detection:
+Detection expects:
 
-`extern/FidelityFX-FSR2/src/ffx-fsr2-api/ffx_fsr2.h`
+- `extern/FidelityFX-FSR2/src/ffx-fsr2-api/ffx_fsr2.h`
+- `extern/FidelityFX-FSR2/src/ffx-fsr2-api/vk/shaders/ffx_fsr2_accumulate_pass_permutations.h`
 
 ## Build Flags
 
-- `WOWEE_ENABLE_AMD_FSR2=ON` (default): try to use AMD SDK if detected.
+- `WOWEE_ENABLE_AMD_FSR2=ON` (default): attempt AMD backend integration.
 - `WOWEE_HAS_AMD_FSR2` compile define:
-  - `1` when SDK header is found.
-  - `0` otherwise (fallback path).
+  - `1` when AMD SDK prerequisites are present.
+  - `0` when missing, in which case internal fallback remains active.
 
 ## Current Status
 
-- CMake detects the SDK and defines `WOWEE_HAS_AMD_FSR2`.
-- UI shows active FSR2 backend label in settings.
-- Runtime logs clearly indicate whether AMD SDK is available.
+- AMD FSR2 Vulkan dispatch path is integrated and used when available.
+- UI displays active backend in settings (`AMD FidelityFX SDK` or `Internal fallback`).
+- Runtime settings include persisted FSR2 jitter tuning.
+- Startup safety behavior remains enabled:
+  - persisted FSR2 is deferred until `IN_WORLD`
+  - startup falls back unless `WOWEE_ALLOW_STARTUP_FSR2=1`
 
-## Remaining Work (to finish official AMD path)
+## FSR Defaults
 
-1. Add backend wrapper around `FfxFsr2Context` and Vulkan backend helpers.
-2. Feed required inputs each frame:
-   - Color, depth, motion vectors
-   - Jitter offsets
-   - Delta time and render/display resolution
-   - Exposure / reactive mask as needed
-3. Replace custom compute accumulation path with `ffxFsr2ContextDispatch`.
-4. Keep current fallback path behind a runtime switch for safety.
-5. Add a debug overlay:
-   - Backend in use
-   - Internal resolution
-   - Jitter values
-   - Motion vector validity stats
-6. Validate with fixed camera + movement sweeps:
-   - Static shimmer
-   - Moving blur/ghosting
-   - Fine geometry stability
+- Quality default: `Native (100%)`
+- UI quality order: `Native`, `Ultra Quality`, `Quality`, `Balanced`
+- Default sharpness: `1.6`
+- Default FSR2 jitter sign: `0.38`
+- Performance preset is intentionally removed.
 
+## CI Notes
+
+- `build-linux-amd-fsr2` clones AMD's repository and configures with `WOWEE_ENABLE_AMD_FSR2=ON`.
+- Some upstream SDK checkouts do not include generated Vulkan permutation headers.
+- In that case, WoWee CMake intentionally falls back to the internal backend so CI remains buildable.

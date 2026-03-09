@@ -179,6 +179,14 @@ make -j$(nproc)
   - `extern/FidelityFX-FSR2/src/ffx-fsr2-api/vk/shaders/ffx_fsr2_accumulate_pass_permutations.h`
 - If SDK files or generated Vulkan permutation headers are missing, CMake falls back to the internal non-AMD FSR2 path automatically.
 
+### Current FSR Defaults
+
+- Upscaling quality default: `Native (100%)`
+- UI quality order: `Native (100%)`, `Ultra Quality (77%)`, `Quality (67%)`, `Balanced (59%)`
+- Default `FSR Sharpness`: `1.6`
+- Default FSR2 `Jitter Sign`: `0.38`
+- `Performance (50%)` preset is intentionally removed.
+
 ## Controls
 
 ### Camera & Movement
@@ -239,6 +247,7 @@ make -j$(nproc)
 ## CI / CD
 
 - GitHub Actions builds on every push: Linux (x86-64, ARM64), Windows (MSYS2), macOS (ARM64)
+- `build-linux-amd-fsr2` clones AMD's FSR2 SDK and builds with `-DWOWEE_ENABLE_AMD_FSR2=ON`; if Vulkan permutation headers are absent in that SDK checkout, WoWee automatically falls back to the internal FSR2 backend
 - Container build via `container/build-in-container.sh` (Podman)
 
 ## Security

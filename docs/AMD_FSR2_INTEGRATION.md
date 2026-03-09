@@ -56,7 +56,9 @@ Runtime note:
   - `WOWEE_FSR3_WRAPPER_BACKEND=vulkan_runtime`
   - `WOWEE_FSR3_WRAPPER_BACKEND=dx12_bridge`
 - Default is `vulkan_runtime` on all platforms.
-- `dx12_bridge` is opt-in and now performs DX12/Vulkan preflight, then loads the first runtime library exposing the required FSR3 dispatch exports.
+- `dx12_bridge` is opt-in.
+- On Windows: `dx12_bridge` performs DX12/Vulkan preflight, then loads the first runtime library exposing the required FSR3 dispatch exports.
+- On Linux: `dx12_bridge` is enabled for wrapper runtime compatibility mode and uses Vulkan dispatch symbols in this build.
 - DX12 bridge runtime override:
   - `WOWEE_FSR3_DX12_RUNTIME_LIB=<path-to-amd_fidelityfx_framegeneration_dx12.dll>`
 - DX12 bridge device preflight toggle:
@@ -70,12 +72,14 @@ Runtime note:
 - Current wrapper ABI version: `3` (dispatch payload carries external memory/semaphore handles and acquire/release fence values for bridge synchronization).
 - Required wrapper exports:
   - `wowee_fsr3_wrapper_get_abi_version`
+  - `wowee_fsr3_wrapper_get_backend`
   - `wowee_fsr3_wrapper_initialize`
   - `wowee_fsr3_wrapper_dispatch_upscale`
   - `wowee_fsr3_wrapper_shutdown`
 - Optional wrapper export:
   - `wowee_fsr3_wrapper_dispatch_framegen`
   - `wowee_fsr3_wrapper_get_last_error`
+  - `wowee_fsr3_wrapper_get_capabilities`
 
 ## Current Status
 

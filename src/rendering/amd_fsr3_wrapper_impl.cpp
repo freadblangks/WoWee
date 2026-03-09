@@ -608,6 +608,10 @@ WOWEE_FSR3_WRAPPER_EXPORT uint32_t wowee_fsr3_wrapper_get_capabilities(WoweeFsr3
     if (ctx->backend == WrapperBackend::Dx12Bridge) {
         caps |= WOWEE_FSR3_WRAPPER_CAP_EXTERNAL_INTEROP;
     }
+#elif defined(__linux__)
+    if (ctx->backend == WrapperBackend::Dx12Bridge) {
+        caps |= WOWEE_FSR3_WRAPPER_CAP_EXTERNAL_INTEROP;
+    }
 #endif
     return caps;
 #else
@@ -647,16 +651,16 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_initialize(const WoweeFsr3W
     const bool backendExplicit = (backendEnvRaw && *backendEnvRaw);
     const WrapperBackend selectedBackend = selectBackend();
     if (selectedBackend == WrapperBackend::Dx12Bridge) {
-#if !defined(_WIN32)
-        writeError(outErrorText, outErrorTextCapacity,
-                   "dx12_bridge backend is Windows-only in current wrapper build");
-        return -1;
-#else
+#if defined(_WIN32)
         std::string preflightError;
         if (!runDx12BridgePreflight(initDesc, preflightError)) {
             writeError(outErrorText, outErrorTextCapacity, preflightError.c_str());
             return -1;
         }
+#elif defined(__linux__)
+        // Linux bridge mode currently routes dispatch through Vulkan runtime symbols
+        // while preserving external interop metadata for wrapper-side diagnostics.
+        (void)initDesc;
 #endif
     }
 
@@ -975,7 +979,9 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_upscale(WoweeFsr3W
     static wchar_t kMotionName[] = L"FSR3_MotionVectors";
     static wchar_t kOutputName[] = L"FSR3_Output";
     FfxFsr3DispatchUpscaleDescription dispatch{};
+    bool useDx12Interop = false;
 #if defined(_WIN32)
+    useDx12Interop = (ctx->backend == WrapperBackend::Dx12Bridge);
     ID3D12Resource* colorRes = nullptr;
     ID3D12Resource* depthRes = nullptr;
     ID3D12Resource* motionRes = nullptr;
@@ -991,7 +997,7 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_upscale(WoweeFsr3W
         safeRelease(releaseFence);
     };
 #endif
-    if (ctx->backend == WrapperBackend::Dx12Bridge) {
+    if (useDx12Interop) {
 #if defined(_WIN32)
         if (ctx->dx12Device->OpenSharedHandle(reinterpret_cast<HANDLE>(dispatchDesc->colorMemoryHandle), IID_PPV_ARGS(&colorRes)) != S_OK ||
             ctx->dx12Device->OpenSharedHandle(reinterpret_cast<HANDLE>(dispatchDesc->depthMemoryHandle), IID_PPV_ARGS(&depthRes)) != S_OK ||
@@ -1015,9 +1021,6 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_upscale(WoweeFsr3W
         dispatch.depth = ctx->fns.getResourceDX12(depthRes, depthDesc, kDepthName, FFX_RESOURCE_STATE_COMPUTE_READ);
         dispatch.motionVectors = ctx->fns.getResourceDX12(motionRes, mvDesc, kMotionName, FFX_RESOURCE_STATE_COMPUTE_READ);
         dispatch.upscaleOutput = ctx->fns.getResourceDX12(outputRes, outDesc, kOutputName, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
-#else
-        setContextError(ctx, "dx12_bridge is unavailable on this platform");
-        return -1;
 #endif
     } else {
         dispatch.commandList = ctx->fns.getCommandListVK(dispatchDesc->commandBuffer);
@@ -1047,7 +1050,7 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_upscale(WoweeFsr3W
 
     const bool ok = (ctx->fns.fsr3ContextDispatchUpscale(reinterpret_cast<FfxFsr3Context*>(ctx->fsr3ContextStorage), &dispatch) == FFX_OK);
 #if defined(_WIN32)
-    if (ctx->backend == WrapperBackend::Dx12Bridge) {
+    if (useDx12Interop) {
         if (ctx->dx12CommandList->Close() != S_OK) {
             cleanupDx12Imports();
             setContextError(ctx, "dx12_bridge failed to close command list after upscale dispatch");
@@ -1150,7 +1153,9 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_framegen(WoweeFsr3
     static wchar_t kPresentName[] = L"FSR3_PresentColor";
     static wchar_t kInterpolatedName[] = L"FSR3_InterpolatedOutput";
     FfxFrameGenerationDispatchDescription fgDispatch{};
+    bool useDx12Interop = false;
 #if defined(_WIN32)
+    useDx12Interop = (ctx->backend == WrapperBackend::Dx12Bridge);
     ID3D12Resource* presentRes = nullptr;
     ID3D12Resource* framegenRes = nullptr;
     ID3D12Fence* acquireFence = nullptr;
@@ -1162,7 +1167,7 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_framegen(WoweeFsr3
         safeRelease(releaseFence);
     };
 #endif
-    if (ctx->backend == WrapperBackend::Dx12Bridge) {
+    if (useDx12Interop) {
 #if defined(_WIN32)
         if (ctx->dx12Device->OpenSharedHandle(reinterpret_cast<HANDLE>(dispatchDesc->outputMemoryHandle), IID_PPV_ARGS(&presentRes)) != S_OK ||
             ctx->dx12Device->OpenSharedHandle(reinterpret_cast<HANDLE>(dispatchDesc->frameGenOutputMemoryHandle), IID_PPV_ARGS(&framegenRes)) != S_OK ||
@@ -1182,9 +1187,6 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_framegen(WoweeFsr3
         fgDispatch.commandList = ctx->fns.getCommandListDX12(ctx->dx12CommandList);
         fgDispatch.presentColor = ctx->fns.getResourceDX12(presentRes, presentDesc, kPresentName, FFX_RESOURCE_STATE_COMPUTE_READ);
         fgDispatch.outputs[0] = ctx->fns.getResourceDX12(framegenRes, fgOutDesc, kInterpolatedName, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
-#else
-        setContextError(ctx, "dx12_bridge is unavailable on this platform");
-        return -1;
 #endif
     } else {
         fgDispatch.commandList = ctx->fns.getCommandListVK(dispatchDesc->commandBuffer);
@@ -1201,7 +1203,7 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_framegen(WoweeFsr3
 
     const bool ok = (ctx->fns.fsr3DispatchFrameGeneration(&fgDispatch) == FFX_OK);
 #if defined(_WIN32)
-    if (ctx->backend == WrapperBackend::Dx12Bridge) {
+    if (useDx12Interop) {
         if (ctx->dx12CommandList->Close() != S_OK) {
             cleanupDx12Imports();
             setContextError(ctx, "dx12_bridge failed to close command list after frame generation dispatch");

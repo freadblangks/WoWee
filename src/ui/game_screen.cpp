@@ -401,6 +401,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderTradeRequestPopup(gameHandler);
     renderSummonRequestPopup(gameHandler);
     renderSharedQuestPopup(gameHandler);
+    renderItemTextWindow(gameHandler);
     renderGuildInvitePopup(gameHandler);
     renderGuildRoster(gameHandler);
     renderBuffBar(gameHandler);
@@ -4402,6 +4403,42 @@ void GameScreen::renderDuelRequestPopup(game::GameHandler& gameHandler) {
             gameHandler.forfeitDuel();
         }
     }
+    ImGui::End();
+}
+
+void GameScreen::renderItemTextWindow(game::GameHandler& gameHandler) {
+    if (!gameHandler.isItemTextOpen()) return;
+
+    auto* window = core::Application::getInstance().getWindow();
+    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
+    float screenH = window ? static_cast<float>(window->getHeight()) :  720.0f;
+
+    ImGui::SetNextWindowPos(ImVec2(screenW * 0.5f - 200, screenH * 0.15f),
+                            ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(400, 300), ImGuiCond_FirstUseEver);
+
+    bool open = true;
+    if (!ImGui::Begin("Book", &open, ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        if (!open) gameHandler.closeItemText();
+        return;
+    }
+    if (!open) {
+        ImGui::End();
+        gameHandler.closeItemText();
+        return;
+    }
+
+    // Parchment-toned background text
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 0.1f, 0.0f, 1.0f));
+    ImGui::TextWrapped("%s", gameHandler.getItemText().c_str());
+    ImGui::PopStyleColor();
+
+    ImGui::Spacing();
+    if (ImGui::Button("Close", ImVec2(80, 0))) {
+        gameHandler.closeItemText();
+    }
+
     ImGui::End();
 }
 

@@ -707,6 +707,12 @@ public:
     bool hasPendingGroupInvite() const { return pendingGroupInvite; }
     const std::string& getPendingInviterName() const { return pendingInviterName; }
 
+    // ---- Item text (books / readable items) ----
+    bool isItemTextOpen() const { return itemTextOpen_; }
+    const std::string& getItemText() const { return itemText_; }
+    void closeItemText() { itemTextOpen_ = false; }
+    void queryItemText(uint64_t itemGuid);
+
     // ---- Shared Quest ----
     bool hasPendingSharedQuest() const { return pendingSharedQuest_; }
     uint32_t getSharedQuestId() const { return sharedQuestId_; }
@@ -1303,6 +1309,7 @@ private:
 
     // ---- Instance lockout handler ----
     void handleRaidInstanceInfo(network::Packet& packet);
+    void handleItemTextQueryResponse(network::Packet& packet);
     void handleQuestConfirmAccept(network::Packet& packet);
     void handleSummonRequest(network::Packet& packet);
     void handleTradeStatus(network::Packet& packet);
@@ -1662,6 +1669,10 @@ private:
     GroupListData partyData;
     bool pendingGroupInvite = false;
     std::string pendingInviterName;
+
+    // Item text state
+    bool        itemTextOpen_   = false;
+    std::string itemText_;
 
     // Shared quest state
     bool        pendingSharedQuest_       = false;

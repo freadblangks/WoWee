@@ -1997,6 +1997,9 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_QUEST_CONFIRM_ACCEPT:
             handleQuestConfirmAccept(packet);
             break;
+        case Opcode::SMSG_ITEM_TEXT_QUERY_RESPONSE:
+            handleItemTextQueryResponse(packet);
+            break;
         case Opcode::SMSG_SUMMON_REQUEST:
             handleSummonRequest(packet);
             break;
@@ -15044,6 +15047,33 @@ void GameHandler::handleAuctionCommandResult(network::Packet& packet) {
     }
     LOG_INFO("SMSG_AUCTION_COMMAND_RESULT: action=", actionName,
              " error=", result.errorCode);
+}
+
+// ---------------------------------------------------------------------------
+// Item text (SMSG_ITEM_TEXT_QUERY_RESPONSE)
+//   uint64 itemGuid + uint8 isEmpty + string text (when !isEmpty)
+// ---------------------------------------------------------------------------
+
+void GameHandler::handleItemTextQueryResponse(network::Packet& packet) {
+    size_t rem = packet.getSize() - packet.getReadPos();
+    if (rem < 9) return;  // guid(8) + isEmpty(1)
+
+    /*uint64_t guid =*/ packet.readUInt64();
+    uint8_t isEmpty = packet.readUInt8();
+    if (!isEmpty) {
+        itemText_    = packet.readString();
+        itemTextOpen_= !itemText_.empty();
+    }
+    LOG_DEBUG("SMSG_ITEM_TEXT_QUERY_RESPONSE: isEmpty=", (int)isEmpty,
+              " len=", itemText_.size());
+}
+
+void GameHandler::queryItemText(uint64_t itemGuid) {
+    if (state != WorldState::IN_WORLD || !socket) return;
+    network::Packet pkt(wireOpcode(Opcode::CMSG_ITEM_TEXT_QUERY));
+    pkt.writeUInt64(itemGuid);
+    socket->send(pkt);
+    LOG_DEBUG("CMSG_ITEM_TEXT_QUERY: guid=0x", std::hex, itemGuid, std::dec);
 }
 
 // ---------------------------------------------------------------------------

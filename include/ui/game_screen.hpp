@@ -209,6 +209,7 @@ private:
     void renderTradeRequestPopup(game::GameHandler& gameHandler);
     void renderSummonRequestPopup(game::GameHandler& gameHandler);
     void renderSharedQuestPopup(game::GameHandler& gameHandler);
+    void renderItemTextWindow(game::GameHandler& gameHandler);
     void renderBuffBar(game::GameHandler& gameHandler);
     void renderLootWindow(game::GameHandler& gameHandler);
     void renderGossipWindow(game::GameHandler& gameHandler);

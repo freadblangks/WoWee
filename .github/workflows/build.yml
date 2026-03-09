@@ -267,7 +267,32 @@ jobs:
           codesign --force --deep --sign - Wowee.app
 
       - name: Create DMG
-        run: hdiutil create -volname Wowee -srcfolder Wowee.app -ov -format UDZO Wowee.dmg
+        run: |
+          set -euo pipefail
+          rm -f Wowee.dmg
+          # CI runners can occasionally leave a mounted volume around; detach if present.
+          if [ -d "/Volumes/Wowee" ]; then
+            hdiutil detach "/Volumes/Wowee" -force || true
+            sleep 2
+          fi
+
+          ok=0
+          for attempt in 1 2 3 4 5; do
+            if hdiutil create -volname Wowee -srcfolder Wowee.app -ov -format UDZO Wowee.dmg; then
+              ok=1
+              break
+            fi
+            echo "hdiutil create failed on attempt ${attempt}; retrying..."
+            if [ -d "/Volumes/Wowee" ]; then
+              hdiutil detach "/Volumes/Wowee" -force || true
+            fi
+            sleep 3
+          done
+
+          if [ "$ok" -ne 1 ] || [ ! -f Wowee.dmg ]; then
+            echo "Failed to create Wowee.dmg after retries."
+            exit 1
+          fi
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4

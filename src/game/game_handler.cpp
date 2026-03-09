@@ -4623,6 +4623,18 @@ void GameHandler::handlePacket(network::Packet& packet) {
             packet.setReadPos(packet.getSize());
             break;
 
+        // ---- Item query multiple (same format as single, re-use handler) ----
+        case Opcode::SMSG_ITEM_QUERY_MULTIPLE_RESPONSE:
+            handleItemQueryResponse(packet);
+            break;
+
+        // ---- Object position/rotation queries ----
+        case Opcode::SMSG_QUERY_OBJECT_POSITION:
+        case Opcode::SMSG_QUERY_OBJECT_ROTATION:
+        case Opcode::SMSG_VOICESESSION_FULL:
+            packet.setReadPos(packet.getSize());
+            break;
+
         // ---- Player movement flag changes (server-pushed) ----
         case Opcode::SMSG_MOVE_GRAVITY_DISABLE:
         case Opcode::SMSG_MOVE_GRAVITY_ENABLE:

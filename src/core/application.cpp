@@ -2121,6 +2121,27 @@ void Application::setupUICallbacks() {
         }
     });
 
+    // SMSG_PLAY_SOUND: look up SoundEntries.dbc and play 2-D sound effect
+    gameHandler->setPlaySoundCallback([this](uint32_t soundId) {
+        if (!assetManager) return;
+
+        auto dbc = assetManager->loadDBC("SoundEntries.dbc");
+        if (!dbc || !dbc->isLoaded()) return;
+
+        int32_t idx = dbc->findRecordById(soundId);
+        if (idx < 0) return;
+
+        const uint32_t row = static_cast<uint32_t>(idx);
+        std::string dir = dbc->getString(row, 23);
+        for (uint32_t f = 3; f <= 12; ++f) {
+            std::string name = dbc->getString(row, f);
+            if (name.empty()) continue;
+            std::string path = dir.empty() ? name : dir + "\\" + name;
+            audio::AudioEngine::instance().playSound2D(path);
+            return;
+        }
+    });
+
     // Other player level-up callback — trigger 3D effect + chat notification
     gameHandler->setOtherPlayerLevelUpCallback([this](uint64_t guid, uint32_t newLevel) {
         if (!gameHandler || !renderer) return;

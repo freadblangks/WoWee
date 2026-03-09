@@ -943,6 +943,11 @@ public:
     using PlayMusicCallback = std::function<void(uint32_t soundId)>;
     void setPlayMusicCallback(PlayMusicCallback cb) { playMusicCallback_ = std::move(cb); }
 
+    // Server-triggered 2-D sound effect callback — fires when SMSG_PLAY_SOUND is received.
+    // The soundId corresponds to a SoundEntries.dbc record.
+    using PlaySoundCallback = std::function<void(uint32_t soundId)>;
+    void setPlaySoundCallback(PlaySoundCallback cb) { playSoundCallback_ = std::move(cb); }
+
     // Mount state
     using MountCallback = std::function<void(uint32_t mountDisplayId)>;  // 0 = dismount
     void setMountCallback(MountCallback cb) { mountCallback_ = std::move(cb); }
@@ -2095,8 +2100,9 @@ private:
     // ---- Forced faction reactions (SMSG_SET_FORCED_REACTIONS) ----
     std::unordered_map<uint32_t, uint8_t> forcedReactions_;  // factionId -> reaction tier
 
-    // ---- Server-triggered music ----
+    // ---- Server-triggered audio ----
     PlayMusicCallback playMusicCallback_;
+    PlaySoundCallback playSoundCallback_;
 };
 
 } // namespace game

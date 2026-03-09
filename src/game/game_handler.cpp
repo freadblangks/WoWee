@@ -3041,6 +3041,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             if (packet.getSize() - packet.getReadPos() >= 4) {
                 uint32_t soundId = packet.readUInt32();
                 LOG_DEBUG("SMSG_PLAY_SOUND id=", soundId);
+                if (playSoundCallback_) playSoundCallback_(soundId);
             }
             break;
 

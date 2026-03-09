@@ -1414,6 +1414,31 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 handleChannelNotify(packet);
             }
             break;
+        case Opcode::SMSG_CHAT_PLAYER_NOT_FOUND: {
+            // string: name of the player not found (for failed whispers)
+            std::string name = packet.readString();
+            if (!name.empty()) {
+                addSystemChatMessage("No player named '" + name + "' is currently playing.");
+            }
+            break;
+        }
+        case Opcode::SMSG_CHAT_PLAYER_AMBIGUOUS: {
+            // string: ambiguous player name (multiple matches)
+            std::string name = packet.readString();
+            if (!name.empty()) {
+                addSystemChatMessage("Player name '" + name + "' is ambiguous.");
+            }
+            break;
+        }
+        case Opcode::SMSG_CHAT_WRONG_FACTION:
+            addSystemChatMessage("You cannot send messages to members of that faction.");
+            break;
+        case Opcode::SMSG_CHAT_NOT_IN_PARTY:
+            addSystemChatMessage("You are not in a party.");
+            break;
+        case Opcode::SMSG_CHAT_RESTRICTED:
+            addSystemChatMessage("You cannot send chat messages in this area.");
+            break;
 
         case Opcode::SMSG_QUERY_TIME_RESPONSE:
             if (state == WorldState::IN_WORLD) {
@@ -1867,6 +1892,28 @@ void GameHandler::handlePacket(network::Packet& packet) {
             autoAttacking = false;
             autoAttackTarget = 0;
             break;
+        case Opcode::SMSG_THREAT_CLEAR:
+            // All threat dropped on the local player (e.g. Vanish, Feign Death)
+            // No local state to clear — informational
+            LOG_DEBUG("SMSG_THREAT_CLEAR: threat wiped");
+            break;
+        case Opcode::SMSG_THREAT_REMOVE: {
+            // packed_guid (unit) + packed_guid (victim whose threat was removed)
+            if (packet.getSize() - packet.getReadPos() >= 1) {
+                (void)UpdateObjectParser::readPackedGuid(packet);
+                if (packet.getSize() - packet.getReadPos() >= 1) {
+                    (void)UpdateObjectParser::readPackedGuid(packet);
+                }
+            }
+            break;
+        }
+        case Opcode::SMSG_HIGHEST_THREAT_UPDATE: {
+            // packed_guid (tank) + packed_guid (new highest threat unit) + uint32 count
+            // + count × (packed_guid victim + uint32 threat)
+            // Informational — no threat UI yet; consume to suppress warnings
+            packet.setReadPos(packet.getSize());
+            break;
+        }
 
         case Opcode::SMSG_CANCEL_COMBAT:
             // Server-side combat state reset

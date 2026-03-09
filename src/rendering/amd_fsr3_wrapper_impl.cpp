@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <sstream>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -172,6 +173,7 @@ struct RuntimeFns {
 };
 
 struct WrapperContext {
+    WrapperBackend backend = WrapperBackend::VulkanRuntime;
     void* backendLibHandle = nullptr;
     RuntimeFns fns{};
     void* scratchBuffer = nullptr;
@@ -225,6 +227,57 @@ void destroyContext(WrapperContext* ctx) {
     ctx->backendLibHandle = nullptr;
     delete ctx;
 }
+
+#if defined(_WIN32)
+bool runDx12BridgePreflight(std::string& errorMessage) {
+    std::vector<std::string> missing;
+
+    HMODULE d3d12 = LoadLibraryA("d3d12.dll");
+    if (!d3d12) {
+        missing.emplace_back("d3d12.dll");
+    } else {
+        FreeLibrary(d3d12);
+    }
+
+    HMODULE dxgi = LoadLibraryA("dxgi.dll");
+    if (!dxgi) {
+        missing.emplace_back("dxgi.dll");
+    } else {
+        FreeLibrary(dxgi);
+    }
+
+    std::vector<std::string> runtimeCandidates;
+    if (const char* explicitRuntime = std::getenv("WOWEE_FSR3_DX12_RUNTIME_LIB")) {
+        if (explicitRuntime && *explicitRuntime) runtimeCandidates.emplace_back(explicitRuntime);
+    }
+    runtimeCandidates.emplace_back("amd_fidelityfx_framegeneration_dx12.dll");
+    runtimeCandidates.emplace_back("ffx_framegeneration_dx12.dll");
+
+    bool foundRuntime = false;
+    for (const std::string& candidate : runtimeCandidates) {
+        HMODULE runtime = LoadLibraryA(candidate.c_str());
+        if (runtime) {
+            FreeLibrary(runtime);
+            foundRuntime = true;
+            break;
+        }
+    }
+    if (!foundRuntime) {
+        missing.emplace_back("amd_fidelityfx_framegeneration_dx12.dll");
+    }
+
+    if (missing.empty()) return true;
+
+    std::ostringstream oss;
+    oss << "dx12_bridge preflight failed, missing: ";
+    for (size_t i = 0; i < missing.size(); ++i) {
+        if (i) oss << ", ";
+        oss << missing[i];
+    }
+    errorMessage = oss.str();
+    return false;
+}
+#endif
 #endif
 
 }  // namespace
@@ -264,14 +317,20 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_initialize(const WoweeFsr3W
         return -1;
     }
 
-    if (selectBackend() == WrapperBackend::Dx12Bridge) {
+    const WrapperBackend backend = selectBackend();
+    if (backend == WrapperBackend::Dx12Bridge) {
 #if !defined(_WIN32)
         writeError(outErrorText, outErrorTextCapacity,
                    "dx12_bridge backend is Windows-only in current wrapper build");
         return -1;
 #else
+        std::string preflightError;
+        if (!runDx12BridgePreflight(preflightError)) {
+            writeError(outErrorText, outErrorTextCapacity, preflightError.c_str());
+            return -1;
+        }
         writeError(outErrorText, outErrorTextCapacity,
-                   "dx12_bridge backend selected but Vulkan<->DX12 interop dispatch is not implemented yet");
+                   "dx12_bridge preflight passed, but Vulkan<->DX12 interop dispatch is not implemented yet");
         return -1;
 #endif
     }
@@ -299,6 +358,7 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_initialize(const WoweeFsr3W
 #endif
 
     WrapperContext* ctx = new WrapperContext{};
+    ctx->backend = backend;
     for (const std::string& path : candidates) {
         ctx->backendLibHandle = openLibrary(path.c_str());
         if (ctx->backendLibHandle) break;

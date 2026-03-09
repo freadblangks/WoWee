@@ -211,6 +211,8 @@ make -j$(nproc)
     - Wrapper backend mode:
       - `WOWEE_FSR3_WRAPPER_BACKEND=vulkan_runtime` (default on non-Windows)
       - `WOWEE_FSR3_WRAPPER_BACKEND=dx12_bridge` (default on Windows; bridge dispatch wiring still in progress)
+    - DX12 runtime override (for `dx12_bridge`):
+      - `WOWEE_FSR3_DX12_RUNTIME_LIB=C:\\path\\to\\amd_fidelityfx_framegeneration_dx12.dll`
   - Path B wrapper libraries must export the clean wrapper ABI (`include/rendering/amd_fsr3_wrapper_abi.h`):
     - `wowee_fsr3_wrapper_get_abi_version`
     - `wowee_fsr3_wrapper_initialize`

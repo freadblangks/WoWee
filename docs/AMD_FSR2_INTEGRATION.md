@@ -55,6 +55,8 @@ Runtime note:
 - Wrapper backend mode selection:
   - `WOWEE_FSR3_WRAPPER_BACKEND=vulkan_runtime`
   - `WOWEE_FSR3_WRAPPER_BACKEND=dx12_bridge`
+- DX12 bridge runtime override:
+  - `WOWEE_FSR3_DX12_RUNTIME_LIB=<path-to-amd_fidelityfx_framegeneration_dx12.dll>`
 - Path B wrapper ABI contract is declared in:
   - `include/rendering/amd_fsr3_wrapper_abi.h`
 - Required wrapper exports:

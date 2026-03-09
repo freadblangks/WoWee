@@ -942,13 +942,10 @@ void WaterRenderer::loadFromWMO([[maybe_unused]] const pipeline::WMOLiquid& liqu
 
     if (surface.origin.z > 2000.0f || surface.origin.z < -500.0f) return;
 
-    // Build tile mask from MLIQ flags and per-vertex heights
+    // Build tile mask from MLIQ flags
     size_t tileCount = static_cast<size_t>(surface.width) * static_cast<size_t>(surface.height);
     size_t maskBytes = (tileCount + 7) / 8;
     surface.mask.assign(maskBytes, 0x00);
-    const float baseZ = liquid.basePosition.z;
-    const bool hasHeights = !liquid.heights.empty() &&
-                            liquid.heights.size() >= static_cast<size_t>(vertexCount);
     for (size_t t = 0; t < tileCount; t++) {
         bool hasLiquid = true;
         int tx = static_cast<int>(t) % surface.width;

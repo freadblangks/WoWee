@@ -1848,8 +1848,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             packet.setReadPos(packet.getSize());
             break;
         case Opcode::SMSG_RAID_INSTANCE_INFO:
-            // Raid lockout list (not yet surfaced in UI).
-            packet.setReadPos(packet.getSize());
+            handleRaidInstanceInfo(packet);
             break;
         case Opcode::SMSG_DUEL_REQUESTED:
             // Duel request UI flow not implemented yet.
@@ -8845,6 +8844,31 @@ void GameHandler::acceptBattlefield(uint32_t queueSlot) {
 
     addSystemChatMessage("Accepting battleground invitation...");
     LOG_INFO("Sent CMSG_BATTLEFIELD_PORT: accept bgTypeId=", slot->bgTypeId);
+}
+
+void GameHandler::handleRaidInstanceInfo(network::Packet& packet) {
+    // SMSG_RAID_INSTANCE_INFO: uint32 count, then for each:
+    //   mapId(u32) + difficulty(u32) + resetTime(u64) + locked(u8) + extended(u8)
+    if (packet.getSize() - packet.getReadPos() < 4) return;
+    uint32_t count = packet.readUInt32();
+
+    instanceLockouts_.clear();
+    instanceLockouts_.reserve(count);
+
+    constexpr size_t kEntrySize = 4 + 4 + 8 + 1 + 1;
+    for (uint32_t i = 0; i < count; ++i) {
+        if (packet.getSize() - packet.getReadPos() < kEntrySize) break;
+        InstanceLockout lo;
+        lo.mapId      = packet.readUInt32();
+        lo.difficulty = packet.readUInt32();
+        lo.resetTime  = packet.readUInt64();
+        lo.locked     = packet.readUInt8() != 0;
+        lo.extended   = packet.readUInt8() != 0;
+        instanceLockouts_.push_back(lo);
+        LOG_INFO("Instance lockout: mapId=", lo.mapId, " diff=", lo.difficulty,
+                 " reset=", lo.resetTime, " locked=", lo.locked, " extended=", lo.extended);
+    }
+    LOG_INFO("SMSG_RAID_INSTANCE_INFO: ", instanceLockouts_.size(), " lockout(s)");
 }
 
 void GameHandler::handleInstanceDifficulty(network::Packet& packet) {

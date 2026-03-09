@@ -707,6 +707,16 @@ public:
     bool hasPendingGroupInvite() const { return pendingGroupInvite; }
     const std::string& getPendingInviterName() const { return pendingInviterName; }
 
+    // ---- Instance lockouts ----
+    struct InstanceLockout {
+        uint32_t mapId       = 0;
+        uint32_t difficulty  = 0;  // 0=normal,1=heroic/10man,2=25man,3=25man heroic
+        uint64_t resetTime   = 0;  // Unix timestamp of instance reset
+        bool     locked      = false;
+        bool     extended    = false;
+    };
+    const std::vector<InstanceLockout>& getInstanceLockouts() const { return instanceLockouts_; }
+
     // ---- LFG / Dungeon Finder ----
     enum class LfgState : uint8_t {
         None           = 0,
@@ -1230,6 +1240,9 @@ private:
     void loadAreaTriggerDbc();
     void checkAreaTriggers();
 
+    // ---- Instance lockout handler ----
+    void handleRaidInstanceInfo(network::Packet& packet);
+
     // ---- LFG / Dungeon Finder handlers ----
     void handleLfgJoinResult(network::Packet& packet);
     void handleLfgQueueStatus(network::Packet& packet);
@@ -1565,6 +1578,9 @@ private:
     // Instance difficulty
     uint32_t instanceDifficulty_ = 0;
     bool instanceIsHeroic_ = false;
+
+    // Instance / raid lockouts
+    std::vector<InstanceLockout> instanceLockouts_;
 
     // LFG / Dungeon Finder state
     LfgState lfgState_        = LfgState::None;

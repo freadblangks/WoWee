@@ -4240,8 +4240,7 @@ void GameScreen::renderQuestObjectiveTracker(game::GameHandler& gameHandler) {
     if (questLog.empty()) return;
 
     auto* window = core::Application::getInstance().getWindow();
-    float screenW = window ? static_cast<float>(window->getWidth())  : 1280.0f;
-    float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
+    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
 
     constexpr float TRACKER_W = 220.0f;
     constexpr float RIGHT_MARGIN = 10.0f;

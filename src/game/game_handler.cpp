@@ -1886,6 +1886,72 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
 
+        // ---- Zone defense messages ----
+        case Opcode::SMSG_DEFENSE_MESSAGE: {
+            // uint32 zoneId + string message — used for PvP zone attack alerts
+            if (packet.getSize() - packet.getReadPos() >= 5) {
+                /*uint32_t zoneId =*/ packet.readUInt32();
+                std::string defMsg = packet.readString();
+                if (!defMsg.empty()) {
+                    addSystemChatMessage("[Defense] " + defMsg);
+                }
+            }
+            break;
+        }
+        case Opcode::SMSG_CORPSE_RECLAIM_DELAY: {
+            // uint32 delayMs before player can reclaim corpse
+            if (packet.getSize() - packet.getReadPos() >= 4) {
+                uint32_t delayMs = packet.readUInt32();
+                uint32_t delaySec = (delayMs + 999) / 1000;
+                addSystemChatMessage("You can reclaim your corpse in " +
+                                     std::to_string(delaySec) + " seconds.");
+                LOG_DEBUG("SMSG_CORPSE_RECLAIM_DELAY: ", delayMs, "ms");
+            }
+            break;
+        }
+        case Opcode::SMSG_DEATH_RELEASE_LOC: {
+            // uint32 mapId + float x + float y + float z — spirit healer position
+            if (packet.getSize() - packet.getReadPos() >= 16) {
+                uint32_t mapId = packet.readUInt32();
+                float x = packet.readFloat();
+                float y = packet.readFloat();
+                float z = packet.readFloat();
+                LOG_INFO("SMSG_DEATH_RELEASE_LOC: map=", mapId, " x=", x, " y=", y, " z=", z);
+            }
+            break;
+        }
+        case Opcode::SMSG_ENABLE_BARBER_SHOP:
+            // Sent by server when player sits in barber chair — triggers barber shop UI
+            // No payload; we don't have barber shop UI yet, so just log
+            LOG_INFO("SMSG_ENABLE_BARBER_SHOP: barber shop available");
+            break;
+        case Opcode::SMSG_FEIGN_DEATH_RESISTED:
+            addSystemChatMessage("Your Feign Death attempt was resisted.");
+            LOG_DEBUG("SMSG_FEIGN_DEATH_RESISTED");
+            break;
+        case Opcode::SMSG_CHANNEL_MEMBER_COUNT: {
+            // string channelName + uint8 flags + uint32 memberCount
+            std::string chanName = packet.readString();
+            if (packet.getSize() - packet.getReadPos() >= 5) {
+                /*uint8_t flags =*/ packet.readUInt8();
+                uint32_t count = packet.readUInt32();
+                LOG_DEBUG("SMSG_CHANNEL_MEMBER_COUNT: channel=", chanName, " members=", count);
+            }
+            break;
+        }
+        case Opcode::SMSG_GAMETIME_SET:
+        case Opcode::SMSG_GAMETIME_UPDATE:
+        case Opcode::SMSG_GAMETIMEBIAS_SET:
+        case Opcode::SMSG_GAMESPEED_SET:
+            // Server-side time/speed synchronization — consume without processing
+            packet.setReadPos(packet.getSize());
+            break;
+        case Opcode::SMSG_ACHIEVEMENT_DELETED:
+        case Opcode::SMSG_CRITERIA_DELETED:
+            // Consume achievement/criteria removal notifications
+            packet.setReadPos(packet.getSize());
+            break;
+
         // ---- Combat clearing ----
         case Opcode::SMSG_ATTACKSWING_DEADTARGET:
             // Target died mid-swing: clear auto-attack

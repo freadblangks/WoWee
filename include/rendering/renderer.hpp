@@ -439,6 +439,7 @@ private:
         bool useAmdBackend = false;
         bool amdFsr3FramegenEnabled = false;
         bool amdFsr3FramegenRuntimeActive = false;
+        bool amdFsr3FramegenRuntimeReady = false;
         float jitterSign = 0.38f;
         float motionVecScaleX = 1.0f;
         float motionVecScaleY = 1.0f;
@@ -460,6 +461,7 @@ private:
     void dispatchMotionVectors();
     void dispatchTemporalAccumulate();
     void dispatchAmdFsr2();
+    void dispatchAmdFsr3Framegen();
     void renderFSR2Sharpen();
     static float halton(uint32_t index, uint32_t base);
 

@@ -1160,6 +1160,7 @@ void Renderer::endFrame() {
             // Compute passes: motion vectors -> temporal accumulation
             dispatchMotionVectors();
             dispatchAmdFsr2();
+            dispatchAmdFsr3Framegen();
 
             // Transition history output: GENERAL -> SHADER_READ_ONLY for sharpen pass
             transitionImageLayout(currentCmd, fsr2_.history[fsr2_.currentHistory].image,
@@ -3741,6 +3742,7 @@ bool Renderer::initFSR2Resources() {
              " (scale=", fsr2_.scaleFactor, ")");
     fsr2_.useAmdBackend = false;
     fsr2_.amdFsr3FramegenRuntimeActive = false;
+    fsr2_.amdFsr3FramegenRuntimeReady = false;
 #if WOWEE_HAS_AMD_FSR2
     LOG_INFO("FSR2: AMD FidelityFX SDK detected at build time.");
 #else
@@ -3844,6 +3846,7 @@ bool Renderer::initFSR2Resources() {
                     // Runtime dispatch path is staged behind SDK runtime binary integration.
                     // Keep the user toggle persisted, but report inactive runtime for now.
                     fsr2_.amdFsr3FramegenRuntimeActive = false;
+                    fsr2_.amdFsr3FramegenRuntimeReady = false;
                     LOG_WARNING("FSR3 framegen is enabled in settings, but runtime dispatch is not linked yet; running FSR2-only.");
                 }
 #endif
@@ -4145,6 +4148,7 @@ void Renderer::destroyFSR2Resources() {
     fsr2_.amdScratchBufferSize = 0;
 #endif
     fsr2_.amdFsr3FramegenRuntimeActive = false;
+    fsr2_.amdFsr3FramegenRuntimeReady = false;
 
     if (fsr2_.sharpenPipeline) { vkDestroyPipeline(device, fsr2_.sharpenPipeline, nullptr); fsr2_.sharpenPipeline = VK_NULL_HANDLE; }
     if (fsr2_.sharpenPipelineLayout) { vkDestroyPipelineLayout(device, fsr2_.sharpenPipelineLayout, nullptr); fsr2_.sharpenPipelineLayout = VK_NULL_HANDLE; }
@@ -4363,6 +4367,28 @@ void Renderer::dispatchAmdFsr2() {
 #endif
 }
 
+void Renderer::dispatchAmdFsr3Framegen() {
+    if (!fsr2_.amdFsr3FramegenEnabled) {
+        fsr2_.amdFsr3FramegenRuntimeActive = false;
+        return;
+    }
+#if WOWEE_HAS_AMD_FSR3_FRAMEGEN
+    // Runtime FI/OF dispatch requires linked FidelityFX-SDK implementation binaries.
+    // The integration hook is intentionally placed here (right after FSR2 dispatch),
+    // so we can enable real frame generation without refactoring the frame pipeline.
+    if (!fsr2_.amdFsr3FramegenRuntimeReady) {
+        static bool warnedMissingRuntime = false;
+        if (!warnedMissingRuntime) {
+            warnedMissingRuntime = true;
+            LOG_WARNING("FSR3 framegen is staged, but runtime binaries are not linked; skipping frame generation dispatch.");
+        }
+    }
+    fsr2_.amdFsr3FramegenRuntimeActive = false;
+#else
+    fsr2_.amdFsr3FramegenRuntimeActive = false;
+#endif
+}
+
 void Renderer::renderFSR2Sharpen() {
     if (!fsr2_.sharpenPipeline || currentCmd == VK_NULL_HANDLE) return;
 
@@ -4443,12 +4469,15 @@ void Renderer::setAmdFsr3FramegenEnabled(bool enabled) {
 #if WOWEE_HAS_AMD_FSR3_FRAMEGEN
     if (enabled) {
         fsr2_.amdFsr3FramegenRuntimeActive = false;
+        fsr2_.amdFsr3FramegenRuntimeReady = false;
         LOG_WARNING("FSR3 framegen toggle enabled, but runtime dispatch is not linked yet; running FSR2-only.");
     } else {
         fsr2_.amdFsr3FramegenRuntimeActive = false;
+        fsr2_.amdFsr3FramegenRuntimeReady = false;
     }
 #else
     fsr2_.amdFsr3FramegenRuntimeActive = false;
+    fsr2_.amdFsr3FramegenRuntimeReady = false;
     if (enabled) {
         LOG_WARNING("FSR3 framegen requested, but AMD FSR3 framegen SDK headers are unavailable in this build.");
     }

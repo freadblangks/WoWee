@@ -58,6 +58,7 @@
 #include "rendering/vk_pipeline.hpp"
 #include "rendering/vk_utils.hpp"
 #include "rendering/amd_fsr3_runtime.hpp"
+#include "rendering/amd_fsr3_wrapper_abi.h"
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -132,6 +133,23 @@ static uint64_t exportImageMemoryHandleWin32(VkDevice device, PFN_vkGetDevicePro
 
     HANDLE outHandle = nullptr;
     if (getMemHandle(device, &handleInfo, &outHandle) != VK_SUCCESS || !outHandle) return 0;
+    return reinterpret_cast<uint64_t>(outHandle);
+}
+
+static uint64_t exportSemaphoreHandleWin32(VkDevice device, PFN_vkGetDeviceProcAddr getDeviceProcAddr,
+                                           VkSemaphore semaphore) {
+    if (!device || !getDeviceProcAddr || !semaphore) return 0;
+    auto getSemHandle = reinterpret_cast<PFN_vkGetSemaphoreWin32HandleKHR>(
+        getDeviceProcAddr(device, "vkGetSemaphoreWin32HandleKHR"));
+    if (!getSemHandle) return 0;
+
+    VkSemaphoreGetWin32HandleInfoKHR handleInfo{};
+    handleInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_WIN32_HANDLE_INFO_KHR;
+    handleInfo.semaphore = semaphore;
+    handleInfo.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+
+    HANDLE outHandle = nullptr;
+    if (getSemHandle(device, &handleInfo, &outHandle) != VK_SUCCESS || !outHandle) return 0;
     return reinterpret_cast<uint64_t>(outHandle);
 }
 #endif
@@ -4558,6 +4576,20 @@ void Renderer::dispatchAmdFsr3Framegen() {
     if (fgDispatch.frameGenOutputMemoryHandle) {
         fgDispatch.externalFlags |= WOWEE_FSR3_WRAPPER_EXTERNAL_FRAMEGEN_OUTPUT_MEMORY;
         trackHandle(fgDispatch.frameGenOutputMemoryHandle);
+    }
+
+    const FrameData& frameData = vkCtx->getCurrentFrameData();
+    fgDispatch.acquireSemaphoreHandle = exportSemaphoreHandleWin32(
+        device, vkGetDeviceProcAddr, frameData.imageAvailableSemaphore);
+    if (fgDispatch.acquireSemaphoreHandle) {
+        fgDispatch.externalFlags |= WOWEE_FSR3_WRAPPER_EXTERNAL_ACQUIRE_SEMAPHORE;
+        trackHandle(fgDispatch.acquireSemaphoreHandle);
+    }
+    fgDispatch.releaseSemaphoreHandle = exportSemaphoreHandleWin32(
+        device, vkGetDeviceProcAddr, frameData.renderFinishedSemaphore);
+    if (fgDispatch.releaseSemaphoreHandle) {
+        fgDispatch.externalFlags |= WOWEE_FSR3_WRAPPER_EXTERNAL_RELEASE_SEMAPHORE;
+        trackHandle(fgDispatch.releaseSemaphoreHandle);
     }
 #endif
 

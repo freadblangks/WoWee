@@ -663,10 +663,13 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_upscale(WoweeFsr3W
             WOWEE_FSR3_WRAPPER_EXTERNAL_COLOR_MEMORY |
             WOWEE_FSR3_WRAPPER_EXTERNAL_DEPTH_MEMORY |
             WOWEE_FSR3_WRAPPER_EXTERNAL_MOTION_MEMORY |
-            WOWEE_FSR3_WRAPPER_EXTERNAL_OUTPUT_MEMORY;
+            WOWEE_FSR3_WRAPPER_EXTERNAL_OUTPUT_MEMORY |
+            WOWEE_FSR3_WRAPPER_EXTERNAL_ACQUIRE_SEMAPHORE |
+            WOWEE_FSR3_WRAPPER_EXTERNAL_RELEASE_SEMAPHORE;
         if ((dispatchDesc->externalFlags & requiredMask) != requiredMask ||
             dispatchDesc->colorMemoryHandle == 0 || dispatchDesc->depthMemoryHandle == 0 ||
-            dispatchDesc->motionVectorMemoryHandle == 0 || dispatchDesc->outputMemoryHandle == 0) {
+            dispatchDesc->motionVectorMemoryHandle == 0 || dispatchDesc->outputMemoryHandle == 0 ||
+            dispatchDesc->acquireSemaphoreHandle == 0 || dispatchDesc->releaseSemaphoreHandle == 0) {
             return -1;
         }
     }
@@ -730,9 +733,12 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_framegen(WoweeFsr3
     if (ctx->backend == WrapperBackend::Dx12Bridge) {
         const uint32_t requiredMask =
             WOWEE_FSR3_WRAPPER_EXTERNAL_OUTPUT_MEMORY |
-            WOWEE_FSR3_WRAPPER_EXTERNAL_FRAMEGEN_OUTPUT_MEMORY;
+            WOWEE_FSR3_WRAPPER_EXTERNAL_FRAMEGEN_OUTPUT_MEMORY |
+            WOWEE_FSR3_WRAPPER_EXTERNAL_ACQUIRE_SEMAPHORE |
+            WOWEE_FSR3_WRAPPER_EXTERNAL_RELEASE_SEMAPHORE;
         if ((dispatchDesc->externalFlags & requiredMask) != requiredMask ||
-            dispatchDesc->outputMemoryHandle == 0 || dispatchDesc->frameGenOutputMemoryHandle == 0) {
+            dispatchDesc->outputMemoryHandle == 0 || dispatchDesc->frameGenOutputMemoryHandle == 0 ||
+            dispatchDesc->acquireSemaphoreHandle == 0 || dispatchDesc->releaseSemaphoreHandle == 0) {
             return -1;
         }
     }

@@ -78,9 +78,16 @@ enum {
     WOWEE_FSR3_WRAPPER_EXTERNAL_RELEASE_SEMAPHORE = 1u << 6
 };
 
+enum {
+    WOWEE_FSR3_WRAPPER_CAP_UPSCALE = 1u << 0,
+    WOWEE_FSR3_WRAPPER_CAP_FRAME_GENERATION = 1u << 1,
+    WOWEE_FSR3_WRAPPER_CAP_EXTERNAL_INTEROP = 1u << 2
+};
+
 uint32_t wowee_fsr3_wrapper_get_abi_version(void);
 const char* wowee_fsr3_wrapper_get_name(void);
 const char* wowee_fsr3_wrapper_get_backend(WoweeFsr3WrapperContext context);
+uint32_t wowee_fsr3_wrapper_get_capabilities(WoweeFsr3WrapperContext context);
 int32_t wowee_fsr3_wrapper_initialize(const WoweeFsr3WrapperInitDesc* initDesc,
                                       WoweeFsr3WrapperContext* outContext,
                                       char* outErrorText,

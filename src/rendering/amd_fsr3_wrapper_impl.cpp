@@ -596,6 +596,26 @@ WOWEE_FSR3_WRAPPER_EXPORT const char* wowee_fsr3_wrapper_get_backend(WoweeFsr3Wr
 #endif
 }
 
+WOWEE_FSR3_WRAPPER_EXPORT uint32_t wowee_fsr3_wrapper_get_capabilities(WoweeFsr3WrapperContext context) {
+#if WOWEE_HAS_AMD_FSR3_FRAMEGEN
+    WrapperContext* ctx = reinterpret_cast<WrapperContext*>(context);
+    if (!ctx) return 0;
+    uint32_t caps = WOWEE_FSR3_WRAPPER_CAP_UPSCALE;
+    if (ctx->frameGenerationReady && ctx->fns.fsr3DispatchFrameGeneration) {
+        caps |= WOWEE_FSR3_WRAPPER_CAP_FRAME_GENERATION;
+    }
+#if defined(_WIN32)
+    if (ctx->backend == WrapperBackend::Dx12Bridge) {
+        caps |= WOWEE_FSR3_WRAPPER_CAP_EXTERNAL_INTEROP;
+    }
+#endif
+    return caps;
+#else
+    (void)context;
+    return 0;
+#endif
+}
+
 WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_initialize(const WoweeFsr3WrapperInitDesc* initDesc,
                                                                 WoweeFsr3WrapperContext* outContext,
                                                                 char* outErrorText,

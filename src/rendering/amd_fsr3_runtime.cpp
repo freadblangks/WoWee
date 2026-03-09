@@ -29,6 +29,7 @@ struct AmdFsr3Runtime::RuntimeFns {
     uint32_t (*wrapperGetAbiVersion)() = nullptr;
     const char* (*wrapperGetName)() = nullptr;
     const char* (*wrapperGetBackend)(WoweeFsr3WrapperContext) = nullptr;
+    uint32_t (*wrapperGetCapabilities)(WoweeFsr3WrapperContext) = nullptr;
     int32_t (*wrapperInitialize)(const WoweeFsr3WrapperInitDesc*, WoweeFsr3WrapperContext*, char*, uint32_t) = nullptr;
     int32_t (*wrapperDispatchUpscale)(WoweeFsr3WrapperContext, const WoweeFsr3WrapperDispatchDesc*) = nullptr;
     int32_t (*wrapperDispatchFramegen)(WoweeFsr3WrapperContext, const WoweeFsr3WrapperDispatchDesc*) = nullptr;
@@ -238,6 +239,7 @@ bool AmdFsr3Runtime::initialize(const AmdFsr3RuntimeInitDesc& desc) {
         fns_->wrapperGetAbiVersion = reinterpret_cast<decltype(fns_->wrapperGetAbiVersion)>(resolveSym("wowee_fsr3_wrapper_get_abi_version"));
         fns_->wrapperGetName = reinterpret_cast<decltype(fns_->wrapperGetName)>(resolveSym("wowee_fsr3_wrapper_get_name"));
         fns_->wrapperGetBackend = reinterpret_cast<decltype(fns_->wrapperGetBackend)>(resolveSym("wowee_fsr3_wrapper_get_backend"));
+        fns_->wrapperGetCapabilities = reinterpret_cast<decltype(fns_->wrapperGetCapabilities)>(resolveSym("wowee_fsr3_wrapper_get_capabilities"));
         fns_->wrapperInitialize = reinterpret_cast<decltype(fns_->wrapperInitialize)>(resolveSym("wowee_fsr3_wrapper_initialize"));
         fns_->wrapperDispatchUpscale = reinterpret_cast<decltype(fns_->wrapperDispatchUpscale)>(resolveSym("wowee_fsr3_wrapper_dispatch_upscale"));
         fns_->wrapperDispatchFramegen = reinterpret_cast<decltype(fns_->wrapperDispatchFramegen)>(resolveSym("wowee_fsr3_wrapper_dispatch_framegen"));
@@ -293,9 +295,20 @@ bool AmdFsr3Runtime::initialize(const AmdFsr3RuntimeInitDesc& desc) {
         }
 
         wrapperContext_ = wrapperCtx;
-        frameGenerationReady_ = desc.enableFrameGeneration;
+        frameGenerationReady_ = false;
         ready_ = true;
         backend_ = RuntimeBackend::Wrapper;
+        uint32_t wrapperCaps = 0;
+        if (fns_->wrapperGetCapabilities) {
+            wrapperCaps = fns_->wrapperGetCapabilities(wrapperCtx);
+        } else {
+            wrapperCaps = WOWEE_FSR3_WRAPPER_CAP_UPSCALE;
+            if (fns_->wrapperDispatchFramegen) {
+                wrapperCaps |= WOWEE_FSR3_WRAPPER_CAP_FRAME_GENERATION;
+            }
+        }
+        frameGenerationReady_ = desc.enableFrameGeneration &&
+                                ((wrapperCaps & WOWEE_FSR3_WRAPPER_CAP_FRAME_GENERATION) != 0u);
         if (fns_->wrapperGetBackend) {
             const char* backendName = fns_->wrapperGetBackend(wrapperCtx);
             if (backendName && *backendName) wrapperBackendName_ = backendName;
@@ -303,7 +316,9 @@ bool AmdFsr3Runtime::initialize(const AmdFsr3RuntimeInitDesc& desc) {
         if (fns_->wrapperGetName) {
             const char* wrapperName = fns_->wrapperGetName();
             if (wrapperName && *wrapperName) {
-                LOG_INFO("FSR3 runtime: wrapper active: ", wrapperName);
+                LOG_INFO("FSR3 runtime: wrapper active: ", wrapperName,
+                         " backend=", wrapperBackendName_.empty() ? "unknown" : wrapperBackendName_,
+                         " caps=0x", static_cast<unsigned int>(wrapperCaps));
             }
         }
         return true;

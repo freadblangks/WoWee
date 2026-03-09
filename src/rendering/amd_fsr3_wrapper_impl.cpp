@@ -2,6 +2,9 @@
 
 #if WOWEE_HAS_AMD_FSR3_FRAMEGEN
 #include <FidelityFX/host/backends/vk/ffx_vk.h>
+#if defined(_WIN32)
+#include <FidelityFX/host/backends/dx12/ffx_dx12.h>
+#endif
 #include <FidelityFX/host/ffx_fsr3.h>
 #endif
 
@@ -219,6 +222,13 @@ struct RuntimeFns {
     decltype(&ffxFsr3ConfigureFrameGeneration) fsr3ConfigureFrameGeneration = nullptr;
     decltype(&ffxFsr3DispatchFrameGeneration) fsr3DispatchFrameGeneration = nullptr;
     decltype(&ffxFsr3ContextDestroy) fsr3ContextDestroy = nullptr;
+#if defined(_WIN32)
+    decltype(&ffxGetScratchMemorySizeDX12) getScratchMemorySizeDX12 = nullptr;
+    decltype(&ffxGetDeviceDX12) getDeviceDX12 = nullptr;
+    decltype(&ffxGetInterfaceDX12) getInterfaceDX12 = nullptr;
+    decltype(&ffxGetCommandListDX12) getCommandListDX12 = nullptr;
+    decltype(&ffxGetResourceDX12) getResourceDX12 = nullptr;
+#endif
 };
 
 struct WrapperContext {
@@ -232,6 +242,12 @@ struct WrapperContext {
     std::string lastError{};
 #if defined(_WIN32)
     ID3D12Device* dx12Device = nullptr;
+    ID3D12CommandQueue* dx12Queue = nullptr;
+    ID3D12CommandAllocator* dx12CommandAllocator = nullptr;
+    ID3D12GraphicsCommandList* dx12CommandList = nullptr;
+    ID3D12Fence* dx12Fence = nullptr;
+    HANDLE dx12FenceEvent = nullptr;
+    uint64_t dx12FenceValue = 0;
 #endif
 };
 
@@ -285,9 +301,48 @@ bool bindVulkanRuntimeFns(void* libHandle, RuntimeFns& outFns) {
            outFns.fsr3ContextDispatchUpscale && outFns.fsr3ContextDestroy;
 }
 
+#if defined(_WIN32)
+bool bindDx12RuntimeFns(void* libHandle, RuntimeFns& outFns) {
+    outFns = RuntimeFns{};
+    outFns.getScratchMemorySizeDX12 = reinterpret_cast<decltype(outFns.getScratchMemorySizeDX12)>(resolveSymbol(libHandle, "ffxGetScratchMemorySizeDX12"));
+    outFns.getDeviceDX12 = reinterpret_cast<decltype(outFns.getDeviceDX12)>(resolveSymbol(libHandle, "ffxGetDeviceDX12"));
+    outFns.getInterfaceDX12 = reinterpret_cast<decltype(outFns.getInterfaceDX12)>(resolveSymbol(libHandle, "ffxGetInterfaceDX12"));
+    outFns.getCommandListDX12 = reinterpret_cast<decltype(outFns.getCommandListDX12)>(resolveSymbol(libHandle, "ffxGetCommandListDX12"));
+    outFns.getResourceDX12 = reinterpret_cast<decltype(outFns.getResourceDX12)>(resolveSymbol(libHandle, "ffxGetResourceDX12"));
+    outFns.fsr3ContextCreate = reinterpret_cast<decltype(outFns.fsr3ContextCreate)>(resolveSymbol(libHandle, "ffxFsr3ContextCreate"));
+    outFns.fsr3ContextDispatchUpscale = reinterpret_cast<decltype(outFns.fsr3ContextDispatchUpscale)>(resolveSymbol(libHandle, "ffxFsr3ContextDispatchUpscale"));
+    outFns.fsr3ConfigureFrameGeneration = reinterpret_cast<decltype(outFns.fsr3ConfigureFrameGeneration)>(resolveSymbol(libHandle, "ffxFsr3ConfigureFrameGeneration"));
+    outFns.fsr3DispatchFrameGeneration = reinterpret_cast<decltype(outFns.fsr3DispatchFrameGeneration)>(resolveSymbol(libHandle, "ffxFsr3DispatchFrameGeneration"));
+    outFns.fsr3ContextDestroy = reinterpret_cast<decltype(outFns.fsr3ContextDestroy)>(resolveSymbol(libHandle, "ffxFsr3ContextDestroy"));
+    return outFns.getScratchMemorySizeDX12 && outFns.getDeviceDX12 && outFns.getInterfaceDX12 &&
+           outFns.getCommandListDX12 && outFns.getResourceDX12 && outFns.fsr3ContextCreate &&
+           outFns.fsr3ContextDispatchUpscale && outFns.fsr3ContextDestroy;
+}
+#endif
+
 void destroyContext(WrapperContext* ctx) {
     if (!ctx) return;
 #if defined(_WIN32)
+    if (ctx->dx12FenceEvent) {
+        CloseHandle(ctx->dx12FenceEvent);
+        ctx->dx12FenceEvent = nullptr;
+    }
+    if (ctx->dx12Fence) {
+        ctx->dx12Fence->Release();
+        ctx->dx12Fence = nullptr;
+    }
+    if (ctx->dx12CommandList) {
+        ctx->dx12CommandList->Release();
+        ctx->dx12CommandList = nullptr;
+    }
+    if (ctx->dx12CommandAllocator) {
+        ctx->dx12CommandAllocator->Release();
+        ctx->dx12CommandAllocator = nullptr;
+    }
+    if (ctx->dx12Queue) {
+        ctx->dx12Queue->Release();
+        ctx->dx12Queue = nullptr;
+    }
     if (ctx->dx12Device) {
         ctx->dx12Device->Release();
         ctx->dx12Device = nullptr;
@@ -583,6 +638,40 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_initialize(const WoweeFsr3W
             writeError(outErrorText, outErrorTextCapacity, "dx12_bridge failed to create D3D12 device");
             return -1;
         }
+
+        D3D12_COMMAND_QUEUE_DESC queueDesc{};
+        queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+        if (ctx->dx12Device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&ctx->dx12Queue)) != S_OK || !ctx->dx12Queue) {
+            destroyContext(ctx);
+            writeError(outErrorText, outErrorTextCapacity, "dx12_bridge failed to create command queue");
+            return -1;
+        }
+        if (ctx->dx12Device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&ctx->dx12CommandAllocator)) != S_OK ||
+            !ctx->dx12CommandAllocator) {
+            destroyContext(ctx);
+            writeError(outErrorText, outErrorTextCapacity, "dx12_bridge failed to create command allocator");
+            return -1;
+        }
+        if (ctx->dx12Device->CreateCommandList(
+                0, D3D12_COMMAND_LIST_TYPE_DIRECT, ctx->dx12CommandAllocator, nullptr,
+                IID_PPV_ARGS(&ctx->dx12CommandList)) != S_OK || !ctx->dx12CommandList) {
+            destroyContext(ctx);
+            writeError(outErrorText, outErrorTextCapacity, "dx12_bridge failed to create command list");
+            return -1;
+        }
+        ctx->dx12CommandList->Close();
+        if (ctx->dx12Device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&ctx->dx12Fence)) != S_OK || !ctx->dx12Fence) {
+            destroyContext(ctx);
+            writeError(outErrorText, outErrorTextCapacity, "dx12_bridge failed to create fence");
+            return -1;
+        }
+        ctx->dx12FenceEvent = CreateEventA(nullptr, FALSE, FALSE, nullptr);
+        if (!ctx->dx12FenceEvent) {
+            destroyContext(ctx);
+            writeError(outErrorText, outErrorTextCapacity, "dx12_bridge failed to create fence event");
+            return -1;
+        }
+        ctx->dx12FenceValue = 1;
     }
 #endif
     for (const std::string& path : candidates) {
@@ -590,7 +679,14 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_initialize(const WoweeFsr3W
         if (!candidateHandle) continue;
 
         RuntimeFns candidateFns{};
-        if (!bindVulkanRuntimeFns(candidateHandle, candidateFns)) {
+#if defined(_WIN32)
+        const bool bound = (backend == WrapperBackend::Dx12Bridge)
+            ? bindDx12RuntimeFns(candidateHandle, candidateFns)
+            : bindVulkanRuntimeFns(candidateHandle, candidateFns);
+#else
+        const bool bound = bindVulkanRuntimeFns(candidateHandle, candidateFns);
+#endif
+        if (!bound) {
             closeLibrary(candidateHandle);
             continue;
         }
@@ -617,7 +713,15 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_initialize(const WoweeFsr3W
         return -1;
     }
 
-    ctx->scratchBufferSize = ctx->fns.getScratchMemorySizeVK(initDesc->physicalDevice, FFX_FSR3_CONTEXT_COUNT);
+    if (backend == WrapperBackend::Dx12Bridge) {
+#if defined(_WIN32)
+        ctx->scratchBufferSize = ctx->fns.getScratchMemorySizeDX12(FFX_FSR3_CONTEXT_COUNT);
+#else
+        ctx->scratchBufferSize = 0;
+#endif
+    } else {
+        ctx->scratchBufferSize = ctx->fns.getScratchMemorySizeVK(initDesc->physicalDevice, FFX_FSR3_CONTEXT_COUNT);
+    }
     if (ctx->scratchBufferSize == 0) {
         destroyContext(ctx);
         writeError(outErrorText, outErrorTextCapacity, "scratch buffer size query returned 0");
@@ -630,15 +734,23 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_initialize(const WoweeFsr3W
         return -1;
     }
 
-    VkDeviceContext vkDevCtx{};
-    vkDevCtx.vkDevice = initDesc->device;
-    vkDevCtx.vkPhysicalDevice = initDesc->physicalDevice;
-    vkDevCtx.vkDeviceProcAddr = initDesc->getDeviceProcAddr;
-
-    FfxDevice ffxDevice = ctx->fns.getDeviceVK(&vkDevCtx);
     FfxInterface backendShared{};
-    FfxErrorCode ifaceErr = ctx->fns.getInterfaceVK(
-        &backendShared, ffxDevice, ctx->scratchBuffer, ctx->scratchBufferSize, FFX_FSR3_CONTEXT_COUNT);
+    FfxErrorCode ifaceErr = FFX_ERROR_CODE_INVALID_ARGUMENT;
+    if (backend == WrapperBackend::Dx12Bridge) {
+#if defined(_WIN32)
+        FfxDevice ffxDevice = ctx->fns.getDeviceDX12(ctx->dx12Device);
+        ifaceErr = ctx->fns.getInterfaceDX12(
+            &backendShared, ffxDevice, ctx->scratchBuffer, ctx->scratchBufferSize, FFX_FSR3_CONTEXT_COUNT);
+#endif
+    } else {
+        VkDeviceContext vkDevCtx{};
+        vkDevCtx.vkDevice = initDesc->device;
+        vkDevCtx.vkPhysicalDevice = initDesc->physicalDevice;
+        vkDevCtx.vkDeviceProcAddr = initDesc->getDeviceProcAddr;
+        FfxDevice ffxDevice = ctx->fns.getDeviceVK(&vkDevCtx);
+        ifaceErr = ctx->fns.getInterfaceVK(
+            &backendShared, ffxDevice, ctx->scratchBuffer, ctx->scratchBufferSize, FFX_FSR3_CONTEXT_COUNT);
+    }
     if (ifaceErr != FFX_OK) {
         destroyContext(ctx);
         writeError(outErrorText, outErrorTextCapacity, "ffxGetInterfaceVK failed");
@@ -761,14 +873,45 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_upscale(WoweeFsr3W
     static wchar_t kMotionName[] = L"FSR3_MotionVectors";
     static wchar_t kOutputName[] = L"FSR3_Output";
     FfxFsr3DispatchUpscaleDescription dispatch{};
-    dispatch.commandList = ctx->fns.getCommandListVK(dispatchDesc->commandBuffer);
-    dispatch.color = ctx->fns.getResourceVK(reinterpret_cast<void*>(dispatchDesc->colorImage), colorDesc, kColorName, FFX_RESOURCE_STATE_COMPUTE_READ);
-    dispatch.depth = ctx->fns.getResourceVK(reinterpret_cast<void*>(dispatchDesc->depthImage), depthDesc, kDepthName, FFX_RESOURCE_STATE_COMPUTE_READ);
-    dispatch.motionVectors = ctx->fns.getResourceVK(reinterpret_cast<void*>(dispatchDesc->motionVectorImage), mvDesc, kMotionName, FFX_RESOURCE_STATE_COMPUTE_READ);
+    if (ctx->backend == WrapperBackend::Dx12Bridge) {
+#if defined(_WIN32)
+        ID3D12Resource* colorRes = nullptr;
+        ID3D12Resource* depthRes = nullptr;
+        ID3D12Resource* motionRes = nullptr;
+        ID3D12Resource* outputRes = nullptr;
+        if (ctx->dx12Device->OpenSharedHandle(reinterpret_cast<HANDLE>(dispatchDesc->colorMemoryHandle), IID_PPV_ARGS(&colorRes)) != S_OK ||
+            ctx->dx12Device->OpenSharedHandle(reinterpret_cast<HANDLE>(dispatchDesc->depthMemoryHandle), IID_PPV_ARGS(&depthRes)) != S_OK ||
+            ctx->dx12Device->OpenSharedHandle(reinterpret_cast<HANDLE>(dispatchDesc->motionVectorMemoryHandle), IID_PPV_ARGS(&motionRes)) != S_OK ||
+            ctx->dx12Device->OpenSharedHandle(reinterpret_cast<HANDLE>(dispatchDesc->outputMemoryHandle), IID_PPV_ARGS(&outputRes)) != S_OK ||
+            !colorRes || !depthRes || !motionRes || !outputRes) {
+            if (colorRes) colorRes->Release();
+            if (depthRes) depthRes->Release();
+            if (motionRes) motionRes->Release();
+            if (outputRes) outputRes->Release();
+            setContextError(ctx, "dx12_bridge failed to import one or more upscale resources");
+            return -1;
+        }
+        ctx->dx12CommandAllocator->Reset();
+        ctx->dx12CommandList->Reset(ctx->dx12CommandAllocator, nullptr);
+        dispatch.commandList = ctx->fns.getCommandListDX12(ctx->dx12CommandList);
+        dispatch.color = ctx->fns.getResourceDX12(colorRes, colorDesc, kColorName, FFX_RESOURCE_STATE_COMPUTE_READ);
+        dispatch.depth = ctx->fns.getResourceDX12(depthRes, depthDesc, kDepthName, FFX_RESOURCE_STATE_COMPUTE_READ);
+        dispatch.motionVectors = ctx->fns.getResourceDX12(motionRes, mvDesc, kMotionName, FFX_RESOURCE_STATE_COMPUTE_READ);
+        dispatch.upscaleOutput = ctx->fns.getResourceDX12(outputRes, outDesc, kOutputName, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
+#else
+        setContextError(ctx, "dx12_bridge is unavailable on this platform");
+        return -1;
+#endif
+    } else {
+        dispatch.commandList = ctx->fns.getCommandListVK(dispatchDesc->commandBuffer);
+        dispatch.color = ctx->fns.getResourceVK(reinterpret_cast<void*>(dispatchDesc->colorImage), colorDesc, kColorName, FFX_RESOURCE_STATE_COMPUTE_READ);
+        dispatch.depth = ctx->fns.getResourceVK(reinterpret_cast<void*>(dispatchDesc->depthImage), depthDesc, kDepthName, FFX_RESOURCE_STATE_COMPUTE_READ);
+        dispatch.motionVectors = ctx->fns.getResourceVK(reinterpret_cast<void*>(dispatchDesc->motionVectorImage), mvDesc, kMotionName, FFX_RESOURCE_STATE_COMPUTE_READ);
+        dispatch.upscaleOutput = ctx->fns.getResourceVK(reinterpret_cast<void*>(dispatchDesc->outputImage), outDesc, kOutputName, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
+    }
     dispatch.exposure = FfxResource{};
     dispatch.reactive = FfxResource{};
     dispatch.transparencyAndComposition = FfxResource{};
-    dispatch.upscaleOutput = ctx->fns.getResourceVK(reinterpret_cast<void*>(dispatchDesc->outputImage), outDesc, kOutputName, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
     dispatch.jitterOffset.x = dispatchDesc->jitterX;
     dispatch.jitterOffset.y = dispatchDesc->jitterY;
     dispatch.motionVectorScale.x = dispatchDesc->motionScaleX;
@@ -786,6 +929,20 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_upscale(WoweeFsr3W
     dispatch.viewSpaceToMetersFactor = 1.0f;
 
     const bool ok = (ctx->fns.fsr3ContextDispatchUpscale(reinterpret_cast<FfxFsr3Context*>(ctx->fsr3ContextStorage), &dispatch) == FFX_OK);
+#if defined(_WIN32)
+    if (ctx->backend == WrapperBackend::Dx12Bridge) {
+        ctx->dx12CommandList->Close();
+        ID3D12CommandList* lists[] = {ctx->dx12CommandList};
+        ctx->dx12Queue->ExecuteCommandLists(1, lists);
+        const uint64_t waitValue = ctx->dx12FenceValue++;
+        if (ctx->dx12Queue->Signal(ctx->dx12Fence, waitValue) == S_OK) {
+            if (ctx->dx12Fence->GetCompletedValue() < waitValue) {
+                ctx->dx12Fence->SetEventOnCompletion(waitValue, ctx->dx12FenceEvent);
+                WaitForSingleObject(ctx->dx12FenceEvent, INFINITE);
+            }
+        }
+    }
+#endif
     if (!ok) {
         setContextError(ctx, "ffxFsr3ContextDispatchUpscale failed");
         return -1;
@@ -849,9 +1006,32 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_framegen(WoweeFsr3
     static wchar_t kPresentName[] = L"FSR3_PresentColor";
     static wchar_t kInterpolatedName[] = L"FSR3_InterpolatedOutput";
     FfxFrameGenerationDispatchDescription fgDispatch{};
-    fgDispatch.commandList = ctx->fns.getCommandListVK(dispatchDesc->commandBuffer);
-    fgDispatch.presentColor = ctx->fns.getResourceVK(reinterpret_cast<void*>(dispatchDesc->outputImage), presentDesc, kPresentName, FFX_RESOURCE_STATE_COMPUTE_READ);
-    fgDispatch.outputs[0] = ctx->fns.getResourceVK(reinterpret_cast<void*>(dispatchDesc->frameGenOutputImage), fgOutDesc, kInterpolatedName, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
+    if (ctx->backend == WrapperBackend::Dx12Bridge) {
+#if defined(_WIN32)
+        ID3D12Resource* presentRes = nullptr;
+        ID3D12Resource* framegenRes = nullptr;
+        if (ctx->dx12Device->OpenSharedHandle(reinterpret_cast<HANDLE>(dispatchDesc->outputMemoryHandle), IID_PPV_ARGS(&presentRes)) != S_OK ||
+            ctx->dx12Device->OpenSharedHandle(reinterpret_cast<HANDLE>(dispatchDesc->frameGenOutputMemoryHandle), IID_PPV_ARGS(&framegenRes)) != S_OK ||
+            !presentRes || !framegenRes) {
+            if (presentRes) presentRes->Release();
+            if (framegenRes) framegenRes->Release();
+            setContextError(ctx, "dx12_bridge failed to import frame generation resources");
+            return -1;
+        }
+        ctx->dx12CommandAllocator->Reset();
+        ctx->dx12CommandList->Reset(ctx->dx12CommandAllocator, nullptr);
+        fgDispatch.commandList = ctx->fns.getCommandListDX12(ctx->dx12CommandList);
+        fgDispatch.presentColor = ctx->fns.getResourceDX12(presentRes, presentDesc, kPresentName, FFX_RESOURCE_STATE_COMPUTE_READ);
+        fgDispatch.outputs[0] = ctx->fns.getResourceDX12(framegenRes, fgOutDesc, kInterpolatedName, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
+#else
+        setContextError(ctx, "dx12_bridge is unavailable on this platform");
+        return -1;
+#endif
+    } else {
+        fgDispatch.commandList = ctx->fns.getCommandListVK(dispatchDesc->commandBuffer);
+        fgDispatch.presentColor = ctx->fns.getResourceVK(reinterpret_cast<void*>(dispatchDesc->outputImage), presentDesc, kPresentName, FFX_RESOURCE_STATE_COMPUTE_READ);
+        fgDispatch.outputs[0] = ctx->fns.getResourceVK(reinterpret_cast<void*>(dispatchDesc->frameGenOutputImage), fgOutDesc, kInterpolatedName, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
+    }
     fgDispatch.numInterpolatedFrames = 1;
     fgDispatch.reset = (dispatchDesc->reset != 0u);
     fgDispatch.backBufferTransferFunction = FFX_BACKBUFFER_TRANSFER_FUNCTION_SRGB;
@@ -859,6 +1039,20 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_framegen(WoweeFsr3
     fgDispatch.minMaxLuminance[1] = 1.0f;
 
     const bool ok = (ctx->fns.fsr3DispatchFrameGeneration(&fgDispatch) == FFX_OK);
+#if defined(_WIN32)
+    if (ctx->backend == WrapperBackend::Dx12Bridge) {
+        ctx->dx12CommandList->Close();
+        ID3D12CommandList* lists[] = {ctx->dx12CommandList};
+        ctx->dx12Queue->ExecuteCommandLists(1, lists);
+        const uint64_t waitValue = ctx->dx12FenceValue++;
+        if (ctx->dx12Queue->Signal(ctx->dx12Fence, waitValue) == S_OK) {
+            if (ctx->dx12Fence->GetCompletedValue() < waitValue) {
+                ctx->dx12Fence->SetEventOnCompletion(waitValue, ctx->dx12FenceEvent);
+                WaitForSingleObject(ctx->dx12FenceEvent, INFINITE);
+            }
+        }
+    }
+#endif
     if (!ok) {
         setContextError(ctx, "ffxFsr3DispatchFrameGeneration failed");
         return -1;

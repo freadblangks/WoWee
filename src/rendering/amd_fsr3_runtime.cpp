@@ -321,6 +321,8 @@ bool AmdFsr3Runtime::initialize(const AmdFsr3RuntimeInitDesc& desc) {
                          " caps=0x", static_cast<unsigned int>(wrapperCaps));
             }
         }
+        LOG_INFO("FSR3 runtime: loaded wrapper library ", loadedLibraryPath_,
+                 " framegenReady=", frameGenerationReady_ ? "yes" : "no");
         return true;
     }
 
@@ -438,6 +440,8 @@ bool AmdFsr3Runtime::initialize(const AmdFsr3RuntimeInitDesc& desc) {
 
     ready_ = true;
     backend_ = RuntimeBackend::Official;
+    LOG_INFO("FSR3 runtime: loaded official library ", loadedLibraryPath_,
+             " framegenReady=", frameGenerationReady_ ? "yes" : "no");
     return true;
 #endif
 }

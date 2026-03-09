@@ -4173,6 +4173,255 @@ void GameHandler::handlePacket(network::Packet& packet) {
             packet.setReadPos(packet.getSize());
             break;
 
+        // ---- Logout cancel ACK ----
+        case Opcode::SMSG_LOGOUT_CANCEL_ACK:
+            // loggingOut_ already cleared by cancelLogout(); this is server's confirmation
+            packet.setReadPos(packet.getSize());
+            break;
+
+        // ---- Guild decline ----
+        case Opcode::SMSG_GUILD_DECLINE: {
+            if (packet.getReadPos() < packet.getSize()) {
+                std::string name = packet.readString();
+                addSystemChatMessage(name + " declined your guild invitation.");
+            }
+            break;
+        }
+
+        // ---- Talents involuntarily reset ----
+        case Opcode::SMSG_TALENTS_INVOLUNTARILY_RESET:
+            addSystemChatMessage("Your talents have been reset by the server.");
+            packet.setReadPos(packet.getSize());
+            break;
+
+        // ---- Account data sync ----
+        case Opcode::SMSG_UPDATE_ACCOUNT_DATA:
+        case Opcode::SMSG_UPDATE_ACCOUNT_DATA_COMPLETE:
+            packet.setReadPos(packet.getSize());
+            break;
+
+        // ---- Rest state ----
+        case Opcode::SMSG_SET_REST_START: {
+            if (packet.getSize() - packet.getReadPos() >= 4) {
+                uint32_t restTrigger = packet.readUInt32();
+                addSystemChatMessage(restTrigger > 0 ? "You are now resting."
+                                                     : "You are no longer resting.");
+            }
+            break;
+        }
+
+        // ---- Aura duration update ----
+        case Opcode::SMSG_UPDATE_AURA_DURATION: {
+            if (packet.getSize() - packet.getReadPos() >= 5) {
+                uint8_t slot       = packet.readUInt8();
+                uint32_t durationMs = packet.readUInt32();
+                handleUpdateAuraDuration(slot, durationMs);
+            }
+            break;
+        }
+
+        // ---- Item name query response ----
+        case Opcode::SMSG_ITEM_NAME_QUERY_RESPONSE: {
+            if (packet.getSize() - packet.getReadPos() >= 4) {
+                uint32_t itemId = packet.readUInt32();
+                std::string name = packet.readString();
+                if (!itemInfoCache_.count(itemId) && !name.empty()) {
+                    ItemQueryResponseData stub;
+                    stub.entry = itemId;
+                    stub.name  = std::move(name);
+                    stub.valid = true;
+                    itemInfoCache_[itemId] = std::move(stub);
+                }
+            }
+            packet.setReadPos(packet.getSize());
+            break;
+        }
+
+        // ---- Mount special animation ----
+        case Opcode::SMSG_MOUNTSPECIAL_ANIM:
+            (void)UpdateObjectParser::readPackedGuid(packet);
+            break;
+
+        // ---- Character customisation / faction change results ----
+        case Opcode::SMSG_CHAR_CUSTOMIZE: {
+            if (packet.getSize() - packet.getReadPos() >= 1) {
+                uint8_t result = packet.readUInt8();
+                addSystemChatMessage(result == 0 ? "Character customization complete."
+                                                 : "Character customization failed.");
+            }
+            packet.setReadPos(packet.getSize());
+            break;
+        }
+        case Opcode::SMSG_CHAR_FACTION_CHANGE: {
+            if (packet.getSize() - packet.getReadPos() >= 1) {
+                uint8_t result = packet.readUInt8();
+                addSystemChatMessage(result == 0 ? "Faction change complete."
+                                                 : "Faction change failed.");
+            }
+            packet.setReadPos(packet.getSize());
+            break;
+        }
+
+        // ---- Invalidate cached player data ----
+        case Opcode::SMSG_INVALIDATE_PLAYER: {
+            if (packet.getSize() - packet.getReadPos() >= 8) {
+                uint64_t guid = packet.readUInt64();
+                playerNameCache.erase(guid);
+            }
+            break;
+        }
+
+        // ---- Movie trigger ----
+        case Opcode::SMSG_TRIGGER_MOVIE:
+            packet.setReadPos(packet.getSize());
+            break;
+
+        // ---- Equipment sets ----
+        case Opcode::SMSG_EQUIPMENT_SET_LIST:
+            handleEquipmentSetList(packet);
+            break;
+        case Opcode::SMSG_EQUIPMENT_SET_USE_RESULT: {
+            if (packet.getSize() - packet.getReadPos() >= 1) {
+                uint8_t result = packet.readUInt8();
+                if (result != 0) addSystemChatMessage("Failed to equip item set.");
+            }
+            break;
+        }
+
+        // ---- LFG informational (not yet surfaced in UI) ----
+        case Opcode::SMSG_LFG_UPDATE:
+        case Opcode::SMSG_LFG_UPDATE_LFG:
+        case Opcode::SMSG_LFG_UPDATE_LFM:
+        case Opcode::SMSG_LFG_UPDATE_QUEUED:
+        case Opcode::SMSG_LFG_PENDING_INVITE:
+        case Opcode::SMSG_LFG_PENDING_MATCH:
+        case Opcode::SMSG_LFG_PENDING_MATCH_DONE:
+            packet.setReadPos(packet.getSize());
+            break;
+
+        // ---- GM Ticket responses ----
+        case Opcode::SMSG_GMTICKET_CREATE: {
+            if (packet.getSize() - packet.getReadPos() >= 1) {
+                uint8_t res = packet.readUInt8();
+                addSystemChatMessage(res == 1 ? "GM ticket submitted."
+                                              : "Failed to submit GM ticket.");
+            }
+            break;
+        }
+        case Opcode::SMSG_GMTICKET_UPDATETEXT: {
+            if (packet.getSize() - packet.getReadPos() >= 1) {
+                uint8_t res = packet.readUInt8();
+                addSystemChatMessage(res == 1 ? "GM ticket updated."
+                                              : "Failed to update GM ticket.");
+            }
+            break;
+        }
+        case Opcode::SMSG_GMTICKET_DELETETICKET: {
+            if (packet.getSize() - packet.getReadPos() >= 1) {
+                uint8_t res = packet.readUInt8();
+                addSystemChatMessage(res == 9 ? "GM ticket deleted."
+                                              : "No ticket to delete.");
+            }
+            break;
+        }
+        case Opcode::SMSG_GMTICKET_GETTICKET:
+        case Opcode::SMSG_GMTICKET_SYSTEMSTATUS:
+            packet.setReadPos(packet.getSize());
+            break;
+
+        // ---- DK rune tracking (not yet implemented) ----
+        case Opcode::SMSG_ADD_RUNE_POWER:
+        case Opcode::SMSG_RESYNC_RUNES:
+            packet.setReadPos(packet.getSize());
+            break;
+
+        // ---- Spell combat logs (consume) ----
+        case Opcode::SMSG_AURACASTLOG:
+        case Opcode::SMSG_SPELLBREAKLOG:
+        case Opcode::SMSG_SPELLDAMAGESHIELD:
+        case Opcode::SMSG_SPELLDISPELLOG:
+        case Opcode::SMSG_SPELLINSTAKILLLOG:
+        case Opcode::SMSG_SPELLLOGEXECUTE:
+        case Opcode::SMSG_SPELLORDAMAGE_IMMUNE:
+        case Opcode::SMSG_SPELLSTEALLOG:
+        case Opcode::SMSG_SPELL_CHANCE_PROC_LOG:
+        case Opcode::SMSG_SPELL_CHANCE_RESIST_PUSHBACK:
+        case Opcode::SMSG_SPELL_UPDATE_CHAIN_TARGETS:
+            packet.setReadPos(packet.getSize());
+            break;
+
+        // ---- Misc consume ----
+        case Opcode::SMSG_CLEAR_EXTRA_AURA_INFO:
+        case Opcode::SMSG_COMPLAIN_RESULT:
+        case Opcode::SMSG_ITEM_REFUND_INFO_RESPONSE:
+        case Opcode::SMSG_ITEM_ENCHANT_TIME_UPDATE:
+        case Opcode::SMSG_LOOT_LIST:
+        case Opcode::SMSG_RESUME_CAST_BAR:
+        case Opcode::SMSG_THREAT_UPDATE:
+        case Opcode::SMSG_UPDATE_INSTANCE_OWNERSHIP:
+        case Opcode::SMSG_UPDATE_LAST_INSTANCE:
+        case Opcode::SMSG_UPDATE_INSTANCE_ENCOUNTER_UNIT:
+        case Opcode::SMSG_SEND_ALL_COMBAT_LOG:
+        case Opcode::SMSG_SET_PROJECTILE_POSITION:
+        case Opcode::SMSG_AUCTION_LIST_PENDING_SALES:
+            packet.setReadPos(packet.getSize());
+            break;
+
+        // ---- Server-first achievement broadcast ----
+        case Opcode::SMSG_SERVER_FIRST_ACHIEVEMENT: {
+            // charName (cstring) + guid (uint64) + achievementId (uint32) + ...
+            if (packet.getReadPos() < packet.getSize()) {
+                std::string charName = packet.readString();
+                if (packet.getSize() - packet.getReadPos() >= 12) {
+                    /*uint64_t guid =*/ packet.readUInt64();
+                    uint32_t achievementId = packet.readUInt32();
+                    char buf[192];
+                    std::snprintf(buf, sizeof(buf),
+                        "%s is the first on the realm to earn achievement #%u!",
+                        charName.c_str(), achievementId);
+                    addSystemChatMessage(buf);
+                }
+            }
+            packet.setReadPos(packet.getSize());
+            break;
+        }
+
+        // ---- Forced faction reactions ----
+        case Opcode::SMSG_SET_FORCED_REACTIONS:
+            handleSetForcedReactions(packet);
+            break;
+
+        // ---- Spline speed changes for other units ----
+        case Opcode::SMSG_SPLINE_SET_FLIGHT_SPEED:
+        case Opcode::SMSG_SPLINE_SET_FLIGHT_BACK_SPEED:
+        case Opcode::SMSG_SPLINE_SET_SWIM_BACK_SPEED:
+        case Opcode::SMSG_SPLINE_SET_WALK_SPEED:
+        case Opcode::SMSG_SPLINE_SET_TURN_RATE:
+        case Opcode::SMSG_SPLINE_SET_PITCH_RATE:
+            packet.setReadPos(packet.getSize());
+            break;
+
+        // ---- Spline move flag changes for other units ----
+        case Opcode::SMSG_SPLINE_MOVE_UNROOT:
+        case Opcode::SMSG_SPLINE_MOVE_UNSET_FLYING:
+        case Opcode::SMSG_SPLINE_MOVE_UNSET_HOVER:
+        case Opcode::SMSG_SPLINE_MOVE_WATER_WALK:
+            packet.setReadPos(packet.getSize());
+            break;
+
+        // ---- Player movement flag changes (server-pushed) ----
+        case Opcode::SMSG_MOVE_GRAVITY_DISABLE:
+        case Opcode::SMSG_MOVE_GRAVITY_ENABLE:
+        case Opcode::SMSG_MOVE_LAND_WALK:
+        case Opcode::SMSG_MOVE_NORMAL_FALL:
+        case Opcode::SMSG_MOVE_SET_CAN_TRANSITION_BETWEEN_SWIM_AND_FLY:
+        case Opcode::SMSG_MOVE_UNSET_CAN_TRANSITION_BETWEEN_SWIM_AND_FLY:
+        case Opcode::SMSG_MOVE_SET_COLLISION_HGT:
+        case Opcode::SMSG_MOVE_SET_FLIGHT:
+        case Opcode::SMSG_MOVE_UNSET_FLIGHT:
+            packet.setReadPos(packet.getSize());
+            break;
+
         default:
             // In pre-world states we need full visibility (char create/login handshakes).
             // In-world we keep de-duplication to avoid heavy log I/O in busy areas.
@@ -16442,6 +16691,72 @@ const std::string& GameHandler::getFactionNamePublic(uint32_t factionId) const {
     if (it != factionNameCache_.end()) return it->second;
     static const std::string empty;
     return empty;
+}
+
+// ---------------------------------------------------------------------------
+// Aura duration update
+// ---------------------------------------------------------------------------
+
+void GameHandler::handleUpdateAuraDuration(uint8_t slot, uint32_t durationMs) {
+    if (slot >= playerAuras.size()) return;
+    if (playerAuras[slot].isEmpty()) return;
+    playerAuras[slot].durationMs = static_cast<int32_t>(durationMs);
+    playerAuras[slot].receivedAtMs = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+// ---------------------------------------------------------------------------
+// Equipment set list
+// ---------------------------------------------------------------------------
+
+void GameHandler::handleEquipmentSetList(network::Packet& packet) {
+    if (packet.getSize() - packet.getReadPos() < 4) return;
+    uint32_t count = packet.readUInt32();
+    if (count > 10) {
+        LOG_WARNING("SMSG_EQUIPMENT_SET_LIST: unexpected count ", count, ", ignoring");
+        packet.setReadPos(packet.getSize());
+        return;
+    }
+    equipmentSets_.clear();
+    equipmentSets_.reserve(count);
+    for (uint32_t i = 0; i < count; ++i) {
+        if (packet.getSize() - packet.getReadPos() < 16) break;
+        EquipmentSet es;
+        es.setGuid        = packet.readUInt64();
+        es.setId          = packet.readUInt32();
+        es.name           = packet.readString();
+        es.iconName       = packet.readString();
+        es.ignoreSlotMask = packet.readUInt32();
+        for (int slot = 0; slot < 19; ++slot) {
+            if (packet.getSize() - packet.getReadPos() < 8) break;
+            es.itemGuids[slot] = packet.readUInt64();
+        }
+        equipmentSets_.push_back(std::move(es));
+    }
+    LOG_INFO("SMSG_EQUIPMENT_SET_LIST: ", equipmentSets_.size(), " equipment sets received");
+}
+
+// ---------------------------------------------------------------------------
+// Forced faction reactions
+// ---------------------------------------------------------------------------
+
+void GameHandler::handleSetForcedReactions(network::Packet& packet) {
+    if (packet.getSize() - packet.getReadPos() < 4) return;
+    uint32_t count = packet.readUInt32();
+    if (count > 64) {
+        LOG_WARNING("SMSG_SET_FORCED_REACTIONS: suspicious count ", count, ", ignoring");
+        packet.setReadPos(packet.getSize());
+        return;
+    }
+    forcedReactions_.clear();
+    for (uint32_t i = 0; i < count; ++i) {
+        if (packet.getSize() - packet.getReadPos() < 8) break;
+        uint32_t factionId = packet.readUInt32();
+        uint32_t reaction  = packet.readUInt32();
+        forcedReactions_[factionId] = static_cast<uint8_t>(reaction);
+    }
+    LOG_INFO("SMSG_SET_FORCED_REACTIONS: ", forcedReactions_.size(), " faction overrides");
 }
 
 } // namespace game

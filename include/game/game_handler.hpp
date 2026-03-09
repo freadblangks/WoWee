@@ -1258,6 +1258,11 @@ private:
     void handleSpellDamageLog(network::Packet& packet);
     void handleSpellHealLog(network::Packet& packet);
 
+    // ---- Equipment set handler ----
+    void handleEquipmentSetList(network::Packet& packet);
+    void handleUpdateAuraDuration(uint8_t slot, uint32_t durationMs);
+    void handleSetForcedReactions(network::Packet& packet);
+
     // ---- Phase 3 handlers ----
     void handleInitialSpells(network::Packet& packet);
     void handleCastFailed(network::Packet& packet);
@@ -2062,6 +2067,20 @@ private:
     uint64_t resurrectCasterGuid_ = 0;
     bool repopPending_ = false;
     uint64_t lastRepopRequestMs_ = 0;
+
+    // ---- Equipment sets (SMSG_EQUIPMENT_SET_LIST) ----
+    struct EquipmentSet {
+        uint64_t setGuid = 0;
+        uint32_t setId = 0;
+        std::string name;
+        std::string iconName;
+        uint32_t ignoreSlotMask = 0;
+        std::array<uint64_t, 19> itemGuids{};
+    };
+    std::vector<EquipmentSet> equipmentSets_;
+
+    // ---- Forced faction reactions (SMSG_SET_FORCED_REACTIONS) ----
+    std::unordered_map<uint32_t, uint8_t> forcedReactions_;  // factionId -> reaction tier
 };
 
 } // namespace game

@@ -68,6 +68,11 @@ public:
     const std::string& lastError() const { return lastError_; }
 
 private:
+    enum class ApiMode {
+        LegacyFsr3,
+        GenericApi
+    };
+
     void* libHandle_ = nullptr;
     std::string loadedLibraryPath_;
     void* scratchBuffer_ = nullptr;
@@ -80,6 +85,10 @@ private:
     struct RuntimeFns;
     RuntimeFns* fns_ = nullptr;
     void* contextStorage_ = nullptr;
+    ApiMode apiMode_ = ApiMode::LegacyFsr3;
+    void* genericUpscaleContext_ = nullptr;
+    void* genericFramegenContext_ = nullptr;
+    uint64_t genericFrameId_ = 1;
 };
 
 }  // namespace wowee::rendering

@@ -201,7 +201,7 @@ void PerformanceHUD::render(const Renderer* renderer, const Camera* camera) {
             }
         }
         if (renderer->isFSR2Enabled()) {
-            ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), "FSR 2.2: ON");
+            ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), "FSR 3 Upscale: ON");
             ImGui::Text("  JitterSign=%.2f", renderer->getFSR2JitterSign());
             const bool fgEnabled = renderer->isAmdFsr3FramegenEnabled();
             const bool fgReady = renderer->isAmdFsr3FramegenRuntimeReady();

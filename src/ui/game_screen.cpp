@@ -6308,7 +6308,7 @@ void GameScreen::renderSettingsWindow() {
                     if (fsr2Active) {
                         ImGui::BeginDisabled();
                         int disabled = 0;
-                        ImGui::Combo("Anti-Aliasing (FSR2)", &disabled, "Off (FSR2 active)\0", 1);
+                        ImGui::Combo("Anti-Aliasing (FSR3)", &disabled, "Off (FSR3 active)\0", 1);
                         ImGui::EndDisabled();
                     } else if (ImGui::Combo("Anti-Aliasing", &pendingAntiAliasing, aaLabels, 4)) {
                         static const VkSampleCountFlagBits aaSamples[] = {
@@ -6321,8 +6321,8 @@ void GameScreen::renderSettingsWindow() {
                 }
                 // FSR Upscaling
                 {
-                    // FSR mode selection: Off, FSR 1.0 (Spatial), FSR 2.2 (Temporal)
-                    const char* fsrModeLabels[] = { "Off", "FSR 1.0 (Spatial)", "FSR 2.2 (Temporal)" };
+                    // FSR mode selection: Off, FSR 1.0 (Spatial), FSR 3.x (Temporal)
+                    const char* fsrModeLabels[] = { "Off", "FSR 1.0 (Spatial)", "FSR 3.x (Temporal)" };
                     int fsrMode = pendingUpscalingMode;
                     if (ImGui::Combo("Upscaling", &fsrMode, fsrModeLabels, 3)) {
                         pendingUpscalingMode = fsrMode;
@@ -6335,7 +6335,7 @@ void GameScreen::renderSettingsWindow() {
                     }
                     if (fsrMode > 0) {
                         if (fsrMode == 2 && renderer) {
-                            ImGui::TextDisabled("FSR2 backend: %s",
+                            ImGui::TextDisabled("FSR3 backend: %s",
                                 renderer->isAmdFsr2SdkAvailable() ? "AMD FidelityFX SDK" : "Internal fallback");
                             if (renderer->isAmdFsr3FramegenSdkAvailable()) {
                                 if (ImGui::Checkbox("AMD FSR3 Frame Generation (Experimental)", &pendingAMDFramegen)) {
@@ -6387,7 +6387,7 @@ void GameScreen::renderSettingsWindow() {
                             saveSettings();
                         }
                         if (fsrMode == 2) {
-                            ImGui::SeparatorText("FSR2 Tuning");
+                            ImGui::SeparatorText("FSR3 Tuning");
                             if (ImGui::SliderFloat("Jitter Sign", &pendingFSR2JitterSign, -2.0f, 2.0f, "%.2f")) {
                                 if (renderer) {
                                     renderer->setFSR2DebugTuning(

@@ -118,6 +118,7 @@ if(WOWEE_ENABLE_AMD_FSR3_FRAMEGEN AND WOWEE_AMD_FFX_SDK_KITS_READY)
         CXX_STANDARD_REQUIRED ON
     )
     target_include_directories(wowee_fsr3_framegen_amd_vk_probe PUBLIC
+        ${WOWEE_AMD_FFX_SDK_KITS_DIR}/upscalers/include
         ${WOWEE_AMD_FFX_SDK_KITS_DIR}/upscalers/fsr3/include
         ${WOWEE_AMD_FFX_SDK_KITS_DIR}/framegeneration/fsr3/include
         ${WOWEE_AMD_FFX_SDK_KITS_DIR}/framegeneration/include
@@ -163,6 +164,8 @@ if(WOWEE_ENABLE_AMD_FSR3_FRAMEGEN AND WOWEE_AMD_FFX_SDK_KITS_READY)
                 -DFFX_BUILD_VK=ON
                 -DFFX_BUILD_FRAMEGENERATION=ON
                 -DFFX_BUILD_UPSCALER=ON
+            COMMAND bash ${CMAKE_SOURCE_DIR}/tools/generate_ffx_sdk_vk_permutations.sh
+                ${CMAKE_SOURCE_DIR}/extern/FidelityFX-SDK
             COMMAND ${CMAKE_COMMAND}
                 --build ${WOWEE_AMD_FSR3_RUNTIME_BUILD_DIR}
                 --config $<CONFIG>
@@ -641,6 +644,14 @@ if(TARGET opcodes-generate)
     add_dependencies(wowee opcodes-generate)
 endif()
 
+# FidelityFX-SDK headers can trigger compiler-specific pragma/unused-static noise
+# when included through the runtime bridge; keep suppression scoped to that TU.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set_source_files_properties(src/rendering/amd_fsr3_runtime.cpp PROPERTIES
+        COMPILE_OPTIONS "-Wno-unknown-pragmas;-Wno-unused-variable"
+    )
+endif()
+
 # Compile GLSL shaders to SPIR-V
 if(GLSLC)
     compile_shaders(wowee)
@@ -715,6 +726,10 @@ endif()
 if(TARGET wowee_fsr3_framegen_amd_vk_probe)
     target_link_libraries(wowee PRIVATE wowee_fsr3_framegen_amd_vk_probe)
 endif()
+if(TARGET wowee_fsr3_official_runtime_copy)
+    # Ensure Path A runtime is available in bin/ whenever wowee is built.
+    add_dependencies(wowee wowee_fsr3_official_runtime_copy)
+endif()
 
 # Link Unicorn if available
 if(HAVE_UNICORN)
@@ -735,6 +750,13 @@ if(MSVC)
     target_compile_options(wowee PRIVATE /W4)
 else()
     target_compile_options(wowee PRIVATE -Wall -Wextra -Wpedantic -Wno-missing-field-initializers)
+    # GCC LTO emits -Wodr for FFX enum-name mismatches across SDK generations.
+    # We intentionally keep FSR2+FSR3 integrations in separate TUs and suppress
+    # this linker-time diagnostic to avoid CI noise.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_compile_options(wowee PRIVATE -Wno-odr)
+        target_link_options(wowee PRIVATE -Wno-odr)
+    endif()
 endif()
 
 # Debug build flags

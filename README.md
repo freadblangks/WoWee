@@ -278,6 +278,7 @@ make -j$(nproc)
 - All build jobs are AMD-FSR2-only (`WOWEE_ENABLE_AMD_FSR2=ON`) and explicitly build `wowee_fsr2_amd_vk`
 - Each job clones AMD's FSR2 SDK and FidelityFX-SDK (`Kelsidavis/FidelityFX-SDK`, `main` by default)
 - Linux CI validates FidelityFX-SDK Kits framegen headers
+- FSR3 Path A runtime build auto-bootstraps missing VK permutation headers via `tools/generate_ffx_sdk_vk_permutations.sh`
 - CI builds `wowee_fsr3_framegen_amd_vk_probe` when that target is generated for the detected SDK layout
 - If FSR2 generated Vulkan permutation headers are absent upstream, WoWee bootstraps them from `third_party/fsr2_vk_permutations`
 - Container build via `container/build-in-container.sh` (Podman)

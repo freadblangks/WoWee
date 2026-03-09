@@ -3899,7 +3899,9 @@ bool Renderer::initFSR2Resources() {
                         fsr2_.amdFsr3RuntimePath = "Path C";
                         fsr2_.amdFsr3RuntimeLastError = fsr2_.amdFsr3Runtime->lastError();
                         LOG_WARNING("FSR3 framegen toggle is enabled, but runtime initialization failed. ",
-                                    "Set WOWEE_FFX_SDK_RUNTIME_LIB to the SDK runtime binary path.");
+                                    "path=", fsr2_.amdFsr3RuntimePath,
+                                    " error=", fsr2_.amdFsr3RuntimeLastError.empty() ? "(none)" : fsr2_.amdFsr3RuntimeLastError,
+                                    " runtimeLib=", fsr2_.amdFsr3Runtime->loadedLibraryPath().empty() ? "(not loaded)" : fsr2_.amdFsr3Runtime->loadedLibraryPath());
                     }
                 }
 #endif

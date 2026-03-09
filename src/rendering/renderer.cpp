@@ -4619,6 +4619,13 @@ void Renderer::dispatchAmdFsr3Framegen() {
 #else
     using ExportHandle = int;
 #endif
+    bool exportInteropHandles = false;
+    if (fsr2_.amdFsr3Runtime &&
+        fsr2_.amdFsr3Runtime->loadPathKind() == AmdFsr3Runtime::LoadPathKind::Wrapper &&
+        fsr2_.amdFsr3Runtime->wrapperBackendName() == "dx12_bridge") {
+        exportInteropHandles = true;
+    }
+
     std::vector<ExportHandle> exportedHandles;
     auto trackHandle = [&](uint64_t h) {
         if (!h) return;
@@ -4642,6 +4649,7 @@ void Renderer::dispatchAmdFsr3Framegen() {
     };
 
     fgDispatch.externalFlags = 0;
+    if (exportInteropHandles) {
 #if defined(_WIN32)
     fgDispatch.colorMemoryHandle = exportImageMemoryHandleWin32(
         device, vkGetDeviceProcAddr, alloc, fsr2_.sceneColor);
@@ -4726,6 +4734,7 @@ void Renderer::dispatchAmdFsr3Framegen() {
     fgDispatch.acquireSemaphoreValue = syncValue;
     fgDispatch.releaseSemaphoreValue = syncValue;
     fsr2_.amdFsr3InteropSyncValue = syncValue + 1;
+    }
 #endif
 
     if (!fsr2_.amdFsr3Runtime->dispatchUpscale(fgDispatch)) {

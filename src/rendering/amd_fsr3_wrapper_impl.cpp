@@ -782,6 +782,10 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_initialize(const WoweeFsr3W
         if (backend == WrapperBackend::Dx12Bridge && !initDx12BridgeState(initDesc)) {
             return false;
         }
+#elif defined(__linux__)
+        if (backend == WrapperBackend::Dx12Bridge && !runLinuxBridgePreflight(initDesc, ctx->lastError)) {
+            return false;
+        }
 #endif
         std::vector<std::string> candidates = baseCandidates;
 #if defined(_WIN32)

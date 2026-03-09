@@ -1850,7 +1850,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
         case Opcode::SMSG_BINDER_CONFIRM: {
-            // uint64 npcGuid — server asking client to confirm bind at innkeeper
+            // uint64 npcGuid — server confirming bind point has been set
+            addSystemChatMessage("This innkeeper is now your home location.");
             packet.setReadPos(packet.getSize());
             break;
         }

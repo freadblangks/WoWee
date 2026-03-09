@@ -758,6 +758,19 @@ public:
     void setAutoLoot(bool enabled) { autoLoot_ = enabled; }
     bool isAutoLoot() const { return autoLoot_; }
 
+    // Group loot roll
+    struct LootRollEntry {
+        uint64_t objectGuid    = 0;
+        uint32_t slot          = 0;
+        uint32_t itemId        = 0;
+        std::string itemName;
+        uint8_t  itemQuality   = 0;
+    };
+    bool hasPendingLootRoll() const { return pendingLootRollActive_; }
+    const LootRollEntry& getPendingLootRoll() const { return pendingLootRoll_; }
+    void sendLootRoll(uint64_t objectGuid, uint32_t slot, uint8_t rollType);
+    // rollType: 0=need, 1=greed, 2=disenchant, 96=pass
+
     // NPC Gossip
     void interactWithNpc(uint64_t guid);
     void interactWithGameObject(uint64_t guid);
@@ -1258,6 +1271,8 @@ private:
     void handleDuelRequested(network::Packet& packet);
     void handleDuelComplete(network::Packet& packet);
     void handleDuelWinner(network::Packet& packet);
+    void handleLootRoll(network::Packet& packet);
+    void handleLootRollWon(network::Packet& packet);
 
     // ---- LFG / Dungeon Finder handlers ----
     void handleLfgJoinResult(network::Packet& packet);
@@ -1637,6 +1652,10 @@ private:
     bool lootWindowOpen = false;
     bool autoLoot_ = false;
     LootResponseData currentLoot;
+
+    // Group loot roll state
+    bool          pendingLootRollActive_ = false;
+    LootRollEntry pendingLootRoll_;
     struct LocalLootState {
         LootResponseData data;
         bool moneyTaken = false;

@@ -1953,6 +1953,16 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_LOOT_REMOVED:
             handleLootRemoved(packet);
             break;
+        case Opcode::SMSG_LOOT_ROLL:
+            handleLootRoll(packet);
+            break;
+        case Opcode::SMSG_LOOT_ROLL_WON:
+            handleLootRollWon(packet);
+            break;
+        case Opcode::SMSG_LOOT_MASTER_LIST:
+            // Master looter list — no UI yet; consume to avoid unhandled warning.
+            packet.setReadPos(packet.getSize());
+            break;
         case Opcode::SMSG_GOSSIP_MESSAGE:
             handleGossipMessage(packet);
             break;
@@ -14946,6 +14956,122 @@ void GameHandler::handleAuctionCommandResult(network::Packet& packet) {
     }
     LOG_INFO("SMSG_AUCTION_COMMAND_RESULT: action=", actionName,
              " error=", result.errorCode);
+}
+
+// ---------------------------------------------------------------------------
+// Group loot roll (SMSG_LOOT_ROLL / SMSG_LOOT_ROLL_WON / CMSG_LOOT_ROLL)
+// ---------------------------------------------------------------------------
+
+void GameHandler::handleLootRoll(network::Packet& packet) {
+    // uint64 objectGuid, uint32 slot, uint64 playerGuid,
+    // uint32 itemId, uint32 randomSuffix, uint32 randomPropId,
+    // uint8 rollNumber, uint8 rollType
+    size_t rem = packet.getSize() - packet.getReadPos();
+    if (rem < 26) return;  // minimum: 8+4+8+4+4+4+1+1 = 34, be lenient
+
+    uint64_t objectGuid = packet.readUInt64();
+    uint32_t slot       = packet.readUInt32();
+    uint64_t rollerGuid = packet.readUInt64();
+    uint32_t itemId     = packet.readUInt32();
+    /*uint32_t randSuffix =*/ packet.readUInt32();
+    /*uint32_t randProp   =*/ packet.readUInt32();
+    uint8_t  rollNum    = packet.readUInt8();
+    uint8_t  rollType   = packet.readUInt8();
+
+    // rollType 128 = "waiting for this player to roll"
+    if (rollType == 128 && rollerGuid == playerGuid) {
+        // Server is asking us to roll; present the roll UI.
+        pendingLootRollActive_             = true;
+        pendingLootRoll_.objectGuid        = objectGuid;
+        pendingLootRoll_.slot              = slot;
+        pendingLootRoll_.itemId            = itemId;
+        // Look up item name from cache
+        auto* info = getItemInfo(itemId);
+        pendingLootRoll_.itemName  = info ? info->name : std::to_string(itemId);
+        pendingLootRoll_.itemQuality = info ? static_cast<uint8_t>(info->quality) : 0;
+        LOG_INFO("SMSG_LOOT_ROLL: need/greed prompt for item=", itemId,
+                 " (", pendingLootRoll_.itemName, ") slot=", slot);
+        return;
+    }
+
+    // Otherwise it's reporting another player's roll result
+    const char* rollNames[] = {"Need", "Greed", "Disenchant", "Pass"};
+    const char* rollName = (rollType < 4) ? rollNames[rollType] : "Pass";
+
+    std::string rollerName;
+    auto entity = entityManager.getEntity(rollerGuid);
+    if (auto* unit = dynamic_cast<Unit*>(entity.get())) {
+        rollerName = unit->getName();
+    }
+    if (rollerName.empty()) rollerName = "Someone";
+
+    auto* info = getItemInfo(itemId);
+    std::string iName = info ? info->name : std::to_string(itemId);
+
+    char buf[256];
+    std::snprintf(buf, sizeof(buf), "%s rolls %s (%d) on [%s]",
+                  rollerName.c_str(), rollName, static_cast<int>(rollNum), iName.c_str());
+    addSystemChatMessage(buf);
+
+    LOG_DEBUG("SMSG_LOOT_ROLL: ", rollerName, " rolled ", rollName,
+              " (", rollNum, ") on item ", itemId);
+    (void)objectGuid; (void)slot;
+}
+
+void GameHandler::handleLootRollWon(network::Packet& packet) {
+    size_t rem = packet.getSize() - packet.getReadPos();
+    if (rem < 26) return;
+
+    /*uint64_t objectGuid =*/ packet.readUInt64();
+    /*uint32_t slot       =*/ packet.readUInt32();
+    uint64_t winnerGuid = packet.readUInt64();
+    uint32_t itemId     = packet.readUInt32();
+    /*uint32_t randSuffix =*/ packet.readUInt32();
+    /*uint32_t randProp   =*/ packet.readUInt32();
+    uint8_t  rollNum    = packet.readUInt8();
+    uint8_t  rollType   = packet.readUInt8();
+
+    const char* rollNames[] = {"Need", "Greed", "Disenchant"};
+    const char* rollName = (rollType < 3) ? rollNames[rollType] : "Roll";
+
+    std::string winnerName;
+    auto entity = entityManager.getEntity(winnerGuid);
+    if (auto* unit = dynamic_cast<Unit*>(entity.get())) {
+        winnerName = unit->getName();
+    }
+    if (winnerName.empty()) {
+        winnerName = (winnerGuid == playerGuid) ? "You" : "Someone";
+    }
+
+    auto* info = getItemInfo(itemId);
+    std::string iName = info ? info->name : std::to_string(itemId);
+
+    char buf[256];
+    std::snprintf(buf, sizeof(buf), "%s wins [%s] (%s %d)!",
+                  winnerName.c_str(), iName.c_str(), rollName, static_cast<int>(rollNum));
+    addSystemChatMessage(buf);
+
+    // Clear pending roll if it was ours
+    if (pendingLootRollActive_ && winnerGuid == playerGuid) {
+        pendingLootRollActive_ = false;
+    }
+    LOG_INFO("SMSG_LOOT_ROLL_WON: winner=", winnerName, " item=", itemId,
+             " roll=", rollName, "(", rollNum, ")");
+}
+
+void GameHandler::sendLootRoll(uint64_t objectGuid, uint32_t slot, uint8_t rollType) {
+    if (state != WorldState::IN_WORLD || !socket) return;
+    pendingLootRollActive_ = false;
+
+    network::Packet pkt(wireOpcode(Opcode::CMSG_LOOT_ROLL));
+    pkt.writeUInt64(objectGuid);
+    pkt.writeUInt32(slot);
+    pkt.writeUInt8(rollType);
+    socket->send(pkt);
+
+    const char* rollNames[] = {"Need", "Greed", "Disenchant", "Pass"};
+    const char* rName = (rollType < 3) ? rollNames[rollType] : "Pass";
+    LOG_INFO("CMSG_LOOT_ROLL: type=", rName, " item=", pendingLootRoll_.itemName);
 }
 
 // ---------------------------------------------------------------------------

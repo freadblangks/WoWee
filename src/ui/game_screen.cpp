@@ -397,6 +397,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderPartyFrames(gameHandler);
     renderGroupInvitePopup(gameHandler);
     renderDuelRequestPopup(gameHandler);
+    renderLootRollPopup(gameHandler);
     renderGuildInvitePopup(gameHandler);
     renderGuildRoster(gameHandler);
     renderBuffBar(gameHandler);
@@ -4396,6 +4397,53 @@ void GameScreen::renderDuelRequestPopup(game::GameHandler& gameHandler) {
         ImGui::SameLine();
         if (ImGui::Button("Decline", ImVec2(130, 30))) {
             gameHandler.forfeitDuel();
+        }
+    }
+    ImGui::End();
+}
+
+void GameScreen::renderLootRollPopup(game::GameHandler& gameHandler) {
+    if (!gameHandler.hasPendingLootRoll()) return;
+
+    const auto& roll = gameHandler.getPendingLootRoll();
+
+    auto* window = core::Application::getInstance().getWindow();
+    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
+
+    ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 175, 310), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(350, 0), ImGuiCond_Always);
+
+    if (ImGui::Begin("Loot Roll", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+        // Quality color for item name
+        static const ImVec4 kQualityColors[] = {
+            ImVec4(0.6f, 0.6f, 0.6f, 1.0f),  // 0=poor (grey)
+            ImVec4(1.0f, 1.0f, 1.0f, 1.0f),  // 1=common (white)
+            ImVec4(0.1f, 1.0f, 0.1f, 1.0f),  // 2=uncommon (green)
+            ImVec4(0.0f, 0.44f, 0.87f, 1.0f),// 3=rare (blue)
+            ImVec4(0.64f, 0.21f, 0.93f, 1.0f),// 4=epic (purple)
+            ImVec4(1.0f, 0.5f, 0.0f, 1.0f),  // 5=legendary (orange)
+        };
+        uint8_t q = roll.itemQuality;
+        ImVec4 col = (q < 6) ? kQualityColors[q] : kQualityColors[1];
+
+        ImGui::Text("An item is up for rolls:");
+        ImGui::TextColored(col, "[%s]", roll.itemName.c_str());
+        ImGui::Spacing();
+
+        if (ImGui::Button("Need", ImVec2(80, 30))) {
+            gameHandler.sendLootRoll(roll.objectGuid, roll.slot, 0);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Greed", ImVec2(80, 30))) {
+            gameHandler.sendLootRoll(roll.objectGuid, roll.slot, 1);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Disenchant", ImVec2(95, 30))) {
+            gameHandler.sendLootRoll(roll.objectGuid, roll.slot, 2);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Pass", ImVec2(70, 30))) {
+            gameHandler.sendLootRoll(roll.objectGuid, roll.slot, 96);
         }
     }
     ImGui::End();

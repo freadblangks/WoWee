@@ -174,11 +174,27 @@ make -j$(nproc)
   - `extern/FidelityFX-FSR2`
 - Source URL:
   - `https://github.com/GPUOpen-Effects/FidelityFX-FSR2.git`
+- Ref:
+  - `master` (depth-1 clone)
 - The renderer enables the AMD backend only when both are present:
   - `extern/FidelityFX-FSR2/src/ffx-fsr2-api/ffx_fsr2.h`
   - `extern/FidelityFX-FSR2/src/ffx-fsr2-api/vk/shaders/ffx_fsr2_accumulate_pass_permutations.h`
 - If the SDK checkout is missing generated Vulkan permutation headers, CMake auto-bootstraps them from `third_party/fsr2_vk_permutations`.
 - If SDK files are missing entirely, CMake falls back to the internal non-AMD FSR2 path automatically.
+
+### FidelityFX SDK (Framegen Extern)
+
+- Build scripts and CI also fetch:
+  - `extern/FidelityFX-SDK`
+- Source URL:
+  - `https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK.git`
+- Ref:
+  - `v1.1.4` (depth-1 clone)
+- This ref includes Vulkan framegen building blocks (`frameinterpolation` + `opticalflow`) and Vulkan shader manifests:
+  - `sdk/src/backends/vk/CMakeShadersFrameinterpolation.txt`
+  - `sdk/src/backends/vk/CMakeShadersOpticalflow.txt`
+- CMake option:
+  - `WOWEE_ENABLE_AMD_FSR3_FRAMEGEN=ON` enables a compile-probe target (`wowee_fsr3_framegen_amd_vk_probe`) that validates SDK FI/OF/FSR3/Vulkan interface headers at build time.
 
 ### Current FSR Defaults
 
@@ -249,7 +265,10 @@ make -j$(nproc)
 
 - GitHub Actions builds on every push: Linux (x86-64, ARM64), Windows (x86-64, ARM64 via MSYS2), macOS (ARM64)
 - All build jobs are AMD-FSR2-only (`WOWEE_ENABLE_AMD_FSR2=ON`) and explicitly build `wowee_fsr2_amd_vk`
-- Each job clones AMD's FSR2 SDK; if generated Vulkan permutation headers are absent upstream, WoWee bootstraps them from `third_party/fsr2_vk_permutations`
+- Each job clones AMD's FSR2 SDK and FidelityFX-SDK (`v1.1.4`)
+- Linux CI asserts FidelityFX-SDK Vulkan framegen files are present (FI/OF GLSL callbacks + Vulkan shader manifests)
+- All CI platform jobs explicitly build `wowee_fsr3_framegen_amd_vk_probe`
+- If FSR2 generated Vulkan permutation headers are absent upstream, WoWee bootstraps them from `third_party/fsr2_vk_permutations`
 - Container build via `container/build-in-container.sh` (Podman)
 
 ## Security

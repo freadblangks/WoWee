@@ -23,6 +23,7 @@ option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 option(WOWEE_BUILD_TESTS "Build tests" OFF)
 option(WOWEE_ENABLE_ASAN "Enable AddressSanitizer (Debug builds)" OFF)
 option(WOWEE_ENABLE_AMD_FSR2 "Enable AMD FidelityFX FSR2 backend when SDK is present" ON)
+option(WOWEE_ENABLE_AMD_FSR3_FRAMEGEN "Enable AMD FidelityFX SDK FSR3 frame generation interface probe when SDK is present" ON)
 
 # AMD FidelityFX FSR2 SDK detection (drop-in under extern/FidelityFX-FSR2)
 set(WOWEE_AMD_FSR2_DIR ${CMAKE_SOURCE_DIR}/extern/FidelityFX-FSR2)
@@ -84,6 +85,38 @@ else()
         elseif(NOT EXISTS ${WOWEE_AMD_FSR2_VK_PERM_HEADER})
             message(WARNING "AMD FSR2 SDK found, but generated Vulkan permutation headers are missing (e.g. ${WOWEE_AMD_FSR2_VK_PERM_HEADER}); using internal fallback implementation.")
         endif()
+    endif()
+endif()
+
+# AMD FidelityFX SDK (FSR3 frame generation interfaces) detection under extern/FidelityFX-SDK
+set(WOWEE_AMD_FFX_SDK_DIR ${CMAKE_SOURCE_DIR}/extern/FidelityFX-SDK/sdk)
+set(WOWEE_AMD_FFX_SDK_FI_HEADER ${WOWEE_AMD_FFX_SDK_DIR}/include/FidelityFX/host/ffx_frameinterpolation.h)
+set(WOWEE_AMD_FFX_SDK_OF_HEADER ${WOWEE_AMD_FFX_SDK_DIR}/include/FidelityFX/host/ffx_opticalflow.h)
+set(WOWEE_AMD_FFX_SDK_FSR3_HEADER ${WOWEE_AMD_FFX_SDK_DIR}/include/FidelityFX/host/ffx_fsr3upscaler.h)
+set(WOWEE_AMD_FFX_SDK_VK_HEADER ${WOWEE_AMD_FFX_SDK_DIR}/include/FidelityFX/host/backends/vk/ffx_vk.h)
+
+if(WOWEE_ENABLE_AMD_FSR3_FRAMEGEN
+   AND EXISTS ${WOWEE_AMD_FFX_SDK_FI_HEADER}
+   AND EXISTS ${WOWEE_AMD_FFX_SDK_OF_HEADER}
+   AND EXISTS ${WOWEE_AMD_FFX_SDK_FSR3_HEADER}
+   AND EXISTS ${WOWEE_AMD_FFX_SDK_VK_HEADER})
+    message(STATUS "AMD FidelityFX-SDK framegen headers detected at ${WOWEE_AMD_FFX_SDK_DIR}")
+    add_compile_definitions(WOWEE_HAS_AMD_FSR3_FRAMEGEN=1)
+    add_library(wowee_fsr3_framegen_amd_vk_probe STATIC
+        src/rendering/amd_fsr3_framegen_probe.cpp
+    )
+    set_target_properties(wowee_fsr3_framegen_amd_vk_probe PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON
+    )
+    target_include_directories(wowee_fsr3_framegen_amd_vk_probe PUBLIC
+        ${WOWEE_AMD_FFX_SDK_DIR}/include
+    )
+    target_link_libraries(wowee_fsr3_framegen_amd_vk_probe PUBLIC Vulkan::Vulkan)
+else()
+    add_compile_definitions(WOWEE_HAS_AMD_FSR3_FRAMEGEN=0)
+    if(WOWEE_ENABLE_AMD_FSR3_FRAMEGEN)
+        message(WARNING "AMD FidelityFX-SDK framegen headers not found at ${WOWEE_AMD_FFX_SDK_DIR}; FSR3 framegen interface probe disabled.")
     endif()
 endif()
 
@@ -603,6 +636,9 @@ endif()
 
 if(TARGET wowee_fsr2_amd_vk)
     target_link_libraries(wowee PRIVATE wowee_fsr2_amd_vk)
+endif()
+if(TARGET wowee_fsr3_framegen_amd_vk_probe)
+    target_link_libraries(wowee PRIVATE wowee_fsr3_framegen_amd_vk_probe)
 endif()
 
 # Link Unicorn if available

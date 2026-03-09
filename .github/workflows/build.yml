@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [master]
 
+env:
+  WOWEE_AMD_FSR2_REPO: https://github.com/GPUOpen-Effects/FidelityFX-FSR2.git
+  WOWEE_AMD_FSR2_REF: master
+  WOWEE_FFX_SDK_REPO: https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK.git
+  WOWEE_FFX_SDK_REF: v1.1.4
+
 jobs:
   build:
     name: Build (${{ matrix.arch }})
@@ -60,7 +66,9 @@ jobs:
       - name: Fetch AMD FSR2 SDK
         run: |
           rm -rf extern/FidelityFX-FSR2
-          git clone --depth 1 https://github.com/GPUOpen-Effects/FidelityFX-FSR2.git extern/FidelityFX-FSR2
+          git clone --depth 1 --branch "${WOWEE_AMD_FSR2_REF}" "${WOWEE_AMD_FSR2_REPO}" extern/FidelityFX-FSR2
+          rm -rf extern/FidelityFX-SDK
+          git clone --depth 1 --branch "${WOWEE_FFX_SDK_REF}" "${WOWEE_FFX_SDK_REPO}" extern/FidelityFX-SDK
 
       - name: Check AMD FSR2 Vulkan permutation headers
         run: |
@@ -74,11 +82,25 @@ jobs:
             echo "WoWee CMake will bootstrap vendored headers."
           fi
 
+      - name: Check FidelityFX-SDK Vulkan framegen files
+        run: |
+          set -euo pipefail
+          SDK_DIR="$PWD/extern/FidelityFX-SDK/sdk"
+          test -f "$SDK_DIR/include/FidelityFX/host/ffx_frameinterpolation.h"
+          test -f "$SDK_DIR/include/FidelityFX/gpu/frameinterpolation/ffx_frameinterpolation_callbacks_glsl.h"
+          test -f "$SDK_DIR/include/FidelityFX/gpu/opticalflow/ffx_opticalflow_callbacks_glsl.h"
+          test -f "$SDK_DIR/src/backends/vk/CMakeShadersFrameinterpolation.txt"
+          test -f "$SDK_DIR/src/backends/vk/CMakeShadersOpticalflow.txt"
+          echo "FidelityFX-SDK Vulkan framegen files detected."
+
       - name: Configure (AMD ON)
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWOWEE_ENABLE_AMD_FSR2=ON
 
       - name: Assert AMD FSR2 target
         run: cmake --build build --target wowee_fsr2_amd_vk --parallel $(nproc)
+
+      - name: Assert AMD FSR3 framegen probe target
+        run: cmake --build build --target wowee_fsr3_framegen_amd_vk_probe --parallel $(nproc)
 
       - name: Build
         run: cmake --build build --parallel $(nproc)
@@ -119,7 +141,9 @@ jobs:
       - name: Fetch AMD FSR2 SDK
         run: |
           rm -rf extern/FidelityFX-FSR2
-          git clone --depth 1 https://github.com/GPUOpen-Effects/FidelityFX-FSR2.git extern/FidelityFX-FSR2
+          git clone --depth 1 --branch "${WOWEE_AMD_FSR2_REF}" "${WOWEE_AMD_FSR2_REPO}" extern/FidelityFX-FSR2
+          rm -rf extern/FidelityFX-SDK
+          git clone --depth 1 --branch "${WOWEE_FFX_SDK_REF}" "${WOWEE_FFX_SDK_REPO}" extern/FidelityFX-SDK
 
       - name: Configure
         run: |
@@ -133,6 +157,9 @@ jobs:
 
       - name: Assert AMD FSR2 target
         run: cmake --build build --target wowee_fsr2_amd_vk --parallel $(sysctl -n hw.logicalcpu)
+
+      - name: Assert AMD FSR3 framegen probe target
+        run: cmake --build build --target wowee_fsr3_framegen_amd_vk_probe --parallel $(sysctl -n hw.logicalcpu)
 
       - name: Build
         run: cmake --build build --parallel $(sysctl -n hw.logicalcpu)
@@ -239,7 +266,9 @@ jobs:
         shell: msys2 {0}
         run: |
           rm -rf extern/FidelityFX-FSR2
-          git clone --depth 1 https://github.com/GPUOpen-Effects/FidelityFX-FSR2.git extern/FidelityFX-FSR2
+          git clone --depth 1 --branch "${WOWEE_AMD_FSR2_REF}" "${WOWEE_AMD_FSR2_REPO}" extern/FidelityFX-FSR2
+          rm -rf extern/FidelityFX-SDK
+          git clone --depth 1 --branch "${WOWEE_FFX_SDK_REF}" "${WOWEE_FFX_SDK_REPO}" extern/FidelityFX-SDK
 
       - name: Configure
         shell: msys2 {0}
@@ -248,6 +277,10 @@ jobs:
       - name: Assert AMD FSR2 target
         shell: msys2 {0}
         run: cmake --build build --target wowee_fsr2_amd_vk --parallel $(nproc)
+
+      - name: Assert AMD FSR3 framegen probe target
+        shell: msys2 {0}
+        run: cmake --build build --target wowee_fsr3_framegen_amd_vk_probe --parallel $(nproc)
 
       - name: Build
         shell: msys2 {0}
@@ -319,7 +352,9 @@ jobs:
         shell: msys2 {0}
         run: |
           rm -rf extern/FidelityFX-FSR2
-          git clone --depth 1 https://github.com/GPUOpen-Effects/FidelityFX-FSR2.git extern/FidelityFX-FSR2
+          git clone --depth 1 --branch "${WOWEE_AMD_FSR2_REF}" "${WOWEE_AMD_FSR2_REPO}" extern/FidelityFX-FSR2
+          rm -rf extern/FidelityFX-SDK
+          git clone --depth 1 --branch "${WOWEE_FFX_SDK_REF}" "${WOWEE_FFX_SDK_REPO}" extern/FidelityFX-SDK
 
       - name: Configure
         shell: msys2 {0}
@@ -328,6 +363,10 @@ jobs:
       - name: Assert AMD FSR2 target
         shell: msys2 {0}
         run: cmake --build build --target wowee_fsr2_amd_vk --parallel $(nproc)
+
+      - name: Assert AMD FSR3 framegen probe target
+        shell: msys2 {0}
+        run: cmake --build build --target wowee_fsr3_framegen_amd_vk_probe --parallel $(nproc)
 
       - name: Build
         shell: msys2 {0}

@@ -283,6 +283,11 @@ public:
 #else
     bool isAmdFsr2SdkAvailable() const { return false; }
 #endif
+#if WOWEE_HAS_AMD_FSR3_FRAMEGEN
+    bool isAmdFsr3FramegenSdkAvailable() const { return true; }
+#else
+    bool isAmdFsr3FramegenSdkAvailable() const { return false; }
+#endif
 
     void setWaterRefractionEnabled(bool enabled);
     bool isWaterRefractionEnabled() const;

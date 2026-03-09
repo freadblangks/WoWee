@@ -30,8 +30,28 @@ function Ensure-Fsr2Sdk {
     }
 }
 
+function Ensure-FidelityFxSdk {
+    $sdkDir = Join-Path $ScriptDir "extern\FidelityFX-SDK"
+    $sdkHeader = Join-Path $sdkDir "sdk\include\FidelityFX\host\ffx_frameinterpolation.h"
+    $sdkRef = "v1.1.4"
+    if (Test-Path $sdkHeader) { return }
+
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        Write-Warning "git not found; cannot auto-fetch AMD FidelityFX SDK."
+        return
+    }
+
+    Write-Host "Fetching AMD FidelityFX SDK ($sdkRef) into $sdkDir ..."
+    New-Item -ItemType Directory -Path (Join-Path $ScriptDir "extern") -Force | Out-Null
+    & git clone --depth 1 --branch $sdkRef https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK.git $sdkDir
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "Failed to clone AMD FidelityFX SDK. FSR3 framegen extern will be unavailable."
+    }
+}
+
 Write-Host "Clean rebuilding wowee..."
 Ensure-Fsr2Sdk
+Ensure-FidelityFxSdk
 
 # Remove build directory completely
 if (Test-Path "build") {

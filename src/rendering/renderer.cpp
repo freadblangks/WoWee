@@ -1027,22 +1027,6 @@ void Renderer::beginFrame() {
         if (!fsr2_.useAmdBackend) {
             camera->setJitter(0.0f, 0.0f);
         } else {
-            glm::mat4 currentVP = camera->getViewProjectionMatrix();
-
-            // Reset history only for clear camera movement.
-            bool cameraMoved = false;
-            for (int i = 0; i < 4 && !cameraMoved; i++) {
-                for (int j = 0; j < 4 && !cameraMoved; j++) {
-                    if (std::abs(currentVP[i][j] - fsr2_.lastStableVP[i][j]) > 1e-3f) {
-                        cameraMoved = true;
-                    }
-                }
-            }
-            if (cameraMoved) {
-                fsr2_.lastStableVP = currentVP;
-                fsr2_.needsHistoryReset = true;
-            }
-
 #if WOWEE_HAS_AMD_FSR2
             // AMD-recommended jitter sequence in pixel space, converted to NDC projection offset.
             int32_t phaseCount = ffxFsr2GetJitterPhaseCount(

@@ -144,15 +144,24 @@ void MusicManager::playFilePath(const std::string& filePath, bool loop, float fa
 }
 
 void MusicManager::stopMusic(float fadeMs) {
-    (void)fadeMs;  // Fade not implemented yet
-    AudioEngine::instance().stopMusic();
-    playing = false;
+    if (!playing) return;
+
     fadingIn = false;
-    fadeInTimer = 0.0f;
-    fadeInDuration = 0.0f;
-    fadeInTargetVolume = 0.0f;
-    currentTrack.clear();
-    currentTrackIsFile = false;
+    crossfading = false;
+
+    if (fadeMs > 0.0f) {
+        // Begin fade-out; actual stop happens once volume reaches zero in update()
+        fadingOut = true;
+        fadeOutTimer = 0.0f;
+        fadeOutDuration = fadeMs / 1000.0f;
+        fadeOutStartVolume = effectiveMusicVolume();
+    } else {
+        AudioEngine::instance().stopMusic();
+        playing = false;
+        fadingOut = false;
+        currentTrack.clear();
+        currentTrackIsFile = false;
+    }
 }
 
 void MusicManager::setVolume(int volume) {
@@ -222,6 +231,22 @@ void MusicManager::update(float deltaTime) {
     // Check if music is still playing
     if (playing && !AudioEngine::instance().isMusicPlaying()) {
         playing = false;
+    }
+
+    if (fadingOut) {
+        fadeOutTimer += deltaTime;
+        float t = std::clamp(1.0f - fadeOutTimer / std::max(fadeOutDuration, 0.001f), 0.0f, 1.0f);
+        AudioEngine::instance().setMusicVolume(fadeOutStartVolume * t);
+        if (t <= 0.0f) {
+            // Fade complete — stop playback and restore volume for next track
+            fadingOut = false;
+            AudioEngine::instance().stopMusic();
+            AudioEngine::instance().setMusicVolume(effectiveMusicVolume());
+            playing = false;
+            currentTrack.clear();
+            currentTrackIsFile = false;
+        }
+        return;  // Don't process other fade logic while fading out
     }
 
     if (fadingIn) {

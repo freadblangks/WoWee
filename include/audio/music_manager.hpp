@@ -52,6 +52,11 @@ private:
     float fadeInTimer = 0.0f;
     float fadeInDuration = 0.0f;
     float fadeInTargetVolume = 0.0f;
+    // Fade-out state (for stopMusic with fadeMs > 0)
+    bool fadingOut = false;
+    float fadeOutTimer = 0.0f;
+    float fadeOutDuration = 0.0f;
+    float fadeOutStartVolume = 0.0f;
 
     std::unordered_map<std::string, std::vector<uint8_t>> musicDataCache_;
 };

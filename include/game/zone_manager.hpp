@@ -6,6 +6,7 @@
 #include <vector>
 
 namespace wowee {
+namespace pipeline { class AssetManager; }
 namespace game {
 
 struct ZoneInfo {
@@ -17,6 +18,10 @@ struct ZoneInfo {
 class ZoneManager {
 public:
     void initialize();
+
+    // Supplement zone music paths using AreaTable → ZoneMusic → SoundEntries DBC chain.
+    // Safe to call after initialize(); idempotent and additive (does not remove existing paths).
+    void enrichFromDBC(pipeline::AssetManager* assets);
 
     uint32_t getZoneId(int tileX, int tileY) const;
     const ZoneInfo* getZoneInfo(uint32_t zoneId) const;

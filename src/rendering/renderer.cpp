@@ -706,9 +706,12 @@ bool Renderer::initialize(core::Window* win) {
     lightingManager = std::make_unique<LightingManager>();
     [[maybe_unused]] auto* assetManager = core::Application::getInstance().getAssetManager();
 
-    // Create zone manager
+    // Create zone manager; enrich music paths from DBC if available
     zoneManager = std::make_unique<game::ZoneManager>();
     zoneManager->initialize();
+    if (assetManager) {
+        zoneManager->enrichFromDBC(assetManager);
+    }
 
     // Initialize AudioEngine (singleton)
     if (!audio::AudioEngine::instance().initialize()) {

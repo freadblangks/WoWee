@@ -1467,11 +1467,39 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 handleRandomRoll(packet);
             }
             break;
-        case Opcode::SMSG_ITEM_PUSH_RESULT:
-            // Item received notification (new item in bags, loot, quest reward, etc.)
-            // TODO: parse and show "item received" UI notification
-            packet.setReadPos(packet.getSize());
+        case Opcode::SMSG_ITEM_PUSH_RESULT: {
+            // Item received notification (loot, quest reward, trade, etc.)
+            // guid(8) + received(1) + created(1) + showInChat(1) + bagSlot(1) + itemSlot(4)
+            // + itemId(4) + itemSuffixFactor(4) + randomPropertyId(4) + count(4) + totalCount(4)
+            constexpr size_t kMinSize = 8 + 1 + 1 + 1 + 1 + 4 + 4 + 4 + 4 + 4 + 4;
+            if (packet.getSize() - packet.getReadPos() >= kMinSize) {
+                /*uint64_t recipientGuid =*/ packet.readUInt64();
+                /*uint8_t received =*/ packet.readUInt8();   // 0=looted/generated, 1=received from trade
+                /*uint8_t created =*/ packet.readUInt8();    // 0=stack added, 1=new item slot
+                uint8_t showInChat = packet.readUInt8();
+                /*uint8_t bagSlot =*/ packet.readUInt8();
+                /*uint32_t itemSlot =*/ packet.readUInt32();
+                uint32_t itemId = packet.readUInt32();
+                /*uint32_t suffixFactor =*/ packet.readUInt32();
+                /*int32_t randomProp =*/ static_cast<int32_t>(packet.readUInt32());
+                uint32_t count = packet.readUInt32();
+                /*uint32_t totalCount =*/ packet.readUInt32();
+
+                queryItemInfo(itemId, 0);
+                if (showInChat) {
+                    std::string itemName = "item #" + std::to_string(itemId);
+                    if (const ItemQueryResponseData* info = getItemInfo(itemId)) {
+                        if (!info->name.empty()) itemName = info->name;
+                    }
+                    std::string msg = "Received: " + itemName;
+                    if (count > 1) msg += " x" + std::to_string(count);
+                    addSystemChatMessage(msg);
+                }
+                LOG_INFO("Item push: itemId=", itemId, " count=", count,
+                         " showInChat=", static_cast<int>(showInChat));
+            }
             break;
+        }
 
         case Opcode::SMSG_LOGOUT_RESPONSE:
             handleLogoutResponse(packet);
@@ -2728,8 +2756,12 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         case Opcode::SMSG_STANDSTATE_UPDATE:
             // Server confirms stand state change (sit/stand/sleep/kneel)
-            // TODO: parse uint8 standState and update player entity
-            packet.setReadPos(packet.getSize());
+            if (packet.getSize() - packet.getReadPos() >= 1) {
+                standState_ = packet.readUInt8();
+                LOG_INFO("Stand state updated: ", static_cast<int>(standState_),
+                         " (", standState_ == 0 ? "stand" : standState_ == 1 ? "sit"
+                            : standState_ == 7 ? "dead" : standState_ == 8 ? "kneel" : "other", ")");
+            }
             break;
         case Opcode::SMSG_NEW_TAXI_PATH:
             // Empty packet - server signals a new flight path was learned

@@ -238,6 +238,7 @@ private:
     void renderAuctionHouseWindow(game::GameHandler& gameHandler);
     void renderDungeonFinderWindow(game::GameHandler& gameHandler);
     void renderInstanceLockouts(game::GameHandler& gameHandler);
+    void renderNameplates(game::GameHandler& gameHandler);
 
     /**
      * Inventory screen

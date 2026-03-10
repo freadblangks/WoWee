@@ -395,6 +395,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderCastBar(gameHandler);
     renderMirrorTimers(gameHandler);
     renderQuestObjectiveTracker(gameHandler);
+    renderNameplates(gameHandler);
     renderCombatText(gameHandler);
     renderPartyFrames(gameHandler);
     renderGroupInvitePopup(gameHandler);
@@ -4509,6 +4510,96 @@ void GameScreen::renderCombatText(game::GameHandler& gameHandler) {
         }
     }
     ImGui::End();
+}
+
+// ============================================================
+// Nameplates — world-space health bars projected to screen
+// ============================================================
+
+void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
+    if (gameHandler.getState() != game::WorldState::IN_WORLD) return;
+
+    auto* appRenderer = core::Application::getInstance().getRenderer();
+    if (!appRenderer) return;
+    rendering::Camera* camera = appRenderer->getCamera();
+    if (!camera) return;
+
+    auto* window = core::Application::getInstance().getWindow();
+    if (!window) return;
+    const float screenW = static_cast<float>(window->getWidth());
+    const float screenH = static_cast<float>(window->getHeight());
+
+    const glm::mat4 viewProj = camera->getProjectionMatrix() * camera->getViewMatrix();
+    const glm::vec3 camPos   = camera->getPosition();
+    const uint64_t  playerGuid = gameHandler.getPlayerGuid();
+    const uint64_t  targetGuid = gameHandler.getTargetGuid();
+
+    ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+
+    for (const auto& [guid, entityPtr] : gameHandler.getEntityManager().getEntities()) {
+        if (!entityPtr || guid == playerGuid) continue;
+
+        auto* unit = dynamic_cast<game::Unit*>(entityPtr.get());
+        if (!unit || unit->getMaxHealth() == 0) continue;
+
+        // Convert canonical WoW position → render space, raise to head height
+        glm::vec3 renderPos = core::coords::canonicalToRender(
+            glm::vec3(unit->getX(), unit->getY(), unit->getZ()));
+        renderPos.z += 2.3f;
+
+        // Cull if too far (render units ≈ WoW yards)
+        float dist = glm::length(renderPos - camPos);
+        if (dist > 40.0f) continue;
+
+        // Project to clip space
+        glm::vec4 clipPos = viewProj * glm::vec4(renderPos, 1.0f);
+        if (clipPos.w <= 0.01f) continue;  // Behind camera
+
+        glm::vec3 ndc = glm::vec3(clipPos) / clipPos.w;
+        if (ndc.x < -1.2f || ndc.x > 1.2f || ndc.y < -1.2f || ndc.y > 1.2f) continue;
+
+        // NDC → screen pixels (Y axis inverted)
+        float sx = (ndc.x * 0.5f + 0.5f) * screenW;
+        float sy = (1.0f - (ndc.y * 0.5f + 0.5f)) * screenH;
+
+        // Fade out in the last 5 units of range
+        float alpha = dist < 35.0f ? 1.0f : 1.0f - (dist - 35.0f) / 5.0f;
+        auto A = [&](int v) { return static_cast<int>(v * alpha); };
+
+        // Bar colour by hostility
+        ImU32 barColor, bgColor;
+        if (unit->isHostile()) {
+            barColor = IM_COL32(220, 60,  60,  A(200));
+            bgColor  = IM_COL32(100, 25,  25,  A(160));
+        } else {
+            barColor = IM_COL32(60,  200, 80,  A(200));
+            bgColor  = IM_COL32(25,  100, 35,  A(160));
+        }
+        ImU32 borderColor = (guid == targetGuid)
+            ? IM_COL32(255, 215, 0,  A(255))
+            : IM_COL32(20,  20,  20, A(180));
+
+        // Bar geometry
+        constexpr float barW = 80.0f;
+        constexpr float barH = 8.0f;
+        const float barX = sx - barW * 0.5f;
+
+        float healthPct = std::clamp(
+            static_cast<float>(unit->getHealth()) / static_cast<float>(unit->getMaxHealth()),
+            0.0f, 1.0f);
+
+        drawList->AddRectFilled(ImVec2(barX,                 sy), ImVec2(barX + barW,               sy + barH), bgColor,    2.0f);
+        drawList->AddRectFilled(ImVec2(barX,                 sy), ImVec2(barX + barW * healthPct,   sy + barH), barColor,   2.0f);
+        drawList->AddRect       (ImVec2(barX - 1.0f, sy - 1.0f), ImVec2(barX + barW + 1.0f, sy + barH + 1.0f), borderColor, 2.0f);
+
+        // Name label with drop shadow
+        const char* name = unit->getName().c_str();
+        ImVec2 textSize = ImGui::CalcTextSize(name);
+        float nameX = sx - textSize.x * 0.5f;
+        float nameY = sy - barH - 12.0f;
+        drawList->AddText(ImVec2(nameX + 1.0f, nameY + 1.0f), IM_COL32(0, 0, 0, A(160)), name);
+        drawList->AddText(ImVec2(nameX,         nameY),         IM_COL32(255, 255, 255, A(220)), name);
+    }
 }
 
 // ============================================================

@@ -2021,13 +2021,14 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
         case Opcode::SMSG_DEATH_RELEASE_LOC: {
-            // uint32 mapId + float x + float y + float z — spirit healer position
+            // uint32 mapId + float x + float y + float z — corpse/spirit healer position
             if (packet.getSize() - packet.getReadPos() >= 16) {
-                uint32_t mapId = packet.readUInt32();
-                float x = packet.readFloat();
-                float y = packet.readFloat();
-                float z = packet.readFloat();
-                LOG_INFO("SMSG_DEATH_RELEASE_LOC: map=", mapId, " x=", x, " y=", y, " z=", z);
+                corpseMapId_ = packet.readUInt32();
+                corpseX_     = packet.readFloat();
+                corpseY_     = packet.readFloat();
+                corpseZ_     = packet.readFloat();
+                LOG_INFO("SMSG_DEATH_RELEASE_LOC: map=", corpseMapId_,
+                         " x=", corpseX_, " y=", corpseY_, " z=", corpseZ_);
             }
             break;
         }
@@ -9457,6 +9458,24 @@ void GameHandler::releaseSpirit() {
         lastRepopRequestMs_ = static_cast<uint64_t>(now);
         LOG_INFO("Sent CMSG_REPOP_REQUEST (Release Spirit)");
     }
+}
+
+bool GameHandler::canReclaimCorpse() const {
+    if (!releasedSpirit_ || corpseMapId_ == 0) return false;
+    // Only if ghost is on the same map as their corpse
+    if (currentMapId_ != corpseMapId_) return false;
+    // Must be within 40 yards (server also validates proximity)
+    float dx = movementInfo.x - corpseX_;
+    float dy = movementInfo.y - corpseY_;
+    float dz = movementInfo.z - corpseZ_;
+    return (dx*dx + dy*dy + dz*dz) <= (40.0f * 40.0f);
+}
+
+void GameHandler::reclaimCorpse() {
+    if (!canReclaimCorpse() || !socket) return;
+    network::Packet packet(wireOpcode(Opcode::CMSG_RECLAIM_CORPSE));
+    socket->send(packet);
+    LOG_INFO("Sent CMSG_RECLAIM_CORPSE");
 }
 
 void GameHandler::activateSpiritHealer(uint64_t npcGuid) {

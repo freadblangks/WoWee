@@ -736,6 +736,10 @@ public:
     bool showDeathDialog() const { return playerDead_ && !releasedSpirit_; }
     bool showResurrectDialog() const { return resurrectRequestPending_; }
     const std::string& getResurrectCasterName() const { return resurrectCasterName_; }
+    /** True when ghost is within 40 yards of corpse position (same map). */
+    bool canReclaimCorpse() const;
+    /** Send CMSG_RECLAIM_CORPSE; noop if not a ghost or not near corpse. */
+    void reclaimCorpse();
     void releaseSpirit();
     void acceptResurrect();
     void declineResurrect();
@@ -2150,6 +2154,8 @@ private:
     float serverPitchRate_ = 3.14159f;
     bool playerDead_ = false;
     bool releasedSpirit_ = false;
+    uint32_t corpseMapId_ = 0;
+    float corpseX_ = 0.0f, corpseY_ = 0.0f, corpseZ_ = 0.0f;
     // Death Knight runes (class 6): slots 0-1=Blood, 2-3=Unholy, 4-5=Frost initially
     std::array<RuneSlot, 6> playerRunes_ = [] {
         std::array<RuneSlot, 6> r{};

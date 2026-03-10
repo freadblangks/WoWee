@@ -433,6 +433,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     // renderQuestMarkers(gameHandler);  // Disabled - using 3D billboard markers now
     renderMinimapMarkers(gameHandler);
     renderDeathScreen(gameHandler);
+    renderReclaimCorpseButton(gameHandler);
     renderResurrectDialog(gameHandler);
     renderChatBubbles(gameHandler);
     renderEscapeMenu();
@@ -7011,6 +7012,34 @@ void GameScreen::renderDeathScreen(game::GameHandler& gameHandler) {
     ImGui::End();
     ImGui::PopStyleColor(2);
     ImGui::PopStyleVar();
+}
+
+void GameScreen::renderReclaimCorpseButton(game::GameHandler& gameHandler) {
+    if (!gameHandler.isPlayerGhost() || !gameHandler.canReclaimCorpse()) return;
+
+    auto* window = core::Application::getInstance().getWindow();
+    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
+    float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
+
+    float btnW = 220.0f, btnH = 36.0f;
+    ImGui::SetNextWindowPos(ImVec2(screenW / 2 - btnW / 2, screenH * 0.72f), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(btnW + 16.0f, btnH + 16.0f), ImGuiCond_Always);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 8.0f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.7f));
+    if (ImGui::Begin("##ReclaimCorpse", nullptr,
+            ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoBringToFrontOnFocus)) {
+        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.15f, 0.35f, 0.15f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.55f, 0.25f, 1.0f));
+        if (ImGui::Button("Resurrect from Corpse", ImVec2(btnW, btnH))) {
+            gameHandler.reclaimCorpse();
+        }
+        ImGui::PopStyleColor(2);
+    }
+    ImGui::End();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(2);
 }
 
 void GameScreen::renderResurrectDialog(game::GameHandler& gameHandler) {

@@ -1979,6 +1979,11 @@ private:
     struct SpellNameEntry { std::string name; std::string rank; uint32_t schoolMask = 0; };
     std::unordered_map<uint32_t, SpellNameEntry> spellNameCache_;
     bool spellNameCacheLoaded_ = false;
+
+    // Achievement name cache (lazy-loaded from Achievement.dbc on first earned event)
+    std::unordered_map<uint32_t, std::string> achievementNameCache_;
+    bool achievementNameCacheLoaded_ = false;
+    void loadAchievementNameCache();
     std::vector<TrainerTab> trainerTabs_;
     void handleTrainerList(network::Packet& packet);
     void loadSpellNameCache();

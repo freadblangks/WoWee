@@ -17094,6 +17094,30 @@ void GameHandler::sendLootRoll(uint64_t objectGuid, uint32_t slot, uint8_t rollT
 //   PackedTime date      — uint32 bitfield (seconds since epoch)
 //   uint32 realmFirst    — how many on realm also got it (0 = realm first)
 // ---------------------------------------------------------------------------
+void GameHandler::loadAchievementNameCache() {
+    if (achievementNameCacheLoaded_) return;
+    achievementNameCacheLoaded_ = true;
+
+    auto* am = core::Application::getInstance().getAssetManager();
+    if (!am || !am->isInitialized()) return;
+
+    auto dbc = am->loadDBC("Achievement.dbc");
+    if (!dbc || !dbc->isLoaded() || dbc->getFieldCount() < 22) return;
+
+    const auto* achL = pipeline::getActiveDBCLayout()
+        ? pipeline::getActiveDBCLayout()->getLayout("Achievement") : nullptr;
+    uint32_t titleField = achL ? achL->field("Title") : 4;
+    if (titleField == 0xFFFFFFFF) titleField = 4;
+
+    for (uint32_t i = 0; i < dbc->getRecordCount(); ++i) {
+        uint32_t id = dbc->getUInt32(i, 0);
+        if (id == 0) continue;
+        std::string title = dbc->getString(i, titleField);
+        if (!title.empty()) achievementNameCache_[id] = std::move(title);
+    }
+    LOG_INFO("Achievement: loaded ", achievementNameCache_.size(), " names from Achievement.dbc");
+}
+
 void GameHandler::handleAchievementEarned(network::Packet& packet) {
     size_t remaining = packet.getSize() - packet.getReadPos();
     if (remaining < 16) return;  // guid(8) + id(4) + date(4)
@@ -17102,12 +17126,20 @@ void GameHandler::handleAchievementEarned(network::Packet& packet) {
     uint32_t achievementId = packet.readUInt32();
     /*uint32_t date =*/ packet.readUInt32();  // PackedTime — not displayed
 
+    loadAchievementNameCache();
+    auto nameIt = achievementNameCache_.find(achievementId);
+    const std::string& achName = (nameIt != achievementNameCache_.end())
+        ? nameIt->second : std::string();
+
     // Show chat notification
     bool isSelf = (guid == playerGuid);
     if (isSelf) {
-        char buf[128];
-        std::snprintf(buf, sizeof(buf),
-                      "Achievement earned! (ID %u)", achievementId);
+        char buf[256];
+        if (!achName.empty()) {
+            std::snprintf(buf, sizeof(buf), "Achievement earned: %s", achName.c_str());
+        } else {
+            std::snprintf(buf, sizeof(buf), "Achievement earned! (ID %u)", achievementId);
+        }
         addSystemChatMessage(buf);
 
         if (achievementEarnedCallback_) {
@@ -17127,13 +17159,19 @@ void GameHandler::handleAchievementEarned(network::Packet& packet) {
             senderName = tmp;
         }
         char buf[256];
-        std::snprintf(buf, sizeof(buf),
-                      "%s has earned an achievement! (ID %u)", senderName.c_str(), achievementId);
+        if (!achName.empty()) {
+            std::snprintf(buf, sizeof(buf), "%s has earned the achievement: %s",
+                          senderName.c_str(), achName.c_str());
+        } else {
+            std::snprintf(buf, sizeof(buf), "%s has earned an achievement! (ID %u)",
+                          senderName.c_str(), achievementId);
+        }
         addSystemChatMessage(buf);
     }
 
     LOG_INFO("SMSG_ACHIEVEMENT_EARNED: guid=0x", std::hex, guid, std::dec,
-             " achievementId=", achievementId, " self=", isSelf);
+             " achievementId=", achievementId, " self=", isSelf,
+             achName.empty() ? "" : " name=", achName);
 }
 
 // ---------------------------------------------------------------------------

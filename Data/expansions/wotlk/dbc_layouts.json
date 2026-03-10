@@ -28,6 +28,7 @@
     "ReputationBase0": 10, "ReputationBase1": 11,
     "ReputationBase2": 12, "ReputationBase3": 13
   },
+  "Achievement": { "ID": 0, "Title": 4, "Description": 21 },
   "AreaTable": { "ID": 0, "ExploreFlag": 3 },
   "CreatureDisplayInfoExtra": {
     "ID": 0, "RaceID": 1, "SexID": 2, "SkinID": 3, "FaceID": 4,

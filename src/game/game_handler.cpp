@@ -3028,8 +3028,22 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_FEATURE_SYSTEM_STATUS:
         case Opcode::SMSG_SET_FLAT_SPELL_MODIFIER:
         case Opcode::SMSG_SET_PCT_SPELL_MODIFIER:
-        case Opcode::SMSG_SPELL_DELAYED:
+        case Opcode::SMSG_SPELL_DELAYED: {
+            // packed_guid (caster) + uint32 delayMs — spell cast was pushed back
+            // Adjust cast bar if it's the player's spell
+            if (casting && packet.getSize() - packet.getReadPos() >= 1) {
+                uint64_t caster = UpdateObjectParser::readPackedGuid(packet);
+                if (caster == playerGuid && packet.getSize() - packet.getReadPos() >= 4) {
+                    uint32_t delayMs = packet.readUInt32();
+                    castTimeRemaining += delayMs / 1000.0f;  // Extend cast bar by delay
+                }
+            }
+            break;
+        }
         case Opcode::SMSG_EQUIPMENT_SET_SAVED:
+            // uint32 setIndex + uint64 guid — equipment set was successfully saved
+            LOG_DEBUG("Equipment set saved");
+            break;
         case Opcode::SMSG_PERIODICAURALOG: {
             // packed_guid victim, packed_guid caster, uint32 spellId, uint32 count, then per-effect
             if (packet.getSize() - packet.getReadPos() < 2) break;

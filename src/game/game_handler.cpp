@@ -11411,8 +11411,20 @@ void GameHandler::handleLfgPlayerReward(network::Packet& packet) {
     uint32_t money  = packet.readUInt32();
     uint32_t xp     = packet.readUInt32();
 
-    std::string rewardMsg = "Dungeon Finder reward: " + std::to_string(money) + "g " +
-                            std::to_string(xp) + " XP";
+    // Convert copper to gold/silver/copper
+    uint32_t gold   = money / 10000;
+    uint32_t silver = (money % 10000) / 100;
+    uint32_t copper = money % 100;
+    char moneyBuf[64];
+    if (gold > 0)
+        snprintf(moneyBuf, sizeof(moneyBuf), "%ug %us %uc", gold, silver, copper);
+    else if (silver > 0)
+        snprintf(moneyBuf, sizeof(moneyBuf), "%us %uc", silver, copper);
+    else
+        snprintf(moneyBuf, sizeof(moneyBuf), "%uc", copper);
+
+    std::string rewardMsg = std::string("Dungeon Finder reward: ") + moneyBuf +
+                            ", " + std::to_string(xp) + " XP";
 
     if (packet.getSize() - packet.getReadPos() >= 4) {
         uint32_t rewardCount = packet.readUInt32();

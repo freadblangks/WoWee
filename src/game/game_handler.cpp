@@ -13310,10 +13310,11 @@ void GameHandler::handlePartyMemberStats(network::Packet& packet, bool isFull) {
         packet.readUInt8();
     }
 
-    // WotLK uses packed GUID; TBC/Classic use full uint64
-    const bool pmsTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
-    if (remaining() < (pmsTbcLike ? 8u : 1u)) return;
-    uint64_t memberGuid = pmsTbcLike
+    // WotLK and Classic/Vanilla use packed GUID; TBC uses full uint64
+    // (Classic uses ObjectGuid::WriteAsPacked() = packed format, same as WotLK)
+    const bool pmsTbc = isActiveExpansion("tbc");
+    if (remaining() < (pmsTbc ? 8u : 1u)) return;
+    uint64_t memberGuid = pmsTbc
         ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
     if (remaining() < 4) return;
     uint32_t updateFlags = packet.readUInt32();

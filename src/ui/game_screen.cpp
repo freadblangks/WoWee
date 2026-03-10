@@ -4684,9 +4684,12 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
         glm::vec3 ndc = glm::vec3(clipPos) / clipPos.w;
         if (ndc.x < -1.2f || ndc.x > 1.2f || ndc.y < -1.2f || ndc.y > 1.2f) continue;
 
-        // NDC → screen pixels (Y axis inverted)
+        // NDC → screen pixels.
+        // The camera bakes the Vulkan Y-flip into the projection matrix, so
+        // NDC y = -1 is the top of the screen and y = 1 is the bottom.
+        // Map directly: sy = (ndc.y + 1) / 2 * screenH  (no extra inversion).
         float sx = (ndc.x * 0.5f + 0.5f) * screenW;
-        float sy = (1.0f - (ndc.y * 0.5f + 0.5f)) * screenH;
+        float sy = (ndc.y * 0.5f + 0.5f) * screenH;
 
         // Fade out in the last 5 units of range
         float alpha = dist < 35.0f ? 1.0f : 1.0f - (dist - 35.0f) / 5.0f;

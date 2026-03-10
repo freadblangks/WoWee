@@ -53,17 +53,20 @@ inline float normalizeAngleRad(float a) {
 
 // Convert server/wire yaw (radians) → canonical yaw (radians).
 //
-// Under server<->canonical X/Y swap:
-//   dir_s = (cos(s), sin(s))
-//   dir_c = swap(dir_s) = (sin(s), cos(s)) => c = PI/2 - s
+// Codebase canonical convention: atan2(-dy, dx) in (canonical_X=north, canonical_Y=west).
+//   North=0, East=+π/2, South=±π, West=-π/2.
+//
+// Server direction at angle s: (cos s, sin s) in (server_X=canonical_Y, server_Y=canonical_X).
+// After swap: dir_c = (sin s, cos s) in (canonical_X, canonical_Y).
+// atan2(-dy, dx) = atan2(-cos s, sin s) = s - π/2.
 inline float serverToCanonicalYaw(float serverYaw) {
-    return normalizeAngleRad((PI * 0.5f) - serverYaw);
+    return normalizeAngleRad(serverYaw - (PI * 0.5f));
 }
 
 // Convert canonical yaw (radians) → server/wire yaw (radians).
-// This mapping is its own inverse.
+// Inverse of serverToCanonicalYaw: s = c + π/2.
 inline float canonicalToServerYaw(float canonicalYaw) {
-    return normalizeAngleRad((PI * 0.5f) - canonicalYaw);
+    return normalizeAngleRad(canonicalYaw + (PI * 0.5f));
 }
 
 // Convert between canonical WoW and engine rendering coordinates (just swap X/Y).

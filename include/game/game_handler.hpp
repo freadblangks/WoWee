@@ -1016,6 +1016,10 @@ public:
     };
     const std::unordered_map<uint32_t, TaxiNode>& getTaxiNodes() const { return taxiNodes_; }
     uint32_t getTaxiCostTo(uint32_t destNodeId) const;
+    bool taxiNpcHasRoutes(uint64_t guid) const {
+        auto it = taxiNpcHasRoutes_.find(guid);
+        return it != taxiNpcHasRoutes_.end() && it->second;
+    }
 
     // Vendor
     void openVendor(uint64_t npcGuid);
@@ -1878,6 +1882,7 @@ private:
     }
 
     // Taxi / Flight Paths
+    std::unordered_map<uint64_t, bool> taxiNpcHasRoutes_;  // guid -> has new/available routes
     std::unordered_map<uint32_t, TaxiNode> taxiNodes_;
     std::vector<TaxiPathEdge> taxiPathEdges_;
     std::unordered_map<uint32_t, std::vector<TaxiPathNode>> taxiPathNodes_;  // pathId -> ordered waypoints

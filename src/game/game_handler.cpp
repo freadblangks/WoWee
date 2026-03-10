@@ -4282,10 +4282,15 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_SET_EXTRA_AURA_INFO_NEED_UPDATE:
             packet.setReadPos(packet.getSize());
             break;
-        case Opcode::SMSG_TAXINODE_STATUS:
-            // Node status cache not implemented yet.
-            packet.setReadPos(packet.getSize());
+        case Opcode::SMSG_TAXINODE_STATUS: {
+            // guid(8) + status(1): status 1 = NPC has available/new routes for this player
+            if (packet.getSize() - packet.getReadPos() >= 9) {
+                uint64_t npcGuid = packet.readUInt64();
+                uint8_t  status  = packet.readUInt8();
+                taxiNpcHasRoutes_[npcGuid] = (status != 0);
+            }
             break;
+        }
         case Opcode::SMSG_INIT_EXTRA_AURA_INFO_OBSOLETE:
         case Opcode::SMSG_SET_EXTRA_AURA_INFO_OBSOLETE:
             // Extra aura metadata (icons/durations) not yet consumed by aura UI.

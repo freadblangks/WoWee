@@ -318,7 +318,9 @@ void CameraController::update(float deltaTime) {
     if (useWoWSpeed) {
         // Movement speeds (WoW-like: Ctrl walk, default run, backpedal slower)
         if (nowBackward && !nowForward) {
-            speed = WOW_BACK_SPEED;
+            speed = (runBackSpeedOverride_ > 0.0f && runBackSpeedOverride_ < 100.0f
+                     && !std::isnan(runBackSpeedOverride_))
+                        ? runBackSpeedOverride_ : WOW_BACK_SPEED;
         } else if (ctrlDown) {
             speed = (walkSpeedOverride_ > 0.0f && walkSpeedOverride_ < 100.0f && !std::isnan(walkSpeedOverride_))
                         ? walkSpeedOverride_ : WOW_WALK_SPEED;

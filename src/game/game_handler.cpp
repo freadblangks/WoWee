@@ -1779,10 +1779,15 @@ void GameHandler::handlePacket(network::Packet& packet) {
         }
 
         // ---- Spell failed on another unit ----
-        case Opcode::SMSG_SPELL_FAILED_OTHER:
-            // packed_guid + uint8 castCount + uint32 spellId + uint8 reason — just consume
+        case Opcode::SMSG_SPELL_FAILED_OTHER: {
+            // packed_guid + uint8 castCount + uint32 spellId + uint8 reason
+            uint64_t failOtherGuid = UpdateObjectParser::readPackedGuid(packet);
+            if (failOtherGuid != 0 && failOtherGuid != playerGuid) {
+                unitCastStates_.erase(failOtherGuid);
+            }
             packet.setReadPos(packet.getSize());
             break;
+        }
 
         // ---- Spell proc resist log ----
         case Opcode::SMSG_PROCRESIST: {
@@ -2526,16 +2531,24 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_SPELL_GO:
             handleSpellGo(packet);
             break;
-        case Opcode::SMSG_SPELL_FAILURE:
-            // Spell failed mid-cast
-            casting = false;
-            currentCastSpellId = 0;
-            if (auto* renderer = core::Application::getInstance().getRenderer()) {
-                if (auto* ssm = renderer->getSpellSoundManager()) {
-                    ssm->stopPrecast();
+        case Opcode::SMSG_SPELL_FAILURE: {
+            // packed_guid caster + uint8 castCount + uint32 spellId + uint8 failReason
+            uint64_t failGuid = UpdateObjectParser::readPackedGuid(packet);
+            if (failGuid == playerGuid || failGuid == 0) {
+                // Player's own cast failed
+                casting = false;
+                currentCastSpellId = 0;
+                if (auto* renderer = core::Application::getInstance().getRenderer()) {
+                    if (auto* ssm = renderer->getSpellSoundManager()) {
+                        ssm->stopPrecast();
+                    }
                 }
+            } else {
+                // Another unit's cast failed — clear their tracked cast bar
+                unitCastStates_.erase(failGuid);
             }
             break;
+        }
         case Opcode::SMSG_SPELL_COOLDOWN:
             handleSpellCooldown(packet);
             break;

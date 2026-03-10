@@ -752,6 +752,7 @@ void Application::logoutToLogin() {
     creatureWasMoving_.clear();
     creatureWasSwimming_.clear();
     creatureWasFlying_.clear();
+    creatureWasWalking_.clear();
     creatureSwimmingState_.clear();
     creatureWalkingState_.clear();
     creatureFlyingState_.clear();
@@ -1492,15 +1493,19 @@ void Application::update(float deltaTime) {
                         bool prevMoving   = creatureWasMoving_[guid];
                         bool prevSwimming = creatureWasSwimming_[guid];
                         bool prevFlying   = creatureWasFlying_[guid];
+                        bool prevWalking  = creatureWasWalking_[guid];
                         // Trigger animation update on any locomotion-state transition, not just
-                        // moving/idle — e.g. creature lands while still moving → FlyForward→Run.
-                        const bool stateChanged = (isMovingNow != prevMoving) ||
+                        // moving/idle — e.g. creature lands while still moving → FlyForward→Run,
+                        // or server changes WALKING flag while creature is already running → Walk.
+                        const bool stateChanged = (isMovingNow  != prevMoving)   ||
                                                   (isSwimmingNow != prevSwimming) ||
-                                                  (isFlyingNow != prevFlying);
+                                                  (isFlyingNow   != prevFlying)   ||
+                                                  (isWalkingNow  != prevWalking && isMovingNow);
                         if (stateChanged) {
                             creatureWasMoving_[guid]   = isMovingNow;
                             creatureWasSwimming_[guid] = isSwimmingNow;
                             creatureWasFlying_[guid]   = isFlyingNow;
+                            creatureWasWalking_[guid]  = isWalkingNow;
                             uint32_t curAnimId = 0; float curT = 0.0f, curDur = 0.0f;
                             bool gotState = charRenderer->getAnimationState(instanceId, curAnimId, curT, curDur);
                             if (!gotState || curAnimId != 1 /*Death*/) {
@@ -6957,8 +6962,10 @@ void Application::despawnOnlinePlayer(uint64_t guid) {
     creatureSwimmingState_.erase(guid);
     creatureWalkingState_.erase(guid);
     creatureFlyingState_.erase(guid);
+    creatureWasMoving_.erase(guid);
     creatureWasSwimming_.erase(guid);
     creatureWasFlying_.erase(guid);
+    creatureWasWalking_.erase(guid);
 }
 
 void Application::spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_t displayId, float x, float y, float z, float orientation) {
@@ -8554,6 +8561,7 @@ void Application::despawnOnlineCreature(uint64_t guid) {
     creatureWasMoving_.erase(guid);
     creatureWasSwimming_.erase(guid);
     creatureWasFlying_.erase(guid);
+    creatureWasWalking_.erase(guid);
     creatureSwimmingState_.erase(guid);
     creatureWalkingState_.erase(guid);
     creatureFlyingState_.erase(guid);

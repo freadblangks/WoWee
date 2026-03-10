@@ -2233,12 +2233,19 @@ void GameHandler::handlePacket(network::Packet& packet) {
 
         // ---- Spell log miss ----
         case Opcode::SMSG_SPELLLOGMISS: {
-            // packed_guid caster + packed_guid target + uint8 isCrit + uint32 count
+            // WotLK: packed_guid caster + packed_guid target + uint8 isCrit + uint32 count
+            // TBC/Classic: full uint64 caster + full uint64 target + uint8 isCrit + uint32 count
             // + count × (uint64 victimGuid + uint8 missInfo)
-            if (packet.getSize() - packet.getReadPos() < 2) break;
-            uint64_t casterGuid = UpdateObjectParser::readPackedGuid(packet);
-            if (packet.getSize() - packet.getReadPos() < 2) break;
-            /*uint64_t targetGuidLog =*/ UpdateObjectParser::readPackedGuid(packet);
+            const bool spellMissTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
+            auto readSpellMissGuid = [&]() -> uint64_t {
+                if (spellMissTbcLike)
+                    return (packet.getSize() - packet.getReadPos() >= 8) ? packet.readUInt64() : 0;
+                return UpdateObjectParser::readPackedGuid(packet);
+            };
+            if (packet.getSize() - packet.getReadPos() < (spellMissTbcLike ? 8 : 1)) break;
+            uint64_t casterGuid = readSpellMissGuid();
+            if (packet.getSize() - packet.getReadPos() < (spellMissTbcLike ? 8 : 1)) break;
+            /*uint64_t targetGuidLog =*/ readSpellMissGuid();
             if (packet.getSize() - packet.getReadPos() < 5) break;
             /*uint8_t isCrit =*/ packet.readUInt8();
             uint32_t count = packet.readUInt32();
@@ -4751,13 +4758,18 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
         case Opcode::SMSG_SPELLORDAMAGE_IMMUNE: {
-            // casterGuid(packed) + victimGuid(packed) + uint32 spellId + uint8 saveType
-            if (packet.getSize() - packet.getReadPos() < 2) {
+            // WotLK: packed casterGuid + packed victimGuid + uint32 spellId + uint8 saveType
+            // TBC/Classic: full uint64 casterGuid + full uint64 victimGuid + uint32 + uint8
+            const bool immuneTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
+            const size_t minSz = immuneTbcLike ? 21u : 2u;
+            if (packet.getSize() - packet.getReadPos() < minSz) {
                 packet.setReadPos(packet.getSize()); break;
             }
-            uint64_t casterGuid = UpdateObjectParser::readPackedGuid(packet);
-            if (packet.getSize() - packet.getReadPos() < 2) break;
-            uint64_t victimGuid = UpdateObjectParser::readPackedGuid(packet);
+            uint64_t casterGuid = immuneTbcLike
+                ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
+            if (packet.getSize() - packet.getReadPos() < (immuneTbcLike ? 8u : 2u)) break;
+            uint64_t victimGuid = immuneTbcLike
+                ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
             if (packet.getSize() - packet.getReadPos() < 5) break;
             /*uint32_t spellId =*/ packet.readUInt32();
             /*uint8_t saveType =*/ packet.readUInt8();
@@ -4770,14 +4782,18 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
         case Opcode::SMSG_SPELLDISPELLOG: {
-            // packed casterGuid + packed victimGuid + uint32 dispelSpell + uint8 isStolen
+            // WotLK: packed casterGuid + packed victimGuid + uint32 dispelSpell + uint8 isStolen
+            // TBC/Classic: full uint64 casterGuid + full uint64 victimGuid + ...
             // + uint32 count + count × (uint32 dispelled_spellId + uint32 unk)
-            if (packet.getSize() - packet.getReadPos() < 2) {
+            const bool dispelTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
+            if (packet.getSize() - packet.getReadPos() < (dispelTbcLike ? 8u : 2u)) {
                 packet.setReadPos(packet.getSize()); break;
             }
-            uint64_t casterGuid = UpdateObjectParser::readPackedGuid(packet);
-            if (packet.getSize() - packet.getReadPos() < 2) break;
-            uint64_t victimGuid = UpdateObjectParser::readPackedGuid(packet);
+            uint64_t casterGuid = dispelTbcLike
+                ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
+            if (packet.getSize() - packet.getReadPos() < (dispelTbcLike ? 8u : 2u)) break;
+            uint64_t victimGuid = dispelTbcLike
+                ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
             if (packet.getSize() - packet.getReadPos() < 9) break;
             /*uint32_t dispelSpell =*/ packet.readUInt32();
             uint8_t isStolen = packet.readUInt8();

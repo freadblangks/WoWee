@@ -4409,7 +4409,9 @@ void GameScreen::renderXpBar(game::GameHandler& gameHandler) {
     uint32_t nextLevelXp = gameHandler.getPlayerNextLevelXp();
     if (nextLevelXp == 0) return; // No XP data yet (level 80 or not initialized)
 
-    uint32_t currentXp = gameHandler.getPlayerXp();
+    uint32_t currentXp  = gameHandler.getPlayerXp();
+    uint32_t restedXp   = gameHandler.getPlayerRestedXp();
+    bool     isResting  = gameHandler.isPlayerResting();
     auto* window = core::Application::getInstance().getWindow();
     float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
     float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
@@ -4449,15 +4451,29 @@ void GameScreen::renderXpBar(game::GameHandler& gameHandler) {
         ImVec2 barMax = ImVec2(barMin.x + barSize.x, barMin.y + barSize.y);
         auto* drawList = ImGui::GetWindowDrawList();
 
-        ImU32 bg = IM_COL32(15, 15, 20, 220);
-        ImU32 fg = IM_COL32(148, 51, 238, 255);
-        ImU32 seg = IM_COL32(35, 35, 45, 255);
+        ImU32 bg      = IM_COL32(15, 15, 20, 220);
+        ImU32 fg      = IM_COL32(148, 51, 238, 255);
+        ImU32 fgRest  = IM_COL32(200, 170, 255, 220); // lighter purple for rested portion
+        ImU32 seg     = IM_COL32(35, 35, 45, 255);
         drawList->AddRectFilled(barMin, barMax, bg, 2.0f);
         drawList->AddRect(barMin, barMax, IM_COL32(80, 80, 90, 220), 2.0f);
 
         float fillW = barSize.x * pct;
         if (fillW > 0.0f) {
             drawList->AddRectFilled(barMin, ImVec2(barMin.x + fillW, barMax.y), fg, 2.0f);
+        }
+
+        // Rested XP overlay: draw from current XP fill to (currentXp + restedXp) fill
+        if (restedXp > 0) {
+            float restedEndPct = std::min(1.0f, static_cast<float>(currentXp + restedXp)
+                                                / static_cast<float>(nextLevelXp));
+            float restedStartX = barMin.x + fillW;
+            float restedEndX   = barMin.x + barSize.x * restedEndPct;
+            if (restedEndX > restedStartX) {
+                drawList->AddRectFilled(ImVec2(restedStartX, barMin.y),
+                                        ImVec2(restedEndX,   barMax.y),
+                                        fgRest, 2.0f);
+            }
         }
 
         const int segments = 20;
@@ -4467,8 +4483,21 @@ void GameScreen::renderXpBar(game::GameHandler& gameHandler) {
             drawList->AddLine(ImVec2(x, barMin.y + 1.0f), ImVec2(x, barMax.y - 1.0f), seg, 1.0f);
         }
 
+        // Rest indicator "zzz" to the right of the bar when resting
+        if (isResting) {
+            const char* zzz = "zzz";
+            ImVec2 zSize = ImGui::CalcTextSize(zzz);
+            float zx = barMax.x - zSize.x - 4.0f;
+            float zy = barMin.y + (barSize.y - zSize.y) * 0.5f;
+            drawList->AddText(ImVec2(zx, zy), IM_COL32(180, 150, 255, 220), zzz);
+        }
+
         char overlay[96];
-        snprintf(overlay, sizeof(overlay), "%u / %u XP", currentXp, nextLevelXp);
+        if (restedXp > 0) {
+            snprintf(overlay, sizeof(overlay), "%u / %u XP  (+%u rested)", currentXp, nextLevelXp, restedXp);
+        } else {
+            snprintf(overlay, sizeof(overlay), "%u / %u XP", currentXp, nextLevelXp);
+        }
         ImVec2 textSize = ImGui::CalcTextSize(overlay);
         float tx = barMin.x + (barSize.x - textSize.x) * 0.5f;
         float ty = barMin.y + (barSize.y - textSize.y) * 0.5f;

@@ -4644,8 +4644,9 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_SET_REST_START: {
             if (packet.getSize() - packet.getReadPos() >= 4) {
                 uint32_t restTrigger = packet.readUInt32();
-                addSystemChatMessage(restTrigger > 0 ? "You are now resting."
-                                                     : "You are no longer resting.");
+                isResting_ = (restTrigger > 0);
+                addSystemChatMessage(isResting_ ? "You are now resting."
+                                                : "You are no longer resting.");
             }
             break;
         }
@@ -7835,6 +7836,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     bool slotsChanged = false;
                     const uint16_t ufPlayerXp = fieldIndex(UF::PLAYER_XP);
                     const uint16_t ufPlayerNextXp = fieldIndex(UF::PLAYER_NEXT_LEVEL_XP);
+                    const uint16_t ufPlayerRestedXp = fieldIndex(UF::PLAYER_REST_STATE_EXPERIENCE);
                     const uint16_t ufPlayerLevel = fieldIndex(UF::UNIT_FIELD_LEVEL);
                     const uint16_t ufCoinage = fieldIndex(UF::PLAYER_FIELD_COINAGE);
                     const uint16_t ufArmor = fieldIndex(UF::UNIT_FIELD_RESISTANCES);
@@ -7842,6 +7844,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     for (const auto& [key, val] : block.fields) {
                         if (key == ufPlayerXp) { playerXp_ = val; }
                         else if (key == ufPlayerNextXp) { playerNextLevelXp_ = val; }
+                        else if (ufPlayerRestedXp != 0xFFFF && key == ufPlayerRestedXp) { playerRestedXp_ = val; }
                         else if (key == ufPlayerLevel) {
                             serverPlayerLevel_ = val;
                             for (auto& ch : characters) {

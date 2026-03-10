@@ -640,6 +640,8 @@ public:
     // XP tracking
     uint32_t getPlayerXp() const { return playerXp_; }
     uint32_t getPlayerNextLevelXp() const { return playerNextLevelXp_; }
+    uint32_t getPlayerRestedXp() const { return playerRestedXp_; }
+    bool isPlayerResting() const { return isResting_; }
     uint32_t getPlayerLevel() const { return serverPlayerLevel_; }
     const std::vector<uint32_t>& getPlayerExploredZoneMasks() const { return playerExploredZones_; }
     bool hasPlayerExploredZoneMasks() const { return hasPlayerExploredZones_; }
@@ -2199,6 +2201,8 @@ private:
     // ---- XP tracking ----
     uint32_t playerXp_ = 0;
     uint32_t playerNextLevelXp_ = 0;
+    uint32_t playerRestedXp_ = 0;
+    bool isResting_ = false;
     uint32_t serverPlayerLevel_ = 1;
     static uint32_t xpForLevel(uint32_t level);
 

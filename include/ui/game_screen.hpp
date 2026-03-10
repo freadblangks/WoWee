@@ -115,6 +115,10 @@ private:
     bool pendingShowActionBar2 = true;   // Show second action bar above main bar
     float pendingActionBar2OffsetX = 0.0f;  // Horizontal offset from default center position
     float pendingActionBar2OffsetY = 0.0f;  // Vertical offset from default (above bar 1)
+    bool pendingShowRightBar = false;   // Right-edge vertical action bar (bar 3, slots 24-35)
+    bool pendingShowLeftBar  = false;   // Left-edge vertical action bar (bar 4, slots 36-47)
+    float pendingRightBarOffsetY = 0.0f;  // Vertical offset from screen center
+    float pendingLeftBarOffsetY  = 0.0f;  // Vertical offset from screen center
     int pendingGroundClutterDensity = 100;
     int pendingAntiAliasing = 0;  // 0=Off, 1=2x, 2=4x, 3=8x
     bool pendingNormalMapping = true;   // on by default

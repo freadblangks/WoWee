@@ -588,10 +588,14 @@ public:
     const std::unordered_map<uint32_t, TalentTabEntry>& getAllTalentTabs() const { return talentTabCache_; }
     void loadTalentDbc();
 
-    // Action bar — 2 bars × 12 slots = 24 total
+    // Action bar — 4 bars × 12 slots = 48 total
+    // Bar 0 (slots  0-11): main bottom bar (1-0, -, =)
+    // Bar 1 (slots 12-23): second bar above main (Shift+1 ... Shift+=)
+    // Bar 2 (slots 24-35): right side vertical bar
+    // Bar 3 (slots 36-47): left side vertical bar
     static constexpr int SLOTS_PER_BAR    = 12;
-    static constexpr int ACTION_BARS      = 2;
-    static constexpr int ACTION_BAR_SLOTS = SLOTS_PER_BAR * ACTION_BARS;   // 24
+    static constexpr int ACTION_BARS      = 4;
+    static constexpr int ACTION_BAR_SLOTS = SLOTS_PER_BAR * ACTION_BARS;   // 48
     std::array<ActionBarSlot, ACTION_BAR_SLOTS>& getActionBar() { return actionBar; }
     const std::array<ActionBarSlot, ACTION_BAR_SLOTS>& getActionBar() const { return actionBar; }
     void setActionBarSlot(int slot, ActionBarSlot::Type type, uint32_t id);

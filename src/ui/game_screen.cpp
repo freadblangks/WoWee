@@ -3897,9 +3897,11 @@ VkDescriptorSet GameScreen::getSpellIcon(uint32_t spellId, pipeline::AssetManage
 }
 
 void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
-    auto* window = core::Application::getInstance().getWindow();
-    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
-    float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
+    // Use ImGui's display size — always in sync with the current swap-chain/frame,
+    // whereas window->getWidth/Height() can lag by one frame on resize events.
+    ImVec2 displaySize = ImGui::GetIO().DisplaySize;
+    float screenW = displaySize.x > 0.0f ? displaySize.x : 1280.0f;
+    float screenH = displaySize.y > 0.0f ? displaySize.y : 720.0f;
     auto* assetMgr = core::Application::getInstance().getAssetManager();
 
     float slotSize = 48.0f;
@@ -4175,6 +4177,64 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
     ImGui::PopStyleColor();
     ImGui::PopStyleVar(4);
 
+    // Right side vertical bar (bar 3, slots 24-35)
+    if (pendingShowRightBar) {
+        bool bar3HasContent = false;
+        for (int i = 0; i < game::GameHandler::SLOTS_PER_BAR; ++i)
+            if (!bar[game::GameHandler::SLOTS_PER_BAR * 2 + i].isEmpty()) { bar3HasContent = true; break; }
+
+        float sideBarW = slotSize + padding * 2;
+        float sideBarH = game::GameHandler::SLOTS_PER_BAR * slotSize + (game::GameHandler::SLOTS_PER_BAR - 1) * spacing + padding * 2;
+        float sideBarX = screenW - sideBarW - 4.0f;
+        float sideBarY = (screenH - sideBarH) / 2.0f + pendingRightBarOffsetY;
+
+        ImGui::SetNextWindowPos(ImVec2(sideBarX, sideBarY), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(sideBarW, sideBarH), ImGuiCond_Always);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(padding, padding));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg,
+            bar3HasContent ? ImVec4(0.05f, 0.05f, 0.05f, 0.85f) : ImVec4(0.05f, 0.05f, 0.05f, 0.4f));
+        if (ImGui::Begin("##ActionBarRight", nullptr, flags)) {
+            for (int i = 0; i < game::GameHandler::SLOTS_PER_BAR; ++i) {
+                renderBarSlot(game::GameHandler::SLOTS_PER_BAR * 2 + i, "");
+            }
+        }
+        ImGui::End();
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar(4);
+    }
+
+    // Left side vertical bar (bar 4, slots 36-47)
+    if (pendingShowLeftBar) {
+        bool bar4HasContent = false;
+        for (int i = 0; i < game::GameHandler::SLOTS_PER_BAR; ++i)
+            if (!bar[game::GameHandler::SLOTS_PER_BAR * 3 + i].isEmpty()) { bar4HasContent = true; break; }
+
+        float sideBarW = slotSize + padding * 2;
+        float sideBarH = game::GameHandler::SLOTS_PER_BAR * slotSize + (game::GameHandler::SLOTS_PER_BAR - 1) * spacing + padding * 2;
+        float sideBarX = 4.0f;
+        float sideBarY = (screenH - sideBarH) / 2.0f + pendingLeftBarOffsetY;
+
+        ImGui::SetNextWindowPos(ImVec2(sideBarX, sideBarY), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(sideBarW, sideBarH), ImGuiCond_Always);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(padding, padding));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg,
+            bar4HasContent ? ImVec4(0.05f, 0.05f, 0.05f, 0.85f) : ImVec4(0.05f, 0.05f, 0.05f, 0.4f));
+        if (ImGui::Begin("##ActionBarLeft", nullptr, flags)) {
+            for (int i = 0; i < game::GameHandler::SLOTS_PER_BAR; ++i) {
+                renderBarSlot(game::GameHandler::SLOTS_PER_BAR * 3 + i, "");
+            }
+        }
+        ImGui::End();
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar(4);
+    }
+
     // Handle action bar drag: render icon at cursor and detect drop outside
     if (actionBarDragSlot_ >= 0) {
         ImVec2 mousePos = ImGui::GetMousePos();
@@ -4211,9 +4271,9 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
 // ============================================================
 
 void GameScreen::renderBagBar(game::GameHandler& gameHandler) {
-    auto* window = core::Application::getInstance().getWindow();
-    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
-    float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
+    ImVec2 displaySize = ImGui::GetIO().DisplaySize;
+    float screenW = displaySize.x > 0.0f ? displaySize.x : 1280.0f;
+    float screenH = displaySize.y > 0.0f ? displaySize.y : 720.0f;
     auto* assetMgr = core::Application::getInstance().getAssetManager();
 
     float slotSize = 42.0f;
@@ -4458,9 +4518,11 @@ void GameScreen::renderXpBar(game::GameHandler& gameHandler) {
     uint32_t currentXp  = gameHandler.getPlayerXp();
     uint32_t restedXp   = gameHandler.getPlayerRestedXp();
     bool     isResting  = gameHandler.isPlayerResting();
+    ImVec2 displaySize = ImGui::GetIO().DisplaySize;
+    float screenW = displaySize.x > 0.0f ? displaySize.x : 1280.0f;
+    float screenH = displaySize.y > 0.0f ? displaySize.y : 720.0f;
     auto* window = core::Application::getInstance().getWindow();
-    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
-    float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
+    (void)window;  // Not used for positioning; kept for AssetManager if needed
 
     // Position just above both action bars (bar1 at screenH-barH, bar2 above that)
     float slotSize = 48.0f;
@@ -4472,8 +4534,17 @@ void GameScreen::renderXpBar(game::GameHandler& gameHandler) {
     float xpBarH = 20.0f;
     float xpBarW = barW;
     float xpBarX = (screenW - xpBarW) / 2.0f;
-    // bar1 is at screenH-barH, bar2 is at screenH-2*barH-2; XP bar sits above bar2
-    float xpBarY = screenH - 2.0f * barH - 2.0f - xpBarH - 2.0f;
+    // XP bar sits just above whichever bar is topmost.
+    // bar1 top edge: screenH - barH
+    // bar2 top edge (when visible): bar1 top - barH - 2 + bar2 vertical offset
+    float bar1TopY = screenH - barH;
+    float xpBarY;
+    if (pendingShowActionBar2) {
+        float bar2TopY = bar1TopY - barH - 2.0f + pendingActionBar2OffsetY;
+        xpBarY = bar2TopY - xpBarH - 2.0f;
+    } else {
+        xpBarY = bar1TopY - xpBarH - 2.0f;
+    }
 
     ImGui::SetNextWindowPos(ImVec2(xpBarX, xpBarY), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(xpBarW, xpBarH + 4.0f), ImGuiCond_Always);
@@ -4564,9 +4635,9 @@ void GameScreen::renderXpBar(game::GameHandler& gameHandler) {
 void GameScreen::renderCastBar(game::GameHandler& gameHandler) {
     if (!gameHandler.isCasting()) return;
 
-    auto* window = core::Application::getInstance().getWindow();
-    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
-    float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
+    ImVec2 displaySize = ImGui::GetIO().DisplaySize;
+    float screenW = displaySize.x > 0.0f ? displaySize.x : 1280.0f;
+    float screenH = displaySize.y > 0.0f ? displaySize.y : 720.0f;
 
     float barW = 300.0f;
     float barX = (screenW - barW) / 2.0f;
@@ -4611,9 +4682,9 @@ void GameScreen::renderCastBar(game::GameHandler& gameHandler) {
 // ============================================================
 
 void GameScreen::renderMirrorTimers(game::GameHandler& gameHandler) {
-    auto* window = core::Application::getInstance().getWindow();
-    float screenW = window ? static_cast<float>(window->getWidth())  : 1280.0f;
-    float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
+    ImVec2 displaySize = ImGui::GetIO().DisplaySize;
+    float screenW = displaySize.x > 0.0f ? displaySize.x : 1280.0f;
+    float screenH = displaySize.y > 0.0f ? displaySize.y : 720.0f;
 
     static const struct { const char* label; ImVec4 color; } kTimerInfo[3] = {
         { "Fatigue", ImVec4(0.8f, 0.4f, 0.1f, 1.0f) },
@@ -4992,16 +5063,26 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
 
         // Name + level label above health bar
         uint32_t level = unit->getLevel();
+        const std::string& unitName = unit->getName();
         char labelBuf[96];
-        if (level > 0) {
+        if (isPlayer) {
+            // Player nameplates: show name only (no level clutter).
+            // Fall back to level as placeholder while the name query is pending.
+            if (!unitName.empty())
+                snprintf(labelBuf, sizeof(labelBuf), "%s", unitName.c_str());
+            else if (level > 0)
+                snprintf(labelBuf, sizeof(labelBuf), "Player (%u)", level);
+            else
+                snprintf(labelBuf, sizeof(labelBuf), "Player");
+        } else if (level > 0) {
             uint32_t playerLevel = gameHandler.getPlayerLevel();
             // Show skull for units more than 10 levels above the player
             if (playerLevel > 0 && level > playerLevel + 10)
-                snprintf(labelBuf, sizeof(labelBuf), "?? %s", unit->getName().c_str());
+                snprintf(labelBuf, sizeof(labelBuf), "?? %s", unitName.c_str());
             else
-                snprintf(labelBuf, sizeof(labelBuf), "%u %s", level, unit->getName().c_str());
+                snprintf(labelBuf, sizeof(labelBuf), "%u %s", level, unitName.c_str());
         } else {
-            snprintf(labelBuf, sizeof(labelBuf), "%s", unit->getName().c_str());
+            snprintf(labelBuf, sizeof(labelBuf), "%s", unitName.c_str());
         }
         ImVec2 textSize = ImGui::CalcTextSize(labelBuf);
         float nameX = sx - textSize.x * 0.5f;
@@ -8030,6 +8111,32 @@ void GameScreen::renderSettingsWindow() {
                     }
                 }
 
+                ImGui::Spacing();
+                if (ImGui::Checkbox("Show Right Side Bar", &pendingShowRightBar)) {
+                    saveSettings();
+                }
+                ImGui::SameLine();
+                ImGui::TextDisabled("(Slots 25-36)");
+                if (pendingShowRightBar) {
+                    ImGui::SetNextItemWidth(160.0f);
+                    if (ImGui::SliderFloat("Vertical Offset##rbar", &pendingRightBarOffsetY, -400.0f, 400.0f, "%.0f px")) {
+                        saveSettings();
+                    }
+                }
+
+                ImGui::Spacing();
+                if (ImGui::Checkbox("Show Left Side Bar", &pendingShowLeftBar)) {
+                    saveSettings();
+                }
+                ImGui::SameLine();
+                ImGui::TextDisabled("(Slots 37-48)");
+                if (pendingShowLeftBar) {
+                    ImGui::SetNextItemWidth(160.0f);
+                    if (ImGui::SliderFloat("Vertical Offset##lbar", &pendingLeftBarOffsetY, -400.0f, 400.0f, "%.0f px")) {
+                        saveSettings();
+                    }
+                }
+
                 ImGui::EndChild();
                 ImGui::EndTabItem();
             }
@@ -9096,6 +9203,10 @@ void GameScreen::saveSettings() {
     out << "show_action_bar2=" << (pendingShowActionBar2 ? 1 : 0) << "\n";
     out << "action_bar2_offset_x=" << pendingActionBar2OffsetX << "\n";
     out << "action_bar2_offset_y=" << pendingActionBar2OffsetY << "\n";
+    out << "show_right_bar=" << (pendingShowRightBar ? 1 : 0) << "\n";
+    out << "show_left_bar=" << (pendingShowLeftBar ? 1 : 0) << "\n";
+    out << "right_bar_offset_y=" << pendingRightBarOffsetY << "\n";
+    out << "left_bar_offset_y=" << pendingLeftBarOffsetY << "\n";
 
     // Audio
     out << "sound_muted=" << (soundMuted_ ? 1 : 0) << "\n";
@@ -9191,6 +9302,14 @@ void GameScreen::loadSettings() {
                 pendingActionBar2OffsetX = std::clamp(std::stof(val), -600.0f, 600.0f);
             } else if (key == "action_bar2_offset_y") {
                 pendingActionBar2OffsetY = std::clamp(std::stof(val), -400.0f, 400.0f);
+            } else if (key == "show_right_bar") {
+                pendingShowRightBar = (std::stoi(val) != 0);
+            } else if (key == "show_left_bar") {
+                pendingShowLeftBar = (std::stoi(val) != 0);
+            } else if (key == "right_bar_offset_y") {
+                pendingRightBarOffsetY = std::clamp(std::stof(val), -400.0f, 400.0f);
+            } else if (key == "left_bar_offset_y") {
+                pendingLeftBarOffsetY = std::clamp(std::stof(val), -400.0f, 400.0f);
             }
             // Audio
             else if (key == "sound_muted") {

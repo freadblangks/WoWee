@@ -1696,12 +1696,71 @@ void Application::setupUICallbacks() {
         LOG_INFO("Online world entry: mapId=", mapId, " pos=(", x, ", ", y, ", ", z, ")"
                  " initial=", isInitialEntry);
 
+        // Reconnect to the same map: terrain stays loaded but all online entities are stale.
+        // Despawn them properly so the server's fresh CREATE_OBJECTs will re-populate the world.
+        if (mapId == loadedMapId_ && renderer && renderer->getTerrainManager() && isInitialEntry) {
+            LOG_INFO("Reconnect to same map ", mapId, ": clearing stale online entities (terrain preserved)");
+
+            // Pending spawn queues
+            pendingCreatureSpawns_.clear();
+            pendingCreatureSpawnGuids_.clear();
+            creatureSpawnRetryCounts_.clear();
+            pendingPlayerSpawns_.clear();
+            pendingPlayerSpawnGuids_.clear();
+            pendingOnlinePlayerEquipment_.clear();
+            deferredEquipmentQueue_.clear();
+            pendingGameObjectSpawns_.clear();
+
+            // Properly despawn all tracked instances from the renderer
+            {
+                std::vector<uint64_t> guids;
+                guids.reserve(creatureInstances_.size());
+                for (const auto& [g, _] : creatureInstances_) guids.push_back(g);
+                for (auto g : guids) despawnOnlineCreature(g);
+            }
+            {
+                std::vector<uint64_t> guids;
+                guids.reserve(playerInstances_.size());
+                for (const auto& [g, _] : playerInstances_) guids.push_back(g);
+                for (auto g : guids) despawnOnlinePlayer(g);
+            }
+            {
+                std::vector<uint64_t> guids;
+                guids.reserve(gameObjectInstances_.size());
+                for (const auto& [g, _] : gameObjectInstances_) guids.push_back(g);
+                for (auto g : guids) despawnOnlineGameObject(g);
+            }
+
+            // Update player position and re-queue nearby tiles (same logic as teleport)
+            glm::vec3 canonical = core::coords::serverToCanonical(glm::vec3(x, y, z));
+            glm::vec3 renderPos = core::coords::canonicalToRender(canonical);
+            renderer->getCharacterPosition() = renderPos;
+            if (renderer->getCameraController()) {
+                auto* ft = renderer->getCameraController()->getFollowTargetMutable();
+                if (ft) *ft = renderPos;
+                renderer->getCameraController()->clearMovementInputs();
+                renderer->getCameraController()->suppressMovementFor(1.0f);
+            }
+            worldEntryMovementGraceTimer_ = 2.0f;
+            taxiLandingClampTimer_ = 0.0f;
+            lastTaxiFlight_ = false;
+            renderer->getTerrainManager()->processAllReadyTiles();
+            {
+                auto [tileX, tileY] = core::coords::worldToTile(renderPos.x, renderPos.y);
+                std::vector<std::pair<int,int>> nearbyTiles;
+                nearbyTiles.reserve(289);
+                for (int dy = -8; dy <= 8; dy++)
+                    for (int dx = -8; dx <= 8; dx++)
+                        nearbyTiles.push_back({tileX + dx, tileY + dy});
+                renderer->getTerrainManager()->precacheTiles(nearbyTiles);
+            }
+            return;
+        }
+
         // Same-map teleport (taxi landing, GM teleport on same continent):
         // just update position, let terrain streamer handle tile loading incrementally.
         // A full reload is only needed on first entry or map change.
-        // Exception: on reconnect to the same map (isInitialEntry=true), all online entities
-        // are stale and must be cleared so the server's fresh CREATE_OBJECTs re-spawn them.
-        if (mapId == loadedMapId_ && renderer && renderer->getTerrainManager() && !isInitialEntry) {
+        if (mapId == loadedMapId_ && renderer && renderer->getTerrainManager()) {
             LOG_INFO("Same-map teleport (map ", mapId, "), skipping full world reload");
             glm::vec3 canonical = core::coords::serverToCanonical(glm::vec3(x, y, z));
             glm::vec3 renderPos = core::coords::canonicalToRender(canonical);

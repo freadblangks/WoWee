@@ -106,9 +106,22 @@ public:
     void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera);
 
     /**
-     * Render terrain into shadow depth map (Phase 6 stub)
+     * Initialize terrain shadow pipeline (must be called after initialize()).
+     * @param shadowRenderPass  Depth-only render pass used for the shadow map.
      */
-    void renderShadow(VkCommandBuffer cmd, const glm::vec3& shadowCenter, float halfExtent);
+    bool initializeShadow(VkRenderPass shadowRenderPass);
+
+    /**
+     * Render terrain into the shadow depth map.
+     * @param cmd               Command buffer (inside shadow render pass).
+     * @param lightSpaceMatrix  Orthographic light-space transform.
+     * @param shadowCenter      World-space centre of shadow coverage.
+     * @param shadowRadius      Cull radius around shadowCenter.
+     */
+    void renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMatrix,
+                      const glm::vec3& shadowCenter, float shadowRadius);
+
+    bool hasShadowPipeline() const { return shadowPipeline_ != VK_NULL_HANDLE; }
 
     void clear();
 
@@ -119,7 +132,6 @@ public:
     void setFogEnabled(bool enabled) { fogEnabled = enabled; }
     bool isFogEnabled() const { return fogEnabled; }
 
-    // Shadow mapping stubs (Phase 6)
     void setShadowMap(VkDescriptorImageInfo /*depthInfo*/, const glm::mat4& /*lightSpaceMat*/) {}
     void clearShadowMap() {}
 
@@ -142,11 +154,20 @@ private:
     VkContext* vkCtx = nullptr;
     pipeline::AssetManager* assetManager = nullptr;
 
-    // Pipeline
+    // Main pipelines
     VkPipeline pipeline = VK_NULL_HANDLE;
     VkPipeline wireframePipeline = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     VkDescriptorSetLayout materialSetLayout = VK_NULL_HANDLE;
+
+    // Shadow pipeline
+    VkPipeline shadowPipeline_ = VK_NULL_HANDLE;
+    VkPipelineLayout shadowPipelineLayout_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout shadowParamsLayout_ = VK_NULL_HANDLE;
+    VkDescriptorPool shadowParamsPool_ = VK_NULL_HANDLE;
+    VkDescriptorSet shadowParamsSet_ = VK_NULL_HANDLE;
+    VkBuffer shadowParamsUBO_ = VK_NULL_HANDLE;
+    VmaAllocation shadowParamsAlloc_ = VK_NULL_HANDLE;
 
     // Descriptor pool for material sets
     VkDescriptorPool materialDescPool = VK_NULL_HANDLE;

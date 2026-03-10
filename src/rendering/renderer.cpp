@@ -4998,6 +4998,11 @@ bool Renderer::initializeRenderers(pipeline::AssetManager* assetManager, const s
             terrainRenderer.reset();
             return false;
         }
+        if (shadowRenderPass != VK_NULL_HANDLE) {
+            terrainRenderer->initializeShadow(shadowRenderPass);
+        }
+    } else if (!terrainRenderer->hasShadowPipeline() && shadowRenderPass != VK_NULL_HANDLE) {
+        terrainRenderer->initializeShadow(shadowRenderPass);
     }
 
     // Create water renderer if not already created
@@ -5724,6 +5729,9 @@ void Renderer::renderShadowPass() {
 
     // Phase 7/8: render shadow casters
     const float shadowCullRadius = shadowDistance_ * 1.35f;
+    if (terrainRenderer) {
+        terrainRenderer->renderShadow(currentCmd, lightSpaceMatrix, shadowCenter, shadowCullRadius);
+    }
     if (wmoRenderer) {
         wmoRenderer->renderShadow(currentCmd, lightSpaceMatrix, shadowCenter, shadowCullRadius);
     }

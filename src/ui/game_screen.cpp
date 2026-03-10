@@ -1214,6 +1214,11 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
                        msg.type == game::ChatType::MONSTER_WHISPER || msg.type == game::ChatType::RAID_BOSS_WHISPER) {
                 std::string fullMsg = tsPrefix + msg.senderName + " whispers: " + processedMessage;
                 renderTextWithLinks(fullMsg, color);
+            } else if (msg.type == game::ChatType::WHISPER_INFORM) {
+                // Outgoing whisper — show "To Name: message" (WoW-style)
+                const std::string& target = !msg.receiverName.empty() ? msg.receiverName : msg.senderName;
+                std::string fullMsg = tsPrefix + "To " + target + ": " + processedMessage;
+                renderTextWithLinks(fullMsg, color);
             } else if (msg.type == game::ChatType::EMOTE ||
                        msg.type == game::ChatType::MONSTER_EMOTE || msg.type == game::ChatType::RAID_BOSS_EMOTE) {
                 std::string fullMsg = tsPrefix + msg.senderName + " " + processedMessage;
@@ -3378,29 +3383,29 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
 
 const char* GameScreen::getChatTypeName(game::ChatType type) const {
     switch (type) {
-        case game::ChatType::SAY: return "SAY";
-        case game::ChatType::YELL: return "YELL";
-        case game::ChatType::EMOTE: return "EMOTE";
-        case game::ChatType::TEXT_EMOTE: return "EMOTE";
-        case game::ChatType::PARTY: return "PARTY";
-        case game::ChatType::GUILD: return "GUILD";
-        case game::ChatType::OFFICER: return "OFFICER";
-        case game::ChatType::RAID: return "RAID";
-        case game::ChatType::RAID_LEADER: return "RAID LEADER";
-        case game::ChatType::RAID_WARNING: return "RAID WARNING";
-        case game::ChatType::BATTLEGROUND: return "BATTLEGROUND";
-        case game::ChatType::BATTLEGROUND_LEADER: return "BG LEADER";
-        case game::ChatType::WHISPER: return "WHISPER";
-        case game::ChatType::WHISPER_INFORM: return "TO";
-        case game::ChatType::SYSTEM: return "SYSTEM";
-        case game::ChatType::MONSTER_SAY: return "SAY";
-        case game::ChatType::MONSTER_YELL: return "YELL";
-        case game::ChatType::MONSTER_EMOTE: return "EMOTE";
-        case game::ChatType::CHANNEL: return "CHANNEL";
-        case game::ChatType::ACHIEVEMENT: return "ACHIEVEMENT";
+        case game::ChatType::SAY: return "Say";
+        case game::ChatType::YELL: return "Yell";
+        case game::ChatType::EMOTE: return "Emote";
+        case game::ChatType::TEXT_EMOTE: return "Emote";
+        case game::ChatType::PARTY: return "Party";
+        case game::ChatType::GUILD: return "Guild";
+        case game::ChatType::OFFICER: return "Officer";
+        case game::ChatType::RAID: return "Raid";
+        case game::ChatType::RAID_LEADER: return "Raid Leader";
+        case game::ChatType::RAID_WARNING: return "Raid Warning";
+        case game::ChatType::BATTLEGROUND: return "Battleground";
+        case game::ChatType::BATTLEGROUND_LEADER: return "Battleground Leader";
+        case game::ChatType::WHISPER: return "Whisper";
+        case game::ChatType::WHISPER_INFORM: return "To";
+        case game::ChatType::SYSTEM: return "System";
+        case game::ChatType::MONSTER_SAY: return "Say";
+        case game::ChatType::MONSTER_YELL: return "Yell";
+        case game::ChatType::MONSTER_EMOTE: return "Emote";
+        case game::ChatType::CHANNEL: return "Channel";
+        case game::ChatType::ACHIEVEMENT: return "Achievement";
         case game::ChatType::DND: return "DND";
         case game::ChatType::AFK: return "AFK";
-        default: return "UNKNOWN";
+        default: return "Unknown";
     }
 }
 

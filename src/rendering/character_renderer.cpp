@@ -1659,7 +1659,13 @@ void CharacterRenderer::update(float deltaTime, const glm::vec3& cameraPos) {
                 if (inst.animationLoop) {
                     inst.animationTime = std::fmod(inst.animationTime, static_cast<float>(seq.duration));
                 } else {
-                    inst.animationTime = static_cast<float>(seq.duration);
+                    // One-shot animation finished: return to Stand (0) unless dead
+                    if (inst.currentAnimationId != 1 /*Death*/) {
+                        playAnimation(pair.first, 0, true);
+                    } else {
+                        // Stay on last frame of death
+                        inst.animationTime = static_cast<float>(seq.duration);
+                    }
                 }
             }
         }

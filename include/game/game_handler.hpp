@@ -1155,6 +1155,9 @@ public:
     bool isPlayerRooted() const {
         return (movementInfo.flags & static_cast<uint32_t>(MovementFlags::ROOT)) != 0;
     }
+    bool isGravityDisabled() const {
+        return (movementInfo.flags & static_cast<uint32_t>(MovementFlags::LEVITATING)) != 0;
+    }
     void dismount();
 
     // Taxi / Flight Paths

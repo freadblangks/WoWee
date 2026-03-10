@@ -1010,6 +1010,7 @@ void Application::update(float deltaTime) {
                 if (renderer && gameHandler && renderer->getCameraController()) {
                     renderer->getCameraController()->setRunSpeedOverride(gameHandler->getServerRunSpeed());
                     renderer->getCameraController()->setMovementRooted(gameHandler->isPlayerRooted());
+                    renderer->getCameraController()->setGravityDisabled(gameHandler->isGravityDisabled());
                 }
 
                 bool onTaxi = gameHandler &&

@@ -717,8 +717,14 @@ void CameraController::update(float deltaTime) {
             jumpBufferTimer -= physicsDeltaTime;
             coyoteTimer -= physicsDeltaTime;
 
-            // Apply gravity
-            verticalVelocity += gravity * physicsDeltaTime;
+            // Apply gravity (skip when server has disabled gravity, e.g. Levitate spell)
+            if (gravityDisabled_) {
+                // Float in place: bleed off any downward velocity, allow upward to decay slowly
+                if (verticalVelocity < 0.0f) verticalVelocity = 0.0f;
+                else verticalVelocity *= std::max(0.0f, 1.0f - 3.0f * physicsDeltaTime);
+            } else {
+                verticalVelocity += gravity * physicsDeltaTime;
+            }
             targetPos.z += verticalVelocity * physicsDeltaTime;
             }
         } else {

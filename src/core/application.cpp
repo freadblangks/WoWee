@@ -1013,6 +1013,7 @@ void Application::update(float deltaTime) {
                     renderer->getCameraController()->setSwimSpeedOverride(gameHandler->getServerSwimSpeed());
                     renderer->getCameraController()->setMovementRooted(gameHandler->isPlayerRooted());
                     renderer->getCameraController()->setGravityDisabled(gameHandler->isGravityDisabled());
+                    renderer->getCameraController()->setFeatherFallActive(gameHandler->isFeatherFalling());
                 }
 
                 bool onTaxi = gameHandler &&

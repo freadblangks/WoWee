@@ -726,6 +726,9 @@ void CameraController::update(float deltaTime) {
                 else verticalVelocity *= std::max(0.0f, 1.0f - 3.0f * physicsDeltaTime);
             } else {
                 verticalVelocity += gravity * physicsDeltaTime;
+                // Feather Fall / Slow Fall: cap downward terminal velocity to ~2 m/s
+                if (featherFallActive_ && verticalVelocity < -2.0f)
+                    verticalVelocity = -2.0f;
             }
             targetPos.z += verticalVelocity * physicsDeltaTime;
             }

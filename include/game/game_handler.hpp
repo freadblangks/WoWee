@@ -1160,6 +1160,9 @@ public:
     bool isGravityDisabled() const {
         return (movementInfo.flags & static_cast<uint32_t>(MovementFlags::LEVITATING)) != 0;
     }
+    bool isFeatherFalling() const {
+        return (movementInfo.flags & static_cast<uint32_t>(MovementFlags::FEATHER_FALL)) != 0;
+    }
     void dismount();
 
     // Taxi / Flight Paths

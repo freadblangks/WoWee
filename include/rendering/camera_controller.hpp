@@ -97,6 +97,7 @@ public:
     void setMovementRooted(bool rooted) { movementRooted_ = rooted; }
     bool isMovementRooted() const { return movementRooted_; }
     void setGravityDisabled(bool disabled) { gravityDisabled_ = disabled; }
+    void setFeatherFallActive(bool active) { featherFallActive_ = active; }
     void setMounted(bool m) { mounted_ = m; }
     void setMountHeightOffset(float offset) { mountHeightOffset_ = offset; }
     void setExternalFollow(bool enabled) { externalFollow_ = enabled; }
@@ -279,6 +280,8 @@ private:
     bool movementRooted_ = false;
     // Server-driven gravity disable (levitate/hover): skip gravity accumulation.
     bool gravityDisabled_ = false;
+    // Server-driven feather fall: cap downward velocity to slow-fall terminal.
+    bool featherFallActive_ = false;
     bool mounted_ = false;
     float mountHeightOffset_ = 0.0f;
     bool externalMoving_ = false;

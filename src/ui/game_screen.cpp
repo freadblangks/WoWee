@@ -1203,16 +1203,19 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
         } else if (msg.type == game::ChatType::TEXT_EMOTE) {
             renderTextWithLinks(tsPrefix + processedMessage, color);
         } else if (!msg.senderName.empty()) {
-            if (msg.type == game::ChatType::MONSTER_SAY || msg.type == game::ChatType::MONSTER_PARTY) {
+            if (msg.type == game::ChatType::SAY ||
+                msg.type == game::ChatType::MONSTER_SAY || msg.type == game::ChatType::MONSTER_PARTY) {
                 std::string fullMsg = tsPrefix + msg.senderName + " says: " + processedMessage;
                 renderTextWithLinks(fullMsg, color);
-            } else if (msg.type == game::ChatType::MONSTER_YELL) {
+            } else if (msg.type == game::ChatType::YELL || msg.type == game::ChatType::MONSTER_YELL) {
                 std::string fullMsg = tsPrefix + msg.senderName + " yells: " + processedMessage;
                 renderTextWithLinks(fullMsg, color);
-            } else if (msg.type == game::ChatType::MONSTER_WHISPER || msg.type == game::ChatType::RAID_BOSS_WHISPER) {
+            } else if (msg.type == game::ChatType::WHISPER ||
+                       msg.type == game::ChatType::MONSTER_WHISPER || msg.type == game::ChatType::RAID_BOSS_WHISPER) {
                 std::string fullMsg = tsPrefix + msg.senderName + " whispers: " + processedMessage;
                 renderTextWithLinks(fullMsg, color);
-            } else if (msg.type == game::ChatType::MONSTER_EMOTE || msg.type == game::ChatType::RAID_BOSS_EMOTE) {
+            } else if (msg.type == game::ChatType::EMOTE ||
+                       msg.type == game::ChatType::MONSTER_EMOTE || msg.type == game::ChatType::RAID_BOSS_EMOTE) {
                 std::string fullMsg = tsPrefix + msg.senderName + " " + processedMessage;
                 renderTextWithLinks(fullMsg, color);
             } else if (msg.type == game::ChatType::CHANNEL && !msg.channelName.empty()) {

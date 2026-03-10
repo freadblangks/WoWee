@@ -2096,8 +2096,8 @@ void Renderer::updateCharacterAnimation() {
             // Rider uses character facing yaw, not mount bone rotation
             // (rider faces character direction, seat bone only provides position)
             float yawRad = glm::radians(characterYaw);
-            float riderPitch = taxiFlight_ ? mountPitch_ * 0.35f : 0.0f;
-            float riderRoll = taxiFlight_ ? mountRoll_ * 0.35f : 0.0f;
+            float riderPitch = mountPitch_ * 0.35f;
+            float riderRoll = mountRoll_ * 0.35f;
             characterRenderer->setInstanceRotation(characterInstanceId, glm::vec3(riderPitch, riderRoll, yawRad));
         } else {
             // Fallback to old manual positioning if attachment not found
@@ -4737,7 +4737,7 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
                 auto t0 = std::chrono::steady_clock::now();
                 VkCommandBuffer cmd = beginSecondary(SEC_WMO);
                 setSecondaryViewportScissor(cmd);
-                wmoRenderer->render(cmd, perFrameSet, *camera);
+                wmoRenderer->render(cmd, perFrameSet, *camera, &characterPosition);
                 vkEndCommandBuffer(cmd);
                 return std::chrono::duration<double, std::milli>(
                     std::chrono::steady_clock::now() - t0).count();
@@ -4905,7 +4905,7 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
         if (wmoRenderer && camera && !skipWMO) {
             wmoRenderer->prepareRender();
             auto wmoStart = std::chrono::steady_clock::now();
-            wmoRenderer->render(currentCmd, perFrameSet, *camera);
+            wmoRenderer->render(currentCmd, perFrameSet, *camera, &characterPosition);
             lastWMORenderMs = std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - wmoStart).count();
         }

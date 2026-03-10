@@ -1356,7 +1356,8 @@ void WMORenderer::prepareRender() {
     }
 }
 
-void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera) {
+void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera,
+                         const glm::vec3* viewerPos) {
     if (!opaquePipeline_ || instances.empty()) {
         lastDrawCalls = 0;
         return;
@@ -1380,6 +1381,11 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
     }
 
     glm::vec3 camPos = camera.getPosition();
+    // For portal culling, use the character/player position when available.
+    // The 3rd-person camera can orbit outside a WMO while the character is inside,
+    // causing the portal traversal to start from outside and cull interior groups.
+    // Passing the actual character position as the viewer fixes this.
+    glm::vec3 portalViewerPos = viewerPos ? *viewerPos : camPos;
     bool doPortalCull = portalCulling;
     bool doDistanceCull = distanceCulling;
 
@@ -1400,7 +1406,7 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
         bool usePortalCulling = doPortalCull && !model.portals.empty() && !model.portalRefs.empty();
         if (usePortalCulling) {
             std::unordered_set<uint32_t> pvgSet;
-            glm::vec4 localCamPos = instance.invModelMatrix * glm::vec4(camPos, 1.0f);
+            glm::vec4 localCamPos = instance.invModelMatrix * glm::vec4(portalViewerPos, 1.0f);
             getVisibleGroupsViaPortals(model, glm::vec3(localCamPos), frustum,
                                        instance.modelMatrix, pvgSet);
             portalVisibleGroups.assign(pvgSet.begin(), pvgSet.end());

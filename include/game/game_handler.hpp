@@ -823,6 +823,22 @@ public:
 
     // Player GUID
     uint64_t getPlayerGuid() const { return playerGuid; }
+
+    // Look up a display name for any guid: checks playerNameCache then entity manager.
+    // Returns empty string if unknown. Used by chat display to resolve names at render time.
+    const std::string& lookupName(uint64_t guid) const {
+        static const std::string kEmpty;
+        auto it = playerNameCache.find(guid);
+        if (it != playerNameCache.end()) return it->second;
+        auto entity = entityManager.getEntity(guid);
+        if (entity) {
+            if (auto* unit = dynamic_cast<const Unit*>(entity.get())) {
+                if (!unit->getName().empty()) return unit->getName();
+            }
+        }
+        return kEmpty;
+    }
+
     uint8_t getPlayerClass() const {
         const Character* ch = getActiveCharacter();
         return ch ? static_cast<uint8_t>(ch->characterClass) : 0;

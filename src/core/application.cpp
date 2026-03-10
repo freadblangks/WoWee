@@ -2741,6 +2741,27 @@ void Application::setupUICallbacks() {
         }
     });
 
+    // Emote animation callback — play server-driven emote animations on NPCs and other players
+    gameHandler->setEmoteAnimCallback([this](uint64_t guid, uint32_t emoteAnim) {
+        if (!renderer || emoteAnim == 0) return;
+        auto* cr = renderer->getCharacterRenderer();
+        if (!cr) return;
+        // Look up creature instance first, then online players
+        {
+            auto it = creatureInstances_.find(guid);
+            if (it != creatureInstances_.end()) {
+                cr->playAnimation(it->second, emoteAnim, false);
+                return;
+            }
+        }
+        {
+            auto it = playerInstances_.find(guid);
+            if (it != playerInstances_.end()) {
+                cr->playAnimation(it->second, emoteAnim, false);
+            }
+        }
+    });
+
     // NPC greeting callback - play voice line
     gameHandler->setNpcGreetingCallback([this](uint64_t guid, const glm::vec3& position) {
         if (renderer && renderer->getNpcVoiceManager()) {

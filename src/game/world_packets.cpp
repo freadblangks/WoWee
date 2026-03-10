@@ -1422,6 +1422,14 @@ bool MessageChatParser::parse(network::Packet& packet, MessageChatData& data) {
             break;
         }
 
+        case ChatType::BG_SYSTEM_NEUTRAL:
+        case ChatType::BG_SYSTEM_ALLIANCE:
+        case ChatType::BG_SYSTEM_HORDE:
+            // BG/Arena system messages — no sender GUID or name field, just message.
+            // Reclassify as SYSTEM for consistent display.
+            data.type = ChatType::SYSTEM;
+            break;
+
         default:
             // SAY, GUILD, PARTY, YELL, WHISPER, WHISPER_INFORM, RAID, etc.
             // All have receiverGuid (typically senderGuid repeated)

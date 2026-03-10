@@ -1251,8 +1251,25 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
                 renderTextWithLinks(fullMsg, color);
             }
         } else {
-            std::string fullMsg = tsPrefix + "[" + std::string(getChatTypeName(msg.type)) + "] " + processedMessage;
-            renderTextWithLinks(fullMsg, color);
+            // No sender name. For group/channel types show a bracket prefix;
+            // for sender-specific types (SAY, YELL, WHISPER, etc.) just show the
+            // raw message — these are server-side announcements without a speaker.
+            bool isGroupType =
+                msg.type == game::ChatType::PARTY ||
+                msg.type == game::ChatType::GUILD ||
+                msg.type == game::ChatType::OFFICER ||
+                msg.type == game::ChatType::RAID ||
+                msg.type == game::ChatType::RAID_LEADER ||
+                msg.type == game::ChatType::RAID_WARNING ||
+                msg.type == game::ChatType::BATTLEGROUND ||
+                msg.type == game::ChatType::BATTLEGROUND_LEADER;
+            if (isGroupType) {
+                std::string fullMsg = tsPrefix + "[" + std::string(getChatTypeName(msg.type)) + "] " + processedMessage;
+                renderTextWithLinks(fullMsg, color);
+            } else {
+                // SAY, YELL, WHISPER, unknown BG_SYSTEM_* types, etc. — no prefix
+                renderTextWithLinks(tsPrefix + processedMessage, color);
+            }
         }
     }
 
@@ -3421,6 +3438,9 @@ const char* GameScreen::getChatTypeName(game::ChatType type) const {
         case game::ChatType::ACHIEVEMENT: return "Achievement";
         case game::ChatType::DND: return "DND";
         case game::ChatType::AFK: return "AFK";
+        case game::ChatType::BG_SYSTEM_NEUTRAL:
+        case game::ChatType::BG_SYSTEM_ALLIANCE:
+        case game::ChatType::BG_SYSTEM_HORDE: return "System";
         default: return "Unknown";
     }
 }

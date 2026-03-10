@@ -7930,10 +7930,10 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             if (ghostStateCallback_) ghostStateCallback_(true);
                         }
                     }
-                    // Determine hostility from faction template for online creatures
-                    if (unit->getFactionTemplate() != 0) {
-                        unit->setHostile(isHostileFaction(unit->getFactionTemplate()));
-                    }
+                    // Determine hostility from faction template for online creatures.
+                    // Always call isHostileFaction — factionTemplate=0 defaults to hostile
+                    // in the lookup rather than silently staying at the struct default (false).
+                    unit->setHostile(isHostileFaction(unit->getFactionTemplate()));
                 // Trigger creature spawn callback for units/players with displayId
                     if (block.objectType == ObjectType::UNIT && unit->getDisplayId() == 0) {
                         LOG_WARNING("[Spawn] UNIT guid=0x", std::hex, block.guid, std::dec,
@@ -14287,8 +14287,9 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
     // animation/sound and expects the client to request the mail list.
     bool isMailbox = false;
     bool chestLike = false;
-    // Stock-like behavior: GO use opens GO loot context. Keep eager CMSG_LOOT only
-    // as Classic/Turtle fallback behavior.
+    // Chest-type game objects (type=3): on all expansions, also send CMSG_LOOT so
+    // the server opens the loot response.  Other harvestable/interactive types rely
+    // on the server auto-sending SMSG_LOOT_RESPONSE after CMSG_GAMEOBJ_USE.
     bool shouldSendLoot = isActiveExpansion("classic") || isActiveExpansion("turtle");
     if (entity && entity->getType() == ObjectType::GAMEOBJECT) {
         auto go = std::static_pointer_cast<GameObject>(entity);
@@ -14305,6 +14306,8 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
             refreshMailList();
         } else if (info && info->type == 3) {
             chestLike = true;
+            // Type-3 chests require CMSG_LOOT on all expansions (AzerothCore WotLK included)
+            shouldSendLoot = true;
         } else if (turtleMode) {
             // Turtle compatibility: keep eager loot open behavior.
             shouldSendLoot = true;
@@ -14315,21 +14318,19 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
         std::transform(lower.begin(), lower.end(), lower.begin(),
                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         chestLike = (lower.find("chest") != std::string::npos);
+        if (chestLike) shouldSendLoot = true;
     }
-    // For WotLK chest-like gameobjects, report use but let server open loot.
-    if (!isMailbox && chestLike) {
-        if (isActiveExpansion("wotlk")) {
-            network::Packet reportUse(wireOpcode(Opcode::CMSG_GAMEOBJ_REPORT_USE));
-            reportUse.writeUInt64(guid);
-            socket->send(reportUse);
-        }
+    // For WotLK chest-like gameobjects, also send CMSG_GAMEOBJ_REPORT_USE.
+    if (!isMailbox && chestLike && isActiveExpansion("wotlk")) {
+        network::Packet reportUse(wireOpcode(Opcode::CMSG_GAMEOBJ_REPORT_USE));
+        reportUse.writeUInt64(guid);
+        socket->send(reportUse);
     }
     if (shouldSendLoot) {
         lootTarget(guid);
     }
-    // Retry use briefly to survive packet loss/order races. Keep loot retries only
-    // when we intentionally use eager loot-open mode.
-    const bool retryLoot = shouldSendLoot && (turtleMode || isActiveExpansion("classic"));
+    // Retry use briefly to survive packet loss/order races.
+    const bool retryLoot = shouldSendLoot;
     const bool retryUse = turtleMode || isActiveExpansion("classic");
     if (retryUse || retryLoot) {
         pendingGameObjectLootRetries_.push_back(PendingLootRetry{guid, 0.15f, 2, retryLoot});

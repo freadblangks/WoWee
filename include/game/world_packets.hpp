@@ -615,7 +615,11 @@ enum class ChatType : uint8_t {
     MONSTER_WHISPER = 42,
     RAID_BOSS_WHISPER = 43,
     RAID_BOSS_EMOTE = 44,
-    MONSTER_PARTY = 50
+    MONSTER_PARTY = 50,
+    // BG/Arena system messages (WoW 3.3.5a — no sender, treated as SYSTEM in display)
+    BG_SYSTEM_NEUTRAL  = 82,
+    BG_SYSTEM_ALLIANCE = 83,
+    BG_SYSTEM_HORDE    = 84
 };
 
 /**

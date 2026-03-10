@@ -5546,9 +5546,15 @@ void GameHandler::handlePacket(network::Packet& packet) {
             handleForceMoveFlagChange(packet, "NORMAL_FALL", Opcode::CMSG_MOVE_FEATHER_FALL_ACK, 0, false);
             break;
         case Opcode::SMSG_MOVE_SET_CAN_TRANSITION_BETWEEN_SWIM_AND_FLY:
+            handleForceMoveFlagChange(packet, "SET_CAN_TRANSITION_SWIM_FLY",
+                Opcode::CMSG_MOVE_SET_CAN_TRANSITION_BETWEEN_SWIM_AND_FLY_ACK, 0, true);
+            break;
         case Opcode::SMSG_MOVE_UNSET_CAN_TRANSITION_BETWEEN_SWIM_AND_FLY:
+            handleForceMoveFlagChange(packet, "UNSET_CAN_TRANSITION_SWIM_FLY",
+                Opcode::CMSG_MOVE_SET_CAN_TRANSITION_BETWEEN_SWIM_AND_FLY_ACK, 0, false);
+            break;
         case Opcode::SMSG_MOVE_SET_COLLISION_HGT:
-            packet.setReadPos(packet.getSize());
+            handleMoveSetCollisionHeight(packet);
             break;
         case Opcode::SMSG_MOVE_SET_FLIGHT:
             handleForceMoveFlagChange(packet, "SET_FLIGHT", Opcode::CMSG_MOVE_FLIGHT_ACK,
@@ -11409,6 +11415,47 @@ void GameHandler::handleForceMoveFlagChange(network::Packet& packet, const char*
     }
     if (packetParsers_) packetParsers_->writeMovementPayload(ack, wire);
     else MovementPacket::writeMovementPayload(ack, wire);
+
+    socket->send(ack);
+}
+
+void GameHandler::handleMoveSetCollisionHeight(network::Packet& packet) {
+    // SMSG_MOVE_SET_COLLISION_HGT: packed guid + counter + float (height)
+    // ACK: CMSG_MOVE_SET_COLLISION_HGT_ACK = packed guid + counter + movement block + float (height)
+    const bool legacyGuid = isClassicLikeExpansion() || isActiveExpansion("tbc");
+    if (packet.getSize() - packet.getReadPos() < (legacyGuid ? 8u : 2u)) return;
+    uint64_t guid = legacyGuid ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
+    if (packet.getSize() - packet.getReadPos() < 8) return;  // counter(4) + height(4)
+    uint32_t counter = packet.readUInt32();
+    float height = packet.readFloat();
+
+    LOG_INFO("SMSG_MOVE_SET_COLLISION_HGT: guid=0x", std::hex, guid, std::dec,
+             " counter=", counter, " height=", height);
+
+    if (guid != playerGuid) return;
+    if (!socket) return;
+
+    uint16_t ackWire = wireOpcode(Opcode::CMSG_MOVE_SET_COLLISION_HGT_ACK);
+    if (ackWire == 0xFFFF) return;
+
+    network::Packet ack(ackWire);
+    const bool legacyGuidAck = isActiveExpansion("classic") || isActiveExpansion("tbc") || isActiveExpansion("turtle");
+    if (legacyGuidAck) {
+        ack.writeUInt64(playerGuid);
+    } else {
+        MovementPacket::writePackedGuid(ack, playerGuid);
+    }
+    ack.writeUInt32(counter);
+
+    MovementInfo wire = movementInfo;
+    wire.time = nextMovementTimestampMs();
+    glm::vec3 serverPos = core::coords::canonicalToServer(glm::vec3(wire.x, wire.y, wire.z));
+    wire.x = serverPos.x;
+    wire.y = serverPos.y;
+    wire.z = serverPos.z;
+    if (packetParsers_) packetParsers_->writeMovementPayload(ack, wire);
+    else MovementPacket::writeMovementPayload(ack, wire);
+    ack.writeFloat(height);
 
     socket->send(ack);
 }

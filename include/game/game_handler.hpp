@@ -1535,6 +1535,7 @@ private:
     void handleForceSpeedChange(network::Packet& packet, const char* name, Opcode ackOpcode, float* speedStorage);
     void handleForceMoveRootState(network::Packet& packet, bool rooted);
     void handleForceMoveFlagChange(network::Packet& packet, const char* name, Opcode ackOpcode, uint32_t flag, bool set);
+    void handleMoveSetCollisionHeight(network::Packet& packet);
     void handleMoveKnockBack(network::Packet& packet);
 
     // ---- Area trigger detection ----

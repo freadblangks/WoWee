@@ -4902,6 +4902,18 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
             : IM_COL32(240, 200, 100, A(230));
         drawList->AddText(ImVec2(nameX + 1.0f, nameY + 1.0f), IM_COL32(0, 0, 0, A(160)), labelBuf);
         drawList->AddText(ImVec2(nameX,         nameY),         nameColor, labelBuf);
+
+        // Click to target: detect left-click inside the combined nameplate region
+        if (!ImGui::GetIO().WantCaptureMouse && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            ImVec2 mouse = ImGui::GetIO().MousePos;
+            float nx0 = nameX - 2.0f;
+            float ny0 = nameY - 1.0f;
+            float nx1 = nameX + textSize.x + 2.0f;
+            float ny1 = sy + barH + 2.0f;
+            if (mouse.x >= nx0 && mouse.x <= nx1 && mouse.y >= ny0 && mouse.y <= ny1) {
+                gameHandler.setTarget(guid);
+            }
+        }
     }
 }
 

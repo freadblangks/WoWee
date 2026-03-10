@@ -353,6 +353,9 @@ public:
     // TBC 2.4.3 CMSG_QUESTGIVER_QUERY_QUEST: guid(8) + questId(4) — no trailing
     // isDialogContinued byte that WotLK added
     network::Packet buildQueryQuestPacket(uint64_t npcGuid, uint32_t questId) override;
+    // TBC/Classic SMSG_QUESTGIVER_QUEST_DETAILS lacks informUnit(u64), flags(u32),
+    // isFinished(u8) that WotLK added; uses variable item counts + emote section.
+    bool parseQuestDetails(network::Packet& packet, QuestDetailsData& data) override;
 };
 
 /**
@@ -402,7 +405,7 @@ public:
     uint8_t readQuestGiverStatus(network::Packet& packet) override;
     network::Packet buildQueryQuestPacket(uint64_t npcGuid, uint32_t questId) override;
     network::Packet buildAcceptQuestPacket(uint64_t npcGuid, uint32_t questId) override;
-    bool parseQuestDetails(network::Packet& packet, QuestDetailsData& data) override;
+    // parseQuestDetails inherited from TbcPacketParsers (same format as TBC 2.4.3)
     uint8_t questLogStride() const override { return 3; }
     bool parseMonsterMove(network::Packet& packet, MonsterMoveData& data) override {
         return MonsterMoveParser::parseVanilla(packet, data);

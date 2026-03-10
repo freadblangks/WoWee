@@ -695,6 +695,75 @@ network::Packet TbcPacketParsers::buildAcceptQuestPacket(uint64_t npcGuid, uint3
 }
 
 // ============================================================================
+// TBC 2.4.3 SMSG_QUESTGIVER_QUEST_DETAILS
+//
+// TBC and Classic share the same format — neither has the WotLK-specific fields
+// (informUnit GUID, flags uint32, isFinished uint8) that were added in 3.x.
+//
+// Format:
+//   npcGuid(8) + questId(4) + title + details + objectives
+//   + activateAccept(1) + suggestedPlayers(4)
+//   + emoteCount(4) + [delay(4)+type(4)] × emoteCount
+//   + choiceCount(4) + [itemId(4)+count(4)+displayInfo(4)] × choiceCount
+//   + rewardCount(4) + [itemId(4)+count(4)+displayInfo(4)] × rewardCount
+//   + rewardMoney(4) + rewardXp(4)
+// ============================================================================
+bool TbcPacketParsers::parseQuestDetails(network::Packet& packet, QuestDetailsData& data) {
+    if (packet.getSize() < 16) return false;
+
+    data.npcGuid = packet.readUInt64();
+    data.questId = packet.readUInt32();
+    data.title      = normalizeWowTextTokens(packet.readString());
+    data.details    = normalizeWowTextTokens(packet.readString());
+    data.objectives = normalizeWowTextTokens(packet.readString());
+
+    if (packet.getReadPos() + 5 > packet.getSize()) {
+        LOG_INFO("Quest details tbc/classic (short): id=", data.questId, " title='", data.title, "'");
+        return !data.title.empty() || data.questId != 0;
+    }
+
+    /*activateAccept*/ packet.readUInt8();
+    data.suggestedPlayers = packet.readUInt32();
+
+    // TBC/Classic: emote section before reward items
+    if (packet.getReadPos() + 4 <= packet.getSize()) {
+        uint32_t emoteCount = packet.readUInt32();
+        for (uint32_t i = 0; i < emoteCount && packet.getReadPos() + 8 <= packet.getSize(); ++i) {
+            packet.readUInt32(); // delay
+            packet.readUInt32(); // type
+        }
+    }
+
+    // Choice reward items (variable count, up to QUEST_REWARD_CHOICES_COUNT)
+    if (packet.getReadPos() + 4 <= packet.getSize()) {
+        uint32_t choiceCount = packet.readUInt32();
+        for (uint32_t i = 0; i < choiceCount && packet.getReadPos() + 12 <= packet.getSize(); ++i) {
+            packet.readUInt32(); // itemId
+            packet.readUInt32(); // count
+            packet.readUInt32(); // displayInfo
+        }
+    }
+
+    // Fixed reward items (variable count, up to QUEST_REWARDS_COUNT)
+    if (packet.getReadPos() + 4 <= packet.getSize()) {
+        uint32_t rewardCount = packet.readUInt32();
+        for (uint32_t i = 0; i < rewardCount && packet.getReadPos() + 12 <= packet.getSize(); ++i) {
+            packet.readUInt32(); // itemId
+            packet.readUInt32(); // count
+            packet.readUInt32(); // displayInfo
+        }
+    }
+
+    if (packet.getReadPos() + 4 <= packet.getSize())
+        data.rewardMoney = packet.readUInt32();
+    if (packet.getReadPos() + 4 <= packet.getSize())
+        data.rewardXp = packet.readUInt32();
+
+    LOG_INFO("Quest details tbc/classic: id=", data.questId, " title='", data.title, "'");
+    return true;
+}
+
+// ============================================================================
 // TBC 2.4.3 CMSG_QUESTGIVER_QUERY_QUEST
 //
 // WotLK adds a trailing uint8 isDialogContinued byte; TBC does not.

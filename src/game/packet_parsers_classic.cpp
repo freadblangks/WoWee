@@ -1558,69 +1558,6 @@ network::Packet ClassicPacketParsers::buildAcceptQuestPacket(uint64_t npcGuid, u
 }
 
 // ============================================================================
-// Classic SMSG_QUESTGIVER_QUEST_DETAILS — Vanilla 1.12 format
-// WotLK inserts an informUnit GUID (8 bytes) between npcGuid and questId.
-// Vanilla has: npcGuid(8) + questId(4) + title + details + objectives + ...
-// ============================================================================
-bool ClassicPacketParsers::parseQuestDetails(network::Packet& packet, QuestDetailsData& data) {
-    if (packet.getSize() < 16) return false;
-
-    data.npcGuid = packet.readUInt64();
-    // Vanilla: questId follows immediately — no informUnit GUID
-    data.questId = packet.readUInt32();
-    data.title      = normalizeWowTextTokens(packet.readString());
-    data.details    = normalizeWowTextTokens(packet.readString());
-    data.objectives = normalizeWowTextTokens(packet.readString());
-
-    if (packet.getReadPos() + 5 > packet.getSize()) {
-        LOG_INFO("Quest details classic (short): id=", data.questId, " title='", data.title, "'");
-        return !data.title.empty() || data.questId != 0;
-    }
-
-    /*activateAccept*/ packet.readUInt8();
-    data.suggestedPlayers = packet.readUInt32();
-
-    // Vanilla 1.12: emote section before reward items
-    // Format: emoteCount(u32) + [delay(u32) + type(u32)] × emoteCount
-    if (packet.getReadPos() + 4 <= packet.getSize()) {
-        uint32_t emoteCount = packet.readUInt32();
-        for (uint32_t i = 0; i < emoteCount && packet.getReadPos() + 8 <= packet.getSize(); ++i) {
-            packet.readUInt32(); // delay
-            packet.readUInt32(); // type
-        }
-    }
-
-    // Choice reward items: variable count + 3 uint32s each
-    if (packet.getReadPos() + 4 <= packet.getSize()) {
-        uint32_t choiceCount = packet.readUInt32();
-        for (uint32_t i = 0; i < choiceCount && packet.getReadPos() + 12 <= packet.getSize(); ++i) {
-            packet.readUInt32(); // itemId
-            packet.readUInt32(); // count
-            packet.readUInt32(); // displayInfo
-        }
-    }
-
-    // Fixed reward items: variable count + 3 uint32s each
-    if (packet.getReadPos() + 4 <= packet.getSize()) {
-        uint32_t rewardCount = packet.readUInt32();
-        for (uint32_t i = 0; i < rewardCount && packet.getReadPos() + 12 <= packet.getSize(); ++i) {
-            packet.readUInt32(); // itemId
-            packet.readUInt32(); // count
-            packet.readUInt32(); // displayInfo
-        }
-    }
-
-    if (packet.getReadPos() + 4 <= packet.getSize())
-        data.rewardMoney = packet.readUInt32();
-    // Vanilla 1.12 includes rewardXp after rewardMoney (same as WotLK)
-    if (packet.getReadPos() + 4 <= packet.getSize())
-        data.rewardXp = packet.readUInt32();
-
-    LOG_INFO("Quest details classic: id=", data.questId, " title='", data.title, "'");
-    return true;
-}
-
-// ============================================================================
 // ClassicPacketParsers::parseCreatureQueryResponse
 //
 // Classic 1.12 SMSG_CREATURE_QUERY_RESPONSE lacks the iconName CString field

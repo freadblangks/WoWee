@@ -14887,21 +14887,16 @@ void GameHandler::handleQuestgiverQuestList(network::Packet& packet) {
     }
     (void)header;
 
-    auto readQuestCount = [&](network::Packet& pkt) -> uint32_t {
-        size_t rem = pkt.getSize() - pkt.getReadPos();
-        if (rem >= 4) {
-            size_t p = pkt.getReadPos();
-            uint32_t c = pkt.readUInt32();
-            if (c <= 64) return c;
-            pkt.setReadPos(p);
-        }
-        if (rem >= 1) {
-            return static_cast<uint32_t>(pkt.readUInt8());
-        }
-        return 0;
-    };
+    // questCount is uint8 in all WoW versions for SMSG_QUESTGIVER_QUEST_LIST.
+    uint32_t questCount = 0;
+    if (packet.getSize() - packet.getReadPos() >= 1) {
+        questCount = packet.readUInt8();
+    }
 
-    uint32_t questCount = readQuestCount(packet);
+    // Classic 1.12 and TBC 2.4.3 don't include questFlags(u32) + isRepeatable(u8)
+    // before the quest title. WotLK 3.3.5a added those 5 bytes.
+    const bool hasQuestFlagsField = !isClassicLikeExpansion() && !isActiveExpansion("tbc");
+
     data.quests.reserve(questCount);
     for (uint32_t i = 0; i < questCount; ++i) {
         if (packet.getSize() - packet.getReadPos() < 12) break;
@@ -14910,23 +14905,14 @@ void GameHandler::handleQuestgiverQuestList(network::Packet& packet) {
         q.questIcon = packet.readUInt32();
         q.questLevel = static_cast<int32_t>(packet.readUInt32());
 
-        // WotLK includes questFlags + isRepeatable; Classic variants may omit.
-        size_t titlePos = packet.getReadPos();
-        if (packet.getSize() - packet.getReadPos() >= 5) {
+        if (hasQuestFlagsField && packet.getSize() - packet.getReadPos() >= 5) {
             q.questFlags = packet.readUInt32();
             q.isRepeatable = packet.readUInt8();
-            q.title = normalizeWowTextTokens(packet.readString());
-            if (q.title.empty()) {
-                packet.setReadPos(titlePos);
-                q.questFlags = 0;
-                q.isRepeatable = 0;
-                q.title = normalizeWowTextTokens(packet.readString());
-            }
         } else {
             q.questFlags = 0;
             q.isRepeatable = 0;
-            q.title = normalizeWowTextTokens(packet.readString());
         }
+        q.title = normalizeWowTextTokens(packet.readString());
         if (q.questId != 0) {
             data.quests.push_back(std::move(q));
         }

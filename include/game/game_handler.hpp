@@ -466,6 +466,24 @@ public:
     bool canUseWeaponSubclass(uint32_t subClass) const { return (weaponProficiency_ >> subClass) & 1u; }
     bool canUseArmorSubclass(uint32_t subClass)  const { return (armorProficiency_  >> subClass) & 1u; }
 
+    // Minimap pings from party members
+    struct MinimapPing {
+        uint64_t senderGuid = 0;
+        float    wowX       = 0.0f;  // canonical WoW X (north)
+        float    wowY       = 0.0f;  // canonical WoW Y (west)
+        float    age        = 0.0f;  // seconds since received
+        static constexpr float LIFETIME = 5.0f;
+        bool isExpired() const { return age >= LIFETIME; }
+    };
+    const std::vector<MinimapPing>& getMinimapPings() const { return minimapPings_; }
+    void tickMinimapPings(float dt) {
+        for (auto& p : minimapPings_) p.age += dt;
+        minimapPings_.erase(
+            std::remove_if(minimapPings_.begin(), minimapPings_.end(),
+                           [](const MinimapPing& p){ return p.isExpired(); }),
+            minimapPings_.end());
+    }
+
     bool isCasting() const { return casting; }
     bool isGameObjectInteractionCasting() const {
         return casting && currentCastSpellId == 0 && pendingGameObjectInteractGuid_ != 0;
@@ -1698,6 +1716,7 @@ private:
     std::unordered_map<uint32_t, float> spellCooldowns;    // spellId -> remaining seconds
     uint32_t weaponProficiency_ = 0;  // bitmask from SMSG_SET_PROFICIENCY itemClass=2
     uint32_t armorProficiency_  = 0;  // bitmask from SMSG_SET_PROFICIENCY itemClass=4
+    std::vector<MinimapPing> minimapPings_;
     uint8_t castCount = 0;
     bool casting = false;
     uint32_t currentCastSpellId = 0;

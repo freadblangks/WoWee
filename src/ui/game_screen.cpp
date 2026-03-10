@@ -8040,6 +8040,25 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         }
     }
 
+    // Minimap pings from party members
+    for (const auto& ping : gameHandler.getMinimapPings()) {
+        glm::vec3 pingRender = core::coords::canonicalToRender(glm::vec3(ping.wowX, ping.wowY, 0.0f));
+        float sx = 0.0f, sy = 0.0f;
+        if (!projectToMinimap(pingRender, sx, sy)) continue;
+
+        float t = ping.age / game::GameHandler::MinimapPing::LIFETIME;
+        float alpha = 1.0f - t;
+        float pulse = 1.0f + 1.5f * t;  // expands outward as it fades
+
+        ImU32 col  = IM_COL32(255, 220, 0, static_cast<int>(alpha * 200));
+        ImU32 col2 = IM_COL32(255, 150, 0, static_cast<int>(alpha * 100));
+        float r1 = 4.0f * pulse;
+        float r2 = 8.0f * pulse;
+        drawList->AddCircle(ImVec2(sx, sy), r1, col, 16, 2.0f);
+        drawList->AddCircle(ImVec2(sx, sy), r2, col2, 16, 1.0f);
+        drawList->AddCircleFilled(ImVec2(sx, sy), 2.5f, col);
+    }
+
     auto applyMuteState = [&]() {
         auto* activeRenderer = core::Application::getInstance().getRenderer();
         float masterScale = soundMuted_ ? 0.0f : static_cast<float>(pendingMasterVolume) / 100.0f;

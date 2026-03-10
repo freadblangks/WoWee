@@ -779,6 +779,7 @@ void GameHandler::update(float deltaTime) {
 
         // Update combat text (Phase 2)
         updateCombatText(deltaTime);
+        tickMinimapPings(deltaTime);
 
         // Update taxi landing cooldown
         if (taxiLandingCooldown_ > 0.0f) {
@@ -2588,10 +2589,21 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_FISH_ESCAPED:
             addSystemChatMessage("Your fish escaped!");
             break;
-        case Opcode::MSG_MINIMAP_PING:
-            // Minimap ping from a party member — consume; no visual support yet.
-            packet.setReadPos(packet.getSize());
+        case Opcode::MSG_MINIMAP_PING: {
+            // SMSG: packed_guid + float posX (canonical WoW Y=west) + float posY (canonical WoW X=north)
+            if (packet.getSize() - packet.getReadPos() < 1) break;
+            uint64_t senderGuid = UpdateObjectParser::readPackedGuid(packet);
+            if (packet.getSize() - packet.getReadPos() < 8) break;
+            float pingX = packet.readFloat(); // server sends map-coord X (east-west)
+            float pingY = packet.readFloat(); // server sends map-coord Y (north-south)
+            MinimapPing ping;
+            ping.senderGuid = senderGuid;
+            ping.wowX       = pingY;  // canonical WoW X = north = server's posY
+            ping.wowY       = pingX;  // canonical WoW Y = west  = server's posX
+            ping.age        = 0.0f;
+            minimapPings_.push_back(ping);
             break;
+        }
         case Opcode::SMSG_ZONE_UNDER_ATTACK: {
             // uint32 areaId
             if (packet.getSize() - packet.getReadPos() >= 4) {

@@ -408,6 +408,10 @@ public:
     // Classic 1.12 uses PackedGuid (not full uint64) and uint16 castFlags (not uint32)
     bool parseSpellStart(network::Packet& packet, SpellStartData& data) override;
     bool parseSpellGo(network::Packet& packet, SpellGoData& data) override;
+    // Classic 1.12 melee/spell log packets use PackedGuid (not full uint64)
+    bool parseAttackerStateUpdate(network::Packet& packet, AttackerStateUpdateData& data) override;
+    bool parseSpellDamageLog(network::Packet& packet, SpellDamageLogData& data) override;
+    bool parseSpellHealLog(network::Packet& packet, SpellHealLogData& data) override;
 };
 
 /**

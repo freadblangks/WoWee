@@ -407,6 +407,115 @@ bool ClassicPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& da
 }
 
 // ============================================================================
+// Classic parseAttackerStateUpdate — Vanilla 1.12 SMSG_ATTACKERSTATEUPDATE
+//
+// Identical to TBC format except GUIDs are PackedGuid (not full uint64).
+// Format: uint32(hitInfo) + PackedGuid(attacker) + PackedGuid(target)
+//       + int32(totalDamage) + uint8(subDamageCount)
+//       + [per sub: uint32(schoolMask) + float(damage) + uint32(intDamage)
+//                 + uint32(absorbed) + uint32(resisted)]
+//       + uint32(victimState) + int32(overkill) [+ uint32(blocked)]
+// ============================================================================
+bool ClassicPacketParsers::parseAttackerStateUpdate(network::Packet& packet, AttackerStateUpdateData& data) {
+    auto rem = [&]() { return packet.getSize() - packet.getReadPos(); };
+    if (rem() < 5) return false;  // hitInfo(4) + at least GUID mask byte(1)
+
+    data.hitInfo      = packet.readUInt32();
+    data.attackerGuid = UpdateObjectParser::readPackedGuid(packet); // PackedGuid in Vanilla
+    if (rem() < 1) return false;
+    data.targetGuid   = UpdateObjectParser::readPackedGuid(packet); // PackedGuid in Vanilla
+
+    if (rem() < 5) return false;  // int32 totalDamage + uint8 subDamageCount
+    data.totalDamage    = static_cast<int32_t>(packet.readUInt32());
+    data.subDamageCount = packet.readUInt8();
+
+    for (uint8_t i = 0; i < data.subDamageCount && rem() >= 20; ++i) {
+        SubDamage sub;
+        sub.schoolMask = packet.readUInt32();
+        sub.damage     = packet.readFloat();
+        sub.intDamage  = packet.readUInt32();
+        sub.absorbed   = packet.readUInt32();
+        sub.resisted   = packet.readUInt32();
+        data.subDamages.push_back(sub);
+    }
+
+    if (rem() < 8) return true;
+    data.victimState = packet.readUInt32();
+    data.overkill    = static_cast<int32_t>(packet.readUInt32());
+
+    if (rem() >= 4) {
+        data.blocked = packet.readUInt32();
+    }
+
+    LOG_INFO("[Classic] Melee hit: ", data.totalDamage, " damage",
+             data.isCrit() ? " (CRIT)" : "",
+             data.isMiss() ? " (MISS)" : "");
+    return true;
+}
+
+// ============================================================================
+// Classic parseSpellDamageLog — Vanilla 1.12 SMSG_SPELLNONMELEEDAMAGELOG
+//
+// Identical to TBC except GUIDs are PackedGuid (not full uint64).
+// Format: PackedGuid(target) + PackedGuid(caster) + uint32(spellId)
+//       + uint32(damage) + uint8(schoolMask) + uint32(absorbed) + uint32(resisted)
+//       + uint8(periodicLog) + uint8(unused) + uint32(blocked) + uint32(flags)
+// ============================================================================
+bool ClassicPacketParsers::parseSpellDamageLog(network::Packet& packet, SpellDamageLogData& data) {
+    auto rem = [&]() { return packet.getSize() - packet.getReadPos(); };
+    if (rem() < 2) return false;
+
+    data.targetGuid   = UpdateObjectParser::readPackedGuid(packet); // PackedGuid in Vanilla
+    if (rem() < 1) return false;
+    data.attackerGuid = UpdateObjectParser::readPackedGuid(packet); // PackedGuid in Vanilla
+
+    // uint32(spellId) + uint32(damage) + uint8(schoolMask) + uint32(absorbed)
+    // + uint32(resisted) + uint8 + uint8 + uint32(blocked) + uint32(flags) = 21 bytes
+    if (rem() < 21) return false;
+    data.spellId    = packet.readUInt32();
+    data.damage     = packet.readUInt32();
+    data.schoolMask = packet.readUInt8();
+    data.absorbed   = packet.readUInt32();
+    data.resisted   = packet.readUInt32();
+    packet.readUInt8();    // periodicLog
+    packet.readUInt8();    // unused
+    packet.readUInt32();   // blocked
+    uint32_t flags  = packet.readUInt32();
+    data.isCrit     = (flags & 0x02) != 0;
+    data.overkill   = 0;  // no overkill field in Vanilla (same as TBC)
+
+    LOG_INFO("[Classic] Spell damage: spellId=", data.spellId, " dmg=", data.damage,
+             data.isCrit ? " CRIT" : "");
+    return true;
+}
+
+// ============================================================================
+// Classic parseSpellHealLog — Vanilla 1.12 SMSG_SPELLHEALLOG
+//
+// Identical to TBC except GUIDs are PackedGuid (not full uint64).
+// Format: PackedGuid(target) + PackedGuid(caster) + uint32(spellId)
+//       + uint32(heal) + uint32(overheal) + uint8(crit)
+// ============================================================================
+bool ClassicPacketParsers::parseSpellHealLog(network::Packet& packet, SpellHealLogData& data) {
+    auto rem = [&]() { return packet.getSize() - packet.getReadPos(); };
+    if (rem() < 2) return false;
+
+    data.targetGuid = UpdateObjectParser::readPackedGuid(packet); // PackedGuid in Vanilla
+    if (rem() < 1) return false;
+    data.casterGuid = UpdateObjectParser::readPackedGuid(packet); // PackedGuid in Vanilla
+
+    if (rem() < 13) return false;  // uint32 + uint32 + uint32 + uint8 = 13 bytes
+    data.spellId  = packet.readUInt32();
+    data.heal     = packet.readUInt32();
+    data.overheal = packet.readUInt32();
+    data.isCrit   = (packet.readUInt8() != 0);
+
+    LOG_INFO("[Classic] Spell heal: spellId=", data.spellId, " heal=", data.heal,
+             data.isCrit ? " CRIT" : "");
+    return true;
+}
+
+// ============================================================================
 // Classic SMSG_CAST_FAILED: no castCount byte (added in TBC/WotLK)
 // Format: spellId(u32) + result(u8)
 // ============================================================================

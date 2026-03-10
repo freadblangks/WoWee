@@ -1561,6 +1561,8 @@ struct ItemQueryResponseData {
         uint32_t spellTrigger = 0; // 0=Use, 1=Equip, 2=ChanceOnHit, 5=Learn
     };
     std::array<ItemSpell, 5> spells{};
+    uint32_t bindType = 0;      // 0=none, 1=BoP, 2=BoE, 3=BoU, 4=BoQ
+    std::string description;    // Flavor/lore text
     bool valid = false;
 };
 

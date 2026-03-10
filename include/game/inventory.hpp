@@ -50,6 +50,8 @@ struct ItemDef {
     uint32_t maxDurability = 0;
     uint32_t itemLevel = 0;
     uint32_t requiredLevel = 0;
+    uint32_t bindType = 0;      // 0=none, 1=BoP, 2=BoE, 3=BoU, 4=BoQ
+    std::string description;    // Flavor/lore text shown in tooltip (italic yellow)
 };
 
 struct ItemSlot {

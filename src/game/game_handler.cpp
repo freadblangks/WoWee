@@ -10761,6 +10761,8 @@ void GameHandler::rebuildOnlineInventory() {
             def.sellPrice = infoIt->second.sellPrice;
             def.itemLevel = infoIt->second.itemLevel;
             def.requiredLevel = infoIt->second.requiredLevel;
+            def.bindType = infoIt->second.bindType;
+            def.description = infoIt->second.description;
         } else {
             def.name = "Item " + std::to_string(def.itemId);
             queryItemInfo(def.itemId, guid);
@@ -10804,6 +10806,8 @@ void GameHandler::rebuildOnlineInventory() {
             def.sellPrice = infoIt->second.sellPrice;
             def.itemLevel = infoIt->second.itemLevel;
             def.requiredLevel = infoIt->second.requiredLevel;
+            def.bindType = infoIt->second.bindType;
+            def.description = infoIt->second.description;
         } else {
             def.name = "Item " + std::to_string(def.itemId);
             queryItemInfo(def.itemId, guid);
@@ -10926,6 +10930,8 @@ void GameHandler::rebuildOnlineInventory() {
             def.spirit = infoIt->second.spirit;
             def.itemLevel = infoIt->second.itemLevel;
             def.requiredLevel = infoIt->second.requiredLevel;
+            def.bindType = infoIt->second.bindType;
+            def.description = infoIt->second.description;
             def.sellPrice = infoIt->second.sellPrice;
             def.bagSlots = infoIt->second.containerSlots;
         } else {

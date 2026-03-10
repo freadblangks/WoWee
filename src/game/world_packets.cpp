@@ -2518,6 +2518,14 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
         packet.readUInt32(); // SpellCategoryCooldown
     }
 
+    // Bonding type (0=none, 1=BoP, 2=BoE, 3=BoU, 4=BoQ)
+    if (packet.getReadPos() + 4 <= packet.getSize())
+        data.bindType = packet.readUInt32();
+
+    // Flavor/lore text (Description cstring)
+    if (packet.getReadPos() < packet.getSize())
+        data.description = packet.readString();
+
     data.valid = !data.name.empty();
     return true;
 }

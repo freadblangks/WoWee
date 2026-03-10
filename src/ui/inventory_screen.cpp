@@ -1718,6 +1718,15 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
         ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 0.7f), "Item Level %u", item.itemLevel);
     }
 
+    // Binding type
+    switch (item.bindType) {
+        case 1: ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 1.0f), "Binds when picked up"); break;
+        case 2: ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 1.0f), "Binds when equipped"); break;
+        case 3: ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 1.0f), "Binds when used"); break;
+        case 4: ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 1.0f), "Quest Item"); break;
+        default: break;
+    }
+
     if (item.itemId == 6948 && gameHandler_) {
         uint32_t mapId = 0;
         glm::vec3 pos;
@@ -1793,13 +1802,15 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
     };
     const bool isWeapon = isWeaponInventoryType(item.inventoryType);
 
-    // Compact stats view for weapons: DPS + condensed stat bonuses.
-    // Non-weapons keep armor/sell info visible.
+    // Compact stats view for weapons: damage range + speed + DPS
     ImVec4 green(0.0f, 1.0f, 0.0f, 1.0f);
     if (isWeapon && item.damageMax > 0.0f && item.delayMs > 0) {
         float speed = static_cast<float>(item.delayMs) / 1000.0f;
         float dps = ((item.damageMin + item.damageMax) * 0.5f) / speed;
-        ImGui::Text("%.1f DPS", dps);
+        ImGui::Text("%.0f - %.0f Damage", item.damageMin, item.damageMax);
+        ImGui::SameLine(160.0f);
+        ImGui::TextDisabled("Speed %.2f", speed);
+        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "(%.1f damage per second)", dps);
     }
 
     // Armor appears before stat bonuses — matches WoW tooltip order
@@ -1834,6 +1845,38 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
         ImGui::TextColored(durColor, "Durability %u / %u",
                            item.curDurability, item.maxDurability);
     }
+    // Item spell effects (Use/Equip/Chance on Hit)
+    if (gameHandler_) {
+        auto* info = gameHandler_->getItemInfo(item.itemId);
+        if (info) {
+            for (const auto& sp : info->spells) {
+                if (sp.spellId == 0) continue;
+                const char* trigger = nullptr;
+                switch (sp.spellTrigger) {
+                    case 0: trigger = "Use"; break;
+                    case 1: trigger = "Equip"; break;
+                    case 2: trigger = "Chance on Hit"; break;
+                    case 6: trigger = "Soulstone"; break;
+                    default: break;
+                }
+                if (!trigger) continue;
+                const std::string& spName = gameHandler_->getSpellName(sp.spellId);
+                if (!spName.empty()) {
+                    ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f),
+                                       "%s: %s", trigger, spName.c_str());
+                } else {
+                    ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f),
+                                       "%s: Spell #%u", trigger, sp.spellId);
+                }
+            }
+        }
+    }
+
+    // Flavor / lore text (italic yellow in WoW, just yellow here)
+    if (!item.description.empty()) {
+        ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.5f, 0.9f), "\"%s\"", item.description.c_str());
+    }
+
     if (item.sellPrice > 0) {
         uint32_t g = item.sellPrice / 10000;
         uint32_t s = (item.sellPrice / 100) % 100;

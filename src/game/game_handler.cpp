@@ -12332,7 +12332,7 @@ float GameHandler::getSpellCooldown(uint32_t spellId) const {
 
 void GameHandler::handleInitialSpells(network::Packet& packet) {
     InitialSpellsData data;
-    if (!InitialSpellsParser::parse(packet, data)) return;
+    if (!packetParsers_->parseInitialSpells(packet, data)) return;
 
     knownSpells = {data.spellIds.begin(), data.spellIds.end()};
 
@@ -12525,7 +12525,7 @@ void GameHandler::handleCooldownEvent(network::Packet& packet) {
 
 void GameHandler::handleAuraUpdate(network::Packet& packet, bool isAll) {
     AuraUpdateData data;
-    if (!AuraUpdateParser::parse(packet, data, isAll)) return;
+    if (!packetParsers_->parseAuraUpdate(packet, data, isAll)) return;
 
     // Determine which aura list to update
     std::vector<AuraSlot>* auraList = nullptr;

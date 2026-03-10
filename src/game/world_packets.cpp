@@ -865,7 +865,14 @@ bool UpdateObjectParser::parseMovementBlock(network::Packet& packet, UpdateBlock
         }
 
         // Swimming/flying pitch
-        if ((moveFlags & 0x02000000) || (moveFlags2 & 0x0010)) { // MOVEMENTFLAG_SWIMMING or MOVEMENTFLAG2_ALWAYS_ALLOW_PITCHING
+        // WotLK 3.3.5a flags: SWIMMING=0x00200000, FLYING=0x02000000
+        // Pitch is present when SWIMMING or FLYING are set, or MOVEMENTFLAG2_ALWAYS_ALLOW_PITCHING.
+        // The original check (0x02000000 only) missed SWIMMING, causing misaligned reads for
+        // swimming NPCs/players — all subsequent fields (fallTime, jumpData, splineElevation)
+        // would be read from the wrong offsets.
+        if ((moveFlags & 0x00200000) /* SWIMMING */ ||
+            (moveFlags & 0x02000000) /* FLYING(WotLK) */ ||
+            (moveFlags2 & 0x0010)    /* MOVEMENTFLAG2_ALWAYS_ALLOW_PITCHING */) {
             /*float pitch =*/ packet.readFloat();
         }
 

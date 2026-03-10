@@ -751,14 +751,22 @@ void M2Renderer::destroyModelGPU(M2ModelGPU& model) {
 
 void M2Renderer::destroyInstanceBones(M2Instance& inst) {
     if (!vkCtx_) return;
+    VkDevice device = vkCtx_->getDevice();
     VmaAllocator alloc = vkCtx_->getAllocator();
     for (int i = 0; i < 2; i++) {
+        // Free bone descriptor set so the pool slot is immediately reusable.
+        // Without this, the pool fills up over a play session as tiles stream
+        // in/out, eventually causing vkAllocateDescriptorSets to fail and
+        // making animated instances invisible (perceived as flickering).
+        if (inst.boneSet[i] != VK_NULL_HANDLE) {
+            vkFreeDescriptorSets(device, boneDescPool_, 1, &inst.boneSet[i]);
+            inst.boneSet[i] = VK_NULL_HANDLE;
+        }
         if (inst.boneBuffer[i]) {
             vmaDestroyBuffer(alloc, inst.boneBuffer[i], inst.boneAlloc[i]);
             inst.boneBuffer[i] = VK_NULL_HANDLE;
             inst.boneMapped[i] = nullptr;
         }
-        // boneSet freed when pool is reset/destroyed
     }
 }
 

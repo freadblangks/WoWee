@@ -381,7 +381,7 @@ private:
     VkDescriptorPool materialDescPool_ = VK_NULL_HANDLE;
     VkDescriptorPool boneDescPool_ = VK_NULL_HANDLE;
     static constexpr uint32_t MAX_MATERIAL_SETS = 8192;
-    static constexpr uint32_t MAX_BONE_SETS = 2048;
+    static constexpr uint32_t MAX_BONE_SETS = 8192;
 
     // Dynamic particle buffers
     ::VkBuffer smokeVB_ = VK_NULL_HANDLE;

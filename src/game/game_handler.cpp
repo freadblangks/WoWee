@@ -4473,6 +4473,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::MSG_MOVE_HEARTBEAT:
         case Opcode::MSG_MOVE_START_SWIM:
         case Opcode::MSG_MOVE_STOP_SWIM:
+        case Opcode::MSG_MOVE_SET_WALK_MODE:
+        case Opcode::MSG_MOVE_SET_RUN_MODE:
             if (state == WorldState::IN_WORLD) {
                 handleOtherPlayerMovement(packet);
             }

@@ -8354,6 +8354,38 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         drawList->AddCircleFilled(ImVec2(sx, sy), 2.5f, col);
     }
 
+    // Party member dots on minimap
+    {
+        const auto& partyData = gameHandler.getPartyData();
+        const uint64_t leaderGuid = partyData.leaderGuid;
+        for (const auto& member : partyData.members) {
+            if (!member.isOnline || !member.hasPartyStats) continue;
+            if (member.posX == 0 && member.posY == 0) continue;
+
+            // posX/posY follow same server axis convention as minimap pings:
+            // server posX = east/west axis → canonical Y (west)
+            // server posY = north/south axis → canonical X (north)
+            float wowX = static_cast<float>(member.posY);
+            float wowY = static_cast<float>(member.posX);
+            glm::vec3 memberRender = core::coords::canonicalToRender(glm::vec3(wowX, wowY, 0.0f));
+
+            float sx = 0.0f, sy = 0.0f;
+            if (!projectToMinimap(memberRender, sx, sy)) continue;
+
+            ImU32 dotColor = (member.guid == leaderGuid)
+                ? IM_COL32(255, 210, 0, 235)
+                : IM_COL32(100, 180, 255, 235);
+            drawList->AddCircleFilled(ImVec2(sx, sy), 4.0f, dotColor);
+            drawList->AddCircle(ImVec2(sx, sy), 4.0f, IM_COL32(255, 255, 255, 160), 12, 1.0f);
+
+            ImVec2 cursorPos = ImGui::GetMousePos();
+            float mdx = cursorPos.x - sx, mdy = cursorPos.y - sy;
+            if (!member.name.empty() && (mdx * mdx + mdy * mdy) < 64.0f) {
+                ImGui::SetTooltip("%s", member.name.c_str());
+            }
+        }
+    }
+
     auto applyMuteState = [&]() {
         auto* activeRenderer = core::Application::getInstance().getRenderer();
         float masterScale = soundMuted_ ? 0.0f : static_cast<float>(pendingMasterVolume) / 100.0f;

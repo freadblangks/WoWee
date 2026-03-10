@@ -692,6 +692,34 @@ void CameraController::update(float deltaTime) {
             }
             swimming = false;
 
+            // Player-controlled flight (flying mount / druid Flight Form):
+            // Use 3D pitch-following movement with no gravity or grounding.
+            if (flyingActive_) {
+                grounded = true;  // suppress fall-damage checks
+                verticalVelocity = 0.0f;
+                jumpBufferTimer = 0.0f;
+                coyoteTimer = 0.0f;
+
+                // Forward/back follows camera 3D direction (same as swim)
+                glm::vec3 flyFwd = glm::normalize(forward3D);
+                if (glm::length(flyFwd) < 1e-4f) flyFwd = forward;
+                glm::vec3 flyMove(0.0f);
+                if (nowForward)     flyMove += flyFwd;
+                if (nowBackward)    flyMove -= flyFwd;
+                if (nowStrafeLeft)  flyMove += right;
+                if (nowStrafeRight) flyMove -= right;
+                // Space = ascend, X = descend while airborne
+                bool flyDescend = !uiWantsKeyboard && xDown && mounted_;
+                if (nowJump)       flyMove.z += 1.0f;
+                if (flyDescend)    flyMove.z -= 1.0f;
+                if (glm::length(flyMove) > 0.001f) {
+                    flyMove = glm::normalize(flyMove);
+                    targetPos += flyMove * speed * physicsDeltaTime;
+                }
+                targetPos.z += verticalVelocity * physicsDeltaTime;
+                // Skip all ground physics — go straight to collision/WMO sections
+            } else {
+
             if (glm::length(movement) > 0.001f) {
                 movement = glm::normalize(movement);
                 targetPos += movement * speed * physicsDeltaTime;
@@ -738,7 +766,8 @@ void CameraController::update(float deltaTime) {
                     verticalVelocity = -2.0f;
             }
             targetPos.z += verticalVelocity * physicsDeltaTime;
-            }
+            } // end !flyingActive_ ground physics
+            } // end !inWater
         } else {
             // External follow (e.g., taxi): trust server position without grounding.
             swimming = false;

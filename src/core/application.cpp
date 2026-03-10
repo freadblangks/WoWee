@@ -1015,6 +1015,7 @@ void Application::update(float deltaTime) {
                     renderer->getCameraController()->setGravityDisabled(gameHandler->isGravityDisabled());
                     renderer->getCameraController()->setFeatherFallActive(gameHandler->isFeatherFalling());
                     renderer->getCameraController()->setWaterWalkActive(gameHandler->isWaterWalking());
+                    renderer->getCameraController()->setFlyingActive(gameHandler->isPlayerFlying());
                 }
 
                 bool onTaxi = gameHandler &&

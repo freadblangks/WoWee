@@ -99,6 +99,7 @@ public:
     void setGravityDisabled(bool disabled) { gravityDisabled_ = disabled; }
     void setFeatherFallActive(bool active) { featherFallActive_ = active; }
     void setWaterWalkActive(bool active) { waterWalkActive_ = active; }
+    void setFlyingActive(bool active) { flyingActive_ = active; }
     void setMounted(bool m) { mounted_ = m; }
     void setMountHeightOffset(float offset) { mountHeightOffset_ = offset; }
     void setExternalFollow(bool enabled) { externalFollow_ = enabled; }
@@ -285,6 +286,8 @@ private:
     bool featherFallActive_ = false;
     // Server-driven water walk: treat water surface as ground (don't swim).
     bool waterWalkActive_ = false;
+    // Player-controlled flight (CAN_FLY + FLYING): 3D movement, no gravity.
+    bool flyingActive_ = false;
     bool mounted_ = false;
     float mountHeightOffset_ = 0.0f;
     bool externalMoving_ = false;

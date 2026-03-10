@@ -1166,6 +1166,11 @@ public:
     bool isWaterWalking() const {
         return (movementInfo.flags & static_cast<uint32_t>(MovementFlags::WATER_WALK)) != 0;
     }
+    bool isPlayerFlying() const {
+        const uint32_t flyMask = static_cast<uint32_t>(MovementFlags::CAN_FLY) |
+                                 static_cast<uint32_t>(MovementFlags::FLYING);
+        return (movementInfo.flags & flyMask) == flyMask;
+    }
     void dismount();
 
     // Taxi / Flight Paths

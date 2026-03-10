@@ -2795,8 +2795,15 @@ void Application::setupUICallbacks() {
     });
 
     // Stand state animation callback — map server stand state to M2 animation on player
+    // and sync camera sit flag so movement is blocked while sitting
     gameHandler->setStandStateCallback([this](uint8_t standState) {
         if (!renderer) return;
+
+        // Sync camera controller sitting flag: block movement while sitting/kneeling
+        if (auto* cc = renderer->getCameraController()) {
+            cc->setSitting(standState >= 1 && standState <= 8 && standState != 7);
+        }
+
         auto* cr = renderer->getCharacterRenderer();
         if (!cr) return;
         uint32_t charInstId = renderer->getCharacterInstanceId();
@@ -2813,7 +2820,7 @@ void Application::setupUICallbacks() {
         } else if (standState == 8) {
             animId = 72;  // Kneel
         }
-        // Non-looping sit/kneel looks wrong frozen; loop them so the held-pose frame shows
+        // Loop sit/kneel (not death) so the held-pose frame stays visible
         const bool loop = (animId != 1);
         cr->playAnimation(charInstId, animId, loop);
     });

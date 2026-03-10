@@ -82,6 +82,7 @@ public:
     bool isSwimming() const { return swimming; }
     bool isInsideWMO() const { return cachedInsideWMO; }
     void setGrounded(bool g) { grounded = g; }
+    void setSitting(bool s) { sitting = s; }
     bool isOnTaxi() const { return externalFollow_; }
     const glm::vec3* getFollowTarget() const { return followTarget; }
     glm::vec3* getFollowTargetMutable() { return followTarget; }

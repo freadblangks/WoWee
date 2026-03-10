@@ -978,6 +978,73 @@ bool TbcPacketParsers::parseMailList(network::Packet& packet, std::vector<MailMe
 }
 
 // ============================================================================
+// TbcPacketParsers::parseSpellStart — TBC 2.4.3 SMSG_SPELL_START
+//
+// TBC uses full uint64 GUIDs for casterGuid and casterUnit.
+// WotLK uses packed (variable-length) GUIDs.
+// TBC also lacks the castCount byte — format:
+//   casterGuid(u64) + casterUnit(u64) + castCount(u8) + spellId(u32) + castFlags(u32) + castTime(u32)
+// Wait: TBC DOES have castCount. But WotLK removed spellId in some paths.
+// Correct TBC format (cmangos-tbc): objectGuid(u64) + casterGuid(u64) + castCount(u8) + spellId(u32) + castFlags(u32) + castTime(u32)
+// ============================================================================
+bool TbcPacketParsers::parseSpellStart(network::Packet& packet, SpellStartData& data) {
+    if (packet.getSize() - packet.getReadPos() < 22) return false;
+
+    data.casterGuid = packet.readUInt64();   // full GUID (object)
+    data.casterUnit = packet.readUInt64();   // full GUID (caster unit)
+    data.castCount  = packet.readUInt8();
+    data.spellId    = packet.readUInt32();
+    data.castFlags  = packet.readUInt32();
+    data.castTime   = packet.readUInt32();
+
+    if (packet.getReadPos() + 4 <= packet.getSize()) {
+        uint32_t targetFlags = packet.readUInt32();
+        if ((targetFlags & 0x02) && packet.getReadPos() + 8 <= packet.getSize()) {
+            data.targetGuid = packet.readUInt64();  // full GUID in TBC
+        }
+    }
+
+    LOG_DEBUG("[TBC] Spell start: spell=", data.spellId, " castTime=", data.castTime, "ms");
+    return true;
+}
+
+// ============================================================================
+// TbcPacketParsers::parseSpellGo — TBC 2.4.3 SMSG_SPELL_GO
+//
+// TBC uses full uint64 GUIDs, no timestamp field after castFlags.
+// WotLK uses packed GUIDs and adds a timestamp (u32) after castFlags.
+// ============================================================================
+bool TbcPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& data) {
+    if (packet.getSize() - packet.getReadPos() < 19) return false;
+
+    data.casterGuid = packet.readUInt64();   // full GUID in TBC
+    data.casterUnit = packet.readUInt64();   // full GUID in TBC
+    data.castCount  = packet.readUInt8();
+    data.spellId    = packet.readUInt32();
+    data.castFlags  = packet.readUInt32();
+    // NOTE: NO timestamp field here in TBC (WotLK added packet.readUInt32())
+
+    if (packet.getReadPos() >= packet.getSize()) {
+        LOG_DEBUG("[TBC] Spell go: spell=", data.spellId, " (no hit data)");
+        return true;
+    }
+
+    data.hitCount = packet.readUInt8();
+    data.hitTargets.reserve(data.hitCount);
+    for (uint8_t i = 0; i < data.hitCount && packet.getReadPos() + 8 <= packet.getSize(); ++i) {
+        data.hitTargets.push_back(packet.readUInt64());  // full GUID in TBC
+    }
+
+    if (packet.getReadPos() < packet.getSize()) {
+        data.missCount = packet.readUInt8();
+    }
+
+    LOG_DEBUG("[TBC] Spell go: spell=", data.spellId, " hits=", (int)data.hitCount,
+              " misses=", (int)data.missCount);
+    return true;
+}
+
+// ============================================================================
 // TbcPacketParsers::parseCastResult — TBC 2.4.3 SMSG_CAST_RESULT
 //
 // TBC format: spellId(u32) + result(u8) = 5 bytes

@@ -105,6 +105,16 @@ public:
         return InitialSpellsParser::parse(packet, data);
     }
 
+    /** Parse SMSG_SPELL_START */
+    virtual bool parseSpellStart(network::Packet& packet, SpellStartData& data) {
+        return SpellStartParser::parse(packet, data);
+    }
+
+    /** Parse SMSG_SPELL_GO */
+    virtual bool parseSpellGo(network::Packet& packet, SpellGoData& data) {
+        return SpellGoParser::parse(packet, data);
+    }
+
     /** Parse SMSG_CAST_FAILED */
     virtual bool parseCastFailed(network::Packet& packet, CastFailedData& data) {
         return CastFailedParser::parse(packet, data);
@@ -322,6 +332,10 @@ public:
     bool parseGossipMessage(network::Packet& packet, GossipMessageData& data) override;
     // TBC 2.4.3 SMSG_CAST_RESULT: spellId(u32) + result(u8) — WotLK added castCount(u8) prefix
     bool parseCastResult(network::Packet& packet, uint32_t& spellId, uint8_t& result) override;
+    // TBC 2.4.3 SMSG_SPELL_START: full uint64 GUIDs (WotLK uses packed GUIDs)
+    bool parseSpellStart(network::Packet& packet, SpellStartData& data) override;
+    // TBC 2.4.3 SMSG_SPELL_GO: full uint64 GUIDs, no timestamp field (WotLK added one)
+    bool parseSpellGo(network::Packet& packet, SpellGoData& data) override;
     // TBC 2.4.3 SMSG_MAIL_LIST_RESULT: uint8 count (not uint32+uint8), no body field,
     // attachment uses uint64 itemGuid (not uint32), enchants are 7×u32 id-only (not 7×{id+dur+charges})
     bool parseMailList(network::Packet& packet, std::vector<MailMessage>& inbox) override;

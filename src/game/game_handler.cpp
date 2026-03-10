@@ -12410,7 +12410,7 @@ static audio::SpellSoundManager::MagicSchool schoolMaskToMagicSchool(uint32_t ma
 
 void GameHandler::handleSpellStart(network::Packet& packet) {
     SpellStartData data;
-    if (!SpellStartParser::parse(packet, data)) return;
+    if (!packetParsers_->parseSpellStart(packet, data)) return;
 
     // If this is the player's own cast, start cast bar
     if (data.casterUnit == playerGuid && data.castTime > 0) {
@@ -12435,7 +12435,7 @@ void GameHandler::handleSpellStart(network::Packet& packet) {
 
 void GameHandler::handleSpellGo(network::Packet& packet) {
     SpellGoData data;
-    if (!SpellGoParser::parse(packet, data)) return;
+    if (!packetParsers_->parseSpellGo(packet, data)) return;
 
     // Cast completed
     if (data.casterUnit == playerGuid) {

@@ -1309,5 +1309,42 @@ bool ClassicPacketParsers::parseQuestDetails(network::Packet& packet, QuestDetai
     return true;
 }
 
+// ============================================================================
+// ClassicPacketParsers::parseCreatureQueryResponse
+//
+// Classic 1.12 SMSG_CREATURE_QUERY_RESPONSE lacks the iconName CString field
+// that TBC 2.4.3 and WotLK 3.3.5a include between subName and typeFlags.
+// Without this override, the TBC/WotLK parser reads typeFlags bytes as the
+// iconName string, shifting typeFlags/creatureType/family/rank by 1-4 bytes.
+// ============================================================================
+bool ClassicPacketParsers::parseCreatureQueryResponse(network::Packet& packet,
+                                                       CreatureQueryResponseData& data) {
+    data.entry = packet.readUInt32();
+    if (data.entry & 0x80000000) {
+        data.entry &= ~0x80000000;
+        data.name = "";
+        return true;
+    }
+
+    data.name = packet.readString();
+    packet.readString(); // name2
+    packet.readString(); // name3
+    packet.readString(); // name4
+    data.subName = packet.readString();
+    // NOTE: NO iconName field in Classic 1.12 — goes straight to typeFlags
+    if (packet.getReadPos() + 16 > packet.getSize()) {
+        LOG_WARNING("[Classic] Creature query: truncated at typeFlags (entry=", data.entry, ")");
+        return true;
+    }
+    data.typeFlags    = packet.readUInt32();
+    data.creatureType = packet.readUInt32();
+    data.family       = packet.readUInt32();
+    data.rank         = packet.readUInt32();
+
+    LOG_DEBUG("[Classic] Creature query: ", data.name, " type=", data.creatureType,
+              " rank=", data.rank);
+    return true;
+}
+
 } // namespace game
 } // namespace wowee

@@ -9578,7 +9578,7 @@ void GameHandler::handleNameQueryResponse(network::Packet& packet) {
 
 void GameHandler::handleCreatureQueryResponse(network::Packet& packet) {
     CreatureQueryResponseData data;
-    if (!CreatureQueryResponseParser::parse(packet, data)) return;
+    if (!packetParsers_->parseCreatureQueryResponse(packet, data)) return;
 
     pendingCreatureQueries.erase(data.entry);
 

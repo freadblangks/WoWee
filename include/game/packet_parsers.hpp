@@ -127,6 +127,13 @@ public:
         return NameQueryResponseParser::parse(packet, data);
     }
 
+    // --- Creature Query ---
+
+    /** Parse SMSG_CREATURE_QUERY_RESPONSE */
+    virtual bool parseCreatureQueryResponse(network::Packet& packet, CreatureQueryResponseData& data) {
+        return CreatureQueryResponseParser::parse(packet, data);
+    }
+
     // --- Item Query ---
 
     /** Build CMSG_ITEM_QUERY_SINGLE */
@@ -339,6 +346,8 @@ public:
     bool parseCastFailed(network::Packet& packet, CastFailedData& data) override;
     bool parseMessageChat(network::Packet& packet, MessageChatData& data) override;
     bool parseGameObjectQueryResponse(network::Packet& packet, GameObjectQueryResponseData& data) override;
+    // Classic 1.12 SMSG_CREATURE_QUERY_RESPONSE lacks the iconName string that TBC/WotLK include
+    bool parseCreatureQueryResponse(network::Packet& packet, CreatureQueryResponseData& data) override;
     bool parseGossipMessage(network::Packet& packet, GossipMessageData& data) override;
     bool parseGuildRoster(network::Packet& packet, GuildRosterData& data) override;
     bool parseGuildQueryResponse(network::Packet& packet, GuildQueryResponseData& data) override;

@@ -6113,6 +6113,13 @@ void GameHandler::handleLoginVerifyWorld(network::Packet& packet) {
     movementClockStart_ = std::chrono::steady_clock::now();
     lastMovementTimestampMs_ = 0;
     movementInfo.time = nextMovementTimestampMs();
+    isFalling_ = false;
+    fallStartMs_ = 0;
+    movementInfo.fallTime = 0;
+    movementInfo.jumpVelocity = 0.0f;
+    movementInfo.jumpSinAngle = 0.0f;
+    movementInfo.jumpCosAngle = 0.0f;
+    movementInfo.jumpXYSpeed = 0.0f;
     resurrectPending_ = false;
     resurrectRequestPending_ = false;
     onTaxiFlight_ = false;
@@ -7230,6 +7237,21 @@ void GameHandler::sendMovement(Opcode opcode) {
             break;
         case Opcode::MSG_MOVE_JUMP:
             movementInfo.flags |= static_cast<uint32_t>(MovementFlags::FALLING);
+            // Record fall start and capture horizontal velocity for jump fields.
+            isFalling_ = true;
+            fallStartMs_ = movementInfo.time;
+            movementInfo.fallTime = 0;
+            // jumpVelocity: WoW convention is the upward speed at launch.
+            movementInfo.jumpVelocity = 7.96f; // WOW_JUMP_VELOCITY from CameraController
+            {
+                // Facing direction encodes the horizontal movement direction at launch.
+                const float facingRad = movementInfo.orientation;
+                movementInfo.jumpCosAngle = std::cos(facingRad);
+                movementInfo.jumpSinAngle = std::sin(facingRad);
+                // Use server run speed as the horizontal speed at jump time.
+                const bool isWalking = (movementInfo.flags & static_cast<uint32_t>(MovementFlags::WALKING)) != 0;
+                movementInfo.jumpXYSpeed = isWalking ? 2.5f : (serverRunSpeed_ > 0.0f ? serverRunSpeed_ : 7.0f);
+            }
             break;
         case Opcode::MSG_MOVE_START_TURN_LEFT:
             movementInfo.flags |= static_cast<uint32_t>(MovementFlags::TURN_LEFT);
@@ -7243,12 +7265,37 @@ void GameHandler::sendMovement(Opcode opcode) {
             break;
         case Opcode::MSG_MOVE_FALL_LAND:
             movementInfo.flags &= ~static_cast<uint32_t>(MovementFlags::FALLING);
+            isFalling_ = false;
+            fallStartMs_ = 0;
+            movementInfo.fallTime = 0;
+            movementInfo.jumpVelocity = 0.0f;
+            movementInfo.jumpSinAngle = 0.0f;
+            movementInfo.jumpCosAngle = 0.0f;
+            movementInfo.jumpXYSpeed = 0.0f;
             break;
         case Opcode::MSG_MOVE_HEARTBEAT:
             // No flag changes — just sends current position
             break;
         default:
             break;
+    }
+
+    // Keep fallTime current: it must equal the elapsed milliseconds since FALLING
+    // was set, so the server can compute fall damage correctly.
+    if (isFalling_ && movementInfo.hasFlag(MovementFlags::FALLING)) {
+        // movementInfo.time is the strictly-increasing client clock (ms).
+        // Subtract fallStartMs_ to get elapsed fall time; clamp to non-negative.
+        uint32_t elapsed = (movementInfo.time >= fallStartMs_)
+                               ? (movementInfo.time - fallStartMs_)
+                               : 0u;
+        movementInfo.fallTime = elapsed;
+    } else if (!movementInfo.hasFlag(MovementFlags::FALLING)) {
+        // Ensure fallTime is zeroed whenever we're not falling.
+        if (isFalling_) {
+            isFalling_ = false;
+            fallStartMs_ = 0;
+        }
+        movementInfo.fallTime = 0;
     }
 
     if (onTaxiFlight_ || taxiMountActive_ || taxiActivatePending_ || taxiClientActive_) {

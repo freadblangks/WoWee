@@ -1686,6 +1686,12 @@ private:
     uint32_t lastMovementTimestampMs_ = 0;
     bool serverMovementAllowed_ = true;
 
+    // Fall/jump tracking for movement packet correctness.
+    // fallTime must be the elapsed ms since the FALLING flag was set; the server
+    // uses it for fall-damage calculations and anti-cheat validation.
+    bool isFalling_ = false;
+    uint32_t fallStartMs_ = 0;  // movementInfo.time value when FALLING started
+
     // Inventory
     Inventory inventory;
 

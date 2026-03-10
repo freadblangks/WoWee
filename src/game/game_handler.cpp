@@ -16551,6 +16551,28 @@ void GameHandler::handleFriendStatus(network::Packet& packet) {
         friendsCache.erase(playerName);
     }
 
+    // Mirror into contacts_: update existing entry or add/remove as needed
+    if (data.status == 0) {  // Removed from friends list
+        contacts_.erase(std::remove_if(contacts_.begin(), contacts_.end(),
+            [&](const ContactEntry& e){ return e.guid == data.guid; }), contacts_.end());
+    } else {
+        auto cit = std::find_if(contacts_.begin(), contacts_.end(),
+            [&](const ContactEntry& e){ return e.guid == data.guid; });
+        if (cit != contacts_.end()) {
+            if (!playerName.empty() && playerName != "Unknown") cit->name = playerName;
+            // status: 2=online→1, 3=offline→0, 1=added→1 (online on add)
+            if (data.status == 2) cit->status = 1;
+            else if (data.status == 3) cit->status = 0;
+        } else {
+            ContactEntry entry;
+            entry.guid   = data.guid;
+            entry.name   = playerName;
+            entry.flags  = 0x1;  // friend
+            entry.status = (data.status == 2) ? 1 : 0;
+            contacts_.push_back(std::move(entry));
+        }
+    }
+
     // Status messages
     switch (data.status) {
         case 0:

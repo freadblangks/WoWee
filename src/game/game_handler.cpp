@@ -3176,12 +3176,19 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_SET_PCT_SPELL_MODIFIER:
         case Opcode::SMSG_SPELL_DELAYED: {
             // packed_guid (caster) + uint32 delayMs — spell cast was pushed back
-            // Adjust cast bar if it's the player's spell
-            if (casting && packet.getSize() - packet.getReadPos() >= 1) {
-                uint64_t caster = UpdateObjectParser::readPackedGuid(packet);
-                if (caster == playerGuid && packet.getSize() - packet.getReadPos() >= 4) {
-                    uint32_t delayMs = packet.readUInt32();
-                    castTimeRemaining += delayMs / 1000.0f;  // Extend cast bar by delay
+            if (packet.getSize() - packet.getReadPos() < 1) break;
+            uint64_t caster = UpdateObjectParser::readPackedGuid(packet);
+            if (packet.getSize() - packet.getReadPos() < 4) break;
+            uint32_t delayMs = packet.readUInt32();
+            if (delayMs == 0) break;
+            float delaySec = delayMs / 1000.0f;
+            if (caster == playerGuid) {
+                if (casting) castTimeRemaining += delaySec;
+            } else {
+                auto it = unitCastStates_.find(caster);
+                if (it != unitCastStates_.end() && it->second.casting) {
+                    it->second.timeRemaining += delaySec;
+                    it->second.timeTotal     += delaySec;
                 }
             }
             break;

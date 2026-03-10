@@ -4879,6 +4879,26 @@ bool Application::getRenderFootZForGuid(uint64_t guid, float& outFootZ) const {
     return renderer->getCharacterRenderer()->getInstanceFootZ(instanceId, outFootZ);
 }
 
+bool Application::getRenderPositionForGuid(uint64_t guid, glm::vec3& outPos) const {
+    if (!renderer || !renderer->getCharacterRenderer()) return false;
+    uint32_t instanceId = 0;
+
+    if (gameHandler && guid == gameHandler->getPlayerGuid()) {
+        instanceId = renderer->getCharacterInstanceId();
+    }
+    if (instanceId == 0) {
+        auto pit = playerInstances_.find(guid);
+        if (pit != playerInstances_.end()) instanceId = pit->second;
+    }
+    if (instanceId == 0) {
+        auto it = creatureInstances_.find(guid);
+        if (it != creatureInstances_.end()) instanceId = it->second;
+    }
+    if (instanceId == 0) return false;
+
+    return renderer->getCharacterRenderer()->getInstancePosition(instanceId, outPos);
+}
+
 pipeline::M2Model Application::loadCreatureM2Sync(const std::string& m2Path) {
     auto m2Data = assetManager->readFile(m2Path);
     if (m2Data.empty()) {

@@ -522,11 +522,25 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         if (gameHandler.hasTarget()) {
             auto target = gameHandler.getTarget();
             if (target) {
-                targetGLPos = core::coords::canonicalToRender(
-                    glm::vec3(target->getX(), target->getY(), target->getZ()));
-                float footZ = 0.0f;
-                if (core::Application::getInstance().getRenderFootZForGuid(target->getGuid(), footZ)) {
-                    targetGLPos.z = footZ;
+                // Prefer the renderer's actual instance position so the selection
+                // circle tracks the rendered model (not a parallel entity-space
+                // interpolator that can drift from the visual position).
+                glm::vec3 instPos;
+                if (core::Application::getInstance().getRenderPositionForGuid(target->getGuid(), instPos)) {
+                    targetGLPos = instPos;
+                    // Override Z with foot position to sit the circle on the ground.
+                    float footZ = 0.0f;
+                    if (core::Application::getInstance().getRenderFootZForGuid(target->getGuid(), footZ)) {
+                        targetGLPos.z = footZ;
+                    }
+                } else {
+                    // Fallback: entity game-logic position (no CharacterRenderer instance yet)
+                    targetGLPos = core::coords::canonicalToRender(
+                        glm::vec3(target->getX(), target->getY(), target->getZ()));
+                    float footZ = 0.0f;
+                    if (core::Application::getInstance().getRenderFootZForGuid(target->getGuid(), footZ)) {
+                        targetGLPos.z = footZ;
+                    }
                 }
                 renderer->setTargetPosition(&targetGLPos);
 

@@ -8760,6 +8760,10 @@ void GameHandler::setTarget(uint64_t guid) {
 
     targetGuid = guid;
 
+    // Clear stale aura data from the previous target so the buff bar shows
+    // an empty state until the server sends SMSG_AURA_UPDATE_ALL for the new target.
+    for (auto& slot : targetAuras) slot = AuraSlot{};
+
     // Clear previous target's cast bar on target change
     // (the new target's cast state is naturally fetched from unitCastStates_ by GUID)
 

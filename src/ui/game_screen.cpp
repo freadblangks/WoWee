@@ -1796,7 +1796,11 @@ void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
                 switch (powerType) {
                     case 0: powerColor = ImVec4(0.2f, 0.2f, 0.9f, 1.0f); break; // Mana (blue)
                     case 1: powerColor = ImVec4(0.9f, 0.2f, 0.2f, 1.0f); break; // Rage (red)
+                    case 2: powerColor = ImVec4(0.9f, 0.6f, 0.1f, 1.0f); break; // Focus (orange)
                     case 3: powerColor = ImVec4(0.9f, 0.9f, 0.2f, 1.0f); break; // Energy (yellow)
+                    case 4: powerColor = ImVec4(0.5f, 0.9f, 0.3f, 1.0f); break; // Happiness (green)
+                    case 6: powerColor = ImVec4(0.8f, 0.1f, 0.2f, 1.0f); break; // Runic Power (crimson)
+                    case 7: powerColor = ImVec4(0.4f, 0.1f, 0.6f, 1.0f); break; // Soul Shards (purple)
                     default: powerColor = ImVec4(0.2f, 0.2f, 0.9f, 1.0f); break;
                 }
                 ImGui::PushStyleColor(ImGuiCol_PlotHistogram, powerColor);
@@ -1921,7 +1925,11 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                     switch (targetPowerType) {
                         case 0: targetPowerColor = ImVec4(0.2f, 0.2f, 0.9f, 1.0f); break; // Mana (blue)
                         case 1: targetPowerColor = ImVec4(0.9f, 0.2f, 0.2f, 1.0f); break; // Rage (red)
+                        case 2: targetPowerColor = ImVec4(0.9f, 0.6f, 0.1f, 1.0f); break; // Focus (orange)
                         case 3: targetPowerColor = ImVec4(0.9f, 0.9f, 0.2f, 1.0f); break; // Energy (yellow)
+                        case 4: targetPowerColor = ImVec4(0.5f, 0.9f, 0.3f, 1.0f); break; // Happiness (green)
+                        case 6: targetPowerColor = ImVec4(0.8f, 0.1f, 0.2f, 1.0f); break; // Runic Power (crimson)
+                        case 7: targetPowerColor = ImVec4(0.4f, 0.1f, 0.6f, 1.0f); break; // Soul Shards (purple)
                         default: targetPowerColor = ImVec4(0.2f, 0.2f, 0.9f, 1.0f); break;
                     }
                     ImGui::PushStyleColor(ImGuiCol_PlotHistogram, targetPowerColor);
@@ -4702,7 +4710,11 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                 switch (member.powerType) {
                     case 0: powerColor = ImVec4(0.2f, 0.2f, 0.9f, 1.0f); break; // Mana (blue)
                     case 1: powerColor = ImVec4(0.9f, 0.2f, 0.2f, 1.0f); break; // Rage (red)
+                    case 2: powerColor = ImVec4(0.9f, 0.6f, 0.1f, 1.0f); break; // Focus (orange)
                     case 3: powerColor = ImVec4(0.9f, 0.9f, 0.2f, 1.0f); break; // Energy (yellow)
+                    case 4: powerColor = ImVec4(0.5f, 0.9f, 0.3f, 1.0f); break; // Happiness (green)
+                    case 6: powerColor = ImVec4(0.8f, 0.1f, 0.2f, 1.0f); break; // Runic Power (crimson)
+                    case 7: powerColor = ImVec4(0.4f, 0.1f, 0.6f, 1.0f); break; // Soul Shards (purple)
                     default: powerColor = ImVec4(0.5f, 0.5f, 0.5f, 1.0f); break;
                 }
                 ImGui::PushStyleColor(ImGuiCol_PlotHistogram, powerColor);

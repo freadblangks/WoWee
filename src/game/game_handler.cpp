@@ -9855,7 +9855,20 @@ void GameHandler::addLocalChatMessage(const MessageChatData& msg) {
 // ============================================================
 
 void GameHandler::queryPlayerName(uint64_t guid) {
-    if (playerNameCache.count(guid) || pendingNameQueries.count(guid)) return;
+    // If already cached, apply the name to the entity (handles entity recreation after
+    // moving out/in range — the entity object is new but the cached name is valid).
+    auto cacheIt = playerNameCache.find(guid);
+    if (cacheIt != playerNameCache.end()) {
+        auto entity = entityManager.getEntity(guid);
+        if (entity && entity->getType() == ObjectType::PLAYER) {
+            auto player = std::static_pointer_cast<Player>(entity);
+            if (player->getName().empty()) {
+                player->setName(cacheIt->second);
+            }
+        }
+        return;
+    }
+    if (pendingNameQueries.count(guid)) return;
     if (state != WorldState::IN_WORLD || !socket) {
         LOG_INFO("queryPlayerName: skipped guid=0x", std::hex, guid, std::dec,
                  " state=", worldStateName(state), " socket=", (socket ? "yes" : "no"));
@@ -13291,6 +13304,9 @@ void GameHandler::handleGroupList(network::Packet& packet) {
     // WotLK 3.3.5a added a roles byte (group level + per-member) for the dungeon finder.
     // Classic 1.12 and TBC 2.4.3 do not send the roles byte.
     const bool hasRoles = isActiveExpansion("wotlk");
+    // Reset before parsing — SMSG_GROUP_LIST is a full replacement, not a delta.
+    // Without this, repeated GROUP_LIST packets push duplicate members.
+    partyData = GroupListData{};
     if (!GroupListParser::parse(packet, partyData, hasRoles)) return;
 
     if (partyData.isEmpty()) {

@@ -217,6 +217,7 @@ void CameraController::update(float deltaTime) {
     bool shiftDown = !uiWantsKeyboard && (input.isKeyPressed(SDL_SCANCODE_LSHIFT) || input.isKeyPressed(SDL_SCANCODE_RSHIFT));
     bool ctrlDown = !uiWantsKeyboard && (input.isKeyPressed(SDL_SCANCODE_LCTRL) || input.isKeyPressed(SDL_SCANCODE_RCTRL));
     bool nowJump = !uiWantsKeyboard && !sitting && !movementSuppressed && input.isKeyJustPressed(SDL_SCANCODE_SPACE);
+    bool spaceDown = !uiWantsKeyboard && !sitting && !movementSuppressed && input.isKeyPressed(SDL_SCANCODE_SPACE);
 
     // Idle camera: any input resets the timer; timeout triggers a slow orbit pan
     bool anyInput = leftMouseDown || rightMouseDown || keyW || keyS || keyA || keyD || keyQ || keyE || nowJump;
@@ -1793,6 +1794,35 @@ void CameraController::update(float deltaTime) {
         } else if (!swimming && wasSwimming) {
             movementCallback(static_cast<uint32_t>(game::Opcode::MSG_MOVE_STOP_SWIM));
         }
+    }
+
+    // Flight ascend/descend transitions (Space = ascend, X = descend while mounted+flying)
+    if (movementCallback && !externalFollow_) {
+        const bool nowAscending = flyingActive_ && spaceDown;
+        const bool nowDescending = flyingActive_ && xDown && mounted_;
+
+        if (flyingActive_) {
+            if (nowAscending && !wasAscending_) {
+                movementCallback(static_cast<uint32_t>(game::Opcode::MSG_MOVE_START_ASCEND));
+            } else if (!nowAscending && wasAscending_) {
+                movementCallback(static_cast<uint32_t>(game::Opcode::MSG_MOVE_STOP_ASCEND));
+            }
+            if (nowDescending && !wasDescending_) {
+                movementCallback(static_cast<uint32_t>(game::Opcode::MSG_MOVE_START_DESCEND));
+            } else if (!nowDescending && wasDescending_) {
+                // No separate STOP_DESCEND opcode; STOP_ASCEND ends all vertical movement
+                movementCallback(static_cast<uint32_t>(game::Opcode::MSG_MOVE_STOP_ASCEND));
+            }
+        } else {
+            // Left flight mode: clear any lingering vertical movement states
+            if (wasAscending_) {
+                movementCallback(static_cast<uint32_t>(game::Opcode::MSG_MOVE_STOP_ASCEND));
+            } else if (wasDescending_) {
+                movementCallback(static_cast<uint32_t>(game::Opcode::MSG_MOVE_STOP_ASCEND));
+            }
+        }
+        wasAscending_ = nowAscending;
+        wasDescending_ = nowDescending;
     }
 
     // Update previous-frame state

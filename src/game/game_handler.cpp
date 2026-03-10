@@ -7329,6 +7329,17 @@ void GameHandler::sendMovement(Opcode opcode) {
         case Opcode::MSG_MOVE_HEARTBEAT:
             // No flag changes — just sends current position
             break;
+        case Opcode::MSG_MOVE_START_ASCEND:
+            movementInfo.flags |= static_cast<uint32_t>(MovementFlags::ASCENDING);
+            break;
+        case Opcode::MSG_MOVE_STOP_ASCEND:
+            // Clears ascending (and descending) — one stop opcode for both directions
+            movementInfo.flags &= ~static_cast<uint32_t>(MovementFlags::ASCENDING);
+            break;
+        case Opcode::MSG_MOVE_START_DESCEND:
+            // Descending: no separate flag; clear ASCENDING so they don't conflict
+            movementInfo.flags &= ~static_cast<uint32_t>(MovementFlags::ASCENDING);
+            break;
         default:
             break;
     }

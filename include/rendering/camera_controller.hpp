@@ -256,6 +256,8 @@ private:
     bool wasTurningRight = false;
     bool wasJumping = false;
     bool wasFalling = false;
+    bool wasAscending_ = false;   // Space held while flyingActive_
+    bool wasDescending_ = false;  // X held while flyingActive_
     bool moveForwardActive = false;
     bool moveBackwardActive = false;
     bool strafeLeftActive = false;

@@ -187,7 +187,9 @@ private:
     std::unordered_map<uint64_t, uint32_t> creatureInstances_;  // guid → render instanceId
     std::unordered_map<uint64_t, uint32_t> creatureModelIds_;   // guid → loaded modelId
     std::unordered_map<uint64_t, glm::vec3> creatureRenderPosCache_; // guid -> last synced render position
-    std::unordered_map<uint64_t, bool> creatureWasMoving_;       // guid -> previous-frame movement state
+    std::unordered_map<uint64_t, bool> creatureWasMoving_;        // guid -> previous-frame movement state
+    std::unordered_map<uint64_t, bool> creatureWasSwimming_;     // guid -> previous-frame swim state (for anim transition detection)
+    std::unordered_map<uint64_t, bool> creatureWasFlying_;       // guid -> previous-frame flying state (for anim transition detection)
     std::unordered_map<uint64_t, bool> creatureSwimmingState_;   // guid -> currently in swim mode (SWIMMING flag)
     std::unordered_map<uint64_t, bool> creatureWalkingState_;    // guid -> walking (WALKING flag, selects Walk(4) vs Run(5))
     std::unordered_map<uint64_t, bool> creatureFlyingState_;     // guid -> currently flying (FLYING flag)

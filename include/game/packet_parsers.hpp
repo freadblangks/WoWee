@@ -345,6 +345,12 @@ public:
     bool parseSpellDamageLog(network::Packet& packet, SpellDamageLogData& data) override;
     // TBC 2.4.3 SMSG_SPELLHEALLOG uses full uint64 GUIDs (WotLK uses packed GUIDs)
     bool parseSpellHealLog(network::Packet& packet, SpellHealLogData& data) override;
+    // TBC 2.4.3 quest log has 4 update fields per slot (questId, state, counts, timer)
+    // WotLK expands this to 5 (splits counts into two fields).
+    uint8_t questLogStride() const override { return 4; }
+    // TBC 2.4.3 CMSG_QUESTGIVER_QUERY_QUEST: guid(8) + questId(4) — no trailing
+    // isDialogContinued byte that WotLK added
+    network::Packet buildQueryQuestPacket(uint64_t npcGuid, uint32_t questId) override;
 };
 
 /**

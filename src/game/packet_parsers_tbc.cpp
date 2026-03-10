@@ -699,6 +699,20 @@ network::Packet TbcPacketParsers::buildAcceptQuestPacket(uint64_t npcGuid, uint3
 }
 
 // ============================================================================
+// TBC 2.4.3 CMSG_QUESTGIVER_QUERY_QUEST
+//
+// WotLK adds a trailing uint8 isDialogContinued byte; TBC does not.
+// TBC format: guid(8) + questId(4) = 12 bytes.
+// ============================================================================
+network::Packet TbcPacketParsers::buildQueryQuestPacket(uint64_t npcGuid, uint32_t questId) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_QUESTGIVER_QUERY_QUEST));
+    packet.writeUInt64(npcGuid);
+    packet.writeUInt32(questId);
+    // No isDialogContinued byte (WotLK-only addition)
+    return packet;
+}
+
+// ============================================================================
 // TBC parseAuraUpdate - SMSG_AURA_UPDATE doesn't exist in TBC
 // TBC uses inline aura update fields + SMSG_INIT_EXTRA_AURA_INFO_OBSOLETE (0x3A3) /
 // SMSG_SET_EXTRA_AURA_INFO_OBSOLETE (0x3A4) instead

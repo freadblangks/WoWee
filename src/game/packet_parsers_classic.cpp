@@ -1242,8 +1242,8 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
 
     packet.readUInt32(); // AllowableClass
     packet.readUInt32(); // AllowableRace
-    packet.readUInt32(); // ItemLevel
-    packet.readUInt32(); // RequiredLevel
+    data.itemLevel = packet.readUInt32();
+    data.requiredLevel = packet.readUInt32();
     packet.readUInt32(); // RequiredSkill
     packet.readUInt32(); // RequiredSkillRank
     packet.readUInt32(); // RequiredSpell
@@ -1301,6 +1301,32 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
         packet.readUInt32(); // ArcaneRes
         data.delayMs = packet.readUInt32();
     }
+
+    // AmmoType + RangedModRange (2 fields, 8 bytes)
+    if (packet.getSize() - packet.getReadPos() >= 8) {
+        packet.readUInt32(); // AmmoType
+        packet.readFloat();  // RangedModRange
+    }
+
+    // 2 item spells in Vanilla (3 fields each: SpellId, Trigger, Charges)
+    // Actually vanilla has 5 spells: SpellId, Trigger, Charges, Cooldown, Category, CatCooldown = 24 bytes each
+    for (int i = 0; i < 5; i++) {
+        if (packet.getReadPos() + 24 > packet.getSize()) break;
+        data.spells[i].spellId = packet.readUInt32();
+        data.spells[i].spellTrigger = packet.readUInt32();
+        packet.readUInt32(); // SpellCharges
+        packet.readUInt32(); // SpellCooldown
+        packet.readUInt32(); // SpellCategory
+        packet.readUInt32(); // SpellCategoryCooldown
+    }
+
+    // Bonding type
+    if (packet.getReadPos() + 4 <= packet.getSize())
+        data.bindType = packet.readUInt32();
+
+    // Description (flavor/lore text)
+    if (packet.getReadPos() < packet.getSize())
+        data.description = packet.readString();
 
     data.valid = !data.name.empty();
     LOG_DEBUG("[Classic] Item query response: ", data.name, " (quality=", data.quality,

@@ -12240,7 +12240,7 @@ void GameHandler::handleCompressedMoves(network::Packet& packet) {
 
     // Player movement sub-opcodes (SMSG_MULTIPLE_MOVES carries MSG_MOVE_*)
     // Not static — wireOpcode() depends on runtime active opcode table.
-    const std::array<uint16_t, 15> kMoveOpcodes = {
+    const std::array<uint16_t, 17> kMoveOpcodes = {
         wireOpcode(Opcode::MSG_MOVE_START_FORWARD),
         wireOpcode(Opcode::MSG_MOVE_START_BACKWARD),
         wireOpcode(Opcode::MSG_MOVE_STOP),
@@ -12256,6 +12256,8 @@ void GameHandler::handleCompressedMoves(network::Packet& packet) {
         wireOpcode(Opcode::MSG_MOVE_HEARTBEAT),
         wireOpcode(Opcode::MSG_MOVE_START_SWIM),
         wireOpcode(Opcode::MSG_MOVE_STOP_SWIM),
+        wireOpcode(Opcode::MSG_MOVE_SET_WALK_MODE),
+        wireOpcode(Opcode::MSG_MOVE_SET_RUN_MODE),
     };
 
     // Track unhandled sub-opcodes once per compressed packet (avoid log spam)

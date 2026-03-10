@@ -15487,7 +15487,9 @@ void GameHandler::handleGossipComplete(network::Packet& packet) {
 }
 
 void GameHandler::handleListInventory(network::Packet& packet) {
+    bool savedCanRepair = currentVendorItems.canRepair;  // preserve armorer flag set before openVendor()
     if (!ListInventoryParser::parse(packet, currentVendorItems)) return;
+    currentVendorItems.canRepair = savedCanRepair;
     vendorWindowOpen = true;
     gossipWindowOpen = false; // Close gossip if vendor opens
 

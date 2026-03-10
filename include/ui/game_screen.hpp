@@ -62,6 +62,7 @@ private:
     // UI state
     bool showEntityWindow = false;
     bool showChatWindow = true;
+    bool showNameplates_ = true;  // V key toggles nameplates
     bool showPlayerInfo = false;
     bool showGuildRoster_ = false;
     std::string selectedGuildMember_;

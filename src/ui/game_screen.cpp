@@ -395,7 +395,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderCastBar(gameHandler);
     renderMirrorTimers(gameHandler);
     renderQuestObjectiveTracker(gameHandler);
-    renderNameplates(gameHandler);
+    if (showNameplates_) renderNameplates(gameHandler);
     renderCombatText(gameHandler);
     renderPartyFrames(gameHandler);
     renderGroupInvitePopup(gameHandler);
@@ -1395,6 +1395,11 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
             } else {
                 showEscapeMenu = true;
             }
+        }
+
+        // V — toggle nameplates (WoW default keybinding)
+        if (input.isKeyJustPressed(SDL_SCANCODE_V)) {
+            showNameplates_ = !showNameplates_;
         }
 
         // Action bar keys (1-9, 0, -, =)

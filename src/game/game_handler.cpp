@@ -486,6 +486,10 @@ void GameHandler::disconnect() {
     contacts_.clear();
     transportAttachments_.clear();
     serverUpdatedTransportGuids_.clear();
+    // Clear in-flight query sets so reconnect can re-issue queries for any
+    // entries whose responses were lost during the disconnect.
+    pendingCreatureQueries.clear();
+    pendingGameObjectQueries_.clear();
     requiresWarden_ = false;
     wardenGateSeen_ = false;
     wardenGateElapsed_ = 0.0f;

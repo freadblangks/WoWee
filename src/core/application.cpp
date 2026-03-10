@@ -3365,7 +3365,9 @@ bool Application::tryAttachCreatureVirtualWeapons(uint64_t guid, uint32_t instan
 
     auto itemDisplayDbc = assetManager->loadDBC("ItemDisplayInfo.dbc");
     if (!itemDisplayDbc) return false;
-    auto itemDbc = assetManager->loadDBC("Item.dbc");
+    // Item.dbc is not distributed to clients in Vanilla 1.12; on those expansions
+    // item display IDs are resolved via the server-sent item cache instead.
+    auto itemDbc = assetManager->loadDBCOptional("Item.dbc");
     const auto* idiL = pipeline::getActiveDBCLayout()
         ? pipeline::getActiveDBCLayout()->getLayout("ItemDisplayInfo") : nullptr;
     const auto* itemL = pipeline::getActiveDBCLayout()
@@ -3373,7 +3375,7 @@ bool Application::tryAttachCreatureVirtualWeapons(uint64_t guid, uint32_t instan
 
     auto resolveDisplayInfoId = [&](uint32_t rawId) -> uint32_t {
         if (rawId == 0) return 0;
-        // AzerothCore uses item entries in UNIT_VIRTUAL_ITEM_SLOT_ID.
+        // Primary path: AzerothCore uses item entries in UNIT_VIRTUAL_ITEM_SLOT_ID.
         // Resolve strictly through Item.dbc entry -> DisplayID to avoid
         // accidental ItemDisplayInfo ID collisions (staff/hilt mismatches).
         if (itemDbc) {
@@ -3383,6 +3385,17 @@ bool Application::tryAttachCreatureVirtualWeapons(uint64_t guid, uint32_t instan
                 uint32_t displayIdA = itemDbc->getUInt32(static_cast<uint32_t>(itemRec), dispFieldPrimary);
                 if (displayIdA != 0 && itemDisplayDbc->findRecordById(displayIdA) >= 0) {
                     return displayIdA;
+                }
+            }
+        }
+        // Fallback: Vanilla 1.12 does not distribute Item.dbc to clients.
+        // Items arrive via SMSG_ITEM_QUERY_SINGLE_RESPONSE and are cached in
+        // itemInfoCache_. Use the server-sent displayInfoId when available.
+        if (!itemDbc && gameHandler) {
+            if (const auto* info = gameHandler->getItemInfo(rawId)) {
+                uint32_t displayIdB = info->displayInfoId;
+                if (displayIdB != 0 && itemDisplayDbc->findRecordById(displayIdB) >= 0) {
+                    return displayIdB;
                 }
             }
         }

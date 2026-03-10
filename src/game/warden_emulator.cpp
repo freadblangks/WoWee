@@ -14,9 +14,11 @@ namespace game {
 #ifdef HAVE_UNICORN
 
 // Memory layout for emulated environment
+// Note: heap must not overlap the module region (typically loaded at 0x400000)
+// or the stack. Keep heap above 0x02000000 (32MB) to leave space for module + padding.
 constexpr uint32_t STACK_BASE = 0x00100000;  // 1MB
 constexpr uint32_t STACK_SIZE = 0x00100000;  // 1MB stack
-constexpr uint32_t HEAP_BASE  = 0x00200000;  // 2MB
+constexpr uint32_t HEAP_BASE  = 0x02000000;  // 32MB — well above typical module base (0x400000)
 constexpr uint32_t HEAP_SIZE  = 0x01000000;  // 16MB heap
 constexpr uint32_t API_STUB_BASE = 0x70000000; // API stub area (high memory)
 
@@ -57,6 +59,17 @@ bool WardenEmulator::initialize(const void* moduleCode, size_t moduleSize, uint3
 
     moduleBase_ = baseAddress;
     moduleSize_ = (moduleSize + 0xFFF) & ~0xFFF; // Align to 4KB
+
+    // Detect overlap between module and heap/stack regions early.
+    uint32_t modEnd = moduleBase_ + moduleSize_;
+    if (modEnd > heapBase_ && moduleBase_ < heapBase_ + heapSize_) {
+        std::cerr << "[WardenEmulator] Module [0x" << std::hex << moduleBase_
+                  << ", 0x" << modEnd << ") overlaps heap [0x" << heapBase_
+                  << ", 0x" << (heapBase_ + heapSize_) << ") — adjust HEAP_BASE\n" << std::dec;
+        uc_close(uc_);
+        uc_ = nullptr;
+        return false;
+    }
 
     // Map module memory (code + data)
     err = uc_mem_map(uc_, moduleBase_, moduleSize_, UC_PROT_ALL);

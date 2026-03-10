@@ -659,6 +659,30 @@ void GameHandler::update(float deltaTime) {
         }
     }
 
+    // Periodically re-query names for players whose initial CMSG_NAME_QUERY was
+    // lost (server didn't respond) or whose entity was recreated while the query
+    // was still pending. Runs every 5 seconds to keep overhead minimal.
+    if (state == WorldState::IN_WORLD && socket) {
+        static float nameResyncTimer = 0.0f;
+        nameResyncTimer += deltaTime;
+        if (nameResyncTimer >= 5.0f) {
+            nameResyncTimer = 0.0f;
+            for (const auto& [guid, entity] : entityManager.getEntities()) {
+                if (!entity || entity->getType() != ObjectType::PLAYER) continue;
+                if (guid == playerGuid) continue;
+                auto player = std::static_pointer_cast<Player>(entity);
+                if (!player->getName().empty()) continue;
+                if (playerNameCache.count(guid)) continue;
+                if (pendingNameQueries.count(guid)) continue;
+                // Player entity exists with empty name and no pending query — resend.
+                LOG_DEBUG("Name resync: re-querying guid=0x", std::hex, guid, std::dec);
+                pendingNameQueries.insert(guid);
+                auto pkt = NameQueryPacket::build(guid);
+                socket->send(pkt);
+            }
+        }
+    }
+
     if (pendingLootMoneyNotifyTimer_ > 0.0f) {
         pendingLootMoneyNotifyTimer_ -= deltaTime;
         if (pendingLootMoneyNotifyTimer_ <= 0.0f) {
@@ -7436,6 +7460,9 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
             otherPlayerMoveTimeMs_.erase(guid);
             inspectedPlayerItemEntries_.erase(guid);
             pendingAutoInspect_.erase(guid);
+            // Clear pending name query so the query is re-sent when this player
+            // comes back into range (entity is recreated as a new object).
+            pendingNameQueries.erase(guid);
         } else if (entity->getType() == ObjectType::GAMEOBJECT && gameObjectDespawnCallback_) {
             gameObjectDespawnCallback_(guid);
         }
@@ -8407,6 +8434,7 @@ void GameHandler::handleDestroyObject(network::Packet& packet) {
                 otherPlayerMoveTimeMs_.erase(data.guid);
                 inspectedPlayerItemEntries_.erase(data.guid);
                 pendingAutoInspect_.erase(data.guid);
+                pendingNameQueries.erase(data.guid);
             } else if (entity->getType() == ObjectType::GAMEOBJECT && gameObjectDespawnCallback_) {
                 gameObjectDespawnCallback_(data.guid);
             }

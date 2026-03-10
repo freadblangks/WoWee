@@ -3652,8 +3652,33 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
             break;
         }
-        case Opcode::MSG_RAID_TARGET_UPDATE:
+        case Opcode::MSG_RAID_TARGET_UPDATE: {
+            // uint8 type: 0 = full update (8 × (uint8 icon + uint64 guid)),
+            //             1 = single update (uint8 icon + uint64 guid)
+            size_t remRTU = packet.getSize() - packet.getReadPos();
+            if (remRTU < 1) break;
+            uint8_t rtuType = packet.readUInt8();
+            if (rtuType == 0) {
+                // Full update: always 8 entries
+                for (uint32_t i = 0; i < kRaidMarkCount; ++i) {
+                    if (packet.getSize() - packet.getReadPos() < 9) break;
+                    uint8_t  icon = packet.readUInt8();
+                    uint64_t guid = packet.readUInt64();
+                    if (icon < kRaidMarkCount)
+                        raidTargetGuids_[icon] = guid;
+                }
+            } else {
+                // Single update
+                if (packet.getSize() - packet.getReadPos() >= 9) {
+                    uint8_t  icon = packet.readUInt8();
+                    uint64_t guid = packet.readUInt64();
+                    if (icon < kRaidMarkCount)
+                        raidTargetGuids_[icon] = guid;
+                }
+            }
+            LOG_DEBUG("MSG_RAID_TARGET_UPDATE: type=", static_cast<int>(rtuType));
             break;
+        }
         case Opcode::SMSG_BUY_ITEM: {
             // uint64 vendorGuid + uint32 vendorSlot + int32 newCount + uint32 itemCount
             // Confirms a successful CMSG_BUY_ITEM. The inventory update arrives via SMSG_UPDATE_OBJECT.
@@ -5985,8 +6010,9 @@ void GameHandler::handleLoginVerifyWorld(network::Packet& packet) {
         mountCallback_(0);
     }
 
-    // Clear boss encounter unit slots on world transfer
+    // Clear boss encounter unit slots and raid marks on world transfer
     encounterUnitGuids_.fill(0);
+    raidTargetGuids_.fill(0);
 
     // Suppress area triggers on initial login — prevents exit portals from
     // immediately firing when spawning inside a dungeon/instance.

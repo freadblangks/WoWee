@@ -888,6 +888,21 @@ public:
         return (slot < kMaxEncounterSlots) ? encounterUnitGuids_[slot] : 0;
     }
 
+    // Raid target markers (MSG_RAID_TARGET_UPDATE)
+    // Icon indices 0-7: Star, Circle, Diamond, Triangle, Moon, Square, Cross, Skull
+    static constexpr uint32_t kRaidMarkCount = 8;
+    // Returns the GUID marked with the given icon (0 = no mark)
+    uint64_t getRaidMarkGuid(uint32_t icon) const {
+        return (icon < kRaidMarkCount) ? raidTargetGuids_[icon] : 0;
+    }
+    // Returns the raid mark icon for a given guid (0xFF = no mark)
+    uint8_t getEntityRaidMark(uint64_t guid) const {
+        if (guid == 0) return 0xFF;
+        for (uint32_t i = 0; i < kRaidMarkCount; ++i)
+            if (raidTargetGuids_[i] == guid) return static_cast<uint8_t>(i);
+        return 0xFF;
+    }
+
     // ---- LFG / Dungeon Finder ----
     enum class LfgState : uint8_t {
         None           = 0,
@@ -1863,6 +1878,9 @@ private:
     // Instance difficulty
     uint32_t instanceDifficulty_ = 0;
     bool instanceIsHeroic_ = false;
+
+    // Raid target markers (icon 0-7 -> guid; 0 = empty slot)
+    std::array<uint64_t, kRaidMarkCount> raidTargetGuids_ = {};
 
     // Mirror timers (0=fatigue, 1=breath, 2=feigndeath)
     MirrorTimer mirrorTimers_[3];

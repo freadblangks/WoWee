@@ -2065,11 +2065,31 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
     ImGui::PushStyleColor(ImGuiCol_Border, borderColor);
 
     if (ImGui::Begin("##TargetFrame", nullptr, flags)) {
+        // Raid mark icon (Star/Circle/Diamond/Triangle/Moon/Square/Cross/Skull)
+        static const struct { const char* sym; ImU32 col; } kRaidMarks[] = {
+            { "\xe2\x98\x85", IM_COL32(255, 220,  50, 255) },  // 0 Star     (yellow)
+            { "\xe2\x97\x8f", IM_COL32(255, 140,   0, 255) },  // 1 Circle   (orange)
+            { "\xe2\x97\x86", IM_COL32(160,  32, 240, 255) },  // 2 Diamond  (purple)
+            { "\xe2\x96\xb2", IM_COL32( 50, 200,  50, 255) },  // 3 Triangle (green)
+            { "\xe2\x97\x8c", IM_COL32( 80, 160, 255, 255) },  // 4 Moon     (blue)
+            { "\xe2\x96\xa0", IM_COL32( 50, 200, 220, 255) },  // 5 Square   (teal)
+            { "\xe2\x9c\x9d", IM_COL32(255,  80,  80, 255) },  // 6 Cross    (red)
+            { "\xe2\x98\xa0", IM_COL32(255, 255, 255, 255) },  // 7 Skull    (white)
+        };
+        uint8_t mark = gameHandler.getEntityRaidMark(target->getGuid());
+        if (mark < game::GameHandler::kRaidMarkCount) {
+            ImGui::GetWindowDrawList()->AddText(
+                ImGui::GetCursorScreenPos(),
+                kRaidMarks[mark].col, kRaidMarks[mark].sym);
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 18.0f);
+        }
+
         // Entity name and type
         std::string name = getEntityName(target);
 
         ImVec4 nameColor = hostileColor;
 
+        ImGui::SameLine(0.0f, 0.0f);
         ImGui::TextColored(nameColor, "%s", name.c_str());
 
         // Level (for units/players) — colored by difficulty
@@ -4892,6 +4912,26 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
             : IM_COL32(240, 200, 100, A(230));
         drawList->AddText(ImVec2(nameX + 1.0f, nameY + 1.0f), IM_COL32(0, 0, 0, A(160)), labelBuf);
         drawList->AddText(ImVec2(nameX,         nameY),         nameColor, labelBuf);
+
+        // Raid mark (if any) to the left of the name
+        {
+            static const struct { const char* sym; ImU32 col; } kNPMarks[] = {
+                { "\xe2\x98\x85", IM_COL32(255,220, 50,230) },  // Star
+                { "\xe2\x97\x8f", IM_COL32(255,140,  0,230) },  // Circle
+                { "\xe2\x97\x86", IM_COL32(160, 32,240,230) },  // Diamond
+                { "\xe2\x96\xb2", IM_COL32( 50,200, 50,230) },  // Triangle
+                { "\xe2\x97\x8c", IM_COL32( 80,160,255,230) },  // Moon
+                { "\xe2\x96\xa0", IM_COL32( 50,200,220,230) },  // Square
+                { "\xe2\x9c\x9d", IM_COL32(255, 80, 80,230) },  // Cross
+                { "\xe2\x98\xa0", IM_COL32(255,255,255,230) },  // Skull
+            };
+            uint8_t raidMark = gameHandler.getEntityRaidMark(guid);
+            if (raidMark < game::GameHandler::kRaidMarkCount) {
+                float markX = nameX - 14.0f;
+                drawList->AddText(ImVec2(markX + 1.0f, nameY + 1.0f), IM_COL32(0,0,0,120), kNPMarks[raidMark].sym);
+                drawList->AddText(ImVec2(markX,         nameY),        kNPMarks[raidMark].col, kNPMarks[raidMark].sym);
+            }
+        }
 
         // Click to target: detect left-click inside the combined nameplate region
         if (!ImGui::GetIO().WantCaptureMouse && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {

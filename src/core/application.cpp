@@ -2762,6 +2762,38 @@ void Application::setupUICallbacks() {
         }
     });
 
+    // Spell cast animation callback — play cast animation on caster (player or NPC/other player)
+    gameHandler->setSpellCastAnimCallback([this](uint64_t guid, bool start, bool /*isChannel*/) {
+        if (!renderer) return;
+        auto* cr = renderer->getCharacterRenderer();
+        if (!cr) return;
+        // Animation 3 = SpellCast (one-shot; return-to-idle handled by character_renderer)
+        const uint32_t castAnim = 3;
+        // Check player character
+        {
+            uint32_t charInstId = renderer->getCharacterInstanceId();
+            if (charInstId != 0 && guid == gameHandler->getPlayerGuid()) {
+                if (start) cr->playAnimation(charInstId, castAnim, false);
+                // On finish: playAnimation(castAnim, loop=false) will auto-return to Stand
+                return;
+            }
+        }
+        // Check creatures and other online players
+        {
+            auto it = creatureInstances_.find(guid);
+            if (it != creatureInstances_.end()) {
+                if (start) cr->playAnimation(it->second, castAnim, false);
+                return;
+            }
+        }
+        {
+            auto it = playerInstances_.find(guid);
+            if (it != playerInstances_.end()) {
+                if (start) cr->playAnimation(it->second, castAnim, false);
+            }
+        }
+    });
+
     // NPC greeting callback - play voice line
     gameHandler->setNpcGreetingCallback([this](uint64_t guid, const glm::vec3& position) {
         if (renderer && renderer->getNpcVoiceManager()) {

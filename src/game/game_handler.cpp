@@ -2605,9 +2605,15 @@ void GameHandler::handlePacket(network::Packet& packet) {
                         ssm->stopPrecast();
                     }
                 }
+                if (spellCastAnimCallback_) {
+                    spellCastAnimCallback_(playerGuid, false, false);
+                }
             } else {
                 // Another unit's cast failed — clear their tracked cast bar
                 unitCastStates_.erase(failGuid);
+                if (spellCastAnimCallback_) {
+                    spellCastAnimCallback_(failGuid, false, false);
+                }
             }
             break;
         }
@@ -12949,6 +12955,10 @@ void GameHandler::handleSpellStart(network::Packet& packet) {
         s.spellId       = data.spellId;
         s.timeTotal     = data.castTime / 1000.0f;
         s.timeRemaining = s.timeTotal;
+        // Trigger cast animation on the casting unit
+        if (spellCastAnimCallback_) {
+            spellCastAnimCallback_(data.casterUnit, true, false);
+        }
     }
 
     // If this is the player's own cast, start cast bar
@@ -12968,6 +12978,11 @@ void GameHandler::handleSpellStart(network::Packet& packet) {
                     : audio::SpellSoundManager::MagicSchool::ARCANE;
                 ssm->playPrecast(school, audio::SpellSoundManager::SpellPower::MEDIUM);
             }
+        }
+
+        // Trigger cast animation on player character
+        if (spellCastAnimCallback_) {
+            spellCastAnimCallback_(playerGuid, true, false);
         }
 
         // Hearthstone cast: begin pre-loading terrain at bind point during cast time
@@ -13021,6 +13036,14 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
         casting = false;
         currentCastSpellId = 0;
         castTimeRemaining = 0.0f;
+
+        // End cast animation on player character
+        if (spellCastAnimCallback_) {
+            spellCastAnimCallback_(playerGuid, false, false);
+        }
+    } else if (spellCastAnimCallback_) {
+        // End cast animation on other unit
+        spellCastAnimCallback_(data.casterUnit, false, false);
     }
 
     // Clear unit cast bar when the spell lands (for any tracked unit)

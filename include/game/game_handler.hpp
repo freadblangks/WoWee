@@ -623,6 +623,11 @@ public:
     using MeleeSwingCallback = std::function<void()>;
     void setMeleeSwingCallback(MeleeSwingCallback cb) { meleeSwingCallback_ = std::move(cb); }
 
+    // Spell cast animation callbacks — true=start cast/channel, false=finish/cancel
+    // guid: caster (may be player or another unit), isChannel: channel vs regular cast
+    using SpellCastAnimCallback = std::function<void(uint64_t guid, bool start, bool isChannel)>;
+    void setSpellCastAnimCallback(SpellCastAnimCallback cb) { spellCastAnimCallback_ = std::move(cb); }
+
     // NPC swing callback (plays attack animation on NPC)
     using NpcSwingCallback = std::function<void(uint64_t guid)>;
     void setNpcSwingCallback(NpcSwingCallback cb) { npcSwingCallback_ = std::move(cb); }
@@ -2246,6 +2251,7 @@ private:
     NpcAggroCallback npcAggroCallback_;
     NpcRespawnCallback npcRespawnCallback_;
     MeleeSwingCallback meleeSwingCallback_;
+    SpellCastAnimCallback spellCastAnimCallback_;
     NpcSwingCallback npcSwingCallback_;
     NpcGreetingCallback npcGreetingCallback_;
     NpcFarewellCallback npcFarewellCallback_;

@@ -456,6 +456,27 @@ public:
     void dismissPet();
     bool hasPet() const { return petGuid_ != 0; }
     uint64_t getPetGuid() const { return petGuid_; }
+
+    // ---- Pet state (populated by SMSG_PET_SPELLS / SMSG_PET_MODE) ----
+    // 10 action bar slots; each entry is a packed uint32:
+    //   bits 0-23  = spell ID (or 0 for empty)
+    //   bits 24-31 = action type (0x00=cast, 0xC0=autocast on, 0x40=autocast off)
+    static constexpr int PET_ACTION_BAR_SLOTS = 10;
+    uint32_t getPetActionSlot(int idx) const {
+        if (idx < 0 || idx >= PET_ACTION_BAR_SLOTS) return 0;
+        return petActionSlots_[idx];
+    }
+    // Pet command/react state from SMSG_PET_MODE or SMSG_PET_SPELLS
+    uint8_t getPetCommand() const { return petCommand_; }   // 0=stay,1=follow,2=attack,3=dismiss
+    uint8_t getPetReact()   const { return petReact_; }     // 0=passive,1=defensive,2=aggressive
+    // Spells the pet knows (from SMSG_PET_SPELLS spell list)
+    const std::vector<uint32_t>& getPetSpells() const { return petSpellList_; }
+    // Pet autocast set (spellIds that have autocast enabled)
+    bool isPetSpellAutocast(uint32_t spellId) const {
+        return petAutocastSpells_.count(spellId) != 0;
+    }
+    // Send CMSG_PET_ACTION to issue a pet command
+    void sendPetAction(uint32_t action, uint64_t targetGuid = 0);
     const std::unordered_set<uint32_t>& getKnownSpells() const { return knownSpells; }
 
     // Player proficiency bitmasks (from SMSG_SET_PROFICIENCY)
@@ -1763,6 +1784,11 @@ private:
     std::vector<AuraSlot> playerAuras;
     std::vector<AuraSlot> targetAuras;
     uint64_t petGuid_ = 0;
+    uint32_t petActionSlots_[10] = {};   // SMSG_PET_SPELLS action bar (10 slots)
+    uint8_t  petCommand_ = 1;            // 0=stay,1=follow,2=attack,3=dismiss
+    uint8_t  petReact_   = 1;            // 0=passive,1=defensive,2=aggressive
+    std::vector<uint32_t> petSpellList_; // known pet spells
+    std::unordered_set<uint32_t> petAutocastSpells_;  // spells with autocast on
 
     // ---- Battleground queue state ----
     struct BgQueueSlot {

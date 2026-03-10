@@ -5111,15 +5111,69 @@ void GameHandler::handlePacket(network::Packet& packet) {
             packet.setReadPos(packet.getSize());
             break;
 
-        // ---- Pet system (not yet implemented) ----
-        case Opcode::SMSG_PET_GUIDS:
-        case Opcode::SMSG_PET_MODE:
+        // ---- Pet system ----
+        case Opcode::SMSG_PET_MODE: {
+            // uint64 petGuid, uint32 mode
+            // mode bits: low byte = command state, next byte = react state
+            if (packet.getSize() - packet.getReadPos() >= 12) {
+                uint64_t modeGuid = packet.readUInt64();
+                uint32_t mode     = packet.readUInt32();
+                if (modeGuid == petGuid_) {
+                    petCommand_ = static_cast<uint8_t>(mode & 0xFF);
+                    petReact_   = static_cast<uint8_t>((mode >> 8) & 0xFF);
+                    LOG_DEBUG("SMSG_PET_MODE: command=", (int)petCommand_,
+                              " react=", (int)petReact_);
+                }
+            }
+            packet.setReadPos(packet.getSize());
+            break;
+        }
         case Opcode::SMSG_PET_BROKEN:
-        case Opcode::SMSG_PET_CAST_FAILED:
+            // Pet bond broken (died or forcibly dismissed) — clear pet state
+            petGuid_ = 0;
+            petSpellList_.clear();
+            petAutocastSpells_.clear();
+            memset(petActionSlots_, 0, sizeof(petActionSlots_));
+            addSystemChatMessage("Your pet has died.");
+            LOG_INFO("SMSG_PET_BROKEN: pet bond broken");
+            packet.setReadPos(packet.getSize());
+            break;
+        case Opcode::SMSG_PET_LEARNED_SPELL: {
+            if (packet.getSize() - packet.getReadPos() >= 4) {
+                uint32_t spellId = packet.readUInt32();
+                petSpellList_.push_back(spellId);
+                LOG_DEBUG("SMSG_PET_LEARNED_SPELL: spellId=", spellId);
+            }
+            packet.setReadPos(packet.getSize());
+            break;
+        }
+        case Opcode::SMSG_PET_UNLEARNED_SPELL: {
+            if (packet.getSize() - packet.getReadPos() >= 4) {
+                uint32_t spellId = packet.readUInt32();
+                petSpellList_.erase(
+                    std::remove(petSpellList_.begin(), petSpellList_.end(), spellId),
+                    petSpellList_.end());
+                petAutocastSpells_.erase(spellId);
+                LOG_DEBUG("SMSG_PET_UNLEARNED_SPELL: spellId=", spellId);
+            }
+            packet.setReadPos(packet.getSize());
+            break;
+        }
+        case Opcode::SMSG_PET_CAST_FAILED: {
+            if (packet.getSize() - packet.getReadPos() >= 5) {
+                uint8_t  castCount = packet.readUInt8();
+                uint32_t spellId   = packet.readUInt32();
+                uint32_t reason    = (packet.getSize() - packet.getReadPos() >= 4)
+                                         ? packet.readUInt32() : 0;
+                LOG_DEBUG("SMSG_PET_CAST_FAILED: spell=", spellId,
+                          " reason=", reason, " castCount=", (int)castCount);
+            }
+            packet.setReadPos(packet.getSize());
+            break;
+        }
+        case Opcode::SMSG_PET_GUIDS:
         case Opcode::SMSG_PET_DISMISS_SOUND:
         case Opcode::SMSG_PET_ACTION_SOUND:
-        case Opcode::SMSG_PET_LEARNED_SPELL:
-        case Opcode::SMSG_PET_UNLEARNED_SPELL:
         case Opcode::SMSG_PET_UNLEARN_CONFIRM:
         case Opcode::SMSG_PET_NAME_INVALID:
         case Opcode::SMSG_PET_RENAMEABLE:
@@ -12419,14 +12473,72 @@ void GameHandler::cancelAura(uint32_t spellId) {
 }
 
 void GameHandler::handlePetSpells(network::Packet& packet) {
-    if (packet.getSize() - packet.getReadPos() < 8) {
-        // Empty packet = pet dismissed/died
+    const size_t remaining = packet.getSize() - packet.getReadPos();
+    if (remaining < 8) {
+        // Empty or undersized → pet cleared (dismissed / died)
         petGuid_ = 0;
-        LOG_INFO("SMSG_PET_SPELLS: pet cleared (empty packet)");
+        petSpellList_.clear();
+        petAutocastSpells_.clear();
+        memset(petActionSlots_, 0, sizeof(petActionSlots_));
+        LOG_INFO("SMSG_PET_SPELLS: pet cleared");
         return;
     }
+
     petGuid_ = packet.readUInt64();
-    LOG_INFO("SMSG_PET_SPELLS: petGuid=0x", std::hex, petGuid_, std::dec);
+    if (petGuid_ == 0) {
+        petSpellList_.clear();
+        petAutocastSpells_.clear();
+        memset(petActionSlots_, 0, sizeof(petActionSlots_));
+        LOG_INFO("SMSG_PET_SPELLS: pet cleared (guid=0)");
+        return;
+    }
+
+    // uint16 duration (ms, 0 = permanent), uint16 timer (ms)
+    if (packet.getSize() - packet.getReadPos() < 4) goto done;
+    /*uint16_t dur =*/ packet.readUInt16();
+    /*uint16_t timer =*/ packet.readUInt16();
+
+    // uint8 reactState, uint8 commandState (packed order varies; WotLK: react first)
+    if (packet.getSize() - packet.getReadPos() < 2) goto done;
+    petReact_   = packet.readUInt8();  // 0=passive, 1=defensive, 2=aggressive
+    petCommand_ = packet.readUInt8();  // 0=stay, 1=follow, 2=attack, 3=dismiss
+
+    // 10 × uint32 action bar slots
+    if (packet.getSize() - packet.getReadPos() < PET_ACTION_BAR_SLOTS * 4u) goto done;
+    for (int i = 0; i < PET_ACTION_BAR_SLOTS; ++i) {
+        petActionSlots_[i] = packet.readUInt32();
+    }
+
+    // uint8 spell count, then per-spell: uint32 spellId, uint16 active flags
+    if (packet.getSize() - packet.getReadPos() < 1) goto done;
+    {
+        uint8_t spellCount = packet.readUInt8();
+        petSpellList_.clear();
+        petAutocastSpells_.clear();
+        for (uint8_t i = 0; i < spellCount; ++i) {
+            if (packet.getSize() - packet.getReadPos() < 6) break;
+            uint32_t spellId = packet.readUInt32();
+            uint16_t activeFlags = packet.readUInt16();
+            petSpellList_.push_back(spellId);
+            // activeFlags bit 0 = autocast on
+            if (activeFlags & 0x0001) {
+                petAutocastSpells_.insert(spellId);
+            }
+        }
+    }
+
+done:
+    LOG_INFO("SMSG_PET_SPELLS: petGuid=0x", std::hex, petGuid_, std::dec,
+             " react=", (int)petReact_, " command=", (int)petCommand_,
+             " spells=", petSpellList_.size());
+}
+
+void GameHandler::sendPetAction(uint32_t action, uint64_t targetGuid) {
+    if (!hasPet() || state != WorldState::IN_WORLD || !socket) return;
+    auto pkt = PetActionPacket::build(petGuid_, action, targetGuid);
+    socket->send(pkt);
+    LOG_DEBUG("sendPetAction: petGuid=0x", std::hex, petGuid_,
+              " action=0x", action, " target=0x", targetGuid, std::dec);
 }
 
 void GameHandler::dismissPet() {

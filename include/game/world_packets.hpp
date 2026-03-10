@@ -1729,7 +1729,8 @@ public:
 /** CMSG_PET_ACTION packet builder */
 class PetActionPacket {
 public:
-    static network::Packet build(uint64_t petGuid, uint32_t action);
+    /** CMSG_PET_ACTION: petGuid + action + targetGuid (0 = no target) */
+    static network::Packet build(uint64_t petGuid, uint32_t action, uint64_t targetGuid = 0);
 };
 
 /** SMSG_CAST_FAILED data */

@@ -116,6 +116,7 @@ bool TbcPacketParsers::parseMovementBlock(network::Packet& packet, UpdateBlock& 
         /*float turnRate =*/ packet.readFloat();
 
         block.runSpeed = runSpeed;
+        block.moveFlags = moveFlags;
 
         // Spline data (TBC/WotLK: SPLINE_ENABLED = 0x08000000)
         if (moveFlags & TbcMoveFlags::SPLINE_ENABLED) {

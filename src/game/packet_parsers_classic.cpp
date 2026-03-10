@@ -103,6 +103,7 @@ bool ClassicPacketParsers::parseMovementBlock(network::Packet& packet, UpdateBlo
         /*float turnRate =*/ packet.readFloat();
 
         block.runSpeed = runSpeed;
+        block.moveFlags = moveFlags;
 
         // Spline data (Classic: SPLINE_ENABLED=0x00400000)
         if (moveFlags & ClassicMoveFlags::SPLINE_ENABLED) {

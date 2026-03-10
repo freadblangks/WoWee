@@ -1868,6 +1868,37 @@ void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
             }
             ImGui::Dummy(ImVec2(totalW, squareH));
         }
+
+        // Combo point display — Rogue (4) and Druid (11) in Cat Form
+        {
+            uint8_t cls = gameHandler.getPlayerClass();
+            const bool isRogue  = (cls == 4);
+            const bool isDruid  = (cls == 11);
+            if (isRogue || isDruid) {
+                uint8_t cp = gameHandler.getComboPoints();
+                if (cp > 0 || isRogue) {  // always show for rogue; only when non-zero for druid
+                    ImGui::Spacing();
+                    ImVec2 cursor = ImGui::GetCursorScreenPos();
+                    float totalW  = ImGui::GetContentRegionAvail().x;
+                    constexpr int MAX_CP = 5;
+                    constexpr float DOT_R = 7.0f;
+                    constexpr float SPACING = 4.0f;
+                    float totalDotsW = MAX_CP * (DOT_R * 2.0f) + (MAX_CP - 1) * SPACING;
+                    float startX = cursor.x + (totalW - totalDotsW) * 0.5f;
+                    float cy = cursor.y + DOT_R;
+                    ImDrawList* dl = ImGui::GetWindowDrawList();
+                    for (int i = 0; i < MAX_CP; ++i) {
+                        float cx = startX + i * (DOT_R * 2.0f + SPACING) + DOT_R;
+                        ImU32 col = (i < static_cast<int>(cp))
+                            ? IM_COL32(255, 210, 0, 240)   // bright gold — active
+                            : IM_COL32(60,  60, 60, 160);  // dark — empty
+                        dl->AddCircleFilled(ImVec2(cx, cy), DOT_R, col);
+                        dl->AddCircle(ImVec2(cx, cy), DOT_R, IM_COL32(160, 140, 0, 180), 0, 1.5f);
+                    }
+                    ImGui::Dummy(ImVec2(totalW, DOT_R * 2.0f));
+                }
+            }
+        }
     }
     ImGui::End();
 

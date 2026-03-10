@@ -4481,6 +4481,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::MSG_MOVE_START_ASCEND:
         case Opcode::MSG_MOVE_STOP_ASCEND:
         case Opcode::MSG_MOVE_START_DESCEND:
+        case Opcode::MSG_MOVE_SET_PITCH:
+        case Opcode::MSG_MOVE_GRAVITY_CHNG:
+        case Opcode::MSG_MOVE_UPDATE_CAN_FLY:
+        case Opcode::MSG_MOVE_UPDATE_CAN_TRANSITION_BETWEEN_SWIM_AND_FLY:
             if (state == WorldState::IN_WORLD) {
                 handleOtherPlayerMovement(packet);
             }
@@ -5159,9 +5163,15 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_SPLINE_SET_SWIM_BACK_SPEED:
         case Opcode::SMSG_SPLINE_SET_WALK_SPEED:
         case Opcode::SMSG_SPLINE_SET_TURN_RATE:
-        case Opcode::SMSG_SPLINE_SET_PITCH_RATE:
-            packet.setReadPos(packet.getSize());
+        case Opcode::SMSG_SPLINE_SET_PITCH_RATE: {
+            // Minimal parse: PackedGuid + float speed (no per-entity speed store yet)
+            if (packet.getSize() - packet.getReadPos() >= 5) {
+                (void)UpdateObjectParser::readPackedGuid(packet);
+                if (packet.getSize() - packet.getReadPos() >= 4)
+                    (void)packet.readFloat();
+            }
             break;
+        }
 
         // ---- Spline move flag changes for other units ----
         case Opcode::SMSG_SPLINE_MOVE_UNROOT:
@@ -12318,7 +12328,7 @@ void GameHandler::handleCompressedMoves(network::Packet& packet) {
 
     // Player movement sub-opcodes (SMSG_MULTIPLE_MOVES carries MSG_MOVE_*)
     // Not static — wireOpcode() depends on runtime active opcode table.
-    const std::array<uint16_t, 23> kMoveOpcodes = {
+    const std::array<uint16_t, 27> kMoveOpcodes = {
         wireOpcode(Opcode::MSG_MOVE_START_FORWARD),
         wireOpcode(Opcode::MSG_MOVE_START_BACKWARD),
         wireOpcode(Opcode::MSG_MOVE_STOP),
@@ -12342,6 +12352,10 @@ void GameHandler::handleCompressedMoves(network::Packet& packet) {
         wireOpcode(Opcode::MSG_MOVE_START_ASCEND),
         wireOpcode(Opcode::MSG_MOVE_STOP_ASCEND),
         wireOpcode(Opcode::MSG_MOVE_START_DESCEND),
+        wireOpcode(Opcode::MSG_MOVE_SET_PITCH),
+        wireOpcode(Opcode::MSG_MOVE_GRAVITY_CHNG),
+        wireOpcode(Opcode::MSG_MOVE_UPDATE_CAN_FLY),
+        wireOpcode(Opcode::MSG_MOVE_UPDATE_CAN_TRANSITION_BETWEEN_SWIM_AND_FLY),
     };
 
     // Track unhandled sub-opcodes once per compressed packet (avoid log spam)

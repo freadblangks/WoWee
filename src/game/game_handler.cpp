@@ -1780,8 +1780,12 @@ void GameHandler::handlePacket(network::Packet& packet) {
 
         // ---- Spell failed on another unit ----
         case Opcode::SMSG_SPELL_FAILED_OTHER: {
-            // packed_guid + uint8 castCount + uint32 spellId + uint8 reason
-            uint64_t failOtherGuid = UpdateObjectParser::readPackedGuid(packet);
+            // WotLK: packed_guid + uint8 castCount + uint32 spellId + uint8 reason
+            // TBC/Classic: full uint64 + uint8 castCount + uint32 spellId + uint8 reason
+            const bool tbcLike2 = isClassicLikeExpansion() || isActiveExpansion("tbc");
+            uint64_t failOtherGuid = tbcLike2
+                ? (packet.getSize() - packet.getReadPos() >= 8 ? packet.readUInt64() : 0)
+                : UpdateObjectParser::readPackedGuid(packet);
             if (failOtherGuid != 0 && failOtherGuid != playerGuid) {
                 unitCastStates_.erase(failOtherGuid);
             }
@@ -2532,8 +2536,12 @@ void GameHandler::handlePacket(network::Packet& packet) {
             handleSpellGo(packet);
             break;
         case Opcode::SMSG_SPELL_FAILURE: {
-            // packed_guid caster + uint8 castCount + uint32 spellId + uint8 failReason
-            uint64_t failGuid = UpdateObjectParser::readPackedGuid(packet);
+            // WotLK: packed_guid + uint8 castCount + uint32 spellId + uint8 failReason
+            // TBC/Classic: full uint64 + uint8 castCount + uint32 spellId + uint8 failReason
+            const bool tbcOrClassic = isClassicLikeExpansion() || isActiveExpansion("tbc");
+            uint64_t failGuid = tbcOrClassic
+                ? (packet.getSize() - packet.getReadPos() >= 8 ? packet.readUInt64() : 0)
+                : UpdateObjectParser::readPackedGuid(packet);
             if (failGuid == playerGuid || failGuid == 0) {
                 // Player's own cast failed
                 casting = false;

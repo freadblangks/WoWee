@@ -1618,6 +1618,7 @@ private:
     void handleGossipMessage(network::Packet& packet);
     void handleQuestgiverQuestList(network::Packet& packet);
     void handleGossipComplete(network::Packet& packet);
+    void handleQuestPoiQueryResponse(network::Packet& packet);
     void handleQuestDetails(network::Packet& packet);
     void handleQuestRequestItems(network::Packet& packet);
     void handleQuestOfferReward(network::Packet& packet);

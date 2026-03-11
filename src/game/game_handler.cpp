@@ -5767,6 +5767,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_RESPOND_INSPECT_ACHIEVEMENTS:
         case Opcode::SMSG_PLAYER_SKINNED:
         case Opcode::SMSG_QUEST_POI_QUERY_RESPONSE:
+            handleQuestPoiQueryResponse(packet);
+            break;
         case Opcode::SMSG_ON_CANCEL_EXPECTED_RIDE_VEHICLE_AURA:
         case Opcode::SMSG_RESET_RANGED_COMBAT_TIMER:
         case Opcode::SMSG_PROFILEDATA_RESPONSE:
@@ -14883,7 +14885,82 @@ bool GameHandler::requestQuestQuery(uint32_t questId, bool force) {
     pkt.writeUInt32(questId);
     socket->send(pkt);
     pendingQuestQueryIds_.insert(questId);
+
+    // WotLK supports CMSG_QUEST_POI_QUERY to get objective map locations.
+    // Only send if the opcode is mapped (stride==5 means WotLK).
+    if (packetParsers_ && packetParsers_->questLogStride() == 5) {
+        const uint32_t wirePoiQuery = wireOpcode(Opcode::CMSG_QUEST_POI_QUERY);
+        if (wirePoiQuery != 0xFFFF) {
+            network::Packet poiPkt(static_cast<uint16_t>(wirePoiQuery));
+            poiPkt.writeUInt32(1);          // count = 1
+            poiPkt.writeUInt32(questId);
+            socket->send(poiPkt);
+        }
+    }
     return true;
+}
+
+void GameHandler::handleQuestPoiQueryResponse(network::Packet& packet) {
+    // WotLK 3.3.5a SMSG_QUEST_POI_QUERY_RESPONSE format:
+    //   uint32 questCount
+    //   per quest:
+    //     uint32 questId
+    //     uint32 poiCount
+    //     per poi:
+    //       uint32 poiId
+    //       int32  objIndex      (-1 = no specific objective)
+    //       uint32 mapId
+    //       uint32 areaId
+    //       uint32 floorId
+    //       uint32 unk1
+    //       uint32 unk2
+    //       uint32 pointCount
+    //       per point: int32 x, int32 y
+    if (packet.getSize() - packet.getReadPos() < 4) return;
+    const uint32_t questCount = packet.readUInt32();
+    for (uint32_t qi = 0; qi < questCount; ++qi) {
+        if (packet.getSize() - packet.getReadPos() < 8) return;
+        const uint32_t questId  = packet.readUInt32();
+        const uint32_t poiCount = packet.readUInt32();
+        for (uint32_t pi = 0; pi < poiCount; ++pi) {
+            if (packet.getSize() - packet.getReadPos() < 28) return;
+            packet.readUInt32();  // poiId
+            packet.readUInt32();  // objIndex (int32)
+            const uint32_t mapId    = packet.readUInt32();
+            packet.readUInt32();  // areaId
+            packet.readUInt32();  // floorId
+            packet.readUInt32();  // unk1
+            packet.readUInt32();  // unk2
+            const uint32_t pointCount = packet.readUInt32();
+            if (pointCount == 0) continue;
+            if (packet.getSize() - packet.getReadPos() < pointCount * 8) return;
+            // Compute centroid of the poi region to place a minimap marker.
+            float sumX = 0.0f, sumY = 0.0f;
+            for (uint32_t pt = 0; pt < pointCount; ++pt) {
+                const int32_t px = static_cast<int32_t>(packet.readUInt32());
+                const int32_t py = static_cast<int32_t>(packet.readUInt32());
+                sumX += static_cast<float>(px);
+                sumY += static_cast<float>(py);
+            }
+            // POI points in WotLK are zone-level coordinates.
+            // Skip POIs for maps other than the player's current map.
+            if (mapId != currentMapId_) continue;
+            // Find the quest title for the marker label.
+            std::string questTitle;
+            for (const auto& q : questLog_) {
+                if (q.questId == questId) { questTitle = q.title; break; }
+            }
+            // Add as a GossipPoi so the existing minimap code displays it.
+            GossipPoi poi;
+            poi.x    = sumX / static_cast<float>(pointCount);  // WoW canonical X (north)
+            poi.y    = sumY / static_cast<float>(pointCount);  // WoW canonical Y (west)
+            poi.icon = 6;  // generic POI icon
+            poi.name = questTitle.empty() ? "Quest objective" : questTitle;
+            gossipPois_.push_back(std::move(poi));
+            LOG_DEBUG("Quest POI: questId=", questId, " mapId=", mapId,
+                      " centroid=(", poi.x, ",", poi.y, ") title=", poi.name);
+        }
+    }
 }
 
 void GameHandler::handleQuestDetails(network::Packet& packet) {

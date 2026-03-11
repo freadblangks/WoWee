@@ -233,6 +233,10 @@ void WorldMap::setMapName(const std::string& name) {
 
 void WorldMap::setServerExplorationMask(const std::vector<uint32_t>& masks, bool hasData) {
     if (!hasData || masks.empty()) {
+        // New session or no data yet — reset both server mask and local accumulation
+        if (hasServerExplorationMask) {
+            locallyExploredZones_.clear();
+        }
         hasServerExplorationMask = false;
         serverExplorationMask.clear();
         return;
@@ -765,9 +769,12 @@ void WorldMap::updateExploration(const glm::vec3& playerRenderPos) {
     }
     if (markedAny) return;
 
+    // Server mask unavailable or empty — fall back to locally-accumulated position tracking.
+    // Add the zone the player is currently in to the local set and display that.
     float wowX = playerRenderPos.y;
     float wowY = playerRenderPos.x;
 
+    bool foundPos = false;
     for (int i = 0; i < static_cast<int>(zones.size()); i++) {
         const auto& z = zones[i];
         if (z.areaID == 0) continue;
@@ -775,15 +782,18 @@ void WorldMap::updateExploration(const glm::vec3& playerRenderPos) {
         float minY = std::min(z.locTop, z.locBottom), maxY = std::max(z.locTop, z.locBottom);
         if (maxX - minX < 0.001f || maxY - minY < 0.001f) continue;
         if (wowX >= minX && wowX <= maxX && wowY >= minY && wowY <= maxY) {
-            exploredZones.insert(i);
-            markedAny = true;
+            locallyExploredZones_.insert(i);
+            foundPos = true;
         }
     }
 
-    if (!markedAny) {
+    if (!foundPos) {
         int zoneIdx = findZoneForPlayer(playerRenderPos);
-        if (zoneIdx >= 0) exploredZones.insert(zoneIdx);
+        if (zoneIdx >= 0) locallyExploredZones_.insert(zoneIdx);
     }
+
+    // Display the accumulated local set
+    exploredZones = locallyExploredZones_;
 }
 
 void WorldMap::zoomIn(const glm::vec3& playerRenderPos) {

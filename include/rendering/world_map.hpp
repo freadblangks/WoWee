@@ -117,6 +117,8 @@ private:
     std::vector<uint32_t> serverExplorationMask;
     bool hasServerExplorationMask = false;
     std::unordered_set<int> exploredZones;
+    // Locally accumulated exploration (used as fallback when server mask is unavailable)
+    std::unordered_set<int> locallyExploredZones_;
 };
 
 } // namespace rendering

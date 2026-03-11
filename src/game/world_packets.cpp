@@ -3288,34 +3288,71 @@ bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
 }
 
 bool AuraUpdateParser::parse(network::Packet& packet, AuraUpdateData& data, bool isAll) {
+    // Validation: packed GUID (1-8 bytes minimum for reading)
+    if (packet.getSize() - packet.getReadPos() < 1) return false;
+
     data.guid = UpdateObjectParser::readPackedGuid(packet);
 
-    while (packet.getReadPos() < packet.getSize()) {
+    // Cap number of aura entries to prevent unbounded loop DoS
+    uint32_t maxAuras = isAll ? 512 : 1;
+    uint32_t auraCount = 0;
+
+    while (packet.getReadPos() < packet.getSize() && auraCount < maxAuras) {
+        // Validate we can read slot (1) + spellId (4) = 5 bytes minimum
+        if (packet.getSize() - packet.getReadPos() < 5) {
+            LOG_DEBUG("Aura update: truncated entry at position ", auraCount);
+            break;
+        }
+
         uint8_t slot = packet.readUInt8();
         uint32_t spellId = packet.readUInt32();
+        auraCount++;
 
         AuraSlot aura;
         if (spellId != 0) {
             aura.spellId = spellId;
-            aura.flags = packet.readUInt8();
-            aura.level = packet.readUInt8();
-            aura.charges = packet.readUInt8();
 
-            if (!(aura.flags & 0x08)) { // NOT_CASTER flag
-                aura.casterGuid = UpdateObjectParser::readPackedGuid(packet);
+            // Validate flags + level + charges (3 bytes)
+            if (packet.getSize() - packet.getReadPos() < 3) {
+                LOG_WARNING("Aura update: truncated flags/level/charges at entry ", auraCount);
+                aura.flags = 0;
+                aura.level = 0;
+                aura.charges = 0;
+            } else {
+                aura.flags = packet.readUInt8();
+                aura.level = packet.readUInt8();
+                aura.charges = packet.readUInt8();
             }
 
-            if (aura.flags & 0x20) { // DURATION
-                aura.maxDurationMs = static_cast<int32_t>(packet.readUInt32());
-                aura.durationMs = static_cast<int32_t>(packet.readUInt32());
+            if (!(aura.flags & 0x08)) { // NOT_CASTER flag
+                // Validate space for packed GUID read (minimum 1 byte)
+                if (packet.getSize() - packet.getReadPos() < 1) {
+                    aura.casterGuid = 0;
+                } else {
+                    aura.casterGuid = UpdateObjectParser::readPackedGuid(packet);
+                }
+            }
+
+            if (aura.flags & 0x20) { // DURATION - need 8 bytes (two uint32s)
+                if (packet.getSize() - packet.getReadPos() < 8) {
+                    LOG_WARNING("Aura update: truncated duration fields at entry ", auraCount);
+                    aura.maxDurationMs = 0;
+                    aura.durationMs = 0;
+                } else {
+                    aura.maxDurationMs = static_cast<int32_t>(packet.readUInt32());
+                    aura.durationMs = static_cast<int32_t>(packet.readUInt32());
+                }
             }
 
             if (aura.flags & 0x40) { // EFFECT_AMOUNTS
                 // Only read amounts for active effect indices (flags 0x01, 0x02, 0x04)
                 for (int i = 0; i < 3; ++i) {
                     if (aura.flags & (1 << i)) {
-                        if (packet.getReadPos() < packet.getSize()) {
+                        if (packet.getSize() - packet.getReadPos() >= 4) {
                             packet.readUInt32();
+                        } else {
+                            LOG_WARNING("Aura update: truncated effect amount ", i, " at entry ", auraCount);
+                            break;
                         }
                     }
                 }
@@ -3326,6 +3363,10 @@ bool AuraUpdateParser::parse(network::Packet& packet, AuraUpdateData& data, bool
 
         // For single update, only one entry
         if (!isAll) break;
+    }
+
+    if (auraCount >= maxAuras && packet.getReadPos() < packet.getSize()) {
+        LOG_WARNING("Aura update: capped at ", maxAuras, " entries, remaining data ignored");
     }
 
     LOG_DEBUG("Aura update for 0x", std::hex, data.guid, std::dec,

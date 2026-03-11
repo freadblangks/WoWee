@@ -1086,7 +1086,10 @@ void InventoryScreen::renderCharacterScreen(game::GameHandler& gameHandler) {
 
         if (ImGui::BeginTabItem("Stats")) {
             ImGui::Spacing();
-            renderStatsPanel(inventory, gameHandler.getPlayerLevel(), gameHandler.getArmorRating());
+            int32_t stats[5];
+            for (int i = 0; i < 5; ++i) stats[i] = gameHandler.getPlayerStat(i);
+            const int32_t* serverStats = (stats[0] >= 0) ? stats : nullptr;
+            renderStatsPanel(inventory, gameHandler.getPlayerLevel(), gameHandler.getArmorRating(), serverStats);
             ImGui::EndTabItem();
         }
 
@@ -1376,18 +1379,18 @@ void InventoryScreen::renderEquipmentPanel(game::Inventory& inventory) {
 // Stats Panel
 // ============================================================
 
-void InventoryScreen::renderStatsPanel(game::Inventory& inventory, uint32_t playerLevel, int32_t serverArmor) {
-    // Sum equipment stats
-    int32_t totalStr = 0, totalAgi = 0, totalSta = 0, totalInt = 0, totalSpi = 0;
-
+void InventoryScreen::renderStatsPanel(game::Inventory& inventory, uint32_t playerLevel,
+                                        int32_t serverArmor, const int32_t* serverStats) {
+    // Sum equipment stats for item-query bonus display
+    int32_t itemStr = 0, itemAgi = 0, itemSta = 0, itemInt = 0, itemSpi = 0;
     for (int s = 0; s < game::Inventory::NUM_EQUIP_SLOTS; s++) {
         const auto& slot = inventory.getEquipSlot(static_cast<game::EquipSlot>(s));
         if (slot.empty()) continue;
-        totalStr += slot.item.strength;
-        totalAgi += slot.item.agility;
-        totalSta += slot.item.stamina;
-        totalInt += slot.item.intellect;
-        totalSpi += slot.item.spirit;
+        itemStr += slot.item.strength;
+        itemAgi += slot.item.agility;
+        itemSta += slot.item.stamina;
+        itemInt += slot.item.intellect;
+        itemSpi += slot.item.spirit;
     }
 
     // Use server-authoritative armor from UNIT_FIELD_RESISTANCES when available.
@@ -1398,9 +1401,6 @@ void InventoryScreen::renderStatsPanel(game::Inventory& inventory, uint32_t play
         if (!slot.empty()) itemQueryArmor += slot.item.armor;
     }
     int32_t totalArmor = (serverArmor > 0) ? serverArmor : itemQueryArmor;
-
-    // Base stats: 20 + level
-    int32_t baseStat = 20 + static_cast<int32_t>(playerLevel);
 
     ImVec4 green(0.0f, 1.0f, 0.0f, 1.0f);
     ImVec4 white(1.0f, 1.0f, 1.0f, 1.0f);
@@ -1414,23 +1414,41 @@ void InventoryScreen::renderStatsPanel(game::Inventory& inventory, uint32_t play
         ImGui::TextColored(gray, "Armor: 0");
     }
 
-    // Helper to render a stat line
-    auto renderStat = [&](const char* name, int32_t equipBonus) {
-        int32_t total = baseStat + equipBonus;
-        if (equipBonus > 0) {
-            ImGui::TextColored(white, "%s: %d", name, total);
-            ImGui::SameLine();
-            ImGui::TextColored(green, "(+%d)", equipBonus);
-        } else {
-            ImGui::TextColored(gray, "%s: %d", name, total);
+    if (serverStats) {
+        // Server-authoritative stats from UNIT_FIELD_STAT0-4: show total and item bonus.
+        // serverStats[i] is the server's effective base stat (items included, buffs excluded).
+        const char* statNames[5] = {"Strength", "Agility", "Stamina", "Intellect", "Spirit"};
+        const int32_t itemBonuses[5] = {itemStr, itemAgi, itemSta, itemInt, itemSpi};
+        for (int i = 0; i < 5; ++i) {
+            int32_t total = serverStats[i];
+            int32_t bonus = itemBonuses[i];
+            if (bonus > 0) {
+                ImGui::TextColored(white, "%s: %d", statNames[i], total);
+                ImGui::SameLine();
+                ImGui::TextColored(green, "(+%d)", bonus);
+            } else {
+                ImGui::TextColored(gray, "%s: %d", statNames[i], total);
+            }
         }
-    };
-
-    renderStat("Strength", totalStr);
-    renderStat("Agility", totalAgi);
-    renderStat("Stamina", totalSta);
-    renderStat("Intellect", totalInt);
-    renderStat("Spirit", totalSpi);
+    } else {
+        // Fallback: estimated base (20 + level) plus item query bonuses.
+        int32_t baseStat = 20 + static_cast<int32_t>(playerLevel);
+        auto renderStat = [&](const char* name, int32_t equipBonus) {
+            int32_t total = baseStat + equipBonus;
+            if (equipBonus > 0) {
+                ImGui::TextColored(white, "%s: %d", name, total);
+                ImGui::SameLine();
+                ImGui::TextColored(green, "(+%d)", equipBonus);
+            } else {
+                ImGui::TextColored(gray, "%s: %d", name, total);
+            }
+        };
+        renderStat("Strength", itemStr);
+        renderStat("Agility", itemAgi);
+        renderStat("Stamina", itemSta);
+        renderStat("Intellect", itemInt);
+        renderStat("Spirit", itemSpi);
+    }
 }
 
 void InventoryScreen::renderBackpackPanel(game::Inventory& inventory, bool collapseEmptySections) {

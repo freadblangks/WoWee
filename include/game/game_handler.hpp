@@ -295,6 +295,13 @@ public:
     // Server-authoritative armor (UNIT_FIELD_RESISTANCES[0])
     int32_t getArmorRating() const { return playerArmorRating_; }
 
+    // Server-authoritative primary stats (UNIT_FIELD_STAT0-4: STR, AGI, STA, INT, SPI).
+    // Returns -1 if the server hasn't sent the value yet.
+    int32_t getPlayerStat(int idx) const {
+        if (idx < 0 || idx > 4) return -1;
+        return playerStats_[idx];
+    }
+
     // Inventory
     Inventory& getInventory() { return inventory; }
     const Inventory& getInventory() const { return inventory; }
@@ -2109,6 +2116,8 @@ private:
     std::unordered_map<uint64_t, float> recentLootMoneyAnnounceCooldowns_;
     uint64_t playerMoneyCopper_ = 0;
     int32_t playerArmorRating_ = 0;
+    // Server-authoritative primary stats: [0]=STR [1]=AGI [2]=STA [3]=INT [4]=SPI; -1 = not received yet
+    int32_t playerStats_[5] = {-1, -1, -1, -1, -1};
     // Some servers/custom clients shift update field indices. We can auto-detect coinage by correlating
     // money-notify deltas with update-field diffs and then overriding UF::PLAYER_FIELD_COINAGE at runtime.
     uint32_t pendingMoneyDelta_ = 0;

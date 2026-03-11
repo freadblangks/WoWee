@@ -34,6 +34,11 @@ enum class UF : uint16_t {
     UNIT_NPC_FLAGS,
     UNIT_DYNAMIC_FLAGS,
     UNIT_FIELD_RESISTANCES,   // Physical armor (index 0 of the resistance array)
+    UNIT_FIELD_STAT0,         // Strength (effective base, includes items)
+    UNIT_FIELD_STAT1,         // Agility
+    UNIT_FIELD_STAT2,         // Stamina
+    UNIT_FIELD_STAT3,         // Intellect
+    UNIT_FIELD_STAT4,         // Spirit
     UNIT_END,
 
     // Player fields

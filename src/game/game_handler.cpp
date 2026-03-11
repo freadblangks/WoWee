@@ -6098,6 +6098,7 @@ void GameHandler::selectCharacter(uint64_t characterGuid) {
     onlineEquipDirty_ = false;
     playerMoneyCopper_ = 0;
     playerArmorRating_ = 0;
+    std::fill(std::begin(playerStats_), std::end(playerStats_), -1);
     knownSpells.clear();
     spellCooldowns.clear();
     actionBar = {};
@@ -8142,6 +8143,11 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     const uint16_t ufCoinage = fieldIndex(UF::PLAYER_FIELD_COINAGE);
                     const uint16_t ufArmor = fieldIndex(UF::UNIT_FIELD_RESISTANCES);
                     const uint16_t ufPBytes2 = fieldIndex(UF::PLAYER_BYTES_2);
+                    const uint16_t ufStats[5] = {
+                        fieldIndex(UF::UNIT_FIELD_STAT0), fieldIndex(UF::UNIT_FIELD_STAT1),
+                        fieldIndex(UF::UNIT_FIELD_STAT2), fieldIndex(UF::UNIT_FIELD_STAT3),
+                        fieldIndex(UF::UNIT_FIELD_STAT4)
+                    };
                     for (const auto& [key, val] : block.fields) {
                         if (key == ufPlayerXp) { playerXp_ = val; }
                         else if (key == ufPlayerNextXp) { playerNextLevelXp_ = val; }
@@ -8169,6 +8175,14 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             // 0 = not resting, 1 = REST_TYPE_IN_TAVERN, 2 = REST_TYPE_IN_CITY
                             uint8_t restStateByte = static_cast<uint8_t>((val >> 24) & 0xFF);
                             isResting_ = (restStateByte != 0);
+                        }
+                        else {
+                            for (int si = 0; si < 5; ++si) {
+                                if (ufStats[si] != 0xFFFF && key == ufStats[si]) {
+                                    playerStats_[si] = static_cast<int32_t>(val);
+                                    break;
+                                }
+                            }
                         }
                         // Do not synthesize quest-log entries from raw update-field slots.
                         // Slot layouts differ on some classic-family realms and can produce
@@ -8454,6 +8468,11 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         const uint16_t ufPlayerFlags = fieldIndex(UF::PLAYER_FLAGS);
                         const uint16_t ufArmor = fieldIndex(UF::UNIT_FIELD_RESISTANCES);
                         const uint16_t ufPBytes2v = fieldIndex(UF::PLAYER_BYTES_2);
+                        const uint16_t ufStatsV[5] = {
+                            fieldIndex(UF::UNIT_FIELD_STAT0), fieldIndex(UF::UNIT_FIELD_STAT1),
+                            fieldIndex(UF::UNIT_FIELD_STAT2), fieldIndex(UF::UNIT_FIELD_STAT3),
+                            fieldIndex(UF::UNIT_FIELD_STAT4)
+                        };
                         for (const auto& [key, val] : block.fields) {
                             if (key == ufPlayerXp) {
                                 playerXp_ = val;
@@ -8508,6 +8527,14 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                     resurrectPending_ = false;
                                     LOG_INFO("Player resurrected (PLAYER_FLAGS ghost cleared)");
                                     if (ghostStateCallback_) ghostStateCallback_(false);
+                                }
+                            }
+                            else {
+                                for (int si = 0; si < 5; ++si) {
+                                    if (ufStatsV[si] != 0xFFFF && key == ufStatsV[si]) {
+                                        playerStats_[si] = static_cast<int32_t>(val);
+                                        break;
+                                    }
                                 }
                             }
                         }

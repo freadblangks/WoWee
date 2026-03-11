@@ -1880,7 +1880,10 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
     }
 
     if (item.requiredLevel > 1) {
-        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Requires Level %u", item.requiredLevel);
+        uint32_t playerLvl = gameHandler_ ? gameHandler_->getPlayerLevel() : 0;
+        bool meetsReq = (playerLvl >= item.requiredLevel);
+        ImVec4 reqColor = meetsReq ? ImVec4(1.0f, 1.0f, 1.0f, 0.75f) : ImVec4(1.0f, 0.5f, 0.5f, 1.0f);
+        ImGui::TextColored(reqColor, "Requires Level %u", item.requiredLevel);
     }
     if (item.maxDurability > 0) {
         float durPct = static_cast<float>(item.curDurability) / static_cast<float>(item.maxDurability);
@@ -2149,7 +2152,10 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info)
     }
 
     if (info.requiredLevel > 1) {
-        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Requires Level %u", info.requiredLevel);
+        uint32_t playerLvl = gameHandler_ ? gameHandler_->getPlayerLevel() : 0;
+        bool meetsReq = (playerLvl >= info.requiredLevel);
+        ImVec4 reqColor = meetsReq ? ImVec4(1.0f, 1.0f, 1.0f, 0.75f) : ImVec4(1.0f, 0.5f, 0.5f, 1.0f);
+        ImGui::TextColored(reqColor, "Requires Level %u", info.requiredLevel);
     }
 
     // Spell effects

@@ -825,6 +825,11 @@ public:
     glm::vec3 getComposedWorldPosition();  // Compose transport transform * local offset
     TransportManager* getTransportManager() { return transportManager_.get(); }
     void setPlayerOnTransport(uint64_t transportGuid, const glm::vec3& localOffset) {
+        // Validate transport is registered before attaching player
+        // (defer if transport not yet registered to prevent desyncs)
+        if (transportGuid != 0 && !isTransportGuid(transportGuid)) {
+            return;  // Transport not yet registered; skip attachment
+        }
         playerTransportGuid_ = transportGuid;
         playerTransportOffset_ = localOffset;
         playerTransportStickyGuid_ = transportGuid;

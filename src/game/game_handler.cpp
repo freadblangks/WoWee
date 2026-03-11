@@ -1906,7 +1906,13 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     casting = false;
                     currentCastSpellId = 0;
                     castTimeRemaining  = 0.0f;
-                    const char* reason = getSpellCastResultString(castResult, -1);
+                    // Pass player's power type so result 85 says "Not enough rage/energy/etc."
+                    int playerPowerType = -1;
+                    if (auto pe = entityManager.getEntity(playerGuid)) {
+                        if (auto pu = std::dynamic_pointer_cast<Unit>(pe))
+                            playerPowerType = static_cast<int>(pu->getPowerType());
+                    }
+                    const char* reason = getSpellCastResultString(castResult, playerPowerType);
                     MessageChatData msg;
                     msg.type     = ChatType::SYSTEM;
                     msg.language = ChatLanguage::UNIVERSAL;

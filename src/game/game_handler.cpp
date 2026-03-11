@@ -13831,21 +13831,21 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
         }
 
         // Instant melee abilities → trigger attack animation
+        // Detect via physical school mask (1 = Physical) from the spell DBC cache.
+        // This covers warrior, rogue, DK, paladin, feral druid, and hunter melee
+        // abilities generically instead of maintaining a brittle per-spell-ID list.
         uint32_t sid = data.spellId;
-        bool isMeleeAbility =
-            sid == 78   || sid == 284   || sid == 285  || sid == 1608  ||  // Heroic Strike ranks
-            sid == 11564 || sid == 11565 || sid == 11566 || sid == 11567 ||
-            sid == 25286 || sid == 29707 || sid == 30324 ||
-            sid == 772  || sid == 6546  || sid == 6547 || sid == 6548 ||   // Rend ranks
-            sid == 11572 || sid == 11573 || sid == 11574 || sid == 25208 ||
-            sid == 6572 || sid == 6574 || sid == 7379 || sid == 11600 ||   // Revenge ranks
-            sid == 11601 || sid == 25288 || sid == 25269 || sid == 30357 ||
-            sid == 845  || sid == 7369  || sid == 11608 || sid == 11609 || // Cleave ranks
-            sid == 20569 || sid == 25231 || sid == 47519 || sid == 47520 ||
-            sid == 12294 || sid == 21551 || sid == 21552 || sid == 21553 || // Mortal Strike ranks
-            sid == 25248 || sid == 30330 || sid == 47485 || sid == 47486 ||
-            sid == 23922 || sid == 23923 || sid == 23924 || sid == 23925 || // Shield Slam ranks
-            sid == 25258 || sid == 30356 || sid == 47487 || sid == 47488;
+        bool isMeleeAbility = false;
+        {
+            loadSpellNameCache();
+            auto cacheIt = spellNameCache_.find(sid);
+            if (cacheIt != spellNameCache_.end() && cacheIt->second.schoolMask == 1) {
+                // Physical school — treat as instant melee ability if cast time is zero.
+                // We don't store cast time in the cache; use the fact that if we were not
+                // in a cast (casting == true with this spellId) then it was instant.
+                isMeleeAbility = (currentCastSpellId != sid);
+            }
+        }
         if (isMeleeAbility && meleeSwingCallback_) {
             meleeSwingCallback_();
         }

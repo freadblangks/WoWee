@@ -3837,14 +3837,30 @@ bool QuestDetailsParser::parse(network::Packet& packet, QuestDetailsData& data) 
 }
 
 bool GossipMessageParser::parse(network::Packet& packet, GossipMessageData& data) {
+    // Upfront validation: npcGuid(8) + menuId(4) + titleTextId(4) + optionCount(4) = 20 bytes minimum
+    if (packet.getSize() - packet.getReadPos() < 20) return false;
+
     data.npcGuid = packet.readUInt64();
     data.menuId = packet.readUInt32();
     data.titleTextId = packet.readUInt32();
     uint32_t optionCount = packet.readUInt32();
 
+    // Cap option count to prevent unbounded memory allocation
+    const uint32_t MAX_GOSSIP_OPTIONS = 64;
+    if (optionCount > MAX_GOSSIP_OPTIONS) {
+        LOG_WARNING("GossipMessageParser: optionCount capped (requested=", optionCount, ")");
+        optionCount = MAX_GOSSIP_OPTIONS;
+    }
+
     data.options.clear();
     data.options.reserve(optionCount);
     for (uint32_t i = 0; i < optionCount; ++i) {
+        // Each option: id(4) + icon(1) + isCoded(1) + boxMoney(4) + text(var) + boxText(var)
+        // Minimum: 10 bytes + 2 empty strings (2 null terminators) = 12 bytes
+        if (packet.getSize() - packet.getReadPos() < 12) {
+            LOG_WARNING("GossipMessageParser: truncated options at index ", i, "/", optionCount);
+            break;
+        }
         GossipOption opt;
         opt.id = packet.readUInt32();
         opt.icon = packet.readUInt8();
@@ -3855,10 +3871,29 @@ bool GossipMessageParser::parse(network::Packet& packet, GossipMessageData& data
         data.options.push_back(opt);
     }
 
+    // Validate questCount field exists (4 bytes)
+    if (packet.getSize() - packet.getReadPos() < 4) {
+        LOG_DEBUG("Gossip: ", data.options.size(), " options (no quest data)");
+        return true;
+    }
+
     uint32_t questCount = packet.readUInt32();
+    // Cap quest count to prevent unbounded memory allocation
+    const uint32_t MAX_GOSSIP_QUESTS = 64;
+    if (questCount > MAX_GOSSIP_QUESTS) {
+        LOG_WARNING("GossipMessageParser: questCount capped (requested=", questCount, ")");
+        questCount = MAX_GOSSIP_QUESTS;
+    }
+
     data.quests.clear();
     data.quests.reserve(questCount);
     for (uint32_t i = 0; i < questCount; ++i) {
+        // Each quest: questId(4) + questIcon(4) + questLevel(4) + questFlags(4) + isRepeatable(1) + title(var)
+        // Minimum: 17 bytes + empty string (1 null terminator) = 18 bytes
+        if (packet.getSize() - packet.getReadPos() < 18) {
+            LOG_WARNING("GossipMessageParser: truncated quests at index ", i, "/", questCount);
+            break;
+        }
         GossipQuestItem quest;
         quest.questId = packet.readUInt32();
         quest.questIcon = packet.readUInt32();
@@ -3869,7 +3904,7 @@ bool GossipMessageParser::parse(network::Packet& packet, GossipMessageData& data
         data.quests.push_back(quest);
     }
 
-    LOG_DEBUG("Gossip: ", optionCount, " options, ", questCount, " quests");
+    LOG_DEBUG("Gossip: ", data.options.size(), " options, ", data.quests.size(), " quests");
     return true;
 }
 

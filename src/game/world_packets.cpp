@@ -2072,15 +2072,42 @@ bool GuildQueryResponseParser::parse(network::Packet& packet, GuildQueryResponse
         return false;
     }
     data.guildId = packet.readUInt32();
-    data.guildName = packet.readString();
-    for (int i = 0; i < 10; ++i) {
-        data.rankNames[i] = packet.readString();
+
+    // Validate before reading guild name
+    if (packet.getReadPos() >= packet.getSize()) {
+        LOG_WARNING("GuildQueryResponseParser: truncated before guild name");
+        data.guildName.clear();
+        return true;
     }
+    data.guildName = packet.readString();
+
+    // Read 10 rank names with validation
+    for (int i = 0; i < 10; ++i) {
+        if (packet.getReadPos() >= packet.getSize()) {
+            LOG_WARNING("GuildQueryResponseParser: truncated at rank name ", i);
+            data.rankNames[i].clear();
+        } else {
+            data.rankNames[i] = packet.readString();
+        }
+    }
+
+    // Validate before reading emblem fields (5 uint32s = 20 bytes)
+    if (packet.getReadPos() + 20 > packet.getSize()) {
+        LOG_WARNING("GuildQueryResponseParser: truncated before emblem data");
+        data.emblemStyle = 0;
+        data.emblemColor = 0;
+        data.borderStyle = 0;
+        data.borderColor = 0;
+        data.backgroundColor = 0;
+        return true;
+    }
+
     data.emblemStyle = packet.readUInt32();
     data.emblemColor = packet.readUInt32();
     data.borderStyle = packet.readUInt32();
     data.borderColor = packet.readUInt32();
     data.backgroundColor = packet.readUInt32();
+
     if ((packet.getSize() - packet.getReadPos()) >= 4) {
         data.rankCount = packet.readUInt32();
     }

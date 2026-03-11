@@ -2068,7 +2068,8 @@ void GameScreen::renderPetFrame(game::GameHandler& gameHandler) {
                 if (slotVal == 0) continue;
 
                 uint32_t actionId = slotVal & 0x00FFFFFFu;
-                bool autocastOn   = (slotVal & 0xFF000000u) == 0x80000000u;
+                // Use the authoritative autocast set from SMSG_PET_SPELLS spell list flags.
+                bool autocastOn   = gameHandler.isPetSpellAutocast(actionId);
 
                 ImGui::PushID(i);
                 if (rendered > 0) ImGui::SameLine(0.0f, spacing);
@@ -2117,7 +2118,7 @@ void GameScreen::renderPetFrame(game::GameHandler& gameHandler) {
                 // Tooltip: show spell name or built-in command name.
                 if (ImGui::IsItemHovered()) {
                     const char* tip = builtinLabel
-                        ? (actionId == 5 ? "Attack" : actionId == 4 ? "Follow" : actionId == 2 ? "Follow" : "Stay")
+                        ? (actionId == 5 ? "Attack" : actionId == 2 ? "Follow" : "Stay")
                         : nullptr;
                     std::string spellNm;
                     if (!tip && actionId > 5) {

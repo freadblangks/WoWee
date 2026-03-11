@@ -404,6 +404,12 @@ network::Packet CharCreatePacket::build(const CharCreateData& data) {
 }
 
 bool CharCreateResponseParser::parse(network::Packet& packet, CharCreateResponseData& data) {
+    // Validate minimum packet size: result(1)
+    if (packet.getSize() - packet.getReadPos() < 1) {
+        LOG_WARNING("SMSG_CHAR_CREATE: packet too small (", packet.getSize(), " bytes)");
+        return false;
+    }
+
     data.result = static_cast<CharCreateResult>(packet.readUInt8());
     LOG_INFO("SMSG_CHAR_CREATE result: ", static_cast<int>(data.result));
     return true;
@@ -1727,6 +1733,12 @@ network::Packet QueryTimePacket::build() {
 }
 
 bool QueryTimeResponseParser::parse(network::Packet& packet, QueryTimeResponseData& data) {
+    // Validate minimum packet size: serverTime(4) + timeOffset(4)
+    if (packet.getSize() - packet.getReadPos() < 8) {
+        LOG_WARNING("SMSG_QUERY_TIME_RESPONSE: packet too small (", packet.getSize(), " bytes)");
+        return false;
+    }
+
     data.serverTime = packet.readUInt32();
     data.timeOffset = packet.readUInt32();
     LOG_DEBUG("Parsed SMSG_QUERY_TIME_RESPONSE: time=", data.serverTime, " offset=", data.timeOffset);
@@ -1741,6 +1753,12 @@ network::Packet RequestPlayedTimePacket::build(bool sendToChat) {
 }
 
 bool PlayedTimeParser::parse(network::Packet& packet, PlayedTimeData& data) {
+    // Validate minimum packet size: totalTime(4) + levelTime(4) + triggerMsg(1)
+    if (packet.getSize() - packet.getReadPos() < 9) {
+        LOG_WARNING("SMSG_PLAYED_TIME: packet too small (", packet.getSize(), " bytes)");
+        return false;
+    }
+
     data.totalTimePlayed = packet.readUInt32();
     data.levelTimePlayed = packet.readUInt32();
     data.triggerMessage = packet.readUInt8() != 0;
@@ -1796,11 +1814,22 @@ network::Packet SetContactNotesPacket::build(uint64_t friendGuid, const std::str
 }
 
 bool FriendStatusParser::parse(network::Packet& packet, FriendStatusData& data) {
+    // Validate minimum packet size: status(1) + guid(8)
+    if (packet.getSize() - packet.getReadPos() < 9) {
+        LOG_WARNING("SMSG_FRIEND_STATUS: packet too small (", packet.getSize(), " bytes)");
+        return false;
+    }
+
     data.status = packet.readUInt8();
     data.guid = packet.readUInt64();
     if (data.status == 1) {  // Online
-        data.note = packet.readString();
-        data.chatFlag = packet.readUInt8();
+        // Conditional: note (string) + chatFlag (1)
+        if (packet.getReadPos() < packet.getSize()) {
+            data.note = packet.readString();
+            if (packet.getReadPos() + 1 <= packet.getSize()) {
+                data.chatFlag = packet.readUInt8();
+            }
+        }
     }
     LOG_DEBUG("Parsed SMSG_FRIEND_STATUS: status=", (int)data.status, " guid=0x", std::hex, data.guid, std::dec);
     return true;
@@ -1837,6 +1866,12 @@ network::Packet LogoutCancelPacket::build() {
 }
 
 bool LogoutResponseParser::parse(network::Packet& packet, LogoutResponseData& data) {
+    // Validate minimum packet size: result(4) + instant(1)
+    if (packet.getSize() - packet.getReadPos() < 5) {
+        LOG_WARNING("SMSG_LOGOUT_RESPONSE: packet too small (", packet.getSize(), " bytes)");
+        return false;
+    }
+
     data.result = packet.readUInt32();
     data.instant = packet.readUInt8();
     LOG_DEBUG("Parsed SMSG_LOGOUT_RESPONSE: result=", data.result, " instant=", (int)data.instant);
@@ -2457,6 +2492,12 @@ network::Packet RandomRollPacket::build(uint32_t minRoll, uint32_t maxRoll) {
 }
 
 bool RandomRollParser::parse(network::Packet& packet, RandomRollData& data) {
+    // Validate minimum packet size: rollerGuid(8) + targetGuid(8) + minRoll(4) + maxRoll(4) + result(4)
+    if (packet.getSize() - packet.getReadPos() < 28) {
+        LOG_WARNING("SMSG_RANDOM_ROLL: packet too small (", packet.getSize(), " bytes)");
+        return false;
+    }
+
     data.rollerGuid = packet.readUInt64();
     data.targetGuid = packet.readUInt64();
     data.minRoll = packet.readUInt32();
@@ -3281,16 +3322,25 @@ bool SpellHealLogParser::parse(network::Packet& packet, SpellHealLogData& data) 
 // ============================================================
 
 bool XpGainParser::parse(network::Packet& packet, XpGainData& data) {
+    // Validate minimum packet size: victimGuid(8) + totalXp(4) + type(1)
+    if (packet.getSize() - packet.getReadPos() < 13) {
+        LOG_WARNING("SMSG_LOG_XPGAIN: packet too small (", packet.getSize(), " bytes)");
+        return false;
+    }
+
     data.victimGuid = packet.readUInt64();
     data.totalXp = packet.readUInt32();
     data.type = packet.readUInt8();
     if (data.type == 0) {
         // Kill XP: float groupRate (1.0 = solo) + uint8 RAF flag
-        float groupRate = packet.readFloat();
-        packet.readUInt8(); // RAF bonus flag
-        // Group bonus = total - (total / rate); only if grouped (rate > 1)
-        if (groupRate > 1.0f) {
-            data.groupBonus = data.totalXp - static_cast<uint32_t>(data.totalXp / groupRate);
+        // Validate before reading conditional fields
+        if (packet.getReadPos() + 5 <= packet.getSize()) {
+            float groupRate = packet.readFloat();
+            packet.readUInt8(); // RAF bonus flag
+            // Group bonus = total - (total / rate); only if grouped (rate > 1)
+            if (groupRate > 1.0f) {
+                data.groupBonus = data.totalXp - static_cast<uint32_t>(data.totalXp / groupRate);
+            }
         }
     }
     LOG_DEBUG("XP gain: ", data.totalXp, " xp (type=", static_cast<int>(data.type), ")");
@@ -3688,7 +3738,14 @@ network::Packet GroupInvitePacket::build(const std::string& playerName) {
 }
 
 bool GroupInviteResponseParser::parse(network::Packet& packet, GroupInviteResponseData& data) {
+    // Validate minimum packet size: canAccept(1)
+    if (packet.getSize() - packet.getReadPos() < 1) {
+        LOG_WARNING("SMSG_GROUP_INVITE: packet too small (", packet.getSize(), " bytes)");
+        return false;
+    }
+
     data.canAccept = packet.readUInt8();
+    // Note: inviterName is a string, which is always safe to read even if empty
     data.inviterName = packet.readString();
     LOG_INFO("Group invite from: ", data.inviterName, " (canAccept=", (int)data.canAccept, ")");
     return true;

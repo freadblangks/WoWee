@@ -21,6 +21,7 @@
 #include "rendering/vk_shader.hpp"
 #include "rendering/vk_buffer.hpp"
 #include "rendering/vk_utils.hpp"
+#include "rendering/vk_frame_data.hpp"
 #include "rendering/camera.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/blp_loader.hpp"
@@ -2677,8 +2678,6 @@ void CharacterRenderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& light
     // Bind shadow params set at set 1
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipelineLayout_,
         1, 1, &shadowParamsSet_, 0, nullptr);
-
-    struct ShadowPush { glm::mat4 lightSpaceMatrix; glm::mat4 model; };
 
     const float shadowRadiusSq = shadowRadius * shadowRadius;
     for (auto& pair : instances) {

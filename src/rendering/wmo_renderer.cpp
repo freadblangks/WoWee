@@ -1715,8 +1715,6 @@ void WMORenderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceM
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipelineLayout_,
         0, 1, &shadowParamsSet_, 0, nullptr);
 
-    struct ShadowPush { glm::mat4 lightSpaceMatrix; glm::mat4 model; };
-
     // WMO shadow cull uses the ortho half-extent (shadow map coverage) rather than
     // the proximity radius so that distant buildings whose shadows reach the player
     // are still rendered into the shadow map.

@@ -25,5 +25,11 @@ struct GPUPushConstants {
     glm::mat4 model;
 };
 
+// Push constants for shadow rendering passes
+struct ShadowPush {
+    glm::mat4 lightSpaceMatrix;
+    glm::mat4 model;
+};
+
 } // namespace rendering
 } // namespace wowee

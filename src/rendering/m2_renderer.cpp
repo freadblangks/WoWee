@@ -3070,7 +3070,6 @@ void M2Renderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMa
     if (!shadowPipeline_ || !shadowParamsSet_) return;
     if (instances.empty() || models.empty()) return;
 
-    struct ShadowPush { glm::mat4 lightSpaceMatrix; glm::mat4 model; };
     struct ShadowParamsUBO {
         int32_t useBones = 0;
         int32_t useTexture = 0;

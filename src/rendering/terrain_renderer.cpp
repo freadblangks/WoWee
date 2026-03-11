@@ -965,7 +965,6 @@ void TerrainRenderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSp
 
     // Identity model matrix — terrain vertices are already in world space
     static const glm::mat4 identity(1.0f);
-    struct ShadowPush { glm::mat4 lightSpaceMatrix; glm::mat4 model; };
     ShadowPush push{ lightSpaceMatrix, identity };
     vkCmdPushConstants(cmd, shadowPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT,
                        0, 128, &push);

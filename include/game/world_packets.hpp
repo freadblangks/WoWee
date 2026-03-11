@@ -2086,6 +2086,14 @@ public:
     static network::Packet build(uint64_t npcGuid, uint32_t questId);
 };
 
+/** Reward item entry (shared by quest detail/offer windows) */
+struct QuestRewardItem {
+    uint32_t itemId = 0;
+    uint32_t count = 0;
+    uint32_t displayInfoId = 0;
+    uint32_t choiceSlot = 0;  // Original reward slot index from server payload
+};
+
 /** SMSG_QUESTGIVER_QUEST_DETAILS data (simplified) */
 struct QuestDetailsData {
     uint64_t npcGuid = 0;
@@ -2096,20 +2104,14 @@ struct QuestDetailsData {
     uint32_t suggestedPlayers = 0;
     uint32_t rewardMoney = 0;
     uint32_t rewardXp = 0;
+    std::vector<QuestRewardItem> rewardChoiceItems;  // Player picks one of these
+    std::vector<QuestRewardItem> rewardItems;         // These are always given
 };
 
 /** SMSG_QUESTGIVER_QUEST_DETAILS parser */
 class QuestDetailsParser {
 public:
     static bool parse(network::Packet& packet, QuestDetailsData& data);
-};
-
-/** Reward item entry (shared by quest detail/offer windows) */
-struct QuestRewardItem {
-    uint32_t itemId = 0;
-    uint32_t count = 0;
-    uint32_t displayInfoId = 0;
-    uint32_t choiceSlot = 0;  // Original reward slot index from server payload
 };
 
 /** SMSG_QUESTGIVER_REQUEST_ITEMS data (turn-in progress check) */

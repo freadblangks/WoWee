@@ -6714,7 +6714,63 @@ void GameScreen::renderQuestDetailsWindow(game::GameHandler& gameHandler) {
             ImGui::TextWrapped("%s", processedObjectives.c_str());
         }
 
-        // Rewards
+        // Choice reward items (player picks one)
+        if (!quest.rewardChoiceItems.empty()) {
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 1.0f), "Choose one reward:");
+            for (const auto& ri : quest.rewardChoiceItems) {
+                gameHandler.ensureItemInfo(ri.itemId);
+                auto* info = gameHandler.getItemInfo(ri.itemId);
+                VkDescriptorSet iconTex = VK_NULL_HANDLE;
+                uint32_t dispId = ri.displayInfoId;
+                if (info && info->valid && info->displayInfoId != 0) dispId = info->displayInfoId;
+                if (dispId != 0) iconTex = inventoryScreen.getItemIcon(dispId);
+
+                std::string label;
+                if (info && info->valid && !info->name.empty())
+                    label = info->name;
+                else
+                    label = "Item " + std::to_string(ri.itemId);
+                if (ri.count > 1) label += " x" + std::to_string(ri.count);
+
+                if (iconTex) {
+                    ImGui::Image((void*)(intptr_t)iconTex, ImVec2(18, 18));
+                    ImGui::SameLine();
+                }
+                ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "  %s", label.c_str());
+            }
+        }
+
+        // Fixed reward items (always given)
+        if (!quest.rewardItems.empty()) {
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 1.0f), "You will receive:");
+            for (const auto& ri : quest.rewardItems) {
+                gameHandler.ensureItemInfo(ri.itemId);
+                auto* info = gameHandler.getItemInfo(ri.itemId);
+                VkDescriptorSet iconTex = VK_NULL_HANDLE;
+                uint32_t dispId = ri.displayInfoId;
+                if (info && info->valid && info->displayInfoId != 0) dispId = info->displayInfoId;
+                if (dispId != 0) iconTex = inventoryScreen.getItemIcon(dispId);
+
+                std::string label;
+                if (info && info->valid && !info->name.empty())
+                    label = info->name;
+                else
+                    label = "Item " + std::to_string(ri.itemId);
+                if (ri.count > 1) label += " x" + std::to_string(ri.count);
+
+                if (iconTex) {
+                    ImGui::Image((void*)(intptr_t)iconTex, ImVec2(18, 18));
+                    ImGui::SameLine();
+                }
+                ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "  %s", label.c_str());
+            }
+        }
+
+        // XP and money rewards
         if (quest.rewardXp > 0 || quest.rewardMoney > 0) {
             ImGui::Spacing();
             ImGui::Separator();

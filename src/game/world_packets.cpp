@@ -3446,9 +3446,15 @@ bool QuestDetailsParser::parse(network::Packet& packet, QuestDetailsData& data) 
         /*choiceCount*/ packet.readUInt32();
         for (int i = 0; i < 6; i++) {
             if (packet.getReadPos() + 12 > packet.getSize()) break;
-            packet.readUInt32(); // itemId
-            packet.readUInt32(); // count
-            packet.readUInt32(); // displayInfo
+            uint32_t itemId = packet.readUInt32();
+            uint32_t count  = packet.readUInt32();
+            uint32_t dispId = packet.readUInt32();
+            if (itemId != 0) {
+                QuestRewardItem ri;
+                ri.itemId = itemId; ri.count = count; ri.displayInfoId = dispId;
+                ri.choiceSlot = static_cast<uint32_t>(i);
+                data.rewardChoiceItems.push_back(ri);
+            }
         }
     }
 
@@ -3457,9 +3463,14 @@ bool QuestDetailsParser::parse(network::Packet& packet, QuestDetailsData& data) 
         /*rewardCount*/ packet.readUInt32();
         for (int i = 0; i < 4; i++) {
             if (packet.getReadPos() + 12 > packet.getSize()) break;
-            packet.readUInt32(); // itemId
-            packet.readUInt32(); // count
-            packet.readUInt32(); // displayInfo
+            uint32_t itemId = packet.readUInt32();
+            uint32_t count  = packet.readUInt32();
+            uint32_t dispId = packet.readUInt32();
+            if (itemId != 0) {
+                QuestRewardItem ri;
+                ri.itemId = itemId; ri.count = count; ri.displayInfoId = dispId;
+                data.rewardItems.push_back(ri);
+            }
         }
     }
 

@@ -739,9 +739,15 @@ bool TbcPacketParsers::parseQuestDetails(network::Packet& packet, QuestDetailsDa
     if (packet.getReadPos() + 4 <= packet.getSize()) {
         uint32_t choiceCount = packet.readUInt32();
         for (uint32_t i = 0; i < choiceCount && packet.getReadPos() + 12 <= packet.getSize(); ++i) {
-            packet.readUInt32(); // itemId
-            packet.readUInt32(); // count
-            packet.readUInt32(); // displayInfo
+            uint32_t itemId = packet.readUInt32();
+            uint32_t count  = packet.readUInt32();
+            uint32_t dispId = packet.readUInt32();
+            if (itemId != 0) {
+                QuestRewardItem ri;
+                ri.itemId = itemId; ri.count = count; ri.displayInfoId = dispId;
+                ri.choiceSlot = i;
+                data.rewardChoiceItems.push_back(ri);
+            }
         }
     }
 
@@ -749,9 +755,14 @@ bool TbcPacketParsers::parseQuestDetails(network::Packet& packet, QuestDetailsDa
     if (packet.getReadPos() + 4 <= packet.getSize()) {
         uint32_t rewardCount = packet.readUInt32();
         for (uint32_t i = 0; i < rewardCount && packet.getReadPos() + 12 <= packet.getSize(); ++i) {
-            packet.readUInt32(); // itemId
-            packet.readUInt32(); // count
-            packet.readUInt32(); // displayInfo
+            uint32_t itemId = packet.readUInt32();
+            uint32_t count  = packet.readUInt32();
+            uint32_t dispId = packet.readUInt32();
+            if (itemId != 0) {
+                QuestRewardItem ri;
+                ri.itemId = itemId; ri.count = count; ri.displayInfoId = dispId;
+                data.rewardItems.push_back(ri);
+            }
         }
     }
 

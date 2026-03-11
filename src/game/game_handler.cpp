@@ -3476,10 +3476,17 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     if (packet.getSize() - packet.getReadPos() < 16) break;
                     uint32_t dmg      = packet.readUInt32();
                     /*uint32_t school=*/ packet.readUInt32();
-                    /*uint32_t abs=*/    packet.readUInt32();
-                    /*uint32_t res=*/    packet.readUInt32();
-                    addCombatText(CombatTextEntry::PERIODIC_DAMAGE, static_cast<int32_t>(dmg),
-                                  spellId, isPlayerCaster);
+                    uint32_t abs      = packet.readUInt32();
+                    uint32_t res      = packet.readUInt32();
+                    if (dmg > 0)
+                        addCombatText(CombatTextEntry::PERIODIC_DAMAGE, static_cast<int32_t>(dmg),
+                                      spellId, isPlayerCaster);
+                    if (abs > 0)
+                        addCombatText(CombatTextEntry::ABSORB, static_cast<int32_t>(abs),
+                                      spellId, isPlayerCaster);
+                    if (res > 0)
+                        addCombatText(CombatTextEntry::RESIST, static_cast<int32_t>(res),
+                                      spellId, isPlayerCaster);
                 } else if (auraType == 8 || auraType == 124 || auraType == 45) {
                     // PERIODIC_HEAL / PERIODIC_HEAL_PCT / OBS_MOD_HEALTH: heal+maxHeal+overHeal
                     if (packet.getSize() - packet.getReadPos() < 12) break;

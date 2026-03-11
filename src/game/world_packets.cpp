@@ -3320,7 +3320,7 @@ network::Packet LootReleasePacket::build(uint64_t lootGuid) {
     return packet;
 }
 
-bool LootResponseParser::parse(network::Packet& packet, LootResponseData& data) {
+bool LootResponseParser::parse(network::Packet& packet, LootResponseData& data, bool isWotlkFormat) {
     data = LootResponseData{};
     if (packet.getSize() - packet.getReadPos() < 14) {
         LOG_WARNING("LootResponseParser: packet too short");
@@ -3332,45 +3332,34 @@ bool LootResponseParser::parse(network::Packet& packet, LootResponseData& data) 
     data.gold = packet.readUInt32();
     uint8_t itemCount = packet.readUInt8();
 
+    // Item wire size:
+    //   WotLK 3.3.5a: slot(1)+itemId(4)+count(4)+displayInfo(4)+randSuffix(4)+randProp(4)+slotType(1) = 22
+    //   Classic/TBC:  slot(1)+itemId(4)+count(4)+displayInfo(4)+slotType(1)                          = 14
+    const size_t kItemSize = isWotlkFormat ? 22u : 14u;
+
     auto parseLootItemList = [&](uint8_t listCount, bool markQuestItems) -> bool {
         for (uint8_t i = 0; i < listCount; ++i) {
             size_t remaining = packet.getSize() - packet.getReadPos();
-            if (remaining < 10) {
+            if (remaining < kItemSize) {
                 return false;
             }
 
-            // Prefer the richest format when possible:
-            // 22-byte (WotLK/full): slot+id+count+display+randSuffix+randProp+slotType
-            // 14-byte (compact):    slot+id+count+display+slotType
-            // 10-byte (minimal):    slot+id+count+slotType
-            uint8_t bytesPerItem = 10;
-            if (remaining >= 22) {
-                bytesPerItem = 22;
-            } else if (remaining >= 14) {
-                bytesPerItem = 14;
-            }
-
             LootItem item;
-            item.slotIndex = packet.readUInt8();
-            item.itemId = packet.readUInt32();
-            item.count = packet.readUInt32();
+            item.slotIndex     = packet.readUInt8();
+            item.itemId        = packet.readUInt32();
+            item.count         = packet.readUInt32();
+            item.displayInfoId = packet.readUInt32();
 
-            if (bytesPerItem >= 14) {
-                item.displayInfoId = packet.readUInt32();
-            } else {
-                item.displayInfoId = 0;
-            }
-
-            if (bytesPerItem == 22) {
-                item.randomSuffix = packet.readUInt32();
+            if (isWotlkFormat) {
+                item.randomSuffix     = packet.readUInt32();
                 item.randomPropertyId = packet.readUInt32();
             } else {
-                item.randomSuffix = 0;
+                item.randomSuffix     = 0;
                 item.randomPropertyId = 0;
             }
 
             item.lootSlotType = packet.readUInt8();
-            item.isQuestItem = markQuestItems;
+            item.isQuestItem  = markQuestItems;
             data.items.push_back(item);
         }
         return true;

@@ -2015,7 +2015,9 @@ public:
 /** SMSG_LOOT_RESPONSE parser */
 class LootResponseParser {
 public:
-    static bool parse(network::Packet& packet, LootResponseData& data);
+    // isWotlkFormat: true for WotLK 3.3.5a (22 bytes/item with randomSuffix+randomProp),
+    //                false for Classic 1.12 and TBC 2.4.3 (14 bytes/item).
+    static bool parse(network::Packet& packet, LootResponseData& data, bool isWotlkFormat = true);
 };
 
 // ============================================================

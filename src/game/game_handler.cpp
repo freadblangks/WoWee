@@ -16164,7 +16164,10 @@ void GameHandler::unstuckHearth() {
 }
 
 void GameHandler::handleLootResponse(network::Packet& packet) {
-    if (!LootResponseParser::parse(packet, currentLoot)) return;
+    // Classic 1.12 and TBC 2.4.3 use 14 bytes/item (no randomSuffix/randomProp fields);
+    // WotLK 3.3.5a uses 22 bytes/item.
+    const bool wotlkLoot = isActiveExpansion("wotlk");
+    if (!LootResponseParser::parse(packet, currentLoot, wotlkLoot)) return;
     lootWindowOpen = true;
     localLootState_[currentLoot.lootGuid] = LocalLootState{currentLoot, false};
 

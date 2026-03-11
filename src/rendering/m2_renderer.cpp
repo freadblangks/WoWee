@@ -192,22 +192,6 @@ float pointAABBDistanceSq(const glm::vec3& p, const glm::vec3& bmin, const glm::
     return glm::dot(d, d);
 }
 
-struct QueryTimer {
-    double* totalMs = nullptr;
-    uint32_t* callCount = nullptr;
-    std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
-    QueryTimer(double* total, uint32_t* calls) : totalMs(total), callCount(calls) {}
-    ~QueryTimer() {
-        if (callCount) {
-            (*callCount)++;
-        }
-        if (totalMs) {
-            auto end = std::chrono::steady_clock::now();
-            *totalMs += std::chrono::duration<double, std::milli>(end - start).count();
-        }
-    }
-};
-
 // Möller–Trumbore ray-triangle intersection.
 // Returns distance along ray if hit, negative if miss.
 float rayTriangleIntersect(const glm::vec3& origin, const glm::vec3& dir,

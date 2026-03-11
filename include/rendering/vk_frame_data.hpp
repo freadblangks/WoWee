@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
+#include <chrono>
 
 namespace wowee {
 namespace rendering {
@@ -39,6 +40,23 @@ struct ShadowParamsUBO {
     int32_t foliageSway;
     float windTime;
     float foliageMotionDamp;
+};
+
+// Timer utility for performance profiling queries
+struct QueryTimer {
+    double* totalMs = nullptr;
+    uint32_t* callCount = nullptr;
+    std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+    QueryTimer(double* total, uint32_t* calls) : totalMs(total), callCount(calls) {}
+    ~QueryTimer() {
+        if (callCount) {
+            (*callCount)++;
+        }
+        if (totalMs) {
+            auto end = std::chrono::steady_clock::now();
+            *totalMs += std::chrono::duration<double, std::milli>(end - start).count();
+        }
+    }
 };
 
 } // namespace rendering

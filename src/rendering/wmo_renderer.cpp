@@ -2492,22 +2492,6 @@ static float pointAABBDistanceSq(const glm::vec3& p, const glm::vec3& bmin, cons
     return glm::dot(d, d);
 }
 
-struct QueryTimer {
-    double* totalMs = nullptr;
-    uint32_t* callCount = nullptr;
-    std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
-    QueryTimer(double* total, uint32_t* calls) : totalMs(total), callCount(calls) {}
-    ~QueryTimer() {
-        if (callCount) {
-            (*callCount)++;
-        }
-        if (totalMs) {
-            auto end = std::chrono::steady_clock::now();
-            *totalMs += std::chrono::duration<double, std::milli>(end - start).count();
-        }
-    }
-};
-
 // Möller–Trumbore ray-triangle intersection
 // Returns distance along ray if hit, or negative if miss
 static float rayTriangleIntersect(const glm::vec3& origin, const glm::vec3& dir,
@@ -3599,12 +3583,13 @@ void WMORenderer::recreatePipelines() {
     }
 
     // --- Vertex input ---
+    // WMO vertex: pos3 + normal3 + texCoord2 + color4 + tangent4 = 64 bytes
     struct WMOVertexData {
         glm::vec3 position;
         glm::vec3 normal;
         glm::vec2 texCoord;
         glm::vec4 color;
-        glm::vec4 tangent;
+        glm::vec4 tangent;  // xyz=tangent dir, w=handedness ±1
     };
 
     VkVertexInputBindingDescription vertexBinding{};

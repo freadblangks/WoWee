@@ -5204,11 +5204,17 @@ void GameScreen::renderCombatText(game::GameHandler& gameHandler) {
                     color = ImVec4(0.9f, 0.9f, 0.9f, alpha);  // White for immune
                     break;
                 case game::CombatTextEntry::ABSORB:
-                    snprintf(text, sizeof(text), "Absorb");
+                    if (entry.amount > 0)
+                        snprintf(text, sizeof(text), "Absorbed %d", entry.amount);
+                    else
+                        snprintf(text, sizeof(text), "Absorbed");
                     color = ImVec4(0.5f, 0.8f, 1.0f, alpha);  // Light blue for absorb
                     break;
                 case game::CombatTextEntry::RESIST:
-                    snprintf(text, sizeof(text), "Resist");
+                    if (entry.amount > 0)
+                        snprintf(text, sizeof(text), "Resisted %d", entry.amount);
+                    else
+                        snprintf(text, sizeof(text), "Resisted");
                     color = ImVec4(0.7f, 0.7f, 0.7f, alpha);  // Grey for resist
                     break;
                 default:

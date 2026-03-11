@@ -13548,7 +13548,12 @@ void GameHandler::handleSpellDamageLog(network::Packet& packet) {
     }
 
     auto type = data.isCrit ? CombatTextEntry::CRIT_DAMAGE : CombatTextEntry::SPELL_DAMAGE;
-    addCombatText(type, static_cast<int32_t>(data.damage), data.spellId, isPlayerSource);
+    if (data.damage > 0)
+        addCombatText(type, static_cast<int32_t>(data.damage), data.spellId, isPlayerSource);
+    if (data.absorbed > 0)
+        addCombatText(CombatTextEntry::ABSORB, static_cast<int32_t>(data.absorbed), data.spellId, isPlayerSource);
+    if (data.resisted > 0)
+        addCombatText(CombatTextEntry::RESIST, static_cast<int32_t>(data.resisted), data.spellId, isPlayerSource);
 }
 
 void GameHandler::handleSpellHealLog(network::Packet& packet) {
@@ -13561,6 +13566,8 @@ void GameHandler::handleSpellHealLog(network::Packet& packet) {
 
     auto type = data.isCrit ? CombatTextEntry::CRIT_HEAL : CombatTextEntry::HEAL;
     addCombatText(type, static_cast<int32_t>(data.heal), data.spellId, isPlayerSource);
+    if (data.absorbed > 0)
+        addCombatText(CombatTextEntry::ABSORB, static_cast<int32_t>(data.absorbed), data.spellId, isPlayerSource);
 }
 
 // ============================================================

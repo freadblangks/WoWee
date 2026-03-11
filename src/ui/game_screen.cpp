@@ -6715,30 +6715,50 @@ void GameScreen::renderQuestDetailsWindow(game::GameHandler& gameHandler) {
         }
 
         // Choice reward items (player picks one)
+        auto renderQuestRewardItem = [&](const game::QuestRewardItem& ri) {
+            gameHandler.ensureItemInfo(ri.itemId);
+            auto* info = gameHandler.getItemInfo(ri.itemId);
+            VkDescriptorSet iconTex = VK_NULL_HANDLE;
+            uint32_t dispId = ri.displayInfoId;
+            if (info && info->valid && info->displayInfoId != 0) dispId = info->displayInfoId;
+            if (dispId != 0) iconTex = inventoryScreen.getItemIcon(dispId);
+
+            std::string label;
+            ImVec4 nameCol = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+            if (info && info->valid && !info->name.empty()) {
+                label = info->name;
+                nameCol = InventoryScreen::getQualityColor(static_cast<game::ItemQuality>(info->quality));
+            } else {
+                label = "Item " + std::to_string(ri.itemId);
+            }
+            if (ri.count > 1) label += " x" + std::to_string(ri.count);
+
+            if (iconTex) {
+                ImGui::Image((void*)(intptr_t)iconTex, ImVec2(18, 18));
+                if (ImGui::IsItemHovered() && info && info->valid) {
+                    ImGui::BeginTooltip();
+                    ImGui::TextColored(nameCol, "%s", info->name.c_str());
+                    if (!info->description.empty())
+                        ImGui::TextWrapped("%s", info->description.c_str());
+                    ImGui::EndTooltip();
+                }
+                ImGui::SameLine();
+            }
+            ImGui::TextColored(nameCol, "  %s", label.c_str());
+            if (ImGui::IsItemHovered() && info && info->valid && !info->description.empty()) {
+                ImGui::BeginTooltip();
+                ImGui::TextColored(nameCol, "%s", info->name.c_str());
+                ImGui::TextWrapped("%s", info->description.c_str());
+                ImGui::EndTooltip();
+            }
+        };
+
         if (!quest.rewardChoiceItems.empty()) {
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 1.0f), "Choose one reward:");
             for (const auto& ri : quest.rewardChoiceItems) {
-                gameHandler.ensureItemInfo(ri.itemId);
-                auto* info = gameHandler.getItemInfo(ri.itemId);
-                VkDescriptorSet iconTex = VK_NULL_HANDLE;
-                uint32_t dispId = ri.displayInfoId;
-                if (info && info->valid && info->displayInfoId != 0) dispId = info->displayInfoId;
-                if (dispId != 0) iconTex = inventoryScreen.getItemIcon(dispId);
-
-                std::string label;
-                if (info && info->valid && !info->name.empty())
-                    label = info->name;
-                else
-                    label = "Item " + std::to_string(ri.itemId);
-                if (ri.count > 1) label += " x" + std::to_string(ri.count);
-
-                if (iconTex) {
-                    ImGui::Image((void*)(intptr_t)iconTex, ImVec2(18, 18));
-                    ImGui::SameLine();
-                }
-                ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "  %s", label.c_str());
+                renderQuestRewardItem(ri);
             }
         }
 
@@ -6748,25 +6768,7 @@ void GameScreen::renderQuestDetailsWindow(game::GameHandler& gameHandler) {
             ImGui::Separator();
             ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 1.0f), "You will receive:");
             for (const auto& ri : quest.rewardItems) {
-                gameHandler.ensureItemInfo(ri.itemId);
-                auto* info = gameHandler.getItemInfo(ri.itemId);
-                VkDescriptorSet iconTex = VK_NULL_HANDLE;
-                uint32_t dispId = ri.displayInfoId;
-                if (info && info->valid && info->displayInfoId != 0) dispId = info->displayInfoId;
-                if (dispId != 0) iconTex = inventoryScreen.getItemIcon(dispId);
-
-                std::string label;
-                if (info && info->valid && !info->name.empty())
-                    label = info->name;
-                else
-                    label = "Item " + std::to_string(ri.itemId);
-                if (ri.count > 1) label += " x" + std::to_string(ri.count);
-
-                if (iconTex) {
-                    ImGui::Image((void*)(intptr_t)iconTex, ImVec2(18, 18));
-                    ImGui::SameLine();
-                }
-                ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "  %s", label.c_str());
+                renderQuestRewardItem(ri);
             }
         }
 

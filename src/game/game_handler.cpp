@@ -11832,12 +11832,41 @@ void GameHandler::handleBattlefieldStatus(network::Packet& packet) {
         bgName = std::to_string(arenaType) + "v" + std::to_string(arenaType) + " Arena";
     }
 
+    // Parse status-specific fields
+    uint32_t inviteTimeout = 80;  // default WoW BG invite window (seconds)
+    if (statusId == 1) {
+        // STATUS_WAIT_QUEUE: avgWaitTime(4) + timeInQueue(4)
+        if (packet.getSize() - packet.getReadPos() >= 8) {
+            /*uint32_t avgWait =*/ packet.readUInt32();
+            /*uint32_t inQueue =*/ packet.readUInt32();
+        }
+    } else if (statusId == 2) {
+        // STATUS_WAIT_JOIN: timeout(4) + mapId(4)
+        if (packet.getSize() - packet.getReadPos() >= 4) {
+            inviteTimeout = packet.readUInt32();
+        }
+        if (packet.getSize() - packet.getReadPos() >= 4) {
+            /*uint32_t mapId =*/ packet.readUInt32();
+        }
+    } else if (statusId == 3) {
+        // STATUS_IN_PROGRESS: mapId(4) + timeSinceStart(4)
+        if (packet.getSize() - packet.getReadPos() >= 8) {
+            /*uint32_t mapId =*/ packet.readUInt32();
+            /*uint32_t elapsed =*/ packet.readUInt32();
+        }
+    }
+
     // Store queue state
     if (queueSlot < bgQueues_.size()) {
+        bool wasInvite = (bgQueues_[queueSlot].statusId == 2);
         bgQueues_[queueSlot].queueSlot = queueSlot;
         bgQueues_[queueSlot].bgTypeId = bgTypeId;
         bgQueues_[queueSlot].arenaType = arenaType;
         bgQueues_[queueSlot].statusId = statusId;
+        if (statusId == 2 && !wasInvite) {
+            bgQueues_[queueSlot].inviteTimeout = inviteTimeout;
+            bgQueues_[queueSlot].inviteReceivedTime = std::chrono::steady_clock::now();
+        }
     }
 
     switch (statusId) {
@@ -11849,8 +11878,10 @@ void GameHandler::handleBattlefieldStatus(network::Packet& packet) {
             LOG_INFO("Battlefield status: WAIT_QUEUE for ", bgName);
             break;
         case 2: // STATUS_WAIT_JOIN
-            addSystemChatMessage(bgName + " is ready! Type /join to enter.");
-            LOG_INFO("Battlefield status: WAIT_JOIN for ", bgName);
+            // Popup shown by the UI; add chat notification too.
+            addSystemChatMessage(bgName + " is ready!");
+            LOG_INFO("Battlefield status: WAIT_JOIN for ", bgName,
+                     " timeout=", inviteTimeout, "s");
             break;
         case 3: // STATUS_IN_PROGRESS
             addSystemChatMessage("Entered " + bgName + ".");
@@ -11863,6 +11894,44 @@ void GameHandler::handleBattlefieldStatus(network::Packet& packet) {
             LOG_INFO("Battlefield status: unknown (", statusId, ") for ", bgName);
             break;
     }
+}
+
+void GameHandler::declineBattlefield(uint32_t queueSlot) {
+    if (state != WorldState::IN_WORLD) return;
+    if (!socket) return;
+
+    const BgQueueSlot* slot = nullptr;
+    if (queueSlot == 0xFFFFFFFF) {
+        for (const auto& s : bgQueues_) {
+            if (s.statusId == 2) { slot = &s; break; }
+        }
+    } else if (queueSlot < bgQueues_.size() && bgQueues_[queueSlot].statusId == 2) {
+        slot = &bgQueues_[queueSlot];
+    }
+
+    if (!slot) {
+        addSystemChatMessage("No battleground invitation pending.");
+        return;
+    }
+
+    // CMSG_BATTLEFIELD_PORT with action=0 (decline)
+    network::Packet pkt(wireOpcode(Opcode::CMSG_BATTLEFIELD_PORT));
+    pkt.writeUInt8(slot->arenaType);
+    pkt.writeUInt8(0x00);
+    pkt.writeUInt32(slot->bgTypeId);
+    pkt.writeUInt16(0x0000);
+    pkt.writeUInt8(0);  // 0 = decline
+
+    socket->send(pkt);
+
+    // Clear queue slot
+    uint32_t clearSlot = slot->queueSlot;
+    if (clearSlot < bgQueues_.size()) {
+        bgQueues_[clearSlot] = BgQueueSlot{};
+    }
+
+    addSystemChatMessage("Battleground invitation declined.");
+    LOG_INFO("Sent CMSG_BATTLEFIELD_PORT: decline");
 }
 
 bool GameHandler::hasPendingBgInvite() const {
@@ -11900,6 +11969,12 @@ void GameHandler::acceptBattlefield(uint32_t queueSlot) {
     pkt.writeUInt8(1);  // 1 = accept, 0 = decline
 
     socket->send(pkt);
+
+    // Optimistically clear the invite so the popup disappears immediately.
+    uint32_t clearSlot = slot->queueSlot;
+    if (clearSlot < bgQueues_.size()) {
+        bgQueues_[clearSlot].statusId = 3; // STATUS_IN_PROGRESS (server will confirm)
+    }
 
     addSystemChatMessage("Accepting battleground invitation...");
     LOG_INFO("Sent CMSG_BATTLEFIELD_PORT: accept bgTypeId=", slot->bgTypeId);

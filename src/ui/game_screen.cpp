@@ -414,6 +414,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderItemTextWindow(gameHandler);
     renderGuildInvitePopup(gameHandler);
     renderReadyCheckPopup(gameHandler);
+    renderBgInvitePopup(gameHandler);
     renderGuildRoster(gameHandler);
     renderBuffBar(gameHandler);
     renderLootWindow(gameHandler);
@@ -5865,6 +5866,99 @@ void GameScreen::renderReadyCheckPopup(game::GameHandler& gameHandler) {
         }
     }
     ImGui::End();
+}
+
+void GameScreen::renderBgInvitePopup(game::GameHandler& gameHandler) {
+    if (!gameHandler.hasPendingBgInvite()) return;
+
+    const auto& queues = gameHandler.getBgQueues();
+    // Find the first WAIT_JOIN slot
+    const game::GameHandler::BgQueueSlot* slot = nullptr;
+    for (const auto& s : queues) {
+        if (s.statusId == 2) { slot = &s; break; }
+    }
+    if (!slot) return;
+
+    // Compute time remaining
+    auto now = std::chrono::steady_clock::now();
+    double elapsed = std::chrono::duration<double>(now - slot->inviteReceivedTime).count();
+    double remaining = static_cast<double>(slot->inviteTimeout) - elapsed;
+
+    // If invite has expired, clear it silently (server will handle the queue)
+    if (remaining <= 0.0) {
+        gameHandler.declineBattlefield(slot->queueSlot);
+        return;
+    }
+
+    auto* window = core::Application::getInstance().getWindow();
+    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
+    float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
+
+    ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 190, screenH / 2 - 70), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(380, 0), ImGuiCond_Always);
+
+    ImGui::PushStyleColor(ImGuiCol_WindowBg,   ImVec4(0.08f, 0.08f, 0.18f, 0.95f));
+    ImGui::PushStyleColor(ImGuiCol_Border,     ImVec4(0.4f, 0.4f, 1.0f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.15f, 0.15f, 0.4f, 1.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0f);
+
+    const ImGuiWindowFlags popupFlags =
+        ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse;
+
+    if (ImGui::Begin("Battleground Ready!", nullptr, popupFlags)) {
+        // BG name
+        std::string bgName;
+        if (slot->arenaType > 0) {
+            bgName = std::to_string(slot->arenaType) + "v" + std::to_string(slot->arenaType) + " Arena";
+        } else {
+            switch (slot->bgTypeId) {
+                case 1: bgName = "Alterac Valley"; break;
+                case 2: bgName = "Warsong Gulch"; break;
+                case 3: bgName = "Arathi Basin"; break;
+                case 7: bgName = "Eye of the Storm"; break;
+                case 9: bgName = "Strand of the Ancients"; break;
+                case 11: bgName = "Isle of Conquest"; break;
+                default: bgName = "Battleground"; break;
+            }
+        }
+
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.2f, 1.0f), "%s", bgName.c_str());
+        ImGui::TextWrapped("A spot has opened! You have %d seconds to enter.", static_cast<int>(remaining));
+        ImGui::Spacing();
+
+        // Countdown progress bar
+        float frac = static_cast<float>(remaining / static_cast<double>(slot->inviteTimeout));
+        frac = std::clamp(frac, 0.0f, 1.0f);
+        ImVec4 barColor = frac > 0.5f ? ImVec4(0.2f, 0.8f, 0.2f, 1.0f)
+                        : frac > 0.25f ? ImVec4(0.9f, 0.7f, 0.1f, 1.0f)
+                                       : ImVec4(0.9f, 0.2f, 0.2f, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, barColor);
+        char countdownLabel[32];
+        snprintf(countdownLabel, sizeof(countdownLabel), "%ds", static_cast<int>(remaining));
+        ImGui::ProgressBar(frac, ImVec2(-1, 16), countdownLabel);
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+
+        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.15f, 0.5f, 0.15f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
+        if (ImGui::Button("Enter Battleground", ImVec2(180, 30))) {
+            gameHandler.acceptBattlefield(slot->queueSlot);
+        }
+        ImGui::PopStyleColor(2);
+
+        ImGui::SameLine();
+
+        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.5f, 0.15f, 0.15f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
+        if (ImGui::Button("Leave Queue", ImVec2(175, 30))) {
+            gameHandler.declineBattlefield(slot->queueSlot);
+        }
+        ImGui::PopStyleColor(2);
+    }
+    ImGui::End();
+
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(3);
 }
 
 void GameScreen::renderGuildRoster(game::GameHandler& gameHandler) {

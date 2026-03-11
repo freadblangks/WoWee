@@ -340,9 +340,21 @@ public:
     // Random roll
     void randomRoll(uint32_t minRoll = 1, uint32_t maxRoll = 100);
 
+    // Battleground queue slot (public so UI can read invite details)
+    struct BgQueueSlot {
+        uint32_t queueSlot = 0;
+        uint32_t bgTypeId = 0;
+        uint8_t arenaType = 0;
+        uint32_t statusId = 0;  // 0=none, 1=wait_queue, 2=wait_join, 3=in_progress
+        uint32_t inviteTimeout = 80;
+        std::chrono::steady_clock::time_point inviteReceivedTime{};
+    };
+
     // Battleground
     bool hasPendingBgInvite() const;
     void acceptBattlefield(uint32_t queueSlot = 0xFFFFFFFF);
+    void declineBattlefield(uint32_t queueSlot = 0xFFFFFFFF);
+    const std::array<BgQueueSlot, 3>& getBgQueues() const { return bgQueues_; }
 
     // Logout commands
     void requestLogout();
@@ -1970,12 +1982,6 @@ private:
     std::unordered_set<uint32_t> petAutocastSpells_;  // spells with autocast on
 
     // ---- Battleground queue state ----
-    struct BgQueueSlot {
-        uint32_t queueSlot = 0;
-        uint32_t bgTypeId = 0;
-        uint8_t arenaType = 0;
-        uint32_t statusId = 0;  // 0=none, 1=wait_queue, 2=wait_join, 3=in_progress
-    };
     std::array<BgQueueSlot, 3> bgQueues_{};
 
     // Instance difficulty

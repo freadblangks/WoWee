@@ -14627,6 +14627,10 @@ void GameHandler::handleQuestDetails(network::Packet& packet) {
         }
         break;
     }
+    // Pre-fetch item info for all reward items so icons and names are ready
+    // by the time the offer-reward dialog opens (after the player turns in).
+    for (const auto& item : data.rewardChoiceItems) queryItemInfo(item.itemId, 0);
+    for (const auto& item : data.rewardItems)       queryItemInfo(item.itemId, 0);
     questDetailsOpen = true;
     gossipWindowOpen = false;
 }

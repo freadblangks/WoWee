@@ -3243,6 +3243,9 @@ network::Packet PetActionPacket::build(uint64_t petGuid, uint32_t action, uint64
 }
 
 bool CastFailedParser::parse(network::Packet& packet, CastFailedData& data) {
+    // WotLK format: castCount(1) + spellId(4) + result(1) = 6 bytes minimum
+    if (packet.getSize() - packet.getReadPos() < 6) return false;
+
     data.castCount = packet.readUInt8();
     data.spellId = packet.readUInt32();
     data.result = packet.readUInt8();

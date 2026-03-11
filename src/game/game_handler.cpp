@@ -1935,14 +1935,23 @@ void GameHandler::handlePacket(network::Packet& packet) {
 
         // ---- Spell proc resist log ----
         case Opcode::SMSG_PROCRESIST: {
-            // casterGuid(8) + victimGuid(8) + uint32 spellId + uint8 logSchoolMask
-            if (packet.getSize() - packet.getReadPos() >= 17) {
-                /*uint64_t caster =*/ packet.readUInt64();
-                uint64_t victim = packet.readUInt64();
-                uint32_t spellId = packet.readUInt32();
-                if (victim == playerGuid)
-                    addCombatText(CombatTextEntry::MISS, 0, spellId, false);
-            }
+            // WotLK:       packed_guid caster + packed_guid victim + uint32 spellId + ...
+            // TBC/Classic: uint64 caster + uint64 victim + uint32 spellId + ...
+            const bool prTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
+            auto readPrGuid = [&]() -> uint64_t {
+                if (prTbcLike)
+                    return (packet.getSize() - packet.getReadPos() >= 8) ? packet.readUInt64() : 0;
+                return UpdateObjectParser::readPackedGuid(packet);
+            };
+            if (packet.getSize() - packet.getReadPos() < (prTbcLike ? 8u : 1u)) break;
+            /*uint64_t caster =*/ readPrGuid();
+            if (packet.getSize() - packet.getReadPos() < (prTbcLike ? 8u : 1u)) break;
+            uint64_t victim = readPrGuid();
+            if (packet.getSize() - packet.getReadPos() < 4) break;
+            uint32_t spellId = packet.readUInt32();
+            if (victim == playerGuid)
+                addCombatText(CombatTextEntry::MISS, 0, spellId, false);
+            packet.setReadPos(packet.getSize());
             break;
         }
 
@@ -2896,15 +2905,20 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
         case Opcode::SMSG_TOTEM_CREATED: {
-            // uint8 slot + uint64 guid + uint32 duration + uint32 spellId
-            if (packet.getSize() - packet.getReadPos() >= 17) {
-                uint8_t  slot     = packet.readUInt8();
+            // WotLK:       uint8 slot + packed_guid + uint32 duration + uint32 spellId
+            // TBC/Classic: uint8 slot + uint64 guid  + uint32 duration + uint32 spellId
+            const bool totemTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
+            if (packet.getSize() - packet.getReadPos() < (totemTbcLike ? 17u : 9u)) break;
+            uint8_t slot = packet.readUInt8();
+            if (totemTbcLike)
                 /*uint64_t guid =*/ packet.readUInt64();
-                uint32_t duration = packet.readUInt32();
-                uint32_t spellId  = packet.readUInt32();
-                LOG_DEBUG("SMSG_TOTEM_CREATED: slot=", (int)slot,
-                          " spellId=", spellId, " duration=", duration, "ms");
-            }
+            else
+                /*uint64_t guid =*/ UpdateObjectParser::readPackedGuid(packet);
+            if (packet.getSize() - packet.getReadPos() < 8) break;
+            uint32_t duration = packet.readUInt32();
+            uint32_t spellId  = packet.readUInt32();
+            LOG_DEBUG("SMSG_TOTEM_CREATED: slot=", (int)slot,
+                      " spellId=", spellId, " duration=", duration, "ms");
             break;
         }
         case Opcode::SMSG_AREA_SPIRIT_HEALER_TIME: {

@@ -1950,7 +1950,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             if (packet.getSize() - packet.getReadPos() < 4) break;
             uint32_t spellId = packet.readUInt32();
             if (victim == playerGuid)
-                addCombatText(CombatTextEntry::MISS, 0, spellId, false);
+                addCombatText(CombatTextEntry::RESIST, 0, spellId, false);
             packet.setReadPos(packet.getSize());
             break;
         }

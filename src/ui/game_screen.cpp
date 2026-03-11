@@ -4059,7 +4059,7 @@ VkDescriptorSet GameScreen::getSpellIcon(uint32_t spellId, pipeline::AssetManage
         const auto* spellL = pipeline::getActiveDBCLayout() ? pipeline::getActiveDBCLayout()->getLayout("Spell") : nullptr;
         if (spellDbc && spellDbc->isLoaded()) {
             uint32_t fieldCount = spellDbc->getFieldCount();
-            // Try expansion layout first
+            // Helper to load icons for a given field layout
             auto tryLoadIcons = [&](uint32_t idField, uint32_t iconField) {
                 spellIconIds_.clear();
                 if (iconField >= fieldCount) return;
@@ -4071,16 +4071,16 @@ VkDescriptorSet GameScreen::getSpellIcon(uint32_t spellId, pipeline::AssetManage
                     }
                 }
             };
-            // If the DBC has WotLK-range field count (≥200 fields), it's the binary
-            // WotLK Spell.dbc (CSV fallback). Use WotLK layout regardless of expansion,
-            // since Turtle/Classic CSV files are garbled and fall back to WotLK binary.
-            if (fieldCount >= 200) {
-                tryLoadIcons(0, 133); // WotLK IconID field
-            } else if (spellL) {
+
+            // Always use expansion-aware layout if available
+            // Field indices vary by expansion: Classic=117, TBC=124, WotLK=133
+            if (spellL) {
                 tryLoadIcons((*spellL)["ID"], (*spellL)["IconID"]);
             }
-            // Fallback to WotLK field 133 if expansion layout yielded nothing
-            if (spellIconIds_.empty() && fieldCount > 133) {
+
+            // Fallback if expansion layout missing or yielded nothing
+            // Only use WotLK field 133 as last resort if we have no layout
+            if (spellIconIds_.empty() && !spellL && fieldCount > 133) {
                 tryLoadIcons(0, 133);
             }
         }

@@ -31,6 +31,12 @@ namespace ClassicMoveFlags {
 // Same as TBC: u8 UpdateFlags, JUMPING=0x2000, 8 speeds, no pitchRate
 // ============================================================================
 bool ClassicPacketParsers::parseMovementBlock(network::Packet& packet, UpdateBlock& block) {
+    // Validate minimum packet size for updateFlags byte
+    if (packet.getReadPos() >= packet.getSize()) {
+        LOG_WARNING("[Classic] Movement block packet too small (need at least 1 byte for updateFlags)");
+        return false;
+    }
+
     // Classic: UpdateFlags is uint8 (same as TBC)
     uint8_t updateFlags = packet.readUInt8();
     block.updateFlags = static_cast<uint16_t>(updateFlags);
@@ -658,7 +664,21 @@ bool ClassicPacketParsers::parseCastResult(network::Packet& packet, uint32_t& sp
 // - After flags: uint8 firstLogin (same as TBC)
 // ============================================================================
 bool ClassicPacketParsers::parseCharEnum(network::Packet& packet, CharEnumResponse& response) {
+    // Validate minimum packet size for count byte
+    if (packet.getSize() < 1) {
+        LOG_ERROR("[Classic] SMSG_CHAR_ENUM packet too small: ", packet.getSize(), " bytes");
+        return false;
+    }
+
     uint8_t count = packet.readUInt8();
+
+    // Cap count to prevent excessive memory allocation
+    constexpr uint8_t kMaxCharacters = 32;
+    if (count > kMaxCharacters) {
+        LOG_WARNING("[Classic] Character count ", (int)count, " exceeds max ", (int)kMaxCharacters,
+                    ", capping");
+        count = kMaxCharacters;
+    }
 
     LOG_INFO("[Classic] Parsing SMSG_CHAR_ENUM: ", (int)count, " characters");
 
@@ -666,6 +686,18 @@ bool ClassicPacketParsers::parseCharEnum(network::Packet& packet, CharEnumRespon
     response.characters.reserve(count);
 
     for (uint8_t i = 0; i < count; ++i) {
+        // Sanity check: ensure we have at least minimal data before reading next character
+        // Minimum: guid(8) + name(1) + race(1) + class(1) + gender(1) + appearance(4)
+        //          + facialFeatures(1) + level(1) + zone(4) + map(4) + pos(12) + guild(4)
+        //          + flags(4) + firstLogin(1) + pet(12) + equipment(20*5)
+        constexpr size_t kMinCharacterSize = 8 + 1 + 1 + 1 + 1 + 4 + 1 + 1 + 4 + 4 + 12 + 4 + 4 + 1 + 12 + 100;
+        if (packet.getReadPos() + kMinCharacterSize > packet.getSize()) {
+            LOG_WARNING("[Classic] Character enum packet truncated at character ", (int)(i + 1),
+                        ", pos=", packet.getReadPos(), " needed=", kMinCharacterSize,
+                        " size=", packet.getSize());
+            break;
+        }
+
         Character character;
 
         // GUID (8 bytes)

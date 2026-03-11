@@ -4976,6 +4976,13 @@ bool AuctionListResultParser::parse(network::Packet& packet, AuctionListResult& 
     if (packet.getSize() - packet.getReadPos() < 4) return false;
 
     uint32_t count = packet.readUInt32();
+    // Cap auction count to prevent unbounded memory allocation
+    const uint32_t MAX_AUCTION_RESULTS = 256;
+    if (count > MAX_AUCTION_RESULTS) {
+        LOG_WARNING("AuctionListResultParser: count capped (requested=", count, ")");
+        count = MAX_AUCTION_RESULTS;
+    }
+
     data.auctions.clear();
     data.auctions.reserve(count);
 

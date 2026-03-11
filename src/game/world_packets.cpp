@@ -2429,6 +2429,12 @@ static const char* getItemSubclassName(uint32_t itemClass, uint32_t subClass) {
 }
 
 bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseData& data) {
+    // Validate minimum packet size: entry(4) + item not found check
+    if (packet.getSize() < 4) {
+        LOG_ERROR("SMSG_ITEM_QUERY_SINGLE_RESPONSE: packet too small (", packet.getSize(), " bytes)");
+        return false;
+    }
+
     data.entry = packet.readUInt32();
 
     // High bit set means item not found
@@ -2436,6 +2442,13 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
         data.entry &= ~0x80000000;
         LOG_DEBUG("Item query: entry ", data.entry, " not found");
         return true;
+    }
+
+    // Validate minimum size for fixed fields before reading: itemClass(4) + subClass(4) + soundOverride(4)
+    // + 4 name strings + displayInfoId(4) + quality(4) = at least 24 bytes more
+    if (packet.getSize() - packet.getReadPos() < 24) {
+        LOG_ERROR("SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before displayInfoId (entry=", data.entry, ")");
+        return false;
     }
 
     uint32_t itemClass = packet.readUInt32();
@@ -2459,6 +2472,10 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
     // Some server variants omit BuyCount (4 fields instead of 5).
     // Read 5 fields and validate InventoryType; if it looks implausible, rewind and try 4.
     const size_t postQualityPos = packet.getReadPos();
+    if (packet.getSize() - packet.getReadPos() < 24) {
+        LOG_ERROR("SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before flags (entry=", data.entry, ")");
+        return false;
+    }
     packet.readUInt32(); // Flags
     packet.readUInt32(); // Flags2
     packet.readUInt32(); // BuyCount
@@ -2476,6 +2493,11 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
         data.inventoryType = packet.readUInt32();
     }
 
+    // Validate minimum size for remaining fixed fields before inventoryType through containerSlots: 13×4 = 52 bytes
+    if (packet.getSize() - packet.getReadPos() < 52) {
+        LOG_ERROR("SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before statsCount (entry=", data.entry, ")");
+        return false;
+    }
     packet.readUInt32(); // AllowableClass
     packet.readUInt32(); // AllowableRace
     data.itemLevel = packet.readUInt32();
@@ -2491,10 +2513,29 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
     data.maxStack = static_cast<int32_t>(packet.readUInt32()); // Stackable
     data.containerSlots = packet.readUInt32();
 
+    // Read statsCount with bounds validation
+    if (packet.getSize() - packet.getReadPos() < 4) {
+        LOG_WARNING("SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated at statsCount (entry=", data.entry, ")");
+        return true;  // Have enough for core fields; stats are optional
+    }
     uint32_t statsCount = packet.readUInt32();
+
+    // Cap statsCount to prevent excessive iteration
+    constexpr uint32_t kMaxItemStats = 10;
+    if (statsCount > kMaxItemStats) {
+        LOG_WARNING("SMSG_ITEM_QUERY_SINGLE_RESPONSE: statsCount=", statsCount, " exceeds max ",
+                    kMaxItemStats, " (entry=", data.entry, "), capping");
+        statsCount = kMaxItemStats;
+    }
+
     // Server sends exactly statsCount stat pairs (not always 10).
     uint32_t statsToRead = std::min(statsCount, 10u);
     for (uint32_t i = 0; i < statsToRead; i++) {
+        // Each stat is 2 uint32s (type + value) = 8 bytes
+        if (packet.getSize() - packet.getReadPos() < 8) {
+            LOG_WARNING("SMSG_ITEM_QUERY_SINGLE_RESPONSE: stat ", i, " truncated (entry=", data.entry, ")");
+            break;
+        }
         uint32_t statType = packet.readUInt32();
         int32_t statValue = static_cast<int32_t>(packet.readUInt32());
         switch (statType) {
@@ -2510,6 +2551,11 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
         }
     }
 
+    // ScalingStatDistribution and ScalingStatValue
+    if (packet.getSize() - packet.getReadPos() < 8) {
+        LOG_WARNING("SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before scaling stats (entry=", data.entry, ")");
+        return true;  // Have core fields; scaling is optional
+    }
     packet.readUInt32(); // ScalingStatDistribution
     packet.readUInt32(); // ScalingStatValue
 

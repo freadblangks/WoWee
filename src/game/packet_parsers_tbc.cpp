@@ -958,10 +958,22 @@ bool TbcPacketParsers::parseNameQueryResponse(network::Packet& packet, NameQuery
 //   - Has statsCount prefix (Classic reads 10 pairs with no prefix)
 // ============================================================================
 bool TbcPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQueryResponseData& data) {
+    // Validate minimum packet size: entry(4)
+    if (packet.getSize() < 4) {
+        LOG_ERROR("TBC SMSG_ITEM_QUERY_SINGLE_RESPONSE: packet too small (", packet.getSize(), " bytes)");
+        return false;
+    }
+
     data.entry = packet.readUInt32();
     if (data.entry & 0x80000000) {
         data.entry &= ~0x80000000;
         return true;
+    }
+
+    // Validate minimum size for fixed fields: itemClass(4) + subClass(4) + soundOverride(4) + 4 name strings + displayInfoId(4) + quality(4)
+    if (packet.getSize() - packet.getReadPos() < 12) {
+        LOG_ERROR("TBC SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before names (entry=", data.entry, ")");
+        return false;
     }
 
     uint32_t itemClass = packet.readUInt32();
@@ -980,12 +992,24 @@ bool TbcPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQuery
     data.displayInfoId = packet.readUInt32();
     data.quality       = packet.readUInt32();
 
+    // Validate minimum size for fixed fields: Flags(4) + BuyPrice(4) + SellPrice(4) + inventoryType(4)
+    if (packet.getSize() - packet.getReadPos() < 16) {
+        LOG_ERROR("TBC SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before inventoryType (entry=", data.entry, ")");
+        return false;
+    }
+
     packet.readUInt32(); // Flags  (TBC: 1 flags field only — no Flags2)
     // TBC: NO Flags2, NO BuyCount
     packet.readUInt32(); // BuyPrice
     data.sellPrice = packet.readUInt32();
 
     data.inventoryType = packet.readUInt32();
+
+    // Validate minimum size for remaining fixed fields: 13×4 = 52 bytes
+    if (packet.getSize() - packet.getReadPos() < 52) {
+        LOG_ERROR("TBC SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before statsCount (entry=", data.entry, ")");
+        return false;
+    }
 
     packet.readUInt32(); // AllowableClass
     packet.readUInt32(); // AllowableRace
@@ -1003,9 +1027,22 @@ bool TbcPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQuery
     data.containerSlots = packet.readUInt32();
 
     // TBC: statsCount prefix + exactly statsCount pairs (WotLK always sends 10)
+    if (packet.getSize() - packet.getReadPos() < 4) {
+        LOG_WARNING("TBC SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated at statsCount (entry=", data.entry, ")");
+        return true;  // Have core fields; stats are optional
+    }
     uint32_t statsCount = packet.readUInt32();
-    if (statsCount > 10) statsCount = 10; // sanity cap
+    if (statsCount > 10) {
+        LOG_WARNING("TBC SMSG_ITEM_QUERY_SINGLE_RESPONSE: statsCount=", statsCount, " exceeds max 10 (entry=",
+                    data.entry, "), capping");
+        statsCount = 10;
+    }
     for (uint32_t i = 0; i < statsCount; i++) {
+        // Each stat is 2 uint32s = 8 bytes
+        if (packet.getSize() - packet.getReadPos() < 8) {
+            LOG_WARNING("TBC SMSG_ITEM_QUERY_SINGLE_RESPONSE: stat ", i, " truncated (entry=", data.entry, ")");
+            break;
+        }
         uint32_t statType  = packet.readUInt32();
         int32_t  statValue = static_cast<int32_t>(packet.readUInt32());
         switch (statType) {
@@ -1022,9 +1059,14 @@ bool TbcPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQuery
     }
     // TBC: NO ScalingStatDistribution, NO ScalingStatValue (WotLK-only)
 
-    // 5 damage entries
+    // 5 damage entries (5×12 = 60 bytes)
     bool haveWeaponDamage = false;
     for (int i = 0; i < 5; i++) {
+        // Each damage entry is dmgMin(4) + dmgMax(4) + damageType(4) = 12 bytes
+        if (packet.getSize() - packet.getReadPos() < 12) {
+            LOG_WARNING("TBC SMSG_ITEM_QUERY_SINGLE_RESPONSE: damage ", i, " truncated (entry=", data.entry, ")");
+            break;
+        }
         float    dmgMin     = packet.readFloat();
         float    dmgMax     = packet.readFloat();
         uint32_t damageType = packet.readUInt32();
@@ -1037,6 +1079,11 @@ bool TbcPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQuery
         }
     }
 
+    // Validate minimum size for armor (4 bytes)
+    if (packet.getSize() - packet.getReadPos() < 4) {
+        LOG_WARNING("TBC SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before armor (entry=", data.entry, ")");
+        return true;  // Have core fields; armor is important but optional
+    }
     data.armor = static_cast<int32_t>(packet.readUInt32());
 
     if (packet.getSize() - packet.getReadPos() >= 28) {

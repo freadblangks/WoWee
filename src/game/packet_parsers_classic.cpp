@@ -1263,12 +1263,24 @@ network::Packet ClassicPacketParsers::buildItemQuery(uint32_t entry, uint64_t gu
 }
 
 bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQueryResponseData& data) {
+    // Validate minimum packet size: entry(4)
+    if (packet.getSize() < 4) {
+        LOG_ERROR("Classic SMSG_ITEM_QUERY_SINGLE_RESPONSE: packet too small (", packet.getSize(), " bytes)");
+        return false;
+    }
+
     data.entry = packet.readUInt32();
 
     // High bit set means item not found
     if (data.entry & 0x80000000) {
         data.entry &= ~0x80000000;
         return true;
+    }
+
+    // Validate minimum size for fixed fields: itemClass(4) + subClass(4) + 4 name strings + displayInfoId(4) + quality(4)
+    if (packet.getSize() - packet.getReadPos() < 8) {
+        LOG_ERROR("Classic SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before names (entry=", data.entry, ")");
+        return false;
     }
 
     uint32_t itemClass = packet.readUInt32();
@@ -1319,12 +1331,24 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
     data.displayInfoId = packet.readUInt32();
     data.quality = packet.readUInt32();
 
+    // Validate minimum size for fixed fields: Flags(4) + BuyPrice(4) + SellPrice(4) + inventoryType(4)
+    if (packet.getSize() - packet.getReadPos() < 16) {
+        LOG_ERROR("Classic SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before inventoryType (entry=", data.entry, ")");
+        return false;
+    }
+
     packet.readUInt32(); // Flags
     // Vanilla: NO Flags2
     packet.readUInt32(); // BuyPrice
     data.sellPrice = packet.readUInt32(); // SellPrice
 
     data.inventoryType = packet.readUInt32();
+
+    // Validate minimum size for remaining fixed fields: 13×4 = 52 bytes
+    if (packet.getSize() - packet.getReadPos() < 52) {
+        LOG_ERROR("Classic SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before stats (entry=", data.entry, ")");
+        return false;
+    }
 
     packet.readUInt32(); // AllowableClass
     packet.readUInt32(); // AllowableRace
@@ -1341,8 +1365,16 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
     data.maxStack = static_cast<int32_t>(packet.readUInt32()); // Stackable
     data.containerSlots = packet.readUInt32();
 
-    // Vanilla: 10 stat pairs, NO statsCount prefix
+    // Vanilla: 10 stat pairs, NO statsCount prefix (10×8 = 80 bytes)
+    if (packet.getSize() - packet.getReadPos() < 80) {
+        LOG_WARNING("Classic SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated in stats section (entry=", data.entry, ")");
+        // Read what we can
+    }
     for (uint32_t i = 0; i < 10; i++) {
+        if (packet.getSize() - packet.getReadPos() < 8) {
+            LOG_WARNING("Classic SMSG_ITEM_QUERY_SINGLE_RESPONSE: stat ", i, " truncated (entry=", data.entry, ")");
+            break;
+        }
         uint32_t statType = packet.readUInt32();
         int32_t statValue = static_cast<int32_t>(packet.readUInt32());
         if (statType != 0) {
@@ -1365,6 +1397,11 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
     // Vanilla: 5 damage types (same count as WotLK)
     bool haveWeaponDamage = false;
     for (int i = 0; i < 5; i++) {
+        // Each damage entry is dmgMin(4) + dmgMax(4) + damageType(4) = 12 bytes
+        if (packet.getSize() - packet.getReadPos() < 12) {
+            LOG_WARNING("Classic SMSG_ITEM_QUERY_SINGLE_RESPONSE: damage ", i, " truncated (entry=", data.entry, ")");
+            break;
+        }
         float dmgMin = packet.readFloat();
         float dmgMax = packet.readFloat();
         uint32_t damageType = packet.readUInt32();
@@ -1378,6 +1415,11 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
         }
     }
 
+    // Validate minimum size for armor field (4 bytes)
+    if (packet.getSize() - packet.getReadPos() < 4) {
+        LOG_WARNING("Classic SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before armor (entry=", data.entry, ")");
+        return true;  // Have core fields; armor is important but optional
+    }
     data.armor = static_cast<int32_t>(packet.readUInt32());
 
     // Remaining tail can vary by core. Read resistances + delay when present.

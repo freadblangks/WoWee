@@ -13529,6 +13529,16 @@ void GameHandler::handleAttackerStateUpdate(network::Packet& packet) {
     } else {
         auto type = data.isCrit() ? CombatTextEntry::CRIT_DAMAGE : CombatTextEntry::MELEE_DAMAGE;
         addCombatText(type, data.totalDamage, 0, isPlayerAttacker);
+        // Show partial absorb/resist from sub-damage entries
+        uint32_t totalAbsorbed = 0, totalResisted = 0;
+        for (const auto& sub : data.subDamages) {
+            totalAbsorbed += sub.absorbed;
+            totalResisted += sub.resisted;
+        }
+        if (totalAbsorbed > 0)
+            addCombatText(CombatTextEntry::ABSORB, static_cast<int32_t>(totalAbsorbed), 0, isPlayerAttacker);
+        if (totalResisted > 0)
+            addCombatText(CombatTextEntry::RESIST, static_cast<int32_t>(totalResisted), 0, isPlayerAttacker);
     }
 
     (void)isPlayerTarget;

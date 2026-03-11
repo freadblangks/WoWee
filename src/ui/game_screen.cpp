@@ -1471,6 +1471,10 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
         }
 
         // Toggle nameplates (customizable keybinding, default V)
+        if (KeybindingManager::getInstance().isActionPressed(KeybindingManager::Action::TOGGLE_INVENTORY)) {
+            inventoryScreen.toggle();
+        }
+
         if (KeybindingManager::getInstance().isActionPressed(KeybindingManager::Action::TOGGLE_NAMEPLATES)) {
             showNameplates_ = !showNameplates_;
         }

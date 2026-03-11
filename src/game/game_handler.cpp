@@ -3438,6 +3438,25 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     /*uint32_t over=*/ packet.readUInt32();
                     addCombatText(CombatTextEntry::PERIODIC_HEAL, static_cast<int32_t>(heal),
                                   spellId, isPlayerCaster);
+                } else if (auraType == 46 || auraType == 91) {
+                    // OBS_MOD_POWER / PERIODIC_ENERGIZE: miscValue(powerType) + amount
+                    // Common in WotLK: Replenishment, Mana Spring Totem, Divine Plea, etc.
+                    if (packet.getSize() - packet.getReadPos() < 8) break;
+                    /*uint32_t powerType =*/ packet.readUInt32();
+                    uint32_t amount = packet.readUInt32();
+                    if ((isPlayerVictim || isPlayerCaster) && amount > 0)
+                        addCombatText(CombatTextEntry::ENERGIZE, static_cast<int32_t>(amount),
+                                      spellId, isPlayerCaster);
+                } else if (auraType == 98) {
+                    // PERIODIC_MANA_LEECH: miscValue(powerType) + amount + float multiplier
+                    if (packet.getSize() - packet.getReadPos() < 12) break;
+                    /*uint32_t powerType =*/ packet.readUInt32();
+                    uint32_t amount = packet.readUInt32();
+                    /*float multiplier =*/ packet.readUInt32();  // read as raw uint32 (float bits)
+                    // Show as periodic damage from victim's perspective (mana drained)
+                    if (isPlayerVictim && amount > 0)
+                        addCombatText(CombatTextEntry::PERIODIC_DAMAGE, static_cast<int32_t>(amount),
+                                      spellId, false);
                 } else {
                     // Unknown/untracked aura type — stop parsing this event safely
                     packet.setReadPos(packet.getSize());

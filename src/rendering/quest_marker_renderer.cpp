@@ -17,8 +17,9 @@ namespace wowee { namespace rendering {
 
 // Push constant layout matching quest_marker.vert.glsl / quest_marker.frag.glsl
 struct QuestMarkerPushConstants {
-    glm::mat4 model;  // 64 bytes, used by vertex shader
-    float alpha;       // 4 bytes, used by fragment shader
+    glm::mat4 model;   // 64 bytes, used by vertex shader
+    float alpha;        // 4 bytes, used by fragment shader
+    float grayscale;    // 4 bytes: 0=colour, 1=desaturated (trivial quests)
 };
 
 QuestMarkerRenderer::QuestMarkerRenderer() {
@@ -340,8 +341,9 @@ void QuestMarkerRenderer::loadTextures(pipeline::AssetManager* assetManager) {
     }
 }
 
-void QuestMarkerRenderer::setMarker(uint64_t guid, const glm::vec3& position, int markerType, float boundingHeight) {
-    markers_[guid] = {position, markerType, boundingHeight};
+void QuestMarkerRenderer::setMarker(uint64_t guid, const glm::vec3& position, int markerType,
+                                    float boundingHeight, float grayscale) {
+    markers_[guid] = {position, markerType, boundingHeight, grayscale};
 }
 
 void QuestMarkerRenderer::removeMarker(uint64_t guid) {
@@ -436,10 +438,11 @@ void QuestMarkerRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSe
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_,
             1, 1, &texDescSets_[marker.type], 0, nullptr);
 
-        // Push constants: model matrix + alpha
+        // Push constants: model matrix + alpha + grayscale tint
         QuestMarkerPushConstants push{};
         push.model = model;
         push.alpha = fadeAlpha;
+        push.grayscale = marker.grayscale;
 
         vkCmdPushConstants(cmd, pipelineLayout_,
             VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,

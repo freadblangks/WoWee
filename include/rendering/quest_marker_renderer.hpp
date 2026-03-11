@@ -35,8 +35,10 @@ public:
      * @param position World position (NPC base position)
      * @param markerType 0=available(!), 1=turnin(?), 2=incomplete(?)
      * @param boundingHeight NPC bounding height (optional, default 2.0f)
+     * @param grayscale 0 = full colour, 1 = desaturated grey (trivial/low-level quests)
      */
-    void setMarker(uint64_t guid, const glm::vec3& position, int markerType, float boundingHeight = 2.0f);
+    void setMarker(uint64_t guid, const glm::vec3& position, int markerType,
+                   float boundingHeight = 2.0f, float grayscale = 0.0f);
 
     /**
      * Remove a quest marker
@@ -61,6 +63,7 @@ private:
         glm::vec3 position;
         int type; // 0=available, 1=turnin, 2=incomplete
         float boundingHeight = 2.0f;
+        float grayscale = 0.0f; // 0 = colour, 1 = desaturated (trivial quests)
     };
 
     std::unordered_map<uint64_t, Marker> markers_;

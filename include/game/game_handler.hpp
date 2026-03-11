@@ -933,13 +933,38 @@ public:
     enum class TradeStatus : uint8_t {
         None = 0, PendingIncoming, Open, Accepted, Complete
     };
+
+    static constexpr int TRADE_SLOT_COUNT = 6;  // WoW has 6 normal trade slots + slot 6 for non-trade item
+
+    struct TradeSlot {
+        uint32_t itemId      = 0;
+        uint32_t displayId   = 0;
+        uint32_t stackCount  = 0;
+        uint64_t itemGuid    = 0;
+        uint8_t  bag         = 0xFF;   // 0xFF = not set
+        uint8_t  bagSlot     = 0xFF;
+        bool     occupied    = false;
+    };
+
     TradeStatus getTradeStatus() const { return tradeStatus_; }
     bool hasPendingTradeRequest() const { return tradeStatus_ == TradeStatus::PendingIncoming; }
+    bool isTradeOpen() const { return tradeStatus_ == TradeStatus::Open || tradeStatus_ == TradeStatus::Accepted; }
     const std::string& getTradePeerName() const { return tradePeerName_; }
+
+    // My trade slots (what I'm offering)
+    const std::array<TradeSlot, TRADE_SLOT_COUNT>& getMyTradeSlots() const { return myTradeSlots_; }
+    // Peer's trade slots (what they're offering)
+    const std::array<TradeSlot, TRADE_SLOT_COUNT>& getPeerTradeSlots() const { return peerTradeSlots_; }
+    uint64_t getMyTradeGold() const { return myTradeGold_; }
+    uint64_t getPeerTradeGold() const { return peerTradeGold_; }
+
     void acceptTradeRequest();   // respond to incoming SMSG_TRADE_STATUS(1) with CMSG_BEGIN_TRADE
     void declineTradeRequest();  // respond with CMSG_CANCEL_TRADE
     void acceptTrade();          // lock in offer: CMSG_ACCEPT_TRADE
     void cancelTrade();          // CMSG_CANCEL_TRADE
+    void setTradeItem(uint8_t tradeSlot, uint8_t bag, uint8_t bagSlot);
+    void clearTradeItem(uint8_t tradeSlot);
+    void setTradeGold(uint64_t copper);
 
     // ---- Duel ----
     bool hasPendingDuelRequest() const { return pendingDuelRequest_; }
@@ -1653,6 +1678,8 @@ private:
     void handleQuestConfirmAccept(network::Packet& packet);
     void handleSummonRequest(network::Packet& packet);
     void handleTradeStatus(network::Packet& packet);
+    void handleTradeStatusExtended(network::Packet& packet);
+    void resetTradeState();
     void handleDuelRequested(network::Packet& packet);
     void handleDuelComplete(network::Packet& packet);
     void handleDuelWinner(network::Packet& packet);
@@ -2077,6 +2104,10 @@ private:
     TradeStatus tradeStatus_  = TradeStatus::None;
     uint64_t    tradePeerGuid_= 0;
     std::string tradePeerName_;
+    std::array<TradeSlot, TRADE_SLOT_COUNT> myTradeSlots_{};
+    std::array<TradeSlot, TRADE_SLOT_COUNT> peerTradeSlots_{};
+    uint64_t myTradeGold_   = 0;
+    uint64_t peerTradeGold_ = 0;
 
     // Duel state
     bool pendingDuelRequest_    = false;

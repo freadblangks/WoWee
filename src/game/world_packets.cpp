@@ -2177,6 +2177,35 @@ network::Packet AcceptTradePacket::build() {
     return packet;
 }
 
+network::Packet SetTradeItemPacket::build(uint8_t tradeSlot, uint8_t bag, uint8_t bagSlot) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_SET_TRADE_ITEM));
+    packet.writeUInt8(tradeSlot);
+    packet.writeUInt8(bag);
+    packet.writeUInt8(bagSlot);
+    LOG_DEBUG("Built CMSG_SET_TRADE_ITEM slot=", (int)tradeSlot, " bag=", (int)bag, " bagSlot=", (int)bagSlot);
+    return packet;
+}
+
+network::Packet ClearTradeItemPacket::build(uint8_t tradeSlot) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_CLEAR_TRADE_ITEM));
+    packet.writeUInt8(tradeSlot);
+    LOG_DEBUG("Built CMSG_CLEAR_TRADE_ITEM slot=", (int)tradeSlot);
+    return packet;
+}
+
+network::Packet SetTradeGoldPacket::build(uint64_t copper) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_SET_TRADE_GOLD));
+    packet.writeUInt64(copper);
+    LOG_DEBUG("Built CMSG_SET_TRADE_GOLD copper=", copper);
+    return packet;
+}
+
+network::Packet UnacceptTradePacket::build() {
+    network::Packet packet(wireOpcode(Opcode::CMSG_UNACCEPT_TRADE));
+    LOG_DEBUG("Built CMSG_UNACCEPT_TRADE");
+    return packet;
+}
+
 network::Packet InitiateTradePacket::build(uint64_t targetGuid) {
     network::Packet packet(wireOpcode(Opcode::CMSG_INITIATE_TRADE));
     packet.writeUInt64(targetGuid);

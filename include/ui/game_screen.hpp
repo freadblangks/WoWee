@@ -224,6 +224,7 @@ private:
     void renderDuelRequestPopup(game::GameHandler& gameHandler);
     void renderLootRollPopup(game::GameHandler& gameHandler);
     void renderTradeRequestPopup(game::GameHandler& gameHandler);
+    void renderTradeWindow(game::GameHandler& gameHandler);
     void renderSummonRequestPopup(game::GameHandler& gameHandler);
     void renderSharedQuestPopup(game::GameHandler& gameHandler);
     void renderItemTextWindow(game::GameHandler& gameHandler);

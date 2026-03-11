@@ -1356,6 +1356,33 @@ public:
     static network::Packet build();
 };
 
+/** CMSG_SET_TRADE_ITEM packet builder (tradeSlot, bag, bagSlot) */
+class SetTradeItemPacket {
+public:
+    // tradeSlot: 0-5 (normal) or 6 (backpack money-only slot)
+    // bag: 255 = main backpack, 19-22 = bag slots
+    // bagSlot: slot within bag
+    static network::Packet build(uint8_t tradeSlot, uint8_t bag, uint8_t bagSlot);
+};
+
+/** CMSG_CLEAR_TRADE_ITEM packet builder (remove item from trade slot) */
+class ClearTradeItemPacket {
+public:
+    static network::Packet build(uint8_t tradeSlot);
+};
+
+/** CMSG_SET_TRADE_GOLD packet builder (gold offered, in copper) */
+class SetTradeGoldPacket {
+public:
+    static network::Packet build(uint64_t copper);
+};
+
+/** CMSG_UNACCEPT_TRADE packet builder (unaccept without cancelling) */
+class UnacceptTradePacket {
+public:
+    static network::Packet build();
+};
+
 /** CMSG_ATTACKSWING packet builder */
 class AttackSwingPacket {
 public:

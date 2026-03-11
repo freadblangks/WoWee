@@ -414,6 +414,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderDuelRequestPopup(gameHandler);
     renderLootRollPopup(gameHandler);
     renderTradeRequestPopup(gameHandler);
+    renderTradeWindow(gameHandler);
     renderSummonRequestPopup(gameHandler);
     renderSharedQuestPopup(gameHandler);
     renderItemTextWindow(gameHandler);
@@ -5978,6 +5979,150 @@ void GameScreen::renderTradeRequestPopup(game::GameHandler& gameHandler) {
         }
     }
     ImGui::End();
+}
+
+void GameScreen::renderTradeWindow(game::GameHandler& gameHandler) {
+    if (!gameHandler.isTradeOpen()) return;
+
+    const auto& mySlots   = gameHandler.getMyTradeSlots();
+    const auto& peerSlots = gameHandler.getPeerTradeSlots();
+    const uint64_t myGold   = gameHandler.getMyTradeGold();
+    const uint64_t peerGold = gameHandler.getPeerTradeGold();
+    const auto& peerName = gameHandler.getTradePeerName();
+
+    auto* window = core::Application::getInstance().getWindow();
+    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
+    float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
+
+    ImGui::SetNextWindowPos(ImVec2(screenW / 2.0f - 240.0f, screenH / 2.0f - 180.0f), ImGuiCond_Once);
+    ImGui::SetNextWindowSize(ImVec2(480.0f, 360.0f), ImGuiCond_Once);
+
+    bool open = true;
+    if (ImGui::Begin(("Trade with " + peerName).c_str(), &open,
+                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+
+        auto formatGold = [](uint64_t copper, char* buf, size_t bufsz) {
+            uint64_t g = copper / 10000;
+            uint64_t s = (copper % 10000) / 100;
+            uint64_t c = copper % 100;
+            if (g > 0) std::snprintf(buf, bufsz, "%llug %llus %lluc",
+                                     (unsigned long long)g, (unsigned long long)s, (unsigned long long)c);
+            else if (s > 0) std::snprintf(buf, bufsz, "%llus %lluc",
+                                          (unsigned long long)s, (unsigned long long)c);
+            else std::snprintf(buf, bufsz, "%lluc", (unsigned long long)c);
+        };
+
+        auto renderSlotColumn = [&](const char* label,
+                                    const std::array<game::GameHandler::TradeSlot,
+                                                     game::GameHandler::TRADE_SLOT_COUNT>& slots,
+                                    uint64_t gold, bool isMine) {
+            ImGui::Text("%s", label);
+            ImGui::Separator();
+
+            for (int i = 0; i < game::GameHandler::TRADE_SLOT_COUNT; ++i) {
+                const auto& slot = slots[i];
+                ImGui::PushID(i * (isMine ? 1 : -1) - (isMine ? 0 : 100));
+
+                if (slot.occupied && slot.itemId != 0) {
+                    const auto* info = gameHandler.getItemInfo(slot.itemId);
+                    std::string name = (info && info->valid && !info->name.empty())
+                        ? info->name
+                        : ("Item " + std::to_string(slot.itemId));
+                    if (slot.stackCount > 1)
+                        name += " x" + std::to_string(slot.stackCount);
+                    ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.5f, 1.0f), "  %d. %s", i + 1, name.c_str());
+
+                    if (isMine && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                        gameHandler.clearTradeItem(static_cast<uint8_t>(i));
+                    }
+                    if (isMine && ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Double-click to remove");
+                    }
+                } else {
+                    ImGui::TextDisabled("  %d. (empty)", i + 1);
+
+                    // Allow dragging inventory items into trade slots via right-click context menu
+                    if (isMine && ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                        ImGui::OpenPopup(("##additem" + std::to_string(i)).c_str());
+                    }
+                }
+
+                if (isMine) {
+                    // Drag-from-inventory: show small popup listing bag items
+                    if (ImGui::BeginPopup(("##additem" + std::to_string(i)).c_str())) {
+                        ImGui::TextDisabled("Add from inventory:");
+                        const auto& inv = gameHandler.getInventory();
+                        // Backpack slots 0-15 (bag=255)
+                        for (int si = 0; si < game::Inventory::BACKPACK_SLOTS; ++si) {
+                            const auto& slot = inv.getBackpackSlot(si);
+                            if (slot.empty()) continue;
+                            const auto* ii = gameHandler.getItemInfo(slot.item.itemId);
+                            std::string iname = (ii && ii->valid && !ii->name.empty())
+                                ? ii->name
+                                : (!slot.item.name.empty() ? slot.item.name
+                                   : ("Item " + std::to_string(slot.item.itemId)));
+                            if (ImGui::Selectable(iname.c_str())) {
+                                // bag=255 = main backpack
+                                gameHandler.setTradeItem(static_cast<uint8_t>(i), 255u,
+                                                         static_cast<uint8_t>(si));
+                                ImGui::CloseCurrentPopup();
+                            }
+                        }
+                        ImGui::EndPopup();
+                    }
+                }
+                ImGui::PopID();
+            }
+
+            // Gold row
+            char gbuf[48];
+            formatGold(gold, gbuf, sizeof(gbuf));
+            ImGui::Spacing();
+            if (isMine) {
+                ImGui::Text("Gold offered: %s", gbuf);
+                static char goldInput[32] = "0";
+                ImGui::SetNextItemWidth(120.0f);
+                if (ImGui::InputText("##goldset", goldInput, sizeof(goldInput),
+                                     ImGuiInputTextFlags_CharsDecimal | ImGuiInputTextFlags_EnterReturnsTrue)) {
+                    uint64_t copper = std::strtoull(goldInput, nullptr, 10);
+                    gameHandler.setTradeGold(copper);
+                }
+                ImGui::SameLine();
+                ImGui::TextDisabled("(copper, Enter to set)");
+            } else {
+                ImGui::Text("Gold offered: %s", gbuf);
+            }
+        };
+
+        // Two-column layout: my offer | peer offer
+        float colW = ImGui::GetContentRegionAvail().x * 0.5f - 4.0f;
+        ImGui::BeginChild("##myoffer", ImVec2(colW, 240.0f), true);
+        renderSlotColumn("Your offer", mySlots, myGold, true);
+        ImGui::EndChild();
+
+        ImGui::SameLine();
+
+        ImGui::BeginChild("##peroffer", ImVec2(colW, 240.0f), true);
+        renderSlotColumn((peerName + "'s offer").c_str(), peerSlots, peerGold, false);
+        ImGui::EndChild();
+
+        // Buttons
+        ImGui::Spacing();
+        ImGui::Separator();
+        float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+        if (ImGui::Button("Accept Trade", ImVec2(bw, 0))) {
+            gameHandler.acceptTrade();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(bw, 0))) {
+            gameHandler.cancelTrade();
+        }
+    }
+    ImGui::End();
+
+    if (!open) {
+        gameHandler.cancelTrade();
+    }
 }
 
 void GameScreen::renderLootRollPopup(game::GameHandler& gameHandler) {

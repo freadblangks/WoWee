@@ -3102,8 +3102,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
             addSystemChatMessage("Summon cancelled.");
             break;
         case Opcode::SMSG_TRADE_STATUS:
-        case Opcode::SMSG_TRADE_STATUS_EXTENDED:
             handleTradeStatus(packet);
+            break;
+        case Opcode::SMSG_TRADE_STATUS_EXTENDED:
+            handleTradeStatusExtended(packet);
             break;
         case Opcode::SMSG_LOOT_ROLL:
             handleLootRoll(packet);
@@ -19047,13 +19049,17 @@ void GameHandler::handleTradeStatus(network::Packet& packet) {
             break;
         }
         case 2: // OPEN_WINDOW
+            myTradeSlots_.fill(TradeSlot{});
+            peerTradeSlots_.fill(TradeSlot{});
+            myTradeGold_   = 0;
+            peerTradeGold_ = 0;
             tradeStatus_ = TradeStatus::Open;
             addSystemChatMessage("Trade window opened.");
             break;
         case 3: // CANCELLED
         case 9: // REJECTED
         case 12: // CLOSE_WINDOW
-            tradeStatus_ = TradeStatus::None;
+            resetTradeState();
             addSystemChatMessage("Trade cancelled.");
             break;
         case 4: // ACCEPTED (partner accepted)
@@ -19061,9 +19067,8 @@ void GameHandler::handleTradeStatus(network::Packet& packet) {
             addSystemChatMessage("Trade accepted. Awaiting other player...");
             break;
         case 8: // COMPLETE
-            tradeStatus_ = TradeStatus::Complete;
             addSystemChatMessage("Trade complete!");
-            tradeStatus_ = TradeStatus::None;  // reset after notification
+            resetTradeState();
             break;
         case 7: // BACK_TO_TRADE (unaccepted after a change)
             tradeStatus_ = TradeStatus::Open;
@@ -19102,8 +19107,102 @@ void GameHandler::acceptTrade() {
 
 void GameHandler::cancelTrade() {
     if (!socket) return;
-    tradeStatus_ = TradeStatus::None;
+    resetTradeState();
     socket->send(CancelTradePacket::build());
+}
+
+void GameHandler::setTradeItem(uint8_t tradeSlot, uint8_t bag, uint8_t bagSlot) {
+    if (!isTradeOpen() || !socket || tradeSlot >= TRADE_SLOT_COUNT) return;
+    socket->send(SetTradeItemPacket::build(tradeSlot, bag, bagSlot));
+}
+
+void GameHandler::clearTradeItem(uint8_t tradeSlot) {
+    if (!isTradeOpen() || !socket || tradeSlot >= TRADE_SLOT_COUNT) return;
+    myTradeSlots_[tradeSlot] = TradeSlot{};
+    socket->send(ClearTradeItemPacket::build(tradeSlot));
+}
+
+void GameHandler::setTradeGold(uint64_t copper) {
+    if (!isTradeOpen() || !socket) return;
+    myTradeGold_ = copper;
+    socket->send(SetTradeGoldPacket::build(copper));
+}
+
+void GameHandler::resetTradeState() {
+    tradeStatus_   = TradeStatus::None;
+    myTradeGold_   = 0;
+    peerTradeGold_ = 0;
+    myTradeSlots_.fill(TradeSlot{});
+    peerTradeSlots_.fill(TradeSlot{});
+}
+
+void GameHandler::handleTradeStatusExtended(network::Packet& packet) {
+    // WotLK 3.3.5a SMSG_TRADE_STATUS_EXTENDED format:
+    // uint8  isSelfState (1 = my trade window, 0 = peer's)
+    // uint32 tradeId
+    // uint32 slotCount  (7: 6 normal + 1 extra for enchanting)
+    // Per slot (up to slotCount):
+    //   uint8  slotIndex
+    //   uint32 itemId
+    //   uint32 displayId
+    //   uint32 stackCount
+    //   uint8  isWrapped
+    //   uint64 giftCreatorGuid
+    //   uint32 enchantId  (and several more enchant/stat fields)
+    //   ... (complex; we parse only the essential fields)
+    // uint64 coins (gold offered by the sender of this message)
+
+    size_t rem = packet.getSize() - packet.getReadPos();
+    if (rem < 9) return;
+
+    uint8_t  isSelf   = packet.readUInt8();
+    uint32_t tradeId  = packet.readUInt32();  (void)tradeId;
+    uint32_t slotCount= packet.readUInt32();
+
+    auto& slots = isSelf ? myTradeSlots_ : peerTradeSlots_;
+
+    for (uint32_t i = 0; i < slotCount && (packet.getSize() - packet.getReadPos()) >= 14; ++i) {
+        uint8_t  slotIdx    = packet.readUInt8();
+        uint32_t itemId     = packet.readUInt32();
+        uint32_t displayId  = packet.readUInt32();
+        uint32_t stackCount = packet.readUInt32();
+
+        // isWrapped + giftCreatorGuid + several enchant fields — skip them all
+        // We need at least 1+8+4*5 = 29 bytes for the rest of this slot entry
+        bool isWrapped = false;
+        if (packet.getSize() - packet.getReadPos() >= 1) {
+            isWrapped = (packet.readUInt8() != 0);
+        }
+        // Skip giftCreatorGuid (8) + enchantId*5 (20) + suffixFactor (4) + randPropId (4) + lockId (4)
+        // + maxDurability (4) + durability (4) = 49 bytes
+        // Plus if wrapped: giftCreatorGuid already consumed; additional guid = 0
+        constexpr size_t SLOT_TRAIL = 49;
+        if (packet.getSize() - packet.getReadPos() >= SLOT_TRAIL) {
+            packet.setReadPos(packet.getReadPos() + SLOT_TRAIL);
+        } else {
+            packet.setReadPos(packet.getSize());
+            return;
+        }
+        (void)isWrapped;
+
+        if (slotIdx < TRADE_SLOT_COUNT) {
+            TradeSlot& s = slots[slotIdx];
+            s.itemId     = itemId;
+            s.displayId  = displayId;
+            s.stackCount = stackCount;
+            s.occupied   = (itemId != 0);
+        }
+    }
+
+    // Gold offered (uint64 copper)
+    if (packet.getSize() - packet.getReadPos() >= 8) {
+        uint64_t coins = packet.readUInt64();
+        if (isSelf) myTradeGold_   = coins;
+        else        peerTradeGold_ = coins;
+    }
+
+    LOG_DEBUG("SMSG_TRADE_STATUS_EXTENDED: isSelf=", (int)isSelf,
+              " myGold=", myTradeGold_, " peerGold=", peerTradeGold_);
 }
 
 // ---------------------------------------------------------------------------

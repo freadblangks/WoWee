@@ -14922,6 +14922,23 @@ void GameHandler::handleQuestPoiQueryResponse(network::Packet& packet) {
         if (packet.getSize() - packet.getReadPos() < 8) return;
         const uint32_t questId  = packet.readUInt32();
         const uint32_t poiCount = packet.readUInt32();
+
+        // Remove any previously added POI markers for this quest to avoid duplicates
+        // on repeated queries (e.g. zone change or force-refresh).
+        gossipPois_.erase(
+            std::remove_if(gossipPois_.begin(), gossipPois_.end(),
+                [questId, this](const GossipPoi& p) {
+                    // Match by questId embedded in data field (set below).
+                    return p.data == questId;
+                }),
+            gossipPois_.end());
+
+        // Find the quest title for the marker label.
+        std::string questTitle;
+        for (const auto& q : questLog_) {
+            if (q.questId == questId) { questTitle = q.title; break; }
+        }
+
         for (uint32_t pi = 0; pi < poiCount; ++pi) {
             if (packet.getSize() - packet.getReadPos() < 28) return;
             packet.readUInt32();  // poiId
@@ -14942,23 +14959,18 @@ void GameHandler::handleQuestPoiQueryResponse(network::Packet& packet) {
                 sumX += static_cast<float>(px);
                 sumY += static_cast<float>(py);
             }
-            // POI points in WotLK are zone-level coordinates.
             // Skip POIs for maps other than the player's current map.
             if (mapId != currentMapId_) continue;
-            // Find the quest title for the marker label.
-            std::string questTitle;
-            for (const auto& q : questLog_) {
-                if (q.questId == questId) { questTitle = q.title; break; }
-            }
-            // Add as a GossipPoi so the existing minimap code displays it.
+            // Add as a GossipPoi; use data field to carry questId for later dedup.
             GossipPoi poi;
-            poi.x    = sumX / static_cast<float>(pointCount);  // WoW canonical X (north)
-            poi.y    = sumY / static_cast<float>(pointCount);  // WoW canonical Y (west)
-            poi.icon = 6;  // generic POI icon
+            poi.x    = sumX / static_cast<float>(pointCount);  // WoW canonical X
+            poi.y    = sumY / static_cast<float>(pointCount);  // WoW canonical Y
+            poi.icon = 6;  // generic quest POI icon
+            poi.data = questId;  // used for dedup on subsequent queries
             poi.name = questTitle.empty() ? "Quest objective" : questTitle;
-            gossipPois_.push_back(std::move(poi));
             LOG_DEBUG("Quest POI: questId=", questId, " mapId=", mapId,
                       " centroid=(", poi.x, ",", poi.y, ") title=", poi.name);
+            gossipPois_.push_back(std::move(poi));
         }
     }
 }

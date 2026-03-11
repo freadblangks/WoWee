@@ -29,23 +29,6 @@ namespace wowee {
 namespace rendering {
 
 namespace {
-size_t envSizeMBOrDefault(const char* name, size_t defMb) {
-    const char* raw = std::getenv(name);
-    if (!raw || !*raw) return defMb;
-    char* end = nullptr;
-    unsigned long long mb = std::strtoull(raw, &end, 10);
-    if (end == raw || mb == 0) return defMb;
-    return static_cast<size_t>(mb);
-}
-
-size_t envSizeOrDefault(const char* name, size_t defValue) {
-    const char* raw = std::getenv(name);
-    if (!raw || !*raw) return defValue;
-    char* end = nullptr;
-    unsigned long long v = std::strtoull(raw, &end, 10);
-    if (end == raw || v == 0) return defValue;
-    return static_cast<size_t>(v);
-}
 } // namespace
 
 // Thread-local scratch buffers for collision queries (allows concurrent getFloorHeight/checkWallCollision calls)

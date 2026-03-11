@@ -46,25 +46,6 @@ namespace wowee {
 namespace rendering {
 
 namespace {
-size_t envSizeMBOrDefault(const char* name, size_t defMb) {
-    const char* v = std::getenv(name);
-    if (!v || !*v) return defMb;
-    char* end = nullptr;
-    unsigned long long mb = std::strtoull(v, &end, 10);
-    if (end == v || mb == 0) return defMb;
-    if (mb > (std::numeric_limits<size_t>::max() / (1024ull * 1024ull))) return defMb;
-    return static_cast<size_t>(mb);
-}
-
-size_t envSizeOrDefault(const char* name, size_t defValue) {
-    const char* v = std::getenv(name);
-    if (!v || !*v) return defValue;
-    char* end = nullptr;
-    unsigned long long n = std::strtoull(v, &end, 10);
-    if (end == v || n == 0) return defValue;
-    return static_cast<size_t>(n);
-}
-
 size_t approxTextureBytesWithMips(int w, int h) {
     if (w <= 0 || h <= 0) return 0;
     size_t base = static_cast<size_t>(w) * static_cast<size_t>(h) * 4ull;

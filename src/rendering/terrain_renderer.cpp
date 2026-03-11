@@ -20,17 +20,6 @@
 namespace wowee {
 namespace rendering {
 
-namespace {
-size_t envSizeMBOrDefault(const char* name, size_t defMb) {
-    const char* raw = std::getenv(name);
-    if (!raw || !*raw) return defMb;
-    char* end = nullptr;
-    unsigned long long mb = std::strtoull(raw, &end, 10);
-    if (end == raw || mb == 0) return defMb;
-    return static_cast<size_t>(mb);
-}
-} // namespace
-
 // Matches set 1 binding 7 in terrain.frag.glsl
 struct TerrainParamsUBO {
     int32_t layerCount;

@@ -40,24 +40,6 @@ bool envFlagEnabled(const char* key, bool defaultValue) {
     return !(v == "0" || v == "false" || v == "off" || v == "no");
 }
 
-size_t envSizeMBOrDefault(const char* name, size_t defMb) {
-    const char* raw = std::getenv(name);
-    if (!raw || !*raw) return defMb;
-    char* end = nullptr;
-    unsigned long long mb = std::strtoull(raw, &end, 10);
-    if (end == raw || mb == 0) return defMb;
-    return static_cast<size_t>(mb);
-}
-
-size_t envSizeOrDefault(const char* name, size_t defValue) {
-    const char* raw = std::getenv(name);
-    if (!raw || !*raw) return defValue;
-    char* end = nullptr;
-    unsigned long long v = std::strtoull(raw, &end, 10);
-    if (end == raw || v == 0) return defValue;
-    return static_cast<size_t>(v);
-}
-
 static constexpr uint32_t kParticleFlagRandomized = 0x40;
 static constexpr uint32_t kParticleFlagTiled = 0x80;
 

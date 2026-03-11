@@ -13982,7 +13982,11 @@ void GameHandler::handleSpellCooldown(network::Packet& packet) {
 }
 
 void GameHandler::handleCooldownEvent(network::Packet& packet) {
+    if (packet.getSize() - packet.getReadPos() < 4) return;
     uint32_t spellId = packet.readUInt32();
+    // WotLK appends the target unit guid (8 bytes) — skip it
+    if (packet.getSize() - packet.getReadPos() >= 8)
+        packet.readUInt64();
     // Cooldown finished
     spellCooldowns.erase(spellId);
     for (auto& slot : actionBar) {

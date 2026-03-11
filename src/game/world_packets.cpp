@@ -2336,6 +2336,12 @@ network::Packet GameObjectQueryPacket::build(uint32_t entry, uint64_t guid) {
 }
 
 bool GameObjectQueryResponseParser::parse(network::Packet& packet, GameObjectQueryResponseData& data) {
+    // Validate minimum packet size: entry(4)
+    if (packet.getSize() < 4) {
+        LOG_ERROR("SMSG_GAMEOBJECT_QUERY_RESPONSE: packet too small (", packet.getSize(), " bytes)");
+        return false;
+    }
+
     data.entry = packet.readUInt32();
 
     // High bit set means gameobject not found
@@ -2344,6 +2350,12 @@ bool GameObjectQueryResponseParser::parse(network::Packet& packet, GameObjectQue
         LOG_DEBUG("GameObject query: entry ", data.entry, " not found");
         data.name = "";
         return true;
+    }
+
+    // Validate minimum size for fixed fields: type(4) + displayId(4)
+    if (packet.getSize() - packet.getReadPos() < 8) {
+        LOG_ERROR("SMSG_GAMEOBJECT_QUERY_RESPONSE: truncated before names (entry=", data.entry, ")");
+        return false;
     }
 
     data.type = packet.readUInt32();       // GameObjectType
@@ -2367,6 +2379,16 @@ bool GameObjectQueryResponseParser::parse(network::Packet& packet, GameObjectQue
             data.data[i] = packet.readUInt32();
         }
         data.hasData = true;
+    } else if (remaining > 0) {
+        // Partial data field; read what we can
+        uint32_t fieldsToRead = remaining / 4;
+        for (uint32_t i = 0; i < fieldsToRead && i < 24; i++) {
+            data.data[i] = packet.readUInt32();
+        }
+        if (fieldsToRead < 24) {
+            LOG_WARNING("SMSG_GAMEOBJECT_QUERY_RESPONSE: truncated in data fields (", fieldsToRead,
+                        " of 24 read, entry=", data.entry, ")");
+        }
     }
 
     LOG_DEBUG("GameObject query response: ", data.name, " (type=", data.type, " entry=", data.entry, ")");

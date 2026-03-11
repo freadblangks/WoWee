@@ -5020,25 +5020,61 @@ bool GuildBankListParser::parse(network::Packet& packet, GuildBankData& data) {
     uint8_t fullUpdate = packet.readUInt8();
 
     if (fullUpdate) {
-        uint8_t tabCount = packet.readUInt8();
-        data.tabs.resize(tabCount);
-        for (uint8_t i = 0; i < tabCount; ++i) {
-            data.tabs[i].tabName = packet.readString();
-            data.tabs[i].tabIcon = packet.readString();
+        if (packet.getReadPos() + 1 > packet.getSize()) {
+            LOG_WARNING("GuildBankListParser: truncated before tabCount");
+            data.tabs.clear();
+        } else {
+            uint8_t tabCount = packet.readUInt8();
+            // Cap at 8 (normal guild bank tab limit in WoW)
+            if (tabCount > 8) {
+                LOG_WARNING("GuildBankListParser: tabCount capped (requested=", (int)tabCount, ")");
+                tabCount = 8;
+            }
+            data.tabs.resize(tabCount);
+            for (uint8_t i = 0; i < tabCount; ++i) {
+                // Validate before reading strings
+                if (packet.getReadPos() >= packet.getSize()) {
+                    LOG_WARNING("GuildBankListParser: truncated tab at index ", (int)i);
+                    break;
+                }
+                data.tabs[i].tabName = packet.readString();
+                if (packet.getReadPos() >= packet.getSize()) {
+                    data.tabs[i].tabIcon.clear();
+                } else {
+                    data.tabs[i].tabIcon = packet.readString();
+                }
+            }
         }
+    }
+
+    if (packet.getReadPos() + 1 > packet.getSize()) {
+        LOG_WARNING("GuildBankListParser: truncated before numSlots");
+        data.tabItems.clear();
+        return true;
     }
 
     uint8_t numSlots = packet.readUInt8();
     data.tabItems.clear();
     for (uint8_t i = 0; i < numSlots; ++i) {
+        // Validate minimum bytes before reading slot (slotId(1) + itemEntry(4) = 5)
+        if (packet.getReadPos() + 5 > packet.getSize()) {
+            LOG_WARNING("GuildBankListParser: truncated slot at index ", (int)i);
+            break;
+        }
         GuildBankItemSlot slot;
         slot.slotId = packet.readUInt8();
         slot.itemEntry = packet.readUInt32();
         if (slot.itemEntry != 0) {
+            // Validate before reading enchant mask
+            if (packet.getReadPos() + 4 > packet.getSize()) break;
             // Enchant info
             uint32_t enchantMask = packet.readUInt32();
             for (int bit = 0; bit < 10; ++bit) {
                 if (enchantMask & (1u << bit)) {
+                    if (packet.getReadPos() + 12 > packet.getSize()) {
+                        LOG_WARNING("GuildBankListParser: truncated enchant data");
+                        break;
+                    }
                     uint32_t enchId = packet.readUInt32();
                     uint32_t enchDur = packet.readUInt32();
                     uint32_t enchCharges = packet.readUInt32();
@@ -5046,10 +5082,19 @@ bool GuildBankListParser::parse(network::Packet& packet, GuildBankData& data) {
                     (void)enchDur; (void)enchCharges;
                 }
             }
+            // Validate before reading remaining item fields
+            if (packet.getReadPos() + 12 > packet.getSize()) {
+                LOG_WARNING("GuildBankListParser: truncated item fields");
+                break;
+            }
             slot.stackCount = packet.readUInt32();
             /*spare=*/ packet.readUInt32();
             slot.randomPropertyId = packet.readUInt32();
             if (slot.randomPropertyId) {
+                if (packet.getReadPos() + 4 > packet.getSize()) {
+                    LOG_WARNING("GuildBankListParser: truncated suffix factor");
+                    break;
+                }
                 /*suffixFactor=*/ packet.readUInt32();
             }
         }

@@ -44,6 +44,11 @@ public:
     // Spell name lookup — triggers DBC load if needed, used by action bar tooltips
     std::string lookupSpellName(uint32_t spellId, pipeline::AssetManager* assetManager);
 
+    // Rich tooltip — renders a full spell tooltip (inside an already-open BeginTooltip block).
+    // Triggers DBC load if needed. Returns true if spell data was found.
+    bool renderSpellInfoTooltip(uint32_t spellId, game::GameHandler& gameHandler,
+                                pipeline::AssetManager* assetManager);
+
     // Drag-and-drop state for action bar assignment
     bool isDraggingSpell() const { return draggingSpell_; }
     uint32_t getDragSpellId() const { return dragSpellId_; }

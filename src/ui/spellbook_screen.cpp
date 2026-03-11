@@ -184,6 +184,15 @@ void SpellbookScreen::loadSpellDBC(pipeline::AssetManager* assetManager) {
     dbcLoaded = !spellData.empty();
 }
 
+bool SpellbookScreen::renderSpellInfoTooltip(uint32_t spellId, game::GameHandler& gameHandler,
+                                              pipeline::AssetManager* assetManager) {
+    if (!dbcLoadAttempted) loadSpellDBC(assetManager);
+    const SpellInfo* info = getSpellInfo(spellId);
+    if (!info) return false;
+    renderSpellTooltip(info, gameHandler);
+    return true;
+}
+
 std::string SpellbookScreen::lookupSpellName(uint32_t spellId, pipeline::AssetManager* assetManager) {
     if (!dbcLoadAttempted) {
         loadSpellDBC(assetManager);

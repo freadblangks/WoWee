@@ -4141,9 +4141,15 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
 
         // Tooltip
         if (ImGui::IsItemHovered() && !slot.isEmpty() && slot.id != 0) {
-            ImGui::BeginTooltip();
             if (slot.type == game::ActionBarSlot::SPELL) {
-                ImGui::Text("%s", getSpellName(slot.id).c_str());
+                // Use the spellbook's rich tooltip (school, cost, cast time, range, description).
+                // Falls back to the simple name if DBC data isn't loaded yet.
+                ImGui::BeginTooltip();
+                bool richOk = spellbookScreen.renderSpellInfoTooltip(slot.id, gameHandler, assetMgr);
+                if (!richOk) {
+                    ImGui::Text("%s", getSpellName(slot.id).c_str());
+                }
+                // Hearthstone: add location note after the spell tooltip body
                 if (slot.id == 8690) {
                     uint32_t mapId = 0; glm::vec3 pos;
                     if (gameHandler.getHomeBind(mapId, pos)) {
@@ -4156,25 +4162,34 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
                         }
                         ImGui::TextColored(ImVec4(0.8f, 0.9f, 1.0f, 1.0f), "Home: %s", mapName);
                     }
-                    ImGui::TextDisabled("Use: Teleport home");
                 }
+                if (onCooldown) {
+                    float cd = slot.cooldownRemaining;
+                    if (cd >= 60.0f)
+                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
+                            "Cooldown: %d min %d sec", (int)cd/60, (int)cd%60);
+                    else
+                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Cooldown: %.1f sec", cd);
+                }
+                ImGui::EndTooltip();
             } else if (slot.type == game::ActionBarSlot::ITEM) {
+                ImGui::BeginTooltip();
                 if (barItemDef && !barItemDef->name.empty())
                     ImGui::Text("%s", barItemDef->name.c_str());
                 else if (!itemNameFromQuery.empty())
                     ImGui::Text("%s", itemNameFromQuery.c_str());
                 else
                     ImGui::Text("Item #%u", slot.id);
+                if (onCooldown) {
+                    float cd = slot.cooldownRemaining;
+                    if (cd >= 60.0f)
+                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
+                            "Cooldown: %d min %d sec", (int)cd/60, (int)cd%60);
+                    else
+                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Cooldown: %.1f sec", cd);
+                }
+                ImGui::EndTooltip();
             }
-            if (onCooldown) {
-                float cd = slot.cooldownRemaining;
-                if (cd >= 60.0f)
-                    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
-                        "Cooldown: %d min %d sec", (int)cd/60, (int)cd%60);
-                else
-                    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Cooldown: %.1f sec", cd);
-            }
-            ImGui::EndTooltip();
         }
 
         // Cooldown overlay: WoW-style clock-sweep + time text

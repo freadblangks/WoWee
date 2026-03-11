@@ -23,6 +23,7 @@
 #include "rendering/vk_utils.hpp"
 #include "rendering/vk_frame_data.hpp"
 #include "rendering/camera.hpp"
+#include "rendering/frustum.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/blp_loader.hpp"
 #include "core/logger.hpp"
@@ -1961,16 +1962,18 @@ void CharacterRenderer::prepareRender(uint32_t frameIndex) {
     }
 }
 
-void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, [[maybe_unused]] const Camera& camera) {
+void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera) {
     if (instances.empty() || !opaquePipeline_) {
         return;
     }
     const float renderRadius = static_cast<float>(envSizeOrDefault("WOWEE_CHAR_RENDER_RADIUS", 130));
     const float renderRadiusSq = renderRadius * renderRadius;
-    const float nearNoConeCullSq = 16.0f * 16.0f;
-    const float backfaceDotCull = -0.30f;
+    const float characterCullRadius = 2.0f;  // Estimate character radius for frustum testing
     const glm::vec3 camPos = camera.getPosition();
-    const glm::vec3 camForward = camera.getForward();
+
+    // Extract frustum planes for per-instance visibility testing
+    Frustum frustum;
+    frustum.extractFromMatrix(camera.getViewProjectionMatrix());
 
     uint32_t frameIndex = vkCtx_->getCurrentFrame();
     uint32_t frameSlot = frameIndex % 2u;
@@ -2001,22 +2004,17 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
 
         // Skip invisible instances (e.g., player in first-person mode)
         if (!instance.visible) continue;
-        // Character instance culling: avoid drawing far-away / strongly behind-camera
-        // actors in dense city scenes.
+
+        // Character instance culling: test both distance and frustum visibility
         if (!instance.hasOverrideModelMatrix) {
             glm::vec3 toInst = instance.position - camPos;
             float distSq = glm::dot(toInst, toInst);
+
+            // Distance cull: skip if beyond render radius
             if (distSq > renderRadiusSq) continue;
-            if (distSq > nearNoConeCullSq) {
-                // Backface cull without sqrt: dot(toInst, camFwd) / |toInst| < threshold
-                // ⟺ dot < 0 || dot² < threshold² * distSq  (when threshold < 0, dot must be negative)
-                float rawDot = glm::dot(toInst, camForward);
-                if (backfaceDotCull >= 0.0f) {
-                    if (rawDot < 0.0f || rawDot * rawDot < backfaceDotCull * backfaceDotCull * distSq) continue;
-                } else {
-                    if (rawDot < 0.0f && rawDot * rawDot > backfaceDotCull * backfaceDotCull * distSq) continue;
-                }
-            }
+
+            // Frustum cull: skip if outside view frustum
+            if (!frustum.intersectsSphere(instance.position, characterCullRadius)) continue;
         }
 
         if (!instance.cachedModel) continue;

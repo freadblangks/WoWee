@@ -189,6 +189,7 @@ private:
      * Render target frame
      */
     void renderTargetFrame(game::GameHandler& gameHandler);
+    void renderFocusFrame(game::GameHandler& gameHandler);
 
     /**
      * Render pet frame (below player frame when player has an active pet)

@@ -380,6 +380,11 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         renderTargetFrame(gameHandler);
     }
 
+    // Focus target frame (only when we have a focus)
+    if (gameHandler.hasFocus()) {
+        renderFocusFrame(gameHandler);
+    }
+
     // Render windows
     if (showPlayerInfo) {
         renderPlayerInfo(gameHandler);
@@ -2478,6 +2483,134 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
             }
         }
     }
+}
+
+void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
+    auto focus = gameHandler.getFocus();
+    if (!focus) return;
+
+    auto* window = core::Application::getInstance().getWindow();
+    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
+
+    // Position: right side of screen, mirroring the target frame on the opposite side
+    float frameW = 200.0f;
+    float frameX = screenW - frameW - 10.0f;
+
+    ImGui::SetNextWindowPos(ImVec2(frameX, 30.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(frameW, 0.0f), ImGuiCond_Always);
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                             ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
+                             ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_AlwaysAutoResize;
+
+    // Determine color based on relation (same logic as target frame)
+    ImVec4 focusColor(0.7f, 0.7f, 0.7f, 1.0f);
+    if (focus->getType() == game::ObjectType::PLAYER) {
+        focusColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f);
+    } else if (focus->getType() == game::ObjectType::UNIT) {
+        auto u = std::static_pointer_cast<game::Unit>(focus);
+        if (u->getHealth() == 0 && u->getMaxHealth() > 0) {
+            focusColor = ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
+        } else if (u->isHostile()) {
+            uint32_t playerLv = gameHandler.getPlayerLevel();
+            uint32_t mobLv = u->getLevel();
+            int32_t diff = static_cast<int32_t>(mobLv) - static_cast<int32_t>(playerLv);
+            if (game::GameHandler::killXp(playerLv, mobLv) == 0)
+                focusColor = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
+            else if (diff >= 10)
+                focusColor = ImVec4(1.0f, 0.1f, 0.1f, 1.0f);
+            else if (diff >= 5)
+                focusColor = ImVec4(1.0f, 0.5f, 0.1f, 1.0f);
+            else if (diff >= -2)
+                focusColor = ImVec4(1.0f, 1.0f, 0.1f, 1.0f);
+            else
+                focusColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f);
+        } else {
+            focusColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f);
+        }
+    }
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08f, 0.08f, 0.15f, 0.85f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.5f, 0.5f, 0.9f, 0.8f));  // Blue tint = focus
+
+    if (ImGui::Begin("##FocusFrame", nullptr, flags)) {
+        // "Focus" label
+        ImGui::TextDisabled("[Focus]");
+        ImGui::SameLine();
+
+        std::string focusName = getEntityName(focus);
+        ImGui::TextColored(focusColor, "%s", focusName.c_str());
+
+        if (focus->getType() == game::ObjectType::UNIT ||
+            focus->getType() == game::ObjectType::PLAYER) {
+            auto unit = std::static_pointer_cast<game::Unit>(focus);
+
+            // Level + health on same row
+            ImGui::SameLine();
+            ImGui::TextDisabled("Lv %u", unit->getLevel());
+
+            uint32_t hp = unit->getHealth();
+            uint32_t maxHp = unit->getMaxHealth();
+            if (maxHp > 0) {
+                float pct = static_cast<float>(hp) / static_cast<float>(maxHp);
+                ImGui::PushStyleColor(ImGuiCol_PlotHistogram,
+                    pct > 0.5f ? ImVec4(0.2f, 0.7f, 0.2f, 1.0f) :
+                    pct > 0.2f ? ImVec4(0.7f, 0.7f, 0.2f, 1.0f) :
+                                 ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
+                char overlay[32];
+                snprintf(overlay, sizeof(overlay), "%u / %u", hp, maxHp);
+                ImGui::ProgressBar(pct, ImVec2(-1, 14), overlay);
+                ImGui::PopStyleColor();
+
+                // Power bar
+                uint8_t pType = unit->getPowerType();
+                uint32_t pwr = unit->getPower();
+                uint32_t maxPwr = unit->getMaxPower();
+                if (maxPwr == 0 && (pType == 1 || pType == 3)) maxPwr = 100;
+                if (maxPwr > 0) {
+                    float mpPct = static_cast<float>(pwr) / static_cast<float>(maxPwr);
+                    ImVec4 pwrColor;
+                    switch (pType) {
+                        case 0: pwrColor = ImVec4(0.2f, 0.2f, 0.9f, 1.0f); break;
+                        case 1: pwrColor = ImVec4(0.9f, 0.2f, 0.2f, 1.0f); break;
+                        case 3: pwrColor = ImVec4(0.9f, 0.9f, 0.2f, 1.0f); break;
+                        case 6: pwrColor = ImVec4(0.8f, 0.1f, 0.2f, 1.0f); break;
+                        default: pwrColor = ImVec4(0.2f, 0.2f, 0.9f, 1.0f); break;
+                    }
+                    ImGui::PushStyleColor(ImGuiCol_PlotHistogram, pwrColor);
+                    ImGui::ProgressBar(mpPct, ImVec2(-1, 10), "");
+                    ImGui::PopStyleColor();
+                }
+            }
+
+            // Focus cast bar
+            const auto* focusCast = gameHandler.getUnitCastState(focus->getGuid());
+            if (focusCast) {
+                float total = focusCast->timeTotal > 0.f ? focusCast->timeTotal : 1.f;
+                float rem   = focusCast->timeRemaining;
+                float prog  = std::clamp(1.0f - rem / total, 0.f, 1.f);
+                const std::string& spName = gameHandler.getSpellName(focusCast->spellId);
+                ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.9f, 0.3f, 0.2f, 1.0f));
+                char castBuf[64];
+                if (!spName.empty())
+                    snprintf(castBuf, sizeof(castBuf), "%s (%.1fs)", spName.c_str(), rem);
+                else
+                    snprintf(castBuf, sizeof(castBuf), "Casting... (%.1fs)", rem);
+                ImGui::ProgressBar(prog, ImVec2(-1, 12), castBuf);
+                ImGui::PopStyleColor();
+            }
+        }
+
+        // Clicking the focus frame targets it
+        if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(0)) {
+            gameHandler.setTarget(focus->getGuid());
+        }
+    }
+    ImGui::End();
+
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar();
 }
 
 void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {

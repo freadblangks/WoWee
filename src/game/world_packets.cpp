@@ -2267,7 +2267,17 @@ network::Packet NameQueryPacket::build(uint64_t playerGuid) {
 bool NameQueryResponseParser::parse(network::Packet& packet, NameQueryResponseData& data) {
     // 3.3.5a: packedGuid, uint8 found
     // If found==0: CString name, CString realmName, uint8 race, uint8 gender, uint8 classId
+    // Validation: packed GUID (1-8 bytes) + found flag (1 byte minimum)
+    if (packet.getSize() - packet.getReadPos() < 2) return false; // At least 1 for packed GUID + 1 for found
+
+    size_t startPos = packet.getReadPos();
     data.guid = UpdateObjectParser::readPackedGuid(packet);
+
+    // Validate found flag read
+    if (packet.getSize() - packet.getReadPos() < 1) {
+        packet.setReadPos(startPos);
+        return false;
+    }
     data.found = packet.readUInt8();
 
     if (data.found != 0) {
@@ -2275,8 +2285,25 @@ bool NameQueryResponseParser::parse(network::Packet& packet, NameQueryResponseDa
         return true; // Valid response, just not found
     }
 
+    // Validate strings: need at least 2 null terminators for empty strings
+    if (packet.getSize() - packet.getReadPos() < 2) {
+        data.name.clear();
+        data.realmName.clear();
+        return !data.name.empty(); // Fail if name was required
+    }
+
     data.name = packet.readString();
     data.realmName = packet.readString();
+
+    // Validate final 3 uint8 fields (race, gender, classId)
+    if (packet.getSize() - packet.getReadPos() < 3) {
+        LOG_WARNING("Name query: truncated fields after realmName, expected 3 uint8s");
+        data.race = 0;
+        data.gender = 0;
+        data.classId = 0;
+        return !data.name.empty();
+    }
+
     data.race = packet.readUInt8();
     data.gender = packet.readUInt8();
     data.classId = packet.readUInt8();

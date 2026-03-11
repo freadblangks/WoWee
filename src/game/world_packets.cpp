@@ -2109,16 +2109,49 @@ bool GuildRosterParser::parse(network::Packet& packet, GuildRosterData& data) {
         return false;
     }
     uint32_t numMembers = packet.readUInt32();
+
+    // Cap members and ranks to prevent unbounded memory allocation
+    const uint32_t MAX_GUILD_MEMBERS = 1000;
+    if (numMembers > MAX_GUILD_MEMBERS) {
+        LOG_WARNING("GuildRosterParser: numMembers capped (requested=", numMembers, ")");
+        numMembers = MAX_GUILD_MEMBERS;
+    }
+
     data.motd = packet.readString();
     data.guildInfo = packet.readString();
 
+    if (packet.getReadPos() + 4 > packet.getSize()) {
+        LOG_WARNING("GuildRosterParser: truncated before rankCount");
+        data.ranks.clear();
+        data.members.clear();
+        return true;
+    }
+
     uint32_t rankCount = packet.readUInt32();
+
+    // Cap rank count to prevent unbounded allocation
+    const uint32_t MAX_GUILD_RANKS = 20;
+    if (rankCount > MAX_GUILD_RANKS) {
+        LOG_WARNING("GuildRosterParser: rankCount capped (requested=", rankCount, ")");
+        rankCount = MAX_GUILD_RANKS;
+    }
+
     data.ranks.resize(rankCount);
     for (uint32_t i = 0; i < rankCount; ++i) {
+        // Validate 4 bytes before each rank rights read
+        if (packet.getReadPos() + 4 > packet.getSize()) {
+            LOG_WARNING("GuildRosterParser: truncated rank at index ", i);
+            break;
+        }
         data.ranks[i].rights = packet.readUInt32();
-        data.ranks[i].goldLimit = packet.readUInt32();
+        if (packet.getReadPos() + 4 > packet.getSize()) {
+            data.ranks[i].goldLimit = 0;
+        } else {
+            data.ranks[i].goldLimit = packet.readUInt32();
+        }
         // 6 bank tab flags + 6 bank tab items per day
         for (int t = 0; t < 6; ++t) {
+            if (packet.getReadPos() + 8 > packet.getSize()) break;
             packet.readUInt32(); // tabFlags
             packet.readUInt32(); // tabItemsPerDay
         }
@@ -2126,20 +2159,68 @@ bool GuildRosterParser::parse(network::Packet& packet, GuildRosterData& data) {
 
     data.members.resize(numMembers);
     for (uint32_t i = 0; i < numMembers; ++i) {
+        // Validate minimum bytes before reading member (guid+online+name at minimum is 9+ bytes)
+        if (packet.getReadPos() + 9 > packet.getSize()) {
+            LOG_WARNING("GuildRosterParser: truncated member at index ", i);
+            break;
+        }
         auto& m = data.members[i];
         m.guid = packet.readUInt64();
         m.online = (packet.readUInt8() != 0);
-        m.name = packet.readString();
-        m.rankIndex = packet.readUInt32();
-        m.level = packet.readUInt8();
-        m.classId = packet.readUInt8();
-        m.gender = packet.readUInt8();
-        m.zoneId = packet.readUInt32();
-        if (!m.online) {
-            m.lastOnline = packet.readFloat();
+
+        // Validate before reading name string
+        if (packet.getReadPos() >= packet.getSize()) {
+            m.name.clear();
+        } else {
+            m.name = packet.readString();
         }
-        m.publicNote = packet.readString();
-        m.officerNote = packet.readString();
+
+        // Validate before reading rank/level/class/gender/zone
+        if (packet.getReadPos() + 1 > packet.getSize()) {
+            m.rankIndex = 0;
+            m.level = 1;
+            m.classId = 0;
+            m.gender = 0;
+            m.zoneId = 0;
+        } else {
+            m.rankIndex = packet.readUInt32();
+            if (packet.getReadPos() + 3 > packet.getSize()) {
+                m.level = 1;
+                m.classId = 0;
+                m.gender = 0;
+            } else {
+                m.level = packet.readUInt8();
+                m.classId = packet.readUInt8();
+                m.gender = packet.readUInt8();
+            }
+            if (packet.getReadPos() + 4 > packet.getSize()) {
+                m.zoneId = 0;
+            } else {
+                m.zoneId = packet.readUInt32();
+            }
+        }
+
+        // Online status affects next fields
+        if (!m.online) {
+            if (packet.getReadPos() + 4 > packet.getSize()) {
+                m.lastOnline = 0.0f;
+            } else {
+                m.lastOnline = packet.readFloat();
+            }
+        }
+
+        // Read notes
+        if (packet.getReadPos() >= packet.getSize()) {
+            m.publicNote.clear();
+            m.officerNote.clear();
+        } else {
+            m.publicNote = packet.readString();
+            if (packet.getReadPos() >= packet.getSize()) {
+                m.officerNote.clear();
+            } else {
+                m.officerNote = packet.readString();
+            }
+        }
     }
     LOG_INFO("Parsed SMSG_GUILD_ROSTER: ", numMembers, " members, motd=", data.motd);
     return true;

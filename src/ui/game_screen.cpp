@@ -5648,6 +5648,32 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                 ImGui::PopStyleColor();
             }
 
+            // Right-click context menu for party member actions
+            if (ImGui::BeginPopupContextItem("PartyMemberCtx")) {
+                ImGui::TextDisabled("%s", member.name.c_str());
+                ImGui::Separator();
+                if (ImGui::MenuItem("Target")) {
+                    gameHandler.setTarget(member.guid);
+                }
+                if (ImGui::MenuItem("Set Focus")) {
+                    gameHandler.setFocus(member.guid);
+                }
+                if (ImGui::MenuItem("Whisper")) {
+                    selectedChatType = 4;  // WHISPER
+                    strncpy(whisperTargetBuffer, member.name.c_str(), sizeof(whisperTargetBuffer) - 1);
+                    whisperTargetBuffer[sizeof(whisperTargetBuffer) - 1] = '\0';
+                    refocusChatInput = true;
+                }
+                if (ImGui::MenuItem("Trade")) {
+                    gameHandler.initiateTrade(member.guid);
+                }
+                if (ImGui::MenuItem("Inspect")) {
+                    gameHandler.setTarget(member.guid);
+                    gameHandler.inspectTarget();
+                }
+                ImGui::EndPopup();
+            }
+
             ImGui::Separator();
             ImGui::PopID();
         }

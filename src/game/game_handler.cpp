@@ -12266,10 +12266,27 @@ void GameHandler::handleRaidInstanceInfo(network::Packet& packet) {
 }
 
 void GameHandler::handleInstanceDifficulty(network::Packet& packet) {
-    if (packet.getSize() - packet.getReadPos() < 8) return;
+    // SMSG_INSTANCE_DIFFICULTY:    uint32 difficulty, uint32 heroic (8 bytes)
+    // MSG_SET_DUNGEON_DIFFICULTY:  uint32 difficulty[, uint32 isInGroup, uint32 savedBool] (4 or 12 bytes)
+    auto rem = [&]() { return packet.getSize() - packet.getReadPos(); };
+    if (rem() < 4) return;
     instanceDifficulty_ = packet.readUInt32();
-    uint32_t isHeroic = packet.readUInt32();
-    instanceIsHeroic_ = (isHeroic != 0);
+    if (rem() >= 4) {
+        uint32_t secondField = packet.readUInt32();
+        // SMSG_INSTANCE_DIFFICULTY: second field is heroic flag (0 or 1)
+        // MSG_SET_DUNGEON_DIFFICULTY: second field is isInGroup (not heroic)
+        // Heroic = difficulty value 1 for 5-man, so use the field value for SMSG and
+        // infer from difficulty for MSG variant (which has larger payloads).
+        if (rem() >= 4) {
+            // Three+ fields: this is MSG_SET_DUNGEON_DIFFICULTY; heroic = (difficulty == 1)
+            instanceIsHeroic_ = (instanceDifficulty_ == 1);
+        } else {
+            // Two fields: SMSG_INSTANCE_DIFFICULTY format
+            instanceIsHeroic_ = (secondField != 0);
+        }
+    } else {
+        instanceIsHeroic_ = (instanceDifficulty_ == 1);
+    }
     LOG_INFO("Instance difficulty: ", instanceDifficulty_, " heroic=", instanceIsHeroic_);
 }
 

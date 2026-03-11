@@ -14174,8 +14174,11 @@ void GameHandler::handleAuraUpdate(network::Packet& packet, bool isAll) {
 }
 
 void GameHandler::handleLearnedSpell(network::Packet& packet) {
-    if (packet.getSize() - packet.getReadPos() < 4) return;
-    uint32_t spellId = packet.readUInt32();
+    // Classic 1.12: uint16 spellId; TBC 2.4.3 / WotLK 3.3.5a: uint32 spellId
+    const bool classicSpellId = isClassicLikeExpansion();
+    const size_t minSz = classicSpellId ? 2u : 4u;
+    if (packet.getSize() - packet.getReadPos() < minSz) return;
+    uint32_t spellId = classicSpellId ? packet.readUInt16() : packet.readUInt32();
     knownSpells.insert(spellId);
     LOG_INFO("Learned spell: ", spellId);
 
@@ -14203,17 +14206,24 @@ void GameHandler::handleLearnedSpell(network::Packet& packet) {
 }
 
 void GameHandler::handleRemovedSpell(network::Packet& packet) {
-    if (packet.getSize() - packet.getReadPos() < 4) return;
-    uint32_t spellId = packet.readUInt32();
+    // Classic 1.12: uint16 spellId; TBC 2.4.3 / WotLK 3.3.5a: uint32 spellId
+    const bool classicSpellId = isClassicLikeExpansion();
+    const size_t minSz = classicSpellId ? 2u : 4u;
+    if (packet.getSize() - packet.getReadPos() < minSz) return;
+    uint32_t spellId = classicSpellId ? packet.readUInt16() : packet.readUInt32();
     knownSpells.erase(spellId);
     LOG_INFO("Removed spell: ", spellId);
 }
 
 void GameHandler::handleSupercededSpell(network::Packet& packet) {
     // Old spell replaced by new rank (e.g., Fireball Rank 1 -> Fireball Rank 2)
-    if (packet.getSize() - packet.getReadPos() < 8) return;
-    uint32_t oldSpellId = packet.readUInt32();
-    uint32_t newSpellId = packet.readUInt32();
+    // Classic 1.12: uint16 oldSpellId + uint16 newSpellId (4 bytes total)
+    // TBC 2.4.3 / WotLK 3.3.5a: uint32 oldSpellId + uint32 newSpellId (8 bytes total)
+    const bool classicSpellId = isClassicLikeExpansion();
+    const size_t minSz = classicSpellId ? 4u : 8u;
+    if (packet.getSize() - packet.getReadPos() < minSz) return;
+    uint32_t oldSpellId = classicSpellId ? packet.readUInt16() : packet.readUInt32();
+    uint32_t newSpellId = classicSpellId ? packet.readUInt16() : packet.readUInt32();
 
     // Remove old spell
     knownSpells.erase(oldSpellId);

@@ -2006,6 +2006,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
 
+        case Opcode::SMSG_LEARNED_DANCE_MOVES:
+            // Contains bitmask of learned dance moves — cosmetic only, no gameplay effect.
+            LOG_DEBUG("SMSG_LEARNED_DANCE_MOVES: ignored (size=", packet.getSize(), ")");
+            break;
+
         // ---- Hearthstone binding ----
         case Opcode::SMSG_PLAYERBOUND: {
             // uint64 binderGuid + uint32 mapId + uint32 zoneId
@@ -4530,6 +4535,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             LOG_INFO("Battleground player left");
             break;
         case Opcode::SMSG_INSTANCE_DIFFICULTY:
+        case Opcode::MSG_SET_DUNGEON_DIFFICULTY:
             handleInstanceDifficulty(packet);
             break;
         case Opcode::SMSG_INSTANCE_SAVE_CREATED:

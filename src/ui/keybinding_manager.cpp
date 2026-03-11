@@ -18,8 +18,8 @@ void KeybindingManager::initializeDefaults() {
     // Set default keybindings
     bindings_[static_cast<int>(Action::TOGGLE_CHARACTER_SCREEN)] = ImGuiKey_C;
     bindings_[static_cast<int>(Action::TOGGLE_INVENTORY)] = ImGuiKey_I;
-    bindings_[static_cast<int>(Action::TOGGLE_SPELLBOOK)] = ImGuiKey_S;
-    bindings_[static_cast<int>(Action::TOGGLE_TALENTS)] = ImGuiKey_K;
+    bindings_[static_cast<int>(Action::TOGGLE_SPELLBOOK)] = ImGuiKey_P;  // WoW standard key
+    bindings_[static_cast<int>(Action::TOGGLE_TALENTS)] = ImGuiKey_N;     // WoW standard key
     bindings_[static_cast<int>(Action::TOGGLE_QUESTS)] = ImGuiKey_L;
     bindings_[static_cast<int>(Action::TOGGLE_MINIMAP)] = ImGuiKey_M;
     bindings_[static_cast<int>(Action::TOGGLE_SETTINGS)] = ImGuiKey_Escape;

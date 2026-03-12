@@ -74,6 +74,7 @@ private:
     ImVec2 nameplateCtxPos_{};      // Screen position of nameplate right-click
     uint32_t lastPlayerHp_ = 0;   // Previous frame HP for damage flash detection
     float damageFlashAlpha_ = 0.0f; // Screen edge flash intensity (fades to 0)
+    bool  damageFlashEnabled_ = true;
     float levelUpFlashAlpha_ = 0.0f; // Golden level-up burst effect (fades to 0)
     uint32_t levelUpDisplayLevel_ = 0; // Level shown in level-up text
 

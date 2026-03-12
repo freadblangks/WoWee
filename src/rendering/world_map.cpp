@@ -752,7 +752,6 @@ void WorldMap::updateExploration(const glm::vec3& playerRenderPos) {
         return (serverExplorationMask[word] & (1u << (bitIndex % 32))) != 0;
     };
 
-    bool markedAny = false;
     if (hasServerExplorationMask) {
         exploredZones.clear();
         for (int i = 0; i < static_cast<int>(zones.size()); i++) {
@@ -761,15 +760,19 @@ void WorldMap::updateExploration(const glm::vec3& playerRenderPos) {
             for (uint32_t bit : z.exploreBits) {
                 if (isBitSet(bit)) {
                     exploredZones.insert(i);
-                    markedAny = true;
                     break;
                 }
             }
         }
+        // Always trust the server mask when available — even if empty (unexplored character).
+        // Also reveal the zone the player is currently standing in so the map isn't pitch-black
+        // the moment they first enter a new zone (the server bit arrives on the next update).
+        int curZone = findZoneForPlayer(playerRenderPos);
+        if (curZone >= 0) exploredZones.insert(curZone);
+        return;
     }
-    if (markedAny) return;
 
-    // Server mask unavailable or empty — fall back to locally-accumulated position tracking.
+    // Server mask unavailable — fall back to locally-accumulated position tracking.
     // Add the zone the player is currently in to the local set and display that.
     float wowX = playerRenderPos.y;
     float wowY = playerRenderPos.x;

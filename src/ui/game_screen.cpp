@@ -709,7 +709,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         }
 
         // Detect HP drop (ignore transitions from 0 — entity just spawned or uninitialized)
-        if (lastPlayerHp_ > 0 && currentHp < lastPlayerHp_ && currentHp > 0)
+        if (damageFlashEnabled_ && lastPlayerHp_ > 0 && currentHp < lastPlayerHp_ && currentHp > 0)
             damageFlashAlpha_ = 1.0f;
         lastPlayerHp_ = currentHp;
 
@@ -10626,6 +10626,16 @@ void GameScreen::renderSettingsWindow() {
                 ImGui::SameLine();
                 ImGui::TextDisabled("(ms indicator near minimap)");
 
+                ImGui::Spacing();
+                ImGui::SeparatorText("Screen Effects");
+                ImGui::Spacing();
+                if (ImGui::Checkbox("Damage Flash", &damageFlashEnabled_)) {
+                    if (!damageFlashEnabled_) damageFlashAlpha_ = 0.0f;
+                    saveSettings();
+                }
+                ImGui::SameLine();
+                ImGui::TextDisabled("(red vignette on taking damage)");
+
                 ImGui::EndChild();
                 ImGui::EndTabItem();
             }
@@ -12290,6 +12300,7 @@ void GameScreen::saveSettings() {
     out << "show_left_bar=" << (pendingShowLeftBar ? 1 : 0) << "\n";
     out << "right_bar_offset_y=" << pendingRightBarOffsetY << "\n";
     out << "left_bar_offset_y=" << pendingLeftBarOffsetY << "\n";
+    out << "damage_flash=" << (damageFlashEnabled_ ? 1 : 0) << "\n";
 
     // Audio
     out << "sound_muted=" << (soundMuted_ ? 1 : 0) << "\n";
@@ -12407,6 +12418,8 @@ void GameScreen::loadSettings() {
                 pendingRightBarOffsetY = std::clamp(std::stof(val), -400.0f, 400.0f);
             } else if (key == "left_bar_offset_y") {
                 pendingLeftBarOffsetY = std::clamp(std::stof(val), -400.0f, 400.0f);
+            } else if (key == "damage_flash") {
+                damageFlashEnabled_ = (std::stoi(val) != 0);
             }
             // Audio
             else if (key == "sound_muted") {

@@ -5129,6 +5129,27 @@ void GameScreen::renderBagBar(game::GameHandler& gameHandler) {
                 dl->AddRect(bagSlotMins[i], bagSlotMaxs[i], IM_COL32(255, 255, 255, 255), 3.0f, 0, 2.0f);
             }
 
+            // Right-click context menu
+            if (ImGui::BeginPopupContextItem("##bagSlotCtx")) {
+                if (!bagItem.empty()) {
+                    ImGui::TextDisabled("%s", bagItem.item.name.c_str());
+                    ImGui::Separator();
+                    bool isOpen = inventoryScreen.isSeparateBags() && inventoryScreen.isBagOpen(i);
+                    if (ImGui::MenuItem(isOpen ? "Close Bag" : "Open Bag")) {
+                        if (inventoryScreen.isSeparateBags())
+                            inventoryScreen.toggleBag(i);
+                        else
+                            inventoryScreen.toggle();
+                    }
+                    if (ImGui::MenuItem("Unequip Bag")) {
+                        gameHandler.unequipToBackpack(bagSlot);
+                    }
+                } else {
+                    ImGui::TextDisabled("Empty Bag Slot");
+                }
+                ImGui::EndPopup();
+            }
+
             // Accept dragged item from inventory
             if (hovered && inventoryScreen.isHoldingItem()) {
                 const auto& heldItem = inventoryScreen.getHeldItem();
@@ -5218,6 +5239,24 @@ void GameScreen::renderBagBar(game::GameHandler& gameHandler) {
         }
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Backpack");
+        }
+        // Right-click context menu on backpack
+        if (ImGui::BeginPopupContextItem("##backpackCtx")) {
+            bool isOpen = inventoryScreen.isSeparateBags() && inventoryScreen.isBackpackOpen();
+            if (ImGui::MenuItem(isOpen ? "Close Backpack" : "Open Backpack")) {
+                if (inventoryScreen.isSeparateBags())
+                    inventoryScreen.toggleBackpack();
+                else
+                    inventoryScreen.toggle();
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Open All Bags")) {
+                inventoryScreen.openAllBags();
+            }
+            if (ImGui::MenuItem("Close All Bags")) {
+                inventoryScreen.closeAllBags();
+            }
+            ImGui::EndPopup();
         }
         if (inventoryScreen.isSeparateBags() &&
             inventoryScreen.isBackpackOpen()) {

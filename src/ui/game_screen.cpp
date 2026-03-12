@@ -3315,6 +3315,29 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                           ImVec2(ImGui::CalcTextSize(name.c_str()).x, 0));
         ImGui::PopStyleColor(4);
 
+        // Quest giver indicator — "!" for available quests, "?" for completable quests
+        {
+            using QGS = game::QuestGiverStatus;
+            QGS qgs = gameHandler.getQuestGiverStatus(target->getGuid());
+            if (qgs == QGS::AVAILABLE) {
+                ImGui::SameLine(0, 4);
+                ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.0f, 1.0f), "!");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Has a quest available");
+            } else if (qgs == QGS::AVAILABLE_LOW) {
+                ImGui::SameLine(0, 4);
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "!");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Has a low-level quest available");
+            } else if (qgs == QGS::REWARD || qgs == QGS::REWARD_REP) {
+                ImGui::SameLine(0, 4);
+                ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.0f, 1.0f), "?");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Quest ready to turn in");
+            } else if (qgs == QGS::INCOMPLETE) {
+                ImGui::SameLine(0, 4);
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "?");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Quest incomplete");
+            }
+        }
+
         // Creature subtitle (e.g. "<Warchief of the Horde>", "Captain of the Guard")
         if (target->getType() == game::ObjectType::UNIT) {
             auto unit = std::static_pointer_cast<game::Unit>(target);

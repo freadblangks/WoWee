@@ -88,6 +88,41 @@ namespace {
         ImGui::TextColored(ImVec4(0.72f, 0.45f, 0.20f, 1.0f), "%uc", c);
     }
 
+    // Return the canonical Blizzard class color as ImVec4.
+    // classId is byte 1 of UNIT_FIELD_BYTES_0 (or CharacterData::classId).
+    // Returns a neutral light-gray for unknown / class 0.
+    ImVec4 classColorVec4(uint8_t classId) {
+        switch (classId) {
+            case 1:  return ImVec4(0.78f, 0.61f, 0.43f, 1.0f); // Warrior  #C79C6E
+            case 2:  return ImVec4(0.96f, 0.55f, 0.73f, 1.0f); // Paladin  #F58CBA
+            case 3:  return ImVec4(0.67f, 0.83f, 0.45f, 1.0f); // Hunter   #ABD473
+            case 4:  return ImVec4(1.00f, 0.96f, 0.41f, 1.0f); // Rogue    #FFF569
+            case 5:  return ImVec4(1.00f, 1.00f, 1.00f, 1.0f); // Priest   #FFFFFF
+            case 6:  return ImVec4(0.77f, 0.12f, 0.23f, 1.0f); // DeathKnight #C41F3B
+            case 7:  return ImVec4(0.00f, 0.44f, 0.87f, 1.0f); // Shaman   #0070DE
+            case 8:  return ImVec4(0.41f, 0.80f, 0.94f, 1.0f); // Mage     #69CCF0
+            case 9:  return ImVec4(0.58f, 0.51f, 0.79f, 1.0f); // Warlock  #9482C9
+            case 11: return ImVec4(1.00f, 0.49f, 0.04f, 1.0f); // Druid    #FF7D0A
+            default: return ImVec4(0.85f, 0.85f, 0.85f, 1.0f); // unknown
+        }
+    }
+
+    // ImU32 variant with alpha in [0,255].
+    ImU32 classColorU32(uint8_t classId, int alpha = 255) {
+        ImVec4 c = classColorVec4(classId);
+        return IM_COL32(static_cast<int>(c.x * 255), static_cast<int>(c.y * 255),
+                        static_cast<int>(c.z * 255), alpha);
+    }
+
+    // Extract class id from a unit's UNIT_FIELD_BYTES_0 update field.
+    // Returns 0 if the entity pointer is null or field is unset.
+    uint8_t entityClassId(const wowee::game::Entity* entity) {
+        if (!entity) return 0;
+        using UF = wowee::game::UF;
+        uint32_t bytes0 = entity->getField(wowee::game::fieldIndex(UF::UNIT_FIELD_BYTES_0));
+        return static_cast<uint8_t>((bytes0 >> 8) & 0xFF);
+    }
+
     bool isPortBotTarget(const std::string& target) {
         std::string t = toLower(trim(target));
         return t == "portbot" || t == "gmbot" || t == "telebot";
@@ -3006,7 +3041,12 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
         // Entity name and type — Selectable so we can attach a right-click context menu
         std::string name = getEntityName(target);
 
+        // Player targets: use class color instead of the generic green
         ImVec4 nameColor = hostileColor;
+        if (target->getType() == game::ObjectType::PLAYER) {
+            uint8_t cid = entityClassId(target.get());
+            if (cid != 0) nameColor = classColorVec4(cid);
+        }
 
         ImGui::SameLine(0.0f, 0.0f);
         ImGui::PushStyleColor(ImGuiCol_Text, nameColor);
@@ -7216,23 +7256,11 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
         // Name color: players get WoW class colors; NPCs use hostility (red/yellow)
         ImU32 nameColor;
         if (isPlayer) {
-            // Determine class from UNIT_FIELD_BYTES_0 byte 1; cyan fallback for unknown class
-            nameColor = IM_COL32(80, 200, 255, A(230));
-            uint8_t cid = static_cast<uint8_t>(
-                (unit->getField(game::fieldIndex(game::UF::UNIT_FIELD_BYTES_0)) >> 8) & 0xFF);
-            switch (cid) {
-                case 1:  nameColor = IM_COL32(199, 156, 110, A(230)); break; // Warrior
-                case 2:  nameColor = IM_COL32(245, 140, 186, A(230)); break; // Paladin
-                case 3:  nameColor = IM_COL32(171, 212, 115, A(230)); break; // Hunter
-                case 4:  nameColor = IM_COL32(255, 245, 105, A(230)); break; // Rogue
-                case 5:  nameColor = IM_COL32(255, 255, 255, A(230)); break; // Priest
-                case 6:  nameColor = IM_COL32(196,  31,  59, A(230)); break; // Death Knight
-                case 7:  nameColor = IM_COL32(  0, 112, 222, A(230)); break; // Shaman
-                case 8:  nameColor = IM_COL32(105, 204, 240, A(230)); break; // Mage
-                case 9:  nameColor = IM_COL32(148, 130, 201, A(230)); break; // Warlock
-                case 11: nameColor = IM_COL32(255, 125,  10, A(230)); break; // Druid
-                default: break;
-            }
+            // Class color with cyan fallback for unknown class
+            uint8_t cid = entityClassId(unit);
+            ImVec4 cc = (cid != 0) ? classColorVec4(cid) : ImVec4(0.31f, 0.78f, 1.0f, 1.0f);
+            nameColor = IM_COL32(static_cast<int>(cc.x*255), static_cast<int>(cc.y*255),
+                                  static_cast<int>(cc.z*255), A(230));
         } else {
             nameColor = unit->isHostile()
                 ? IM_COL32(220,  80,  80, A(230))   // red  — hostile NPC
@@ -7442,23 +7470,8 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                         nameCol = isMemberLeader ? IM_COL32(255, 215, 0, 255) : IM_COL32(220, 220, 220, 255);
                         // Override with WoW class color if entity is loaded
                         auto mEnt = gameHandler.getEntityManager().getEntity(m.guid);
-                        if (mEnt) {
-                            uint8_t cid = static_cast<uint8_t>(
-                                (mEnt->getField(game::fieldIndex(game::UF::UNIT_FIELD_BYTES_0)) >> 8) & 0xFF);
-                            switch (cid) {
-                                case 1:  nameCol = IM_COL32(199, 156, 110, 255); break; // Warrior
-                                case 2:  nameCol = IM_COL32(245, 140, 186, 255); break; // Paladin
-                                case 3:  nameCol = IM_COL32(171, 212, 115, 255); break; // Hunter
-                                case 4:  nameCol = IM_COL32(255, 245, 105, 255); break; // Rogue
-                                case 5:  nameCol = IM_COL32(255, 255, 255, 255); break; // Priest
-                                case 6:  nameCol = IM_COL32(196,  31,  59, 255); break; // Death Knight
-                                case 7:  nameCol = IM_COL32(  0, 112, 222, 255); break; // Shaman
-                                case 8:  nameCol = IM_COL32(105, 204, 240, 255); break; // Mage
-                                case 9:  nameCol = IM_COL32(148, 130, 201, 255); break; // Warlock
-                                case 11: nameCol = IM_COL32(255, 125,  10, 255); break; // Druid
-                                default: break;
-                            }
-                        }
+                        uint8_t cid = entityClassId(mEnt.get());
+                        if (cid != 0) nameCol = classColorU32(cid);
                     }
                     draw->AddText(ImVec2(cellMin.x + 4.0f, cellMin.y + 3.0f), nameCol, truncName);
 
@@ -7632,24 +7645,8 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                 : ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
             {
                 auto memberEntity = gameHandler.getEntityManager().getEntity(member.guid);
-                if (memberEntity) {
-                    uint32_t bytes0 = memberEntity->getField(
-                        game::fieldIndex(game::UF::UNIT_FIELD_BYTES_0));
-                    uint8_t classId = static_cast<uint8_t>((bytes0 >> 8) & 0xFF);
-                    switch (classId) {
-                        case 1:  nameColor = ImVec4(0.78f, 0.61f, 0.43f, 1.0f); break; // Warrior
-                        case 2:  nameColor = ImVec4(0.96f, 0.55f, 0.73f, 1.0f); break; // Paladin
-                        case 3:  nameColor = ImVec4(0.67f, 0.83f, 0.45f, 1.0f); break; // Hunter
-                        case 4:  nameColor = ImVec4(1.00f, 0.96f, 0.41f, 1.0f); break; // Rogue
-                        case 5:  nameColor = ImVec4(1.00f, 1.00f, 1.00f, 1.0f); break; // Priest
-                        case 6:  nameColor = ImVec4(0.77f, 0.12f, 0.23f, 1.0f); break; // Death Knight
-                        case 7:  nameColor = ImVec4(0.00f, 0.44f, 0.87f, 1.0f); break; // Shaman
-                        case 8:  nameColor = ImVec4(0.41f, 0.80f, 0.94f, 1.0f); break; // Mage
-                        case 9:  nameColor = ImVec4(0.58f, 0.51f, 0.79f, 1.0f); break; // Warlock
-                        case 11: nameColor = ImVec4(1.00f, 0.49f, 0.04f, 1.0f); break; // Druid
-                        default: break; // keep fallback
-                    }
-                }
+                uint8_t cid = entityClassId(memberEntity.get());
+                if (cid != 0) nameColor = classColorVec4(cid);
             }
             ImGui::PushStyleColor(ImGuiCol_Text, nameColor);
             if (ImGui::Selectable(label.c_str(), gameHandler.getTargetGuid() == member.guid)) {

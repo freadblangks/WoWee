@@ -3315,6 +3315,15 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                           ImVec2(ImGui::CalcTextSize(name.c_str()).x, 0));
         ImGui::PopStyleColor(4);
 
+        // Creature subtitle (e.g. "<Warchief of the Horde>", "Captain of the Guard")
+        if (target->getType() == game::ObjectType::UNIT) {
+            auto unit = std::static_pointer_cast<game::Unit>(target);
+            const std::string sub = gameHandler.getCachedCreatureSubName(unit->getEntry());
+            if (!sub.empty()) {
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 0.9f), "<%s>", sub.c_str());
+            }
+        }
+
         // Right-click context menu on the target name
         if (ImGui::BeginPopupContextItem("##TargetNameCtx")) {
             const bool isPlayer = (target->getType() == game::ObjectType::PLAYER);

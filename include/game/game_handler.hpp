@@ -548,6 +548,11 @@ public:
     }
     std::string getCachedPlayerName(uint64_t guid) const;
     std::string getCachedCreatureName(uint32_t entry) const;
+    // Returns the creature subname/title (e.g. "<Warchief of the Horde>"), empty if not cached
+    std::string getCachedCreatureSubName(uint32_t entry) const {
+        auto it = creatureInfoCache.find(entry);
+        return (it != creatureInfoCache.end()) ? it->second.subName : "";
+    }
     // Returns the creature rank (0=Normal,1=Elite,2=RareElite,3=Boss,4=Rare)
     // or -1 if not cached yet
     int getCreatureRank(uint32_t entry) const {

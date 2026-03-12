@@ -7455,6 +7455,15 @@ void GameScreen::renderLootWindow(game::GameHandler& gameHandler) {
         }
 
         ImGui::Spacing();
+        bool hasItems = !loot.items.empty();
+        if (hasItems) {
+            if (ImGui::Button("Loot All", ImVec2(-1, 0))) {
+                for (const auto& item : loot.items) {
+                    gameHandler.lootItem(item.slotIndex);
+                }
+            }
+            ImGui::Spacing();
+        }
         if (ImGui::Button("Close", ImVec2(-1, 0))) {
             gameHandler.closeLoot();
         }

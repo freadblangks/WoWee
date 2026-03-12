@@ -7250,6 +7250,20 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                     bool isDead   = (m.onlineStatus & 0x0020) != 0;
                     bool isGhost  = (m.onlineStatus & 0x0010) != 0;
 
+                    // Out-of-range check (40 yard threshold)
+                    bool isOOR = false;
+                    if (m.hasPartyStats && isOnline && !isDead && !isGhost && m.zoneId != 0) {
+                        auto playerEnt = gameHandler.getEntityManager().getEntity(gameHandler.getPlayerGuid());
+                        if (playerEnt) {
+                            float dx = playerEnt->getX() - static_cast<float>(m.posX);
+                            float dy = playerEnt->getY() - static_cast<float>(m.posY);
+                            isOOR = (dx * dx + dy * dy) > (40.0f * 40.0f);
+                        }
+                    }
+                    // Dim cell overlay when out of range
+                    if (isOOR)
+                        draw->AddRectFilled(cellMin, cellMax, IM_COL32(0, 0, 0, 80), 3.0f);
+
                     // Name text (truncated); leader name is gold
                     char truncName[16];
                     snprintf(truncName, sizeof(truncName), "%.12s", m.name.c_str());
@@ -7282,13 +7296,17 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                         draw->AddRectFilled(barBg, barBgEnd, IM_COL32(40, 40, 40, 200), 2.0f);
                         ImVec2 barFill(barBg.x, barBg.y);
                         ImVec2 barFillEnd(barBg.x + (barBgEnd.x - barBg.x) * pct, barBgEnd.y);
-                        ImU32 hpCol = pct > 0.5f ? IM_COL32(60, 180, 60, 255) :
-                                      pct > 0.2f ? IM_COL32(200, 180, 50, 255) :
-                                                   IM_COL32(200, 60, 60, 255);
+                        ImU32 hpCol = isOOR ? IM_COL32(100, 100, 100, 160) :
+                                     pct > 0.5f ? IM_COL32(60, 180, 60, 255) :
+                                     pct > 0.2f ? IM_COL32(200, 180, 50, 255) :
+                                                  IM_COL32(200, 60, 60, 255);
                         draw->AddRectFilled(barFill, barFillEnd, hpCol, 2.0f);
-                        // HP percentage text centered on bar
+                        // HP percentage or OOR text centered on bar
                         char hpPct[8];
-                        snprintf(hpPct, sizeof(hpPct), "%d%%", static_cast<int>(pct * 100.0f + 0.5f));
+                        if (isOOR)
+                            snprintf(hpPct, sizeof(hpPct), "OOR");
+                        else
+                            snprintf(hpPct, sizeof(hpPct), "%d%%", static_cast<int>(pct * 100.0f + 0.5f));
                         ImVec2 ts = ImGui::CalcTextSize(hpPct);
                         float tx = (barBg.x + barBgEnd.x - ts.x) * 0.5f;
                         float ty = barBg.y + (BAR_H - ts.y) * 0.5f;
@@ -7457,6 +7475,21 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                 memberOffline = !isOnline2;
             }
 
+            // Out-of-range check: compare player position to member's reported position
+            // Range threshold: 40 yards (standard heal/spell range)
+            bool memberOutOfRange = false;
+            if (member.hasPartyStats && !memberOffline && !memberDead &&
+                member.zoneId != 0) {
+                // Same map: use 2D Euclidean distance in WoW coordinates (yards)
+                auto playerEntity = gameHandler.getEntityManager().getEntity(gameHandler.getPlayerGuid());
+                if (playerEntity) {
+                    float dx = playerEntity->getX() - static_cast<float>(member.posX);
+                    float dy = playerEntity->getY() - static_cast<float>(member.posY);
+                    float distSq = dx * dx + dy * dy;
+                    memberOutOfRange = (distSq > 40.0f * 40.0f);
+                }
+            }
+
             if (memberDead) {
                 // Gray "Dead" bar for fallen party members
                 ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.35f, 0.35f, 0.35f, 1.0f));
@@ -7471,21 +7504,27 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                 ImGui::PopStyleColor(2);
             } else if (maxHp > 0) {
                 float pct = static_cast<float>(hp) / static_cast<float>(maxHp);
-                ImGui::PushStyleColor(ImGuiCol_PlotHistogram,
-                    pct > 0.5f ? ImVec4(0.2f, 0.8f, 0.2f, 1.0f) :
-                    pct > 0.2f ? ImVec4(0.8f, 0.8f, 0.2f, 1.0f) :
-                                 ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
+                // Out-of-range: desaturate health bar to gray
+                ImVec4 hpBarColor = memberOutOfRange
+                    ? ImVec4(0.45f, 0.45f, 0.45f, 0.7f)
+                    : (pct > 0.5f ? ImVec4(0.2f, 0.8f, 0.2f, 1.0f) :
+                       pct > 0.2f ? ImVec4(0.8f, 0.8f, 0.2f, 1.0f) :
+                                    ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_PlotHistogram, hpBarColor);
                 char hpText[32];
-                if (maxHp >= 10000)
+                if (memberOutOfRange) {
+                    snprintf(hpText, sizeof(hpText), "OOR");
+                } else if (maxHp >= 10000) {
                     snprintf(hpText, sizeof(hpText), "%dk/%dk",
                              (int)hp / 1000, (int)maxHp / 1000);
-                else
+                } else {
                     snprintf(hpText, sizeof(hpText), "%u/%u", hp, maxHp);
+                }
                 ImGui::ProgressBar(pct, ImVec2(-1, 14), hpText);
                 ImGui::PopStyleColor();
             }
 
-            // Power bar (mana/rage/energy) from party stats — hidden for dead/offline
+            // Power bar (mana/rage/energy) from party stats — hidden for dead/offline/OOR
             if (!memberDead && !memberOffline && member.hasPartyStats && member.maxPower > 0) {
                 float powerPct = static_cast<float>(member.curPower) / static_cast<float>(member.maxPower);
                 ImVec4 powerColor;

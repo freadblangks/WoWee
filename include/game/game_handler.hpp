@@ -1679,6 +1679,8 @@ public:
     void closeTrainer();
     const std::string& getSpellName(uint32_t spellId) const;
     const std::string& getSpellRank(uint32_t spellId) const;
+    /// Returns the tooltip/description text from Spell.dbc (empty if unknown or has no text).
+    const std::string& getSpellDescription(uint32_t spellId) const;
     const std::string& getSkillLineName(uint32_t spellId) const;
     /// Returns the DispelType for a spell (0=none,1=magic,2=curse,3=disease,4=poison,5+=other)
     uint8_t getSpellDispelType(uint32_t spellId) const;
@@ -2598,7 +2600,7 @@ private:
     // Trainer
     bool trainerWindowOpen_ = false;
     TrainerListData currentTrainerList_;
-    struct SpellNameEntry { std::string name; std::string rank; uint32_t schoolMask = 0; uint8_t dispelType = 0; };
+    struct SpellNameEntry { std::string name; std::string rank; std::string description; uint32_t schoolMask = 0; uint8_t dispelType = 0; };
     std::unordered_map<uint32_t, SpellNameEntry> spellNameCache_;
     bool spellNameCacheLoaded_ = false;
 

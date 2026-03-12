@@ -2233,10 +2233,13 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
                     default: break;
                 }
                 if (!trigger) continue;
-                const std::string& spName = gameHandler_->getSpellName(sp.spellId);
-                if (!spName.empty()) {
+                const std::string& spDesc = gameHandler_->getSpellDescription(sp.spellId);
+                const std::string& spText = spDesc.empty() ? gameHandler_->getSpellName(sp.spellId) : spDesc;
+                if (!spText.empty()) {
+                    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 320.0f);
                     ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f),
-                                       "%s: %s", trigger, spName.c_str());
+                                       "%s: %s", trigger, spText.c_str());
+                    ImGui::PopTextWrapPos();
                 } else {
                     ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f),
                                        "%s: Spell #%u", trigger, sp.spellId);
@@ -2521,11 +2524,17 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
         }
         if (!trigger) continue;
         if (gameHandler_) {
-            const std::string& spName = gameHandler_->getSpellName(sp.spellId);
-            if (!spName.empty())
+            // Prefer the spell's tooltip text (the actual effect description).
+            // Fall back to the spell name if the description is empty.
+            const std::string& spDesc = gameHandler_->getSpellDescription(sp.spellId);
+            const std::string& spName = spDesc.empty() ? gameHandler_->getSpellName(sp.spellId) : spDesc;
+            if (!spName.empty()) {
+                ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 320.0f);
                 ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f), "%s: %s", trigger, spName.c_str());
-            else
+                ImGui::PopTextWrapPos();
+            } else {
                 ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f), "%s: Spell #%u", trigger, sp.spellId);
+            }
         }
     }
 

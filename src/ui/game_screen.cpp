@@ -16862,8 +16862,23 @@ void GameScreen::renderWhoWindow(game::GameHandler& gameHandler) {
         return;
     }
 
+    // Search bar with Send button
+    static char whoSearchBuf[64] = {};
+    bool doSearch = false;
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 60.0f);
+    if (ImGui::InputTextWithHint("##whosearch", "Search players...", whoSearchBuf, sizeof(whoSearchBuf),
+            ImGuiInputTextFlags_EnterReturnsTrue))
+        doSearch = true;
+    ImGui::SameLine();
+    if (ImGui::Button("Search", ImVec2(-1, 0)))
+        doSearch = true;
+    if (doSearch) {
+        gameHandler.queryWho(std::string(whoSearchBuf));
+    }
+    ImGui::Separator();
+
     if (results.empty()) {
-        ImGui::TextDisabled("No results. Use /who [filter] to search.");
+        ImGui::TextDisabled("No results. Type a filter above or use /who [filter].");
         ImGui::End();
         return;
     }

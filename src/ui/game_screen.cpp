@@ -6498,6 +6498,10 @@ void GameScreen::renderCombatText(game::GameHandler& gameHandler) {
                         snprintf(text, sizeof(text), "Resisted");
                     color = ImVec4(0.7f, 0.7f, 0.7f, alpha);  // Grey for resist
                     break;
+                case game::CombatTextEntry::PROC_TRIGGER:
+                    snprintf(text, sizeof(text), "PROC!");
+                    color = ImVec4(1.0f, 0.85f, 0.0f, alpha);  // Gold for proc
+                    break;
                 default:
                     snprintf(text, sizeof(text), "%d", entry.amount);
                     color = ImVec4(1.0f, 1.0f, 1.0f, alpha);

@@ -5578,9 +5578,28 @@ void GameHandler::handlePacket(network::Packet& packet) {
             packet.setReadPos(packet.getSize());
             break;
         }
+        case Opcode::SMSG_SPELL_CHANCE_PROC_LOG: {
+            // Format (all expansions): PackedGuid target + PackedGuid caster + uint32 spellId + ...
+            if (packet.getSize() - packet.getReadPos() < 3) {
+                packet.setReadPos(packet.getSize()); break;
+            }
+            /*uint64_t targetGuid =*/ UpdateObjectParser::readPackedGuid(packet);
+            if (packet.getSize() - packet.getReadPos() < 2) {
+                packet.setReadPos(packet.getSize()); break;
+            }
+            uint64_t procCasterGuid = UpdateObjectParser::readPackedGuid(packet);
+            if (packet.getSize() - packet.getReadPos() < 4) {
+                packet.setReadPos(packet.getSize()); break;
+            }
+            uint32_t procSpellId = packet.readUInt32();
+            // Show a "PROC!" floating text when the player triggers the proc
+            if (procCasterGuid == playerGuid && procSpellId > 0)
+                addCombatText(CombatTextEntry::PROC_TRIGGER, 0, procSpellId, true);
+            packet.setReadPos(packet.getSize());
+            break;
+        }
         case Opcode::SMSG_SPELLINSTAKILLLOG:
         case Opcode::SMSG_SPELLLOGEXECUTE:
-        case Opcode::SMSG_SPELL_CHANCE_PROC_LOG:
         case Opcode::SMSG_SPELL_CHANCE_RESIST_PUSHBACK:
         case Opcode::SMSG_SPELL_UPDATE_CHAIN_TARGETS:
             packet.setReadPos(packet.getSize());

@@ -15093,19 +15093,33 @@ void GameHandler::handlePartyMemberStats(network::Packet& packet, bool isFull) {
     if (updateFlags & 0x0200) { // AURAS
         if (remaining() >= 8) {
             uint64_t auraMask = packet.readUInt64();
+            // Collect aura updates for this member and store in unitAurasCache_
+            // so party frame debuff dots can use them.
+            std::vector<AuraSlot> newAuras;
             for (int i = 0; i < 64; ++i) {
                 if (auraMask & (uint64_t(1) << i)) {
+                    AuraSlot a;
+                    a.level = static_cast<uint8_t>(i);  // use slot index
                     if (isWotLK) {
                         // WotLK: uint32 spellId + uint8 auraFlags
                         if (remaining() < 5) break;
-                        packet.readUInt32();
-                        packet.readUInt8();
+                        a.spellId = packet.readUInt32();
+                        a.flags   = packet.readUInt8();
                     } else {
-                        // Classic/TBC: uint16 spellId only
+                        // Classic/TBC: uint16 spellId only; negative auras not indicated here
                         if (remaining() < 2) break;
-                        packet.readUInt16();
+                        a.spellId = packet.readUInt16();
+                        // Infer negative/positive from dispel type: non-zero dispel → debuff
+                        uint8_t dt = getSpellDispelType(a.spellId);
+                        if (dt > 0) a.flags = 0x80; // mark as debuff
                     }
+                    if (a.spellId != 0) newAuras.push_back(a);
                 }
+            }
+            // Populate unitAurasCache_ for this member (merge: keep existing per-GUID data
+            // only if we already have a richer source; otherwise replace with stats data)
+            if (memberGuid != 0 && memberGuid != playerGuid && memberGuid != targetGuid) {
+                unitAurasCache_[memberGuid] = std::move(newAuras);
             }
         }
     }

@@ -13912,6 +13912,10 @@ void GameHandler::setActionBarSlot(int slot, ActionBarSlot::Type type, uint32_t 
     if (slot < 0 || slot >= ACTION_BAR_SLOTS) return;
     actionBar[slot].type = type;
     actionBar[slot].id = id;
+    // Pre-query item information so action bar displays item name instead of "Item" placeholder
+    if (type == ActionBarSlot::ITEM && id != 0) {
+        queryItemInfo(id, 0);
+    }
     saveCharacterConfig();
 }
 

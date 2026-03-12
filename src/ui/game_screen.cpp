@@ -4305,6 +4305,16 @@ void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
             }
         }
 
+        // Distance to focus target
+        {
+            const auto& mv = gameHandler.getMovementInfo();
+            float fdx = focus->getX() - mv.x;
+            float fdy = focus->getY() - mv.y;
+            float fdz = focus->getZ() - mv.z;
+            float fdist = std::sqrt(fdx * fdx + fdy * fdy + fdz * fdz);
+            ImGui::TextDisabled("%.1f yd", fdist);
+        }
+
         // Clicking the focus frame targets it
         if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(0)) {
             gameHandler.setTarget(focus->getGuid());

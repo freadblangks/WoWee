@@ -7642,6 +7642,9 @@ void GameHandler::sendPing() {
     LOG_DEBUG("Sending CMSG_PING (heartbeat)");
     LOG_DEBUG("  Sequence: ", pingSequence);
 
+    // Record send time for RTT measurement
+    pingTimestamp_ = std::chrono::steady_clock::now();
+
     // Build and send ping packet
     auto packet = PingPacket::build(pingSequence, lastLatency);
     socket->send(packet);
@@ -7663,7 +7666,12 @@ void GameHandler::handlePong(network::Packet& packet) {
         return;
     }
 
-    LOG_DEBUG("Heartbeat acknowledged (sequence: ", data.sequence, ")");
+    // Measure round-trip time
+    auto rtt = std::chrono::steady_clock::now() - pingTimestamp_;
+    lastLatency = static_cast<uint32_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(rtt).count());
+
+    LOG_DEBUG("Heartbeat acknowledged (sequence: ", data.sequence, ", latency: ", lastLatency, "ms)");
 }
 
 uint32_t GameHandler::nextMovementTimestampMs() {
@@ -15077,10 +15085,12 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
     // animation/sound and expects the client to request the mail list.
     bool isMailbox = false;
     bool chestLike = false;
-    // Chest-type game objects (type=3): on all expansions, also send CMSG_LOOT so
-    // the server opens the loot response.  Other harvestable/interactive types rely
-    // on the server auto-sending SMSG_LOOT_RESPONSE after CMSG_GAMEOBJ_USE.
-    bool shouldSendLoot = isActiveExpansion("classic") || isActiveExpansion("turtle");
+    // Always send CMSG_LOOT after CMSG_GAMEOBJ_USE for any gameobject that could be
+    // lootable.  The server silently ignores CMSG_LOOT for non-lootable objects
+    // (doors, buttons, etc.), so this is safe.  Not sending it is the main reason
+    // chests fail to open when their GO type is not yet cached or their name doesn't
+    // contain the word "chest" (e.g. lockboxes, coffers, strongboxes, caches).
+    bool shouldSendLoot = true;
     if (entity && entity->getType() == ObjectType::GAMEOBJECT) {
         auto go = std::static_pointer_cast<GameObject>(entity);
         auto* info = getCachedGameObjectInfo(go->getEntry());
@@ -15096,22 +15106,20 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
             refreshMailList();
         } else if (info && info->type == 3) {
             chestLike = true;
-            // Type-3 chests require CMSG_LOOT on all expansions (AzerothCore WotLK included)
-            shouldSendLoot = true;
-        } else if (turtleMode) {
-            // Turtle compatibility: keep eager loot open behavior.
-            shouldSendLoot = true;
         }
     }
     if (!chestLike && !goName.empty()) {
         std::string lower = goName;
         std::transform(lower.begin(), lower.end(), lower.begin(),
                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        chestLike = (lower.find("chest") != std::string::npos);
-        if (chestLike) shouldSendLoot = true;
+        chestLike = (lower.find("chest") != std::string::npos ||
+                     lower.find("lockbox") != std::string::npos ||
+                     lower.find("strongbox") != std::string::npos ||
+                     lower.find("coffer") != std::string::npos ||
+                     lower.find("cache") != std::string::npos);
     }
-    // For WotLK chest-like gameobjects, also send CMSG_GAMEOBJ_REPORT_USE.
-    if (!isMailbox && chestLike && isActiveExpansion("wotlk")) {
+    // For WotLK, CMSG_GAMEOBJ_REPORT_USE is required for chests (and is harmless for others).
+    if (!isMailbox && isActiveExpansion("wotlk")) {
         network::Packet reportUse(wireOpcode(Opcode::CMSG_GAMEOBJ_REPORT_USE));
         reportUse.writeUInt64(guid);
         socket->send(reportUse);

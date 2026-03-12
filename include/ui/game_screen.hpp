@@ -113,6 +113,7 @@ private:
     bool pendingMinimapRotate = false;
     bool pendingMinimapSquare = false;
     bool pendingMinimapNpcDots = false;
+    bool pendingShowLatencyMeter = true;
     bool pendingSeparateBags = true;
     bool pendingAutoLoot = false;
 
@@ -159,6 +160,7 @@ private:
     bool minimapRotate_ = false;
     bool minimapSquare_ = false;
     bool minimapNpcDots_ = false;
+    bool showLatencyMeter_ = true;           // Show server latency indicator
     bool minimapSettingsApplied_ = false;
     bool volumeSettingsApplied_ = false;  // True once saved volume settings applied to audio managers
     bool msaaSettingsApplied_ = false;   // True once saved MSAA setting applied to renderer

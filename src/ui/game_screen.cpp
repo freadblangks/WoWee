@@ -8581,6 +8581,7 @@ void GameScreen::renderSettingsWindow() {
         pendingMinimapRotate = minimapRotate_;
         pendingMinimapSquare = minimapSquare_;
         pendingMinimapNpcDots = minimapNpcDots_;
+        pendingShowLatencyMeter = showLatencyMeter_;
         if (renderer) {
             if (auto* minimap = renderer->getMinimap()) {
                 minimap->setRotateWithCamera(minimapRotate_);
@@ -8951,6 +8952,16 @@ void GameScreen::renderSettingsWindow() {
                         saveSettings();
                     }
                 }
+
+                ImGui::Spacing();
+                ImGui::SeparatorText("Network");
+                ImGui::Spacing();
+                if (ImGui::Checkbox("Show Latency Meter", &pendingShowLatencyMeter)) {
+                    showLatencyMeter_ = pendingShowLatencyMeter;
+                    saveSettings();
+                }
+                ImGui::SameLine();
+                ImGui::TextDisabled("(ms indicator near minimap)");
 
                 ImGui::EndChild();
                 ImGui::EndTabItem();
@@ -10080,9 +10091,9 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         break;  // Show at most one queue slot indicator
     }
 
-    // Latency indicator (shown when in world and last latency is known)
+    // Latency indicator (toggleable in Interface settings)
     uint32_t latMs = gameHandler.getLatencyMs();
-    if (latMs > 0 && gameHandler.getState() == game::WorldState::IN_WORLD) {
+    if (showLatencyMeter_ && latMs > 0 && gameHandler.getState() == game::WorldState::IN_WORLD) {
         ImVec4 latColor;
         if      (latMs < 100) latColor = ImVec4(0.3f, 1.0f, 0.3f, 0.8f);   // Green < 100ms
         else if (latMs < 250) latColor = ImVec4(1.0f, 1.0f, 0.3f, 0.8f);   // Yellow < 250ms
@@ -10340,6 +10351,7 @@ void GameScreen::saveSettings() {
     out << "minimap_rotate=" << (pendingMinimapRotate ? 1 : 0) << "\n";
     out << "minimap_square=" << (pendingMinimapSquare ? 1 : 0) << "\n";
     out << "minimap_npc_dots=" << (pendingMinimapNpcDots ? 1 : 0) << "\n";
+    out << "show_latency_meter=" << (pendingShowLatencyMeter ? 1 : 0) << "\n";
     out << "separate_bags=" << (pendingSeparateBags ? 1 : 0) << "\n";
     out << "show_action_bar2=" << (pendingShowActionBar2 ? 1 : 0) << "\n";
     out << "action_bar2_offset_x=" << pendingActionBar2OffsetX << "\n";
@@ -10440,6 +10452,9 @@ void GameScreen::loadSettings() {
                 int v = std::stoi(val);
                 minimapNpcDots_ = (v != 0);
                 pendingMinimapNpcDots = minimapNpcDots_;
+            } else if (key == "show_latency_meter") {
+                showLatencyMeter_ = (std::stoi(val) != 0);
+                pendingShowLatencyMeter = showLatencyMeter_;
             } else if (key == "separate_bags") {
                 pendingSeparateBags = (std::stoi(val) != 0);
                 inventoryScreen.setSeparateBags(pendingSeparateBags);

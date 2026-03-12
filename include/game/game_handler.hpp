@@ -1862,6 +1862,7 @@ private:
     float timeSinceLastMoveHeartbeat_ = 0.0f; // Periodic movement heartbeat to keep server position synced
     float moveHeartbeatInterval_ = 0.5f;
     uint32_t lastLatency = 0;                // Last measured latency (milliseconds)
+    std::chrono::steady_clock::time_point pingTimestamp_;  // Time CMSG_PING was sent
 
     // Player GUID and map
     uint64_t playerGuid = 0;

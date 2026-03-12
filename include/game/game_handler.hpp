@@ -540,6 +540,15 @@ public:
     const std::deque<CombatLogEntry>& getCombatLog() const { return combatLog_; }
     void clearCombatLog() { combatLog_.clear(); }
 
+    // Area trigger messages (SMSG_AREA_TRIGGER_MESSAGE) — drained by UI each frame
+    bool hasAreaTriggerMsg() const { return !areaTriggerMsgs_.empty(); }
+    std::string popAreaTriggerMsg() {
+        if (areaTriggerMsgs_.empty()) return {};
+        std::string msg = areaTriggerMsgs_.front();
+        areaTriggerMsgs_.pop_front();
+        return msg;
+    }
+
     // Threat
     struct ThreatEntry {
         uint64_t victimGuid = 0;
@@ -2155,6 +2164,7 @@ private:
     std::vector<CombatTextEntry> combatText;
     static constexpr size_t MAX_COMBAT_LOG = 500;
     std::deque<CombatLogEntry> combatLog_;
+    std::deque<std::string>    areaTriggerMsgs_;
     // unitGuid → sorted threat list (descending by threat value)
     std::unordered_map<uint64_t, std::vector<ThreatEntry>> threatLists_;
 

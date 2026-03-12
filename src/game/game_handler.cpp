@@ -3877,7 +3877,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
             if (packet.getSize() - packet.getReadPos() >= 4) {
                 /*uint32_t len =*/ packet.readUInt32();
                 std::string msg = packet.readString();
-                if (!msg.empty()) addSystemChatMessage(msg);
+                if (!msg.empty()) {
+                    addSystemChatMessage(msg);
+                    areaTriggerMsgs_.push_back(msg);
+                }
             }
             break;
         }

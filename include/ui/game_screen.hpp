@@ -119,6 +119,10 @@ private:
     // Zone entry toast: brief banner when entering a new zone
     struct ZoneToastEntry { std::string zoneName; float age = 0.0f; };
     std::vector<ZoneToastEntry> zoneToasts_;
+
+    struct AreaTriggerToast { std::string text; float age = 0.0f; };
+    std::vector<AreaTriggerToast> areaTriggerToasts_;
+    void renderAreaTriggerToasts(float deltaTime, game::GameHandler& gameHandler);
     std::string lastKnownZone_;
     static constexpr float kZoneToastLifetime = 3.0f;
 

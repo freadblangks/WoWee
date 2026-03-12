@@ -562,6 +562,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderRepToasts(ImGui::GetIO().DeltaTime);
     renderQuestCompleteToasts(ImGui::GetIO().DeltaTime);
     renderZoneToasts(ImGui::GetIO().DeltaTime);
+    renderAreaTriggerToasts(ImGui::GetIO().DeltaTime, gameHandler);
     if (showRaidFrames_) {
         renderPartyFrames(gameHandler);
     }
@@ -8569,6 +8570,72 @@ void GameScreen::renderZoneToasts(float deltaTime) {
         draw->AddText(font, 14.0f,
             ImVec2(cx - nameSz.x * 0.5f, tl.y + toastH * 0.5f + 1.0f),
             IM_COL32(255, 230, 140, (int)(alpha * 240)), e.zoneName.c_str());
+    }
+}
+
+// ─── Area Trigger Message Toasts ─────────────────────────────────────────────
+void GameScreen::renderAreaTriggerToasts(float deltaTime, game::GameHandler& gameHandler) {
+    // Drain any pending messages from GameHandler
+    while (gameHandler.hasAreaTriggerMsg()) {
+        AreaTriggerToast t;
+        t.text = gameHandler.popAreaTriggerMsg();
+        t.age  = 0.0f;
+        areaTriggerToasts_.push_back(std::move(t));
+        if (areaTriggerToasts_.size() > 4)
+            areaTriggerToasts_.erase(areaTriggerToasts_.begin());
+    }
+
+    // Age and prune
+    constexpr float kLifetime = 4.5f;
+    for (auto& t : areaTriggerToasts_) t.age += deltaTime;
+    areaTriggerToasts_.erase(
+        std::remove_if(areaTriggerToasts_.begin(), areaTriggerToasts_.end(),
+                       [](const AreaTriggerToast& t) { return t.age >= kLifetime; }),
+        areaTriggerToasts_.end());
+    if (areaTriggerToasts_.empty()) return;
+
+    auto* window = core::Application::getInstance().getWindow();
+    float screenW = window ? static_cast<float>(window->getWidth())  : 1280.0f;
+    float screenH = window ? static_cast<float>(window->getHeight()) :  720.0f;
+
+    ImDrawList* draw = ImGui::GetForegroundDrawList();
+    ImFont* font = ImGui::GetFont();
+    constexpr float kSlideDur = 0.35f;
+
+    for (int i = 0; i < static_cast<int>(areaTriggerToasts_.size()); ++i) {
+        const auto& t = areaTriggerToasts_[i];
+
+        float slideIn  = std::min(t.age, kSlideDur) / kSlideDur;
+        float slideOut = std::min(std::max(0.0f, kLifetime - t.age), kSlideDur) / kSlideDur;
+        float alpha    = std::clamp(std::min(slideIn, slideOut), 0.0f, 1.0f);
+
+        // Measure text
+        ImVec2 txtSz = font->CalcTextSizeA(13.0f, FLT_MAX, 0.0f, t.text.c_str());
+        float toastW = txtSz.x + 30.0f;
+        float toastH = 30.0f;
+
+        // Center horizontally, place below zone text (center of lower-third)
+        float toastX = (screenW - toastW) * 0.5f;
+        float toastY = screenH * 0.62f + i * (toastH + 3.0f);
+        // Slide up from below
+        float offY = (1.0f - std::min(slideIn, slideOut)) * (toastH + 12.0f);
+        toastY += offY;
+
+        ImVec2 tl(toastX, toastY);
+        ImVec2 br(toastX + toastW, toastY + toastH);
+
+        draw->AddRectFilled(tl, br, IM_COL32(8, 12, 22, (int)(alpha * 190)), 5.0f);
+        draw->AddRect(tl, br, IM_COL32(100, 160, 220, (int)(alpha * 200)), 5.0f, 0, 1.0f);
+
+        float cx = tl.x + toastW * 0.5f;
+        // Shadow
+        draw->AddText(font, 13.0f,
+            ImVec2(cx - txtSz.x * 0.5f + 1, tl.y + (toastH - txtSz.y) * 0.5f + 1),
+            IM_COL32(0, 0, 0, (int)(alpha * 180)), t.text.c_str());
+        // Text in light blue
+        draw->AddText(font, 13.0f,
+            ImVec2(cx - txtSz.x * 0.5f, tl.y + (toastH - txtSz.y) * 0.5f),
+            IM_COL32(180, 220, 255, (int)(alpha * 240)), t.text.c_str());
     }
 }
 

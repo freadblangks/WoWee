@@ -2777,7 +2777,27 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
                         ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoScrollbar)) {
                     std::string totName = getEntityName(totEntity);
-                    ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "%s", totName.c_str());
+                    // Selectable so we can attach a right-click context menu
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Header,        ImVec4(0,0,0,0));
+                    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(1,1,1,0.08f));
+                    ImGui::PushStyleColor(ImGuiCol_HeaderActive,  ImVec4(1,1,1,0.12f));
+                    if (ImGui::Selectable(totName.c_str(), false,
+                            ImGuiSelectableFlags_DontClosePopups,
+                            ImVec2(ImGui::CalcTextSize(totName.c_str()).x, 0))) {
+                        gameHandler.setTarget(totGuid);
+                    }
+                    ImGui::PopStyleColor(4);
+
+                    if (ImGui::BeginPopupContextItem("##ToTCtx")) {
+                        ImGui::TextDisabled("%s", totName.c_str());
+                        ImGui::Separator();
+                        if (ImGui::MenuItem("Target"))
+                            gameHandler.setTarget(totGuid);
+                        if (ImGui::MenuItem("Set Focus"))
+                            gameHandler.setFocus(totGuid);
+                        ImGui::EndPopup();
+                    }
 
                     if (totEntity->getType() == game::ObjectType::UNIT ||
                         totEntity->getType() == game::ObjectType::PLAYER) {
@@ -2797,10 +2817,6 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                             ImGui::ProgressBar(pct, ImVec2(-1, 10), "");
                             ImGui::PopStyleColor();
                         }
-                    }
-                    // Click to target the target-of-target
-                    if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(0)) {
-                        gameHandler.setTarget(totGuid);
                     }
                 }
                 ImGui::End();

@@ -1215,6 +1215,13 @@ public:
     using AchievementEarnedCallback = std::function<void(uint32_t achievementId, const std::string& name)>;
     void setAchievementEarnedCallback(AchievementEarnedCallback cb) { achievementEarnedCallback_ = std::move(cb); }
     const std::unordered_set<uint32_t>& getEarnedAchievements() const { return earnedAchievements_; }
+    /// Returns the name of an achievement by ID, or empty string if unknown.
+    const std::string& getAchievementName(uint32_t id) const {
+        auto it = achievementNameCache_.find(id);
+        if (it != achievementNameCache_.end()) return it->second;
+        static const std::string kEmpty;
+        return kEmpty;
+    }
 
     // Server-triggered music callback — fires when SMSG_PLAY_MUSIC is received.
     // The soundId corresponds to a SoundEntries.dbc record. The receiver is

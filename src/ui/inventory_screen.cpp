@@ -1180,6 +1180,57 @@ void InventoryScreen::renderCharacterScreen(game::GameHandler& gameHandler) {
             ImGui::EndTabItem();
         }
 
+        if (ImGui::BeginTabItem("Achievements")) {
+            const auto& earned = gameHandler.getEarnedAchievements();
+            if (earned.empty()) {
+                ImGui::Spacing();
+                ImGui::TextDisabled("No achievements earned yet.");
+            } else {
+                static char achieveFilter[128] = {};
+                ImGui::SetNextItemWidth(-1.0f);
+                ImGui::InputTextWithHint("##achsearch", "Search achievements...",
+                                         achieveFilter, sizeof(achieveFilter));
+                ImGui::Separator();
+
+                char filterLower[128];
+                for (size_t i = 0; i < sizeof(achieveFilter); ++i)
+                    filterLower[i] = static_cast<char>(tolower(static_cast<unsigned char>(achieveFilter[i])));
+
+                ImGui::BeginChild("##AchList", ImVec2(0, 0), false);
+                // Sort by ID for stable ordering
+                std::vector<uint32_t> sortedIds(earned.begin(), earned.end());
+                std::sort(sortedIds.begin(), sortedIds.end());
+                int shown = 0;
+                for (uint32_t id : sortedIds) {
+                    const std::string& name = gameHandler.getAchievementName(id);
+                    const char* displayName = name.empty() ? nullptr : name.c_str();
+                    if (displayName == nullptr) continue;  // skip unknown achievements
+
+                    // Apply filter
+                    if (filterLower[0] != '\0') {
+                        // simple case-insensitive substring match
+                        std::string lower;
+                        lower.reserve(name.size());
+                        for (char c : name) lower += static_cast<char>(tolower(static_cast<unsigned char>(c)));
+                        if (lower.find(filterLower) == std::string::npos) continue;
+                    }
+
+                    ImGui::PushID(static_cast<int>(id));
+                    ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.0f, 1.0f), "[Achievement]");
+                    ImGui::SameLine();
+                    ImGui::Text("%s", displayName);
+                    ImGui::PopID();
+                    ++shown;
+                }
+                if (shown == 0 && filterLower[0] != '\0') {
+                    ImGui::TextDisabled("No achievements match the filter.");
+                }
+                ImGui::Text("Total: %d", static_cast<int>(earned.size()));
+                ImGui::EndChild();
+            }
+            ImGui::EndTabItem();
+        }
+
         ImGui::EndTabBar();
     }
 

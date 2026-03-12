@@ -5013,6 +5013,36 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
             dl->AddText(ImVec2(tx, ty), IM_COL32(255, 255, 255, 255), cdText);
         }
 
+        // Item stack count overlay — bottom-right corner of icon
+        if (slot.type == game::ActionBarSlot::ITEM && slot.id != 0) {
+            // Count total of this item across all inventory slots
+            auto& inv = gameHandler.getInventory();
+            int totalCount = 0;
+            for (int bi = 0; bi < inv.getBackpackSize(); bi++) {
+                const auto& bs = inv.getBackpackSlot(bi);
+                if (!bs.empty() && bs.item.itemId == slot.id) totalCount += bs.item.stackCount;
+            }
+            for (int bag = 0; bag < game::Inventory::NUM_BAG_SLOTS; bag++) {
+                for (int si = 0; si < inv.getBagSize(bag); si++) {
+                    const auto& bs = inv.getBagSlot(bag, si);
+                    if (!bs.empty() && bs.item.itemId == slot.id) totalCount += bs.item.stackCount;
+                }
+            }
+            if (totalCount > 0) {
+                char countStr[8];
+                snprintf(countStr, sizeof(countStr), "%d", totalCount);
+                ImVec2 btnMax = ImGui::GetItemRectMax();
+                ImVec2 tsz = ImGui::CalcTextSize(countStr);
+                float cx2 = btnMax.x - tsz.x - 2.0f;
+                float cy2 = btnMax.y - tsz.y - 1.0f;
+                auto* cdl = ImGui::GetWindowDrawList();
+                cdl->AddText(ImVec2(cx2 + 1.0f, cy2 + 1.0f), IM_COL32(0, 0, 0, 200), countStr);
+                cdl->AddText(ImVec2(cx2, cy2),
+                    totalCount <= 1 ? IM_COL32(220, 100, 100, 255) : IM_COL32(255, 255, 255, 255),
+                    countStr);
+            }
+        }
+
         // Key label below
         ImGui::TextDisabled("%s", keyLabel);
 

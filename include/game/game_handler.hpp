@@ -332,6 +332,19 @@ public:
     // Inspection
     void inspectTarget();
 
+    struct InspectResult {
+        uint64_t    guid           = 0;
+        std::string playerName;
+        uint32_t    totalTalents   = 0;
+        uint32_t    unspentTalents = 0;
+        uint8_t     talentGroups   = 0;
+        uint8_t     activeTalentGroup = 0;
+        std::array<uint32_t, 19> itemEntries{}; // 0=head…18=ranged
+    };
+    const InspectResult* getInspectResult() const {
+        return inspectResult_.guid ? &inspectResult_ : nullptr;
+    }
+
     // Server info commands
     void queryServerTime();
     void requestPlayedTime();
@@ -2019,6 +2032,7 @@ private:
 
     // Inspect fallback (when visible item fields are missing/unreliable)
     std::unordered_map<uint64_t, std::array<uint32_t, 19>> inspectedPlayerItemEntries_;
+    InspectResult inspectResult_; // most-recently received inspect response
     std::unordered_set<uint64_t> pendingAutoInspect_;
     float inspectRateLimit_ = 0.0f;
 

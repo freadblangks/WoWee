@@ -11258,16 +11258,21 @@ void GameHandler::handleInspectResults(network::Packet& packet) {
         }
     }
 
-    // Display inspect results
-    std::string msg = "Inspect: " + playerName;
-    msg += " - " + std::to_string(totalTalents) + " talent points spent";
-    if (unspentTalents > 0) {
-        msg += ", " + std::to_string(unspentTalents) + " unspent";
+    // Store inspect result for UI display
+    inspectResult_.guid              = guid;
+    inspectResult_.playerName        = playerName;
+    inspectResult_.totalTalents      = totalTalents;
+    inspectResult_.unspentTalents    = unspentTalents;
+    inspectResult_.talentGroups      = talentGroupCount;
+    inspectResult_.activeTalentGroup = activeTalentGroup;
+
+    // Merge any gear we already have from a prior inspect request
+    auto gearIt = inspectedPlayerItemEntries_.find(guid);
+    if (gearIt != inspectedPlayerItemEntries_.end()) {
+        inspectResult_.itemEntries = gearIt->second;
+    } else {
+        inspectResult_.itemEntries = {};
     }
-    if (talentGroupCount > 1) {
-        msg += " (dual spec, active: " + std::to_string(activeTalentGroup + 1) + ")";
-    }
-    addSystemChatMessage(msg);
 
     LOG_INFO("Inspect results for ", playerName, ": ", totalTalents, " talents, ",
              unspentTalents, " unspent, ", (int)talentGroupCount, " specs");

@@ -499,6 +499,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderInstanceLockouts(gameHandler);
     renderAchievementWindow(gameHandler);
     renderGmTicketWindow(gameHandler);
+    renderInspectWindow(gameHandler);
     // renderQuestMarkers(gameHandler);  // Disabled - using 3D billboard markers now
     if (showMinimap_) {
         renderMinimapMarkers(gameHandler);
@@ -2621,6 +2622,7 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                 }
                 if (ImGui::MenuItem("Inspect")) {
                     gameHandler.inspectTarget();
+                    showInspectWindow_ = true;
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Add Friend")) {
@@ -3009,6 +3011,7 @@ void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
                 if (ImGui::MenuItem("Inspect")) {
                     gameHandler.setTarget(fGuid);
                     gameHandler.inspectTarget();
+                    showInspectWindow_ = true;
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Add Friend"))
@@ -3144,6 +3147,7 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
             // /inspect command
             if (cmdLower == "inspect") {
                 gameHandler.inspectTarget();
+                showInspectWindow_ = true;
                 chatInputBuffer[0] = '\0';
                 return;
             }
@@ -6348,6 +6352,7 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                         if (ImGui::MenuItem("Inspect")) {
                             gameHandler.setTarget(m.guid);
                             gameHandler.inspectTarget();
+                            showInspectWindow_ = true;
                         }
                         bool isLeader = (partyData.leaderGuid == gameHandler.getPlayerGuid());
                         if (isLeader) {
@@ -6532,6 +6537,7 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                 if (ImGui::MenuItem("Inspect")) {
                     gameHandler.setTarget(member.guid);
                     gameHandler.inspectTarget();
+                    showInspectWindow_ = true;
                 }
                 ImGui::Separator();
                 if (!member.name.empty()) {
@@ -14479,6 +14485,97 @@ void GameScreen::renderGmTicketWindow(game::GameHandler& gameHandler) {
     ImGui::SameLine();
     if (ImGui::Button("Delete Ticket", ImVec2(100, 0))) {
         gameHandler.deleteGmTicket();
+    }
+
+    ImGui::End();
+}
+
+// ─── Inspect Window ───────────────────────────────────────────────────────────
+void GameScreen::renderInspectWindow(game::GameHandler& gameHandler) {
+    if (!showInspectWindow_) return;
+
+    // Slot index 0..18 maps to equipment slots 1..19 (WoW convention: slot 0 unused on server)
+    static const char* kSlotNames[19] = {
+        "Head", "Neck", "Shoulder", "Shirt", "Chest",
+        "Waist", "Legs", "Feet", "Wrist", "Hands",
+        "Finger 1", "Finger 2", "Trinket 1", "Trinket 2", "Back",
+        "Main Hand", "Off Hand", "Ranged", "Tabard"
+    };
+
+    ImGui::SetNextWindowSize(ImVec2(360, 440), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(350, 120), ImGuiCond_FirstUseEver);
+
+    const game::GameHandler::InspectResult* result = gameHandler.getInspectResult();
+
+    std::string title = result ? ("Inspect: " + result->playerName + "###InspectWin")
+                                : "Inspect###InspectWin";
+    if (!ImGui::Begin(title.c_str(), &showInspectWindow_, ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+
+    if (!result) {
+        ImGui::TextDisabled("No inspect data yet. Target a player and use Inspect.");
+        ImGui::End();
+        return;
+    }
+
+    // Talent summary
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.82f, 0.0f, 1.0f)); // gold
+    ImGui::Text("%s", result->playerName.c_str());
+    ImGui::PopStyleColor();
+    ImGui::SameLine();
+    ImGui::TextDisabled("  %u talent pts", result->totalTalents);
+    if (result->unspentTalents > 0) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "(%u unspent)", result->unspentTalents);
+    }
+    if (result->talentGroups > 1) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("  Dual spec (active %u)", (unsigned)result->activeTalentGroup + 1);
+    }
+
+    ImGui::Separator();
+
+    // Equipment list
+    bool hasAnyGear = false;
+    for (int s = 0; s < 19; ++s) {
+        if (result->itemEntries[s] != 0) { hasAnyGear = true; break; }
+    }
+
+    if (!hasAnyGear) {
+        ImGui::TextDisabled("Equipment data not yet available.");
+        ImGui::TextDisabled("(Gear loads after the player is inspected in-range)");
+    } else {
+        if (ImGui::BeginChild("##inspect_gear", ImVec2(0, 0), false)) {
+            for (int s = 0; s < 19; ++s) {
+                uint32_t entry = result->itemEntries[s];
+                if (entry == 0) continue;
+
+                const game::ItemQueryResponseData* info = gameHandler.getItemInfo(entry);
+                if (!info) {
+                    gameHandler.ensureItemInfo(entry);
+                    ImGui::TextDisabled("[%s]  (loading…)", kSlotNames[s]);
+                    continue;
+                }
+
+                ImGui::TextDisabled("%s", kSlotNames[s]);
+                ImGui::SameLine(90);
+                auto qColor = InventoryScreen::getQualityColor(
+                    static_cast<game::ItemQuality>(info->quality));
+                ImGui::TextColored(qColor, "%s", info->name.c_str());
+                if (ImGui::IsItemHovered()) {
+                    ImGui::BeginTooltip();
+                    ImGui::TextColored(qColor, "%s", info->name.c_str());
+                    if (info->itemLevel > 0)
+                        ImGui::Text("Item Level %u", info->itemLevel);
+                    if (info->armor > 0)
+                        ImGui::Text("Armor: %d", info->armor);
+                    ImGui::EndTooltip();
+                }
+            }
+        }
+        ImGui::EndChild();
     }
 
     ImGui::End();

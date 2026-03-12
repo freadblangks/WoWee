@@ -6800,7 +6800,30 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                     maxHp = unit->getMaxHealth();
                 }
             }
-            if (maxHp > 0) {
+            // Check dead/ghost state for health bar rendering
+            bool memberDead = false;
+            bool memberOffline = false;
+            if (member.hasPartyStats) {
+                bool isOnline2 = (member.onlineStatus & 0x0001) != 0;
+                bool isDead2   = (member.onlineStatus & 0x0020) != 0;
+                bool isGhost2  = (member.onlineStatus & 0x0010) != 0;
+                memberDead    = isDead2 || isGhost2;
+                memberOffline = !isOnline2;
+            }
+
+            if (memberDead) {
+                // Gray "Dead" bar for fallen party members
+                ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.35f, 0.35f, 0.35f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_FrameBg,       ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
+                ImGui::ProgressBar(0.0f, ImVec2(-1, 14), "Dead");
+                ImGui::PopStyleColor(2);
+            } else if (memberOffline) {
+                // Dim bar for offline members
+                ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.25f, 0.25f, 0.25f, 0.6f));
+                ImGui::PushStyleColor(ImGuiCol_FrameBg,       ImVec4(0.1f, 0.1f, 0.1f, 0.6f));
+                ImGui::ProgressBar(0.0f, ImVec2(-1, 14), "Offline");
+                ImGui::PopStyleColor(2);
+            } else if (maxHp > 0) {
                 float pct = static_cast<float>(hp) / static_cast<float>(maxHp);
                 ImGui::PushStyleColor(ImGuiCol_PlotHistogram,
                     pct > 0.5f ? ImVec4(0.2f, 0.8f, 0.2f, 1.0f) :
@@ -6816,8 +6839,8 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                 ImGui::PopStyleColor();
             }
 
-            // Power bar (mana/rage/energy) from party stats
-            if (member.hasPartyStats && member.maxPower > 0) {
+            // Power bar (mana/rage/energy) from party stats — hidden for dead/offline
+            if (!memberDead && !memberOffline && member.hasPartyStats && member.maxPower > 0) {
                 float powerPct = static_cast<float>(member.curPower) / static_cast<float>(member.maxPower);
                 ImVec4 powerColor;
                 switch (member.powerType) {

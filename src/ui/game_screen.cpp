@@ -8376,6 +8376,15 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
         drawList->AddText(ImVec2(nameX + 1.0f, nameY + 1.0f), IM_COL32(0, 0, 0, A(160)), labelBuf);
         drawList->AddText(ImVec2(nameX,         nameY),         nameColor, labelBuf);
 
+        // Group leader crown to the right of the name on player nameplates
+        if (isPlayer && gameHandler.isInGroup() &&
+            gameHandler.getPartyData().leaderGuid == guid) {
+            float crownX = nameX + textSize.x + 3.0f;
+            const char* crownSym = "\xe2\x99\x9b";  // ♛
+            drawList->AddText(ImVec2(crownX + 1.0f, nameY + 1.0f), IM_COL32(0, 0, 0, A(160)), crownSym);
+            drawList->AddText(ImVec2(crownX,         nameY),         IM_COL32(255, 215, 0, A(240)), crownSym);
+        }
+
         // Raid mark (if any) to the left of the name
         {
             static const struct { const char* sym; ImU32 col; } kNPMarks[] = {

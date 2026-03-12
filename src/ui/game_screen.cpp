@@ -5131,7 +5131,16 @@ void GameScreen::renderQuestObjectiveTracker(game::GameHandler& gameHandler) {
                     if (reqIt != q.requiredItemCounts.end()) required = reqIt->second;
                     const auto* info = gameHandler.getItemInfo(itemId);
                     const char* itemName = (info && !info->name.empty()) ? info->name.c_str() : nullptr;
-                    if (itemName) {
+
+                    // Show small icon if available
+                    uint32_t dispId = (info && info->displayInfoId) ? info->displayInfoId : 0;
+                    VkDescriptorSet iconTex = dispId ? inventoryScreen.getItemIcon(dispId) : VK_NULL_HANDLE;
+                    if (iconTex) {
+                        ImGui::Image((ImTextureID)(uintptr_t)iconTex, ImVec2(12, 12));
+                        ImGui::SameLine(0, 3);
+                        ImGui::TextColored(ImVec4(0.75f, 0.75f, 0.75f, 1.0f),
+                                           "%s: %u/%u", itemName ? itemName : "Item", count, required);
+                    } else if (itemName) {
                         ImGui::TextColored(ImVec4(0.75f, 0.75f, 0.75f, 1.0f),
                                            "  %s: %u/%u", itemName, count, required);
                     } else {

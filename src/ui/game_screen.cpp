@@ -4483,8 +4483,9 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
 
             char cdText[16];
             float cd = slot.cooldownRemaining;
-            if (cd >= 60.0f) snprintf(cdText, sizeof(cdText), "%dm", (int)cd / 60);
-            else             snprintf(cdText, sizeof(cdText), "%.0f", cd);
+            if (cd >= 3600.0f)     snprintf(cdText, sizeof(cdText), "%dh", (int)cd / 3600);
+            else if (cd >= 60.0f)  snprintf(cdText, sizeof(cdText), "%dm%ds", (int)cd / 60, (int)cd % 60);
+            else                   snprintf(cdText, sizeof(cdText), "%ds", (int)cd);
             ImVec2 textSize = ImGui::CalcTextSize(cdText);
             float tx = cx - textSize.x * 0.5f;
             float ty = cy - textSize.y * 0.5f;
@@ -5830,7 +5831,13 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                     pct > 0.5f ? ImVec4(0.2f, 0.8f, 0.2f, 1.0f) :
                     pct > 0.2f ? ImVec4(0.8f, 0.8f, 0.2f, 1.0f) :
                                  ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
-                ImGui::ProgressBar(pct, ImVec2(-1, 12), "");
+                char hpText[32];
+                if (maxHp >= 10000)
+                    snprintf(hpText, sizeof(hpText), "%dk/%dk",
+                             (int)hp / 1000, (int)maxHp / 1000);
+                else
+                    snprintf(hpText, sizeof(hpText), "%u/%u", hp, maxHp);
+                ImGui::ProgressBar(pct, ImVec2(-1, 14), hpText);
                 ImGui::PopStyleColor();
             }
 

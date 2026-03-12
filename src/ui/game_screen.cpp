@@ -7385,9 +7385,38 @@ void GameScreen::renderGossipWindow(game::GameHandler& gameHandler) {
             for (size_t qi = 0; qi < gossip.quests.size(); qi++) {
                 const auto& quest = gossip.quests[qi];
                 ImGui::PushID(static_cast<int>(qi));
+
+                // Determine icon and color based on QuestGiverStatus stored in questIcon
+                // 5=INCOMPLETE (gray?), 6=REWARD_REP (yellow?), 7=AVAILABLE_LOW (gray!),
+                // 8=AVAILABLE (yellow!), 10=REWARD (yellow?)
+                const char* statusIcon = "!";
+                ImVec4 statusColor = ImVec4(1.0f, 1.0f, 0.3f, 1.0f); // yellow
+                switch (quest.questIcon) {
+                    case 5:  // INCOMPLETE — in progress but not done
+                        statusIcon = "?";
+                        statusColor = ImVec4(0.65f, 0.65f, 0.65f, 1.0f); // gray
+                        break;
+                    case 6:  // REWARD_REP — repeatable, ready to turn in
+                    case 10: // REWARD — ready to turn in
+                        statusIcon = "?";
+                        statusColor = ImVec4(1.0f, 1.0f, 0.3f, 1.0f); // yellow
+                        break;
+                    case 7:  // AVAILABLE_LOW — available but gray (low-level)
+                        statusIcon = "!";
+                        statusColor = ImVec4(0.65f, 0.65f, 0.65f, 1.0f); // gray
+                        break;
+                    default: // AVAILABLE (8) and any others
+                        statusIcon = "!";
+                        statusColor = ImVec4(1.0f, 1.0f, 0.3f, 1.0f); // yellow
+                        break;
+                }
+
+                // Render: colored icon glyph then [Lv] Title
+                ImGui::TextColored(statusColor, "%s", statusIcon);
+                ImGui::SameLine(0, 4);
                 char qlabel[256];
                 snprintf(qlabel, sizeof(qlabel), "[%d] %s", quest.questLevel, quest.title.c_str());
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.3f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, statusColor);
                 if (ImGui::Selectable(qlabel)) {
                     gameHandler.selectGossipQuest(quest.questId);
                 }

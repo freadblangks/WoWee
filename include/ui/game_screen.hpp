@@ -66,6 +66,8 @@ private:
     bool showMinimap_ = true;  // M key toggles minimap
     bool showNameplates_ = true;  // V key toggles nameplates
     float nameplateScale_ = 1.0f; // Scale multiplier for nameplate bar dimensions
+    uint32_t lastPlayerHp_ = 0;   // Previous frame HP for damage flash detection
+    float damageFlashAlpha_ = 0.0f; // Screen edge flash intensity (fades to 0)
     bool showPlayerInfo = false;
     bool showSocialFrame_ = false;  // O key toggles social/friends list
     bool showGuildRoster_ = false;

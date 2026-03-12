@@ -654,6 +654,52 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         }
     }
 
+    // Screen edge damage flash — red vignette that fires on HP decrease
+    {
+        auto playerEntity = gameHandler.getEntityManager().getEntity(gameHandler.getPlayerGuid());
+        uint32_t currentHp = 0;
+        if (playerEntity && (playerEntity->getType() == game::ObjectType::PLAYER ||
+                             playerEntity->getType() == game::ObjectType::UNIT)) {
+            auto unit = std::static_pointer_cast<game::Unit>(playerEntity);
+            if (unit->getMaxHealth() > 0)
+                currentHp = unit->getHealth();
+        }
+
+        // Detect HP drop (ignore transitions from 0 — entity just spawned or uninitialized)
+        if (lastPlayerHp_ > 0 && currentHp < lastPlayerHp_ && currentHp > 0)
+            damageFlashAlpha_ = 1.0f;
+        lastPlayerHp_ = currentHp;
+
+        // Fade out over ~0.5 seconds
+        if (damageFlashAlpha_ > 0.0f) {
+            damageFlashAlpha_ -= ImGui::GetIO().DeltaTime * 2.0f;
+            if (damageFlashAlpha_ < 0.0f) damageFlashAlpha_ = 0.0f;
+
+            // Draw four red gradient rectangles along each screen edge (vignette style)
+            ImDrawList* fg = ImGui::GetForegroundDrawList();
+            ImGuiIO& io = ImGui::GetIO();
+            const float W = io.DisplaySize.x;
+            const float H = io.DisplaySize.y;
+            const int alpha = static_cast<int>(damageFlashAlpha_ * 180.0f);
+            const ImU32 edgeCol  = IM_COL32(200, 0, 0, alpha);
+            const ImU32 fadeCol  = IM_COL32(200, 0, 0, 0);
+            const float thickness = std::min(W, H) * 0.12f;
+
+            // Top
+            fg->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(W, thickness),
+                                        edgeCol, edgeCol, fadeCol, fadeCol);
+            // Bottom
+            fg->AddRectFilledMultiColor(ImVec2(0, H - thickness), ImVec2(W, H),
+                                        fadeCol, fadeCol, edgeCol, edgeCol);
+            // Left
+            fg->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(thickness, H),
+                                        edgeCol, fadeCol, fadeCol, edgeCol);
+            // Right
+            fg->AddRectFilledMultiColor(ImVec2(W - thickness, 0), ImVec2(W, H),
+                                        fadeCol, edgeCol, edgeCol, fadeCol);
+        }
+    }
+
     // Restore previous alpha
     ImGui::GetStyle().Alpha = prevAlpha;
 }
@@ -3394,6 +3440,41 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
             // Targeting commands
             if (cmdLower == "cleartarget") {
                 gameHandler.clearTarget();
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            if (cmdLower == "target" && spacePos != std::string::npos) {
+                // Search visible entities for name match (case-insensitive prefix)
+                std::string targetArg = command.substr(spacePos + 1);
+                std::string targetArgLower = targetArg;
+                for (char& c : targetArgLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                uint64_t bestGuid = 0;
+                for (const auto& [guid, entity] : gameHandler.getEntityManager().getEntities()) {
+                    if (!entity || entity->getType() == game::ObjectType::OBJECT) continue;
+                    std::string name;
+                    if (entity->getType() == game::ObjectType::PLAYER ||
+                        entity->getType() == game::ObjectType::UNIT) {
+                        auto unit = std::static_pointer_cast<game::Unit>(entity);
+                        name = unit->getName();
+                    }
+                    if (name.empty()) continue;
+                    std::string nameLower = name;
+                    for (char& c : nameLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                    if (nameLower.find(targetArgLower) == 0) {
+                        bestGuid = guid;
+                        if (nameLower == targetArgLower) break;  // Exact match wins
+                    }
+                }
+                if (bestGuid) {
+                    gameHandler.setTarget(bestGuid);
+                } else {
+                    game::MessageChatData sysMsg;
+                    sysMsg.type = game::ChatType::SYSTEM;
+                    sysMsg.language = game::ChatLanguage::UNIVERSAL;
+                    sysMsg.message = "No target matching '" + targetArg + "' found.";
+                    gameHandler.addLocalChatMessage(sysMsg);
+                }
                 chatInputBuffer[0] = '\0';
                 return;
             }

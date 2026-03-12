@@ -565,6 +565,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderRaidWarningOverlay(gameHandler);
     renderCombatText(gameHandler);
     renderDPSMeter(gameHandler);
+    renderDurabilityWarning(gameHandler);
     renderUIErrors(gameHandler, ImGui::GetIO().DeltaTime);
     renderRepToasts(ImGui::GetIO().DeltaTime);
     renderQuestCompleteToasts(ImGui::GetIO().DeltaTime);
@@ -9086,6 +9087,72 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
 
     ImGui::PopStyleColor();
     ImGui::PopStyleVar();
+}
+
+// ============================================================
+// Durability Warning (equipment damage indicator)
+// ============================================================
+
+void GameScreen::renderDurabilityWarning(game::GameHandler& gameHandler) {
+    if (gameHandler.getPlayerGuid() == 0) return;
+
+    const auto& inv = gameHandler.getInventory();
+
+    // Scan all equipment slots (skip bag slots which have no durability)
+    float minDurPct = 1.0f;
+    bool hasBroken = false;
+
+    for (int i = static_cast<int>(game::EquipSlot::HEAD);
+             i < static_cast<int>(game::EquipSlot::BAG1); ++i) {
+        const auto& slot = inv.getEquipSlot(static_cast<game::EquipSlot>(i));
+        if (slot.empty() || slot.item.maxDurability == 0) continue;
+        if (slot.item.curDurability == 0) {
+            hasBroken = true;
+        }
+        float pct = static_cast<float>(slot.item.curDurability) /
+                    static_cast<float>(slot.item.maxDurability);
+        if (pct < minDurPct) minDurPct = pct;
+    }
+
+    // Only show warning below 20%
+    if (minDurPct >= 0.2f && !hasBroken) return;
+
+    ImGuiIO& io = ImGui::GetIO();
+    const float screenW = io.DisplaySize.x;
+    const float screenH = io.DisplaySize.y;
+
+    // Position: just above the XP bar / action bar area (bottom-center)
+    const float warningW = 220.0f;
+    const float warningH = 26.0f;
+    const float posX = (screenW - warningW) * 0.5f;
+    const float posY = screenH - 140.0f;  // above action bar
+
+    ImGui::SetNextWindowPos(ImVec2(posX, posY), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(warningW, warningH), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.75f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6, 4));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(0, 0));
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                             ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoInputs |
+                             ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                             ImGuiWindowFlags_NoBringToFrontOnFocus;
+
+    if (ImGui::Begin("##durability_warn", nullptr, flags)) {
+        if (hasBroken) {
+            ImGui::TextColored(ImVec4(1.0f, 0.15f, 0.15f, 1.0f),
+                               "\xef\x94\x9b Gear broken! Visit a repair NPC");
+        } else {
+            int pctInt = static_cast<int>(minDurPct * 100.0f);
+            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.1f, 1.0f),
+                               "\xef\x94\x9b Low durability: %d%%", pctInt);
+        }
+        if (ImGui::IsWindowHovered())
+            ImGui::SetTooltip("Your equipment is damaged. Visit any blacksmith or repair NPC.");
+    }
+    ImGui::End();
+    ImGui::PopStyleVar(3);
 }
 
 // ============================================================

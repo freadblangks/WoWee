@@ -368,6 +368,7 @@ private:
     void renderNameplates(game::GameHandler& gameHandler);
     void renderBattlegroundScore(game::GameHandler& gameHandler);
     void renderDPSMeter(game::GameHandler& gameHandler);
+    void renderDurabilityWarning(game::GameHandler& gameHandler);
 
     /**
      * Inventory screen

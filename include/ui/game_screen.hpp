@@ -574,6 +574,19 @@ private:
     bool pvpHonorCallbackSet_ = false;
     void renderPvpHonorToasts();
 
+    // Item loot toast — quality-coloured popup when an item is received
+    struct ItemLootToastEntry {
+        uint32_t itemId = 0;
+        uint32_t count = 0;
+        uint32_t quality = 1;  // 0=grey,1=white,2=green,3=blue,4=purple,5=orange
+        std::string name;
+        float age = 0.0f;
+    };
+    static constexpr float ITEM_LOOT_TOAST_DURATION = 3.0f;
+    std::vector<ItemLootToastEntry> itemLootToasts_;
+    bool itemLootCallbackSet_ = false;
+    void renderItemLootToasts();
+
     // Zone discovery text ("Entering: <ZoneName>")
     static constexpr float ZONE_TEXT_DURATION = 5.0f;
     float zoneTextTimer_ = 0.0f;

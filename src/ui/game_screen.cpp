@@ -359,6 +359,25 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         pvpHonorCallbackSet_ = true;
     }
 
+    // Set up item loot toast callback (once)
+    if (!itemLootCallbackSet_) {
+        gameHandler.setItemLootCallback([this](uint32_t itemId, uint32_t count,
+                                               uint32_t quality, const std::string& name) {
+            // Coalesce: if same item already in queue, bump count and reset age
+            for (auto& t : itemLootToasts_) {
+                if (t.itemId == itemId) {
+                    t.count += count;
+                    t.age = 0.0f;
+                    return;
+                }
+            }
+            if (itemLootToasts_.size() >= 5)
+                itemLootToasts_.erase(itemLootToasts_.begin());
+            itemLootToasts_.push_back({itemId, count, quality, name, 0.0f});
+        });
+        itemLootCallbackSet_ = true;
+    }
+
     // Set up UI error frame callback (once)
     if (!uiErrorCallbackSet_) {
         gameHandler.setUIErrorCallback([this](const std::string& msg) {
@@ -692,6 +711,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderQuestProgressToasts();
     renderPlayerLevelUpToasts(gameHandler);
     renderPvpHonorToasts();
+    renderItemLootToasts();
     renderZoneText();
 
     // World map (M key toggle handled inside)
@@ -18223,6 +18243,93 @@ void GameScreen::renderQuestProgressToasts() {
             snprintf(progBuf, sizeof(progBuf), "%u/%u", toast.current, toast.required);
         bgDL->AddText(ImVec2(toastX + 8.0f, ty + 32.0f),
                       IM_COL32(220, 220, 200, static_cast<uint8_t>(210 * alpha)), progBuf);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Item loot toasts — quality-coloured strip at bottom-left when item received
+// ---------------------------------------------------------------------------
+
+void GameScreen::renderItemLootToasts() {
+    if (itemLootToasts_.empty()) return;
+
+    float dt = ImGui::GetIO().DeltaTime;
+    for (auto& t : itemLootToasts_) t.age += dt;
+    itemLootToasts_.erase(
+        std::remove_if(itemLootToasts_.begin(), itemLootToasts_.end(),
+            [](const ItemLootToastEntry& t) { return t.age >= ITEM_LOOT_TOAST_DURATION; }),
+        itemLootToasts_.end());
+    if (itemLootToasts_.empty()) return;
+
+    ImVec2 displaySize = ImGui::GetIO().DisplaySize;
+    float screenH = displaySize.y > 0.0f ? displaySize.y : 720.0f;
+
+    // Quality colours (matching WoW convention)
+    static const ImU32 kQualityColors[] = {
+        IM_COL32(157, 157, 157, 255),  // 0 grey (poor)
+        IM_COL32(255, 255, 255, 255),  // 1 white (common)
+        IM_COL32( 30, 255,  30, 255),  // 2 green (uncommon)
+        IM_COL32(  0, 112, 221, 255),  // 3 blue (rare)
+        IM_COL32(163,  53, 238, 255),  // 4 purple (epic)
+        IM_COL32(255, 128,   0, 255),  // 5 orange (legendary)
+    };
+
+    // Stack at bottom-left above action bars; each item is 24 px tall
+    constexpr float TOAST_W   = 260.0f;
+    constexpr float TOAST_H   = 24.0f;
+    constexpr float TOAST_GAP = 2.0f;
+    constexpr float TOAST_X   = 14.0f;
+    float baseY = screenH * 0.68f;  // slightly above the whisper toasts
+
+    ImDrawList* bgDL = ImGui::GetBackgroundDrawList();
+    const int count = static_cast<int>(itemLootToasts_.size());
+
+    for (int i = 0; i < count; ++i) {
+        const auto& toast = itemLootToasts_[i];
+
+        float remaining = ITEM_LOOT_TOAST_DURATION - toast.age;
+        float alpha;
+        if (toast.age < 0.15f)
+            alpha = toast.age / 0.15f;
+        else if (remaining < 0.7f)
+            alpha = remaining / 0.7f;
+        else
+            alpha = 1.0f;
+        alpha = std::clamp(alpha, 0.0f, 1.0f);
+
+        // Slide-in from left
+        float slideX = (toast.age < 0.15f) ? (TOAST_W * (1.0f - toast.age / 0.15f)) : 0.0f;
+        float tx = TOAST_X - slideX;
+        float ty = baseY - (count - i) * (TOAST_H + TOAST_GAP);
+
+        uint8_t bgA = static_cast<uint8_t>(180 * alpha);
+        uint8_t fgA = static_cast<uint8_t>(255 * alpha);
+
+        // Background: very dark with quality-tinted left border accent
+        bgDL->AddRectFilled(ImVec2(tx, ty), ImVec2(tx + TOAST_W, ty + TOAST_H),
+                            IM_COL32(12, 12, 12, bgA), 3.0f);
+
+        // Quality colour accent bar on left edge (3px wide)
+        ImU32 qualCol = kQualityColors[std::min(static_cast<uint32_t>(5u), toast.quality)];
+        ImU32 qualColA = (qualCol & 0x00FFFFFFu) | (static_cast<uint32_t>(fgA) << 24u);
+        bgDL->AddRectFilled(ImVec2(tx, ty), ImVec2(tx + 3.0f, ty + TOAST_H), qualColA, 3.0f);
+
+        // "Loot:" label in dim white
+        bgDL->AddText(ImVec2(tx + 7.0f, ty + 5.0f),
+                      IM_COL32(160, 160, 160, static_cast<uint8_t>(200 * alpha)), "Loot:");
+
+        // Item name in quality colour
+        std::string displayName = toast.name.empty() ? ("Item #" + std::to_string(toast.itemId)) : toast.name;
+        if (displayName.size() > 26) { displayName.resize(23); displayName += "..."; }
+        bgDL->AddText(ImVec2(tx + 42.0f, ty + 5.0f), qualColA, displayName.c_str());
+
+        // Count (if > 1)
+        if (toast.count > 1) {
+            char countBuf[12];
+            snprintf(countBuf, sizeof(countBuf), "x%u", toast.count);
+            bgDL->AddText(ImVec2(tx + TOAST_W - 34.0f, ty + 5.0f),
+                          IM_COL32(200, 200, 200, static_cast<uint8_t>(200 * alpha)), countBuf);
+        }
     }
 }
 

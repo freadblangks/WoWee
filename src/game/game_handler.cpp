@@ -1701,12 +1701,17 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 queryItemInfo(itemId, 0);
                 if (showInChat) {
                     std::string itemName = "item #" + std::to_string(itemId);
+                    uint32_t quality = 1;  // white default
                     if (const ItemQueryResponseData* info = getItemInfo(itemId)) {
                         if (!info->name.empty()) itemName = info->name;
+                        quality = info->quality;
                     }
                     std::string msg = "Received: " + itemName;
                     if (count > 1) msg += " x" + std::to_string(count);
                     addSystemChatMessage(msg);
+                    if (itemLootCallback_) {
+                        itemLootCallback_(itemId, count, quality, itemName);
+                    }
                 }
                 LOG_INFO("Item push: itemId=", itemId, " count=", count,
                          " showInChat=", static_cast<int>(showInChat));

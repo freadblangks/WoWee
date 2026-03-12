@@ -1494,6 +1494,10 @@ public:
     using PvpHonorCallback = std::function<void(uint32_t honorAmount, uint64_t victimGuid, uint32_t victimRank)>;
     void setPvpHonorCallback(PvpHonorCallback cb) { pvpHonorCallback_ = std::move(cb); }
 
+    // Item looted / received callback (SMSG_ITEM_PUSH_RESULT when showInChat is set)
+    using ItemLootCallback = std::function<void(uint32_t itemId, uint32_t count, uint32_t quality, const std::string& name)>;
+    void setItemLootCallback(ItemLootCallback cb) { itemLootCallback_ = std::move(cb); }
+
     // Quest turn-in completion callback
     using QuestCompleteCallback = std::function<void(uint32_t questId, const std::string& questTitle)>;
     void setQuestCompleteCallback(QuestCompleteCallback cb) { questCompleteCallback_ = std::move(cb); }
@@ -2837,6 +2841,9 @@ private:
 
     // ---- PvP honor credit callback ----
     PvpHonorCallback pvpHonorCallback_;
+
+    // ---- Item loot callback ----
+    ItemLootCallback itemLootCallback_;
 
     // ---- Quest completion callback ----
     QuestCompleteCallback questCompleteCallback_;

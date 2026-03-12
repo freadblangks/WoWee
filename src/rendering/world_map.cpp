@@ -1017,6 +1017,33 @@ void WorldMap::renderImGuiOverlay(const glm::vec3& playerRenderPos, int screenWi
             }
         }
 
+        // Party member dots
+        if (currentIdx >= 0 && viewLevel != ViewLevel::WORLD) {
+            ImFont* font = ImGui::GetFont();
+            for (const auto& dot : partyDots_) {
+                glm::vec2 uv = renderPosToMapUV(dot.renderPos, currentIdx);
+                if (uv.x < 0.0f || uv.x > 1.0f || uv.y < 0.0f || uv.y > 1.0f) continue;
+                float px = imgMin.x + uv.x * displayW;
+                float py = imgMin.y + uv.y * displayH;
+                drawList->AddCircleFilled(ImVec2(px, py), 5.0f, dot.color);
+                drawList->AddCircle(ImVec2(px, py), 5.0f, IM_COL32(0, 0, 0, 200), 0, 1.5f);
+                // Name tooltip on hover
+                if (!dot.name.empty()) {
+                    ImVec2 mp = ImGui::GetMousePos();
+                    float dx = mp.x - px, dy = mp.y - py;
+                    if (dx * dx + dy * dy <= 49.0f) {  // radius 7 px hit area
+                        ImGui::SetTooltip("%s", dot.name.c_str());
+                    }
+                    // Draw name label above the dot
+                    ImVec2 nameSz = font->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, 0.0f, dot.name.c_str());
+                    float tx = px - nameSz.x * 0.5f;
+                    float ty = py - nameSz.y - 7.0f;
+                    drawList->AddText(ImVec2(tx + 1.0f, ty + 1.0f), IM_COL32(0, 0, 0, 180), dot.name.c_str());
+                    drawList->AddText(ImVec2(tx, ty), IM_COL32(255, 255, 255, 220), dot.name.c_str());
+                }
+            }
+        }
+
         // Hover coordinate display — show WoW coordinates under cursor
         if (currentIdx >= 0 && viewLevel != ViewLevel::WORLD) {
             auto& io = ImGui::GetIO();

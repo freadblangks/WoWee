@@ -6139,6 +6139,31 @@ void GameScreen::renderWorldMap(game::GameHandler& gameHandler) {
         gameHandler.getPlayerExploredZoneMasks(),
         gameHandler.hasPlayerExploredZoneMasks());
 
+    // Party member dots on world map
+    {
+        std::vector<rendering::WorldMapPartyDot> dots;
+        if (gameHandler.isInGroup()) {
+            const auto& partyData = gameHandler.getPartyData();
+            for (const auto& member : partyData.members) {
+                if (!member.isOnline || !member.hasPartyStats) continue;
+                if (member.posX == 0 && member.posY == 0) continue;
+                // posY → canonical X (north), posX → canonical Y (west)
+                float wowX = static_cast<float>(member.posY);
+                float wowY = static_cast<float>(member.posX);
+                glm::vec3 rpos = core::coords::canonicalToRender(glm::vec3(wowX, wowY, 0.0f));
+                auto ent = gameHandler.getEntityManager().getEntity(member.guid);
+                uint8_t cid = entityClassId(ent.get());
+                ImU32 col = (cid != 0)
+                    ? classColorU32(cid, 230)
+                    : (member.guid == partyData.leaderGuid
+                       ? IM_COL32(255, 210, 0, 230)
+                       : IM_COL32(100, 180, 255, 230));
+                dots.push_back({ rpos, col, member.name });
+            }
+        }
+        wm->setPartyDots(std::move(dots));
+    }
+
     glm::vec3 playerPos = renderer->getCharacterPosition();
     auto* window = app.getWindow();
     int screenW = window ? window->getWidth() : 1280;

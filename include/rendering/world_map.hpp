@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -16,6 +17,13 @@ namespace rendering {
 class VkContext;
 class VkTexture;
 class VkRenderTarget;
+
+/// Party member dot passed in from the UI layer for world map overlay.
+struct WorldMapPartyDot {
+    glm::vec3 renderPos;   ///< Position in render-space coordinates
+    uint32_t  color;       ///< RGBA packed color (IM_COL32 format)
+    std::string name;      ///< Member name (shown as tooltip on hover)
+};
 
 struct WorldMapZone {
     uint32_t wmaID = 0;
@@ -47,6 +55,7 @@ public:
 
     void setMapName(const std::string& name);
     void setServerExplorationMask(const std::vector<uint32_t>& masks, bool hasData);
+    void setPartyDots(std::vector<WorldMapPartyDot> dots) { partyDots_ = std::move(dots); }
     bool isOpen() const { return open; }
     void close() { open = false; }
 
@@ -112,6 +121,9 @@ private:
 
     // Texture storage (owns all VkTexture objects for zone tiles)
     std::vector<std::unique_ptr<VkTexture>> zoneTextures;
+
+    // Party member dots (set each frame from the UI layer)
+    std::vector<WorldMapPartyDot> partyDots_;
 
     // Exploration / fog of war
     std::vector<uint32_t> serverExplorationMask;

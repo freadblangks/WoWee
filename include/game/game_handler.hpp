@@ -1252,6 +1252,7 @@ public:
     };
     const std::vector<QuestLogEntry>& getQuestLog() const { return questLog_; }
     void abandonQuest(uint32_t questId);
+    void shareQuestWithParty(uint32_t questId);  // CMSG_PUSHQUESTTOPARTY
     bool requestQuestQuery(uint32_t questId, bool force = false);
     bool isQuestTracked(uint32_t questId) const { return trackedQuestIds_.count(questId) > 0; }
     void setQuestTracked(uint32_t questId, bool tracked) {

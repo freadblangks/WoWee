@@ -377,6 +377,11 @@ void QuestLogScreen::render(game::GameHandler& gameHandler, InventoryScreen& inv
                     if (ImGui::MenuItem(tracked ? "Untrack" : "Track")) {
                         gameHandler.setQuestTracked(q.questId, !tracked);
                     }
+                    if (gameHandler.isInGroup() && !q.complete) {
+                        if (ImGui::MenuItem("Share Quest")) {
+                            gameHandler.shareQuestWithParty(q.questId);
+                        }
+                    }
                     if (!q.complete) {
                         ImGui::Separator();
                         if (ImGui::MenuItem("Abandon Quest")) {
@@ -559,11 +564,18 @@ void QuestLogScreen::render(game::GameHandler& gameHandler, InventoryScreen& inv
                     }
                 }
 
-                // Track / Abandon buttons
+                // Track / Share / Abandon buttons
                 ImGui::Separator();
                 bool isTracked = gameHandler.isQuestTracked(sel.questId);
                 if (ImGui::Button(isTracked ? "Untrack" : "Track", ImVec2(100.0f, 0.0f))) {
                     gameHandler.setQuestTracked(sel.questId, !isTracked);
+                }
+                if (gameHandler.isInGroup() && !sel.complete) {
+                    ImGui::SameLine();
+                    if (ImGui::Button("Share", ImVec2(80.0f, 0.0f))) {
+                        gameHandler.shareQuestWithParty(sel.questId);
+                    }
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Share this quest with your party");
                 }
                 if (!sel.complete) {
                     ImGui::SameLine();

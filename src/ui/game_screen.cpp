@@ -6833,6 +6833,11 @@ void GameScreen::renderQuestObjectiveTracker(game::GameHandler& gameHandler) {
                         gameHandler.setQuestTracked(q.questId, true);
                     }
                 }
+                if (gameHandler.isInGroup() && !q.complete) {
+                    if (ImGui::MenuItem("Share Quest")) {
+                        gameHandler.shareQuestWithParty(q.questId);
+                    }
+                }
                 if (!q.complete) {
                     ImGui::Separator();
                     if (ImGui::MenuItem("Abandon Quest")) {

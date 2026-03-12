@@ -16096,6 +16096,28 @@ void GameHandler::abandonQuest(uint32_t questId) {
         gossipPois_.end());
 }
 
+void GameHandler::shareQuestWithParty(uint32_t questId) {
+    if (state != WorldState::IN_WORLD || !socket) {
+        addSystemChatMessage("Cannot share quest: not in world.");
+        return;
+    }
+    if (!isInGroup()) {
+        addSystemChatMessage("You must be in a group to share a quest.");
+        return;
+    }
+    network::Packet pkt(wireOpcode(Opcode::CMSG_PUSHQUESTTOPARTY));
+    pkt.writeUInt32(questId);
+    socket->send(pkt);
+    // Local feedback: find quest title
+    for (const auto& q : questLog_) {
+        if (q.questId == questId && !q.title.empty()) {
+            addSystemChatMessage("Sharing quest: " + q.title);
+            return;
+        }
+    }
+    addSystemChatMessage("Quest shared.");
+}
+
 void GameHandler::handleQuestRequestItems(network::Packet& packet) {
     QuestRequestItemsData data;
     if (!QuestRequestItemsParser::parse(packet, data)) {

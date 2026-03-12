@@ -7841,6 +7841,8 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
                 } else {
                     ImGui::TextColored(bbQc, "%s", name);
                 }
+                if (ImGui::IsItemHovered() && bbInfo && bbInfo->valid)
+                    inventoryScreen.renderItemTooltip(*bbInfo);
                 ImGui::TableSetColumnIndex(2);
                 if (!canAfford) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
                 ImGui::Text("%ug %us %uc", g, s, c);

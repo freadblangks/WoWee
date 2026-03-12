@@ -757,15 +757,25 @@ void SpellbookScreen::render(game::GameHandler& gameHandler, pipeline::AssetMana
 
                         // Interaction
                         if (rowHovered) {
-                            // Start drag on click (not passive)
-                            if (rowClicked && !isPassive) {
+                            // Shift-click to insert spell link into chat
+                            if (rowClicked && ImGui::GetIO().KeyShift && !info->name.empty()) {
+                                // WoW spell link format: |cffffd000|Hspell:<spellId>|h[Name]|h|r
+                                char linkBuf[256];
+                                snprintf(linkBuf, sizeof(linkBuf),
+                                    "|cffffd000|Hspell:%u|h[%s]|h|r",
+                                    info->spellId, info->name.c_str());
+                                pendingChatSpellLink_ = linkBuf;
+                            }
+                            // Start drag on click (not passive, not shift-click)
+                            else if (rowClicked && !isPassive && !ImGui::GetIO().KeyShift) {
                                 draggingSpell_ = true;
                                 dragSpellId_ = info->spellId;
                                 dragSpellIconTex_ = iconTex;
                             }
 
                             // Double-click to cast
-                            if (ImGui::IsMouseDoubleClicked(0) && !isPassive && !onCooldown) {
+                            if (ImGui::IsMouseDoubleClicked(0) && !isPassive && !onCooldown
+                                && !ImGui::GetIO().KeyShift) {
                                 draggingSpell_ = false;
                                 dragSpellId_ = 0;
                                 dragSpellIconTex_ = VK_NULL_HANDLE;

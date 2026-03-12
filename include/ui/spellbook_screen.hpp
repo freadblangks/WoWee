@@ -54,6 +54,13 @@ public:
     uint32_t getDragSpellId() const { return dragSpellId_; }
     void consumeDragSpell() { draggingSpell_ = false; dragSpellId_ = 0; dragSpellIconTex_ = VK_NULL_HANDLE; }
 
+    /// Returns a WoW spell link string if the user shift-clicked a spell, then clears it.
+    std::string getAndClearPendingChatLink() {
+        std::string out = std::move(pendingChatSpellLink_);
+        pendingChatSpellLink_.clear();
+        return out;
+    }
+
 private:
     bool open = false;
     bool pKeyWasDown = false;
@@ -86,6 +93,9 @@ private:
     bool draggingSpell_ = false;
     uint32_t dragSpellId_ = 0;
     VkDescriptorSet dragSpellIconTex_ = VK_NULL_HANDLE;
+
+    // Pending chat spell link from shift-click
+    std::string pendingChatSpellLink_;
 
     void loadSpellDBC(pipeline::AssetManager* assetManager);
     void loadSpellIconDBC(pipeline::AssetManager* assetManager);

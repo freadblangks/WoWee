@@ -476,6 +476,19 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     // Spellbook (P key toggle handled inside)
     spellbookScreen.render(gameHandler, core::Application::getInstance().getAssetManager());
 
+    // Insert spell link into chat if player shift-clicked a spellbook entry
+    {
+        std::string pendingSpellLink = spellbookScreen.getAndClearPendingChatLink();
+        if (!pendingSpellLink.empty()) {
+            size_t curLen = strlen(chatInputBuffer);
+            if (curLen + pendingSpellLink.size() + 1 < sizeof(chatInputBuffer)) {
+                strncat(chatInputBuffer, pendingSpellLink.c_str(), sizeof(chatInputBuffer) - curLen - 1);
+                chatInputMoveCursorToEnd = true;
+                refocusChatInput = true;
+            }
+        }
+    }
+
     // Talents (N key toggle handled inside)
     talentScreen.render(gameHandler);
 

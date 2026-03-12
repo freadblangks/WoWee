@@ -12,6 +12,7 @@
 #include "core/logger.hpp"
 #include <imgui.h>
 #include <cmath>
+#include <cstdio>
 #include <algorithm>
 #include <limits>
 
@@ -1016,6 +1017,40 @@ void WorldMap::renderImGuiOverlay(const glm::vec3& playerRenderPos, int screenWi
             }
         }
 
+        // Hover coordinate display — show WoW coordinates under cursor
+        if (currentIdx >= 0 && viewLevel != ViewLevel::WORLD) {
+            auto& io = ImGui::GetIO();
+            ImVec2 mp = io.MousePos;
+            if (mp.x >= imgMin.x && mp.x <= imgMin.x + displayW &&
+                mp.y >= imgMin.y && mp.y <= imgMin.y + displayH) {
+                float mu = (mp.x - imgMin.x) / displayW;
+                float mv = (mp.y - imgMin.y) / displayH;
+
+                const auto& zone = zones[currentIdx];
+                float left = zone.locLeft, right = zone.locRight;
+                float top = zone.locTop, bottom = zone.locBottom;
+                if (zone.areaID == 0) {
+                    float l, r, t, b;
+                    getContinentProjectionBounds(currentIdx, l, r, t, b);
+                    left = l; right = r; top = t; bottom = b;
+                    // Undo the kVOffset applied during renderPosToMapUV for continent
+                    constexpr float kVOffset = -0.15f;
+                    mv -= kVOffset;
+                }
+
+                float hWowX = left - mu * (left - right);
+                float hWowY = top  - mv * (top  - bottom);
+
+                char coordBuf[32];
+                snprintf(coordBuf, sizeof(coordBuf), "%.0f, %.0f", hWowX, hWowY);
+                ImVec2 coordSz = ImGui::CalcTextSize(coordBuf);
+                float cx = imgMin.x + displayW - coordSz.x - 8.0f;
+                float cy = imgMin.y + displayH - coordSz.y - 8.0f;
+                drawList->AddText(ImVec2(cx + 1.0f, cy + 1.0f), IM_COL32(0, 0, 0, 180), coordBuf);
+                drawList->AddText(ImVec2(cx, cy), IM_COL32(220, 210, 150, 230), coordBuf);
+            }
+        }
+
         // Continent view: clickable zone overlays
         if (viewLevel == ViewLevel::CONTINENT && continentIdx >= 0) {
             const auto& cont = zones[continentIdx];
@@ -1079,6 +1114,23 @@ void WorldMap::renderImGuiOverlay(const glm::vec3& playerRenderPos, int screenWi
                     } else if (explored) {
                         drawList->AddRect(ImVec2(sx0, sy0), ImVec2(sx1, sy1),
                                           IM_COL32(255, 255, 255, 30), 0.0f, 0, 1.0f);
+                    }
+
+                    // Zone name label — only if the rect is large enough to fit it
+                    if (!z.areaName.empty()) {
+                        ImVec2 textSz = ImGui::CalcTextSize(z.areaName.c_str());
+                        float rectW = sx1 - sx0;
+                        float rectH = sy1 - sy0;
+                        if (rectW > textSz.x + 4.0f && rectH > textSz.y + 2.0f) {
+                            float tx = (sx0 + sx1) * 0.5f - textSz.x * 0.5f;
+                            float ty = (sy0 + sy1) * 0.5f - textSz.y * 0.5f;
+                            ImU32 labelCol = explored
+                                ? IM_COL32(255, 230, 150, 210)
+                                : IM_COL32(160, 160, 160, 80);
+                            drawList->AddText(ImVec2(tx + 1.0f, ty + 1.0f),
+                                              IM_COL32(0, 0, 0, 130), z.areaName.c_str());
+                            drawList->AddText(ImVec2(tx, ty), labelCol, z.areaName.c_str());
+                        }
                     }
                 }
             }

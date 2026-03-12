@@ -228,9 +228,9 @@ void TalentScreen::renderTalentTree(game::GameHandler& gameHandler, uint32_t tab
         if (bgIt != bgTextureCache_.end()) {
             bgTex = bgIt->second;
         } else {
-            // Try to load the background texture
+            // Only load the background if icon uploads aren't saturating this frame.
+            // Background is cosmetic; skip if we're already loading icons this frame.
             std::string bgPath = bgFile;
-            // Normalize path separators
             for (auto& c : bgPath) { if (c == '\\') c = '/'; }
             bgPath += ".blp";
             auto blpData = assetManager->readFile(bgPath);
@@ -244,6 +244,7 @@ void TalentScreen::renderTalentTree(game::GameHandler& gameHandler, uint32_t tab
                     }
                 }
             }
+            // Cache even if null to avoid retrying every frame on missing files
             bgTextureCache_[tabId] = bgTex;
         }
 
@@ -617,6 +618,17 @@ VkDescriptorSet TalentScreen::getSpellIcon(uint32_t iconId, pipeline::AssetManag
 
     auto cit = spellIconCache.find(iconId);
     if (cit != spellIconCache.end()) return cit->second;
+
+    // Rate-limit texture uploads to avoid multi-hundred-ms stalls when switching
+    // to a tab whose icons are not yet cached (each upload is a blocking GPU op).
+    // Allow at most 4 new icon loads per frame; the rest show a blank icon and
+    // load on the next frame, spreading the cost across ~5 frames.
+    static int loadsThisFrame = 0;
+    static int lastImGuiFrame = -1;
+    int curFrame = ImGui::GetFrameCount();
+    if (curFrame != lastImGuiFrame) { loadsThisFrame = 0; lastImGuiFrame = curFrame; }
+    if (loadsThisFrame >= 4) return VK_NULL_HANDLE;  // defer, don't cache null
+    ++loadsThisFrame;
 
     auto pit = spellIconPaths.find(iconId);
     if (pit == spellIconPaths.end()) {

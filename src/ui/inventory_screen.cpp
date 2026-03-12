@@ -1399,6 +1399,9 @@ void InventoryScreen::renderStatsPanel(game::Inventory& inventory, uint32_t play
                                         int32_t serverArmor, const int32_t* serverStats) {
     // Sum equipment stats for item-query bonus display
     int32_t itemStr = 0, itemAgi = 0, itemSta = 0, itemInt = 0, itemSpi = 0;
+    // Secondary stat sums from extraStats
+    int32_t itemAP = 0, itemSP = 0, itemHit = 0, itemCrit = 0, itemHaste = 0;
+    int32_t itemResil = 0, itemExpertise = 0, itemMp5 = 0, itemHp5 = 0;
     for (int s = 0; s < game::Inventory::NUM_EQUIP_SLOTS; s++) {
         const auto& slot = inventory.getEquipSlot(static_cast<game::EquipSlot>(s));
         if (slot.empty()) continue;
@@ -1407,6 +1410,20 @@ void InventoryScreen::renderStatsPanel(game::Inventory& inventory, uint32_t play
         itemSta += slot.item.stamina;
         itemInt += slot.item.intellect;
         itemSpi += slot.item.spirit;
+        for (const auto& es : slot.item.extraStats) {
+            switch (es.statType) {
+                case 16: case 17: case 18: case 31: itemHit   += es.statValue; break;
+                case 19: case 20: case 21: case 32: itemCrit  += es.statValue; break;
+                case 28: case 29: case 30: case 36: itemHaste += es.statValue; break;
+                case 35:                             itemResil += es.statValue; break;
+                case 37:                             itemExpertise += es.statValue; break;
+                case 38: case 39:                    itemAP    += es.statValue; break;
+                case 41: case 42: case 45:           itemSP    += es.statValue; break;
+                case 43:                             itemMp5   += es.statValue; break;
+                case 46:                             itemHp5   += es.statValue; break;
+                default: break;
+            }
+        }
     }
 
     // Use server-authoritative armor from UNIT_FIELD_RESISTANCES when available.
@@ -1464,6 +1481,28 @@ void InventoryScreen::renderStatsPanel(game::Inventory& inventory, uint32_t play
         renderStat("Stamina", itemSta);
         renderStat("Intellect", itemInt);
         renderStat("Spirit", itemSpi);
+    }
+
+    // Secondary stats from equipped items
+    bool hasSecondary = itemAP || itemSP || itemHit || itemCrit || itemHaste ||
+                        itemResil || itemExpertise || itemMp5 || itemHp5;
+    if (hasSecondary) {
+        ImGui::Spacing();
+        ImGui::Separator();
+        auto renderSecondary = [&](const char* name, int32_t val) {
+            if (val > 0) {
+                ImGui::TextColored(green, "+%d %s", val, name);
+            }
+        };
+        renderSecondary("Attack Power",    itemAP);
+        renderSecondary("Spell Power",     itemSP);
+        renderSecondary("Hit Rating",      itemHit);
+        renderSecondary("Crit Rating",     itemCrit);
+        renderSecondary("Haste Rating",    itemHaste);
+        renderSecondary("Resilience",      itemResil);
+        renderSecondary("Expertise",       itemExpertise);
+        renderSecondary("Mana per 5 sec",  itemMp5);
+        renderSecondary("Health per 5 sec",itemHp5);
     }
 }
 

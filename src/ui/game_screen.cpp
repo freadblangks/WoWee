@@ -1928,10 +1928,19 @@ void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
             playerHp = playerMaxHp;
         }
 
-        // Name in green (friendly player color) — clickable for self-target
+        // Name in green (friendly player color) — clickable for self-target, right-click for menu
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 1.0f, 0.3f, 1.0f));
         if (ImGui::Selectable(playerName.c_str(), false, 0, ImVec2(0, 0))) {
             gameHandler.setTarget(gameHandler.getPlayerGuid());
+        }
+        if (ImGui::BeginPopupContextItem("PlayerSelfCtx")) {
+            if (ImGui::Selectable("Open Character")) {
+                inventoryScreen.setCharacterOpen(true);
+            }
+            if (ImGui::Selectable("Toggle PvP")) {
+                gameHandler.togglePvp();
+            }
+            ImGui::EndPopup();
         }
         ImGui::PopStyleColor();
         ImGui::SameLine();

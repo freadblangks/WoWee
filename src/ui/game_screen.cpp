@@ -7885,84 +7885,140 @@ void GameScreen::renderSocialFrame(game::GameHandler& gameHandler) {
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.1f, 0.1f, 0.1f, 0.92f));
 
     bool open = showSocialFrame_;
-    if (ImGui::Begin("Friends##SocialFrame", &open,
+    char socialTitle[32];
+    snprintf(socialTitle, sizeof(socialTitle), "Social (%d online)##SocialFrame", onlineCount);
+    if (ImGui::Begin(socialTitle, &open,
             ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse |
             ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoScrollbar)) {
 
-        // Online friends
-        char onlineHeader[32];
-        snprintf(onlineHeader, sizeof(onlineHeader), "Online (%d)", onlineCount);
-        ImGui::TextDisabled("%s", onlineHeader);
-        ImGui::Separator();
+        if (ImGui::BeginTabBar("##SocialTabs")) {
+            // ---- Friends tab ----
+            if (ImGui::BeginTabItem("Friends")) {
+                ImGui::BeginChild("##FriendsList", ImVec2(200, 200), false);
 
-        int shown = 0;
-        for (size_t ci = 0; ci < contacts.size(); ++ci) {
-            const auto& c = contacts[ci];
-            if (!c.isFriend()) continue;
+                // Online friends first
+                int shown = 0;
+                for (int pass = 0; pass < 2; ++pass) {
+                    bool wantOnline = (pass == 0);
+                    for (size_t ci = 0; ci < contacts.size(); ++ci) {
+                        const auto& c = contacts[ci];
+                        if (!c.isFriend()) continue;
+                        if (c.isOnline() != wantOnline) continue;
 
-            ImGui::PushID(static_cast<int>(ci));
+                        ImGui::PushID(static_cast<int>(ci));
 
-            // Status dot: green=online, yellow=AFK, orange=DND, grey=offline
-            ImU32 dotColor;
-            if (!c.isOnline())        dotColor = IM_COL32(100, 100, 100, 200);
-            else if (c.status == 2)   dotColor = IM_COL32(255, 200,  50, 255); // AFK
-            else if (c.status == 3)   dotColor = IM_COL32(255, 120,  50, 255); // DND
-            else                      dotColor = IM_COL32( 50, 220,  50, 255); // online
+                        // Status dot
+                        ImU32 dotColor;
+                        if (!c.isOnline())        dotColor = IM_COL32(100, 100, 100, 200);
+                        else if (c.status == 2)   dotColor = IM_COL32(255, 200,  50, 255); // AFK
+                        else if (c.status == 3)   dotColor = IM_COL32(255, 120,  50, 255); // DND
+                        else                      dotColor = IM_COL32( 50, 220,  50, 255); // online
 
-            ImVec2 dotMin = ImGui::GetCursorScreenPos();
-            dotMin.y += 4.0f;
-            ImGui::GetWindowDrawList()->AddCircleFilled(
-                ImVec2(dotMin.x + 5.0f, dotMin.y + 5.0f), 4.5f, dotColor);
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 14.0f);
+                        ImVec2 dotMin = ImGui::GetCursorScreenPos();
+                        dotMin.y += 4.0f;
+                        ImGui::GetWindowDrawList()->AddCircleFilled(
+                            ImVec2(dotMin.x + 5.0f, dotMin.y + 5.0f), 4.5f, dotColor);
+                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 14.0f);
 
-            const char* displayName = c.name.empty() ? "(unknown)" : c.name.c_str();
-            ImVec4 nameCol = c.isOnline()
-                ? ImVec4(0.9f, 0.9f, 0.9f, 1.0f)
-                : ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
-            ImGui::TextColored(nameCol, "%s", displayName);
+                        const char* displayName = c.name.empty() ? "(unknown)" : c.name.c_str();
+                        ImVec4 nameCol = c.isOnline()
+                            ? ImVec4(0.9f, 0.9f, 0.9f, 1.0f)
+                            : ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
+                        ImGui::TextColored(nameCol, "%s", displayName);
 
-            if (c.isOnline() && c.level > 0) {
-                ImGui::SameLine();
-                ImGui::TextDisabled("%u", c.level);
-            }
+                        if (c.isOnline() && c.level > 0) {
+                            ImGui::SameLine();
+                            ImGui::TextDisabled("Lv%u", c.level);
+                        }
 
-            // Right-click context menu
-            if (ImGui::BeginPopupContextItem("FriendCtx")) {
-                ImGui::TextDisabled("%s", displayName);
-                ImGui::Separator();
-                if (c.isOnline()) {
-                    if (ImGui::MenuItem("Whisper")) {
-                        showSocialFrame_ = false;
-                        strncpy(whisperTargetBuffer, c.name.c_str(), sizeof(whisperTargetBuffer) - 1);
-                        whisperTargetBuffer[sizeof(whisperTargetBuffer) - 1] = '\0';
-                        selectedChatType = 4;
-                        refocusChatInput = true;
+                        // Right-click context menu
+                        if (ImGui::BeginPopupContextItem("FriendCtx")) {
+                            ImGui::TextDisabled("%s", displayName);
+                            ImGui::Separator();
+                            if (c.isOnline()) {
+                                if (ImGui::MenuItem("Whisper")) {
+                                    showSocialFrame_ = false;
+                                    strncpy(whisperTargetBuffer, c.name.c_str(), sizeof(whisperTargetBuffer) - 1);
+                                    whisperTargetBuffer[sizeof(whisperTargetBuffer) - 1] = '\0';
+                                    selectedChatType = 4;
+                                    refocusChatInput = true;
+                                }
+                                if (ImGui::MenuItem("Invite to Group"))
+                                    gameHandler.inviteToGroup(c.name);
+                            }
+                            if (ImGui::MenuItem("Remove Friend"))
+                                gameHandler.removeFriend(c.name);
+                            ImGui::EndPopup();
+                        }
+
+                        ++shown;
+                        ImGui::PopID();
                     }
-                    if (ImGui::MenuItem("Invite to Group"))
-                        gameHandler.inviteToGroup(c.name);
+                    // Separator between online and offline if there are both
+                    if (pass == 0 && shown > 0) {
+                        ImGui::Separator();
+                    }
                 }
-                if (ImGui::MenuItem("Remove Friend"))
-                    gameHandler.removeFriend(c.name);
-                ImGui::EndPopup();
+
+                if (shown == 0) {
+                    ImGui::TextDisabled("No friends yet.");
+                }
+
+                ImGui::EndChild();
+                ImGui::Separator();
+
+                // Add friend
+                static char addFriendBuf[64] = {};
+                ImGui::SetNextItemWidth(140.0f);
+                ImGui::InputText("##sf_addfriend", addFriendBuf, sizeof(addFriendBuf));
+                ImGui::SameLine();
+                if (ImGui::Button("+##addfriend") && addFriendBuf[0] != '\0') {
+                    gameHandler.addFriend(addFriendBuf);
+                    addFriendBuf[0] = '\0';
+                }
+
+                ImGui::EndTabItem();
             }
 
-            ++shown;
-            ImGui::PopID();
-        }
+            // ---- Ignore tab ----
+            if (ImGui::BeginTabItem("Ignore")) {
+                const auto& ignores = gameHandler.getIgnoreCache();
+                ImGui::BeginChild("##IgnoreList", ImVec2(200, 200), false);
 
-        if (shown == 0) {
-            ImGui::TextDisabled("No friends.");
-        }
+                if (ignores.empty()) {
+                    ImGui::TextDisabled("Ignore list is empty.");
+                } else {
+                    for (const auto& kv : ignores) {
+                        ImGui::PushID(kv.first.c_str());
+                        ImGui::TextUnformatted(kv.first.c_str());
+                        if (ImGui::BeginPopupContextItem("IgnoreCtx")) {
+                            ImGui::TextDisabled("%s", kv.first.c_str());
+                            ImGui::Separator();
+                            if (ImGui::MenuItem("Unignore"))
+                                gameHandler.removeIgnore(kv.first);
+                            ImGui::EndPopup();
+                        }
+                        ImGui::PopID();
+                    }
+                }
 
-        ImGui::Separator();
-        // Add friend inline
-        static char addFriendBuf[64] = {};
-        ImGui::SetNextItemWidth(140.0f);
-        ImGui::InputText("##sf_addfriend", addFriendBuf, sizeof(addFriendBuf));
-        ImGui::SameLine();
-        if (ImGui::Button("+") && addFriendBuf[0] != '\0') {
-            gameHandler.addFriend(addFriendBuf);
-            addFriendBuf[0] = '\0';
+                ImGui::EndChild();
+                ImGui::Separator();
+
+                // Add ignore
+                static char addIgnBuf[64] = {};
+                ImGui::SetNextItemWidth(140.0f);
+                ImGui::InputText("##sf_addignore", addIgnBuf, sizeof(addIgnBuf));
+                ImGui::SameLine();
+                if (ImGui::Button("+##addignore") && addIgnBuf[0] != '\0') {
+                    gameHandler.addIgnore(addIgnBuf);
+                    addIgnBuf[0] = '\0';
+                }
+
+                ImGui::EndTabItem();
+            }
+
+            ImGui::EndTabBar();
         }
     }
     ImGui::End();

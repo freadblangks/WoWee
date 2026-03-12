@@ -343,6 +343,7 @@ public:
     void setFriendNote(const std::string& playerName, const std::string& note);
     void addIgnore(const std::string& playerName);
     void removeIgnore(const std::string& playerName);
+    const std::unordered_map<std::string, uint64_t>& getIgnoreCache() const { return ignoreCache; }
 
     // Random roll
     void randomRoll(uint32_t minRoll = 1, uint32_t maxRoll = 100);

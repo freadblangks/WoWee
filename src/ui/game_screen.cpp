@@ -8005,6 +8005,18 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
                 drawList->AddRect      (ImVec2(dotX - 1.0f,          nameplateBottom - 1.0f),
                                         ImVec2(dotX + dotSize + 1.0f, nameplateBottom + dotSize + 1.0f),
                                         IM_COL32(0, 0, 0, A(150)), 1.0f);
+
+                // Spell name tooltip on hover
+                {
+                    ImVec2 mouse = ImGui::GetMousePos();
+                    if (mouse.x >= dotX && mouse.x < dotX + dotSize &&
+                        mouse.y >= nameplateBottom && mouse.y < nameplateBottom + dotSize) {
+                        const std::string& dotSpellName = gameHandler.getSpellName(aura.spellId);
+                        if (!dotSpellName.empty())
+                            ImGui::SetTooltip("%s", dotSpellName.c_str());
+                    }
+                }
+
                 dotX += dotSize + dotGap;
                 if (dotX + dotSize > barX + barW) break;
             }

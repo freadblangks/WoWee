@@ -16508,6 +16508,7 @@ void GameScreen::renderInspectWindow(game::GameHandler& gameHandler) {
                 ImGui::PushID(s);
                 auto qColor = InventoryScreen::getQualityColor(
                     static_cast<game::ItemQuality>(info->quality));
+                uint16_t enchantId = result->enchantIds[s];
 
                 // Item icon
                 VkDescriptorSet iconTex = inventoryScreen.getItemIcon(info->displayInfoId);
@@ -16530,6 +16531,13 @@ void GameScreen::renderInspectWindow(game::GameHandler& gameHandler) {
                 ImGui::BeginGroup();
                 ImGui::TextDisabled("%s", kSlotNames[s]);
                 ImGui::TextColored(qColor, "%s", info->name.c_str());
+                // Enchant indicator on the same row as the name
+                if (enchantId != 0) {
+                    ImGui::SameLine();
+                    ImGui::TextColored(ImVec4(0.6f, 0.85f, 1.0f, 1.0f), "\xe2\x9c\xa6");  // UTF-8 ✦
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Enchanted (ID %u)", static_cast<unsigned>(enchantId));
+                }
                 ImGui::EndGroup();
                 hovered = hovered || ImGui::IsItemHovered();
 

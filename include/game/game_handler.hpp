@@ -339,7 +339,8 @@ public:
         uint32_t    unspentTalents = 0;
         uint8_t     talentGroups   = 0;
         uint8_t     activeTalentGroup = 0;
-        std::array<uint32_t, 19> itemEntries{}; // 0=head…18=ranged
+        std::array<uint32_t, 19> itemEntries{};  // 0=head…18=ranged
+        std::array<uint16_t, 19> enchantIds{};   // permanent enchant per slot (0 = none)
     };
     const InspectResult* getInspectResult() const {
         return inspectResult_.guid ? &inspectResult_ : nullptr;

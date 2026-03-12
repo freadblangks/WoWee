@@ -11339,6 +11339,7 @@ void GameHandler::handleInspectResults(network::Packet& packet) {
     }
 
     // Parse enchantment slot mask + enchant IDs
+    std::array<uint16_t, 19> enchantIds{};
     bytesLeft = packet.getSize() - packet.getReadPos();
     if (bytesLeft >= 4) {
         uint32_t slotMask = packet.readUInt32();
@@ -11346,7 +11347,7 @@ void GameHandler::handleInspectResults(network::Packet& packet) {
             if (slotMask & (1u << slot)) {
                 bytesLeft = packet.getSize() - packet.getReadPos();
                 if (bytesLeft < 2) break;
-                packet.readUInt16(); // enchantId
+                enchantIds[slot] = packet.readUInt16();
             }
         }
     }
@@ -11358,6 +11359,7 @@ void GameHandler::handleInspectResults(network::Packet& packet) {
     inspectResult_.unspentTalents    = unspentTalents;
     inspectResult_.talentGroups      = talentGroupCount;
     inspectResult_.activeTalentGroup = activeTalentGroup;
+    inspectResult_.enchantIds        = enchantIds;
 
     // Merge any gear we already have from a prior inspect request
     auto gearIt = inspectedPlayerItemEntries_.find(guid);

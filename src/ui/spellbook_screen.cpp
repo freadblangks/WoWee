@@ -666,9 +666,36 @@ void SpellbookScreen::render(game::GameHandler& gameHandler, pipeline::AssetMana
 
                         // Row selectable
                         ImGui::Selectable("##row", false,
-                            ImGuiSelectableFlags_AllowDoubleClick, ImVec2(0, rowHeight));
+                            ImGuiSelectableFlags_AllowDoubleClick | ImGuiSelectableFlags_DontClosePopups,
+                            ImVec2(0, rowHeight));
                         bool rowHovered = ImGui::IsItemHovered();
                         bool rowClicked = ImGui::IsItemClicked(0);
+
+                        // Right-click context menu
+                        if (ImGui::BeginPopupContextItem("##SpellCtx")) {
+                            ImGui::TextDisabled("%s", info->name.c_str());
+                            if (!info->rank.empty()) {
+                                ImGui::SameLine();
+                                ImGui::TextDisabled("(%s)", info->rank.c_str());
+                            }
+                            ImGui::Separator();
+                            if (!isPassive) {
+                                if (onCooldown) ImGui::BeginDisabled();
+                                if (ImGui::MenuItem("Cast")) {
+                                    uint64_t tgt = gameHandler.hasTarget() ? gameHandler.getTargetGuid() : 0;
+                                    gameHandler.castSpell(info->spellId, tgt);
+                                }
+                                if (onCooldown) ImGui::EndDisabled();
+                            }
+                            if (ImGui::MenuItem("Copy Spell Link")) {
+                                char linkBuf[256];
+                                snprintf(linkBuf, sizeof(linkBuf),
+                                    "|cffffd000|Hspell:%u|h[%s]|h|r",
+                                    info->spellId, info->name.c_str());
+                                pendingChatSpellLink_ = linkBuf;
+                            }
+                            ImGui::EndPopup();
+                        }
                         ImVec2 rMin = ImGui::GetItemRectMin();
                         ImVec2 rMax = ImGui::GetItemRectMax();
                         auto* dl = ImGui::GetWindowDrawList();

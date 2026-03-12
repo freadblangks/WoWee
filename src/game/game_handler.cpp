@@ -12160,6 +12160,21 @@ void GameHandler::addCombatText(CombatTextEntry::Type type, int32_t amount, uint
     entry.age = 0.0f;
     entry.isPlayerSource = isPlayerSource;
     combatText.push_back(entry);
+
+    // Persistent combat log
+    CombatLogEntry log;
+    log.type     = type;
+    log.amount   = amount;
+    log.spellId  = spellId;
+    log.isPlayerSource = isPlayerSource;
+    log.timestamp = std::time(nullptr);
+    std::string pname(lookupName(playerGuid));
+    std::string tname((targetGuid != 0) ? lookupName(targetGuid) : std::string());
+    log.sourceName = isPlayerSource ? pname : tname;
+    log.targetName = isPlayerSource ? tname : pname;
+    if (combatLog_.size() >= MAX_COMBAT_LOG)
+        combatLog_.pop_front();
+    combatLog_.push_back(std::move(log));
 }
 
 void GameHandler::updateCombatText(float deltaTime) {

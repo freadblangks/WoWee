@@ -598,6 +598,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderDungeonFinderWindow(gameHandler);
     renderInstanceLockouts(gameHandler);
     renderWhoWindow(gameHandler);
+    renderCombatLog(gameHandler);
     renderAchievementWindow(gameHandler);
     renderGmTicketWindow(gameHandler);
     renderInspectWindow(gameHandler);
@@ -1951,7 +1952,7 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
                 static const std::vector<std::string> kCmds = {
                     "/afk", "/away", "/cast", "/chathelp", "/clear",
                     "/dance", "/do", "/dnd", "/e", "/emote",
-                    "/equip", "/follow", "/g", "/guild", "/guildinfo",
+                    "/cl", "/combatlog", "/equip", "/follow", "/g", "/guild", "/guildinfo",
                     "/gmticket", "/grouploot", "/i", "/instance",
                     "/invite", "/j", "/join", "/kick",
                     "/l", "/leave", "/local", "/me",
@@ -4043,6 +4044,13 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
 
                 gameHandler.queryWho(query);
                 showWhoWindow_ = true;
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            // /combatlog command
+            if (cmdLower == "combatlog" || cmdLower == "cl") {
+                showCombatLog_ = !showCombatLog_;
                 chatInputBuffer[0] = '\0';
                 return;
             }
@@ -16949,6 +16957,206 @@ void GameScreen::renderWhoWindow(game::GameHandler& gameHandler) {
 
             ImGui::PopID();
         }
+
+        ImGui::EndTable();
+    }
+
+    ImGui::End();
+}
+
+// ─── Combat Log Window ────────────────────────────────────────────────────────
+void GameScreen::renderCombatLog(game::GameHandler& gameHandler) {
+    if (!showCombatLog_) return;
+
+    const auto& log = gameHandler.getCombatLog();
+
+    ImGui::SetNextWindowSize(ImVec2(520, 320), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(160, 200), ImGuiCond_FirstUseEver);
+
+    char title[64];
+    snprintf(title, sizeof(title), "Combat Log (%zu)###CombatLog", log.size());
+    if (!ImGui::Begin(title, &showCombatLog_)) {
+        ImGui::End();
+        return;
+    }
+
+    // Filter toggles
+    static bool filterDamage  = true;
+    static bool filterHeal    = true;
+    static bool filterMisc    = true;
+    static bool autoScroll    = true;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4, 2));
+    ImGui::Checkbox("Damage",  &filterDamage); ImGui::SameLine();
+    ImGui::Checkbox("Healing", &filterHeal);   ImGui::SameLine();
+    ImGui::Checkbox("Misc",    &filterMisc);   ImGui::SameLine();
+    ImGui::Checkbox("Auto-scroll", &autoScroll);
+    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 40.0f);
+    if (ImGui::SmallButton("Clear"))
+        gameHandler.clearCombatLog();
+    ImGui::PopStyleVar();
+    ImGui::Separator();
+
+    // Helper: categorize entry
+    auto isDamageType = [](game::CombatTextEntry::Type t) {
+        using T = game::CombatTextEntry;
+        return t == T::MELEE_DAMAGE || t == T::SPELL_DAMAGE ||
+               t == T::CRIT_DAMAGE  || t == T::PERIODIC_DAMAGE ||
+               t == T::ENVIRONMENTAL;
+    };
+    auto isHealType = [](game::CombatTextEntry::Type t) {
+        using T = game::CombatTextEntry;
+        return t == T::HEAL || t == T::CRIT_HEAL || t == T::PERIODIC_HEAL;
+    };
+
+    // Two-column table: Time | Event description
+    ImGuiTableFlags tableFlags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg |
+                                 ImGuiTableFlags_SizingFixedFit;
+    float availH = ImGui::GetContentRegionAvail().y;
+    if (ImGui::BeginTable("##CombatLogTable", 2, tableFlags, ImVec2(0.0f, availH))) {
+        ImGui::TableSetupScrollFreeze(0, 0);
+        ImGui::TableSetupColumn("Time",  ImGuiTableColumnFlags_WidthFixed, 62.0f);
+        ImGui::TableSetupColumn("Event", ImGuiTableColumnFlags_WidthStretch);
+
+        for (const auto& e : log) {
+            // Apply filters
+            bool isDmg  = isDamageType(e.type);
+            bool isHeal = isHealType(e.type);
+            bool isMisc = !isDmg && !isHeal;
+            if (isDmg  && !filterDamage) continue;
+            if (isHeal && !filterHeal)   continue;
+            if (isMisc && !filterMisc)   continue;
+
+            // Format timestamp as HH:MM:SS
+            char timeBuf[10];
+            {
+                struct tm* tm_info = std::localtime(&e.timestamp);
+                if (tm_info)
+                    snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d:%02d",
+                             tm_info->tm_hour, tm_info->tm_min, tm_info->tm_sec);
+                else
+                    snprintf(timeBuf, sizeof(timeBuf), "--:--:--");
+            }
+
+            // Build event description and choose color
+            char desc[256];
+            ImVec4 color;
+            using T = game::CombatTextEntry;
+            const char* src = e.sourceName.empty() ? (e.isPlayerSource ? "You" : "?") : e.sourceName.c_str();
+            const char* tgt = e.targetName.empty() ? "?" : e.targetName.c_str();
+            const std::string& spellName = (e.spellId != 0) ? gameHandler.getSpellName(e.spellId) : std::string();
+            const char* spell = spellName.empty() ? nullptr : spellName.c_str();
+
+            switch (e.type) {
+                case T::MELEE_DAMAGE:
+                    snprintf(desc, sizeof(desc), "%s hits %s for %d", src, tgt, e.amount);
+                    color = e.isPlayerSource ? ImVec4(1.0f, 0.9f, 0.3f, 1.0f) : ImVec4(1.0f, 0.4f, 0.4f, 1.0f);
+                    break;
+                case T::CRIT_DAMAGE:
+                    snprintf(desc, sizeof(desc), "%s crits %s for %d!", src, tgt, e.amount);
+                    color = e.isPlayerSource ? ImVec4(1.0f, 1.0f, 0.0f, 1.0f) : ImVec4(1.0f, 0.2f, 0.2f, 1.0f);
+                    break;
+                case T::SPELL_DAMAGE:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s's %s hits %s for %d", src, spell, tgt, e.amount);
+                    else
+                        snprintf(desc, sizeof(desc), "%s's spell hits %s for %d", src, tgt, e.amount);
+                    color = e.isPlayerSource ? ImVec4(1.0f, 0.9f, 0.3f, 1.0f) : ImVec4(1.0f, 0.4f, 0.4f, 1.0f);
+                    break;
+                case T::PERIODIC_DAMAGE:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s's %s ticks %s for %d", src, spell, tgt, e.amount);
+                    else
+                        snprintf(desc, sizeof(desc), "%s's DoT ticks %s for %d", src, tgt, e.amount);
+                    color = e.isPlayerSource ? ImVec4(0.9f, 0.7f, 0.3f, 1.0f) : ImVec4(0.9f, 0.3f, 0.3f, 1.0f);
+                    break;
+                case T::HEAL:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s heals %s for %d (%s)", src, tgt, e.amount, spell);
+                    else
+                        snprintf(desc, sizeof(desc), "%s heals %s for %d", src, tgt, e.amount);
+                    color = ImVec4(0.4f, 1.0f, 0.4f, 1.0f);
+                    break;
+                case T::CRIT_HEAL:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s critically heals %s for %d! (%s)", src, tgt, e.amount, spell);
+                    else
+                        snprintf(desc, sizeof(desc), "%s critically heals %s for %d!", src, tgt, e.amount);
+                    color = ImVec4(0.3f, 1.0f, 0.3f, 1.0f);
+                    break;
+                case T::PERIODIC_HEAL:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s's %s heals %s for %d", src, spell, tgt, e.amount);
+                    else
+                        snprintf(desc, sizeof(desc), "%s's HoT heals %s for %d", src, tgt, e.amount);
+                    color = ImVec4(0.4f, 0.9f, 0.4f, 1.0f);
+                    break;
+                case T::MISS:
+                    snprintf(desc, sizeof(desc), "%s misses %s", src, tgt);
+                    color = ImVec4(0.65f, 0.65f, 0.65f, 1.0f);
+                    break;
+                case T::DODGE:
+                    snprintf(desc, sizeof(desc), "%s dodges %s's attack", tgt, src);
+                    color = ImVec4(0.65f, 0.65f, 0.65f, 1.0f);
+                    break;
+                case T::PARRY:
+                    snprintf(desc, sizeof(desc), "%s parries %s's attack", tgt, src);
+                    color = ImVec4(0.65f, 0.65f, 0.65f, 1.0f);
+                    break;
+                case T::BLOCK:
+                    snprintf(desc, sizeof(desc), "%s blocks %s's attack (%d blocked)", tgt, src, e.amount);
+                    color = ImVec4(0.65f, 0.75f, 0.65f, 1.0f);
+                    break;
+                case T::IMMUNE:
+                    snprintf(desc, sizeof(desc), "%s is immune", tgt);
+                    color = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+                    break;
+                case T::ABSORB:
+                    snprintf(desc, sizeof(desc), "%d absorbed", e.amount);
+                    color = ImVec4(0.5f, 0.8f, 1.0f, 1.0f);
+                    break;
+                case T::RESIST:
+                    snprintf(desc, sizeof(desc), "%d resisted", e.amount);
+                    color = ImVec4(0.6f, 0.6f, 0.9f, 1.0f);
+                    break;
+                case T::ENVIRONMENTAL:
+                    snprintf(desc, sizeof(desc), "Environmental damage: %d", e.amount);
+                    color = ImVec4(1.0f, 0.5f, 0.2f, 1.0f);
+                    break;
+                case T::ENERGIZE:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s gains %d power (%s)", tgt, e.amount, spell);
+                    else
+                        snprintf(desc, sizeof(desc), "%s gains %d power", tgt, e.amount);
+                    color = ImVec4(0.4f, 0.6f, 1.0f, 1.0f);
+                    break;
+                case T::XP_GAIN:
+                    snprintf(desc, sizeof(desc), "You gain %d experience", e.amount);
+                    color = ImVec4(0.8f, 0.6f, 1.0f, 1.0f);
+                    break;
+                case T::PROC_TRIGGER:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s procs!", spell);
+                    else
+                        snprintf(desc, sizeof(desc), "Proc triggered");
+                    color = ImVec4(1.0f, 0.85f, 0.3f, 1.0f);
+                    break;
+                default:
+                    snprintf(desc, sizeof(desc), "Combat event (type %d, amount %d)", (int)e.type, e.amount);
+                    color = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+                    break;
+            }
+
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextDisabled("%s", timeBuf);
+            ImGui::TableSetColumnIndex(1);
+            ImGui::TextColored(color, "%s", desc);
+        }
+
+        // Auto-scroll to bottom
+        if (autoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
+            ImGui::SetScrollHereY(1.0f);
 
         ImGui::EndTable();
     }

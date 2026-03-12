@@ -400,6 +400,10 @@ private:
     bool  showWhoWindow_ = false;
     void  renderWhoWindow(game::GameHandler& gameHandler);
 
+    // Combat Log window
+    bool  showCombatLog_ = false;
+    void  renderCombatLog(game::GameHandler& gameHandler);
+
     // Instance Lockouts window
     bool  showInstanceLockouts_ = false;
 

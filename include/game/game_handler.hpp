@@ -536,6 +536,10 @@ public:
     const std::vector<CombatTextEntry>& getCombatText() const { return combatText; }
     void updateCombatText(float deltaTime);
 
+    // Combat log (persistent rolling history, max MAX_COMBAT_LOG entries)
+    const std::deque<CombatLogEntry>& getCombatLog() const { return combatLog_; }
+    void clearCombatLog() { combatLog_.clear(); }
+
     // Threat
     struct ThreatEntry {
         uint64_t victimGuid = 0;
@@ -2149,6 +2153,8 @@ private:
     float autoAttackFacingSyncTimer_ = 0.0f; // Periodic facing sync while meleeing
     std::unordered_set<uint64_t> hostileAttackers_;
     std::vector<CombatTextEntry> combatText;
+    static constexpr size_t MAX_COMBAT_LOG = 500;
+    std::deque<CombatLogEntry> combatLog_;
     // unitGuid → sorted threat list (descending by threat value)
     std::unordered_map<uint64_t, std::vector<ThreatEntry>> threatLists_;
 

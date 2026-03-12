@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <ctime>
 #include <string>
 #include <vector>
 
@@ -61,6 +62,19 @@ struct CombatTextEntry {
 
     static constexpr float LIFETIME = 2.5f;
     bool isExpired() const { return age >= LIFETIME; }
+};
+
+/**
+ * Persistent combat log entry (stored in a rolling deque, survives beyond floating-text lifetime)
+ */
+struct CombatLogEntry {
+    CombatTextEntry::Type type = CombatTextEntry::MELEE_DAMAGE;
+    int32_t  amount       = 0;
+    uint32_t spellId      = 0;
+    bool     isPlayerSource = false;
+    time_t   timestamp    = 0;   // Wall-clock time (std::time(nullptr))
+    std::string sourceName;      // Resolved display name of attacker/caster
+    std::string targetName;      // Resolved display name of victim/target
 };
 
 /**

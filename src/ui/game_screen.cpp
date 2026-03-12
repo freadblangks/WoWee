@@ -511,7 +511,10 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     inventoryScreen.setGameHandler(&gameHandler);
     inventoryScreen.render(gameHandler.getInventory(), gameHandler.getMoneyCopper());
 
-    // Insert item link into chat if player shift-clicked a bag item
+    // Character screen (C key toggle handled inside render())
+    inventoryScreen.renderCharacterScreen(gameHandler);
+
+    // Insert item link into chat if player shift-clicked any inventory/equipment slot
     {
         std::string pendingLink = inventoryScreen.getAndClearPendingChatLink();
         if (!pendingLink.empty()) {
@@ -523,9 +526,6 @@ void GameScreen::render(game::GameHandler& gameHandler) {
             }
         }
     }
-
-    // Character screen (C key toggle handled inside render())
-    inventoryScreen.renderCharacterScreen(gameHandler);
 
     if (inventoryScreen.consumeEquipmentDirty() || gameHandler.consumeOnlineEquipmentDirty()) {
         updateCharacterGeosets(gameHandler.getInventory());
@@ -7411,22 +7411,13 @@ void GameScreen::renderQuestDetailsWindow(game::GameHandler& gameHandler) {
 
             if (iconTex) {
                 ImGui::Image((void*)(intptr_t)iconTex, ImVec2(18, 18));
-                if (ImGui::IsItemHovered() && info && info->valid) {
-                    ImGui::BeginTooltip();
-                    ImGui::TextColored(nameCol, "%s", info->name.c_str());
-                    if (!info->description.empty())
-                        ImGui::TextWrapped("%s", info->description.c_str());
-                    ImGui::EndTooltip();
-                }
+                if (ImGui::IsItemHovered() && info && info->valid)
+                    inventoryScreen.renderItemTooltip(*info);
                 ImGui::SameLine();
             }
             ImGui::TextColored(nameCol, "  %s", label.c_str());
-            if (ImGui::IsItemHovered() && info && info->valid && !info->description.empty()) {
-                ImGui::BeginTooltip();
-                ImGui::TextColored(nameCol, "%s", info->name.c_str());
-                ImGui::TextWrapped("%s", info->description.c_str());
-                ImGui::EndTooltip();
-            }
+            if (ImGui::IsItemHovered() && info && info->valid)
+                inventoryScreen.renderItemTooltip(*info);
         };
 
         if (!quest.rewardChoiceItems.empty()) {

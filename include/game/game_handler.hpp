@@ -1277,6 +1277,26 @@ public:
     };
     const std::vector<FactionStandingInit>& getInitialFactions() const { return initialFactions_; }
     const std::unordered_map<uint32_t, int32_t>& getFactionStandings() const { return factionStandings_; }
+    // Shaman totems (4 slots: 0=Earth, 1=Fire, 2=Water, 3=Air)
+    struct TotemSlot {
+        uint32_t spellId     = 0;
+        uint32_t durationMs  = 0;
+        std::chrono::steady_clock::time_point placedAt{};
+        bool active() const { return spellId != 0 && remainingMs() > 0; }
+        float remainingMs() const {
+            if (spellId == 0 || durationMs == 0) return 0.0f;
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - placedAt).count();
+            float rem = static_cast<float>(durationMs) - static_cast<float>(elapsed);
+            return rem > 0.0f ? rem : 0.0f;
+        }
+    };
+    static constexpr int NUM_TOTEM_SLOTS = 4;
+    const TotemSlot& getTotemSlot(int slot) const {
+        static TotemSlot empty;
+        return (slot >= 0 && slot < NUM_TOTEM_SLOTS) ? activeTotemSlots_[slot] : empty;
+    }
+
     const std::string& getFactionNamePublic(uint32_t factionId) const;
     uint32_t getWatchedFactionId() const { return watchedFactionId_; }
     void setWatchedFactionId(uint32_t id) { watchedFactionId_ = id; }
@@ -2253,6 +2273,9 @@ private:
     std::array<TradeSlot, TRADE_SLOT_COUNT> peerTradeSlots_{};
     uint64_t myTradeGold_   = 0;
     uint64_t peerTradeGold_ = 0;
+
+    // Shaman totem state
+    TotemSlot activeTotemSlots_[NUM_TOTEM_SLOTS];
 
     // Duel state
     bool pendingDuelRequest_    = false;

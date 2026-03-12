@@ -2348,6 +2348,85 @@ void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
                 }
             }
         }
+
+        // Shaman totem bar (class 7) — 4 slots: Earth, Fire, Water, Air
+        if (gameHandler.getPlayerClass() == 7) {
+            static const ImVec4 kTotemColors[] = {
+                ImVec4(0.80f, 0.55f, 0.25f, 1.0f), // Earth — brown
+                ImVec4(1.00f, 0.35f, 0.10f, 1.0f), // Fire  — orange-red
+                ImVec4(0.20f, 0.55f, 0.90f, 1.0f), // Water — blue
+                ImVec4(0.70f, 0.90f, 1.00f, 1.0f), // Air   — pale sky
+            };
+            static const char* kTotemNames[] = { "Earth", "Fire", "Water", "Air" };
+
+            ImGui::Spacing();
+            ImVec2 cursor = ImGui::GetCursorScreenPos();
+            float totalW  = ImGui::GetContentRegionAvail().x;
+            float spacing = 3.0f;
+            float slotW   = (totalW - spacing * 3.0f) / 4.0f;
+            float slotH   = 14.0f;
+            ImDrawList* tdl = ImGui::GetWindowDrawList();
+
+            for (int i = 0; i < game::GameHandler::NUM_TOTEM_SLOTS; i++) {
+                const auto& ts = gameHandler.getTotemSlot(i);
+                float x0 = cursor.x + i * (slotW + spacing);
+                float y0 = cursor.y;
+                float x1 = x0 + slotW;
+                float y1 = y0 + slotH;
+
+                // Background
+                tdl->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(20, 20, 20, 200), 2.0f);
+
+                if (ts.active()) {
+                    float rem = ts.remainingMs();
+                    float frac = rem / static_cast<float>(ts.durationMs);
+                    float fillX = x0 + (x1 - x0) * frac;
+                    tdl->AddRectFilled(ImVec2(x0, y0), ImVec2(fillX, y1),
+                                      ImGui::ColorConvertFloat4ToU32(kTotemColors[i]), 2.0f);
+                    // Remaining seconds label
+                    char secBuf[8];
+                    snprintf(secBuf, sizeof(secBuf), "%.0f", rem / 1000.0f);
+                    ImVec2 tsz = ImGui::CalcTextSize(secBuf);
+                    float lx = x0 + (slotW - tsz.x) * 0.5f;
+                    float ly = y0 + (slotH - tsz.y) * 0.5f;
+                    tdl->AddText(ImVec2(lx + 1, ly + 1), IM_COL32(0, 0, 0, 180), secBuf);
+                    tdl->AddText(ImVec2(lx, ly), IM_COL32(255, 255, 255, 230), secBuf);
+                } else {
+                    // Inactive — show element letter
+                    const char* letter = kTotemNames[i];
+                    char single[2] = { letter[0], '\0' };
+                    ImVec2 tsz = ImGui::CalcTextSize(single);
+                    float lx = x0 + (slotW - tsz.x) * 0.5f;
+                    float ly = y0 + (slotH - tsz.y) * 0.5f;
+                    tdl->AddText(ImVec2(lx, ly), IM_COL32(80, 80, 80, 200), single);
+                }
+
+                // Border
+                ImU32 borderCol = ts.active()
+                    ? ImGui::ColorConvertFloat4ToU32(kTotemColors[i])
+                    : IM_COL32(60, 60, 60, 160);
+                tdl->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), borderCol, 2.0f);
+
+                // Tooltip on hover
+                ImGui::SetCursorScreenPos(ImVec2(x0, y0));
+                ImGui::InvisibleButton(("##totem" + std::to_string(i)).c_str(), ImVec2(slotW, slotH));
+                if (ImGui::IsItemHovered()) {
+                    ImGui::BeginTooltip();
+                    if (ts.active()) {
+                        const std::string& spellNm = gameHandler.getSpellName(ts.spellId);
+                        ImGui::TextColored(ImVec4(kTotemColors[i].x, kTotemColors[i].y,
+                                                  kTotemColors[i].z, 1.0f),
+                                           "%s Totem", kTotemNames[i]);
+                        if (!spellNm.empty()) ImGui::Text("%s", spellNm.c_str());
+                        ImGui::Text("%.1fs remaining", ts.remainingMs() / 1000.0f);
+                    } else {
+                        ImGui::TextDisabled("%s Totem (empty)", kTotemNames[i]);
+                    }
+                    ImGui::EndTooltip();
+                }
+            }
+            ImGui::SetCursorScreenPos(ImVec2(cursor.x, cursor.y + slotH + 2.0f));
+        }
     }
     ImGui::End();
 

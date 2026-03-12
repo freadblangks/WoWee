@@ -3061,6 +3061,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
             uint32_t spellId  = packet.readUInt32();
             LOG_DEBUG("SMSG_TOTEM_CREATED: slot=", (int)slot,
                       " spellId=", spellId, " duration=", duration, "ms");
+            if (slot < NUM_TOTEM_SLOTS) {
+                activeTotemSlots_[slot].spellId    = spellId;
+                activeTotemSlots_[slot].durationMs = duration;
+                activeTotemSlots_[slot].placedAt   = std::chrono::steady_clock::now();
+            }
             break;
         }
         case Opcode::SMSG_AREA_SPIRIT_HEALER_TIME: {

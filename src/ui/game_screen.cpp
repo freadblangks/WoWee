@@ -6156,9 +6156,19 @@ void GameScreen::renderTradeWindow(game::GameHandler& gameHandler) {
                     if (isMine && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                         gameHandler.clearTradeItem(static_cast<uint8_t>(i));
                     }
-                    if (isMine && ImGui::IsItemHovered()) {
+                    if (ImGui::IsItemHovered()) {
                         if (info && info->valid) inventoryScreen.renderItemTooltip(*info);
-                        else ImGui::SetTooltip("Double-click to remove");
+                        else if (isMine) ImGui::SetTooltip("Double-click to remove");
+                    }
+                    if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+                        ImGui::GetIO().KeyShift && info && info->valid && !info->name.empty()) {
+                        std::string link = buildItemChatLink(info->entry, info->quality, info->name);
+                        size_t curLen = strlen(chatInputBuffer);
+                        if (curLen + link.size() + 1 < sizeof(chatInputBuffer)) {
+                            strncat(chatInputBuffer, link.c_str(), sizeof(chatInputBuffer) - curLen - 1);
+                            chatInputMoveCursorToEnd = true;
+                            refocusChatInput = true;
+                        }
                     }
                 } else {
                     ImGui::TextDisabled("  %d. (empty)", i + 1);
@@ -6284,6 +6294,16 @@ void GameScreen::renderLootRollPopup(game::GameHandler& gameHandler) {
         ImGui::TextColored(col, "[%s]", roll.itemName.c_str());
         if (ImGui::IsItemHovered() && rollInfo && rollInfo->valid) {
             inventoryScreen.renderItemTooltip(*rollInfo);
+        }
+        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+            ImGui::GetIO().KeyShift && rollInfo && rollInfo->valid && !rollInfo->name.empty()) {
+            std::string link = buildItemChatLink(rollInfo->entry, rollInfo->quality, rollInfo->name);
+            size_t curLen = strlen(chatInputBuffer);
+            if (curLen + link.size() + 1 < sizeof(chatInputBuffer)) {
+                strncat(chatInputBuffer, link.c_str(), sizeof(chatInputBuffer) - curLen - 1);
+                chatInputMoveCursorToEnd = true;
+                refocusChatInput = true;
+            }
         }
         ImGui::Spacing();
 

@@ -12945,8 +12945,9 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
 
     // Quest kill objective markers — highlight live NPCs matching active quest kill objectives
     {
-        // Collect NPC entry IDs needed for incomplete kill objectives in tracked quests
-        std::unordered_set<uint32_t> killTargetEntries;
+        // Build map of NPC entry → (quest title, current, required) for tooltips
+        struct KillInfo { std::string questTitle; uint32_t current = 0; uint32_t required = 0; };
+        std::unordered_map<uint32_t, KillInfo> killInfoMap;
         const auto& trackedIds = gameHandler.getTrackedQuestIds();
         for (const auto& quest : gameHandler.getQuestLog()) {
             if (quest.complete) continue;
@@ -12956,16 +12957,20 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
                 uint32_t npcEntry = static_cast<uint32_t>(obj.npcOrGoId);
                 auto it = quest.killCounts.find(npcEntry);
                 uint32_t current = (it != quest.killCounts.end()) ? it->second.first : 0;
-                if (current < obj.required) killTargetEntries.insert(npcEntry);
+                if (current < obj.required) {
+                    killInfoMap[npcEntry] = { quest.title, current, obj.required };
+                }
             }
         }
 
-        if (!killTargetEntries.empty()) {
+        if (!killInfoMap.empty()) {
+            ImVec2 mouse = ImGui::GetMousePos();
             for (const auto& [guid, entity] : gameHandler.getEntityManager().getEntities()) {
                 if (!entity || entity->getType() != game::ObjectType::UNIT) continue;
                 auto unit = std::static_pointer_cast<game::Unit>(entity);
                 if (!unit || unit->getHealth() == 0) continue;
-                if (!killTargetEntries.count(unit->getEntry())) continue;
+                auto infoIt = killInfoMap.find(unit->getEntry());
+                if (infoIt == killInfoMap.end()) continue;
 
                 glm::vec3 unitRender = core::coords::canonicalToRender(
                     glm::vec3(entity->getX(), entity->getY(), entity->getZ()));
@@ -12979,6 +12984,23 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
                                   IM_COL32(20, 20, 20, 230), 1.2f);
                 drawList->AddLine(ImVec2(sx + 2.5f, sy - 2.5f), ImVec2(sx - 2.5f, sy + 2.5f),
                                   IM_COL32(20, 20, 20, 230), 1.2f);
+
+                // Tooltip on hover
+                float mdx = mouse.x - sx, mdy = mouse.y - sy;
+                if (mdx * mdx + mdy * mdy < 64.0f) {
+                    const auto& ki = infoIt->second;
+                    const std::string& npcName = unit->getName();
+                    if (!npcName.empty()) {
+                        ImGui::SetTooltip("%s\n%s: %u/%u",
+                            npcName.c_str(),
+                            ki.questTitle.empty() ? "Quest" : ki.questTitle.c_str(),
+                            ki.current, ki.required);
+                    } else {
+                        ImGui::SetTooltip("%s: %u/%u",
+                            ki.questTitle.empty() ? "Quest" : ki.questTitle.c_str(),
+                            ki.current, ki.required);
+                    }
+                }
             }
         }
     }

@@ -534,6 +534,11 @@ void QuestLogScreen::render(game::GameHandler& gameHandler, InventoryScreen& inv
                                 ImGui::Text("%s x%u", name.c_str(), ri.count);
                             else
                                 ImGui::Text("%s", name.c_str());
+                            if (info && info->valid && ImGui::IsItemHovered()) {
+                                ImGui::BeginTooltip();
+                                invScreen.renderItemTooltip(*info);
+                                ImGui::EndTooltip();
+                            }
                         }
                     }
 
@@ -560,6 +565,11 @@ void QuestLogScreen::render(game::GameHandler& gameHandler, InventoryScreen& inv
                                 ImGui::Text("%s x%u", name.c_str(), ri.count);
                             else
                                 ImGui::Text("%s", name.c_str());
+                            if (info && info->valid && ImGui::IsItemHovered()) {
+                                ImGui::BeginTooltip();
+                                invScreen.renderItemTooltip(*info);
+                                ImGui::EndTooltip();
+                            }
                         }
                     }
                 }

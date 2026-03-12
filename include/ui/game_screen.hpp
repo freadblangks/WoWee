@@ -91,6 +91,8 @@ private:
     bool showAddRankModal_ = false;
     bool refocusChatInput = false;
     bool vendorBagsOpened_ = false;  // Track if bags were auto-opened for current vendor session
+    bool chatScrolledUp_ = false;         // true when user has scrolled above the latest messages
+    bool chatForceScrollToBottom_ = false; // set to true to jump to bottom next frame
     bool chatWindowLocked = true;
     ImVec2 chatWindowPos_ = ImVec2(0.0f, 0.0f);
     bool chatWindowPosInit_ = false;

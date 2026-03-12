@@ -1462,15 +1462,35 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
         ImGui::PopID();
     }
 
-    // Auto-scroll to bottom
-    if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
-        ImGui::SetScrollHereY(1.0f);
+    // Auto-scroll to bottom; track whether user has scrolled up
+    {
+        float scrollY    = ImGui::GetScrollY();
+        float scrollMaxY = ImGui::GetScrollMaxY();
+        bool atBottom = (scrollMaxY <= 0.0f) || (scrollY >= scrollMaxY - 2.0f);
+        if (atBottom || chatForceScrollToBottom_) {
+            ImGui::SetScrollHereY(1.0f);
+            chatScrolledUp_ = false;
+            chatForceScrollToBottom_ = false;
+        } else {
+            chatScrolledUp_ = true;
+        }
     }
 
     ImGui::EndChild();
 
     // Reset font scale after chat history
     ImGui::SetWindowFontScale(1.0f);
+
+    // "Jump to bottom" indicator when scrolled up
+    if (chatScrolledUp_) {
+        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.2f, 0.35f, 0.7f, 0.9f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.5f,  0.9f, 1.0f));
+        if (ImGui::SmallButton("  v  New messages  ")) {
+            chatForceScrollToBottom_ = true;
+        }
+        ImGui::PopStyleColor(2);
+        ImGui::SameLine();
+    }
 
     ImGui::Spacing();
     ImGui::Separator();

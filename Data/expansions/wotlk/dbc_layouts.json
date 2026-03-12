@@ -101,5 +101,15 @@
   },
   "SpellItemEnchantment": {
     "ID": 0, "Name": 8
+  },
+  "ItemSet": {
+    "ID": 0, "Name": 1,
+    "Item0": 18, "Item1": 19, "Item2": 20, "Item3": 21, "Item4": 22,
+    "Item5": 23, "Item6": 24, "Item7": 25, "Item8": 26, "Item9": 27,
+    "Spell0": 28, "Spell1": 29, "Spell2": 30, "Spell3": 31, "Spell4": 32,
+    "Spell5": 33, "Spell6": 34, "Spell7": 35, "Spell8": 36, "Spell9": 37,
+    "Threshold0": 38, "Threshold1": 39, "Threshold2": 40, "Threshold3": 41,
+    "Threshold4": 42, "Threshold5": 43, "Threshold6": 44, "Threshold7": 45,
+    "Threshold8": 46, "Threshold9": 47
   }
 }

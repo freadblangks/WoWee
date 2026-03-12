@@ -2936,8 +2936,11 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
     // TotemCategory(4) = 48 bytes before sockets
     constexpr size_t kPreSocketSkip = 48;
     if (packet.getReadPos() + kPreSocketSkip + 28 <= packet.getSize()) {
-        for (size_t i = 0; i < kPreSocketSkip / 4; ++i)
-            packet.readUInt32();
+        // LockID(0), Material(1), Sheath(2), RandomProperty(3), RandomSuffix(4), Block(5)
+        for (size_t i = 0; i < 6; ++i) packet.readUInt32();
+        data.itemSetId = packet.readUInt32(); // ItemSet(6)
+        // MaxDurability(7), Area(8), Map(9), BagFamily(10), TotemCategory(11)
+        for (size_t i = 0; i < 5; ++i) packet.readUInt32();
         // 3 socket slots: socketColor (4 bytes each)
         data.socketColor[0] = packet.readUInt32();
         data.socketColor[1] = packet.readUInt32();

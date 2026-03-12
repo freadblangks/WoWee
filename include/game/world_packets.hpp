@@ -1597,6 +1597,7 @@ struct ItemQueryResponseData {
     // Gem socket slots (WotLK/TBC): 0=no socket; color mask: 1=Meta,2=Red,4=Yellow,8=Blue
     std::array<uint32_t, 3> socketColor{};
     uint32_t socketBonus = 0;   // enchantmentId of socket bonus; 0=none
+    uint32_t itemSetId   = 0;   // ItemSet.dbc entry; 0=not part of a set
     bool valid = false;
 };
 

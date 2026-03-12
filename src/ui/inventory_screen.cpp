@@ -2536,6 +2536,36 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
         }
     }
 
+    // Item set membership
+    if (info.itemSetId != 0) {
+        // Lazy-load ItemSet.dbc name table
+        static std::unordered_map<uint32_t, std::string> s_setNames;
+        static bool s_setNamesLoaded = false;
+        if (!s_setNamesLoaded && assetManager_) {
+            s_setNamesLoaded = true;
+            auto dbc = assetManager_->loadDBC("ItemSet.dbc");
+            if (dbc && dbc->isLoaded()) {
+                const auto* layout = pipeline::getActiveDBCLayout()
+                    ? pipeline::getActiveDBCLayout()->getLayout("ItemSet") : nullptr;
+                uint32_t idF   = layout ? (*layout)["ID"]   : 0;
+                uint32_t nameF = layout ? (*layout)["Name"] : 1;
+                for (uint32_t r = 0; r < dbc->getRecordCount(); ++r) {
+                    uint32_t id = dbc->getUInt32(r, idF);
+                    if (!id) continue;
+                    std::string nm = dbc->getString(r, nameF);
+                    if (!nm.empty()) s_setNames[id] = std::move(nm);
+                }
+            }
+        }
+        auto setIt = s_setNames.find(info.itemSetId);
+        const char* setName = (setIt != s_setNames.end()) ? setIt->second.c_str() : nullptr;
+        ImGui::Spacing();
+        if (setName)
+            ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 1.0f), "%s", setName);
+        else
+            ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 1.0f), "Set (id %u)", info.itemSetId);
+    }
+
     if (info.startQuestId != 0) {
         ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 1.0f), "Begins a Quest");
     }

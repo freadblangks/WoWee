@@ -222,6 +222,10 @@ void GameScreen::initChatTabs() {
     // Whispers tab
     chatTabs_.push_back({"Whispers", (1ULL << static_cast<uint8_t>(game::ChatType::WHISPER)) |
                                       (1ULL << static_cast<uint8_t>(game::ChatType::WHISPER_INFORM))});
+    // Guild tab: guild and officer chat
+    chatTabs_.push_back({"Guild", (1ULL << static_cast<uint8_t>(game::ChatType::GUILD)) |
+                                   (1ULL << static_cast<uint8_t>(game::ChatType::OFFICER)) |
+                                   (1ULL << static_cast<uint8_t>(game::ChatType::GUILD_ACHIEVEMENT))});
     // Trade/LFG tab: channel messages
     chatTabs_.push_back({"Trade/LFG", (1ULL << static_cast<uint8_t>(game::ChatType::CHANNEL))});
 }
@@ -233,8 +237,8 @@ bool GameScreen::shouldShowMessage(const game::MessageChatData& msg, int tabInde
 
     uint64_t typeBit = 1ULL << static_cast<uint8_t>(msg.type);
 
-    // For Trade/LFG tab, also filter by channel name
-    if (tabIndex == 3 && msg.type == game::ChatType::CHANNEL) {
+    // For Trade/LFG tab (now index 4), also filter by channel name
+    if (tabIndex == 4 && msg.type == game::ChatType::CHANNEL) {
         const std::string& ch = msg.channelName;
         if (ch.find("Trade") == std::string::npos &&
             ch.find("General") == std::string::npos &&

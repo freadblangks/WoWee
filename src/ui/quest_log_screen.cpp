@@ -352,6 +352,27 @@ void QuestLogScreen::render(game::GameHandler& gameHandler, InventoryScreen& inv
                         questDetailQueryNoResponse_.erase(q.questId);
                     }
                 }
+
+                // Right-click context menu on quest row
+                if (ImGui::BeginPopupContextItem("QuestRowCtx")) {
+                    selectedIndex = static_cast<int>(i); // select on right-click too
+                    ImGui::TextDisabled("%s", displayTitle.c_str());
+                    ImGui::Separator();
+                    bool tracked = gameHandler.isQuestTracked(q.questId);
+                    if (ImGui::MenuItem(tracked ? "Untrack" : "Track")) {
+                        gameHandler.setQuestTracked(q.questId, !tracked);
+                    }
+                    if (!q.complete) {
+                        ImGui::Separator();
+                        if (ImGui::MenuItem("Abandon Quest")) {
+                            gameHandler.abandonQuest(q.questId);
+                            gameHandler.setQuestTracked(q.questId, false);
+                            selectedIndex = -1;
+                        }
+                    }
+                    ImGui::EndPopup();
+                }
+
                 ImGui::PopID();
             }
             if (visibleQuestCount == 0) {

@@ -7411,13 +7411,36 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                     if (isOOR)
                         draw->AddRectFilled(cellMin, cellMax, IM_COL32(0, 0, 0, 80), 3.0f);
 
-                    // Name text (truncated); leader name is gold
+                    // Name text (truncated) — class color when alive+online, gray when dead/offline
                     char truncName[16];
                     snprintf(truncName, sizeof(truncName), "%.12s", m.name.c_str());
                     bool isMemberLeader = (m.guid == partyData.leaderGuid);
-                    ImU32 nameCol = isMemberLeader ? IM_COL32(255, 215, 0, 255) :
-                                    (!isOnline || isDead || isGhost)
-                                        ? IM_COL32(140, 140, 140, 200) : IM_COL32(220, 220, 220, 255);
+                    ImU32 nameCol;
+                    if (!isOnline || isDead || isGhost) {
+                        nameCol = IM_COL32(140, 140, 140, 200); // gray for dead/offline
+                    } else {
+                        // Default: gold for leader, light gray for others
+                        nameCol = isMemberLeader ? IM_COL32(255, 215, 0, 255) : IM_COL32(220, 220, 220, 255);
+                        // Override with WoW class color if entity is loaded
+                        auto mEnt = gameHandler.getEntityManager().getEntity(m.guid);
+                        if (mEnt) {
+                            uint8_t cid = static_cast<uint8_t>(
+                                (mEnt->getField(game::fieldIndex(game::UF::UNIT_FIELD_BYTES_0)) >> 8) & 0xFF);
+                            switch (cid) {
+                                case 1:  nameCol = IM_COL32(199, 156, 110, 255); break; // Warrior
+                                case 2:  nameCol = IM_COL32(245, 140, 186, 255); break; // Paladin
+                                case 3:  nameCol = IM_COL32(171, 212, 115, 255); break; // Hunter
+                                case 4:  nameCol = IM_COL32(255, 245, 105, 255); break; // Rogue
+                                case 5:  nameCol = IM_COL32(255, 255, 255, 255); break; // Priest
+                                case 6:  nameCol = IM_COL32(196,  31,  59, 255); break; // Death Knight
+                                case 7:  nameCol = IM_COL32(  0, 112, 222, 255); break; // Shaman
+                                case 8:  nameCol = IM_COL32(105, 204, 240, 255); break; // Mage
+                                case 9:  nameCol = IM_COL32(148, 130, 201, 255); break; // Warlock
+                                case 11: nameCol = IM_COL32(255, 125,  10, 255); break; // Druid
+                                default: break;
+                            }
+                        }
+                    }
                     draw->AddText(ImVec2(cellMin.x + 4.0f, cellMin.y + 3.0f), nameCol, truncName);
 
                     // Leader crown star in top-right of cell

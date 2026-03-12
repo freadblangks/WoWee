@@ -9547,22 +9547,8 @@ void GameScreen::renderSocialFrame(game::GameHandler& gameHandler) {
             ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse |
             ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoScrollbar)) {
 
-        // Class color helper shared by Friends tab
         auto getClassColor = [](uint32_t classId, bool online) -> ImVec4 {
-            if (!online) return ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
-            switch (classId) {
-                case 1:  return ImVec4(0.78f, 0.61f, 0.43f, 1.0f); // Warrior
-                case 2:  return ImVec4(0.96f, 0.55f, 0.73f, 1.0f); // Paladin
-                case 3:  return ImVec4(0.67f, 0.83f, 0.45f, 1.0f); // Hunter
-                case 4:  return ImVec4(1.00f, 0.96f, 0.41f, 1.0f); // Rogue
-                case 5:  return ImVec4(1.00f, 1.00f, 1.00f, 1.0f); // Priest
-                case 6:  return ImVec4(0.77f, 0.12f, 0.23f, 1.0f); // Death Knight
-                case 7:  return ImVec4(0.00f, 0.44f, 0.87f, 1.0f); // Shaman
-                case 8:  return ImVec4(0.41f, 0.80f, 0.94f, 1.0f); // Mage
-                case 9:  return ImVec4(0.58f, 0.51f, 0.79f, 1.0f); // Warlock
-                case 11: return ImVec4(1.00f, 0.49f, 0.04f, 1.0f); // Druid
-                default: return ImVec4(0.75f, 0.75f, 0.75f, 1.0f);
-            }
+            return online ? classColorVec4(static_cast<uint8_t>(classId)) : ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
         };
         static const char* kClassNames[] = {
             "Unknown","Warrior","Paladin","Hunter","Rogue","Priest",
@@ -9605,7 +9591,7 @@ void GameScreen::renderSocialFrame(game::GameHandler& gameHandler) {
 
                         const char* displayName = c.name.empty() ? "(unknown)" : c.name.c_str();
                         ImVec4 nameCol = c.isOnline()
-                            ? ImVec4(0.9f, 0.9f, 0.9f, 1.0f)
+                            ? classColorVec4(static_cast<uint8_t>(c.classId))
                             : ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
                         ImGui::TextColored(nameCol, "%s", displayName);
 

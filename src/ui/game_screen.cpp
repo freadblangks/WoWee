@@ -6093,13 +6093,23 @@ void GameScreen::renderTradeWindow(game::GameHandler& gameHandler) {
                         : ("Item " + std::to_string(slot.itemId));
                     if (slot.stackCount > 1)
                         name += " x" + std::to_string(slot.stackCount);
-                    ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.5f, 1.0f), "  %d. %s", i + 1, name.c_str());
-
+                    ImVec4 qc = (info && info->valid)
+                        ? InventoryScreen::getQualityColor(static_cast<game::ItemQuality>(info->quality))
+                        : ImVec4(1.0f, 0.9f, 0.5f, 1.0f);
+                    if (info && info->valid && info->displayInfoId != 0) {
+                        VkDescriptorSet iconTex = inventoryScreen.getItemIcon(info->displayInfoId);
+                        if (iconTex) {
+                            ImGui::Image((ImTextureID)(uintptr_t)iconTex, ImVec2(16, 16));
+                            ImGui::SameLine();
+                        }
+                    }
+                    ImGui::TextColored(qc, "%d. %s", i + 1, name.c_str());
                     if (isMine && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                         gameHandler.clearTradeItem(static_cast<uint8_t>(i));
                     }
                     if (isMine && ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("Double-click to remove");
+                        if (info && info->valid) inventoryScreen.renderItemTooltip(*info);
+                        else ImGui::SetTooltip("Double-click to remove");
                     }
                 } else {
                     ImGui::TextDisabled("  %d. (empty)", i + 1);

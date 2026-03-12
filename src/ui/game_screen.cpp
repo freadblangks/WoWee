@@ -6067,6 +6067,59 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
         }
         drawList->AddRect       (ImVec2(barX - 1.0f, sy - 1.0f), ImVec2(barX + barW + 1.0f, sy + barH + 1.0f), borderColor, 2.0f);
 
+        // HP % text centered on health bar (non-corpse, non-full-health for readability)
+        if (!isCorpse && unit->getMaxHealth() > 0) {
+            int hpPct = static_cast<int>(healthPct * 100.0f + 0.5f);
+            char hpBuf[8];
+            snprintf(hpBuf, sizeof(hpBuf), "%d%%", hpPct);
+            ImVec2 hpTextSz = ImGui::CalcTextSize(hpBuf);
+            float hpTx = sx - hpTextSz.x * 0.5f;
+            float hpTy = sy + (barH - hpTextSz.y) * 0.5f;
+            drawList->AddText(ImVec2(hpTx + 1.0f, hpTy + 1.0f), IM_COL32(0, 0, 0, A(140)), hpBuf);
+            drawList->AddText(ImVec2(hpTx,         hpTy),         IM_COL32(255, 255, 255, A(200)), hpBuf);
+        }
+
+        // Cast bar below health bar when unit is casting
+        float castBarBaseY = sy + barH + 2.0f;
+        {
+            const auto* cs = gameHandler.getUnitCastState(guid);
+            if (cs && cs->casting && cs->timeTotal > 0.0f) {
+                float castPct = std::clamp((cs->timeTotal - cs->timeRemaining) / cs->timeTotal, 0.0f, 1.0f);
+                const float cbH = 6.0f * nameplateScale_;
+
+                // Spell name above the cast bar
+                const std::string& spellName = gameHandler.getSpellName(cs->spellId);
+                if (!spellName.empty()) {
+                    ImVec2 snSz = ImGui::CalcTextSize(spellName.c_str());
+                    float snX = sx - snSz.x * 0.5f;
+                    float snY = castBarBaseY;
+                    drawList->AddText(ImVec2(snX + 1.0f, snY + 1.0f), IM_COL32(0, 0, 0, A(140)), spellName.c_str());
+                    drawList->AddText(ImVec2(snX,         snY),         IM_COL32(255, 210, 100, A(220)), spellName.c_str());
+                    castBarBaseY += snSz.y + 2.0f;
+                }
+
+                // Cast bar background + fill
+                ImU32 cbBg   = IM_COL32(40,  30,  60,  A(180));
+                ImU32 cbFill = IM_COL32(140, 80,  220, A(200));  // purple cast bar
+                drawList->AddRectFilled(ImVec2(barX,                   castBarBaseY),
+                                        ImVec2(barX + barW,             castBarBaseY + cbH), cbBg,    2.0f);
+                drawList->AddRectFilled(ImVec2(barX,                   castBarBaseY),
+                                        ImVec2(barX + barW * castPct,   castBarBaseY + cbH), cbFill,  2.0f);
+                drawList->AddRect      (ImVec2(barX - 1.0f, castBarBaseY - 1.0f),
+                                        ImVec2(barX + barW + 1.0f, castBarBaseY + cbH + 1.0f),
+                                        IM_COL32(20, 10, 40, A(200)), 2.0f);
+
+                // Time remaining text
+                char timeBuf[12];
+                snprintf(timeBuf, sizeof(timeBuf), "%.1fs", cs->timeRemaining);
+                ImVec2 timeSz = ImGui::CalcTextSize(timeBuf);
+                float timeX = sx - timeSz.x * 0.5f;
+                float timeY = castBarBaseY + (cbH - timeSz.y) * 0.5f;
+                drawList->AddText(ImVec2(timeX + 1.0f, timeY + 1.0f), IM_COL32(0, 0, 0, A(140)), timeBuf);
+                drawList->AddText(ImVec2(timeX,         timeY),         IM_COL32(220, 200, 255, A(220)), timeBuf);
+            }
+        }
+
         // Name + level label above health bar
         uint32_t level = unit->getLevel();
         const std::string& unitName = unit->getName();

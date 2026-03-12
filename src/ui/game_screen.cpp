@@ -11071,6 +11071,39 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         nextIndicatorY += kIndicatorH;
     }
 
+    // Low durability warning — shown when any equipped item has < 20% durability
+    if (gameHandler.getState() == game::WorldState::IN_WORLD) {
+        const auto& inv = gameHandler.getInventory();
+        float lowestDurPct = 1.0f;
+        for (int i = 0; i < game::Inventory::NUM_EQUIP_SLOTS; ++i) {
+            const auto& slot = inv.getEquipSlot(static_cast<game::EquipSlot>(i));
+            if (slot.empty()) continue;
+            const auto& it = slot.item;
+            if (it.maxDurability > 0) {
+                float pct = static_cast<float>(it.curDurability) / static_cast<float>(it.maxDurability);
+                if (pct < lowestDurPct) lowestDurPct = pct;
+            }
+        }
+        if (lowestDurPct < 0.20f) {
+            bool critical = (lowestDurPct < 0.05f);
+            float pulse = critical
+                ? (0.7f + 0.3f * std::sin(static_cast<float>(ImGui::GetTime()) * 4.0f))
+                : 1.0f;
+            ImVec4 durWarnColor = critical
+                ? ImVec4(1.0f, 0.2f, 0.2f, pulse)
+                : ImVec4(1.0f, 0.65f, 0.1f, 0.9f);
+            const char* durWarnText = critical ? "Item breaking!" : "Low durability";
+
+            ImGui::SetNextWindowPos(ImVec2(indicatorX, nextIndicatorY), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(indicatorW, kIndicatorH), ImGuiCond_Always);
+            if (ImGui::Begin("##DurabilityIndicator", nullptr, indicatorFlags)) {
+                ImGui::TextColored(durWarnColor, "%s", durWarnText);
+            }
+            ImGui::End();
+            nextIndicatorY += kIndicatorH;
+        }
+    }
+
     // Local time clock — always visible below minimap indicators
     {
         auto now = std::chrono::system_clock::now();

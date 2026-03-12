@@ -12878,6 +12878,46 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
             IM_COL32(0, 0, 0, 255), marker);
     }
 
+    // Quest kill objective markers — highlight live NPCs matching active quest kill objectives
+    {
+        // Collect NPC entry IDs needed for incomplete kill objectives in tracked quests
+        std::unordered_set<uint32_t> killTargetEntries;
+        const auto& trackedIds = gameHandler.getTrackedQuestIds();
+        for (const auto& quest : gameHandler.getQuestLog()) {
+            if (quest.complete) continue;
+            if (!trackedIds.empty() && !trackedIds.count(quest.questId)) continue;
+            for (const auto& obj : quest.killObjectives) {
+                if (obj.npcOrGoId <= 0 || obj.required == 0) continue;
+                uint32_t npcEntry = static_cast<uint32_t>(obj.npcOrGoId);
+                auto it = quest.killCounts.find(npcEntry);
+                uint32_t current = (it != quest.killCounts.end()) ? it->second.first : 0;
+                if (current < obj.required) killTargetEntries.insert(npcEntry);
+            }
+        }
+
+        if (!killTargetEntries.empty()) {
+            for (const auto& [guid, entity] : gameHandler.getEntityManager().getEntities()) {
+                if (!entity || entity->getType() != game::ObjectType::UNIT) continue;
+                auto unit = std::static_pointer_cast<game::Unit>(entity);
+                if (!unit || unit->getHealth() == 0) continue;
+                if (!killTargetEntries.count(unit->getEntry())) continue;
+
+                glm::vec3 unitRender = core::coords::canonicalToRender(
+                    glm::vec3(entity->getX(), entity->getY(), entity->getZ()));
+                float sx = 0.0f, sy = 0.0f;
+                if (!projectToMinimap(unitRender, sx, sy)) continue;
+
+                // Gold circle with a dark "x" mark — indicates a quest kill target
+                drawList->AddCircleFilled(ImVec2(sx, sy), 5.0f, IM_COL32(255, 185, 0, 240));
+                drawList->AddCircle(ImVec2(sx, sy), 5.5f, IM_COL32(0, 0, 0, 180), 12, 1.0f);
+                drawList->AddLine(ImVec2(sx - 2.5f, sy - 2.5f), ImVec2(sx + 2.5f, sy + 2.5f),
+                                  IM_COL32(20, 20, 20, 230), 1.2f);
+                drawList->AddLine(ImVec2(sx + 2.5f, sy - 2.5f), ImVec2(sx - 2.5f, sy + 2.5f),
+                                  IM_COL32(20, 20, 20, 230), 1.2f);
+            }
+        }
+    }
+
     // Gossip POI markers (quest / NPC navigation targets)
     for (const auto& poi : gameHandler.getGossipPois()) {
         // Convert WoW canonical coords to render coords for minimap projection

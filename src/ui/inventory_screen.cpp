@@ -2321,7 +2321,7 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
 // ---------------------------------------------------------------------------
 // Tooltip overload for ItemQueryResponseData (used by loot window, etc.)
 // ---------------------------------------------------------------------------
-void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info) {
+void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info, const game::Inventory* inventory) {
     ImGui::BeginTooltip();
 
     ImVec4 qColor = getQualityColor(static_cast<game::ItemQuality>(info.quality));
@@ -2478,6 +2478,48 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info)
         uint32_t s = (info.sellPrice / 100) % 100;
         uint32_t c = info.sellPrice % 100;
         ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.0f, 1.0f), "Sell: %ug %us %uc", g, s, c);
+    }
+
+    // Shift-hover: compare with currently equipped item
+    if (inventory && ImGui::GetIO().KeyShift && info.inventoryType > 0) {
+        if (const game::ItemSlot* eq = findComparableEquipped(*inventory, static_cast<uint8_t>(info.inventoryType))) {
+            ImGui::Separator();
+            ImGui::TextDisabled("Equipped:");
+            VkDescriptorSet eqIcon = getItemIcon(eq->item.displayInfoId);
+            if (eqIcon) { ImGui::Image((ImTextureID)(uintptr_t)eqIcon, ImVec2(18.0f, 18.0f)); ImGui::SameLine(); }
+            ImGui::TextColored(getQualityColor(eq->item.quality), "%s", eq->item.name.c_str());
+
+            auto showDiff = [](const char* label, float nv, float ev) {
+                if (nv == 0.0f && ev == 0.0f) return;
+                float diff = nv - ev;
+                char buf[96];
+                if (diff > 0.0f) { std::snprintf(buf, sizeof(buf), "%s: %.0f (▲%.0f)", label, nv, diff);  ImGui::TextColored(ImVec4(0.0f,1.0f,0.0f,1.0f), "%s", buf); }
+                else if (diff < 0.0f) { std::snprintf(buf, sizeof(buf), "%s: %.0f (▼%.0f)", label, nv, -diff); ImGui::TextColored(ImVec4(1.0f,0.3f,0.3f,1.0f), "%s", buf); }
+                else { std::snprintf(buf, sizeof(buf), "%s: %.0f (=)", label, nv); ImGui::TextColored(ImVec4(0.7f,0.7f,0.7f,1.0f), "%s", buf); }
+            };
+
+            float ilvlDiff = static_cast<float>(info.itemLevel) - static_cast<float>(eq->item.itemLevel);
+            if (info.itemLevel > 0 || eq->item.itemLevel > 0) {
+                char ilvlBuf[64];
+                if (ilvlDiff > 0)      std::snprintf(ilvlBuf, sizeof(ilvlBuf), "Item Level: %u (▲%.0f)", info.itemLevel, ilvlDiff);
+                else if (ilvlDiff < 0) std::snprintf(ilvlBuf, sizeof(ilvlBuf), "Item Level: %u (▼%.0f)", info.itemLevel, -ilvlDiff);
+                else                   std::snprintf(ilvlBuf, sizeof(ilvlBuf), "Item Level: %u (=)", info.itemLevel);
+                ImVec4 ic = ilvlDiff > 0 ? ImVec4(0,1,0,1) : ilvlDiff < 0 ? ImVec4(1,0.3f,0.3f,1) : ImVec4(0.7f,0.7f,0.7f,1);
+                ImGui::TextColored(ic, "%s", ilvlBuf);
+            }
+
+            showDiff("Armor", static_cast<float>(info.armor),     static_cast<float>(eq->item.armor));
+            showDiff("Str",   static_cast<float>(info.strength),  static_cast<float>(eq->item.strength));
+            showDiff("Agi",   static_cast<float>(info.agility),   static_cast<float>(eq->item.agility));
+            showDiff("Sta",   static_cast<float>(info.stamina),   static_cast<float>(eq->item.stamina));
+            showDiff("Int",   static_cast<float>(info.intellect), static_cast<float>(eq->item.intellect));
+            showDiff("Spi",   static_cast<float>(info.spirit),    static_cast<float>(eq->item.spirit));
+
+            // Hint text
+            ImGui::TextDisabled("Hold Shift to compare");
+        }
+    } else if (info.inventoryType > 0) {
+        ImGui::TextDisabled("Hold Shift to compare");
     }
 
     ImGui::EndTooltip();

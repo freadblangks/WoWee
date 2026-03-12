@@ -10173,7 +10173,7 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
                         ImVec4 qc = InventoryScreen::getQualityColor(static_cast<game::ItemQuality>(info->quality));
                         ImGui::TextColored(qc, "%s", info->name.c_str());
                         if (ImGui::IsItemHovered()) {
-                            inventoryScreen.renderItemTooltip(*info);
+                            inventoryScreen.renderItemTooltip(*info, &gameHandler.getInventory());
                         }
                         // Shift-click: insert item link into chat
                         if (ImGui::IsItemClicked() && ImGui::GetIO().KeyShift) {

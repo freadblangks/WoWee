@@ -15086,6 +15086,46 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         }
     }
 
+    // Interactable game object dots (chests, resource nodes) when NPC dots are enabled.
+    // Shown as small orange triangles to distinguish from unit dots and loot corpses.
+    if (minimapNpcDots_) {
+        ImVec2 mouse = ImGui::GetMousePos();
+        for (const auto& [guid, entity] : gameHandler.getEntityManager().getEntities()) {
+            if (!entity || entity->getType() != game::ObjectType::GAMEOBJECT) continue;
+
+            // Only show objects that are likely interactive (chests/nodes: type 3;
+            // also show type 0=Door when open, but filter by dynamic-flag ACTIVATED).
+            // For simplicity, show all game objects that have a non-empty cached name.
+            auto go = std::static_pointer_cast<game::GameObject>(entity);
+            if (!go) continue;
+
+            // Only show if we have name data (avoids cluttering with unknown objects)
+            const auto* goInfo = gameHandler.getCachedGameObjectInfo(go->getEntry());
+            if (!goInfo || !goInfo->isValid()) continue;
+            // Skip transport objects (boats/zeppelins): type 15 = MO_TRANSPORT, 11 = TRANSPORT
+            if (goInfo->type == 11 || goInfo->type == 15) continue;
+
+            glm::vec3 goRender = core::coords::canonicalToRender(
+                glm::vec3(entity->getX(), entity->getY(), entity->getZ()));
+            float sx = 0.0f, sy = 0.0f;
+            if (!projectToMinimap(goRender, sx, sy)) continue;
+
+            // Small upward triangle in gold/amber for interactable objects
+            const float ts = 3.5f;
+            ImVec2 goTip  (sx,        sy - ts);
+            ImVec2 goLeft (sx - ts,   sy + ts * 0.6f);
+            ImVec2 goRight(sx + ts,   sy + ts * 0.6f);
+            drawList->AddTriangleFilled(goTip, goLeft, goRight, IM_COL32(255, 185, 30, 220));
+            drawList->AddTriangle(goTip, goLeft, goRight, IM_COL32(100, 60, 0, 180), 1.0f);
+
+            // Tooltip on hover
+            float mdx = mouse.x - sx, mdy = mouse.y - sy;
+            if (mdx * mdx + mdy * mdy < 64.0f) {
+                ImGui::SetTooltip("%s", goInfo->name.c_str());
+            }
+        }
+    }
+
     // Party member dots on minimap — small colored squares with name tooltip on hover
     if (gameHandler.isInGroup()) {
         const auto& partyData = gameHandler.getPartyData();

@@ -204,29 +204,33 @@ GameScreen::GameScreen() {
 void GameScreen::initChatTabs() {
     chatTabs_.clear();
     // General tab: shows everything
-    chatTabs_.push_back({"General", 0xFFFFFFFF});
+    chatTabs_.push_back({"General", ~0ULL});
     // Combat tab: system, loot, skills, achievements, and NPC speech/emotes
-    chatTabs_.push_back({"Combat", (1u << static_cast<uint8_t>(game::ChatType::SYSTEM)) |
-                                    (1u << static_cast<uint8_t>(game::ChatType::LOOT)) |
-                                    (1u << static_cast<uint8_t>(game::ChatType::SKILL)) |
-                                    (1u << static_cast<uint8_t>(game::ChatType::ACHIEVEMENT)) |
-                                    (1u << static_cast<uint8_t>(game::ChatType::GUILD_ACHIEVEMENT)) |
-                                    (1u << static_cast<uint8_t>(game::ChatType::MONSTER_SAY)) |
-                                    (1u << static_cast<uint8_t>(game::ChatType::MONSTER_YELL)) |
-                                    (1u << static_cast<uint8_t>(game::ChatType::MONSTER_EMOTE))});
+    chatTabs_.push_back({"Combat", (1ULL << static_cast<uint8_t>(game::ChatType::SYSTEM)) |
+                                    (1ULL << static_cast<uint8_t>(game::ChatType::LOOT)) |
+                                    (1ULL << static_cast<uint8_t>(game::ChatType::SKILL)) |
+                                    (1ULL << static_cast<uint8_t>(game::ChatType::ACHIEVEMENT)) |
+                                    (1ULL << static_cast<uint8_t>(game::ChatType::GUILD_ACHIEVEMENT)) |
+                                    (1ULL << static_cast<uint8_t>(game::ChatType::MONSTER_SAY)) |
+                                    (1ULL << static_cast<uint8_t>(game::ChatType::MONSTER_YELL)) |
+                                    (1ULL << static_cast<uint8_t>(game::ChatType::MONSTER_EMOTE)) |
+                                    (1ULL << static_cast<uint8_t>(game::ChatType::MONSTER_WHISPER)) |
+                                    (1ULL << static_cast<uint8_t>(game::ChatType::MONSTER_PARTY)) |
+                                    (1ULL << static_cast<uint8_t>(game::ChatType::RAID_BOSS_WHISPER)) |
+                                    (1ULL << static_cast<uint8_t>(game::ChatType::RAID_BOSS_EMOTE))});
     // Whispers tab
-    chatTabs_.push_back({"Whispers", (1u << static_cast<uint8_t>(game::ChatType::WHISPER)) |
-                                      (1u << static_cast<uint8_t>(game::ChatType::WHISPER_INFORM))});
+    chatTabs_.push_back({"Whispers", (1ULL << static_cast<uint8_t>(game::ChatType::WHISPER)) |
+                                      (1ULL << static_cast<uint8_t>(game::ChatType::WHISPER_INFORM))});
     // Trade/LFG tab: channel messages
-    chatTabs_.push_back({"Trade/LFG", (1u << static_cast<uint8_t>(game::ChatType::CHANNEL))});
+    chatTabs_.push_back({"Trade/LFG", (1ULL << static_cast<uint8_t>(game::ChatType::CHANNEL))});
 }
 
 bool GameScreen::shouldShowMessage(const game::MessageChatData& msg, int tabIndex) const {
     if (tabIndex < 0 || tabIndex >= static_cast<int>(chatTabs_.size())) return true;
     const auto& tab = chatTabs_[tabIndex];
-    if (tab.typeMask == 0xFFFFFFFF) return true;  // General tab shows all
+    if (tab.typeMask == ~0ULL) return true;  // General tab shows all
 
-    uint32_t typeBit = 1u << static_cast<uint8_t>(msg.type);
+    uint64_t typeBit = 1ULL << static_cast<uint8_t>(msg.type);
 
     // For Trade/LFG tab, also filter by channel name
     if (tabIndex == 3 && msg.type == game::ChatType::CHANNEL) {

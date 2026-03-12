@@ -66,7 +66,7 @@ private:
     int activeChatTab_ = 0;
     struct ChatTab {
         std::string name;
-        uint32_t typeMask;  // bitmask of ChatType values to show
+        uint64_t typeMask;  // bitmask of ChatType values to show (64-bit: types go up to 84)
     };
     std::vector<ChatTab> chatTabs_;
     void initChatTabs();

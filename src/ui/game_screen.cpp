@@ -12579,15 +12579,54 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         drawList->AddText(font, fontSize, ImVec2(tx, ty), IM_COL32(230, 220, 140, 255), coordBuf);
     }
 
-    // Hover tooltip: show player's WoW coordinates (canonical X=North, Y=West)
+    // Hover tooltip and right-click context menu
     {
         ImVec2 mouse = ImGui::GetMousePos();
         float mdx = mouse.x - centerX;
         float mdy = mouse.y - centerY;
-        if (mdx * mdx + mdy * mdy <= mapRadius * mapRadius) {
+        bool overMinimap = (mdx * mdx + mdy * mdy <= mapRadius * mapRadius);
+
+        if (overMinimap) {
             ImGui::BeginTooltip();
             ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.5f, 1.0f), "Ctrl+click to ping");
             ImGui::EndTooltip();
+
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                ImGui::OpenPopup("##minimapContextMenu");
+            }
+        }
+
+        if (ImGui::BeginPopup("##minimapContextMenu")) {
+            ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 1.0f), "Minimap");
+            ImGui::Separator();
+
+            // Zoom controls
+            if (ImGui::MenuItem("Zoom In")) {
+                minimap->zoomIn();
+            }
+            if (ImGui::MenuItem("Zoom Out")) {
+                minimap->zoomOut();
+            }
+
+            ImGui::Separator();
+
+            // Toggle options with checkmarks
+            bool rotWithCam = minimap->isRotateWithCamera();
+            if (ImGui::MenuItem("Rotate with Camera", nullptr, rotWithCam)) {
+                minimap->setRotateWithCamera(!rotWithCam);
+            }
+
+            bool squareShape = minimap->isSquareShape();
+            if (ImGui::MenuItem("Square Shape", nullptr, squareShape)) {
+                minimap->setSquareShape(!squareShape);
+            }
+
+            bool npcDots = minimapNpcDots_;
+            if (ImGui::MenuItem("Show NPC Dots", nullptr, npcDots)) {
+                minimapNpcDots_ = !minimapNpcDots_;
+            }
+
+            ImGui::EndPopup();
         }
     }
 

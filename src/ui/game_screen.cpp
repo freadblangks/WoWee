@@ -11656,6 +11656,21 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         }
     }
 
+    // Hover tooltip: show player's WoW coordinates (canonical X=North, Y=West)
+    {
+        ImVec2 mouse = ImGui::GetMousePos();
+        float mdx = mouse.x - centerX;
+        float mdy = mouse.y - centerY;
+        if (mdx * mdx + mdy * mdy <= mapRadius * mapRadius) {
+            glm::vec3 playerCanon = core::coords::renderToCanonical(playerRender);
+            ImGui::BeginTooltip();
+            ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.5f, 1.0f),
+                               "%.1f, %.1f", playerCanon.x, playerCanon.y);
+            ImGui::TextDisabled("Ctrl+click to ping");
+            ImGui::EndTooltip();
+        }
+    }
+
     auto applyMuteState = [&]() {
         auto* activeRenderer = core::Application::getInstance().getRenderer();
         float masterScale = soundMuted_ ? 0.0f : static_cast<float>(pendingMasterVolume) / 100.0f;

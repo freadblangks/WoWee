@@ -6125,9 +6125,32 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_ON_CANCEL_EXPECTED_RIDE_VEHICLE_AURA:
         case Opcode::SMSG_RESET_RANGED_COMBAT_TIMER:
         case Opcode::SMSG_PROFILEDATA_RESPONSE:
-        case Opcode::SMSG_PLAY_TIME_WARNING:
             packet.setReadPos(packet.getSize());
             break;
+
+        case Opcode::SMSG_PLAY_TIME_WARNING: {
+            // uint32 type (0=normal, 1=heavy, 2=tired/restricted) + uint32 minutes played
+            if (packet.getSize() - packet.getReadPos() >= 4) {
+                uint32_t warnType = packet.readUInt32();
+                uint32_t minutesPlayed = (packet.getSize() - packet.getReadPos() >= 4)
+                    ? packet.readUInt32() : 0;
+                const char* severity = (warnType >= 2) ? "[Tired] " : "[Play Time] ";
+                char buf[128];
+                if (minutesPlayed > 0) {
+                    uint32_t h = minutesPlayed / 60;
+                    uint32_t m = minutesPlayed % 60;
+                    if (h > 0)
+                        std::snprintf(buf, sizeof(buf), "%sYou have been playing for %uh %um.", severity, h, m);
+                    else
+                        std::snprintf(buf, sizeof(buf), "%sYou have been playing for %um.", severity, m);
+                } else {
+                    std::snprintf(buf, sizeof(buf), "%sYou have been playing for a long time.", severity);
+                }
+                addSystemChatMessage(buf);
+                addUIError(buf);
+            }
+            break;
+        }
 
         // ---- Item query multiple (same format as single, re-use handler) ----
         case Opcode::SMSG_ITEM_QUERY_MULTIPLE_RESPONSE:

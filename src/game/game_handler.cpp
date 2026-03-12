@@ -20094,10 +20094,8 @@ void GameHandler::handleLootRollWon(network::Packet& packet) {
                   winnerName.c_str(), iName.c_str(), rollName, static_cast<int>(rollNum));
     addSystemChatMessage(buf);
 
-    // Clear pending roll if it was ours
-    if (pendingLootRollActive_ && winnerGuid == playerGuid) {
-        pendingLootRollActive_ = false;
-    }
+    // Dismiss roll popup — roll contest is over regardless of who won
+    pendingLootRollActive_ = false;
     LOG_INFO("SMSG_LOOT_ROLL_WON: winner=", winnerName, " item=", itemId,
              " roll=", rollName, "(", rollNum, ")");
 }

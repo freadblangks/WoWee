@@ -10256,6 +10256,15 @@ void GameHandler::followTarget() {
     LOG_INFO("Following target: ", targetName, " (GUID: 0x", std::hex, targetGuid, std::dec, ")");
 }
 
+void GameHandler::cancelFollow() {
+    if (followTargetGuid_ == 0) {
+        addSystemChatMessage("You are not following anyone.");
+        return;
+    }
+    followTargetGuid_ = 0;
+    addSystemChatMessage("You stop following.");
+}
+
 void GameHandler::assistTarget() {
     if (state != WorldState::IN_WORLD) {
         LOG_WARNING("Cannot assist: not in world");

@@ -402,6 +402,7 @@ public:
 
     // Follow/Assist
     void followTarget();
+    void cancelFollow();   // Stop following current target
     void assistTarget();
 
     // PvP

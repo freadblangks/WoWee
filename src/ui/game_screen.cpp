@@ -3809,6 +3809,20 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                 return;
             }
 
+            // /zone command — print current zone name
+            if (cmdLower == "zone") {
+                std::string zoneName;
+                if (auto* rend = core::Application::getInstance().getRenderer())
+                    zoneName = rend->getCurrentZoneName();
+                game::MessageChatData sysMsg;
+                sysMsg.type = game::ChatType::SYSTEM;
+                sysMsg.language = game::ChatLanguage::UNIVERSAL;
+                sysMsg.message = zoneName.empty() ? "You are not in a known zone." : "You are in: " + zoneName;
+                gameHandler.addLocalChatMessage(sysMsg);
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
             // /played command
             if (cmdLower == "played") {
                 gameHandler.requestPlayedTime();
@@ -3834,11 +3848,11 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                     "       /maintank  /mainassist  /roll [min-max]",
                     "Guild: /ginvite  /gkick  /gquit  /gpromote  /gdemote  /gmotd",
                     "       /gleader  /groster  /ginfo  /gcreate  /gdisband",
-                    "Combat: /startattack  /stopattack  /stopcasting  /duel  /pvp",
-                    "        /forfeit  /follow  /assist",
+                    "Combat: /startattack  /stopattack  /stopcasting  /cast <spell>  /duel  /pvp",
+                    "        /forfeit  /follow  /stopfollow  /assist",
                     "Target: /target <name>  /cleartarget  /focus  /clearfocus",
                     "Movement: /sit  /stand  /kneel  /dismount",
-                    "Misc: /played  /time  /afk [msg]  /dnd [msg]  /inspect",
+                    "Misc: /played  /time  /zone  /afk [msg]  /dnd [msg]  /inspect",
                     "      /helm  /cloak  /trade  /join <channel>  /leave <channel>",
                     "      /unstuck  /logout  /ticket  /help",
                 };
@@ -4079,6 +4093,13 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
             // /follow command
             if (cmdLower == "follow" || cmdLower == "f") {
                 gameHandler.followTarget();
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            // /stopfollow command
+            if (cmdLower == "stopfollow") {
+                gameHandler.cancelFollow();
                 chatInputBuffer[0] = '\0';
                 return;
             }

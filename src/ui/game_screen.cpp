@@ -11450,6 +11450,52 @@ void GameScreen::renderSocialFrame(game::GameHandler& gameHandler) {
                 ImGui::EndTabItem();
             }
 
+            // ---- Arena tab (WotLK: shows per-team rating/record) ----
+            const auto& arenaStats = gameHandler.getArenaTeamStats();
+            if (!arenaStats.empty()) {
+                if (ImGui::BeginTabItem("Arena")) {
+                    ImGui::BeginChild("##ArenaList", ImVec2(200, 200), false);
+
+                    for (size_t ai = 0; ai < arenaStats.size(); ++ai) {
+                        const auto& ts = arenaStats[ai];
+                        ImGui::PushID(static_cast<int>(ai));
+
+                        // Team header with rating
+                        char teamLabel[48];
+                        snprintf(teamLabel, sizeof(teamLabel), "Team #%u", ts.teamId);
+                        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.2f, 1.0f), "%s", teamLabel);
+
+                        ImGui::Indent(8.0f);
+                        // Rating and rank
+                        ImGui::Text("Rating: %u", ts.rating);
+                        if (ts.rank > 0) {
+                            ImGui::SameLine(0, 6);
+                            ImGui::TextDisabled("(Rank #%u)", ts.rank);
+                        }
+
+                        // Weekly record
+                        uint32_t weekLosses = ts.weekGames > ts.weekWins
+                                              ? ts.weekGames - ts.weekWins : 0;
+                        ImGui::Text("Week:   %u W / %u L", ts.weekWins, weekLosses);
+
+                        // Season record
+                        uint32_t seasLosses = ts.seasonGames > ts.seasonWins
+                                              ? ts.seasonGames - ts.seasonWins : 0;
+                        ImGui::Text("Season: %u W / %u L", ts.seasonWins, seasLosses);
+
+                        ImGui::Unindent(8.0f);
+
+                        if (ai + 1 < arenaStats.size())
+                            ImGui::Separator();
+
+                        ImGui::PopID();
+                    }
+
+                    ImGui::EndChild();
+                    ImGui::EndTabItem();
+                }
+            }
+
             ImGui::EndTabBar();
         }
     }

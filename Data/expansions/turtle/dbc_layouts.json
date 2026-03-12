@@ -95,5 +95,8 @@
     "ID": 0, "MapID": 1, "AreaID": 2, "AreaName": 3,
     "LocLeft": 4, "LocRight": 5, "LocTop": 6, "LocBottom": 7,
     "DisplayMapID": 8, "ParentWorldMapID": 10
+  },
+  "SpellItemEnchantment": {
+    "ID": 0, "Name": 8
   }
 }

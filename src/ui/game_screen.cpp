@@ -17996,6 +17996,28 @@ void GameScreen::renderObjectiveTracker(game::GameHandler& gameHandler) {
 void GameScreen::renderInspectWindow(game::GameHandler& gameHandler) {
     if (!showInspectWindow_) return;
 
+    // Lazy-load SpellItemEnchantment.dbc for enchant name lookup
+    static std::unordered_map<uint32_t, std::string> s_enchantNames;
+    static bool s_enchantDbLoaded = false;
+    auto* assetMgrEnchant = core::Application::getInstance().getAssetManager();
+    if (!s_enchantDbLoaded && assetMgrEnchant && assetMgrEnchant->isInitialized()) {
+        s_enchantDbLoaded = true;
+        auto dbc = assetMgrEnchant->loadDBC("SpellItemEnchantment.dbc");
+        if (dbc && dbc->isLoaded()) {
+            const auto* layout = pipeline::getActiveDBCLayout()
+                                 ? pipeline::getActiveDBCLayout()->getLayout("SpellItemEnchantment")
+                                 : nullptr;
+            uint32_t idField   = layout ? (*layout)["ID"]   : 0;
+            uint32_t nameField = layout ? (*layout)["Name"] : 8;
+            for (uint32_t i = 0; i < dbc->getRecordCount(); ++i) {
+                uint32_t id = dbc->getUInt32(i, idField);
+                if (id == 0) continue;
+                std::string nm = dbc->getString(i, nameField);
+                if (!nm.empty()) s_enchantNames[id] = std::move(nm);
+            }
+        }
+    }
+
     // Slot index 0..18 maps to equipment slots 1..19 (WoW convention: slot 0 unused on server)
     static const char* kSlotNames[19] = {
         "Head", "Neck", "Shoulder", "Shirt", "Chest",
@@ -18122,10 +18144,18 @@ void GameScreen::renderInspectWindow(game::GameHandler& gameHandler) {
                 ImGui::TextColored(qColor, "%s", info->name.c_str());
                 // Enchant indicator on the same row as the name
                 if (enchantId != 0) {
+                    auto enchIt = s_enchantNames.find(enchantId);
+                    const std::string& enchName = (enchIt != s_enchantNames.end())
+                                                  ? enchIt->second : std::string{};
                     ImGui::SameLine();
-                    ImGui::TextColored(ImVec4(0.6f, 0.85f, 1.0f, 1.0f), "\xe2\x9c\xa6");  // UTF-8 ✦
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("Enchanted (ID %u)", static_cast<unsigned>(enchantId));
+                    if (!enchName.empty()) {
+                        ImGui::TextColored(ImVec4(0.6f, 0.85f, 1.0f, 1.0f),
+                            "\xe2\x9c\xa6 %s", enchName.c_str());  // UTF-8 ✦
+                    } else {
+                        ImGui::TextColored(ImVec4(0.6f, 0.85f, 1.0f, 1.0f), "\xe2\x9c\xa6");
+                        if (ImGui::IsItemHovered())
+                            ImGui::SetTooltip("Enchanted (ID %u)", static_cast<unsigned>(enchantId));
+                    }
                 }
                 ImGui::EndGroup();
                 hovered = hovered || ImGui::IsItemHovered();

@@ -3239,7 +3239,20 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                 ImGui::PushID(static_cast<int>(10000 + i));
 
                 bool isBuff = (aura.flags & 0x80) == 0;
-                ImVec4 auraBorderColor = isBuff ? ImVec4(0.2f, 0.8f, 0.2f, 0.9f) : ImVec4(0.8f, 0.2f, 0.2f, 0.9f);
+                ImVec4 auraBorderColor;
+                if (isBuff) {
+                    auraBorderColor = ImVec4(0.2f, 0.8f, 0.2f, 0.9f);
+                } else {
+                    // Debuff: color by dispel type, matching player buff bar convention
+                    uint8_t dt = gameHandler.getSpellDispelType(aura.spellId);
+                    switch (dt) {
+                        case 1:  auraBorderColor = ImVec4(0.15f, 0.50f, 1.00f, 0.9f); break; // magic: blue
+                        case 2:  auraBorderColor = ImVec4(0.70f, 0.20f, 0.90f, 0.9f); break; // curse: purple
+                        case 3:  auraBorderColor = ImVec4(0.55f, 0.30f, 0.10f, 0.9f); break; // disease: brown
+                        case 4:  auraBorderColor = ImVec4(0.10f, 0.70f, 0.10f, 0.9f); break; // poison: green
+                        default: auraBorderColor = ImVec4(0.80f, 0.20f, 0.20f, 0.9f); break; // other: red
+                    }
+                }
 
                 VkDescriptorSet iconTex = VK_NULL_HANDLE;
                 if (assetMgr) {

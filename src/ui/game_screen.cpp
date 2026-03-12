@@ -10802,12 +10802,8 @@ void GameScreen::renderMailWindow(game::GameHandler& gameHandler) {
                         }
 
                         ImGui::InvisibleButton("##mailatt", ImVec2(MAIL_SLOT, MAIL_SLOT));
-                        if (ImGui::IsItemHovered()) {
-                            ImGui::BeginTooltip();
-                            ImGui::TextColored(qc, "%s", name.c_str());
-                            if (att.stackCount > 1) ImGui::Text("Count: %u", att.stackCount);
-                            ImGui::EndTooltip();
-                        }
+                        if (ImGui::IsItemHovered() && info && info->valid)
+                            inventoryScreen.renderItemTooltip(*info);
                         ImGui::SameLine();
                         ImGui::TextColored(qc, "%s", name.c_str());
                         ImGui::SameLine();
@@ -11272,12 +11268,8 @@ void GameScreen::renderGuildBankWindow(game::GameHandler& gameHandler) {
             if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
                 gameHandler.guildBankWithdrawItem(activeTab, item.slotId, 0xFF, 0);
             }
-            if (ImGui::IsItemHovered()) {
-                ImGui::BeginTooltip();
-                ImGui::TextColored(qc, "%s", name.c_str());
-                if (item.stackCount > 1) ImGui::Text("Count: %u", item.stackCount);
-                ImGui::EndTooltip();
-            }
+            if (ImGui::IsItemHovered() && info && info->valid)
+                inventoryScreen.renderItemTooltip(*info);
         }
         ImGui::PopID();
     }

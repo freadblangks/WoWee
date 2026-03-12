@@ -3486,7 +3486,9 @@ void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
     // Determine color based on relation (same logic as target frame)
     ImVec4 focusColor(0.7f, 0.7f, 0.7f, 1.0f);
     if (focus->getType() == game::ObjectType::PLAYER) {
-        focusColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f);
+        // Use class color for player focus targets
+        uint8_t cid = entityClassId(focus.get());
+        focusColor = (cid != 0) ? classColorVec4(cid) : ImVec4(0.3f, 1.0f, 0.3f, 1.0f);
     } else if (focus->getType() == game::ObjectType::UNIT) {
         auto u = std::static_pointer_cast<game::Unit>(focus);
         if (u->getHealth() == 0 && u->getMaxHealth() > 0) {

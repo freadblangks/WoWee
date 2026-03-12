@@ -5410,13 +5410,33 @@ void GameScreen::renderQuestObjectiveTracker(game::GameHandler& gameHandler) {
                                          : ImVec4(1.0f, 1.0f, 0.85f, 1.0f);
             ImGui::PushStyleColor(ImGuiCol_Text, titleCol);
             if (ImGui::Selectable(q.title.c_str(), false,
-                                   ImGuiSelectableFlags_None, ImVec2(TRACKER_W - 12.0f, 0))) {
+                                   ImGuiSelectableFlags_DontClosePopups, ImVec2(TRACKER_W - 12.0f, 0))) {
                 questLogScreen.openAndSelectQuest(q.questId);
             }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Click to open Quest Log");
+            if (ImGui::IsItemHovered() && !ImGui::IsPopupOpen("##QTCtx")) {
+                ImGui::SetTooltip("Click: open Quest Log  |  Right-click: tracking options");
             }
             ImGui::PopStyleColor();
+
+            // Right-click context menu for quest tracker entry
+            if (ImGui::BeginPopupContextItem("##QTCtx")) {
+                ImGui::TextDisabled("%s", q.title.c_str());
+                ImGui::Separator();
+                if (ImGui::MenuItem("Open in Quest Log")) {
+                    questLogScreen.openAndSelectQuest(q.questId);
+                }
+                bool tracked = gameHandler.isQuestTracked(q.questId);
+                if (tracked) {
+                    if (ImGui::MenuItem("Stop Tracking")) {
+                        gameHandler.setQuestTracked(q.questId, false);
+                    }
+                } else {
+                    if (ImGui::MenuItem("Track")) {
+                        gameHandler.setQuestTracked(q.questId, true);
+                    }
+                }
+                ImGui::EndPopup();
+            }
             ImGui::PopID();
 
             // Objectives line (condensed)

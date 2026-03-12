@@ -12012,10 +12012,18 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
                     if (ImGui::IsItemHovered()) {
                         ImGui::BeginTooltip();
                         if (!name.empty()) {
-                            ImGui::Text("%s", name.c_str());
-                            if (!rank.empty()) ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "%s", rank.c_str());
+                            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "%s", name.c_str());
+                            if (!rank.empty()) ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "%s", rank.c_str());
                         }
-                        ImGui::Text("Status: %s", statusLabel);
+                        const std::string& spDesc = gameHandler.getSpellDescription(spell->spellId);
+                        if (!spDesc.empty()) {
+                            ImGui::Spacing();
+                            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 300.0f);
+                            ImGui::TextWrapped("%s", spDesc.c_str());
+                            ImGui::PopTextWrapPos();
+                            ImGui::Spacing();
+                        }
+                        ImGui::TextDisabled("Status: %s", statusLabel);
                         if (spell->reqLevel > 0) {
                             ImVec4 lvlColor = levelMet ? ImVec4(0.7f, 0.7f, 0.7f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
                             ImGui::TextColored(lvlColor, "Required Level: %u", spell->reqLevel);

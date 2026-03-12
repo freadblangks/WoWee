@@ -2213,7 +2213,16 @@ void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
                 float mpPct = static_cast<float>(power) / static_cast<float>(maxPower);
                 ImVec4 powerColor;
                 switch (powerType) {
-                    case 0: powerColor = ImVec4(0.2f, 0.2f, 0.9f, 1.0f); break; // Mana (blue)
+                    case 0: {
+                        // Mana: pulse desaturated blue when critically low (< 20%)
+                        if (mpPct < 0.2f) {
+                            float pulse = 0.6f + 0.4f * std::sin(static_cast<float>(ImGui::GetTime()) * 3.0f);
+                            powerColor = ImVec4(0.1f, 0.1f, 0.8f * pulse, 1.0f);
+                        } else {
+                            powerColor = ImVec4(0.2f, 0.2f, 0.9f, 1.0f);
+                        }
+                        break;
+                    }
                     case 1: powerColor = ImVec4(0.9f, 0.2f, 0.2f, 1.0f); break; // Rage (red)
                     case 2: powerColor = ImVec4(0.9f, 0.6f, 0.1f, 1.0f); break; // Focus (orange)
                     case 3: powerColor = ImVec4(0.9f, 0.9f, 0.2f, 1.0f); break; // Energy (yellow)
@@ -2729,7 +2738,15 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
             float castLeft  = gameHandler.getTargetCastTimeRemaining();
             uint32_t tspell = gameHandler.getTargetCastSpellId();
             const std::string& castName = (tspell != 0) ? gameHandler.getSpellName(tspell) : "";
-            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.9f, 0.3f, 0.2f, 1.0f));
+            // Pulse bright orange when cast is > 80% complete — interrupt window closing
+            ImVec4 castBarColor;
+            if (castPct > 0.8f) {
+                float pulse = 0.7f + 0.3f * std::sin(static_cast<float>(ImGui::GetTime()) * 8.0f);
+                castBarColor = ImVec4(1.0f * pulse, 0.5f * pulse, 0.0f, 1.0f);
+            } else {
+                castBarColor = ImVec4(0.9f, 0.3f, 0.2f, 1.0f);
+            }
+            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, castBarColor);
             char castLabel[72];
             if (!castName.empty())
                 snprintf(castLabel, sizeof(castLabel), "%s (%.1fs)", castName.c_str(), castLeft);
@@ -3099,7 +3116,15 @@ void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
                 float rem   = focusCast->timeRemaining;
                 float prog  = std::clamp(1.0f - rem / total, 0.f, 1.f);
                 const std::string& spName = gameHandler.getSpellName(focusCast->spellId);
-                ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.9f, 0.3f, 0.2f, 1.0f));
+                // Pulse orange when > 80% complete — interrupt window closing
+                ImVec4 focusCastColor;
+                if (prog > 0.8f) {
+                    float pulse = 0.7f + 0.3f * std::sin(static_cast<float>(ImGui::GetTime()) * 8.0f);
+                    focusCastColor = ImVec4(1.0f * pulse, 0.5f * pulse, 0.0f, 1.0f);
+                } else {
+                    focusCastColor = ImVec4(0.9f, 0.3f, 0.2f, 1.0f);
+                }
+                ImGui::PushStyleColor(ImGuiCol_PlotHistogram, focusCastColor);
                 char castBuf[64];
                 if (!spName.empty())
                     snprintf(castBuf, sizeof(castBuf), "%s (%.1fs)", spName.c_str(), rem);
@@ -7108,7 +7133,15 @@ void GameScreen::renderBossFrames(game::GameHandler& gameHandler) {
                 uint32_t bspell = cs->spellId;
                 const std::string& bcastName = (bspell != 0)
                     ? gameHandler.getSpellName(bspell) : "";
-                ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.9f, 0.3f, 0.2f, 1.0f));
+                // Pulse bright orange when > 80% complete — interrupt window closing
+                ImVec4 bcastColor;
+                if (castPct > 0.8f) {
+                    float pulse = 0.7f + 0.3f * std::sin(static_cast<float>(ImGui::GetTime()) * 8.0f);
+                    bcastColor = ImVec4(1.0f * pulse, 0.5f * pulse, 0.0f, 1.0f);
+                } else {
+                    bcastColor = ImVec4(0.9f, 0.3f, 0.2f, 1.0f);
+                }
+                ImGui::PushStyleColor(ImGuiCol_PlotHistogram, bcastColor);
                 char bcastLabel[72];
                 if (!bcastName.empty())
                     snprintf(bcastLabel, sizeof(bcastLabel), "%s (%.1fs)",

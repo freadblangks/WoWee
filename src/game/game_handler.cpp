@@ -5001,10 +5001,34 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::MSG_QUERY_NEXT_MAIL_TIME:
             handleQueryNextMailTime(packet);
             break;
-        case Opcode::SMSG_CHANNEL_LIST:
-            // Channel member listing currently not rendered in UI.
-            packet.setReadPos(packet.getSize());
+        case Opcode::SMSG_CHANNEL_LIST: {
+            // string channelName + uint8 flags + uint32 count + count×(uint64 guid + uint8 memberFlags)
+            std::string chanName = packet.readString();
+            if (packet.getSize() - packet.getReadPos() < 5) break;
+            /*uint8_t chanFlags =*/ packet.readUInt8();
+            uint32_t memberCount = packet.readUInt32();
+            memberCount = std::min(memberCount, 200u);
+            addSystemChatMessage(chanName + " has " + std::to_string(memberCount) + " member(s):");
+            for (uint32_t i = 0; i < memberCount; ++i) {
+                if (packet.getSize() - packet.getReadPos() < 9) break;
+                uint64_t memberGuid = packet.readUInt64();
+                uint8_t memberFlags = packet.readUInt8();
+                // Look up the name from our entity manager
+                auto entity = entityManager.getEntity(memberGuid);
+                std::string name = "(unknown)";
+                if (entity) {
+                    auto player = std::dynamic_pointer_cast<Player>(entity);
+                    if (player && !player->getName().empty()) name = player->getName();
+                }
+                std::string entry = "  " + name;
+                if (memberFlags & 0x01) entry += " [Moderator]";
+                if (memberFlags & 0x02) entry += " [Muted]";
+                addSystemChatMessage(entry);
+                LOG_DEBUG("  channel member: 0x", std::hex, memberGuid, std::dec,
+                          " flags=", (int)memberFlags, " name=", name);
+            }
             break;
+        }
         case Opcode::SMSG_INSPECT_RESULTS_UPDATE:
             handleInspectResults(packet);
             break;
@@ -12971,15 +12995,18 @@ void GameHandler::handleLfgBootProposalUpdate(network::Packet& packet) {
     uint32_t timeLeft    = packet.readUInt32();
     uint32_t votesNeeded = packet.readUInt32();
 
-    (void)myVote; (void)totalVotes; (void)bootVotes; (void)timeLeft; (void)votesNeeded;
+    (void)myVote;
+
+    lfgBootVotes_    = bootVotes;
+    lfgBootTotal_    = totalVotes;
+    lfgBootTimeLeft_ = timeLeft;
+    lfgBootNeeded_   = votesNeeded;
 
     if (inProgress) {
         lfgState_ = LfgState::Boot;
-        addSystemChatMessage(
-            std::string("Dungeon Finder: Vote to kick in progress (") +
-            std::to_string(timeLeft) + "s remaining).");
     } else {
         // Boot vote ended — return to InDungeon state regardless of outcome
+        lfgBootVotes_ = lfgBootTotal_ = lfgBootTimeLeft_ = lfgBootNeeded_ = 0;
         lfgState_ = LfgState::InDungeon;
         if (myAnswer) {
             addSystemChatMessage("Dungeon Finder: Vote kick passed — member removed.");

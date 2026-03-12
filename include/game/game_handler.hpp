@@ -1061,6 +1061,10 @@ public:
     uint32_t getLfgProposalId()  const { return lfgProposalId_; }
     int32_t  getLfgAvgWaitSec()  const { return lfgAvgWaitSec_; }
     uint32_t getLfgTimeInQueueMs() const { return lfgTimeInQueueMs_; }
+    uint32_t getLfgBootVotes()    const { return lfgBootVotes_; }
+    uint32_t getLfgBootTotal()    const { return lfgBootTotal_; }
+    uint32_t getLfgBootTimeLeft() const { return lfgBootTimeLeft_; }
+    uint32_t getLfgBootNeeded()   const { return lfgBootNeeded_; }
 
     // ---- Phase 5: Loot ----
     void lootTarget(uint64_t guid);
@@ -2128,6 +2132,10 @@ private:
     uint32_t lfgProposalId_   = 0;   // pending proposal id (0 = none)
     int32_t  lfgAvgWaitSec_   = -1;  // estimated wait, -1=unknown
     uint32_t lfgTimeInQueueMs_= 0;   // ms already in queue
+    uint32_t lfgBootVotes_    = 0;   // current boot-yes votes
+    uint32_t lfgBootTotal_    = 0;   // total votes cast
+    uint32_t lfgBootTimeLeft_ = 0;   // seconds remaining
+    uint32_t lfgBootNeeded_   = 0;   // votes needed to kick
 
     // Ready check state
     bool        pendingReadyCheck_       = false;

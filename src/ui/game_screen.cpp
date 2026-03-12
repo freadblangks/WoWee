@@ -7973,8 +7973,7 @@ void GameScreen::renderSocialFrame(game::GameHandler& gameHandler) {
         if (c.isFriend() && c.isOnline()) ++onlineCount;
 
     auto* window = core::Application::getInstance().getWindow();
-    float screenW = window ? static_cast<float>(window->getWidth())  : 1280.0f;
-    float screenH = window ? static_cast<float>(window->getHeight()) :  720.0f;
+    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
 
     ImGui::SetNextWindowPos(ImVec2(screenW - 230.0f, 240.0f), ImGuiCond_Once);
     ImGui::SetNextWindowSize(ImVec2(220.0f, 0.0f), ImGuiCond_Always);
@@ -13983,6 +13982,14 @@ void GameScreen::renderDungeonFinderWindow(game::GameHandler& gameHandler) {
     // ---- Vote-to-kick buttons ----
     if (state == LfgState::Boot) {
         ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Vote to kick in progress:");
+        uint32_t bootVotes   = gameHandler.getLfgBootVotes();
+        uint32_t bootTotal   = gameHandler.getLfgBootTotal();
+        uint32_t bootNeeded  = gameHandler.getLfgBootNeeded();
+        uint32_t bootTimeLeft= gameHandler.getLfgBootTimeLeft();
+        if (bootNeeded > 0) {
+            ImGui::Text("Votes: %u / %u  (need %u)   %us left",
+                        bootVotes, bootTotal, bootNeeded, bootTimeLeft);
+        }
         ImGui::Spacing();
         if (ImGui::Button("Vote Yes (kick)", ImVec2(140, 0))) {
             gameHandler.lfgSetBootVote(true);

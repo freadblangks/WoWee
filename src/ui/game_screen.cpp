@@ -13313,7 +13313,18 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
 
         if (overMinimap) {
             ImGui::BeginTooltip();
-            ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.5f, 1.0f), "Ctrl+click to ping");
+            // Compute the world coordinate under the mouse cursor
+            // Inverse of projectToMinimap: pixel offset → world offset in render space → canonical
+            float rxW = mdx / mapRadius * viewRadius;
+            float ryW = mdy / mapRadius * viewRadius;
+            // Un-rotate: [dx, dy] = R^-1 * [rxW, ryW]
+            //  where R applied: rx = -(dx*cosB + dy*sinB), ry = dx*sinB - dy*cosB
+            float hoverDx = -cosB * rxW + sinB * ryW;
+            float hoverDy = -sinB * rxW - cosB * ryW;
+            glm::vec3 hoverRender(playerRender.x + hoverDx, playerRender.y + hoverDy, playerRender.z);
+            glm::vec3 hoverCanon = core::coords::renderToCanonical(hoverRender);
+            ImGui::TextColored(ImVec4(0.9f, 0.85f, 0.5f, 1.0f), "%.1f, %.1f", hoverCanon.x, hoverCanon.y);
+            ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.65f, 1.0f), "Ctrl+click to ping");
             ImGui::EndTooltip();
 
             if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {

@@ -2544,6 +2544,12 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                 if (ImGui::MenuItem("Trade")) {
                     gameHandler.initiateTrade(tGuid);
                 }
+                if (ImGui::MenuItem("Duel")) {
+                    gameHandler.proposeDuel(tGuid);
+                }
+                if (ImGui::MenuItem("Inspect")) {
+                    gameHandler.inspectTarget();
+                }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Add Friend")) {
                     gameHandler.addFriend(name);
@@ -2911,6 +2917,12 @@ void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
                     gameHandler.inviteToGroup(focusName);
                 if (ImGui::MenuItem("Trade"))
                     gameHandler.initiateTrade(fGuid);
+                if (ImGui::MenuItem("Duel"))
+                    gameHandler.proposeDuel(fGuid);
+                if (ImGui::MenuItem("Inspect")) {
+                    gameHandler.setTarget(fGuid);
+                    gameHandler.inspectTarget();
+                }
             }
             ImGui::EndPopup();
         }
@@ -6230,6 +6242,9 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                 }
                 if (ImGui::MenuItem("Trade")) {
                     gameHandler.initiateTrade(member.guid);
+                }
+                if (ImGui::MenuItem("Duel")) {
+                    gameHandler.proposeDuel(member.guid);
                 }
                 if (ImGui::MenuItem("Inspect")) {
                     gameHandler.setTarget(member.guid);

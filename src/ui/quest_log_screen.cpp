@@ -414,6 +414,80 @@ void QuestLogScreen::render(game::GameHandler& gameHandler, InventoryScreen& inv
                     }
                 }
 
+                // Reward summary
+                bool hasAnyReward = (sel.rewardMoney != 0);
+                for (const auto& ri : sel.rewardItems)       if (ri.itemId) hasAnyReward = true;
+                for (const auto& ri : sel.rewardChoiceItems) if (ri.itemId) hasAnyReward = true;
+                if (hasAnyReward) {
+                    ImGui::Separator();
+                    ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.5f, 1.0f), "Rewards");
+
+                    // Money reward
+                    if (sel.rewardMoney > 0) {
+                        uint32_t rg = static_cast<uint32_t>(sel.rewardMoney) / 10000;
+                        uint32_t rs = static_cast<uint32_t>(sel.rewardMoney % 10000) / 100;
+                        uint32_t rc = static_cast<uint32_t>(sel.rewardMoney % 100);
+                        if (rg > 0)
+                            ImGui::Text("%ug %us %uc", rg, rs, rc);
+                        else if (rs > 0)
+                            ImGui::Text("%us %uc", rs, rc);
+                        else
+                            ImGui::Text("%uc", rc);
+                    }
+
+                    // Guaranteed reward items
+                    bool anyFixed = false;
+                    for (const auto& ri : sel.rewardItems) if (ri.itemId) { anyFixed = true; break; }
+                    if (anyFixed) {
+                        ImGui::TextDisabled("You will receive:");
+                        for (const auto& ri : sel.rewardItems) {
+                            if (!ri.itemId) continue;
+                            std::string name = "Item " + std::to_string(ri.itemId);
+                            uint32_t dispId = 0;
+                            const auto* info = gameHandler.getItemInfo(ri.itemId);
+                            if (info && info->valid) {
+                                if (!info->name.empty()) name = info->name;
+                                dispId = info->displayInfoId;
+                            }
+                            VkDescriptorSet icon = dispId ? invScreen.getItemIcon(dispId) : VK_NULL_HANDLE;
+                            if (icon) {
+                                ImGui::Image((ImTextureID)(uintptr_t)icon, ImVec2(16, 16));
+                                ImGui::SameLine();
+                            }
+                            if (ri.count > 1)
+                                ImGui::Text("%s x%u", name.c_str(), ri.count);
+                            else
+                                ImGui::Text("%s", name.c_str());
+                        }
+                    }
+
+                    // Choice reward items
+                    bool anyChoice = false;
+                    for (const auto& ri : sel.rewardChoiceItems) if (ri.itemId) { anyChoice = true; break; }
+                    if (anyChoice) {
+                        ImGui::TextDisabled("Choose one of:");
+                        for (const auto& ri : sel.rewardChoiceItems) {
+                            if (!ri.itemId) continue;
+                            std::string name = "Item " + std::to_string(ri.itemId);
+                            uint32_t dispId = 0;
+                            const auto* info = gameHandler.getItemInfo(ri.itemId);
+                            if (info && info->valid) {
+                                if (!info->name.empty()) name = info->name;
+                                dispId = info->displayInfoId;
+                            }
+                            VkDescriptorSet icon = dispId ? invScreen.getItemIcon(dispId) : VK_NULL_HANDLE;
+                            if (icon) {
+                                ImGui::Image((ImTextureID)(uintptr_t)icon, ImVec2(16, 16));
+                                ImGui::SameLine();
+                            }
+                            if (ri.count > 1)
+                                ImGui::Text("%s x%u", name.c_str(), ri.count);
+                            else
+                                ImGui::Text("%s", name.c_str());
+                        }
+                    }
+                }
+
                 // Track / Abandon buttons
                 ImGui::Separator();
                 bool isTracked = gameHandler.isQuestTracked(sel.questId);

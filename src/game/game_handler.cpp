@@ -438,6 +438,49 @@ QuestQueryObjectives extractQuestQueryObjectives(const std::vector<uint8_t>& dat
     }
 }
 
+// Parse quest reward fields from SMSG_QUEST_QUERY_RESPONSE fixed header.
+// Classic/TBC: 40 fixed fields; WotLK: 55 fixed fields.
+struct QuestQueryRewards {
+    int32_t  rewardMoney = 0;
+    std::array<uint32_t, 4> itemId{};
+    std::array<uint32_t, 4> itemCount{};
+    std::array<uint32_t, 6> choiceItemId{};
+    std::array<uint32_t, 6> choiceItemCount{};
+    bool valid = false;
+};
+
+static QuestQueryRewards tryParseQuestRewards(const std::vector<uint8_t>& data,
+                                               bool classicLayout) {
+    const size_t base = 8; // after questId(4) + questMethod(4)
+    const size_t fieldCount = classicLayout ? 40u : 55u;
+    const size_t headerEnd = base + fieldCount * 4u;
+    if (data.size() < headerEnd) return {};
+
+    // Field indices (0-based) for each expansion:
+    //   Classic/TBC: rewardMoney=[14], rewardItemId[4]=[20..23], rewardItemCount[4]=[24..27],
+    //                rewardChoiceItemId[6]=[28..33], rewardChoiceItemCount[6]=[34..39]
+    //   WotLK:       rewardMoney=[17], rewardItemId[4]=[30..33], rewardItemCount[4]=[34..37],
+    //                rewardChoiceItemId[6]=[38..43], rewardChoiceItemCount[6]=[44..49]
+    const size_t moneyField     = classicLayout ? 14u : 17u;
+    const size_t itemIdField    = classicLayout ? 20u : 30u;
+    const size_t itemCountField = classicLayout ? 24u : 34u;
+    const size_t choiceIdField  = classicLayout ? 28u : 38u;
+    const size_t choiceCntField = classicLayout ? 34u : 44u;
+
+    QuestQueryRewards out;
+    out.rewardMoney = static_cast<int32_t>(readU32At(data, base + moneyField * 4u));
+    for (size_t i = 0; i < 4; ++i) {
+        out.itemId[i]    = readU32At(data, base + (itemIdField    + i) * 4u);
+        out.itemCount[i] = readU32At(data, base + (itemCountField + i) * 4u);
+    }
+    for (size_t i = 0; i < 6; ++i) {
+        out.choiceItemId[i]    = readU32At(data, base + (choiceIdField  + i) * 4u);
+        out.choiceItemCount[i] = readU32At(data, base + (choiceCntField + i) * 4u);
+    }
+    out.valid = true;
+    return out;
+}
+
 } // namespace
 
 
@@ -4529,6 +4572,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             const bool isClassicLayout = packetParsers_ && packetParsers_->questLogStride() <= 4;
             const QuestQueryTextCandidate parsed = pickBestQuestQueryTexts(packet.getData(), isClassicLayout);
             const QuestQueryObjectives objs = extractQuestQueryObjectives(packet.getData(), isClassicLayout);
+            const QuestQueryRewards rwds = tryParseQuestRewards(packet.getData(), isClassicLayout);
 
             for (auto& q : questLog_) {
                 if (q.questId != questId) continue;
@@ -4583,6 +4627,21 @@ void GameHandler::handlePacket(network::Packet& packet) {
                               objs.kills[1].npcOrGoId, "/", objs.kills[1].required, ", ",
                               objs.kills[2].npcOrGoId, "/", objs.kills[2].required, ", ",
                               objs.kills[3].npcOrGoId, "/", objs.kills[3].required, "]");
+                }
+
+                // Store reward data and pre-fetch item info for icons.
+                if (rwds.valid) {
+                    q.rewardMoney = rwds.rewardMoney;
+                    for (int i = 0; i < 4; ++i) {
+                        q.rewardItems[i].itemId = rwds.itemId[i];
+                        q.rewardItems[i].count  = (rwds.itemId[i] != 0) ? rwds.itemCount[i] : 0;
+                        if (rwds.itemId[i] != 0) queryItemInfo(rwds.itemId[i], 0);
+                    }
+                    for (int i = 0; i < 6; ++i) {
+                        q.rewardChoiceItems[i].itemId = rwds.choiceItemId[i];
+                        q.rewardChoiceItems[i].count  = (rwds.choiceItemId[i] != 0) ? rwds.choiceItemCount[i] : 0;
+                        if (rwds.choiceItemId[i] != 0) queryItemInfo(rwds.choiceItemId[i], 0);
+                    }
                 }
                 break;
             }

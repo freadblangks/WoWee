@@ -1131,6 +1131,10 @@ public:
             uint32_t required = 0;
         };
         std::array<ItemObjective, 6> itemObjectives{};  // zeroed by default
+        // Reward data parsed from SMSG_QUEST_QUERY_RESPONSE
+        int32_t  rewardMoney = 0;                          // copper; positive=reward, negative=cost
+        std::array<QuestRewardItem, 4> rewardItems{};       // guaranteed reward items
+        std::array<QuestRewardItem, 6> rewardChoiceItems{}; // player picks one of these
     };
     const std::vector<QuestLogEntry>& getQuestLog() const { return questLog_; }
     void abandonQuest(uint32_t questId);

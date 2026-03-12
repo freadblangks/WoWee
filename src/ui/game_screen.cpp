@@ -6363,9 +6363,15 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
                     castBarBaseY += snSz.y + 2.0f;
                 }
 
-                // Cast bar background + fill
-                ImU32 cbBg   = IM_COL32(40,  30,  60,  A(180));
-                ImU32 cbFill = IM_COL32(140, 80,  220, A(200));  // purple cast bar
+                // Cast bar background + fill (pulse orange when >80% = interrupt window closing)
+                ImU32 cbBg = IM_COL32(40, 30, 60, A(180));
+                ImU32 cbFill;
+                if (castPct > 0.8f && unit->isHostile()) {
+                    float pulse = 0.7f + 0.3f * std::sin(static_cast<float>(ImGui::GetTime()) * 8.0f);
+                    cbFill = IM_COL32(static_cast<int>(255 * pulse), static_cast<int>(130 * pulse), 0, A(220));
+                } else {
+                    cbFill = IM_COL32(140, 80, 220, A(200));  // purple cast bar
+                }
                 drawList->AddRectFilled(ImVec2(barX,                   castBarBaseY),
                                         ImVec2(barX + barW,             castBarBaseY + cbH), cbBg,    2.0f);
                 drawList->AddRectFilled(ImVec2(barX,                   castBarBaseY),

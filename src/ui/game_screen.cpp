@@ -13329,9 +13329,16 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
             float sx = 0.0f, sy = 0.0f;
             if (!projectToMinimap(memberRender, sx, sy)) continue;
 
-            ImU32 dotColor = (member.guid == leaderGuid)
-                ? IM_COL32(255, 210, 0, 235)
-                : IM_COL32(100, 180, 255, 235);
+            ImU32 dotColor;
+            {
+                auto mEnt = gameHandler.getEntityManager().getEntity(member.guid);
+                uint8_t cid = entityClassId(mEnt.get());
+                dotColor = (cid != 0)
+                    ? classColorU32(cid, 235)
+                    : (member.guid == leaderGuid)
+                        ? IM_COL32(255, 210, 0, 235)
+                        : IM_COL32(100, 180, 255, 235);
+            }
             drawList->AddCircleFilled(ImVec2(sx, sy), 4.0f, dotColor);
             drawList->AddCircle(ImVec2(sx, sy), 4.0f, IM_COL32(255, 255, 255, 160), 12, 1.0f);
 

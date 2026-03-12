@@ -1242,6 +1242,7 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
         }
     };
 
+    int chatMsgIdx = 0;
     for (const auto& msg : chatHistory) {
         if (!shouldShowMessage(msg, activeChatTab_)) continue;
         std::string processedMessage = replaceGenderPlaceholders(msg.message, gameHandler);
@@ -1279,46 +1280,35 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
         else if (msg.chatTag & 0x01) tagPrefix = "<AFK> ";
         else if (msg.chatTag & 0x02) tagPrefix = "<DND> ";
 
-        if (msg.type == game::ChatType::SYSTEM) {
-            renderTextWithLinks(tsPrefix + processedMessage, color);
-        } else if (msg.type == game::ChatType::TEXT_EMOTE) {
-            renderTextWithLinks(tsPrefix + processedMessage, color);
+        // Build full message string for this entry
+        std::string fullMsg;
+        if (msg.type == game::ChatType::SYSTEM || msg.type == game::ChatType::TEXT_EMOTE) {
+            fullMsg = tsPrefix + processedMessage;
         } else if (!resolvedSenderName.empty()) {
             if (msg.type == game::ChatType::SAY ||
                 msg.type == game::ChatType::MONSTER_SAY || msg.type == game::ChatType::MONSTER_PARTY) {
-                std::string fullMsg = tsPrefix + tagPrefix + resolvedSenderName + " says: " + processedMessage;
-                renderTextWithLinks(fullMsg, color);
+                fullMsg = tsPrefix + tagPrefix + resolvedSenderName + " says: " + processedMessage;
             } else if (msg.type == game::ChatType::YELL || msg.type == game::ChatType::MONSTER_YELL) {
-                std::string fullMsg = tsPrefix + tagPrefix + resolvedSenderName + " yells: " + processedMessage;
-                renderTextWithLinks(fullMsg, color);
+                fullMsg = tsPrefix + tagPrefix + resolvedSenderName + " yells: " + processedMessage;
             } else if (msg.type == game::ChatType::WHISPER ||
                        msg.type == game::ChatType::MONSTER_WHISPER || msg.type == game::ChatType::RAID_BOSS_WHISPER) {
-                std::string fullMsg = tsPrefix + tagPrefix + resolvedSenderName + " whispers: " + processedMessage;
-                renderTextWithLinks(fullMsg, color);
+                fullMsg = tsPrefix + tagPrefix + resolvedSenderName + " whispers: " + processedMessage;
             } else if (msg.type == game::ChatType::WHISPER_INFORM) {
-                // Outgoing whisper — show "To Name: message" (WoW-style)
                 const std::string& target = !msg.receiverName.empty() ? msg.receiverName : resolvedSenderName;
-                std::string fullMsg = tsPrefix + "To " + target + ": " + processedMessage;
-                renderTextWithLinks(fullMsg, color);
+                fullMsg = tsPrefix + "To " + target + ": " + processedMessage;
             } else if (msg.type == game::ChatType::EMOTE ||
                        msg.type == game::ChatType::MONSTER_EMOTE || msg.type == game::ChatType::RAID_BOSS_EMOTE) {
-                std::string fullMsg = tsPrefix + tagPrefix + resolvedSenderName + " " + processedMessage;
-                renderTextWithLinks(fullMsg, color);
+                fullMsg = tsPrefix + tagPrefix + resolvedSenderName + " " + processedMessage;
             } else if (msg.type == game::ChatType::CHANNEL && !msg.channelName.empty()) {
                 int chIdx = gameHandler.getChannelIndex(msg.channelName);
                 std::string chDisplay = chIdx > 0
                     ? "[" + std::to_string(chIdx) + ". " + msg.channelName + "]"
                     : "[" + msg.channelName + "]";
-                std::string fullMsg = tsPrefix + chDisplay + " [" + tagPrefix + resolvedSenderName + "]: " + processedMessage;
-                renderTextWithLinks(fullMsg, color);
+                fullMsg = tsPrefix + chDisplay + " [" + tagPrefix + resolvedSenderName + "]: " + processedMessage;
             } else {
-                std::string fullMsg = tsPrefix + "[" + std::string(getChatTypeName(msg.type)) + "] " + tagPrefix + resolvedSenderName + ": " + processedMessage;
-                renderTextWithLinks(fullMsg, color);
+                fullMsg = tsPrefix + "[" + std::string(getChatTypeName(msg.type)) + "] " + tagPrefix + resolvedSenderName + ": " + processedMessage;
             }
         } else {
-            // No sender name. For group/channel types show a bracket prefix;
-            // for sender-specific types (SAY, YELL, WHISPER, etc.) just show the
-            // raw message — these are server-side announcements without a speaker.
             bool isGroupType =
                 msg.type == game::ChatType::PARTY ||
                 msg.type == game::ChatType::GUILD ||
@@ -1329,13 +1319,49 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
                 msg.type == game::ChatType::BATTLEGROUND ||
                 msg.type == game::ChatType::BATTLEGROUND_LEADER;
             if (isGroupType) {
-                std::string fullMsg = tsPrefix + "[" + std::string(getChatTypeName(msg.type)) + "] " + processedMessage;
-                renderTextWithLinks(fullMsg, color);
+                fullMsg = tsPrefix + "[" + std::string(getChatTypeName(msg.type)) + "] " + processedMessage;
             } else {
-                // SAY, YELL, WHISPER, unknown BG_SYSTEM_* types, etc. — no prefix
-                renderTextWithLinks(tsPrefix + processedMessage, color);
+                fullMsg = tsPrefix + processedMessage;
             }
         }
+
+        // Render message in a group so we can attach a right-click context menu
+        ImGui::PushID(chatMsgIdx++);
+        ImGui::BeginGroup();
+        renderTextWithLinks(fullMsg, color);
+        ImGui::EndGroup();
+
+        // Right-click context menu (only for player messages with a sender)
+        bool isPlayerMsg = !resolvedSenderName.empty() &&
+            msg.type != game::ChatType::SYSTEM &&
+            msg.type != game::ChatType::TEXT_EMOTE &&
+            msg.type != game::ChatType::MONSTER_SAY &&
+            msg.type != game::ChatType::MONSTER_YELL &&
+            msg.type != game::ChatType::MONSTER_WHISPER &&
+            msg.type != game::ChatType::MONSTER_EMOTE &&
+            msg.type != game::ChatType::MONSTER_PARTY &&
+            msg.type != game::ChatType::RAID_BOSS_WHISPER &&
+            msg.type != game::ChatType::RAID_BOSS_EMOTE;
+
+        if (isPlayerMsg && ImGui::BeginPopupContextItem("ChatMsgCtx")) {
+            ImGui::TextDisabled("%s", resolvedSenderName.c_str());
+            ImGui::Separator();
+            if (ImGui::MenuItem("Whisper")) {
+                selectedChatType = 4; // WHISPER
+                strncpy(whisperTargetBuffer, resolvedSenderName.c_str(), sizeof(whisperTargetBuffer) - 1);
+                whisperTargetBuffer[sizeof(whisperTargetBuffer) - 1] = '\0';
+                refocusChatInput = true;
+            }
+            if (ImGui::MenuItem("Add Friend")) {
+                gameHandler.addFriend(resolvedSenderName);
+            }
+            if (ImGui::MenuItem("Ignore")) {
+                gameHandler.addIgnore(resolvedSenderName);
+            }
+            ImGui::EndPopup();
+        }
+
+        ImGui::PopID();
     }
 
     // Auto-scroll to bottom

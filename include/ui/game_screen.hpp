@@ -76,6 +76,12 @@ private:
     float damageFlashAlpha_ = 0.0f; // Screen edge flash intensity (fades to 0)
     float levelUpFlashAlpha_ = 0.0f; // Golden level-up burst effect (fades to 0)
     uint32_t levelUpDisplayLevel_ = 0; // Level shown in level-up text
+
+    // UIErrorsFrame: WoW-style center-bottom error messages (spell fails, out of range, etc.)
+    struct UIErrorEntry { std::string text; float age = 0.0f; };
+    std::vector<UIErrorEntry> uiErrors_;
+    bool uiErrorCallbackSet_ = false;
+    static constexpr float kUIErrorLifetime = 2.5f;
     bool showPlayerInfo = false;
     bool showSocialFrame_ = false;  // O key toggles social/friends list
     bool showGuildRoster_ = false;
@@ -256,6 +262,7 @@ private:
     void renderCombatText(game::GameHandler& gameHandler);
     void renderPartyFrames(game::GameHandler& gameHandler);
     void renderBossFrames(game::GameHandler& gameHandler);
+    void renderUIErrors(game::GameHandler& gameHandler, float deltaTime);
     void renderGroupInvitePopup(game::GameHandler& gameHandler);
     void renderDuelRequestPopup(game::GameHandler& gameHandler);
     void renderLootRollPopup(game::GameHandler& gameHandler);

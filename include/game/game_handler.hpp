@@ -1269,6 +1269,11 @@ public:
     using PlayPositionalSoundCallback = std::function<void(uint32_t soundId, uint64_t sourceGuid)>;
     void setPlayPositionalSoundCallback(PlayPositionalSoundCallback cb) { playPositionalSoundCallback_ = std::move(cb); }
 
+    // UI error frame: prominent on-screen error messages (spell can't be cast, etc.)
+    using UIErrorCallback = std::function<void(const std::string& msg)>;
+    void setUIErrorCallback(UIErrorCallback cb) { uiErrorCallback_ = std::move(cb); }
+    void addUIError(const std::string& msg) { if (uiErrorCallback_) uiErrorCallback_(msg); }
+
     // Mount state
     using MountCallback = std::function<void(uint32_t mountDisplayId)>;  // 0 = dismount
     void setMountCallback(MountCallback cb) { mountCallback_ = std::move(cb); }
@@ -2548,6 +2553,9 @@ private:
     PlayMusicCallback playMusicCallback_;
     PlaySoundCallback playSoundCallback_;
     PlayPositionalSoundCallback playPositionalSoundCallback_;
+
+    // ---- UI error frame callback ----
+    UIErrorCallback uiErrorCallback_;
 };
 
 } // namespace game

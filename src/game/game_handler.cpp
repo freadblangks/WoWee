@@ -1124,6 +1124,7 @@ void GameHandler::update(float deltaTime) {
                         autoAttackOutOfRangeTime_ += deltaTime;
                         if (autoAttackRangeWarnCooldown_ <= 0.0f) {
                             addSystemChatMessage("Target is too far away.");
+                            addUIError("Target is too far away.");
                             autoAttackRangeWarnCooldown_ = 1.25f;
                         }
                         // Stop chasing stale swings when the target remains out of range.
@@ -1959,11 +1960,13 @@ void GameHandler::handlePacket(network::Packet& packet) {
                             playerPowerType = static_cast<int>(pu->getPowerType());
                     }
                     const char* reason = getSpellCastResultString(castResult, playerPowerType);
+                    std::string errMsg = reason ? reason
+                                                : ("Spell cast failed (error " + std::to_string(castResult) + ")");
+                    addUIError(errMsg);
                     MessageChatData msg;
                     msg.type     = ChatType::SYSTEM;
                     msg.language = ChatLanguage::UNIVERSAL;
-                    msg.message  = reason ? reason
-                                          : ("Spell cast failed (error " + std::to_string(castResult) + ")");
+                    msg.message  = errMsg;
                     addLocalChatMessage(msg);
                 }
             }
@@ -2274,6 +2277,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             LOG_INFO("SMSG_ENABLE_BARBER_SHOP: barber shop available");
             break;
         case Opcode::SMSG_FEIGN_DEATH_RESISTED:
+            addUIError("Your Feign Death was resisted.");
             addSystemChatMessage("Your Feign Death attempt was resisted.");
             LOG_DEBUG("SMSG_FEIGN_DEATH_RESISTED");
             break;
@@ -3173,6 +3177,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             handleDuelWinner(packet);
             break;
         case Opcode::SMSG_DUEL_OUTOFBOUNDS:
+            addUIError("You are out of the duel area!");
             addSystemChatMessage("You are out of the duel area!");
             break;
         case Opcode::SMSG_DUEL_INBOUNDS:

@@ -227,6 +227,15 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         achievementCallbackSet_ = true;
     }
 
+    // Set up UI error frame callback (once)
+    if (!uiErrorCallbackSet_) {
+        gameHandler.setUIErrorCallback([this](const std::string& msg) {
+            uiErrors_.push_back({msg, 0.0f});
+            if (uiErrors_.size() > 5) uiErrors_.erase(uiErrors_.begin());
+        });
+        uiErrorCallbackSet_ = true;
+    }
+
     // Apply UI transparency setting
     float prevAlpha = ImGui::GetStyle().Alpha;
     ImGui::GetStyle().Alpha = uiOpacity_;
@@ -443,6 +452,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderNameplates(gameHandler);  // player names always shown; NPC plates gated by showNameplates_
     renderBattlegroundScore(gameHandler);
     renderCombatText(gameHandler);
+    renderUIErrors(gameHandler, ImGui::GetIO().DeltaTime);
     if (showRaidFrames_) {
         renderPartyFrames(gameHandler);
     }
@@ -6512,6 +6522,66 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
     ImGui::End();
 
     ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
+}
+
+// ============================================================
+// UI Error Frame (WoW-style center-bottom error overlay)
+// ============================================================
+
+void GameScreen::renderUIErrors(game::GameHandler& /*gameHandler*/, float deltaTime) {
+    // Age out old entries
+    for (auto& e : uiErrors_) e.age += deltaTime;
+    uiErrors_.erase(
+        std::remove_if(uiErrors_.begin(), uiErrors_.end(),
+            [](const UIErrorEntry& e) { return e.age >= kUIErrorLifetime; }),
+        uiErrors_.end());
+
+    if (uiErrors_.empty()) return;
+
+    auto* window = core::Application::getInstance().getWindow();
+    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
+    float screenH = window ? static_cast<float>(window->getHeight()) :  720.0f;
+
+    // Fixed invisible overlay
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2(screenW, screenH));
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoDecoration |
+                             ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
+                             ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar;
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    if (ImGui::Begin("##UIErrors", nullptr, flags)) {
+        // Render messages stacked above the action bar (~200px from bottom)
+        // The newest message is on top; older ones fade below it.
+        const float baseY = screenH - 200.0f;
+        const float lineH = 20.0f;
+        const int   count = static_cast<int>(uiErrors_.size());
+
+        ImDrawList* draw = ImGui::GetWindowDrawList();
+        for (int i = count - 1; i >= 0; --i) {
+            const auto& e = uiErrors_[i];
+            float alpha = 1.0f - (e.age / kUIErrorLifetime);
+            alpha = std::max(0.0f, std::min(1.0f, alpha));
+
+            // Fade fast in the last 0.5 s
+            if (e.age > kUIErrorLifetime - 0.5f)
+                alpha *= (kUIErrorLifetime - e.age) / 0.5f;
+
+            uint8_t a8 = static_cast<uint8_t>(alpha * 255.0f);
+            ImU32 textCol  = IM_COL32(255, 50,  50, a8);
+            ImU32 shadowCol= IM_COL32(  0,  0,   0, static_cast<uint8_t>(alpha * 180));
+
+            const char* txt = e.text.c_str();
+            ImVec2 sz = ImGui::CalcTextSize(txt);
+            float x = std::round((screenW - sz.x) * 0.5f);
+            float y = std::round(baseY - (count - 1 - i) * lineH);
+
+            // Drop shadow
+            draw->AddText(ImVec2(x + 1, y + 1), shadowCol, txt);
+            draw->AddText(ImVec2(x, y), textCol, txt);
+        }
+    }
+    ImGui::End();
     ImGui::PopStyleVar();
 }
 

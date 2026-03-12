@@ -5127,6 +5127,40 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
             }
         }
 
+        // Ready glow: animate a gold border for ~1.5s when a cooldown just expires
+        {
+            static std::unordered_map<int, float> slotGlowTimers;    // absSlot -> remaining glow seconds
+            static std::unordered_map<int, bool>  slotWasOnCooldown; // absSlot -> last frame state
+
+            float dt = ImGui::GetIO().DeltaTime;
+            bool wasOnCd = slotWasOnCooldown.count(absSlot) ? slotWasOnCooldown[absSlot] : false;
+
+            // Trigger glow when transitioning from on-cooldown to ready (and slot isn't empty)
+            if (wasOnCd && !onCooldown && !slot.isEmpty()) {
+                slotGlowTimers[absSlot] = 1.5f;
+            }
+            slotWasOnCooldown[absSlot] = onCooldown;
+
+            auto git = slotGlowTimers.find(absSlot);
+            if (git != slotGlowTimers.end() && git->second > 0.0f) {
+                git->second -= dt;
+                float t = git->second / 1.5f; // 1.0 → 0.0 over lifetime
+                // Pulse: bright when fresh, fading out
+                float pulse = std::sin(t * IM_PI * 4.0f) * 0.5f + 0.5f; // 4 pulses
+                uint8_t alpha = static_cast<uint8_t>(200 * t * (0.5f + 0.5f * pulse));
+                if (alpha > 0) {
+                    ImVec2 bMin = ImGui::GetItemRectMin();
+                    ImVec2 bMax = ImGui::GetItemRectMax();
+                    auto* gdl = ImGui::GetWindowDrawList();
+                    // Gold glow border (2px inset, 3px thick)
+                    gdl->AddRect(ImVec2(bMin.x - 2, bMin.y - 2),
+                                 ImVec2(bMax.x + 2, bMax.y + 2),
+                                 IM_COL32(255, 215, 0, alpha), 3.0f, 0, 3.0f);
+                }
+                if (git->second <= 0.0f) slotGlowTimers.erase(git);
+            }
+        }
+
         // Key label below
         ImGui::TextDisabled("%s", keyLabel);
 

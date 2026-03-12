@@ -705,6 +705,11 @@ public:
     // Auras
     const std::vector<AuraSlot>& getPlayerAuras() const { return playerAuras; }
     const std::vector<AuraSlot>& getTargetAuras() const { return targetAuras; }
+    // Per-unit aura cache (populated for party members and any unit we receive updates for)
+    const std::vector<AuraSlot>* getUnitAuras(uint64_t guid) const {
+        auto it = unitAurasCache_.find(guid);
+        return (it != unitAurasCache_.end()) ? &it->second : nullptr;
+    }
 
     // Completed quests (populated from SMSG_QUERY_QUESTS_COMPLETED_RESPONSE)
     bool isQuestCompleted(uint32_t questId) const { return completedQuests_.count(questId) > 0; }
@@ -2247,6 +2252,7 @@ private:
     std::array<ActionBarSlot, ACTION_BAR_SLOTS> actionBar{};
     std::vector<AuraSlot> playerAuras;
     std::vector<AuraSlot> targetAuras;
+    std::unordered_map<uint64_t, std::vector<AuraSlot>> unitAurasCache_; // per-unit aura cache
     uint64_t petGuid_ = 0;
     uint32_t petActionSlots_[10] = {};   // SMSG_PET_SPELLS action bar (10 slots)
     uint8_t  petCommand_ = 1;            // 0=stay,1=follow,2=attack,3=dismiss

@@ -6708,6 +6708,7 @@ void GameHandler::selectCharacter(uint64_t characterGuid) {
     actionBar = {};
     playerAuras.clear();
     targetAuras.clear();
+    unitAurasCache_.clear();
     unitCastStates_.clear();
     petGuid_ = 0;
     playerXp_ = 0;
@@ -14594,6 +14595,10 @@ void GameHandler::handleAuraUpdate(network::Packet& packet, bool isAll) {
         auraList = &playerAuras;
     } else if (data.guid == targetGuid) {
         auraList = &targetAuras;
+    }
+    // Also maintain a per-unit cache for any unit (party members, etc.)
+    if (data.guid != 0 && data.guid != playerGuid && data.guid != targetGuid) {
+        auraList = &unitAurasCache_[data.guid];
     }
 
     if (auraList) {

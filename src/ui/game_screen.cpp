@@ -8379,6 +8379,57 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                 ImGui::PopStyleColor();
             }
 
+            // Dispellable debuff indicators — small colored dots for party member debuffs
+            // Only show magic/curse/disease/poison (types 1-4); skip non-dispellable
+            if (!memberDead && !memberOffline) {
+                const std::vector<game::AuraSlot>* unitAuras = nullptr;
+                if (member.guid == gameHandler.getPlayerGuid())
+                    unitAuras = &gameHandler.getPlayerAuras();
+                else if (member.guid == gameHandler.getTargetGuid())
+                    unitAuras = &gameHandler.getTargetAuras();
+                else
+                    unitAuras = gameHandler.getUnitAuras(member.guid);
+
+                if (unitAuras) {
+                    bool anyDebuff = false;
+                    for (const auto& aura : *unitAuras) {
+                        if (aura.isEmpty()) continue;
+                        if ((aura.flags & 0x80) == 0) continue; // only debuffs
+                        uint8_t dt = gameHandler.getSpellDispelType(aura.spellId);
+                        if (dt == 0) continue; // skip non-dispellable
+                        anyDebuff = true;
+                        break;
+                    }
+                    if (anyDebuff) {
+                        // Render one dot per unique dispel type present
+                        bool shown[5] = {};
+                        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(2.0f, 1.0f));
+                        for (const auto& aura : *unitAuras) {
+                            if (aura.isEmpty()) continue;
+                            if ((aura.flags & 0x80) == 0) continue;
+                            uint8_t dt = gameHandler.getSpellDispelType(aura.spellId);
+                            if (dt == 0 || dt > 4 || shown[dt]) continue;
+                            shown[dt] = true;
+                            ImVec4 dotCol;
+                            switch (dt) {
+                                case 1: dotCol = ImVec4(0.25f, 0.50f, 1.00f, 1.0f); break; // Magic: blue
+                                case 2: dotCol = ImVec4(0.70f, 0.15f, 0.90f, 1.0f); break; // Curse: purple
+                                case 3: dotCol = ImVec4(0.65f, 0.45f, 0.10f, 1.0f); break; // Disease: brown
+                                case 4: dotCol = ImVec4(0.10f, 0.75f, 0.10f, 1.0f); break; // Poison: green
+                                default: break;
+                            }
+                            ImGui::PushStyleColor(ImGuiCol_Button, dotCol);
+                            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, dotCol);
+                            ImGui::Button("##d", ImVec2(8.0f, 8.0f));
+                            ImGui::PopStyleColor(2);
+                            ImGui::SameLine();
+                        }
+                        ImGui::NewLine();
+                        ImGui::PopStyleVar();
+                    }
+                }
+            }
+
             // Party member cast bar — shows when the party member is casting
             if (auto* cs = gameHandler.getUnitCastState(member.guid)) {
                 float castPct = (cs->timeTotal > 0.0f)

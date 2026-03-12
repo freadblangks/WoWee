@@ -2179,9 +2179,21 @@ void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
             }
         }
 
-        // Health bar
+        // Health bar — color transitions green→yellow→red as HP drops
         float pct = static_cast<float>(playerHp) / static_cast<float>(playerMaxHp);
-        ImVec4 hpColor = isDead ? ImVec4(0.5f, 0.5f, 0.5f, 1.0f) : ImVec4(0.2f, 0.8f, 0.2f, 1.0f);
+        ImVec4 hpColor;
+        if (isDead) {
+            hpColor = ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
+        } else if (pct > 0.5f) {
+            hpColor = ImVec4(0.2f, 0.8f, 0.2f, 1.0f);              // green
+        } else if (pct > 0.2f) {
+            float t = (pct - 0.2f) / 0.3f;  // 0 at 20%, 1 at 50%
+            hpColor = ImVec4(0.9f - 0.7f * t, 0.4f + 0.4f * t, 0.0f, 1.0f); // orange→yellow
+        } else {
+            // Critical — pulse red when < 20%
+            float pulse = 0.7f + 0.3f * std::sin(static_cast<float>(ImGui::GetTime()) * 3.5f);
+            hpColor = ImVec4(0.9f * pulse, 0.05f, 0.05f, 1.0f);    // pulsing red
+        }
         ImGui::PushStyleColor(ImGuiCol_PlotHistogram, hpColor);
         char overlay[64];
         snprintf(overlay, sizeof(overlay), "%u / %u", playerHp, playerMaxHp);
@@ -2368,7 +2380,10 @@ void GameScreen::renderPetFrame(game::GameHandler& gameHandler) {
         uint32_t maxHp = petUnit->getMaxHealth();
         if (maxHp > 0) {
             float pct = static_cast<float>(hp) / static_cast<float>(maxHp);
-            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.2f, 0.8f, 0.2f, 1.0f));
+            ImVec4 petHpColor = pct > 0.5f ? ImVec4(0.2f, 0.8f, 0.2f, 1.0f)
+                              : pct > 0.2f ? ImVec4(0.9f, 0.6f, 0.0f, 1.0f)
+                              :              ImVec4(0.9f, 0.15f, 0.15f, 1.0f);
+            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, petHpColor);
             char hpText[32];
             snprintf(hpText, sizeof(hpText), "%u/%u", hp, maxHp);
             ImGui::ProgressBar(pct, ImVec2(-1, 14), hpText);

@@ -2548,11 +2548,30 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
                 }
             }
         }
-        if (hasSocket && info.socketBonus != 0 && gameHandler_) {
-            // Socket bonus is an enchantment ID — show its name if known
-            const std::string& bonusName = gameHandler_->getSpellName(info.socketBonus);
-            if (!bonusName.empty())
-                ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "Socket Bonus: %s", bonusName.c_str());
+        if (hasSocket && info.socketBonus != 0) {
+            // Socket bonus is a SpellItemEnchantment ID — look up via SpellItemEnchantment.dbc
+            static std::unordered_map<uint32_t, std::string> s_enchantNames;
+            static bool s_enchantNamesLoaded = false;
+            if (!s_enchantNamesLoaded && assetManager_) {
+                s_enchantNamesLoaded = true;
+                auto dbc = assetManager_->loadDBC("SpellItemEnchantment.dbc");
+                if (dbc && dbc->isLoaded()) {
+                    const auto* lay = pipeline::getActiveDBCLayout()
+                        ? pipeline::getActiveDBCLayout()->getLayout("SpellItemEnchantment") : nullptr;
+                    uint32_t nameField = lay ? lay->field("Name") : 8u;
+                    if (nameField == 0xFFFFFFFF) nameField = 8;
+                    uint32_t fc = dbc->getFieldCount();
+                    for (uint32_t r = 0; r < dbc->getRecordCount(); ++r) {
+                        uint32_t eid = dbc->getUInt32(r, 0);
+                        if (eid == 0 || nameField >= fc) continue;
+                        std::string ename = dbc->getString(r, nameField);
+                        if (!ename.empty()) s_enchantNames[eid] = std::move(ename);
+                    }
+                }
+            }
+            auto enchIt = s_enchantNames.find(info.socketBonus);
+            if (enchIt != s_enchantNames.end())
+                ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "Socket Bonus: %s", enchIt->second.c_str());
             else
                 ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "Socket Bonus: (id %u)", info.socketBonus);
         }

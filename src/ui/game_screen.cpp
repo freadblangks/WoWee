@@ -8289,11 +8289,35 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
             }
 
             // Quest kill objective indicator: small yellow sword icon to the right of the name
+            float questIconX = nameX + textSize.x + 4.0f;
             if (!isPlayer && questKillEntries.count(unit->getEntry())) {
                 const char* objSym = "\xe2\x9a\x94";  // ⚔ crossed swords (UTF-8)
-                float objX = nameX + textSize.x + 4.0f;
-                drawList->AddText(ImVec2(objX + 1.0f, nameY + 1.0f), IM_COL32(0, 0, 0, A(160)), objSym);
-                drawList->AddText(ImVec2(objX,         nameY),         IM_COL32(255, 220, 0, A(230)), objSym);
+                drawList->AddText(ImVec2(questIconX + 1.0f, nameY + 1.0f), IM_COL32(0, 0, 0, A(160)), objSym);
+                drawList->AddText(ImVec2(questIconX,         nameY),         IM_COL32(255, 220, 0, A(230)), objSym);
+                questIconX += ImGui::CalcTextSize("\xe2\x9a\x94").x + 2.0f;
+            }
+
+            // Quest giver indicator: "!" for available quests, "?" for completable/incomplete
+            if (!isPlayer) {
+                using QGS = game::QuestGiverStatus;
+                QGS qgs = gameHandler.getQuestGiverStatus(guid);
+                const char* qSym = nullptr;
+                ImU32 qCol = IM_COL32(255, 210, 0, A(255));
+                if (qgs == QGS::AVAILABLE) {
+                    qSym = "!";
+                } else if (qgs == QGS::AVAILABLE_LOW) {
+                    qSym = "!";
+                    qCol = IM_COL32(160, 160, 160, A(220));
+                } else if (qgs == QGS::REWARD || qgs == QGS::REWARD_REP) {
+                    qSym = "?";
+                } else if (qgs == QGS::INCOMPLETE) {
+                    qSym = "?";
+                    qCol = IM_COL32(160, 160, 160, A(220));
+                }
+                if (qSym) {
+                    drawList->AddText(ImVec2(questIconX + 1.0f, nameY + 1.0f), IM_COL32(0, 0, 0, A(160)), qSym);
+                    drawList->AddText(ImVec2(questIconX,         nameY),         qCol, qSym);
+                }
             }
         }
 

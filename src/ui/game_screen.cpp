@@ -5538,6 +5538,13 @@ void GameScreen::renderQuestObjectiveTracker(game::GameHandler& gameHandler) {
                         gameHandler.setQuestTracked(q.questId, true);
                     }
                 }
+                if (!q.complete) {
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Abandon Quest")) {
+                        gameHandler.abandonQuest(q.questId);
+                        gameHandler.setQuestTracked(q.questId, false);
+                    }
+                }
                 ImGui::EndPopup();
             }
             ImGui::PopID();

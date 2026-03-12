@@ -3316,6 +3316,15 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                           ImVec2(ImGui::CalcTextSize(name.c_str()).x, 0));
         ImGui::PopStyleColor(4);
 
+        // Group leader crown — golden ♛ when the targeted player is the party/raid leader
+        if (gameHandler.isInGroup() && target->getType() == game::ObjectType::PLAYER) {
+            if (gameHandler.getPartyData().leaderGuid == target->getGuid()) {
+                ImGui::SameLine(0, 4);
+                ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.1f, 1.0f), "\xe2\x99\x9b");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Group Leader");
+            }
+        }
+
         // Quest giver indicator — "!" for available quests, "?" for completable quests
         {
             using QGS = game::QuestGiverStatus;

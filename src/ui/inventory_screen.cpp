@@ -834,6 +834,33 @@ void InventoryScreen::render(game::Inventory& inventory, uint64_t moneyCopper) {
         ImGui::EndPopup();
     }
 
+    // Shift+right-click destroy confirmation popup
+    if (destroyConfirmOpen_) {
+        ImVec2 mousePos = ImGui::GetIO().MousePos;
+        ImGui::SetNextWindowPos(ImVec2(mousePos.x - 80.0f, mousePos.y - 20.0f), ImGuiCond_Always);
+        ImGui::OpenPopup("##DestroyItem");
+        destroyConfirmOpen_ = false;
+    }
+    if (ImGui::BeginPopup("##DestroyItem", ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar)) {
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Destroy");
+        ImGui::TextUnformatted(destroyItemName_.c_str());
+        ImGui::Spacing();
+        if (ImGui::Button("Yes, Destroy", ImVec2(110, 0))) {
+            if (gameHandler_) {
+                gameHandler_->destroyItem(destroyBag_, destroySlot_, destroyCount_);
+            }
+            destroyItemName_.clear();
+            inventoryDirty = true;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(70, 0))) {
+            destroyItemName_.clear();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
     // Draw held item at cursor
     renderHeldItem();
 }
@@ -1783,9 +1810,28 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
             }
         }
 
+        // Shift+right-click: open destroy confirmation for non-quest items
+        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right) &&
+            !holdingItem && ImGui::GetIO().KeyShift && item.itemId != 0 && item.bindType != 4) {
+            destroyConfirmOpen_ = true;
+            destroyItemName_ = item.name;
+            destroyCount_ = static_cast<uint8_t>(std::clamp<uint32_t>(
+                std::max<uint32_t>(1u, item.stackCount), 1u, 255u));
+            if (kind == SlotKind::BACKPACK && backpackIndex >= 0) {
+                destroyBag_ = 0xFF;
+                destroySlot_ = static_cast<uint8_t>(23 + backpackIndex);
+            } else if (kind == SlotKind::BACKPACK && isBagSlot) {
+                destroyBag_ = static_cast<uint8_t>(19 + bagIndex);
+                destroySlot_ = static_cast<uint8_t>(bagSlotIndex);
+            } else if (kind == SlotKind::EQUIPMENT) {
+                destroyBag_ = 0xFF;
+                destroySlot_ = static_cast<uint8_t>(equipSlot);
+            }
+        }
+
         // Right-click: bank deposit (if bank open), vendor sell (if vendor mode), or auto-equip/use
         // Note: InvisibleButton only tracks left-click by default, so use IsItemHovered+IsMouseClicked
-        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !holdingItem && gameHandler_) {
+        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !holdingItem && !ImGui::GetIO().KeyShift && gameHandler_) {
             LOG_WARNING("Right-click slot: kind=", (int)kind,
                      " backpackIndex=", backpackIndex,
                      " bagIndex=", bagIndex, " bagSlotIndex=", bagSlotIndex,
@@ -2189,6 +2235,16 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
                 if (!lbl) continue;
                 showDiff(lbl, static_cast<float>(nv), static_cast<float>(ev));
             }
+        }
+    }
+
+    // Destroy hint (not shown for quest items)
+    if (item.itemId != 0 && item.bindType != 4) {
+        ImGui::Spacing();
+        if (ImGui::GetIO().KeyShift) {
+            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 0.9f), "Shift+RClick to destroy");
+        } else {
+            ImGui::TextDisabled("Shift+RClick to destroy");
         }
     }
 

@@ -171,10 +171,17 @@ private:
     void renderHeldItem();
     bool bagHasAnyItems(const game::Inventory& inventory, int bagIndex) const;
 
-    // Drop confirmation
+    // Drop confirmation (drag-outside-window destroy)
     bool dropConfirmOpen_ = false;
     int dropBackpackIndex_ = -1;
     std::string dropItemName_;
+
+    // Destroy confirmation (Shift+right-click destroy)
+    bool destroyConfirmOpen_ = false;
+    uint8_t destroyBag_ = 0xFF;
+    uint8_t destroySlot_ = 0;
+    uint8_t destroyCount_ = 1;
+    std::string destroyItemName_;
 
     // Pending chat item link from shift-click
     std::string pendingChatItemLink_;

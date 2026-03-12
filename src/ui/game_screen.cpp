@@ -6584,6 +6584,20 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
             }
         }
 
+        // Auto-attack active glow — pulsing golden border when slot 6603 (Attack) is toggled on
+        if (slot.type == game::ActionBarSlot::SPELL && slot.id == 6603
+            && gameHandler.isAutoAttacking()) {
+            ImVec2 bMin = ImGui::GetItemRectMin();
+            ImVec2 bMax = ImGui::GetItemRectMax();
+            float pulse = 0.55f + 0.45f * std::sin(static_cast<float>(ImGui::GetTime()) * 5.0f);
+            ImU32 glowCol = IM_COL32(
+                static_cast<int>(255),
+                static_cast<int>(200 * pulse),
+                static_cast<int>(0),
+                static_cast<int>(200 * pulse));
+            ImGui::GetWindowDrawList()->AddRect(bMin, bMax, glowCol, 2.0f, 0, 2.5f);
+        }
+
         // Item stack count overlay — bottom-right corner of icon
         if (slot.type == game::ActionBarSlot::ITEM && slot.id != 0) {
             // Count total of this item across all inventory slots

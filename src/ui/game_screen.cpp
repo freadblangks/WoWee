@@ -15129,6 +15129,7 @@ void GameScreen::renderInspectWindow(game::GameHandler& gameHandler) {
         ImGui::TextDisabled("(Gear loads after the player is inspected in-range)");
     } else {
         if (ImGui::BeginChild("##inspect_gear", ImVec2(0, 0), false)) {
+            constexpr float kIconSz = 28.0f;
             for (int s = 0; s < 19; ++s) {
                 uint32_t entry = result->itemEntries[s];
                 if (entry == 0) continue;
@@ -15136,24 +15137,48 @@ void GameScreen::renderInspectWindow(game::GameHandler& gameHandler) {
                 const game::ItemQueryResponseData* info = gameHandler.getItemInfo(entry);
                 if (!info) {
                     gameHandler.ensureItemInfo(entry);
+                    ImGui::PushID(s);
                     ImGui::TextDisabled("[%s]  (loading…)", kSlotNames[s]);
+                    ImGui::PopID();
                     continue;
                 }
 
-                ImGui::TextDisabled("%s", kSlotNames[s]);
-                ImGui::SameLine(90);
+                ImGui::PushID(s);
                 auto qColor = InventoryScreen::getQualityColor(
                     static_cast<game::ItemQuality>(info->quality));
-                ImGui::TextColored(qColor, "%s", info->name.c_str());
-                if (ImGui::IsItemHovered()) {
-                    ImGui::BeginTooltip();
-                    ImGui::TextColored(qColor, "%s", info->name.c_str());
-                    if (info->itemLevel > 0)
-                        ImGui::Text("Item Level %u", info->itemLevel);
-                    if (info->armor > 0)
-                        ImGui::Text("Armor: %d", info->armor);
-                    ImGui::EndTooltip();
+
+                // Item icon
+                VkDescriptorSet iconTex = inventoryScreen.getItemIcon(info->displayInfoId);
+                if (iconTex) {
+                    ImGui::Image((ImTextureID)(uintptr_t)iconTex, ImVec2(kIconSz, kIconSz),
+                                 ImVec2(0,0), ImVec2(1,1),
+                                 ImVec4(1,1,1,1), qColor);
+                } else {
+                    ImGui::GetWindowDrawList()->AddRectFilled(
+                        ImGui::GetCursorScreenPos(),
+                        ImVec2(ImGui::GetCursorScreenPos().x + kIconSz,
+                               ImGui::GetCursorScreenPos().y + kIconSz),
+                        IM_COL32(40, 40, 50, 200));
+                    ImGui::Dummy(ImVec2(kIconSz, kIconSz));
                 }
+                bool hovered = ImGui::IsItemHovered();
+
+                ImGui::SameLine();
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (kIconSz - ImGui::GetTextLineHeight()) * 0.5f);
+                ImGui::BeginGroup();
+                ImGui::TextDisabled("%s", kSlotNames[s]);
+                ImGui::TextColored(qColor, "%s", info->name.c_str());
+                ImGui::EndGroup();
+                hovered = hovered || ImGui::IsItemHovered();
+
+                if (hovered && info->valid) {
+                    inventoryScreen.renderItemTooltip(*info);
+                } else if (hovered) {
+                    ImGui::SetTooltip("%s", info->name.c_str());
+                }
+
+                ImGui::PopID();
+                ImGui::Spacing();
             }
         }
         ImGui::EndChild();

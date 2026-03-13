@@ -16505,8 +16505,14 @@ void GameHandler::handleLearnedSpell(network::Packet& packet) {
     const size_t minSz = classicSpellId ? 2u : 4u;
     if (packet.getSize() - packet.getReadPos() < minSz) return;
     uint32_t spellId = classicSpellId ? packet.readUInt16() : packet.readUInt32();
+
+    // Track whether we already knew this spell before inserting.
+    // SMSG_TRAINER_BUY_SUCCEEDED pre-inserts the spell and shows its own "You have
+    // learned X" message, so when the accompanying SMSG_LEARNED_SPELL arrives we
+    // must not duplicate it.
+    const bool alreadyKnown = knownSpells.count(spellId) > 0;
     knownSpells.insert(spellId);
-    LOG_INFO("Learned spell: ", spellId);
+    LOG_INFO("Learned spell: ", spellId, alreadyKnown ? " (already known, skipping chat)" : "");
 
     // Check if this spell corresponds to a talent rank
     for (const auto& [talentId, talent] : talentCache_) {
@@ -16522,12 +16528,15 @@ void GameHandler::handleLearnedSpell(network::Packet& packet) {
         }
     }
 
-    // Show chat message for non-talent spells
-    const std::string& name = getSpellName(spellId);
-    if (!name.empty()) {
-        addSystemChatMessage("You have learned a new spell: " + name + ".");
-    } else {
-        addSystemChatMessage("You have learned a new spell.");
+    // Show chat message for non-talent spells, but only if not already announced by
+    // SMSG_TRAINER_BUY_SUCCEEDED (which pre-inserts into knownSpells).
+    if (!alreadyKnown) {
+        const std::string& name = getSpellName(spellId);
+        if (!name.empty()) {
+            addSystemChatMessage("You have learned a new spell: " + name + ".");
+        } else {
+            addSystemChatMessage("You have learned a new spell.");
+        }
     }
 }
 

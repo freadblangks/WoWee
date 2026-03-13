@@ -219,6 +219,9 @@ void PerformanceHUD::render(const Renderer* renderer, const Camera* camera) {
             ImGui::Text("  Upscale Dispatches: %zu", renderer->getAmdFsr3UpscaleDispatchCount());
             ImGui::Text("  FG Fallbacks: %zu", renderer->getAmdFsr3FallbackCount());
         }
+        if (renderer->isFXAAEnabled()) {
+            ImGui::TextColored(ImVec4(0.8f, 1.0f, 0.6f, 1.0f), "FXAA: ON");
+        }
 
         ImGui::Spacing();
     }

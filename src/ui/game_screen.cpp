@@ -3030,8 +3030,38 @@ void GameScreen::renderPetFrame(game::GameHandler& gameHandler) {
             if (ImGui::MenuItem("Target Pet")) {
                 gameHandler.setTarget(petGuid);
             }
+            if (ImGui::MenuItem("Rename Pet")) {
+                ImGui::CloseCurrentPopup();
+                petRenameOpen_ = true;
+                petRenameBuf_[0] = '\0';
+            }
             if (ImGui::MenuItem("Dismiss Pet")) {
                 gameHandler.dismissPet();
+            }
+            ImGui::EndPopup();
+        }
+        // Pet rename modal (opened via context menu)
+        if (petRenameOpen_) {
+            ImGui::OpenPopup("Rename Pet###PetRename");
+            petRenameOpen_ = false;
+        }
+        if (ImGui::BeginPopupModal("Rename Pet###PetRename", nullptr,
+                                   ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse)) {
+            ImGui::Text("Enter new pet name (max 12 characters):");
+            ImGui::SetNextItemWidth(180.0f);
+            bool submitted = ImGui::InputText("##PetRenameInput", petRenameBuf_, sizeof(petRenameBuf_),
+                                              ImGuiInputTextFlags_EnterReturnsTrue);
+            ImGui::SameLine();
+            if (ImGui::Button("OK") || submitted) {
+                std::string newName(petRenameBuf_);
+                if (!newName.empty() && newName.size() <= 12) {
+                    gameHandler.renamePet(newName);
+                }
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel")) {
+                ImGui::CloseCurrentPopup();
             }
             ImGui::EndPopup();
         }

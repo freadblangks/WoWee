@@ -2718,5 +2718,14 @@ public:
     static network::Packet build(uint64_t stableMasterGuid, uint32_t petNumber);
 };
 
+class PetRenamePacket {
+public:
+    /** CMSG_PET_RENAME: rename the player's active pet.
+     *  petGuid: the pet's object GUID (from GameHandler::getPetGuid())
+     *  name: new name (max 12 chars; server validates and may reject)
+     *  isDeclined: 0 for non-Cyrillic locales (no declined name forms) */
+    static network::Packet build(uint64_t petGuid, const std::string& name, uint8_t isDeclined = 0);
+};
+
 } // namespace game
 } // namespace wowee

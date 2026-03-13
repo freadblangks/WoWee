@@ -5421,5 +5421,13 @@ network::Packet UnstablePetPacket::build(uint64_t stableMasterGuid, uint32_t pet
     return p;
 }
 
+network::Packet PetRenamePacket::build(uint64_t petGuid, const std::string& name, uint8_t isDeclined) {
+    network::Packet p(wireOpcode(Opcode::CMSG_PET_RENAME));
+    p.writeUInt64(petGuid);
+    p.writeString(name);    // null-terminated
+    p.writeUInt8(isDeclined);
+    return p;
+}
+
 } // namespace game
 } // namespace wowee

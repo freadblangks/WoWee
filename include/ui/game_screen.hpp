@@ -434,6 +434,10 @@ private:
     char  gmTicketBuf_[2048] = {};
     void  renderGmTicketWindow(game::GameHandler& gameHandler);
 
+    // Pet rename modal (triggered from pet frame context menu)
+    bool petRenameOpen_ = false;
+    char petRenameBuf_[16] = {};
+
     // Inspect window
     bool  showInspectWindow_ = false;
     void  renderInspectWindow(game::GameHandler& gameHandler);

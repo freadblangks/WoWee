@@ -14655,6 +14655,14 @@ void GameHandler::dismissPet() {
     socket->send(packet);
 }
 
+void GameHandler::renamePet(const std::string& newName) {
+    if (petGuid_ == 0 || state != WorldState::IN_WORLD || !socket) return;
+    if (newName.empty() || newName.size() > 12) return;  // Server enforces max 12 chars
+    auto packet = PetRenamePacket::build(petGuid_, newName, 0);
+    socket->send(packet);
+    LOG_INFO("Sent CMSG_PET_RENAME: petGuid=0x", std::hex, petGuid_, std::dec, " name='", newName, "'");
+}
+
 void GameHandler::requestStabledPetList() {
     if (state != WorldState::IN_WORLD || !socket || stableMasterGuid_ == 0) return;
     auto pkt = ListStabledPetsPacket::build(stableMasterGuid_);

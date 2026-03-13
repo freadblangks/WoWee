@@ -609,6 +609,7 @@ public:
     void cancelCast();
     void cancelAura(uint32_t spellId);
     void dismissPet();
+    void renamePet(const std::string& newName);
     bool hasPet() const { return petGuid_ != 0; }
     uint64_t getPetGuid() const { return petGuid_; }
 

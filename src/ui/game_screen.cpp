@@ -50,8 +50,8 @@ namespace {
     // Build a WoW-format item link string for chat insertion.
     // Format: |cff<qualHex>|Hitem:<itemId>:0:0:0:0:0:0:0:0|h[<name>]|h|r
     std::string buildItemChatLink(uint32_t itemId, uint8_t quality, const std::string& name) {
-        static const char* kQualHex[] = {"9d9d9d","ffffff","1eff00","0070dd","a335ee","ff8000"};
-        uint8_t qi = quality < 6 ? quality : 1;
+        static const char* kQualHex[] = {"9d9d9d","ffffff","1eff00","0070dd","a335ee","ff8000","e6cc80","e6cc80"};
+        uint8_t qi = quality < 8 ? quality : 1;
         char buf[512];
         snprintf(buf, sizeof(buf), "|cff%s|Hitem:%u:0:0:0:0:0:0:0:0|h[%s]|h|r",
                  kQualHex[qi], itemId, name.c_str());
@@ -10801,7 +10801,7 @@ void GameScreen::renderLootRollPopup(game::GameHandler& gameHandler) {
             ? rollInfo->name.c_str()
             : roll.itemName.c_str();
         if (rollInfo && rollInfo->valid)
-            col = (rollInfo->quality < 6) ? kQualityColors[rollInfo->quality] : kQualityColors[1];
+            col = (rollInfo->quality < 8) ? kQualityColors[rollInfo->quality] : kQualityColors[1];
         ImGui::TextColored(col, "[%s]", displayName);
         if (ImGui::IsItemHovered() && rollInfo && rollInfo->valid) {
             inventoryScreen.renderItemTooltip(*rollInfo);

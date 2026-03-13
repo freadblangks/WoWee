@@ -16576,6 +16576,11 @@ void GameHandler::handleSupercededSpell(network::Packet& packet) {
     // Remove old spell
     knownSpells.erase(oldSpellId);
 
+    // Track whether the new spell was already announced via SMSG_TRAINER_BUY_SUCCEEDED.
+    // If it was pre-inserted there, that handler already showed "You have learned X" so
+    // we should skip the "Upgraded to X" message to avoid a duplicate.
+    const bool newSpellAlreadyAnnounced = knownSpells.count(newSpellId) > 0;
+
     // Add new spell
     knownSpells.insert(newSpellId);
 
@@ -16596,9 +16601,14 @@ void GameHandler::handleSupercededSpell(network::Packet& packet) {
     }
     if (barChanged) saveCharacterConfig();
 
-    const std::string& newName = getSpellName(newSpellId);
-    if (!newName.empty()) {
-        addSystemChatMessage("Upgraded to " + newName);
+    // Show "Upgraded to X" only when the new spell wasn't already announced by the
+    // trainer-buy handler.  For non-trainer supersedes (e.g. quest rewards), the new
+    // spell won't be pre-inserted so we still show the message.
+    if (!newSpellAlreadyAnnounced) {
+        const std::string& newName = getSpellName(newSpellId);
+        if (!newName.empty()) {
+            addSystemChatMessage("Upgraded to " + newName);
+        }
     }
 }
 

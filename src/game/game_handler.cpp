@@ -3243,8 +3243,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_DURABILITY_DAMAGE_DEATH: {
             // uint32 percent (how much durability was lost due to death)
             if (packet.getSize() - packet.getReadPos() >= 4) {
-                /*uint32_t pct =*/ packet.readUInt32();
-                addSystemChatMessage("You have lost 10% of your gear's durability due to death.");
+                uint32_t pct = packet.readUInt32();
+                char buf[80];
+                std::snprintf(buf, sizeof(buf),
+                    "You have lost %u%% of your gear's durability due to death.", pct);
+                addSystemChatMessage(buf);
             }
             break;
         }
@@ -6869,10 +6872,20 @@ void GameHandler::handlePacket(network::Packet& packet) {
             if (packet.getSize() - packet.getReadPos() >= 5) {
                 uint8_t  castCount = packet.readUInt8();
                 uint32_t spellId   = packet.readUInt32();
-                uint32_t reason    = (packet.getSize() - packet.getReadPos() >= 4)
-                                         ? packet.readUInt32() : 0;
+                uint8_t  reason    = (packet.getSize() - packet.getReadPos() >= 1)
+                                         ? packet.readUInt8() : 0;
                 LOG_DEBUG("SMSG_PET_CAST_FAILED: spell=", spellId,
-                          " reason=", reason, " castCount=", (int)castCount);
+                          " reason=", (int)reason, " castCount=", (int)castCount);
+                if (reason != 0) {
+                    const char* reasonStr = getSpellCastResultString(reason);
+                    const std::string& sName = getSpellName(spellId);
+                    std::string errMsg;
+                    if (reasonStr && *reasonStr)
+                        errMsg = sName.empty() ? reasonStr : (sName + ": " + reasonStr);
+                    else
+                        errMsg = sName.empty() ? "Pet spell failed." : (sName + ": Pet spell failed.");
+                    addSystemChatMessage(errMsg);
+                }
             }
             packet.setReadPos(packet.getSize());
             break;
@@ -21999,11 +22012,14 @@ void GameHandler::handleTradeStatus(network::Packet& packet) {
             tradeStatus_ = TradeStatus::Open;
             addSystemChatMessage("Trade window opened.");
             break;
-        case 3: // CANCELLED
-        case 9: // REJECTED
+        case 3:  // CANCELLED
         case 12: // CLOSE_WINDOW
             resetTradeState();
             addSystemChatMessage("Trade cancelled.");
+            break;
+        case 9: // REJECTED — other player clicked Decline
+            resetTradeState();
+            addSystemChatMessage("Trade declined.");
             break;
         case 4: // ACCEPTED (partner accepted)
             tradeStatus_ = TradeStatus::Accepted;

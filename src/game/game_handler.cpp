@@ -2998,7 +2998,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             const size_t remainingFields = isClassic ? 5u : 6u;  // spellId(4)+reason(1) [+castCount(1)]
             if (packet.getSize() - packet.getReadPos() >= remainingFields) {
                 if (!isClassic) /*uint8_t castCount =*/ packet.readUInt8();
-                /*uint32_t spellId  =*/ packet.readUInt32();
+                uint32_t failSpellId = packet.readUInt32();
                 uint8_t rawFailReason = packet.readUInt8();
                 // Classic result enum starts at 0=AFFECTING_COMBAT; shift +1 for WotLK table
                 uint8_t failReason = isClassic ? static_cast<uint8_t>(rawFailReason + 1) : rawFailReason;
@@ -3010,11 +3010,15 @@ void GameHandler::handlePacket(network::Packet& packet) {
                             pt = static_cast<int>(pu->getPowerType());
                     const char* reason = getSpellCastResultString(failReason, pt);
                     if (reason) {
-                        addUIError(reason);
+                        // Prefix with spell name for context, e.g. "Fireball: Not in range"
+                        const std::string& sName = getSpellName(failSpellId);
+                        std::string fullMsg = sName.empty() ? reason
+                                                            : sName + ": " + reason;
+                        addUIError(fullMsg);
                         MessageChatData emsg;
                         emsg.type = ChatType::SYSTEM;
                         emsg.language = ChatLanguage::UNIVERSAL;
-                        emsg.message = reason;
+                        emsg.message = std::move(fullMsg);
                         addLocalChatMessage(emsg);
                     }
                 }

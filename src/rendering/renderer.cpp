@@ -1019,13 +1019,15 @@ void Renderer::beginFrame() {
         }
     }
 
-    // FXAA resource management (disabled when FSR2 is active — FSR2 has its own AA)
+    // FXAA resource management — FXAA can coexist with FSR1 and FSR3.
+    // When both FXAA and FSR3 are enabled, FXAA runs as a post-FSR3 pass.
+    // When both FXAA and FSR1 are enabled, FXAA takes priority (native res render).
     if (fxaa_.needsRecreate && fxaa_.sceneFramebuffer) {
         destroyFXAAResources();
         fxaa_.needsRecreate = false;
         if (!fxaa_.enabled) LOG_INFO("FXAA: disabled");
     }
-    if (fxaa_.enabled && !fsr2_.enabled && !fsr_.enabled && !fxaa_.sceneFramebuffer) {
+    if (fxaa_.enabled && !fxaa_.sceneFramebuffer) {
         if (!initFXAAResources()) {
             LOG_ERROR("FXAA: initialization failed, disabling");
             fxaa_.enabled = false;
@@ -1049,7 +1051,8 @@ void Renderer::beginFrame() {
             initFSR2Resources();
         }
         // Recreate FXAA resources for new swapchain dimensions
-        if (fxaa_.enabled && !fsr2_.enabled && !fsr_.enabled) {
+        // FXAA can coexist with FSR1 and FSR3 simultaneously.
+        if (fxaa_.enabled) {
             destroyFXAAResources();
             initFXAAResources();
         }
@@ -1139,12 +1142,14 @@ void Renderer::beginFrame() {
     if (fsr2_.enabled && fsr2_.sceneFramebuffer) {
         rpInfo.framebuffer = fsr2_.sceneFramebuffer;
         renderExtent = { fsr2_.internalWidth, fsr2_.internalHeight };
+    } else if (fxaa_.enabled && fxaa_.sceneFramebuffer) {
+        // FXAA takes priority over FSR1: renders at native res with AA post-process.
+        // When both FSR1 and FXAA are enabled, FXAA wins (native res, no downscale).
+        rpInfo.framebuffer = fxaa_.sceneFramebuffer;
+        renderExtent = vkCtx->getSwapchainExtent();  // native resolution — no downscaling
     } else if (fsr_.enabled && fsr_.sceneFramebuffer) {
         rpInfo.framebuffer = fsr_.sceneFramebuffer;
         renderExtent = { fsr_.internalWidth, fsr_.internalHeight };
-    } else if (fxaa_.enabled && fxaa_.sceneFramebuffer) {
-        rpInfo.framebuffer = fxaa_.sceneFramebuffer;
-        renderExtent = vkCtx->getSwapchainExtent();  // native resolution — no downscaling
     } else {
         rpInfo.framebuffer = vkCtx->getSwapchainFramebuffers()[currentImageIndex];
         renderExtent = vkCtx->getSwapchainExtent();
@@ -1231,6 +1236,35 @@ void Renderer::endFrame() {
                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
         }
 
+        // FSR3+FXAA combined: re-point FXAA's descriptor to the FSR3 temporal output
+        // so renderFXAAPass() applies spatial AA on the temporally-stabilized frame.
+        // This must happen outside the render pass (descriptor updates are CPU-side).
+        if (fxaa_.enabled && fxaa_.descSet && fxaa_.sceneSampler) {
+            VkImageView fsr3OutputView = VK_NULL_HANDLE;
+            if (fsr2_.useAmdBackend) {
+                if (fsr2_.amdFsr3FramegenRuntimeActive && fsr2_.framegenOutput.image)
+                    fsr3OutputView = fsr2_.framegenOutput.imageView;
+                else if (fsr2_.history[fsr2_.currentHistory].image)
+                    fsr3OutputView = fsr2_.history[fsr2_.currentHistory].imageView;
+            } else if (fsr2_.history[fsr2_.currentHistory].image) {
+                fsr3OutputView = fsr2_.history[fsr2_.currentHistory].imageView;
+            }
+            if (fsr3OutputView) {
+                VkDescriptorImageInfo imgInfo{};
+                imgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                imgInfo.imageView   = fsr3OutputView;
+                imgInfo.sampler     = fxaa_.sceneSampler;
+                VkWriteDescriptorSet write{};
+                write.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                write.dstSet           = fxaa_.descSet;
+                write.dstBinding       = 0;
+                write.descriptorCount  = 1;
+                write.descriptorType   = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                write.pImageInfo       = &imgInfo;
+                vkUpdateDescriptorSets(vkCtx->getDevice(), 1, &write, 0, nullptr);
+            }
+        }
+
         // Begin swapchain render pass at full resolution for sharpening + ImGui
         VkRenderPassBeginInfo rpInfo{};
         rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -1260,8 +1294,33 @@ void Renderer::endFrame() {
         sc.extent = ext;
         vkCmdSetScissor(currentCmd, 0, 1, &sc);
 
-        // Draw RCAS sharpening from accumulated history buffer
-        renderFSR2Sharpen();
+        // When FXAA is also enabled: apply FXAA on the FSR3 temporal output instead
+        // of RCAS sharpening. FXAA descriptor is temporarily pointed to the FSR3
+        // history buffer (which is already in SHADER_READ_ONLY_OPTIMAL). This gives
+        // FSR3 temporal stability + FXAA spatial edge smoothing ("ultra quality native").
+        if (fxaa_.enabled && fxaa_.pipeline && fxaa_.descSet) {
+            renderFXAAPass();
+        } else {
+            // Draw RCAS sharpening from accumulated history buffer
+            renderFSR2Sharpen();
+        }
+
+        // Restore FXAA descriptor to its normal scene color source so standalone
+        // FXAA frames are not affected by the FSR3 history pointer set above.
+        if (fxaa_.enabled && fxaa_.descSet && fxaa_.sceneSampler && fxaa_.sceneColor.imageView) {
+            VkDescriptorImageInfo restoreInfo{};
+            restoreInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            restoreInfo.imageView   = fxaa_.sceneColor.imageView;
+            restoreInfo.sampler     = fxaa_.sceneSampler;
+            VkWriteDescriptorSet restoreWrite{};
+            restoreWrite.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            restoreWrite.dstSet          = fxaa_.descSet;
+            restoreWrite.dstBinding      = 0;
+            restoreWrite.descriptorCount = 1;
+            restoreWrite.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            restoreWrite.pImageInfo      = &restoreInfo;
+            vkUpdateDescriptorSets(vkCtx->getDevice(), 1, &restoreWrite, 0, nullptr);
+        }
 
         // Maintain frame bookkeeping
         fsr2_.prevViewProjection = camera->getViewProjectionMatrix();
@@ -1271,56 +1330,6 @@ void Renderer::endFrame() {
             fsr2_.currentHistory = 1 - fsr2_.currentHistory;
         }
         fsr2_.frameIndex = (fsr2_.frameIndex + 1) % 256;  // Wrap to keep Halton values well-distributed
-
-    } else if (fsr_.enabled && fsr_.sceneFramebuffer) {
-        // End the off-screen scene render pass
-        vkCmdEndRenderPass(currentCmd);
-
-        // Transition scene color (1x resolve/color target): PRESENT_SRC_KHR → SHADER_READ_ONLY
-        // The render pass finalLayout puts the resolve/color attachment in PRESENT_SRC_KHR
-        transitionImageLayout(currentCmd, fsr_.sceneColor.image,
-            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
-
-        // Begin swapchain render pass at full resolution
-        VkRenderPassBeginInfo rpInfo{};
-        rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        rpInfo.renderPass = vkCtx->getImGuiRenderPass();
-        rpInfo.framebuffer = vkCtx->getSwapchainFramebuffers()[currentImageIndex];
-        rpInfo.renderArea.offset = {0, 0};
-        rpInfo.renderArea.extent = vkCtx->getSwapchainExtent();
-
-        // Clear values must match the render pass attachment count
-        bool msaaOn = (vkCtx->getMsaaSamples() > VK_SAMPLE_COUNT_1_BIT);
-        VkClearValue clearValues[4]{};
-        clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-        clearValues[1].depthStencil = {1.0f, 0};
-        clearValues[2].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-        clearValues[3].depthStencil = {1.0f, 0};
-        if (msaaOn) {
-            bool depthRes = (vkCtx->getDepthResolveImageView() != VK_NULL_HANDLE);
-            rpInfo.clearValueCount = depthRes ? 4 : 3;
-        } else {
-            rpInfo.clearValueCount = 2;
-        }
-        rpInfo.pClearValues = clearValues;
-
-        vkCmdBeginRenderPass(currentCmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-        // Set full-resolution viewport and scissor
-        VkExtent2D ext = vkCtx->getSwapchainExtent();
-        VkViewport vp{};
-        vp.width = static_cast<float>(ext.width);
-        vp.height = static_cast<float>(ext.height);
-        vp.maxDepth = 1.0f;
-        vkCmdSetViewport(currentCmd, 0, 1, &vp);
-        VkRect2D sc{};
-        sc.extent = ext;
-        vkCmdSetScissor(currentCmd, 0, 1, &sc);
-
-        // Draw FSR upscale fullscreen quad
-        renderFSRUpscale();
 
     } else if (fxaa_.enabled && fxaa_.sceneFramebuffer) {
         // End the off-screen scene render pass
@@ -1361,9 +1370,57 @@ void Renderer::endFrame() {
 
         // Draw FXAA pass
         renderFXAAPass();
+
+    } else if (fsr_.enabled && fsr_.sceneFramebuffer) {
+        // FSR1 upscale path — only runs when FXAA is not active.
+        // When both FSR1 and FXAA are enabled, FXAA took priority above.
+        vkCmdEndRenderPass(currentCmd);
+
+        // Transition scene color (1x resolve/color target): PRESENT_SRC_KHR → SHADER_READ_ONLY
+        transitionImageLayout(currentCmd, fsr_.sceneColor.image,
+            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+        // Begin swapchain render pass at full resolution
+        VkRenderPassBeginInfo fsrRpInfo{};
+        fsrRpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        fsrRpInfo.renderPass = vkCtx->getImGuiRenderPass();
+        fsrRpInfo.framebuffer = vkCtx->getSwapchainFramebuffers()[currentImageIndex];
+        fsrRpInfo.renderArea.offset = {0, 0};
+        fsrRpInfo.renderArea.extent = vkCtx->getSwapchainExtent();
+
+        bool fsrMsaaOn = (vkCtx->getMsaaSamples() > VK_SAMPLE_COUNT_1_BIT);
+        VkClearValue fsrClearValues[4]{};
+        fsrClearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+        fsrClearValues[1].depthStencil = {1.0f, 0};
+        fsrClearValues[2].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+        fsrClearValues[3].depthStencil = {1.0f, 0};
+        if (fsrMsaaOn) {
+            bool depthRes = (vkCtx->getDepthResolveImageView() != VK_NULL_HANDLE);
+            fsrRpInfo.clearValueCount = depthRes ? 4 : 3;
+        } else {
+            fsrRpInfo.clearValueCount = 2;
+        }
+        fsrRpInfo.pClearValues = fsrClearValues;
+
+        vkCmdBeginRenderPass(currentCmd, &fsrRpInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        VkExtent2D fsrExt = vkCtx->getSwapchainExtent();
+        VkViewport fsrVp{};
+        fsrVp.width = static_cast<float>(fsrExt.width);
+        fsrVp.height = static_cast<float>(fsrExt.height);
+        fsrVp.maxDepth = 1.0f;
+        vkCmdSetViewport(currentCmd, 0, 1, &fsrVp);
+        VkRect2D fsrSc{};
+        fsrSc.extent = fsrExt;
+        vkCmdSetScissor(currentCmd, 0, 1, &fsrSc);
+
+        renderFSRUpscale();
     }
 
     // ImGui rendering — must respect subpass contents mode
+    // Parallel recording only applies when no post-process pass is active.
     if (!fsr_.enabled && !fsr2_.enabled && !fxaa_.enabled && parallelRecordingEnabled_) {
         // Scene pass was begun with VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS,
         // so ImGui must be recorded into a secondary command buffer.

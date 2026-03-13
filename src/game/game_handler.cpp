@@ -5001,7 +5001,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             handleBattlefieldStatus(packet);
             break;
         case Opcode::SMSG_BATTLEFIELD_LIST:
-            LOG_INFO("Received SMSG_BATTLEFIELD_LIST");
+            handleBattlefieldList(packet);
             break;
         case Opcode::SMSG_BATTLEFIELD_PORT_DENIED:
             addSystemChatMessage("Battlefield port denied.");
@@ -13218,6 +13218,80 @@ void GameHandler::handleBattlefieldStatus(network::Packet& packet) {
             LOG_INFO("Battlefield status: unknown (", statusId, ") for ", bgName);
             break;
     }
+}
+
+void GameHandler::handleBattlefieldList(network::Packet& packet) {
+    // SMSG_BATTLEFIELD_LIST wire format by expansion:
+    //
+    // Classic 1.12 (vmangos/cmangos):
+    //   bgTypeId(4) isRegistered(1) count(4) [instanceId(4)...]
+    //
+    // TBC 2.4.3:
+    //   bgTypeId(4) isRegistered(1) isHoliday(1) count(4) [instanceId(4)...]
+    //
+    // WotLK 3.3.5a:
+    //   bgTypeId(4) isRegistered(1) isHoliday(1) minLevel(4) maxLevel(4) count(4) [instanceId(4)...]
+
+    if (packet.getSize() - packet.getReadPos() < 5) return;
+
+    AvailableBgInfo info;
+    info.bgTypeId     = packet.readUInt32();
+    info.isRegistered = packet.readUInt8() != 0;
+
+    const bool isWotlk = isActiveExpansion("wotlk");
+    const bool isTbc   = isActiveExpansion("tbc");
+
+    if (isTbc || isWotlk) {
+        if (packet.getSize() - packet.getReadPos() < 1) return;
+        info.isHoliday = packet.readUInt8() != 0;
+    }
+
+    if (isWotlk) {
+        if (packet.getSize() - packet.getReadPos() < 8) return;
+        info.minLevel = packet.readUInt32();
+        info.maxLevel = packet.readUInt32();
+    }
+
+    if (packet.getSize() - packet.getReadPos() < 4) return;
+    uint32_t count = packet.readUInt32();
+
+    // Sanity cap to avoid OOM from malformed packets
+    constexpr uint32_t kMaxInstances = 256;
+    count = std::min(count, kMaxInstances);
+    info.instanceIds.reserve(count);
+
+    for (uint32_t i = 0; i < count; ++i) {
+        if (packet.getSize() - packet.getReadPos() < 4) break;
+        info.instanceIds.push_back(packet.readUInt32());
+    }
+
+    // Update or append the entry for this BG type
+    bool updated = false;
+    for (auto& existing : availableBgs_) {
+        if (existing.bgTypeId == info.bgTypeId) {
+            existing = std::move(info);
+            updated = true;
+            break;
+        }
+    }
+    if (!updated) {
+        availableBgs_.push_back(std::move(info));
+    }
+
+    const auto& stored = availableBgs_.back();
+    static const std::unordered_map<uint32_t, const char*> kBgNames = {
+        {1, "Alterac Valley"}, {2, "Warsong Gulch"}, {3, "Arathi Basin"},
+        {4, "Nagrand Arena"}, {5, "Blade's Edge Arena"}, {6, "All Arenas"},
+        {7, "Eye of the Storm"}, {8, "Ruins of Lordaeron"},
+        {9, "Strand of the Ancients"}, {10, "Dalaran Sewers"},
+        {11, "The Ring of Valor"}, {30, "Isle of Conquest"},
+    };
+    auto nameIt = kBgNames.find(stored.bgTypeId);
+    const char* bgName = (nameIt != kBgNames.end()) ? nameIt->second : "Unknown Battleground";
+
+    LOG_INFO("SMSG_BATTLEFIELD_LIST: ", bgName, " bgType=", stored.bgTypeId,
+             " registered=", stored.isRegistered ? "yes" : "no",
+             " instances=", stored.instanceIds.size());
 }
 
 void GameHandler::declineBattlefield(uint32_t queueSlot) {

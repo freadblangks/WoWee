@@ -405,11 +405,22 @@ public:
         std::chrono::steady_clock::time_point inviteReceivedTime{};
     };
 
+    // Available BG list (populated by SMSG_BATTLEFIELD_LIST)
+    struct AvailableBgInfo {
+        uint32_t bgTypeId         = 0;
+        bool     isRegistered     = false;
+        bool     isHoliday        = false;
+        uint32_t minLevel         = 0;
+        uint32_t maxLevel         = 0;
+        std::vector<uint32_t> instanceIds;
+    };
+
     // Battleground
     bool hasPendingBgInvite() const;
     void acceptBattlefield(uint32_t queueSlot = 0xFFFFFFFF);
     void declineBattlefield(uint32_t queueSlot = 0xFFFFFFFF);
     const std::array<BgQueueSlot, 3>& getBgQueues() const { return bgQueues_; }
+    const std::vector<AvailableBgInfo>& getAvailableBgs() const { return availableBgs_; }
 
     // BG scoreboard (MSG_PVP_LOG_DATA)
     struct BgPlayerScore {
@@ -2474,6 +2485,10 @@ private:
 
     // ---- Battleground queue state ----
     std::array<BgQueueSlot, 3> bgQueues_{};
+
+    // ---- Available battleground list (SMSG_BATTLEFIELD_LIST) ----
+    std::vector<AvailableBgInfo> availableBgs_;
+    void handleBattlefieldList(network::Packet& packet);
 
     // Instance difficulty
     uint32_t instanceDifficulty_ = 0;

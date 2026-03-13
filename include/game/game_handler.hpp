@@ -2778,6 +2778,9 @@ private:
         float timer = 0.0f;
     };
     std::vector<PendingLootOpen> pendingGameObjectLootOpens_;
+    // Tracks the last GO we sent CMSG_GAMEOBJ_USE to; used in handleSpellGo
+    // to send CMSG_LOOT after a gather cast (mining/herbalism) completes.
+    uint64_t lastInteractedGoGuid_ = 0;
     uint64_t pendingLootMoneyGuid_ = 0;
     uint32_t pendingLootMoneyAmount_ = 0;
     float pendingLootMoneyNotifyTimer_ = 0.0f;

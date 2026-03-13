@@ -16213,6 +16213,14 @@ void GameHandler::handleSpellStart(network::Packet& packet) {
 
     // If this is the player's own cast, start cast bar
     if (data.casterUnit == playerGuid && data.castTime > 0) {
+        // CMSG_GAMEOBJ_USE was accepted — cancel pending USE retries so we don't
+        // re-send GAMEOBJ_USE mid-gather-cast and get SPELL_FAILED_BAD_TARGETS.
+        // Keep entries that only have sendLoot (no-cast chests that still need looting).
+        pendingGameObjectLootRetries_.erase(
+            std::remove_if(pendingGameObjectLootRetries_.begin(), pendingGameObjectLootRetries_.end(),
+                [](const PendingLootRetry&) { return true; /* cancel all retries once a gather cast starts */ }),
+            pendingGameObjectLootRetries_.end());
+
         casting = true;
         castIsChannel = false;
         currentCastSpellId = data.spellId;
@@ -16288,6 +16296,13 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
         castIsChannel = false;
         currentCastSpellId = 0;
         castTimeRemaining = 0.0f;
+
+        // If we were gathering a node (mining/herbalism), send CMSG_LOOT now that
+        // the gather cast completed and the server has made the node lootable.
+        if (lastInteractedGoGuid_ != 0) {
+            lootTarget(lastInteractedGoGuid_);
+            lastInteractedGoGuid_ = 0;
+        }
 
         // End cast animation on player character
         if (spellCastAnimCallback_) {
@@ -17369,6 +17384,7 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
 
     auto packet = GameObjectUsePacket::build(guid);
     socket->send(packet);
+    lastInteractedGoGuid_ = guid;
 
     // For mailbox GameObjects (type 19), open mail UI and request mail list.
     // In Vanilla/Classic there is no SMSG_SHOW_MAILBOX — the server just sends
@@ -18582,6 +18598,7 @@ void GameHandler::handleLootResponse(network::Packet& packet) {
     const bool wotlkLoot = isActiveExpansion("wotlk");
     if (!LootResponseParser::parse(packet, currentLoot, wotlkLoot)) return;
     lootWindowOpen = true;
+    lastInteractedGoGuid_ = 0; // loot opened — no need to re-send in handleSpellGo
     localLootState_[currentLoot.lootGuid] = LocalLootState{currentLoot, false};
 
     // Query item info so loot window can show names instead of IDs

@@ -339,6 +339,16 @@ public:
     // Inspection
     void inspectTarget();
 
+    struct InspectArenaTeam {
+        uint32_t    teamId         = 0;
+        uint8_t     type           = 0;   // bracket size: 2, 3, or 5
+        uint32_t    weekGames      = 0;
+        uint32_t    weekWins       = 0;
+        uint32_t    seasonGames    = 0;
+        uint32_t    seasonWins     = 0;
+        std::string name;
+        uint32_t    personalRating = 0;
+    };
     struct InspectResult {
         uint64_t    guid           = 0;
         std::string playerName;
@@ -348,6 +358,7 @@ public:
         uint8_t     activeTalentGroup = 0;
         std::array<uint32_t, 19> itemEntries{};  // 0=head…18=ranged
         std::array<uint16_t, 19> enchantIds{};   // permanent enchant per slot (0 = none)
+        std::vector<InspectArenaTeam> arenaTeams; // from MSG_INSPECT_ARENA_TEAMS (WotLK)
     };
     const InspectResult* getInspectResult() const {
         return inspectResult_.guid ? &inspectResult_ : nullptr;

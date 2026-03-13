@@ -5166,9 +5166,37 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::MSG_PVP_LOG_DATA:
             handlePvpLogData(packet);
             break;
-        case Opcode::MSG_INSPECT_ARENA_TEAMS:
-            LOG_INFO("Received MSG_INSPECT_ARENA_TEAMS");
+        case Opcode::MSG_INSPECT_ARENA_TEAMS: {
+            // WotLK: uint64 playerGuid + uint8 teamCount + per-team fields
+            if (packet.getSize() - packet.getReadPos() < 9) {
+                packet.setReadPos(packet.getSize());
+                break;
+            }
+            uint64_t inspGuid  = packet.readUInt64();
+            uint8_t  teamCount = packet.readUInt8();
+            if (teamCount > 3) teamCount = 3; // 2v2, 3v3, 5v5
+            if (inspGuid == inspectResult_.guid || inspectResult_.guid == 0) {
+                inspectResult_.guid = inspGuid;
+                inspectResult_.arenaTeams.clear();
+                for (uint8_t t = 0; t < teamCount; ++t) {
+                    if (packet.getSize() - packet.getReadPos() < 21) break;
+                    InspectArenaTeam team;
+                    team.teamId         = packet.readUInt32();
+                    team.type           = packet.readUInt8();
+                    team.weekGames      = packet.readUInt32();
+                    team.weekWins       = packet.readUInt32();
+                    team.seasonGames    = packet.readUInt32();
+                    team.seasonWins     = packet.readUInt32();
+                    team.name           = packet.readString();
+                    if (packet.getSize() - packet.getReadPos() < 4) break;
+                    team.personalRating = packet.readUInt32();
+                    inspectResult_.arenaTeams.push_back(std::move(team));
+                }
+            }
+            LOG_DEBUG("MSG_INSPECT_ARENA_TEAMS: guid=0x", std::hex, inspGuid, std::dec,
+                      " teams=", (int)teamCount);
             break;
+        }
         case Opcode::MSG_TALENT_WIPE_CONFIRM: {
             // Server sends: uint64 npcGuid + uint32 cost
             // Client must respond with the same opcode containing uint64 npcGuid to confirm.
@@ -5869,10 +5897,21 @@ void GameHandler::handlePacket(network::Packet& packet) {
             LOG_DEBUG("SMSG_ITEM_ENCHANT_TIME_UPDATE: slot=", enchSlot, " dur=", durationSec, "s");
             break;
         }
-        case Opcode::SMSG_COMPLAIN_RESULT:
+        case Opcode::SMSG_COMPLAIN_RESULT: {
+            // uint8 result: 0=success, 1=failed, 2=disabled
+            if (packet.getSize() - packet.getReadPos() >= 1) {
+                uint8_t result = packet.readUInt8();
+                if (result == 0)
+                    addSystemChatMessage("Your complaint has been submitted.");
+                else if (result == 2)
+                    addUIError("Report a Player is currently disabled.");
+            }
+            packet.setReadPos(packet.getSize());
+            break;
+        }
         case Opcode::SMSG_ITEM_REFUND_INFO_RESPONSE:
         case Opcode::SMSG_LOOT_LIST:
-            // Consume — not yet processed
+            // Consume silently — informational, no UI action needed
             packet.setReadPos(packet.getSize());
             break;
 

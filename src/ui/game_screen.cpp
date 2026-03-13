@@ -20697,6 +20697,28 @@ void GameScreen::renderInspectWindow(game::GameHandler& gameHandler) {
         ImGui::EndChild();
     }
 
+    // Arena teams (WotLK — from MSG_INSPECT_ARENA_TEAMS)
+    if (!result->arenaTeams.empty()) {
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f), "Arena Teams");
+        ImGui::Spacing();
+        for (const auto& team : result->arenaTeams) {
+            const char* bracket = (team.type == 2) ? "2v2"
+                                : (team.type == 3) ? "3v3"
+                                : (team.type == 5) ? "5v5" : "?v?";
+            ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f),
+                               "[%s]  %s", bracket, team.name.c_str());
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(0.4f, 0.85f, 1.0f, 1.0f),
+                               "  Rating: %u", team.personalRating);
+            if (team.weekGames > 0 || team.seasonGames > 0) {
+                ImGui::TextDisabled("    Week: %u/%u  Season: %u/%u",
+                                    team.weekWins, team.weekGames,
+                                    team.seasonWins, team.seasonGames);
+            }
+        }
+    }
+
     ImGui::End();
 }
 

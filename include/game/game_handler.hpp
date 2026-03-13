@@ -2199,6 +2199,7 @@ private:
 
     // ---- Other player movement (MSG_MOVE_* from server) ----
     void handleOtherPlayerMovement(network::Packet& packet);
+    void handleMoveSetSpeed(network::Packet& packet);
 
     // ---- Phase 5 handlers ----
     void handleLootResponse(network::Packet& packet);

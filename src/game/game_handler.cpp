@@ -5338,6 +5338,22 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
             break;
 
+        // ---- Broadcast speed changes (server→client, no ACK) ----
+        // Format: PackedGuid (mover) + MovementInfo (variable) + float speed
+        // MovementInfo is complex (optional transport/fall/spline blocks based on flags).
+        // We consume the packet to suppress "Unhandled world opcode" warnings.
+        case Opcode::MSG_MOVE_SET_RUN_SPEED:
+        case Opcode::MSG_MOVE_SET_RUN_BACK_SPEED:
+        case Opcode::MSG_MOVE_SET_WALK_SPEED:
+        case Opcode::MSG_MOVE_SET_SWIM_SPEED:
+        case Opcode::MSG_MOVE_SET_SWIM_BACK_SPEED:
+        case Opcode::MSG_MOVE_SET_FLIGHT_SPEED:
+        case Opcode::MSG_MOVE_SET_FLIGHT_BACK_SPEED:
+            if (state == WorldState::IN_WORLD) {
+                handleMoveSetSpeed(packet);
+            }
+            break;
+
         // ---- Mail ----
         case Opcode::SMSG_SHOW_MAILBOX:
             handleShowMailbox(packet);
@@ -15106,6 +15122,40 @@ void GameHandler::handlePvpLogData(network::Packet& packet) {
         LOG_INFO("PvP log: ", bgScoreboard_.players.size(), " players, hasWinner=",
                  bgScoreboard_.hasWinner, " winner=", (int)bgScoreboard_.winner);
     }
+}
+
+void GameHandler::handleMoveSetSpeed(network::Packet& packet) {
+    // MSG_MOVE_SET_*_SPEED: PackedGuid (WotLK) / full uint64 (Classic/TBC) + MovementInfo + float speed.
+    // The MovementInfo block is variable-length; rather than fully parsing it, we read the
+    // fixed prefix, skip over optional blocks by consuming remaining bytes until 4 remain,
+    // then read the speed float. This is safe because the speed is always the last field.
+    const bool useFull = isClassicLikeExpansion() || isActiveExpansion("tbc");
+    uint64_t moverGuid = useFull
+        ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
+
+    // Skip to the last 4 bytes — the speed float — by advancing past the MovementInfo.
+    // This avoids duplicating the full variable-length MovementInfo parser here.
+    const size_t remaining = packet.getSize() - packet.getReadPos();
+    if (remaining < 4) return;
+    if (remaining > 4) {
+        // Advance past all MovementInfo bytes (flags, time, position, optional blocks).
+        // Speed is always the last 4 bytes in the packet.
+        packet.setReadPos(packet.getSize() - 4);
+    }
+
+    float speed = packet.readFloat();
+    if (!std::isfinite(speed) || speed <= 0.01f || speed > 200.0f) return;
+
+    // Update local player speed state if this broadcast targets us.
+    if (moverGuid != playerGuid) return;
+    const uint16_t wireOp = packet.getOpcode();
+    if      (wireOp == wireOpcode(Opcode::MSG_MOVE_SET_RUN_SPEED))        serverRunSpeed_      = speed;
+    else if (wireOp == wireOpcode(Opcode::MSG_MOVE_SET_RUN_BACK_SPEED))   serverRunBackSpeed_  = speed;
+    else if (wireOp == wireOpcode(Opcode::MSG_MOVE_SET_WALK_SPEED))       serverWalkSpeed_     = speed;
+    else if (wireOp == wireOpcode(Opcode::MSG_MOVE_SET_SWIM_SPEED))       serverSwimSpeed_     = speed;
+    else if (wireOp == wireOpcode(Opcode::MSG_MOVE_SET_SWIM_BACK_SPEED))  serverSwimBackSpeed_ = speed;
+    else if (wireOp == wireOpcode(Opcode::MSG_MOVE_SET_FLIGHT_SPEED))     serverFlightSpeed_   = speed;
+    else if (wireOp == wireOpcode(Opcode::MSG_MOVE_SET_FLIGHT_BACK_SPEED))serverFlightBackSpeed_= speed;
 }
 
 void GameHandler::handleOtherPlayerMovement(network::Packet& packet) {

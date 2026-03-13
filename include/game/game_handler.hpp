@@ -440,6 +440,8 @@ public:
         uint8_t arenaType = 0;
         uint32_t statusId = 0;  // 0=none, 1=wait_queue, 2=wait_join, 3=in_progress
         uint32_t inviteTimeout = 80;
+        uint32_t avgWaitTimeSec = 0;   // server-estimated average wait (STATUS_WAIT_QUEUE)
+        uint32_t timeInQueueSec = 0;   // time already spent in queue (STATUS_WAIT_QUEUE)
         std::chrono::steady_clock::time_point inviteReceivedTime{};
     };
 

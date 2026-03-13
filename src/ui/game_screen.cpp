@@ -16630,8 +16630,15 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         ImGui::SetNextWindowSize(ImVec2(indicatorW, kIndicatorH), ImGuiCond_Always);
         if (ImGui::Begin("##BgQueueIndicator", nullptr, indicatorFlags)) {
             float pulse = 0.6f + 0.4f * std::sin(static_cast<float>(ImGui::GetTime()) * 1.5f);
-            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, pulse),
-                               "In Queue: %s", bgName.c_str());
+            if (slot.avgWaitTimeSec > 0) {
+                int avgMin = static_cast<int>(slot.avgWaitTimeSec) / 60;
+                int avgSec = static_cast<int>(slot.avgWaitTimeSec) % 60;
+                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, pulse),
+                    "Queue: %s (~%d:%02d)", bgName.c_str(), avgMin, avgSec);
+            } else {
+                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, pulse),
+                    "In Queue: %s", bgName.c_str());
+            }
         }
         ImGui::End();
         nextIndicatorY += kIndicatorH;

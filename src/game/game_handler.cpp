@@ -14537,11 +14537,12 @@ void GameHandler::handleBattlefieldStatus(network::Packet& packet) {
 
     // Parse status-specific fields
     uint32_t inviteTimeout = 80;  // default WoW BG invite window (seconds)
+    uint32_t avgWaitSec = 0, timeInQueueSec = 0;
     if (statusId == 1) {
         // STATUS_WAIT_QUEUE: avgWaitTime(4) + timeInQueue(4)
         if (packet.getSize() - packet.getReadPos() >= 8) {
-            /*uint32_t avgWait =*/ packet.readUInt32();
-            /*uint32_t inQueue =*/ packet.readUInt32();
+            avgWaitSec    = packet.readUInt32() / 1000;  // ms → seconds
+            timeInQueueSec = packet.readUInt32() / 1000;
         }
     } else if (statusId == 2) {
         // STATUS_WAIT_JOIN: timeout(4) + mapId(4)
@@ -14566,6 +14567,10 @@ void GameHandler::handleBattlefieldStatus(network::Packet& packet) {
         bgQueues_[queueSlot].bgTypeId = bgTypeId;
         bgQueues_[queueSlot].arenaType = arenaType;
         bgQueues_[queueSlot].statusId = statusId;
+        if (statusId == 1) {
+            bgQueues_[queueSlot].avgWaitTimeSec = avgWaitSec;
+            bgQueues_[queueSlot].timeInQueueSec = timeInQueueSec;
+        }
         if (statusId == 2 && !wasInvite) {
             bgQueues_[queueSlot].inviteTimeout = inviteTimeout;
             bgQueues_[queueSlot].inviteReceivedTime = std::chrono::steady_clock::now();

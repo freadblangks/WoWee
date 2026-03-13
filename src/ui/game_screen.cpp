@@ -10751,9 +10751,11 @@ void GameScreen::renderLootRollPopup(game::GameHandler& gameHandler) {
             ImVec4(0.0f, 0.44f, 0.87f, 1.0f),// 3=rare (blue)
             ImVec4(0.64f, 0.21f, 0.93f, 1.0f),// 4=epic (purple)
             ImVec4(1.0f, 0.5f, 0.0f, 1.0f),  // 5=legendary (orange)
+            ImVec4(0.90f, 0.80f, 0.50f, 1.0f),// 6=artifact (light gold)
+            ImVec4(0.90f, 0.80f, 0.50f, 1.0f),// 7=heirloom (light gold)
         };
         uint8_t q = roll.itemQuality;
-        ImVec4 col = (q < 6) ? kQualityColors[q] : kQualityColors[1];
+        ImVec4 col = (q < 8) ? kQualityColors[q] : kQualityColors[1];
 
         // Countdown bar
         {
@@ -13214,7 +13216,16 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
                 gameHandler.repairAll(vendor.vendorGuid, false);
             }
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Repair all equipped items");
+                ImGui::SetTooltip("Repair all equipped items using your gold");
+            }
+            if (gameHandler.isInGuild()) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Repair (Guild)")) {
+                    gameHandler.repairAll(vendor.vendorGuid, true);
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Repair all equipped items using guild bank funds");
+                }
             }
         }
         ImGui::Separator();
@@ -19037,6 +19048,8 @@ void GameScreen::renderItemLootToasts() {
         IM_COL32(  0, 112, 221, 255),  // 3 blue (rare)
         IM_COL32(163,  53, 238, 255),  // 4 purple (epic)
         IM_COL32(255, 128,   0, 255),  // 5 orange (legendary)
+        IM_COL32(230, 204, 128, 255),  // 6 light gold (artifact)
+        IM_COL32(230, 204, 128, 255),  // 7 light gold (heirloom)
     };
 
     // Stack at bottom-left above action bars; each item is 24 px tall
@@ -19075,7 +19088,7 @@ void GameScreen::renderItemLootToasts() {
                             IM_COL32(12, 12, 12, bgA), 3.0f);
 
         // Quality colour accent bar on left edge (3px wide)
-        ImU32 qualCol = kQualityColors[std::min(static_cast<uint32_t>(5u), toast.quality)];
+        ImU32 qualCol = kQualityColors[std::min(static_cast<uint32_t>(7u), toast.quality)];
         ImU32 qualColA = (qualCol & 0x00FFFFFFu) | (static_cast<uint32_t>(fgA) << 24u);
         bgDL->AddRectFilled(ImVec2(tx, ty), ImVec2(tx + 3.0f, ty + TOAST_H), qualColA, 3.0f);
 

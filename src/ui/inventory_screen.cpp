@@ -2531,6 +2531,73 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
         }
     }
 
+    // Skill / reputation requirements from item query cache
+    if (gameHandler_) {
+        const auto* qInfo = gameHandler_->getItemInfo(item.itemId);
+        if (qInfo && qInfo->valid) {
+            if (qInfo->requiredSkill != 0 && qInfo->requiredSkillRank > 0) {
+                static std::unordered_map<uint32_t, std::string> s_skillNamesB;
+                static bool s_skillNamesLoadedB = false;
+                if (!s_skillNamesLoadedB && assetManager_) {
+                    s_skillNamesLoadedB = true;
+                    auto dbc = assetManager_->loadDBC("SkillLine.dbc");
+                    if (dbc && dbc->isLoaded()) {
+                        const auto* layout = pipeline::getActiveDBCLayout()
+                            ? pipeline::getActiveDBCLayout()->getLayout("SkillLine") : nullptr;
+                        uint32_t idF   = layout ? (*layout)["ID"]   : 0;
+                        uint32_t nameF = layout ? (*layout)["Name"] : 2;
+                        for (uint32_t r = 0; r < dbc->getRecordCount(); ++r) {
+                            uint32_t sid = dbc->getUInt32(r, idF);
+                            if (!sid) continue;
+                            std::string sname = dbc->getString(r, nameF);
+                            if (!sname.empty()) s_skillNamesB[sid] = std::move(sname);
+                        }
+                    }
+                }
+                uint32_t playerSkillVal = 0;
+                const auto& skills = gameHandler_->getPlayerSkills();
+                auto skPit = skills.find(qInfo->requiredSkill);
+                if (skPit != skills.end()) playerSkillVal = skPit->second.effectiveValue();
+                bool meetsSkill = (playerSkillVal == 0 || playerSkillVal >= qInfo->requiredSkillRank);
+                ImVec4 skColor = meetsSkill ? ImVec4(1.0f, 1.0f, 1.0f, 0.75f) : ImVec4(1.0f, 0.5f, 0.5f, 1.0f);
+                auto skIt = s_skillNamesB.find(qInfo->requiredSkill);
+                if (skIt != s_skillNamesB.end())
+                    ImGui::TextColored(skColor, "Requires %s (%u)", skIt->second.c_str(), qInfo->requiredSkillRank);
+                else
+                    ImGui::TextColored(skColor, "Requires Skill %u (%u)", qInfo->requiredSkill, qInfo->requiredSkillRank);
+            }
+            if (qInfo->requiredReputationFaction != 0 && qInfo->requiredReputationRank > 0) {
+                static std::unordered_map<uint32_t, std::string> s_factionNamesB;
+                static bool s_factionNamesLoadedB = false;
+                if (!s_factionNamesLoadedB && assetManager_) {
+                    s_factionNamesLoadedB = true;
+                    auto dbc = assetManager_->loadDBC("Faction.dbc");
+                    if (dbc && dbc->isLoaded()) {
+                        const auto* layout = pipeline::getActiveDBCLayout()
+                            ? pipeline::getActiveDBCLayout()->getLayout("Faction") : nullptr;
+                        uint32_t idF   = layout ? (*layout)["ID"]   : 0;
+                        uint32_t nameF = layout ? (*layout)["Name"] : 20;
+                        for (uint32_t r = 0; r < dbc->getRecordCount(); ++r) {
+                            uint32_t fid = dbc->getUInt32(r, idF);
+                            if (!fid) continue;
+                            std::string fname = dbc->getString(r, nameF);
+                            if (!fname.empty()) s_factionNamesB[fid] = std::move(fname);
+                        }
+                    }
+                }
+                static const char* kRepRankNamesB[] = {
+                    "Hated","Hostile","Unfriendly","Neutral","Friendly","Honored","Revered","Exalted"
+                };
+                const char* rankName = (qInfo->requiredReputationRank < 8)
+                    ? kRepRankNamesB[qInfo->requiredReputationRank] : "Unknown";
+                auto fIt = s_factionNamesB.find(qInfo->requiredReputationFaction);
+                ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 0.75f), "Requires %s with %s",
+                    rankName,
+                    fIt != s_factionNamesB.end() ? fIt->second.c_str() : "Unknown Faction");
+            }
+        }
+    }
+
     // "Begins a Quest" line (shown in yellow-green like the game)
     if (item.startQuestId != 0) {
         ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 1.0f), "Begins a Quest");

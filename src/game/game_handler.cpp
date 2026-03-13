@@ -10046,6 +10046,27 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             go->getX(), go->getY(), go->getZ(), go->getOrientation());
                     }
                 }
+                // Detect player's own corpse object so we have the position even when
+                // SMSG_DEATH_RELEASE_LOC hasn't been received (e.g. login as ghost).
+                if (block.objectType == ObjectType::CORPSE && block.hasMovement) {
+                    // CORPSE_FIELD_OWNER is at index 6 (uint64, low word at 6, high at 7)
+                    uint16_t ownerLowIdx = 6;
+                    auto ownerLowIt = block.fields.find(ownerLowIdx);
+                    uint32_t ownerLow = (ownerLowIt != block.fields.end()) ? ownerLowIt->second : 0;
+                    auto ownerHighIt = block.fields.find(ownerLowIdx + 1);
+                    uint32_t ownerHigh = (ownerHighIt != block.fields.end()) ? ownerHighIt->second : 0;
+                    uint64_t ownerGuid = (static_cast<uint64_t>(ownerHigh) << 32) | ownerLow;
+                    if (ownerGuid == playerGuid || ownerLow == static_cast<uint32_t>(playerGuid)) {
+                        // Server coords from movement block
+                        corpseX_     = block.x;
+                        corpseY_     = block.y;
+                        corpseZ_     = block.z;
+                        corpseMapId_ = currentMapId_;
+                        LOG_INFO("Corpse object detected: server=(", block.x, ", ", block.y, ", ", block.z,
+                                 ") map=", corpseMapId_);
+                    }
+                }
+
                 // Track online item objects (CONTAINER = bags, also tracked as items)
                 if (block.objectType == ObjectType::ITEM || block.objectType == ObjectType::CONTAINER) {
                     auto entryIt = block.fields.find(fieldIndex(UF::OBJECT_FIELD_ENTRY));
@@ -12192,9 +12213,11 @@ bool GameHandler::canReclaimCorpse() const {
     if (!releasedSpirit_ || corpseMapId_ == 0) return false;
     // Only if ghost is on the same map as their corpse
     if (currentMapId_ != corpseMapId_) return false;
-    // Must be within 40 yards (server also validates proximity)
-    float dx = movementInfo.x - corpseX_;
-    float dy = movementInfo.y - corpseY_;
+    // movementInfo.x/y are canonical (x=north=server_y, y=west=server_x).
+    // corpseX_/Y_ are raw server coords (x=west, y=north).
+    // Convert corpse to canonical before comparing.
+    float dx = movementInfo.x - corpseY_;  // canonical north - server.y
+    float dy = movementInfo.y - corpseX_;  // canonical west  - server.x
     float dz = movementInfo.z - corpseZ_;
     return (dx*dx + dy*dy + dz*dz) <= (40.0f * 40.0f);
 }

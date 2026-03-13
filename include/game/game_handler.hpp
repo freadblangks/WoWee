@@ -1106,8 +1106,10 @@ public:
     /** Distance (yards) from ghost to corpse, or -1 if no corpse data. */
     float getCorpseDistance() const {
         if (corpseMapId_ == 0 || currentMapId_ != corpseMapId_) return -1.0f;
-        float dx = movementInfo.x - corpseX_;
-        float dy = movementInfo.y - corpseY_;
+        // movementInfo is canonical (x=north=server_y, y=west=server_x);
+        // corpse coords are raw server (x=west, y=north) — swap to compare.
+        float dx = movementInfo.x - corpseY_;
+        float dy = movementInfo.y - corpseX_;
         float dz = movementInfo.z - corpseZ_;
         return std::sqrt(dx*dx + dy*dy + dz*dz);
     }

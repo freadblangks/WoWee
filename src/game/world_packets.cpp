@@ -3971,13 +3971,27 @@ network::Packet LootReleasePacket::build(uint64_t lootGuid) {
 
 bool LootResponseParser::parse(network::Packet& packet, LootResponseData& data, bool isWotlkFormat) {
     data = LootResponseData{};
-    if (packet.getSize() - packet.getReadPos() < 14) {
-        LOG_WARNING("LootResponseParser: packet too short");
+    size_t avail = packet.getSize() - packet.getReadPos();
+
+    // Minimum is guid(8)+lootType(1) = 9 bytes.  Servers send a short packet with
+    // lootType=0 (LOOT_NONE) when loot is unavailable (e.g. chest not yet opened,
+    // needs a key, or another player is looting).  We treat this as an empty-loot
+    // signal and return false so the caller knows not to open the loot window.
+    if (avail < 9) {
+        LOG_WARNING("LootResponseParser: packet too short (", avail, " bytes)");
         return false;
     }
 
     data.lootGuid = packet.readUInt64();
     data.lootType = packet.readUInt8();
+
+    // Short failure packet — no gold/item data follows.
+    avail = packet.getSize() - packet.getReadPos();
+    if (avail < 5) {
+        LOG_DEBUG("LootResponseParser: lootType=", (int)data.lootType, " (empty/failure response)");
+        return false;
+    }
+
     data.gold = packet.readUInt32();
     uint8_t itemCount = packet.readUInt8();
 

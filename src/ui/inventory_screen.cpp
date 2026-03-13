@@ -1931,6 +1931,38 @@ void InventoryScreen::renderStatsPanel(game::Inventory& inventory, uint32_t play
                     ImGui::TextColored(cyan, "Resilience: %d", resilR);
             }
         }
+
+        // Movement speeds (always show when non-default)
+        {
+            constexpr float kBaseRun    = 7.0f;
+            constexpr float kBaseFlight = 7.0f;
+            float runSpeed    = gh->getServerRunSpeed();
+            float flightSpeed = gh->getServerFlightSpeed();
+            float swimSpeed   = gh->getServerSwimSpeed();
+
+            bool showRun    = runSpeed    > 0.0f && std::fabs(runSpeed    - kBaseRun)    > 0.05f;
+            bool showFlight = flightSpeed > 0.0f && std::fabs(flightSpeed - kBaseFlight) > 0.05f;
+            bool showSwim   = swimSpeed   > 0.0f && std::fabs(swimSpeed   - 4.722f)      > 0.05f;
+
+            if (showRun || showFlight || showSwim) {
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.0f, 1.0f), "Movement");
+                ImVec4 speedColor(0.6f, 1.0f, 0.8f, 1.0f);
+                if (showRun) {
+                    float pct = (runSpeed / kBaseRun) * 100.0f;
+                    ImGui::TextColored(speedColor, "Run Speed: %.1f%%", pct);
+                }
+                if (showFlight) {
+                    float pct = (flightSpeed / kBaseFlight) * 100.0f;
+                    ImGui::TextColored(speedColor, "Flight Speed: %.1f%%", pct);
+                }
+                if (showSwim) {
+                    float pct = (swimSpeed / 4.722f) * 100.0f;
+                    ImGui::TextColored(speedColor, "Swim Speed: %.1f%%", pct);
+                }
+            }
+        }
     }
 }
 

@@ -4669,6 +4669,12 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                 return;
             }
 
+            if (cmdLower == "clear") {
+                gameHandler.clearChatHistory();
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
             // /invite command
             if (cmdLower == "invite" && spacePos != std::string::npos) {
                 std::string targetName = command.substr(spacePos + 1);

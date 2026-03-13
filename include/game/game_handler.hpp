@@ -283,6 +283,7 @@ public:
      * @return Vector of chat messages
      */
     const std::deque<MessageChatData>& getChatHistory() const { return chatHistory; }
+    void clearChatHistory() { chatHistory.clear(); }
 
     /**
      * Add a locally-generated chat message (e.g., emote feedback)

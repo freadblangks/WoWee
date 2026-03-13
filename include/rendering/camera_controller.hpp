@@ -162,7 +162,7 @@ private:
 
     // Mouse settings
     float mouseSensitivity = 0.2f;
-    bool invertMouse = false;
+    bool invertMouse = true;
     bool mouseButtonDown = false;
     bool leftMouseDown = false;
     bool rightMouseDown = false;

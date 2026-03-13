@@ -21,9 +21,7 @@ vec3 fsrFetch(vec2 p, vec2 off) {
 }
 
 void main() {
-    // Undo the vertex shader Y flip (postprocess.vert flips for Vulkan overlay,
-    // but we need standard UV coords for texture sampling)
-    vec2 tc = vec2(TexCoord.x, 1.0 - TexCoord.y);
+    vec2 tc = TexCoord;
 
     // Map output pixel to input space
     vec2 pp = tc * fsr.con2.xy; // output pixel position

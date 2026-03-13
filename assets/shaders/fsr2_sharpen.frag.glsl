@@ -10,9 +10,7 @@ layout(push_constant) uniform PushConstants {
 } pc;
 
 void main() {
-    // Undo the vertex shader Y flip (postprocess.vert flips for Vulkan overlay,
-    // but we need standard UV coords for texture sampling)
-    vec2 tc = vec2(TexCoord.x, 1.0 - TexCoord.y);
+    vec2 tc = TexCoord;
 
     vec2 texelSize = pc.params.xy;
     float sharpness = pc.params.z;

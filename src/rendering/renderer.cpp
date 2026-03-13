@@ -3865,7 +3865,13 @@ void Renderer::setFSREnabled(bool enabled) {
     if (fsr_.enabled == enabled) return;
     fsr_.enabled = enabled;
 
-    if (!enabled) {
+    if (enabled) {
+        // FSR1 upscaling renders its own AA — disable MSAA to avoid redundant work
+        if (vkCtx && vkCtx->getMsaaSamples() > VK_SAMPLE_COUNT_1_BIT) {
+            pendingMsaaSamples_ = VK_SAMPLE_COUNT_1_BIT;
+            msaaChangePending_ = true;
+        }
+    } else {
         // Defer destruction to next beginFrame() — can't destroy mid-render
         fsr_.needsRecreate = true;
     }

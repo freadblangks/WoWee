@@ -5044,7 +5044,7 @@ void Renderer::renderFXAAPass() {
     vkCmdBindDescriptorSets(currentCmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                             fxaa_.pipelineLayout, 0, 1, &fxaa_.descSet, 0, nullptr);
 
-    // Pass rcpFrame + sharpness (vec4, 16 bytes).
+    // Pass rcpFrame + sharpness + desaturate (vec4, 16 bytes).
     // When FSR2/FSR3 is active alongside FXAA, forward FSR2's sharpness so the
     // post-FXAA unsharp-mask step restores the crispness that FXAA's blur removes.
     float sharpness = fsr2_.enabled ? fsr2_.sharpness : 0.0f;
@@ -5052,7 +5052,7 @@ void Renderer::renderFXAAPass() {
         1.0f / static_cast<float>(ext.width),
         1.0f / static_cast<float>(ext.height),
         sharpness,
-        0.0f
+        ghostMode_ ? 1.0f : 0.0f  // desaturate: 1=ghost grayscale, 0=normal
     };
     vkCmdPushConstants(currentCmd, fxaa_.pipelineLayout,
                        VK_SHADER_STAGE_FRAGMENT_BIT, 0, 16, pc);
@@ -5091,6 +5091,9 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
     lastTerrainRenderMs = 0.0;
     lastWMORenderMs = 0.0;
     lastM2RenderMs = 0.0;
+
+    // Cache ghost state for use in overlay and FXAA passes this frame.
+    ghostMode_ = (gameHandler && gameHandler->isPlayerGhost());
 
     uint32_t frameIdx = vkCtx->getCurrentFrame();
     VkDescriptorSet perFrameSet = perFrameDescSets[frameIdx];
@@ -5237,6 +5240,12 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
                     renderOverlay(tint, cmd);
                 }
             }
+            // Ghost mode desaturation overlay (non-FXAA path approximation).
+            // When FXAA is active the FXAA shader applies true per-pixel desaturation;
+            // otherwise a high-opacity gray overlay gives a similar washed-out effect.
+            if (ghostMode_ && overlayPipeline && !fxaa_.enabled) {
+                renderOverlay(glm::vec4(0.5f, 0.5f, 0.55f, 0.82f), cmd);
+            }
             if (minimap && minimap->isEnabled() && camera && window) {
                 glm::vec3 minimapCenter = camera->getPosition();
                 if (cameraController && cameraController->isThirdPerson())
@@ -5368,6 +5377,10 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
                     : glm::vec4(0.03f, 0.09f, 0.18f, fogStrength);
                 renderOverlay(tint);
             }
+        }
+        // Ghost mode desaturation overlay (non-FXAA path approximation).
+        if (ghostMode_ && overlayPipeline && !fxaa_.enabled) {
+            renderOverlay(glm::vec4(0.5f, 0.5f, 0.55f, 0.82f));
         }
         if (minimap && minimap->isEnabled() && camera && window) {
             glm::vec3 minimapCenter = camera->getPosition();

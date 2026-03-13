@@ -638,6 +638,8 @@ private:
     bool terrainEnabled = true;
     bool terrainLoaded = false;
 
+    bool ghostMode_ = false;  // set each frame from gameHandler->isPlayerGhost()
+
     // CPU timing stats (last frame/update).
     double lastUpdateMs = 0.0;
     double lastRenderMs = 0.0;

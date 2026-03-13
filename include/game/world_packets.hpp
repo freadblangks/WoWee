@@ -948,6 +948,21 @@ public:
 };
 
 // ============================================================
+// Action Bar
+// ============================================================
+
+/** CMSG_SET_ACTION_BUTTON packet builder */
+class SetActionButtonPacket {
+public:
+    // button:   0-based slot index
+    // type:     ActionBarSlot::Type (SPELL=0, ITEM=1, MACRO=2, EMPTY=0)
+    // id:       spellId, itemId, or macroId (0 to clear)
+    // isClassic: true for Vanilla/Turtle format (5-byte payload),
+    //            false for TBC/WotLK (5-byte packed uint32)
+    static network::Packet build(uint8_t button, uint8_t type, uint32_t id, bool isClassic);
+};
+
+// ============================================================
 // Display Toggles
 // ============================================================
 

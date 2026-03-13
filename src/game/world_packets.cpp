@@ -1906,6 +1906,42 @@ network::Packet StandStateChangePacket::build(uint8_t state) {
 }
 
 // ============================================================
+// Action Bar
+// ============================================================
+
+network::Packet SetActionButtonPacket::build(uint8_t button, uint8_t type, uint32_t id, bool isClassic) {
+    // Classic/Turtle (1.12): uint8 button + uint16 id + uint8 type + uint8 misc(0)
+    //   type encoding: 0=spell, 1=item, 64=macro
+    // TBC/WotLK:       uint8 button + uint32 packed (type<<24 | id)
+    //   type encoding: 0x00=spell, 0x80=item, 0x40=macro
+    //   packed=0 means clear the slot
+    network::Packet packet(wireOpcode(Opcode::CMSG_SET_ACTION_BUTTON));
+    packet.writeUInt8(button);
+    if (isClassic) {
+        // Classic: 16-bit id, 8-bit type code, 8-bit misc
+        // Map ActionBarSlot::Type (0=EMPTY,1=SPELL,2=ITEM,3=MACRO) → classic type byte
+        uint8_t classicType = 0; // 0 = spell
+        if (type == 2 /* ITEM */)  classicType = 1;
+        if (type == 3 /* MACRO */) classicType = 64;
+        packet.writeUInt16(static_cast<uint16_t>(id));
+        packet.writeUInt8(classicType);
+        packet.writeUInt8(0); // misc
+        LOG_DEBUG("Built CMSG_SET_ACTION_BUTTON (Classic): button=", (int)button,
+                  " id=", id, " type=", (int)classicType);
+    } else {
+        // TBC/WotLK: type in bits 24–31, id in bits 0–23; packed=0 clears slot
+        uint8_t packedType = 0x00; // spell
+        if (type == 2 /* ITEM */)  packedType = 0x80;
+        if (type == 3 /* MACRO */) packedType = 0x40;
+        uint32_t packed = (id == 0) ? 0 : (static_cast<uint32_t>(packedType) << 24) | (id & 0x00FFFFFF);
+        packet.writeUInt32(packed);
+        LOG_DEBUG("Built CMSG_SET_ACTION_BUTTON (TBC/WotLK): button=", (int)button,
+                  " packed=0x", std::hex, packed, std::dec);
+    }
+    return packet;
+}
+
+// ============================================================
 // Display Toggles
 // ============================================================
 

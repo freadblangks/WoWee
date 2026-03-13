@@ -16101,6 +16101,16 @@ void GameHandler::setActionBarSlot(int slot, ActionBarSlot::Type type, uint32_t 
         queryItemInfo(id, 0);
     }
     saveCharacterConfig();
+    // Notify the server so the action bar persists across relogs.
+    if (state == WorldState::IN_WORLD && socket) {
+        const bool classic = isClassicLikeExpansion();
+        auto pkt = SetActionButtonPacket::build(
+            static_cast<uint8_t>(slot),
+            static_cast<uint8_t>(type),
+            id,
+            classic);
+        socket->send(pkt);
+    }
 }
 
 float GameHandler::getSpellCooldown(uint32_t spellId) const {

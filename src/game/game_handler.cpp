@@ -5462,7 +5462,9 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     while (auraList->size() <= slot) auraList->push_back(AuraSlot{});
                     AuraSlot& a = (*auraList)[slot];
                     a.spellId      = spellId;
-                    a.flags        = flags;
+                    // TBC uses same flag convention as Classic: 0x02=harmful, 0x04=beneficial.
+                    // Normalize to WotLK SMSG_AURA_UPDATE convention: 0x80=debuff, 0=buff.
+                    a.flags        = (flags & 0x02) ? 0x80u : 0u;
                     a.durationMs   = (durationMs == 0xFFFFFFFF) ? -1 : static_cast<int32_t>(durationMs);
                     a.maxDurationMs= (maxDurMs   == 0xFFFFFFFF) ? -1 : static_cast<int32_t>(maxDurMs);
                     a.receivedAtMs = nowMs;

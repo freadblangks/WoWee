@@ -10266,7 +10266,18 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                         playerDead_ = true;
                                         releasedSpirit_ = false;
                                         stopAutoAttack();
-                                        LOG_INFO("Player died!");
+                                        // Cache death position as corpse location.
+                                        // Classic WoW does not send SMSG_DEATH_RELEASE_LOC, so
+                                        // this is the primary source for canReclaimCorpse().
+                                        // movementInfo is canonical (x=north, y=west); corpseX_/Y_
+                                        // are raw server coords (x=west, y=north) — swap axes.
+                                        corpseX_     = movementInfo.y;   // canonical west  = server X
+                                        corpseY_     = movementInfo.x;   // canonical north = server Y
+                                        corpseZ_     = movementInfo.z;
+                                        corpseMapId_ = currentMapId_;
+                                        LOG_INFO("Player died! Corpse position cached at server=(",
+                                                 corpseX_, ",", corpseY_, ",", corpseZ_,
+                                                 ") map=", corpseMapId_);
                                     }
                                     if (entity->getType() == ObjectType::UNIT && npcDeathCallback_) {
                                         npcDeathCallback_(block.guid);
@@ -10301,7 +10312,11 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                     if (!wasDead && nowDead) {
                                         playerDead_ = true;
                                         releasedSpirit_ = false;
-                                        LOG_INFO("Player died (dynamic flags)");
+                                        corpseX_     = movementInfo.y;
+                                        corpseY_     = movementInfo.x;
+                                        corpseZ_     = movementInfo.z;
+                                        corpseMapId_ = currentMapId_;
+                                        LOG_INFO("Player died (dynamic flags). Corpse cached map=", corpseMapId_);
                                     } else if (wasDead && !nowDead) {
                                         playerDead_ = false;
                                         releasedSpirit_ = false;
@@ -10575,6 +10590,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                     playerDead_ = false;
                                     repopPending_ = false;
                                     resurrectPending_ = false;
+                                    corpseMapId_ = 0;  // corpse reclaimed
                                     LOG_INFO("Player resurrected (PLAYER_FLAGS ghost cleared)");
                                     if (ghostStateCallback_) ghostStateCallback_(false);
                                 }
@@ -19390,6 +19406,7 @@ void GameHandler::handleNewWorld(network::Packet& packet) {
         repopPending_           = false;
         pendingSpiritHealerGuid_ = 0;
         resurrectCasterGuid_    = 0;
+        corpseMapId_            = 0;
         hostileAttackers_.clear();
         stopAutoAttack();
         tabCycleStale = true;

@@ -2196,17 +2196,19 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // uint64 binderGuid + uint32 mapId + uint32 zoneId
             if (packet.getSize() - packet.getReadPos() < 16) break;
             /*uint64_t binderGuid =*/ packet.readUInt64();
-            uint32_t mapId  = packet.readUInt32();
+            /*uint32_t mapId =*/ packet.readUInt32();
             uint32_t zoneId = packet.readUInt32();
-            char buf[128];
-            std::snprintf(buf, sizeof(buf),
-                          "Your home location has been set (map %u, zone %u).", mapId, zoneId);
-            addSystemChatMessage(buf);
+            std::string pbMsg = "Your home location has been set";
+            std::string zoneName = getAreaName(zoneId);
+            if (!zoneName.empty())
+                pbMsg += " to " + zoneName;
+            pbMsg += '.';
+            addSystemChatMessage(pbMsg);
             break;
         }
         case Opcode::SMSG_BINDER_CONFIRM: {
-            // uint64 npcGuid — server confirming bind point has been set
-            addSystemChatMessage("This innkeeper is now your home location.");
+            // uint64 npcGuid — fires just before SMSG_PLAYERBOUND; PLAYERBOUND shows
+            // the zone name so this confirm is redundant. Consume silently.
             packet.setReadPos(packet.getSize());
             break;
         }
@@ -3529,7 +3531,12 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     bindPointCallback_(data.mapId, canonical.x, canonical.y, canonical.z);
                 }
                 if (wasSet) {
-                    addSystemChatMessage("Your home has been set.");
+                    std::string bindMsg = "Your home has been set";
+                    std::string zoneName = getAreaName(data.zoneId);
+                    if (!zoneName.empty())
+                        bindMsg += " to " + zoneName;
+                    bindMsg += '.';
+                    addSystemChatMessage(bindMsg);
                 }
             } else {
                 LOG_WARNING("Failed to parse SMSG_BINDPOINTUPDATE");
@@ -12033,6 +12040,11 @@ void GameHandler::handleDuelRequested(network::Packet& packet) {
     auto entity = entityManager.getEntity(duelChallengerGuid_);
     if (auto* unit = dynamic_cast<Unit*>(entity.get())) {
         duelChallengerName_ = unit->getName();
+    }
+    if (duelChallengerName_.empty()) {
+        auto nit = playerNameCache.find(duelChallengerGuid_);
+        if (nit != playerNameCache.end())
+            duelChallengerName_ = nit->second;
     }
     if (duelChallengerName_.empty()) {
         char tmp[32];

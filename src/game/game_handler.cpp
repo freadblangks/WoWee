@@ -11228,10 +11228,46 @@ void GameHandler::handleChannelNotify(network::Packet& packet) {
             }
             break;
         }
-        case ChannelNotifyType::NOT_IN_AREA: {
+        case ChannelNotifyType::NOT_IN_AREA:
+            addSystemChatMessage("You must be in the area to join '" + data.channelName + "'.");
             LOG_DEBUG("Cannot join channel ", data.channelName, " (not in area)");
             break;
-        }
+        case ChannelNotifyType::WRONG_PASSWORD:
+            addSystemChatMessage("Wrong password for channel '" + data.channelName + "'.");
+            break;
+        case ChannelNotifyType::NOT_MEMBER:
+            addSystemChatMessage("You are not in channel '" + data.channelName + "'.");
+            break;
+        case ChannelNotifyType::NOT_MODERATOR:
+            addSystemChatMessage("You are not a moderator of '" + data.channelName + "'.");
+            break;
+        case ChannelNotifyType::MUTED:
+            addSystemChatMessage("You are muted in channel '" + data.channelName + "'.");
+            break;
+        case ChannelNotifyType::BANNED:
+            addSystemChatMessage("You are banned from channel '" + data.channelName + "'.");
+            break;
+        case ChannelNotifyType::THROTTLED:
+            addSystemChatMessage("Channel '" + data.channelName + "' is throttled. Please wait.");
+            break;
+        case ChannelNotifyType::NOT_IN_LFG:
+            addSystemChatMessage("You must be in a LFG queue to join '" + data.channelName + "'.");
+            break;
+        case ChannelNotifyType::PLAYER_KICKED:
+            addSystemChatMessage("A player was kicked from '" + data.channelName + "'.");
+            break;
+        case ChannelNotifyType::PASSWORD_CHANGED:
+            addSystemChatMessage("Password for '" + data.channelName + "' changed.");
+            break;
+        case ChannelNotifyType::OWNER_CHANGED:
+            addSystemChatMessage("Owner of '" + data.channelName + "' changed.");
+            break;
+        case ChannelNotifyType::NOT_OWNER:
+            addSystemChatMessage("You are not the owner of '" + data.channelName + "'.");
+            break;
+        case ChannelNotifyType::INVALID_NAME:
+            addSystemChatMessage("Invalid channel name '" + data.channelName + "'.");
+            break;
         default:
             LOG_DEBUG("Channel notify type ", static_cast<int>(data.notifyType),
                      " for channel ", data.channelName);

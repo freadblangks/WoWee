@@ -8197,6 +8197,8 @@ void GameHandler::selectCharacter(uint64_t characterGuid) {
     std::fill(std::begin(playerStats_), std::end(playerStats_), -1);
     playerMeleeAP_ = -1;
     playerRangedAP_ = -1;
+    std::fill(std::begin(playerSpellDmgBonus_), std::end(playerSpellDmgBonus_), -1);
+    playerHealBonus_ = -1;
     playerDodgePct_ = -1.0f;
     playerParryPct_ = -1.0f;
     playerBlockPct_ = -1.0f;
@@ -10385,6 +10387,8 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     };
                     const uint16_t ufMeleeAP   = fieldIndex(UF::UNIT_FIELD_ATTACK_POWER);
                     const uint16_t ufRangedAP  = fieldIndex(UF::UNIT_FIELD_RANGED_ATTACK_POWER);
+                    const uint16_t ufSpDmg1    = fieldIndex(UF::PLAYER_FIELD_MOD_DAMAGE_DONE_POS);
+                    const uint16_t ufHealBonus = fieldIndex(UF::PLAYER_FIELD_MOD_HEALING_DONE_POS);
                     const uint16_t ufBlockPct  = fieldIndex(UF::PLAYER_BLOCK_PERCENTAGE);
                     const uint16_t ufDodgePct  = fieldIndex(UF::PLAYER_DODGE_PERCENTAGE);
                     const uint16_t ufParryPct  = fieldIndex(UF::PLAYER_PARRY_PERCENTAGE);
@@ -10429,6 +10433,10 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         }
                         else if (ufMeleeAP  != 0xFFFF && key == ufMeleeAP)  { playerMeleeAP_  = static_cast<int32_t>(val); }
                         else if (ufRangedAP != 0xFFFF && key == ufRangedAP) { playerRangedAP_ = static_cast<int32_t>(val); }
+                        else if (ufSpDmg1   != 0xFFFF && key >= ufSpDmg1 && key < ufSpDmg1 + 7) {
+                            playerSpellDmgBonus_[key - ufSpDmg1] = static_cast<int32_t>(val);
+                        }
+                        else if (ufHealBonus != 0xFFFF && key == ufHealBonus) { playerHealBonus_ = static_cast<int32_t>(val); }
                         else if (ufBlockPct != 0xFFFF && key == ufBlockPct) { std::memcpy(&playerBlockPct_, &val, 4); }
                         else if (ufDodgePct != 0xFFFF && key == ufDodgePct) { std::memcpy(&playerDodgePct_, &val, 4); }
                         else if (ufParryPct != 0xFFFF && key == ufParryPct) { std::memcpy(&playerParryPct_, &val, 4); }
@@ -10799,6 +10807,8 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         };
                         const uint16_t ufMeleeAPV  = fieldIndex(UF::UNIT_FIELD_ATTACK_POWER);
                         const uint16_t ufRangedAPV = fieldIndex(UF::UNIT_FIELD_RANGED_ATTACK_POWER);
+                        const uint16_t ufSpDmg1V   = fieldIndex(UF::PLAYER_FIELD_MOD_DAMAGE_DONE_POS);
+                        const uint16_t ufHealBonusV= fieldIndex(UF::PLAYER_FIELD_MOD_HEALING_DONE_POS);
                         const uint16_t ufBlockPctV = fieldIndex(UF::PLAYER_BLOCK_PERCENTAGE);
                         const uint16_t ufDodgePctV = fieldIndex(UF::PLAYER_DODGE_PERCENTAGE);
                         const uint16_t ufParryPctV = fieldIndex(UF::PLAYER_PARRY_PERCENTAGE);
@@ -10872,6 +10882,10 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             }
                             else if (ufMeleeAPV  != 0xFFFF && key == ufMeleeAPV)  { playerMeleeAP_  = static_cast<int32_t>(val); }
                             else if (ufRangedAPV != 0xFFFF && key == ufRangedAPV) { playerRangedAP_ = static_cast<int32_t>(val); }
+                            else if (ufSpDmg1V   != 0xFFFF && key >= ufSpDmg1V && key < ufSpDmg1V + 7) {
+                                playerSpellDmgBonus_[key - ufSpDmg1V] = static_cast<int32_t>(val);
+                            }
+                            else if (ufHealBonusV != 0xFFFF && key == ufHealBonusV) { playerHealBonus_ = static_cast<int32_t>(val); }
                             else if (ufBlockPctV != 0xFFFF && key == ufBlockPctV) { std::memcpy(&playerBlockPct_, &val, 4); }
                             else if (ufDodgePctV != 0xFFFF && key == ufDodgePctV) { std::memcpy(&playerDodgePct_, &val, 4); }
                             else if (ufParryPctV != 0xFFFF && key == ufParryPctV) { std::memcpy(&playerParryPct_, &val, 4); }

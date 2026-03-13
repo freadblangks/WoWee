@@ -1780,9 +1780,11 @@ void InventoryScreen::renderStatsPanel(game::Inventory& inventory, uint32_t play
 
     // Server-authoritative combat stats (WotLK update fields — only shown when received)
     if (gh) {
-        int32_t meleeAP  = gh->getMeleeAttackPower();
-        int32_t rangedAP = gh->getRangedAttackPower();
-        float dodgePct   = gh->getDodgePct();
+        int32_t meleeAP   = gh->getMeleeAttackPower();
+        int32_t rangedAP  = gh->getRangedAttackPower();
+        int32_t spellPow  = gh->getSpellPower();
+        int32_t healPow   = gh->getHealingPower();
+        float dodgePct    = gh->getDodgePct();
         float parryPct   = gh->getParryPct();
         float blockPct   = gh->getBlockPct();
         float critPct    = gh->getCritPct();
@@ -1795,7 +1797,7 @@ void InventoryScreen::renderStatsPanel(game::Inventory& inventory, uint32_t play
         int32_t armorPenR   = gh->getCombatRating(24);
         int32_t resilR      = gh->getCombatRating(14);  // CR_CRIT_TAKEN_MELEE = Resilience
 
-        bool hasAny = (meleeAP >= 0 || dodgePct >= 0.0f || parryPct >= 0.0f ||
+        bool hasAny = (meleeAP >= 0 || spellPow >= 0 || dodgePct >= 0.0f || parryPct >= 0.0f ||
                        blockPct >= 0.0f || critPct >= 0.0f || hitRating >= 0);
         if (hasAny) {
             ImGui::Spacing();
@@ -1805,6 +1807,9 @@ void InventoryScreen::renderStatsPanel(game::Inventory& inventory, uint32_t play
             if (meleeAP  >= 0) ImGui::TextColored(cyan, "Attack Power: %d", meleeAP);
             if (rangedAP >= 0 && rangedAP != meleeAP)
                 ImGui::TextColored(cyan, "Ranged Attack Power: %d", rangedAP);
+            if (spellPow  >= 0) ImGui::TextColored(cyan, "Spell Power: %d", spellPow);
+            if (healPow   >= 0 && healPow != spellPow)
+                ImGui::TextColored(cyan, "Healing Power: %d", healPow);
             if (dodgePct  >= 0.0f) ImGui::TextColored(cyan, "Dodge: %.2f%%", dodgePct);
             if (parryPct  >= 0.0f) ImGui::TextColored(cyan, "Parry: %.2f%%", parryPct);
             if (blockPct  >= 0.0f) ImGui::TextColored(cyan, "Block: %.2f%%", blockPct);

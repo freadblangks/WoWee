@@ -63,6 +63,10 @@ enum class UF : uint16_t {
     PLAYER_EXPLORED_ZONES_START,
     PLAYER_CHOSEN_TITLE,         // Active title index (-1 = no title)
 
+    // Player spell power / healing bonus (WotLK: PRIVATE — int32 per school)
+    PLAYER_FIELD_MOD_DAMAGE_DONE_POS,  // Spell damage bonus (first of 7 schools)
+    PLAYER_FIELD_MOD_HEALING_DONE_POS, // Healing bonus
+
     // Player combat stats (WotLK: PRIVATE — float values)
     PLAYER_BLOCK_PERCENTAGE,         // Block chance %
     PLAYER_DODGE_PERCENTAGE,         // Dodge chance %

@@ -314,6 +314,18 @@ public:
     int32_t getMeleeAttackPower()  const { return playerMeleeAP_; }
     int32_t getRangedAttackPower() const { return playerRangedAP_; }
 
+    // Server-authoritative spell damage / healing bonus (WotLK: PLAYER_FIELD_MOD_*).
+    // getSpellPower returns the max damage bonus across magic schools 1-6 (Holy/Fire/Nature/Frost/Shadow/Arcane).
+    // Returns -1 if not yet received.
+    int32_t getSpellPower() const {
+        int32_t sp = -1;
+        for (int i = 1; i <= 6; ++i) {
+            if (playerSpellDmgBonus_[i] > sp) sp = playerSpellDmgBonus_[i];
+        }
+        return sp;
+    }
+    int32_t getHealingPower() const { return playerHealBonus_; }
+
     // Server-authoritative combat chance percentages (WotLK: PLAYER_* float fields).
     // Returns -1.0f if not yet received.
     float getDodgePct()  const { return playerDodgePct_; }
@@ -2820,6 +2832,8 @@ private:
     // WotLK secondary combat stats (-1 = not yet received)
     int32_t playerMeleeAP_    = -1;
     int32_t playerRangedAP_   = -1;
+    int32_t playerSpellDmgBonus_[7] = {-1,-1,-1,-1,-1,-1,-1}; // per school 0-6
+    int32_t playerHealBonus_  = -1;
     float playerDodgePct_     = -1.0f;
     float playerParryPct_     = -1.0f;
     float playerBlockPct_     = -1.0f;

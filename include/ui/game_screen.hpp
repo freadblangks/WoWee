@@ -641,6 +641,7 @@ public:
                      uint32_t str = 0, uint32_t agi = 0, uint32_t sta = 0,
                      uint32_t intel = 0, uint32_t spi = 0);
     void triggerAchievementToast(uint32_t achievementId, std::string name = {});
+    void openDungeonFinder() { showDungeonFinder_ = true; }
 };
 
 } // namespace ui

@@ -1625,6 +1625,10 @@ public:
     using TaxiFlightStartCallback = std::function<void()>;
     void setTaxiFlightStartCallback(TaxiFlightStartCallback cb) { taxiFlightStartCallback_ = std::move(cb); }
 
+    // Callback fired when server sends SMSG_OPEN_LFG_DUNGEON_FINDER (open dungeon finder UI)
+    using OpenLfgCallback = std::function<void()>;
+    void setOpenLfgCallback(OpenLfgCallback cb) { openLfgCallback_ = std::move(cb); }
+
     bool isMounted() const { return currentMountDisplayId_ != 0; }
     bool isHostileAttacker(uint64_t guid) const { return hostileAttackers_.count(guid) > 0; }
     float getServerRunSpeed() const { return serverRunSpeed_; }
@@ -2916,6 +2920,7 @@ private:
     TaxiPrecacheCallback taxiPrecacheCallback_;
     TaxiOrientationCallback taxiOrientationCallback_;
     TaxiFlightStartCallback taxiFlightStartCallback_;
+    OpenLfgCallback openLfgCallback_;
     uint32_t currentMountDisplayId_ = 0;
     uint32_t mountAuraSpellId_ = 0;       // Spell ID of the aura that caused mounting (for CMSG_CANCEL_AURA fallback)
     float serverRunSpeed_ = 7.0f;

@@ -5133,9 +5133,13 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_UPDATE_LFG_LIST:
         case Opcode::SMSG_LFG_PLAYER_INFO:
         case Opcode::SMSG_LFG_PARTY_INFO:
-        case Opcode::SMSG_OPEN_LFG_DUNGEON_FINDER:
             // Informational LFG packets not yet surfaced in UI — consume silently.
             packet.setReadPos(packet.getSize());
+            break;
+        case Opcode::SMSG_OPEN_LFG_DUNGEON_FINDER:
+            // Server requests client to open the dungeon finder UI
+            packet.setReadPos(packet.getSize()); // consume any payload
+            if (openLfgCallback_) openLfgCallback_();
             break;
 
         case Opcode::SMSG_ARENA_TEAM_COMMAND_RESULT:

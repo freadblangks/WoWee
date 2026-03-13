@@ -2550,6 +2550,11 @@ void Application::setupUICallbacks() {
         }
     });
 
+    // Open dungeon finder callback — server sends SMSG_OPEN_LFG_DUNGEON_FINDER
+    gameHandler->setOpenLfgCallback([this]() {
+        if (uiManager) uiManager->getGameScreen().openDungeonFinder();
+    });
+
     // Creature move callback (online mode) - update creature positions
     gameHandler->setCreatureMoveCallback([this](uint64_t guid, float x, float y, float z, uint32_t durationMs) {
         if (!renderer || !renderer->getCharacterRenderer()) return;

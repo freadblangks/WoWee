@@ -16174,6 +16174,19 @@ void GameHandler::handleInitialSpells(network::Packet& packet) {
     actionBar[11].id = 8690;  // Hearthstone
     loadCharacterConfig();
 
+    // Sync login-time cooldowns into action bar slot overlays.  Without this, spells
+    // that are still on cooldown when the player logs in show no cooldown timer on the
+    // action bar even though spellCooldowns has the right remaining time.
+    for (auto& slot : actionBar) {
+        if (slot.type == ActionBarSlot::SPELL && slot.id != 0) {
+            auto it = spellCooldowns.find(slot.id);
+            if (it != spellCooldowns.end() && it->second > 0.0f) {
+                slot.cooldownTotal     = it->second;
+                slot.cooldownRemaining = it->second;
+            }
+        }
+    }
+
     LOG_INFO("Learned ", knownSpells.size(), " spells");
 }
 

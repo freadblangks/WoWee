@@ -15555,7 +15555,9 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
     float sinB = 0.0f;
     if (minimap->isRotateWithCamera()) {
         glm::vec3 fwd = camera->getForward();
-        bearing = std::atan2(-fwd.x, fwd.y);
+        // Render space: +X=West, +Y=North. Camera fwd=(cos(yaw),sin(yaw)).
+        // Clockwise bearing from North: atan2(fwd.y, -fwd.x).
+        bearing = std::atan2(fwd.y, -fwd.x);
         cosB = std::cos(bearing);
         sinB = std::sin(bearing);
     }
@@ -15593,7 +15595,7 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         // The player is always at centerX, centerY on the minimap.
         // Draw a yellow arrow pointing in the player's facing direction.
         glm::vec3 fwd = camera->getForward();
-        float facing = std::atan2(-fwd.x, fwd.y); // bearing relative to north
+        float facing = std::atan2(fwd.y, -fwd.x); // clockwise bearing from North
         float cosF = std::cos(facing - bearing);
         float sinF = std::sin(facing - bearing);
         float arrowLen = 8.0f;

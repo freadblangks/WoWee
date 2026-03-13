@@ -5211,10 +5211,19 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // GM ticket status (new/updated); no ticket UI yet
             packet.setReadPos(packet.getSize());
             break;
-        case Opcode::SMSG_PLAYER_VEHICLE_DATA:
-            // Vehicle data update for player in vehicle; no vehicle UI yet
-            packet.setReadPos(packet.getSize());
+        case Opcode::SMSG_PLAYER_VEHICLE_DATA: {
+            // PackedGuid (player guid) + uint32 vehicleId
+            // vehicleId == 0 means the player left the vehicle
+            if (packet.getSize() - packet.getReadPos() >= 1) {
+                (void)UpdateObjectParser::readPackedGuid(packet); // player guid (unused)
+            }
+            if (packet.getSize() - packet.getReadPos() >= 4) {
+                vehicleId_ = packet.readUInt32();
+            } else {
+                vehicleId_ = 0;
+            }
             break;
+        }
         case Opcode::SMSG_SET_EXTRA_AURA_INFO_NEED_UPDATE:
             packet.setReadPos(packet.getSize());
             break;
@@ -6868,6 +6877,7 @@ void GameHandler::handleLoginVerifyWorld(network::Packet& packet) {
     taxiStartGrace_ = 0.0f;
     currentMountDisplayId_ = 0;
     taxiMountDisplayId_ = 0;
+    vehicleId_ = 0;
     if (mountCallback_) {
         mountCallback_(0);
     }
@@ -7891,6 +7901,14 @@ void GameHandler::sendPing() {
     socket->send(packet);
 }
 
+void GameHandler::sendRequestVehicleExit() {
+    if (state != WorldState::IN_WORLD || vehicleId_ == 0) return;
+    // CMSG_REQUEST_VEHICLE_EXIT has no payload — opcode only
+    network::Packet pkt(wireOpcode(Opcode::CMSG_REQUEST_VEHICLE_EXIT));
+    socket->send(pkt);
+    vehicleId_ = 0;  // Optimistically clear; server will confirm via SMSG_PLAYER_VEHICLE_DATA(0)
+}
+
 void GameHandler::sendMinimapPing(float wowX, float wowY) {
     if (state != WorldState::IN_WORLD) return;
 
@@ -8202,6 +8220,7 @@ void GameHandler::forceClearTaxiAndMovementState() {
     taxiMountActive_ = false;
     taxiMountDisplayId_ = 0;
     currentMountDisplayId_ = 0;
+    vehicleId_ = 0;
     resurrectPending_ = false;
     resurrectRequestPending_ = false;
     playerDead_ = false;

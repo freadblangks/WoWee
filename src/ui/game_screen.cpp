@@ -6968,6 +6968,38 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
         ImGui::PopStyleVar(4);
     }
 
+    // Vehicle exit button (WotLK): floating button above action bar when player is in a vehicle
+    if (gameHandler.isInVehicle()) {
+        const float btnW = 120.0f;
+        const float btnH = 32.0f;
+        const float btnX = (screenW - btnW) / 2.0f;
+        const float btnY = barY - btnH - 6.0f;
+
+        ImGui::SetNextWindowPos(ImVec2(btnX, btnY), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(btnW, btnH), ImGuiCond_Always);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4.0f, 4.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+        ImGuiWindowFlags vFlags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                                  ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
+                                  ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoBackground;
+        if (ImGui::Begin("##VehicleExit", nullptr, vFlags)) {
+            ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.6f, 0.1f, 0.1f, 0.9f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.4f, 0.0f, 0.0f, 1.0f));
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+            if (ImGui::Button("Leave Vehicle", ImVec2(btnW - 8.0f, btnH - 8.0f))) {
+                gameHandler.sendRequestVehicleExit();
+            }
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(3);
+        }
+        ImGui::End();
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar(3);
+    }
+
     // Handle action bar drag: render icon at cursor and detect drop outside
     if (actionBarDragSlot_ >= 0) {
         ImVec2 mousePos = ImGui::GetMousePos();

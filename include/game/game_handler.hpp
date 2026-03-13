@@ -1594,6 +1594,11 @@ public:
         return it != taxiNpcHasRoutes_.end() && it->second;
     }
 
+    // Vehicle (WotLK)
+    bool isInVehicle() const { return vehicleId_ != 0; }
+    uint32_t getVehicleId() const { return vehicleId_; }
+    void sendRequestVehicleExit();
+
     // Vendor
     void openVendor(uint64_t npcGuid);
     void closeVendor();
@@ -2535,6 +2540,9 @@ private:
         auto it = factionHostileMap_.find(factionTemplateId);
         return it != factionHostileMap_.end() ? it->second : true; // default hostile if unknown
     }
+
+    // Vehicle (WotLK): non-zero when player is seated in a vehicle
+    uint32_t vehicleId_ = 0;
 
     // Taxi / Flight Paths
     std::unordered_map<uint64_t, bool> taxiNpcHasRoutes_;  // guid -> has new/available routes

@@ -2,7 +2,7 @@
 
 // FXAA 3.11 — Fast Approximate Anti-Aliasing post-process pass.
 // Reads the resolved scene color and outputs a smoothed result.
-// Push constant: rcpFrame = vec2(1/width, 1/height).
+// Push constant: rcpFrame = vec2(1/width, 1/height), sharpness (0=off, 2=max), unused.
 
 layout(set = 0, binding = 0) uniform sampler2D uScene;
 
@@ -10,7 +10,9 @@ layout(location = 0) in vec2 TexCoord;
 layout(location = 0) out vec4 outColor;
 
 layout(push_constant) uniform PC {
-    vec2 rcpFrame;
+    vec2  rcpFrame;
+    float sharpness;  // 0 = no sharpen, 2 = max (matches FSR2 RCAS range)
+    float _pad;
 } pc;
 
 // Quality tuning
@@ -128,5 +130,20 @@ void main() {
     if ( horzSpan) finalUV.y += pixelOffsetFinal * lengthSign;
     if (!horzSpan) finalUV.x += pixelOffsetFinal * lengthSign;
 
-    outColor = vec4(texture(uScene, finalUV).rgb, 1.0);
+    vec3 fxaaResult = texture(uScene, finalUV).rgb;
+
+    // Post-FXAA contrast-adaptive sharpening (unsharp mask).
+    // Counteracts FXAA's sub-pixel blur when sharpness > 0.
+    if (pc.sharpness > 0.0) {
+        vec2 r = pc.rcpFrame;
+        vec3 blur = (texture(uScene, uv + vec2(-r.x, 0)).rgb
+                   + texture(uScene, uv + vec2( r.x, 0)).rgb
+                   + texture(uScene, uv + vec2(0, -r.y)).rgb
+                   + texture(uScene, uv + vec2(0,  r.y)).rgb) * 0.25;
+        // scale sharpness from [0,2] to a modest [0, 0.3] boost factor
+        float s = pc.sharpness * 0.15;
+        fxaaResult = clamp(fxaaResult + s * (fxaaResult - blur), 0.0, 1.0);
+    }
+
+    outColor = vec4(fxaaResult, 1.0);
 }

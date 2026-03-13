@@ -4968,11 +4968,11 @@ bool Renderer::initFXAAResources() {
     write.pImageInfo = &imgInfo;
     vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
 
-    // Pipeline layout — push constant holds vec2 rcpFrame
+    // Pipeline layout — push constant holds vec4(rcpFrame.xy, sharpness, pad)
     VkPushConstantRange pc{};
     pc.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     pc.offset = 0;
-    pc.size = 8;  // vec2
+    pc.size = 16;  // vec4
     VkPipelineLayoutCreateInfo plCI{};
     plCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     plCI.setLayoutCount = 1;
@@ -5044,19 +5044,31 @@ void Renderer::renderFXAAPass() {
     vkCmdBindDescriptorSets(currentCmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                             fxaa_.pipelineLayout, 0, 1, &fxaa_.descSet, 0, nullptr);
 
-    // Push rcpFrame = vec2(1/width, 1/height)
-    float rcpFrame[2] = {
+    // Pass rcpFrame + sharpness (vec4, 16 bytes).
+    // When FSR2/FSR3 is active alongside FXAA, forward FSR2's sharpness so the
+    // post-FXAA unsharp-mask step restores the crispness that FXAA's blur removes.
+    float sharpness = fsr2_.enabled ? fsr2_.sharpness : 0.0f;
+    float pc[4] = {
         1.0f / static_cast<float>(ext.width),
-        1.0f / static_cast<float>(ext.height)
+        1.0f / static_cast<float>(ext.height),
+        sharpness,
+        0.0f
     };
     vkCmdPushConstants(currentCmd, fxaa_.pipelineLayout,
-                       VK_SHADER_STAGE_FRAGMENT_BIT, 0, 8, rcpFrame);
+                       VK_SHADER_STAGE_FRAGMENT_BIT, 0, 16, pc);
 
     vkCmdDraw(currentCmd, 3, 1, 0, 0);  // fullscreen triangle
 }
 
 void Renderer::setFXAAEnabled(bool enabled) {
     if (fxaa_.enabled == enabled) return;
+    // FXAA is a post-process AA pass intended to supplement FSR temporal output.
+    // It conflicts with MSAA (which resolves AA during the scene render pass), so
+    // refuse to enable FXAA when hardware MSAA is active.
+    if (enabled && vkCtx && vkCtx->getMsaaSamples() > VK_SAMPLE_COUNT_1_BIT) {
+        LOG_INFO("FXAA: blocked while MSAA is active — disable MSAA first");
+        return;
+    }
     fxaa_.enabled = enabled;
     if (!enabled) {
         fxaa_.needsRecreate = true;  // defer destruction to next beginFrame()

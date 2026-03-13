@@ -4060,8 +4060,9 @@ void GameHandler::handlePacket(network::Packet& packet) {
                             break;
                         }
                     }
-                    if (newLevel > oldLevel && levelUpCallback_) {
-                        levelUpCallback_(newLevel);
+                    if (newLevel > oldLevel) {
+                        addSystemChatMessage("You have reached level " + std::to_string(newLevel) + "!");
+                        if (levelUpCallback_) levelUpCallback_(newLevel);
                     }
                 }
             }
@@ -6865,6 +6866,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
             if (packet.getSize() - packet.getReadPos() >= 4) {
                 uint32_t spellId = packet.readUInt32();
                 petSpellList_.push_back(spellId);
+                const std::string& sname = getSpellName(spellId);
+                addSystemChatMessage("Your pet has learned " + (sname.empty() ? "a new ability." : sname + "."));
                 LOG_DEBUG("SMSG_PET_LEARNED_SPELL: spellId=", spellId);
             }
             packet.setReadPos(packet.getSize());
@@ -6908,9 +6911,12 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_PET_DISMISS_SOUND:
         case Opcode::SMSG_PET_ACTION_SOUND:
         case Opcode::SMSG_PET_UNLEARN_CONFIRM:
-        case Opcode::SMSG_PET_NAME_INVALID:
         case Opcode::SMSG_PET_RENAMEABLE:
         case Opcode::SMSG_PET_UPDATE_COMBO_POINTS:
+            packet.setReadPos(packet.getSize());
+            break;
+        case Opcode::SMSG_PET_NAME_INVALID:
+            addSystemChatMessage("That pet name is invalid. Please choose a different name.");
             packet.setReadPos(packet.getSize());
             break;
 

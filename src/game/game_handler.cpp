@@ -20759,10 +20759,13 @@ void GameHandler::activateTaxi(uint32_t destNodeId) {
 
     {
         auto destIt = taxiNodes_.find(destNodeId);
-        if (destIt != taxiNodes_.end() && !destIt->second.name.empty())
+        if (destIt != taxiNodes_.end() && !destIt->second.name.empty()) {
+            taxiDestName_ = destIt->second.name;
             addSystemChatMessage("Requesting flight to " + destIt->second.name + "...");
-        else
+        } else {
+            taxiDestName_.clear();
             addSystemChatMessage("Taxi: requesting flight...");
+        }
     }
 
     // BFS to find path from startNode to destNodeId

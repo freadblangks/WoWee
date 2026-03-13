@@ -16681,6 +16681,25 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         }
     }
 
+    // Taxi flight indicator — shown while on a flight path
+    if (gameHandler.isOnTaxiFlight()) {
+        ImGui::SetNextWindowPos(ImVec2(indicatorX, nextIndicatorY), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(indicatorW, kIndicatorH), ImGuiCond_Always);
+        if (ImGui::Begin("##TaxiIndicator", nullptr, indicatorFlags)) {
+            const std::string& dest = gameHandler.getTaxiDestName();
+            float pulse = 0.7f + 0.3f * std::sin(static_cast<float>(ImGui::GetTime()) * 1.0f);
+            if (dest.empty()) {
+                ImGui::TextColored(ImVec4(0.6f, 0.85f, 1.0f, pulse), "\xe2\x9c\x88 In Flight");
+            } else {
+                char buf[64];
+                snprintf(buf, sizeof(buf), "\xe2\x9c\x88 \xe2\x86\x92 %s", dest.c_str());
+                ImGui::TextColored(ImVec4(0.6f, 0.85f, 1.0f, pulse), "%s", buf);
+            }
+        }
+        ImGui::End();
+        nextIndicatorY += kIndicatorH;
+    }
+
     // Latency indicator — centered at top of screen
     uint32_t latMs = gameHandler.getLatencyMs();
     if (showLatencyMeter_ && latMs > 0 && gameHandler.getState() == game::WorldState::IN_WORLD) {

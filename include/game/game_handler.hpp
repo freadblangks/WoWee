@@ -1873,6 +1873,7 @@ public:
     bool isTaxiMountActive() const { return taxiMountActive_; }
     bool isTaxiActivationPending() const { return taxiActivatePending_; }
     void forceClearTaxiAndMovementState();
+    const std::string& getTaxiDestName() const { return taxiDestName_; }
     const ShowTaxiNodesData& getTaxiData() const { return currentTaxiData_; }
     uint32_t getTaxiCurrentNode() const { return currentTaxiData_.nearestNode; }
 
@@ -2900,6 +2901,7 @@ private:
     ShowTaxiNodesData currentTaxiData_;
     uint64_t taxiNpcGuid_ = 0;
     bool onTaxiFlight_ = false;
+    std::string taxiDestName_;
     bool taxiMountActive_ = false;
     uint32_t taxiMountDisplayId_ = 0;
     bool taxiActivatePending_ = false;

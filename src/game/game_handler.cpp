@@ -3915,13 +3915,13 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     uint32_t res      = packet.readUInt32();
                     if (dmg > 0)
                         addCombatText(CombatTextEntry::PERIODIC_DAMAGE, static_cast<int32_t>(dmg),
-                                      spellId, isPlayerCaster);
+                                      spellId, isPlayerCaster, 0, casterGuid, victimGuid);
                     if (abs > 0)
                         addCombatText(CombatTextEntry::ABSORB, static_cast<int32_t>(abs),
-                                      spellId, isPlayerCaster);
+                                      spellId, isPlayerCaster, 0, casterGuid, victimGuid);
                     if (res > 0)
                         addCombatText(CombatTextEntry::RESIST, static_cast<int32_t>(res),
-                                      spellId, isPlayerCaster);
+                                      spellId, isPlayerCaster, 0, casterGuid, victimGuid);
                 } else if (auraType == 8 || auraType == 124 || auraType == 45) {
                     // Classic/TBC: heal(4)+maxHeal(4)+overHeal(4)                  = 12 bytes
                     // WotLK 3.3.5a: heal(4)+maxHeal(4)+overHeal(4)+absorbed(4)+isCrit(1) = 17 bytes
@@ -3937,10 +3937,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
                         /*uint8_t isCrit=*/ packet.readUInt8();
                     }
                     addCombatText(CombatTextEntry::PERIODIC_HEAL, static_cast<int32_t>(heal),
-                                  spellId, isPlayerCaster);
+                                  spellId, isPlayerCaster, 0, casterGuid, victimGuid);
                     if (hotAbs > 0)
                         addCombatText(CombatTextEntry::ABSORB, static_cast<int32_t>(hotAbs),
-                                      spellId, isPlayerCaster);
+                                      spellId, isPlayerCaster, 0, casterGuid, victimGuid);
                 } else if (auraType == 46 || auraType == 91) {
                     // OBS_MOD_POWER / PERIODIC_ENERGIZE: miscValue(powerType) + amount
                     // Common in WotLK: Replenishment, Mana Spring Totem, Divine Plea, etc.
@@ -3949,7 +3949,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     uint32_t amount = packet.readUInt32();
                     if ((isPlayerVictim || isPlayerCaster) && amount > 0)
                         addCombatText(CombatTextEntry::ENERGIZE, static_cast<int32_t>(amount),
-                                      spellId, isPlayerCaster, periodicPowerType);
+                                      spellId, isPlayerCaster, periodicPowerType, casterGuid, victimGuid);
                 } else if (auraType == 98) {
                     // PERIODIC_MANA_LEECH: miscValue(powerType) + amount + float multiplier
                     if (packet.getSize() - packet.getReadPos() < 12) break;
@@ -3959,7 +3959,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     // Show as periodic damage from victim's perspective (mana drained)
                     if (isPlayerVictim && amount > 0)
                         addCombatText(CombatTextEntry::PERIODIC_DAMAGE, static_cast<int32_t>(amount),
-                                      spellId, false);
+                                      spellId, false, 0, casterGuid, victimGuid);
                 } else {
                     // Unknown/untracked aura type — stop parsing this event safely
                     packet.setReadPos(packet.getSize());
@@ -14003,7 +14003,8 @@ void GameHandler::stopAutoAttack() {
     LOG_INFO("Stopping auto-attack");
 }
 
-void GameHandler::addCombatText(CombatTextEntry::Type type, int32_t amount, uint32_t spellId, bool isPlayerSource, uint8_t powerType) {
+void GameHandler::addCombatText(CombatTextEntry::Type type, int32_t amount, uint32_t spellId, bool isPlayerSource, uint8_t powerType,
+                                uint64_t srcGuid, uint64_t dstGuid) {
     CombatTextEntry entry;
     entry.type = type;
     entry.amount = amount;
@@ -14013,17 +14014,20 @@ void GameHandler::addCombatText(CombatTextEntry::Type type, int32_t amount, uint
     entry.powerType = powerType;
     combatText.push_back(entry);
 
-    // Persistent combat log
+    // Persistent combat log — use explicit GUIDs if provided, else fall back to
+    // player/current-target (the old behaviour for events without specific participants).
     CombatLogEntry log;
     log.type     = type;
     log.amount   = amount;
     log.spellId  = spellId;
     log.isPlayerSource = isPlayerSource;
     log.timestamp = std::time(nullptr);
-    std::string pname(lookupName(playerGuid));
-    std::string tname((targetGuid != 0) ? lookupName(targetGuid) : std::string());
-    log.sourceName = isPlayerSource ? pname : tname;
-    log.targetName = isPlayerSource ? tname : pname;
+    uint64_t effectiveSrc = (srcGuid != 0) ? srcGuid
+                          : (isPlayerSource ? playerGuid : targetGuid);
+    uint64_t effectiveDst = (dstGuid != 0) ? dstGuid
+                          : (isPlayerSource ? targetGuid : playerGuid);
+    log.sourceName = lookupName(effectiveSrc);
+    log.targetName = (effectiveDst != 0) ? lookupName(effectiveDst) : std::string{};
     if (combatLog_.size() >= MAX_COMBAT_LOG)
         combatLog_.pop_front();
     combatLog_.push_back(std::move(log));
@@ -16210,28 +16214,28 @@ void GameHandler::handleAttackerStateUpdate(network::Packet& packet) {
     }
 
     if (data.isMiss()) {
-        addCombatText(CombatTextEntry::MISS, 0, 0, isPlayerAttacker);
+        addCombatText(CombatTextEntry::MISS, 0, 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
     } else if (data.victimState == 1) {
-        addCombatText(CombatTextEntry::DODGE, 0, 0, isPlayerAttacker);
+        addCombatText(CombatTextEntry::DODGE, 0, 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
     } else if (data.victimState == 2) {
-        addCombatText(CombatTextEntry::PARRY, 0, 0, isPlayerAttacker);
+        addCombatText(CombatTextEntry::PARRY, 0, 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
     } else if (data.victimState == 4) {
         // VICTIMSTATE_BLOCKS: show reduced damage and the blocked amount
         if (data.totalDamage > 0)
-            addCombatText(CombatTextEntry::MELEE_DAMAGE, data.totalDamage, 0, isPlayerAttacker);
-        addCombatText(CombatTextEntry::BLOCK, static_cast<int32_t>(data.blocked), 0, isPlayerAttacker);
+            addCombatText(CombatTextEntry::MELEE_DAMAGE, data.totalDamage, 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
+        addCombatText(CombatTextEntry::BLOCK, static_cast<int32_t>(data.blocked), 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
     } else if (data.victimState == 5) {
         // VICTIMSTATE_EVADE: NPC evaded (out of combat zone). Show as miss.
-        addCombatText(CombatTextEntry::MISS, 0, 0, isPlayerAttacker);
+        addCombatText(CombatTextEntry::MISS, 0, 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
     } else if (data.victimState == 6) {
         // VICTIMSTATE_IS_IMMUNE: Target is immune to this attack.
-        addCombatText(CombatTextEntry::IMMUNE, 0, 0, isPlayerAttacker);
+        addCombatText(CombatTextEntry::IMMUNE, 0, 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
     } else if (data.victimState == 7) {
         // VICTIMSTATE_DEFLECT: Attack was deflected (e.g. shield slam reflect).
-        addCombatText(CombatTextEntry::MISS, 0, 0, isPlayerAttacker);
+        addCombatText(CombatTextEntry::MISS, 0, 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
     } else {
         auto type = data.isCrit() ? CombatTextEntry::CRIT_DAMAGE : CombatTextEntry::MELEE_DAMAGE;
-        addCombatText(type, data.totalDamage, 0, isPlayerAttacker);
+        addCombatText(type, data.totalDamage, 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
         // Show partial absorb/resist from sub-damage entries
         uint32_t totalAbsorbed = 0, totalResisted = 0;
         for (const auto& sub : data.subDamages) {
@@ -16239,9 +16243,9 @@ void GameHandler::handleAttackerStateUpdate(network::Packet& packet) {
             totalResisted += sub.resisted;
         }
         if (totalAbsorbed > 0)
-            addCombatText(CombatTextEntry::ABSORB, static_cast<int32_t>(totalAbsorbed), 0, isPlayerAttacker);
+            addCombatText(CombatTextEntry::ABSORB, static_cast<int32_t>(totalAbsorbed), 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
         if (totalResisted > 0)
-            addCombatText(CombatTextEntry::RESIST, static_cast<int32_t>(totalResisted), 0, isPlayerAttacker);
+            addCombatText(CombatTextEntry::RESIST, static_cast<int32_t>(totalResisted), 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
     }
 
     (void)isPlayerTarget;
@@ -16262,11 +16266,11 @@ void GameHandler::handleSpellDamageLog(network::Packet& packet) {
 
     auto type = data.isCrit ? CombatTextEntry::CRIT_DAMAGE : CombatTextEntry::SPELL_DAMAGE;
     if (data.damage > 0)
-        addCombatText(type, static_cast<int32_t>(data.damage), data.spellId, isPlayerSource);
+        addCombatText(type, static_cast<int32_t>(data.damage), data.spellId, isPlayerSource, 0, data.attackerGuid, data.targetGuid);
     if (data.absorbed > 0)
-        addCombatText(CombatTextEntry::ABSORB, static_cast<int32_t>(data.absorbed), data.spellId, isPlayerSource);
+        addCombatText(CombatTextEntry::ABSORB, static_cast<int32_t>(data.absorbed), data.spellId, isPlayerSource, 0, data.attackerGuid, data.targetGuid);
     if (data.resisted > 0)
-        addCombatText(CombatTextEntry::RESIST, static_cast<int32_t>(data.resisted), data.spellId, isPlayerSource);
+        addCombatText(CombatTextEntry::RESIST, static_cast<int32_t>(data.resisted), data.spellId, isPlayerSource, 0, data.attackerGuid, data.targetGuid);
 }
 
 void GameHandler::handleSpellHealLog(network::Packet& packet) {
@@ -16278,9 +16282,9 @@ void GameHandler::handleSpellHealLog(network::Packet& packet) {
     if (!isPlayerSource && !isPlayerTarget) return;  // Not our combat
 
     auto type = data.isCrit ? CombatTextEntry::CRIT_HEAL : CombatTextEntry::HEAL;
-    addCombatText(type, static_cast<int32_t>(data.heal), data.spellId, isPlayerSource);
+    addCombatText(type, static_cast<int32_t>(data.heal), data.spellId, isPlayerSource, 0, data.casterGuid, data.targetGuid);
     if (data.absorbed > 0)
-        addCombatText(CombatTextEntry::ABSORB, static_cast<int32_t>(data.absorbed), data.spellId, isPlayerSource);
+        addCombatText(CombatTextEntry::ABSORB, static_cast<int32_t>(data.absorbed), data.spellId, isPlayerSource, 0, data.casterGuid, data.targetGuid);
 }
 
 // ============================================================

@@ -16292,6 +16292,12 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
             meleeSwingCallback_();
         }
 
+        // Capture cast state before clearing: SMSG_SPELL_GO for instant casts and
+        // proc/triggered spells arrives while casting == false (they never go through
+        // handleSpellStart with castTime > 0).  We must NOT send CMSG_LOOT for a
+        // gather node in those cases — only when a real timed gather cast completes.
+        const bool wasInTimedCast = casting;
+
         casting = false;
         castIsChannel = false;
         currentCastSpellId = 0;
@@ -16299,7 +16305,8 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
 
         // If we were gathering a node (mining/herbalism), send CMSG_LOOT now that
         // the gather cast completed and the server has made the node lootable.
-        if (lastInteractedGoGuid_ != 0) {
+        // Guard with wasInTimedCast to avoid firing on instant casts / procs.
+        if (wasInTimedCast && lastInteractedGoGuid_ != 0) {
             lootTarget(lastInteractedGoGuid_);
             lastInteractedGoGuid_ = 0;
         }

@@ -7234,6 +7234,11 @@ void Application::spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_t 
         auto* m2Renderer = renderer->getM2Renderer();
         if (!m2Renderer) return;
 
+        // Skip displayIds that permanently failed to load (e.g. empty/unsupported M2s).
+        // Without this guard the same empty model is re-parsed every frame, causing
+        // sustained log spam and wasted CPU.
+        if (gameObjectDisplayIdFailedCache_.count(displayId)) return;
+
         uint32_t modelId = 0;
         auto itCache = gameObjectDisplayIdModelCache_.find(displayId);
         if (itCache != gameObjectDisplayIdModelCache_.end()) {
@@ -7252,12 +7257,14 @@ void Application::spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_t 
             auto m2Data = assetManager->readFile(modelPath);
             if (m2Data.empty()) {
                 LOG_WARNING("Failed to read gameobject M2: ", modelPath);
+                gameObjectDisplayIdFailedCache_.insert(displayId);
                 return;
             }
 
             pipeline::M2Model model = pipeline::M2Loader::load(m2Data);
             if (model.vertices.empty()) {
                 LOG_WARNING("Failed to parse gameobject M2: ", modelPath);
+                gameObjectDisplayIdFailedCache_.insert(displayId);
                 return;
             }
 
@@ -7269,6 +7276,7 @@ void Application::spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_t 
 
             if (!m2Renderer->loadModel(model, modelId)) {
                 LOG_WARNING("Failed to load gameobject model: ", modelPath);
+                gameObjectDisplayIdFailedCache_.insert(displayId);
                 return;
             }
 
@@ -8189,6 +8197,13 @@ void Application::processPendingTransportDoodads() {
     auto startTime = std::chrono::steady_clock::now();
     static constexpr float kDoodadBudgetMs = 4.0f;
 
+    // Batch all GPU uploads into a single async command buffer submission so that
+    // N doodads with multiple textures each don't each block on vkQueueSubmit +
+    // vkWaitForFences. Without batching, 30+ doodads × several textures = hundreds
+    // of sync GPU submits → the 490ms stall that preceded the VK_ERROR_DEVICE_LOST.
+    auto* vkCtx = renderer->getVkContext();
+    if (vkCtx) vkCtx->beginUploadBatch();
+
     size_t budgetLeft = MAX_TRANSPORT_DOODADS_PER_FRAME;
     for (auto it = pendingTransportDoodadBatches_.begin();
          it != pendingTransportDoodadBatches_.end() && budgetLeft > 0;) {
@@ -8256,6 +8271,9 @@ void Application::processPendingTransportDoodads() {
             ++it;
         }
     }
+
+    // Finalize the upload batch — submit all GPU copies in one shot (async, no wait).
+    if (vkCtx) vkCtx->endUploadBatch();
 }
 
 void Application::processPendingMount() {

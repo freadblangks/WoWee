@@ -271,6 +271,7 @@ private:
     };
     std::unordered_map<uint32_t, std::string> gameObjectDisplayIdToPath_;
     std::unordered_map<uint32_t, uint32_t> gameObjectDisplayIdModelCache_; // displayId → M2 modelId
+    std::unordered_set<uint32_t> gameObjectDisplayIdFailedCache_;           // displayIds that permanently fail to load
     std::unordered_map<uint32_t, uint32_t> gameObjectDisplayIdWmoCache_;   // displayId → WMO modelId
     std::unordered_map<uint64_t, GameObjectInstanceInfo> gameObjectInstances_; // guid → instance info
     struct PendingTransportMove {

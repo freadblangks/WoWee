@@ -3565,7 +3565,7 @@ void M2Renderer::updateRibbons(M2Instance& inst, const M2ModelGPU& gpu, float dt
 // Ribbon rendering
 // ---------------------------------------------------------------------------
 void M2Renderer::renderM2Ribbons(VkCommandBuffer cmd, VkDescriptorSet perFrameSet) {
-    if (!ribbonPipeline_ || !ribbonVB_ || !ribbonVBMapped_) return;
+    if (!ribbonPipeline_ || !ribbonAdditivePipeline_ || !ribbonVB_ || !ribbonVBMapped_) return;
 
     // Build camera right vector for billboard orientation
     // For ribbons we orient the quad strip along the spine with screen-space up.

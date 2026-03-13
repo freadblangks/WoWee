@@ -11996,13 +11996,18 @@ void GameHandler::handleDuelComplete(network::Packet& packet) {
 
 void GameHandler::handleDuelWinner(network::Packet& packet) {
     if (packet.getSize() - packet.getReadPos() < 3) return;
-    /*uint8_t type =*/ packet.readUInt8();  // 0=normal, 1=flee
+    uint8_t duelType = packet.readUInt8();  // 0=normal win, 1=opponent fled duel area
     std::string winner = packet.readString();
     std::string loser  = packet.readString();
 
-    std::string msg = winner + " has defeated " + loser + " in a duel!";
+    std::string msg;
+    if (duelType == 1) {
+        msg = loser + " has fled from the duel. " + winner + " wins!";
+    } else {
+        msg = winner + " has defeated " + loser + " in a duel!";
+    }
     addSystemChatMessage(msg);
-    LOG_INFO("SMSG_DUEL_WINNER: winner=", winner, " loser=", loser);
+    LOG_INFO("SMSG_DUEL_WINNER: winner=", winner, " loser=", loser, " type=", static_cast<int>(duelType));
 }
 
 void GameHandler::toggleAfk(const std::string& message) {

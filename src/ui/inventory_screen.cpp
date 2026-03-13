@@ -2423,6 +2423,21 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
         ImGui::Text("%d Armor", item.armor);
     }
 
+    // Elemental resistances from item query cache (fire resist gear, nature resist gear, etc.)
+    if (gameHandler_) {
+        const auto* qi = gameHandler_->getItemInfo(item.itemId);
+        if (qi && qi->valid) {
+            const int32_t resValsI[6] = { qi->holyRes, qi->fireRes, qi->natureRes,
+                                          qi->frostRes, qi->shadowRes, qi->arcaneRes };
+            static const char* resLabelsI[6] = {
+                "Holy Resistance", "Fire Resistance", "Nature Resistance",
+                "Frost Resistance", "Shadow Resistance", "Arcane Resistance"
+            };
+            for (int i = 0; i < 6; ++i)
+                if (resValsI[i] > 0) ImGui::Text("+%d %s", resValsI[i], resLabelsI[i]);
+        }
+    }
+
     auto appendBonus = [](std::string& out, int32_t val, const char* shortName) {
         if (val <= 0) return;
         if (!out.empty()) out += "  ";
@@ -2594,6 +2609,55 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
                 ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 0.75f), "Requires %s with %s",
                     rankName,
                     fIt != s_factionNamesB.end() ? fIt->second.c_str() : "Unknown Faction");
+            }
+            // Class restriction
+            if (qInfo->allowableClass != 0) {
+                static const struct { uint32_t mask; const char* name; } kClassesB[] = {
+                    { 1,"Warrior" },{ 2,"Paladin" },{ 4,"Hunter" },{ 8,"Rogue" },
+                    { 16,"Priest" },{ 32,"Death Knight" },{ 64,"Shaman" },
+                    { 128,"Mage" },{ 256,"Warlock" },{ 1024,"Druid" },
+                };
+                int mc = 0;
+                for (const auto& kc : kClassesB) if (qInfo->allowableClass & kc.mask) ++mc;
+                if (mc > 0 && mc < 10) {
+                    char buf[128] = "Classes: "; bool first = true;
+                    for (const auto& kc : kClassesB) {
+                        if (!(qInfo->allowableClass & kc.mask)) continue;
+                        if (!first) strncat(buf, ", ", sizeof(buf)-strlen(buf)-1);
+                        strncat(buf, kc.name, sizeof(buf)-strlen(buf)-1);
+                        first = false;
+                    }
+                    uint8_t pc = gameHandler_->getPlayerClass();
+                    uint32_t pm = (pc > 0 && pc <= 10) ? (1u << (pc-1)) : 0;
+                    bool ok = (pm == 0 || (qInfo->allowableClass & pm));
+                    ImGui::TextColored(ok ? ImVec4(1,1,1,0.75f) : ImVec4(1,0.5f,0.5f,1), "%s", buf);
+                }
+            }
+            // Race restriction
+            if (qInfo->allowableRace != 0) {
+                static const struct { uint32_t mask; const char* name; } kRacesB[] = {
+                    { 1,"Human" },{ 2,"Orc" },{ 4,"Dwarf" },{ 8,"Night Elf" },
+                    { 16,"Undead" },{ 32,"Tauren" },{ 64,"Gnome" },{ 128,"Troll" },
+                    { 512,"Blood Elf" },{ 1024,"Draenei" },
+                };
+                constexpr uint32_t kAll = 1|2|4|8|16|32|64|128|512|1024;
+                if ((qInfo->allowableRace & kAll) != kAll) {
+                    int mc = 0;
+                    for (const auto& kr : kRacesB) if (qInfo->allowableRace & kr.mask) ++mc;
+                    if (mc > 0) {
+                        char buf[160] = "Races: "; bool first = true;
+                        for (const auto& kr : kRacesB) {
+                            if (!(qInfo->allowableRace & kr.mask)) continue;
+                            if (!first) strncat(buf, ", ", sizeof(buf)-strlen(buf)-1);
+                            strncat(buf, kr.name, sizeof(buf)-strlen(buf)-1);
+                            first = false;
+                        }
+                        uint8_t pr = gameHandler_->getPlayerRace();
+                        uint32_t pm = (pr > 0 && pr <= 11) ? (1u << (pr-1)) : 0;
+                        bool ok = (pm == 0 || (qInfo->allowableRace & pm));
+                        ImGui::TextColored(ok ? ImVec4(1,1,1,0.75f) : ImVec4(1,0.5f,0.5f,1), "%s", buf);
+                    }
+                }
             }
         }
     }
@@ -2810,6 +2874,18 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
 
     if (info.armor > 0) ImGui::Text("%d Armor", info.armor);
 
+    // Elemental resistances (fire resist gear, nature resist gear, etc.)
+    {
+        const int32_t resVals[6]  = { info.holyRes, info.fireRes, info.natureRes,
+                                      info.frostRes, info.shadowRes, info.arcaneRes };
+        static const char* resLabels[6] = {
+            "Holy Resistance", "Fire Resistance", "Nature Resistance",
+            "Frost Resistance", "Shadow Resistance", "Arcane Resistance"
+        };
+        for (int i = 0; i < 6; ++i)
+            if (resVals[i] > 0) ImGui::Text("+%d %s", resVals[i], resLabels[i]);
+    }
+
     auto appendBonus = [](std::string& out, int32_t val, const char* name) {
         if (val <= 0) return;
         if (!out.empty()) out += "  ";
@@ -2967,6 +3043,47 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
             }
             ImVec4 clColor = playerAllowed ? ImVec4(1.0f, 1.0f, 1.0f, 0.75f) : ImVec4(1.0f, 0.5f, 0.5f, 1.0f);
             ImGui::TextColored(clColor, "%s", classBuf);
+        }
+    }
+
+    // Race restriction (e.g. "Races: Night Elf, Human")
+    if (info.allowableRace != 0) {
+        static const struct { uint32_t mask; const char* name; } kRaces[] = {
+            { 1,    "Human"      },
+            { 2,    "Orc"        },
+            { 4,    "Dwarf"      },
+            { 8,    "Night Elf"  },
+            { 16,   "Undead"     },
+            { 32,   "Tauren"     },
+            { 64,   "Gnome"      },
+            { 128,  "Troll"      },
+            { 512,  "Blood Elf"  },
+            { 1024, "Draenei"    },
+        };
+        constexpr uint32_t kAllPlayable = 1|2|4|8|16|32|64|128|512|1024;
+        // Only show if not all playable races are allowed
+        if ((info.allowableRace & kAllPlayable) != kAllPlayable) {
+            int matchCount = 0;
+            for (const auto& kr : kRaces)
+                if (info.allowableRace & kr.mask) ++matchCount;
+            if (matchCount > 0) {
+                char raceBuf[160] = "Races: ";
+                bool first = true;
+                for (const auto& kr : kRaces) {
+                    if (!(info.allowableRace & kr.mask)) continue;
+                    if (!first) strncat(raceBuf, ", ", sizeof(raceBuf) - strlen(raceBuf) - 1);
+                    strncat(raceBuf, kr.name, sizeof(raceBuf) - strlen(raceBuf) - 1);
+                    first = false;
+                }
+                bool playerAllowed = true;
+                if (gameHandler_) {
+                    uint8_t pr = gameHandler_->getPlayerRace();
+                    uint32_t pmask = (pr > 0 && pr <= 11) ? (1u << (pr - 1)) : 0;
+                    playerAllowed = (pmask == 0 || (info.allowableRace & pmask));
+                }
+                ImVec4 rColor = playerAllowed ? ImVec4(1.0f, 1.0f, 1.0f, 0.75f) : ImVec4(1.0f, 0.5f, 0.5f, 1.0f);
+                ImGui::TextColored(rColor, "%s", raceBuf);
+            }
         }
     }
 

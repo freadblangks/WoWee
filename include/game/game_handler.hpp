@@ -1135,6 +1135,10 @@ public:
         const Character* ch = getActiveCharacter();
         return ch ? static_cast<uint8_t>(ch->characterClass) : 0;
     }
+    uint8_t getPlayerRace() const {
+        const Character* ch = getActiveCharacter();
+        return ch ? static_cast<uint8_t>(ch->race) : 0;
+    }
     void setPlayerGuid(uint64_t guid) { playerGuid = guid; }
 
     // Player death state

@@ -1594,6 +1594,12 @@ struct ItemQueryResponseData {
     float damageMax = 0.0f;
     uint32_t delayMs = 0;
     int32_t armor = 0;
+    int32_t holyRes = 0;
+    int32_t fireRes = 0;
+    int32_t natureRes = 0;
+    int32_t frostRes = 0;
+    int32_t shadowRes = 0;
+    int32_t arcaneRes = 0;
     int32_t stamina = 0;
     int32_t strength = 0;
     int32_t agility = 0;

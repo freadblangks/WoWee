@@ -2945,12 +2945,12 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
     }
 
     data.armor = static_cast<int32_t>(packet.readUInt32());
-    packet.readUInt32(); // HolyRes
-    packet.readUInt32(); // FireRes
-    packet.readUInt32(); // NatureRes
-    packet.readUInt32(); // FrostRes
-    packet.readUInt32(); // ShadowRes
-    packet.readUInt32(); // ArcaneRes
+    data.holyRes   = static_cast<int32_t>(packet.readUInt32()); // HolyRes
+    data.fireRes   = static_cast<int32_t>(packet.readUInt32()); // FireRes
+    data.natureRes = static_cast<int32_t>(packet.readUInt32()); // NatureRes
+    data.frostRes  = static_cast<int32_t>(packet.readUInt32()); // FrostRes
+    data.shadowRes = static_cast<int32_t>(packet.readUInt32()); // ShadowRes
+    data.arcaneRes = static_cast<int32_t>(packet.readUInt32()); // ArcaneRes
     data.delayMs = packet.readUInt32();
     packet.readUInt32(); // AmmoType
     packet.readFloat();  // RangedModRange

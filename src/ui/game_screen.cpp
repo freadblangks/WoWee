@@ -3758,6 +3758,44 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
             ImGui::PopStyleColor();
         }
 
+        // Target-of-Target (ToT): show who the current target is targeting
+        {
+            uint64_t totGuid = 0;
+            const auto& tFields = target->getFields();
+            auto itLo = tFields.find(game::fieldIndex(game::UF::UNIT_FIELD_TARGET_LO));
+            if (itLo != tFields.end()) {
+                totGuid = itLo->second;
+                auto itHi = tFields.find(game::fieldIndex(game::UF::UNIT_FIELD_TARGET_HI));
+                if (itHi != tFields.end())
+                    totGuid |= (static_cast<uint64_t>(itHi->second) << 32);
+            }
+            if (totGuid != 0) {
+                auto totEnt = gameHandler.getEntityManager().getEntity(totGuid);
+                std::string totName;
+                ImVec4 totColor(0.7f, 0.7f, 0.7f, 1.0f);
+                if (totGuid == gameHandler.getPlayerGuid()) {
+                    auto playerEnt = gameHandler.getEntityManager().getEntity(totGuid);
+                    totName = playerEnt ? getEntityName(playerEnt) : "You";
+                    totColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f);
+                } else if (totEnt) {
+                    totName = getEntityName(totEnt);
+                    uint8_t cid = entityClassId(totEnt.get());
+                    if (cid != 0) totColor = classColorVec4(cid);
+                }
+                if (!totName.empty()) {
+                    ImGui::TextDisabled("▶");
+                    ImGui::SameLine(0, 2);
+                    ImGui::TextColored(totColor, "%s", totName.c_str());
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Target's target: %s\nClick to target", totName.c_str());
+                    }
+                    if (ImGui::IsItemClicked()) {
+                        gameHandler.setTarget(totGuid);
+                    }
+                }
+            }
+        }
+
         // Distance
         const auto& movement = gameHandler.getMovementInfo();
         float dx = target->getX() - movement.x;

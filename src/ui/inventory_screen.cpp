@@ -2311,16 +2311,24 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
         uint32_t mapId = 0;
         glm::vec3 pos;
         if (gameHandler_->getHomeBind(mapId, pos)) {
-            const char* mapName = "Unknown";
-            switch (mapId) {
-                case 0:   mapName = "Eastern Kingdoms"; break;
-                case 1:   mapName = "Kalimdor"; break;
-                case 530:  mapName = "Outland"; break;
-                case 571:  mapName = "Northrend"; break;
-                case 13:   mapName = "Test"; break;
-                case 169:  mapName = "Emerald Dream"; break;
+            std::string homeLocation;
+            // Prefer the specific zone name from the bind-point zone ID
+            uint32_t zoneId = gameHandler_->getHomeBindZoneId();
+            if (zoneId != 0)
+                homeLocation = gameHandler_->getWhoAreaName(zoneId);
+            // Fall back to continent name if zone unavailable
+            if (homeLocation.empty()) {
+                switch (mapId) {
+                    case 0:   homeLocation = "Eastern Kingdoms"; break;
+                    case 1:   homeLocation = "Kalimdor"; break;
+                    case 530: homeLocation = "Outland"; break;
+                    case 571: homeLocation = "Northrend"; break;
+                    case 13:  homeLocation = "Test"; break;
+                    case 169: homeLocation = "Emerald Dream"; break;
+                    default:  homeLocation = "Unknown"; break;
+                }
             }
-            ImGui::TextColored(ImVec4(0.8f, 0.9f, 1.0f, 1.0f), "Home: %s", mapName);
+            ImGui::TextColored(ImVec4(0.8f, 0.9f, 1.0f, 1.0f), "Home: %s", homeLocation.c_str());
         } else {
             ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Home: not set");
         }

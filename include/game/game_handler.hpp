@@ -882,6 +882,11 @@ public:
     using KnockBackCallback = std::function<void(float vcos, float vsin, float hspeed, float vspeed)>;
     void setKnockBackCallback(KnockBackCallback cb) { knockBackCallback_ = std::move(cb); }
 
+    // Camera shake callback: called when server sends SMSG_CAMERA_SHAKE.
+    // Parameters: magnitude (world units), frequency (Hz), duration (seconds).
+    using CameraShakeCallback = std::function<void(float magnitude, float frequency, float duration)>;
+    void setCameraShakeCallback(CameraShakeCallback cb) { cameraShakeCallback_ = std::move(cb); }
+
     // Unstuck callback (resets player Z to floor height)
     using UnstuckCallback = std::function<void()>;
     void setUnstuckCallback(UnstuckCallback cb) { unstuckCallback_ = std::move(cb); }
@@ -2323,6 +2328,7 @@ private:
     // ---- Phase 3: Spells ----
     WorldEntryCallback worldEntryCallback_;
     KnockBackCallback knockBackCallback_;
+    CameraShakeCallback cameraShakeCallback_;
     UnstuckCallback unstuckCallback_;
     UnstuckCallback unstuckGyCallback_;
     UnstuckCallback unstuckHearthCallback_;

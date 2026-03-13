@@ -129,6 +129,12 @@ public:
     // vspeed: raw packet vspeed field (server sends negative for upward launch)
     void applyKnockBack(float vcos, float vsin, float hspeed, float vspeed);
 
+    // Trigger a camera shake effect (e.g. from SMSG_CAMERA_SHAKE).
+    // magnitude: peak positional offset in world units
+    // frequency: oscillation frequency in Hz
+    // duration: shake duration in seconds
+    void triggerShake(float magnitude, float frequency, float duration);
+
     // For first-person player hiding
     void setCharacterRenderer(class CharacterRenderer* cr, uint32_t playerId) {
         characterRenderer = cr;
@@ -369,6 +375,12 @@ private:
     glm::vec2 knockbackHorizVel_ = glm::vec2(0.0f); // render-space horizontal velocity (units/s)
     // Horizontal velocity decays via WoW-like drag so the player doesn't slide forever.
     static constexpr float KNOCKBACK_HORIZ_DRAG = 4.5f; // exponential decay rate (1/s)
+
+    // Camera shake state (SMSG_CAMERA_SHAKE)
+    float shakeElapsed_   = 0.0f;
+    float shakeDuration_  = 0.0f;
+    float shakeMagnitude_ = 0.0f;
+    float shakeFrequency_ = 0.0f;
 };
 
 } // namespace rendering

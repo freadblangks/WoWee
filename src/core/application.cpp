@@ -646,6 +646,11 @@ void Application::setState(AppState newState) {
                         renderer->getCameraController()->applyKnockBack(vcos, vsin, hspeed, vspeed);
                     }
                 });
+                gameHandler->setCameraShakeCallback([this](float magnitude, float frequency, float duration) {
+                    if (renderer && renderer->getCameraController()) {
+                        renderer->getCameraController()->triggerShake(magnitude, frequency, duration);
+                    }
+                });
             }
             // Load quest marker models
             loadQuestMarkerModels();

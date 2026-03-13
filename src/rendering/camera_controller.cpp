@@ -140,6 +140,17 @@ std::optional<float> CameraController::getCachedFloorHeight(float x, float y, fl
     return result;
 }
 
+void CameraController::triggerShake(float magnitude, float frequency, float duration) {
+    // Allow stronger shake to override weaker; don't allow zero magnitude.
+    if (magnitude <= 0.0f || duration <= 0.0f) return;
+    if (magnitude > shakeMagnitude_ || shakeElapsed_ >= shakeDuration_) {
+        shakeMagnitude_ = magnitude;
+        shakeFrequency_ = frequency;
+        shakeDuration_  = duration;
+        shakeElapsed_   = 0.0f;
+    }
+}
+
 void CameraController::update(float deltaTime) {
     if (!enabled || !camera) {
         return;
@@ -1859,6 +1870,23 @@ void CameraController::update(float deltaTime) {
     wasFalling = !grounded && verticalVelocity <= 0.0f;
 
     // R key is now handled above with chat safeguard (WantTextInput check)
+
+    // Camera shake (SMSG_CAMERA_SHAKE): apply sinusoidal offset to final camera position.
+    if (shakeElapsed_ < shakeDuration_) {
+        shakeElapsed_ += deltaTime;
+        float t = shakeElapsed_ / shakeDuration_;
+        // Envelope: fade out over the last 30% of shake duration
+        float envelope = (t < 0.7f) ? 1.0f : (1.0f - (t - 0.7f) / 0.3f);
+        float theta = shakeElapsed_ * shakeFrequency_ * 2.0f * 3.14159265f;
+        glm::vec3 offset(
+            shakeMagnitude_ * envelope * std::sin(theta),
+            shakeMagnitude_ * envelope * std::cos(theta * 1.3f),
+            shakeMagnitude_ * envelope * std::sin(theta * 0.7f) * 0.5f
+        );
+        if (camera) {
+            camera->setPosition(camera->getPosition() + offset);
+        }
+    }
 }
 
 void CameraController::processMouseMotion(const SDL_MouseMotionEvent& event) {

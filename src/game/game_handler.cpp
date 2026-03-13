@@ -2760,6 +2760,25 @@ void GameHandler::handlePacket(network::Packet& packet) {
             handleMoveKnockBack(packet);
             break;
 
+        case Opcode::SMSG_CAMERA_SHAKE: {
+            // uint32 shakeID (CameraShakes.dbc), uint32 shakeType
+            // We don't parse CameraShakes.dbc; apply a hardcoded moderate shake.
+            if (packet.getSize() - packet.getReadPos() >= 8) {
+                uint32_t shakeId   = packet.readUInt32();
+                uint32_t shakeType = packet.readUInt32();
+                (void)shakeType;
+                // Map shakeId ranges to approximate magnitudes:
+                // IDs < 50: minor environmental (0.04), others: larger boss effects (0.08)
+                float magnitude = (shakeId < 50) ? 0.04f : 0.08f;
+                if (cameraShakeCallback_) {
+                    cameraShakeCallback_(magnitude, 18.0f, 0.5f);
+                }
+                LOG_DEBUG("SMSG_CAMERA_SHAKE: id=", shakeId, " type=", shakeType,
+                          " magnitude=", magnitude);
+            }
+            break;
+        }
+
         case Opcode::SMSG_CLIENT_CONTROL_UPDATE: {
             // Minimal parse: PackedGuid + uint8 allowMovement.
             if (packet.getSize() - packet.getReadPos() < 2) {

@@ -1794,8 +1794,23 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
         case Opcode::SMSG_PET_ACTION_FEEDBACK: {
-            // uint8 action + uint8 flags
-            packet.setReadPos(packet.getSize());  // Consume; no UI for pet feedback yet.
+            // uint8 msg: 1=dead, 2=nothing_to_attack, 3=cant_attack_target,
+            //            4=target_too_far, 5=no_path, 6=cant_attack_immune
+            if (packet.getSize() - packet.getReadPos() < 1) break;
+            uint8_t msg = packet.readUInt8();
+            static const char* kPetFeedback[] = {
+                nullptr,
+                "Your pet is dead.",
+                "Your pet has nothing to attack.",
+                "Your pet cannot attack that target.",
+                "That target is too far away.",
+                "Your pet cannot find a path to the target.",
+                "Your pet cannot attack an immune target.",
+            };
+            if (msg > 0 && msg < 7 && kPetFeedback[msg]) {
+                addSystemChatMessage(kPetFeedback[msg]);
+            }
+            packet.setReadPos(packet.getSize());
             break;
         }
         case Opcode::SMSG_PET_NAME_QUERY_RESPONSE: {

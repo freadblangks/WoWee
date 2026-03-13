@@ -2002,6 +2002,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     castIsChannel = false;
                     currentCastSpellId = 0;
                     castTimeRemaining  = 0.0f;
+                    lastInteractedGoGuid_ = 0;
                     // Pass player's power type so result 85 says "Not enough rage/energy/etc."
                     int playerPowerType = -1;
                     if (auto pe = entityManager.getEntity(playerGuid)) {
@@ -3012,10 +3013,12 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 }
             }
             if (failGuid == playerGuid || failGuid == 0) {
-                // Player's own cast failed
+                // Player's own cast failed — clear gather-node loot target so the
+                // next timed cast doesn't try to loot a stale interrupted gather node.
                 casting = false;
                 castIsChannel = false;
                 currentCastSpellId = 0;
+                lastInteractedGoGuid_ = 0;
                 if (auto* renderer = core::Application::getInstance().getRenderer()) {
                     if (auto* ssm = renderer->getSpellSoundManager()) {
                         ssm->stopPrecast();
@@ -7996,6 +7999,7 @@ void GameHandler::selectCharacter(uint64_t characterGuid) {
     castIsChannel = false;
     currentCastSpellId = 0;
     pendingGameObjectInteractGuid_ = 0;
+    lastInteractedGoGuid_ = 0;
     castTimeRemaining = 0.0f;
     castTimeTotal = 0.0f;
     playerDead_ = false;
@@ -12219,6 +12223,7 @@ void GameHandler::stopCasting() {
     castIsChannel = false;
     currentCastSpellId = 0;
     pendingGameObjectInteractGuid_ = 0;
+    lastInteractedGoGuid_ = 0;
     castTimeRemaining = 0.0f;
     castTimeTotal = 0.0f;
 
@@ -15912,6 +15917,7 @@ void GameHandler::cancelCast() {
         socket->send(packet);
     }
     pendingGameObjectInteractGuid_ = 0;
+    lastInteractedGoGuid_ = 0;
     casting = false;
     castIsChannel = false;
     currentCastSpellId = 0;

@@ -201,20 +201,23 @@ void TalentScreen::renderTalentTree(game::GameHandler& gameHandler, uint32_t tab
         return a->column < b->column;
     });
 
-    // Find grid dimensions
-    uint8_t maxRow = 0, maxCol = 0;
+    // Find grid dimensions — use int to avoid uint8_t wrap-around infinite loops
+    int maxRow = 0, maxCol = 0;
     for (const auto* talent : talents) {
-        maxRow = std::max(maxRow, talent->row);
-        maxCol = std::max(maxCol, talent->column);
+        maxRow = std::max(maxRow, (int)talent->row);
+        maxCol = std::max(maxCol, (int)talent->column);
     }
+    // Sanity-cap to prevent runaway loops from corrupt/unexpected DBC data
+    maxRow = std::min(maxRow, 15);
+    maxCol = std::min(maxCol, 15);
     // WoW talent grids are always 4 columns wide
     if (maxCol < 3) maxCol = 3;
 
     const float iconSize = 40.0f;
     const float spacing = 8.0f;
     const float cellSize = iconSize + spacing;
-    const float gridWidth = (maxCol + 1) * cellSize + spacing;
-    const float gridHeight = (maxRow + 1) * cellSize + spacing;
+    const float gridWidth = (float)(maxCol + 1) * cellSize + spacing;
+    const float gridHeight = (float)(maxRow + 1) * cellSize + spacing;
 
     // Points in this tree
     uint32_t pointsInTree = 0;
@@ -322,8 +325,8 @@ void TalentScreen::renderTalentTree(game::GameHandler& gameHandler, uint32_t tab
     }
 
     // Render talent icons
-    for (uint8_t row = 0; row <= maxRow; ++row) {
-        for (uint8_t col = 0; col <= maxCol; ++col) {
+    for (int row = 0; row <= maxRow; ++row) {
+        for (int col = 0; col <= maxCol; ++col) {
             const game::GameHandler::TalentEntry* talent = nullptr;
             for (const auto* t : talents) {
                 if (t->row == row && t->column == col) {

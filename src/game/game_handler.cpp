@@ -20752,11 +20752,9 @@ std::string GameHandler::getFormattedTitle(uint32_t bit) const {
     auto it = titleNameCache_.find(bit);
     if (it == titleNameCache_.end() || it->second.empty()) return {};
 
-    const std::string& pName = [&]() -> const std::string& {
-        auto nameIt = playerNameCache.find(playerGuid);
-        static const std::string kUnknown = "unknown";
-        return (nameIt != playerNameCache.end()) ? nameIt->second : kUnknown;
-    }();
+    static const std::string kUnknown = "unknown";
+    auto nameIt = playerNameCache.find(playerGuid);
+    const std::string& pName = (nameIt != playerNameCache.end()) ? nameIt->second : kUnknown;
 
     const std::string& fmt = it->second;
     size_t pos = fmt.find("%s");

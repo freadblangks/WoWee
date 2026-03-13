@@ -186,7 +186,7 @@ private:
     static constexpr float COLLISION_FOCUS_RADIUS_THIRD_PERSON = 20.0f;  // Reduced for performance
     static constexpr float COLLISION_FOCUS_RADIUS_FREE_FLY = 20.0f;
     static constexpr float MIN_PITCH = -88.0f;      // Look almost straight down
-    static constexpr float MAX_PITCH = 35.0f;       // Limited upward look
+    static constexpr float MAX_PITCH = 88.0f;       // Look almost straight up (WoW standard)
     glm::vec3* followTarget = nullptr;
     glm::vec3 smoothedCamPos = glm::vec3(0.0f);     // For smooth camera movement
     float smoothedCollisionDist_ = -1.0f;           // Asymmetrically-smoothed WMO collision limit (-1 = uninitialised)

@@ -4416,12 +4416,20 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // uint64 vendorGuid + uint32 vendorSlot + int32 newCount + uint32 itemCount
             // Confirms a successful CMSG_BUY_ITEM. The inventory update arrives via SMSG_UPDATE_OBJECT.
             if (packet.getSize() - packet.getReadPos() >= 20) {
-                uint64_t vendorGuid = packet.readUInt64();
-                uint32_t vendorSlot = packet.readUInt32();
-                int32_t  newCount   = static_cast<int32_t>(packet.readUInt32());
+                /*uint64_t vendorGuid =*/ packet.readUInt64();
+                /*uint32_t vendorSlot =*/ packet.readUInt32();
+                /*int32_t  newCount   =*/ static_cast<int32_t>(packet.readUInt32());
                 uint32_t itemCount  = packet.readUInt32();
-                LOG_DEBUG("SMSG_BUY_ITEM: vendorGuid=0x", std::hex, vendorGuid, std::dec,
-                          " slot=", vendorSlot, " newCount=", newCount, " bought=", itemCount);
+                // Show purchase confirmation with item name if available
+                if (pendingBuyItemId_ != 0) {
+                    std::string itemLabel;
+                    if (const ItemQueryResponseData* info = getItemInfo(pendingBuyItemId_))
+                        if (!info->name.empty()) itemLabel = info->name;
+                    if (itemLabel.empty()) itemLabel = "item #" + std::to_string(pendingBuyItemId_);
+                    std::string msg = "Purchased: " + itemLabel;
+                    if (itemCount > 1) msg += " x" + std::to_string(itemCount);
+                    addSystemChatMessage(msg);
+                }
                 pendingBuyItemId_   = 0;
                 pendingBuyItemSlot_ = 0;
             }
@@ -5243,16 +5251,30 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // Server asks player to confirm entering a saved instance.
             // We auto-confirm with CMSG_INSTANCE_LOCK_RESPONSE.
             if (socket && packet.getSize() - packet.getReadPos() >= 17) {
-                /*uint32_t mapId =*/ packet.readUInt32();
-                /*uint32_t diff  =*/ packet.readUInt32();
-                /*uint32_t timeLeft =*/ packet.readUInt32();
+                uint32_t ilMapId    = packet.readUInt32();
+                uint32_t ilDiff     = packet.readUInt32();
+                uint32_t ilTimeLeft = packet.readUInt32();
                 packet.readUInt32(); // unk
-                /*uint8_t  locked =*/ packet.readUInt8();
+                uint8_t  ilLocked   = packet.readUInt8();
+                // Notify player which instance is being entered/resumed
+                std::string ilName = getMapName(ilMapId);
+                if (ilName.empty()) ilName = "instance #" + std::to_string(ilMapId);
+                static const char* kDiff[] = {"Normal","Heroic","25-Man","25-Man Heroic"};
+                std::string ilMsg = "Entering " + ilName;
+                if (ilDiff < 4) ilMsg += std::string(" (") + kDiff[ilDiff] + ")";
+                if (ilLocked && ilTimeLeft > 0) {
+                    uint32_t ilMins = ilTimeLeft / 60;
+                    ilMsg += " — " + std::to_string(ilMins) + " min remaining.";
+                } else {
+                    ilMsg += ".";
+                }
+                addSystemChatMessage(ilMsg);
                 // Send acceptance
                 network::Packet resp(wireOpcode(Opcode::CMSG_INSTANCE_LOCK_RESPONSE));
                 resp.writeUInt8(1); // 1=accept
                 socket->send(resp);
-                LOG_INFO("SMSG_INSTANCE_LOCK_WARNING_QUERY: auto-accepted");
+                LOG_INFO("SMSG_INSTANCE_LOCK_WARNING_QUERY: auto-accepted mapId=", ilMapId,
+                         " diff=", ilDiff, " timeLeft=", ilTimeLeft);
             }
             break;
         }
@@ -5453,13 +5475,18 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 if (packet.getSize() - packet.getReadPos() < 9) break;
                 uint64_t memberGuid = packet.readUInt64();
                 uint8_t memberFlags = packet.readUInt8();
-                // Look up the name from our entity manager
+                // Look up the name: entity manager > playerNameCache
                 auto entity = entityManager.getEntity(memberGuid);
-                std::string name = "(unknown)";
+                std::string name;
                 if (entity) {
                     auto player = std::dynamic_pointer_cast<Player>(entity);
                     if (player && !player->getName().empty()) name = player->getName();
                 }
+                if (name.empty()) {
+                    auto nit = playerNameCache.find(memberGuid);
+                    if (nit != playerNameCache.end()) name = nit->second;
+                }
+                if (name.empty()) name = "(unknown)";
                 std::string entry = "  " + name;
                 if (memberFlags & 0x01) entry += " [Moderator]";
                 if (memberFlags & 0x02) entry += " [Muted]";
@@ -11494,13 +11521,16 @@ void GameHandler::setFocus(uint64_t guid) {
     if (guid != 0) {
         auto entity = entityManager.getEntity(guid);
         if (entity) {
-            std::string name = "Unknown";
-            if (entity->getType() == ObjectType::PLAYER) {
-                auto player = std::dynamic_pointer_cast<Player>(entity);
-                if (player && !player->getName().empty()) {
-                    name = player->getName();
-                }
+            std::string name;
+            auto unit = std::dynamic_pointer_cast<Unit>(entity);
+            if (unit && !unit->getName().empty()) {
+                name = unit->getName();
             }
+            if (name.empty()) {
+                auto nit = playerNameCache.find(guid);
+                if (nit != playerNameCache.end()) name = nit->second;
+            }
+            if (name.empty()) name = "Unknown";
             addSystemChatMessage("Focus set: " + name);
             LOG_INFO("Focus set: 0x", std::hex, guid, std::dec);
         }
@@ -20914,13 +20944,17 @@ void GameHandler::handleFriendStatus(network::Packet& packet) {
         return;
     }
 
-    // Look up player name from GUID
+    // Look up player name: contacts_ (populated by SMSG_FRIEND_LIST) > playerNameCache
     std::string playerName;
-    auto it = playerNameCache.find(data.guid);
-    if (it != playerNameCache.end()) {
-        playerName = it->second;
-    } else {
-        playerName = "Unknown";
+    {
+        auto cit2 = std::find_if(contacts_.begin(), contacts_.end(),
+            [&](const ContactEntry& e){ return e.guid == data.guid; });
+        if (cit2 != contacts_.end() && !cit2->name.empty()) {
+            playerName = cit2->name;
+        } else {
+            auto it = playerNameCache.find(data.guid);
+            if (it != playerNameCache.end()) playerName = it->second;
+        }
     }
 
     // Update friends cache

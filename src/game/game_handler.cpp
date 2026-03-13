@@ -2634,7 +2634,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             count = std::min(count, 32u);
             for (uint32_t i = 0; i < count; ++i) {
                 if (packet.getSize() - packet.getReadPos() < (spellMissTbcLike ? 9u : 2u)) break;
-                /*uint64_t victimGuid =*/ readSpellMissGuid();
+                uint64_t victimGuid = readSpellMissGuid();
                 if (packet.getSize() - packet.getReadPos() < 1) break;
                 uint8_t missInfo = packet.readUInt8();
                 // REFLECT (11): extra uint32 reflectSpellId + uint8 reflectResult
@@ -2647,21 +2647,24 @@ void GameHandler::handlePacket(network::Packet& packet) {
                         break;
                     }
                 }
-                // Show combat text only for local player's spell misses
+                static const CombatTextEntry::Type missTypes[] = {
+                    CombatTextEntry::MISS,    // 0=MISS
+                    CombatTextEntry::DODGE,   // 1=DODGE
+                    CombatTextEntry::PARRY,   // 2=PARRY
+                    CombatTextEntry::BLOCK,   // 3=BLOCK
+                    CombatTextEntry::MISS,    // 4=EVADE
+                    CombatTextEntry::IMMUNE,  // 5=IMMUNE
+                    CombatTextEntry::MISS,    // 6=DEFLECT
+                    CombatTextEntry::ABSORB,  // 7=ABSORB
+                    CombatTextEntry::RESIST,  // 8=RESIST
+                };
+                CombatTextEntry::Type ct = (missInfo < 9) ? missTypes[missInfo] : CombatTextEntry::MISS;
                 if (casterGuid == playerGuid) {
-                    static const CombatTextEntry::Type missTypes[] = {
-                        CombatTextEntry::MISS,    // 0=MISS
-                        CombatTextEntry::DODGE,   // 1=DODGE
-                        CombatTextEntry::PARRY,   // 2=PARRY
-                        CombatTextEntry::BLOCK,   // 3=BLOCK
-                        CombatTextEntry::MISS,    // 4=EVADE
-                        CombatTextEntry::IMMUNE,  // 5=IMMUNE
-                        CombatTextEntry::MISS,    // 6=DEFLECT
-                        CombatTextEntry::ABSORB,  // 7=ABSORB
-                        CombatTextEntry::RESIST,  // 8=RESIST
-                    };
-                    CombatTextEntry::Type ct = (missInfo < 9) ? missTypes[missInfo] : CombatTextEntry::MISS;
+                    // We cast a spell and it missed the target
                     addCombatText(ct, 0, 0, true);
+                } else if (victimGuid == playerGuid) {
+                    // Enemy spell missed us (we dodged/parried/blocked/resisted/etc.)
+                    addCombatText(ct, 0, 0, false);
                 }
             }
             break;

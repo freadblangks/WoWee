@@ -2202,8 +2202,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // uint64 binderGuid + uint32 mapId + uint32 zoneId
             if (packet.getSize() - packet.getReadPos() < 16) break;
             /*uint64_t binderGuid =*/ packet.readUInt64();
-            /*uint32_t mapId =*/ packet.readUInt32();
+            uint32_t mapId = packet.readUInt32();
             uint32_t zoneId = packet.readUInt32();
+            // Update home bind location so hearthstone tooltip reflects the new zone
+            homeBindMapId_  = mapId;
+            homeBindZoneId_ = zoneId;
             std::string pbMsg = "Your home location has been set";
             std::string zoneName = getAreaName(zoneId);
             if (!zoneName.empty())

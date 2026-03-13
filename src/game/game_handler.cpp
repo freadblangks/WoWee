@@ -2711,12 +2711,13 @@ void GameHandler::handlePacket(network::Packet& packet) {
             uint32_t absorb   = packet.readUInt32();
             uint32_t resist   = packet.readUInt32();
             if (victimGuid == playerGuid) {
+                // Environmental damage: no caster GUID, victim = player
                 if (damage > 0)
-                    addCombatText(CombatTextEntry::ENVIRONMENTAL, static_cast<int32_t>(damage), 0, false);
+                    addCombatText(CombatTextEntry::ENVIRONMENTAL, static_cast<int32_t>(damage), 0, false, 0, 0, victimGuid);
                 if (absorb > 0)
-                    addCombatText(CombatTextEntry::ABSORB, static_cast<int32_t>(absorb), 0, false);
+                    addCombatText(CombatTextEntry::ABSORB, static_cast<int32_t>(absorb), 0, false, 0, 0, victimGuid);
                 if (resist > 0)
-                    addCombatText(CombatTextEntry::RESIST, static_cast<int32_t>(resist), 0, false);
+                    addCombatText(CombatTextEntry::RESIST, static_cast<int32_t>(resist), 0, false, 0, 0, victimGuid);
             }
             break;
         }
@@ -3988,7 +3989,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             bool isPlayerVictim = (victimGuid == playerGuid);
             bool isPlayerCaster = (casterGuid == playerGuid);
             if ((isPlayerVictim || isPlayerCaster) && amount > 0)
-                addCombatText(CombatTextEntry::ENERGIZE, amount, spellId, isPlayerCaster, energizePowerType);
+                addCombatText(CombatTextEntry::ENERGIZE, amount, spellId, isPlayerCaster, energizePowerType, casterGuid, victimGuid);
             packet.setReadPos(packet.getSize());
             break;
         }
@@ -4002,12 +4003,13 @@ void GameHandler::handlePacket(network::Packet& packet) {
             uint32_t envAbs      = packet.readUInt32();
             uint32_t envRes      = packet.readUInt32();
             if (victimGuid == playerGuid) {
+                // Environmental damage: no caster GUID, victim = player
                 if (dmg > 0)
-                    addCombatText(CombatTextEntry::ENVIRONMENTAL, static_cast<int32_t>(dmg), 0, false);
+                    addCombatText(CombatTextEntry::ENVIRONMENTAL, static_cast<int32_t>(dmg), 0, false, 0, 0, victimGuid);
                 if (envAbs > 0)
-                    addCombatText(CombatTextEntry::ABSORB, static_cast<int32_t>(envAbs), 0, false);
+                    addCombatText(CombatTextEntry::ABSORB, static_cast<int32_t>(envAbs), 0, false, 0, 0, victimGuid);
                 if (envRes > 0)
-                    addCombatText(CombatTextEntry::RESIST, static_cast<int32_t>(envRes), 0, false);
+                    addCombatText(CombatTextEntry::RESIST, static_cast<int32_t>(envRes), 0, false, 0, 0, victimGuid);
             }
             packet.setReadPos(packet.getSize());
             break;

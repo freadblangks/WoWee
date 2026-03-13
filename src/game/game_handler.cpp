@@ -3756,11 +3756,28 @@ void GameHandler::handlePacket(network::Packet& packet) {
         }
 
         case Opcode::SMSG_FEATURE_SYSTEM_STATUS:
-        case Opcode::SMSG_SET_FLAT_SPELL_MODIFIER:
-        case Opcode::SMSG_SET_PCT_SPELL_MODIFIER:
-            // Different formats than SMSG_SPELL_DELAYED — consume and ignore
             packet.setReadPos(packet.getSize());
             break;
+
+        case Opcode::SMSG_SET_FLAT_SPELL_MODIFIER:
+        case Opcode::SMSG_SET_PCT_SPELL_MODIFIER: {
+            // WotLK format: one or more (uint8 groupIndex, uint8 modOp, int32 value) tuples
+            // Each tuple is 6 bytes; iterate until packet is consumed.
+            const bool isFlat = (*logicalOp == Opcode::SMSG_SET_FLAT_SPELL_MODIFIER);
+            auto& modMap = isFlat ? spellFlatMods_ : spellPctMods_;
+            while (packet.getSize() - packet.getReadPos() >= 6) {
+                uint8_t groupIndex = packet.readUInt8();
+                uint8_t modOpRaw   = packet.readUInt8();
+                int32_t value      = static_cast<int32_t>(packet.readUInt32());
+                if (groupIndex > 5 || modOpRaw >= SPELL_MOD_OP_COUNT) continue;
+                SpellModKey key{ static_cast<SpellModOp>(modOpRaw), groupIndex };
+                modMap[key] = value;
+                LOG_DEBUG(isFlat ? "SMSG_SET_FLAT_SPELL_MODIFIER" : "SMSG_SET_PCT_SPELL_MODIFIER",
+                          ": group=", (int)groupIndex, " op=", (int)modOpRaw, " value=", value);
+            }
+            packet.setReadPos(packet.getSize());
+            break;
+        }
 
         case Opcode::SMSG_SPELL_DELAYED: {
             // WotLK: packed_guid (caster) + uint32 delayMs
@@ -7930,6 +7947,8 @@ void GameHandler::selectCharacter(uint64_t characterGuid) {
     std::fill(std::begin(playerStats_), std::end(playerStats_), -1);
     knownSpells.clear();
     spellCooldowns.clear();
+    spellFlatMods_.clear();
+    spellPctMods_.clear();
     actionBar = {};
     playerAuras.clear();
     targetAuras.clear();

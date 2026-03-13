@@ -1491,6 +1491,84 @@ public:
     };
     const std::array<RuneSlot, 6>& getPlayerRunes() const { return playerRunes_; }
 
+    // Talent-driven spell modifiers (SMSG_SET_FLAT_SPELL_MODIFIER / SMSG_SET_PCT_SPELL_MODIFIER)
+    // SpellModOp matches WotLK SpellModOp enum (server-side).
+    enum class SpellModOp : uint8_t {
+        Damage            =  0,
+        Duration          =  1,
+        Threat            =  2,
+        Effect1           =  3,
+        Charges           =  4,
+        Range             =  5,
+        Radius            =  6,
+        CritChance        =  7,
+        AllEffects        =  8,
+        NotLoseCastingTime =  9,
+        CastingTime       = 10,
+        Cooldown          = 11,
+        Effect2           = 12,
+        IgnoreArmor       = 13,
+        Cost              = 14,
+        CritDamageBonus   = 15,
+        ResistMissChance  = 16,
+        JumpTargets       = 17,
+        ChanceOfSuccess   = 18,
+        ActivationTime    = 19,
+        Efficiency        = 20,
+        MultipleValue     = 21,
+        ResistDispelChance = 22,
+        Effect3           = 23,
+        BonusMultiplier   = 24,
+        ProcPerMinute     = 25,
+        ValueMultiplier   = 26,
+        ResistPushback    = 27,
+        MechanicDuration  = 28,
+        StartCooldown     = 29,
+        PeriodicBonus     = 30,
+        AttackPower       = 31,
+    };
+    static constexpr int SPELL_MOD_OP_COUNT = 32;
+
+    // Key: (SpellModOp, groupIndex) — value: accumulated flat or pct modifier
+    // pct values are stored in integer percent (e.g. -20 means -20% reduction).
+    struct SpellModKey {
+        SpellModOp op;
+        uint8_t    group;
+        bool operator==(const SpellModKey& o) const {
+            return op == o.op && group == o.group;
+        }
+    };
+    struct SpellModKeyHash {
+        std::size_t operator()(const SpellModKey& k) const {
+            return std::hash<uint32_t>()(
+                (static_cast<uint32_t>(static_cast<uint8_t>(k.op)) << 8) | k.group);
+        }
+    };
+
+    // Returns the sum of all flat modifiers for a given op across all groups.
+    // (Callers that need per-group resolution can use getSpellFlatMods() directly.)
+    int32_t getSpellFlatMod(SpellModOp op) const {
+        int32_t total = 0;
+        for (const auto& [k, v] : spellFlatMods_)
+            if (k.op == op) total += v;
+        return total;
+    }
+    // Returns the sum of all pct modifiers for a given op across all groups (in %).
+    int32_t getSpellPctMod(SpellModOp op) const {
+        int32_t total = 0;
+        for (const auto& [k, v] : spellPctMods_)
+            if (k.op == op) total += v;
+        return total;
+    }
+
+    // Convenience: apply flat+pct modifier to a base value.
+    // result = (base + flatMod) * (1.0 + pctMod/100.0), clamped to >= 0.
+    static int32_t applySpellMod(int32_t base, int32_t flat, int32_t pct) {
+        int64_t v = static_cast<int64_t>(base) + flat;
+        if (pct != 0) v = v + (v * pct + 50) / 100;  // round half-up
+        return static_cast<int32_t>(v < 0 ? 0 : v);
+    }
+
     struct FactionStandingInit {
         uint8_t flags = 0;
         int32_t standing = 0;
@@ -3100,6 +3178,11 @@ private:
 
     // ---- WotLK Calendar: pending invite counter ----
     uint32_t    calendarPendingInvites_ = 0; ///< Unacknowledged calendar invites (SMSG_CALENDAR_SEND_NUM_PENDING)
+
+    // ---- Spell modifiers (SMSG_SET_FLAT_SPELL_MODIFIER / SMSG_SET_PCT_SPELL_MODIFIER) ----
+    // Keyed by (SpellModOp, groupIndex); cleared on logout/character change.
+    std::unordered_map<SpellModKey, int32_t, SpellModKeyHash> spellFlatMods_;
+    std::unordered_map<SpellModKey, int32_t, SpellModKeyHash> spellPctMods_;
 };
 
 } // namespace game

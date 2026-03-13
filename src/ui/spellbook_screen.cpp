@@ -525,7 +525,7 @@ void SpellbookScreen::renderSpellTooltip(const SpellInfo* info, game::GameHandle
 
     // Resource cost + cast time on same row (WoW style)
     if (!info->isPassive()) {
-        // Left: resource cost
+        // Left: resource cost (with talent flat/pct modifier applied)
         char costBuf[64] = "";
         if (info->manaCost > 0) {
             const char* powerName = "Mana";
@@ -535,16 +535,26 @@ void SpellbookScreen::renderSpellTooltip(const SpellInfo* info, game::GameHandle
                 case 4: powerName = "Focus";  break;
                 default: break;
             }
-            std::snprintf(costBuf, sizeof(costBuf), "%u %s", info->manaCost, powerName);
+            // Apply SMSG_SET_FLAT/PCT_SPELL_MODIFIER Cost modifier (SpellModOp::Cost = 14)
+            int32_t flatCost = gameHandler.getSpellFlatMod(game::GameHandler::SpellModOp::Cost);
+            int32_t pctCost  = gameHandler.getSpellPctMod(game::GameHandler::SpellModOp::Cost);
+            uint32_t displayCost = static_cast<uint32_t>(
+                game::GameHandler::applySpellMod(static_cast<int32_t>(info->manaCost), flatCost, pctCost));
+            std::snprintf(costBuf, sizeof(costBuf), "%u %s", displayCost, powerName);
         }
 
-        // Right: cast time
+        // Right: cast time (with talent CastingTime modifier applied)
         char castBuf[32] = "";
         if (info->castTimeMs == 0) {
             std::snprintf(castBuf, sizeof(castBuf), "Instant cast");
         } else {
-            float secs = info->castTimeMs / 1000.0f;
-            std::snprintf(castBuf, sizeof(castBuf), "%.1f sec cast", secs);
+            // Apply SpellModOp::CastingTime (10) modifiers
+            int32_t flatCT = gameHandler.getSpellFlatMod(game::GameHandler::SpellModOp::CastingTime);
+            int32_t pctCT  = gameHandler.getSpellPctMod(game::GameHandler::SpellModOp::CastingTime);
+            int32_t modCT  = game::GameHandler::applySpellMod(
+                static_cast<int32_t>(info->castTimeMs), flatCT, pctCT);
+            float secs = static_cast<float>(modCT) / 1000.0f;
+            std::snprintf(castBuf, sizeof(castBuf), "%.1f sec cast", secs > 0.0f ? secs : 0.0f);
         }
 
         if (costBuf[0] || castBuf[0]) {

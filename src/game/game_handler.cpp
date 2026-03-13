@@ -2307,8 +2307,14 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_DAMAGE_CALC_LOG:
         case Opcode::SMSG_DYNAMIC_DROP_ROLL_RESULT:
         case Opcode::SMSG_DESTRUCTIBLE_BUILDING_DAMAGE:
-        case Opcode::SMSG_FORCED_DEATH_UPDATE:
             // Consume — handled by broader object update or not yet implemented
+            packet.setReadPos(packet.getSize());
+            break;
+        case Opcode::SMSG_FORCED_DEATH_UPDATE:
+            // Server forces player into dead state (GM command, scripted event, etc.)
+            playerDead_ = true;
+            if (ghostStateCallback_) ghostStateCallback_(false); // dead but not ghost yet
+            LOG_INFO("SMSG_FORCED_DEATH_UPDATE: player force-killed");
             packet.setReadPos(packet.getSize());
             break;
 
@@ -2392,11 +2398,27 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // Time bias — consume without processing
             packet.setReadPos(packet.getSize());
             break;
-        case Opcode::SMSG_ACHIEVEMENT_DELETED:
-        case Opcode::SMSG_CRITERIA_DELETED:
-            // Consume achievement/criteria removal notifications
+        case Opcode::SMSG_ACHIEVEMENT_DELETED: {
+            // uint32 achievementId — remove from local earned set
+            if (packet.getSize() - packet.getReadPos() >= 4) {
+                uint32_t achId = packet.readUInt32();
+                earnedAchievements_.erase(achId);
+                achievementDates_.erase(achId);
+                LOG_DEBUG("SMSG_ACHIEVEMENT_DELETED: id=", achId);
+            }
             packet.setReadPos(packet.getSize());
             break;
+        }
+        case Opcode::SMSG_CRITERIA_DELETED: {
+            // uint32 criteriaId — remove from local criteria progress
+            if (packet.getSize() - packet.getReadPos() >= 4) {
+                uint32_t critId = packet.readUInt32();
+                criteriaProgress_.erase(critId);
+                LOG_DEBUG("SMSG_CRITERIA_DELETED: id=", critId);
+            }
+            packet.setReadPos(packet.getSize());
+            break;
+        }
 
         // ---- Combat clearing ----
         case Opcode::SMSG_ATTACKSWING_DEADTARGET:

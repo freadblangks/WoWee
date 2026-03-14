@@ -3782,9 +3782,11 @@ bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
     }
     data.hitCount = static_cast<uint8_t>(data.hitTargets.size());
 
-    // Validate missCount field exists
+    // missCount is mandatory in SMSG_SPELL_GO. Missing byte means truncation.
     if (packet.getSize() - packet.getReadPos() < 1) {
-        return true; // Valid, just no misses
+        LOG_WARNING("Spell go: missing missCount after hit target list");
+        packet.setReadPos(startPos);
+        return false;
     }
 
     const uint8_t rawMissCount = packet.readUInt8();

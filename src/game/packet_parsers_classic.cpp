@@ -414,8 +414,12 @@ bool ClassicPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& da
     data.spellId   = packet.readUInt32();
     data.castFlags = packet.readUInt16();   // uint16 in Vanilla (uint32 in TBC/WotLK)
 
-    // Hit targets
-    if (rem() < 1) return true;
+    // hitCount is mandatory in SMSG_SPELL_GO. Missing byte means truncation.
+    if (rem() < 1) {
+        LOG_WARNING("[Classic] Spell go: missing hitCount after fixed fields");
+        packet.setReadPos(startPos);
+        return false;
+    }
     const uint8_t rawHitCount = packet.readUInt8();
     if (rawHitCount > 128) {
         LOG_WARNING("[Classic] Spell go: hitCount capped (requested=", (int)rawHitCount, ")");
@@ -441,8 +445,12 @@ bool ClassicPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& da
     }
     data.hitCount = static_cast<uint8_t>(data.hitTargets.size());
 
-    // Miss targets
-    if (rem() < 1) return true;
+    // missCount is mandatory in SMSG_SPELL_GO. Missing byte means truncation.
+    if (rem() < 1) {
+        LOG_WARNING("[Classic] Spell go: missing missCount after hit target list");
+        packet.setReadPos(startPos);
+        return false;
+    }
     const uint8_t rawMissCount = packet.readUInt8();
     if (rawMissCount > 128) {
         LOG_WARNING("[Classic] Spell go: missCount capped (requested=", (int)rawMissCount, ")");

@@ -1277,8 +1277,9 @@ bool TbcPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& data) 
     // NOTE: NO timestamp field here in TBC (WotLK added packet.readUInt32())
 
     if (packet.getReadPos() >= packet.getSize()) {
-        LOG_DEBUG("[TBC] Spell go: spell=", data.spellId, " (no hit data)");
-        return true;
+        LOG_WARNING("[TBC] Spell go: missing hitCount after fixed fields");
+        packet.setReadPos(startPos);
+        return false;
     }
 
     const uint8_t rawHitCount = packet.readUInt8();
@@ -1306,43 +1307,47 @@ bool TbcPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& data) 
     }
     data.hitCount = static_cast<uint8_t>(data.hitTargets.size());
 
-    if (packet.getReadPos() < packet.getSize()) {
-        const uint8_t rawMissCount = packet.readUInt8();
-        if (rawMissCount > 128) {
-            LOG_WARNING("[TBC] Spell go: missCount capped (requested=", (int)rawMissCount, ")");
+    if (packet.getReadPos() >= packet.getSize()) {
+        LOG_WARNING("[TBC] Spell go: missing missCount after hit target list");
+        packet.setReadPos(startPos);
+        return false;
+    }
+
+    const uint8_t rawMissCount = packet.readUInt8();
+    if (rawMissCount > 128) {
+        LOG_WARNING("[TBC] Spell go: missCount capped (requested=", (int)rawMissCount, ")");
+    }
+    const uint8_t storedMissLimit = std::min<uint8_t>(rawMissCount, 128);
+    data.missTargets.reserve(storedMissLimit);
+    for (uint16_t i = 0; i < rawMissCount; ++i) {
+        if (packet.getReadPos() + 9 > packet.getSize()) {
+            LOG_WARNING("[TBC] Spell go: truncated miss targets at index ", i,
+                        "/", (int)rawMissCount);
+            truncatedTargets = true;
+            break;
         }
-        const uint8_t storedMissLimit = std::min<uint8_t>(rawMissCount, 128);
-        data.missTargets.reserve(storedMissLimit);
-        for (uint16_t i = 0; i < rawMissCount; ++i) {
-            if (packet.getReadPos() + 9 > packet.getSize()) {
-                LOG_WARNING("[TBC] Spell go: truncated miss targets at index ", i,
+        SpellGoMissEntry m;
+        m.targetGuid = packet.readUInt64();  // full GUID in TBC
+        m.missType   = packet.readUInt8();
+        if (m.missType == 11) {
+            if (packet.getReadPos() + 5 > packet.getSize()) {
+                LOG_WARNING("[TBC] Spell go: truncated reflect payload at miss index ", i,
                             "/", (int)rawMissCount);
                 truncatedTargets = true;
                 break;
             }
-            SpellGoMissEntry m;
-            m.targetGuid = packet.readUInt64();  // full GUID in TBC
-            m.missType   = packet.readUInt8();
-            if (m.missType == 11) {
-                if (packet.getReadPos() + 5 > packet.getSize()) {
-                    LOG_WARNING("[TBC] Spell go: truncated reflect payload at miss index ", i,
-                                "/", (int)rawMissCount);
-                    truncatedTargets = true;
-                    break;
-                }
-                (void)packet.readUInt32();
-                (void)packet.readUInt8();
-            }
-            if (i < storedMissLimit) {
-                data.missTargets.push_back(m);
-            }
+            (void)packet.readUInt32();
+            (void)packet.readUInt8();
         }
-        if (truncatedTargets) {
-            packet.setReadPos(startPos);
-            return false;
+        if (i < storedMissLimit) {
+            data.missTargets.push_back(m);
         }
-        data.missCount = static_cast<uint8_t>(data.missTargets.size());
     }
+    if (truncatedTargets) {
+        packet.setReadPos(startPos);
+        return false;
+    }
+    data.missCount = static_cast<uint8_t>(data.missTargets.size());
 
     LOG_DEBUG("[TBC] Spell go: spell=", data.spellId, " hits=", (int)data.hitCount,
               " misses=", (int)data.missCount);

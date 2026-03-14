@@ -18445,6 +18445,21 @@ void GameHandler::selectGossipOption(uint32_t optionId) {
             LOG_INFO("Sent CMSG_BANKER_ACTIVATE for npc=0x", std::hex, currentGossip.npcGuid, std::dec);
         }
 
+        // Vendor / repair: some servers require an explicit CMSG_LIST_INVENTORY after gossip select.
+        const bool isVendor = (text == "GOSSIP_OPTION_VENDOR" ||
+                               (textLower.find("browse") != std::string::npos &&
+                                (textLower.find("goods") != std::string::npos || textLower.find("wares") != std::string::npos)));
+        const bool isArmorer = (text == "GOSSIP_OPTION_ARMORER" || textLower.find("repair") != std::string::npos);
+        if (isVendor || isArmorer) {
+            if (isArmorer) {
+                setVendorCanRepair(true);
+            }
+            auto pkt = ListInventoryPacket::build(currentGossip.npcGuid);
+            socket->send(pkt);
+            LOG_INFO("Sent CMSG_LIST_INVENTORY (gossip) to npc=0x", std::hex, currentGossip.npcGuid, std::dec,
+                     " vendor=", (int)isVendor, " repair=", (int)isArmorer);
+        }
+
         if (textLower.find("make this inn your home") != std::string::npos ||
             textLower.find("set your home") != std::string::npos) {
             auto bindPkt = BinderActivatePacket::build(currentGossip.npcGuid);

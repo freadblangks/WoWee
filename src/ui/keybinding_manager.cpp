@@ -47,9 +47,7 @@ bool KeybindingManager::isActionPressed(Action action, bool repeat) {
 
     // When typing in a text field (e.g. chat input), never treat A-Z or 0-9 as shortcuts.
     const ImGuiIO& io = ImGui::GetIO();
-    // Note: WantTextInput may not be set until the text widget is processed later in the
-    // frame, but WantCaptureKeyboard remains true while an ImGui widget is active.
-    if (io.WantTextInput || io.WantCaptureKeyboard) {
+    if (io.WantTextInput) {
         if ((key >= ImGuiKey_A && key <= ImGuiKey_Z) ||
             (key >= ImGuiKey_0 && key <= ImGuiKey_9)) {
             return false;

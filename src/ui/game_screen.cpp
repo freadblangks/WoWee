@@ -2288,7 +2288,7 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
         refocusChatInput = true;
     }
 
-    const bool textFocus = chatInputActive || refocusChatInput || io.WantTextInput || io.WantCaptureKeyboard;
+    const bool textFocus = chatInputActive || refocusChatInput || io.WantTextInput;
 
     // Tab targeting (when keyboard not captured by UI)
     if (!io.WantCaptureKeyboard) {

@@ -1399,15 +1399,33 @@ bool TbcPacketParsers::parseCastFailed(network::Packet& packet, CastFailedData& 
 // would mis-parse TBC's GUIDs and corrupt all subsequent damage fields.
 // ============================================================================
 bool TbcPacketParsers::parseAttackerStateUpdate(network::Packet& packet, AttackerStateUpdateData& data) {
-    if (packet.getSize() - packet.getReadPos() < 21) return false;
+    data = AttackerStateUpdateData{};
 
-    data.hitInfo      = packet.readUInt32();
-    data.attackerGuid = packet.readUInt64();   // full GUID in TBC
-    data.targetGuid   = packet.readUInt64();   // full GUID in TBC
-    data.totalDamage  = static_cast<int32_t>(packet.readUInt32());
+    const size_t startPos = packet.getReadPos();
+    auto rem = [&]() { return packet.getSize() - packet.getReadPos(); };
+
+    // Fixed fields before sub-damage list:
+    // hitInfo(4) + attackerGuid(8) + targetGuid(8) + totalDamage(4) + subDamageCount(1) = 25 bytes
+    if (rem() < 25) return false;
+
+    data.hitInfo        = packet.readUInt32();
+    data.attackerGuid   = packet.readUInt64();   // full GUID in TBC
+    data.targetGuid     = packet.readUInt64();   // full GUID in TBC
+    data.totalDamage    = static_cast<int32_t>(packet.readUInt32());
     data.subDamageCount = packet.readUInt8();
 
+    // Clamp to what can fit in the remaining payload (20 bytes per sub-damage entry).
+    const uint8_t maxSubDamageCount = static_cast<uint8_t>(std::min<size_t>(rem() / 20, 64));
+    if (data.subDamageCount > maxSubDamageCount) {
+        data.subDamageCount = maxSubDamageCount;
+    }
+
+    data.subDamages.reserve(data.subDamageCount);
     for (uint8_t i = 0; i < data.subDamageCount; ++i) {
+        if (rem() < 20) {
+            packet.setReadPos(startPos);
+            return false;
+        }
         SubDamage sub;
         sub.schoolMask = packet.readUInt32();
         sub.damage     = packet.readFloat();
@@ -1417,10 +1435,17 @@ bool TbcPacketParsers::parseAttackerStateUpdate(network::Packet& packet, Attacke
         data.subDamages.push_back(sub);
     }
 
+    data.subDamageCount = static_cast<uint8_t>(data.subDamages.size());
+
+    // victimState + overkill are part of the expected payload.
+    if (rem() < 8) {
+        packet.setReadPos(startPos);
+        return false;
+    }
     data.victimState = packet.readUInt32();
     data.overkill    = static_cast<int32_t>(packet.readUInt32());
 
-    if (packet.getReadPos() < packet.getSize()) {
+    if (rem() >= 4) {
         data.blocked = packet.readUInt32();
     }
 

@@ -6206,17 +6206,23 @@ void GameHandler::handlePacket(network::Packet& packet) {
             packet.setReadPos(packet.getSize());
             break;
         case Opcode::SMSG_SPELLORDAMAGE_IMMUNE: {
-            // WotLK: packed casterGuid + packed victimGuid + uint32 spellId + uint8 saveType
-            // TBC/Classic: full uint64 casterGuid + full uint64 victimGuid + uint32 + uint8
-            const bool immuneTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
-            const size_t minSz = immuneTbcLike ? 21u : 2u;
+            // WotLK/Classic/Turtle: packed casterGuid + packed victimGuid + uint32 spellId + uint8 saveType
+            // TBC:                  full uint64 casterGuid + full uint64 victimGuid + uint32 + uint8
+            const bool immuneUsesFullGuid = isActiveExpansion("tbc");
+            const size_t minSz = immuneUsesFullGuid ? 21u : 2u;
             if (packet.getSize() - packet.getReadPos() < minSz) {
                 packet.setReadPos(packet.getSize()); break;
             }
-            uint64_t casterGuid = immuneTbcLike
+            if (!immuneUsesFullGuid && !hasFullPackedGuid(packet)) {
+                packet.setReadPos(packet.getSize()); break;
+            }
+            uint64_t casterGuid = immuneUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
-            if (packet.getSize() - packet.getReadPos() < (immuneTbcLike ? 8u : 2u)) break;
-            uint64_t victimGuid = immuneTbcLike
+            if (packet.getSize() - packet.getReadPos() < (immuneUsesFullGuid ? 8u : 2u)
+                || (!immuneUsesFullGuid && !hasFullPackedGuid(packet))) {
+                packet.setReadPos(packet.getSize()); break;
+            }
+            uint64_t victimGuid = immuneUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
             if (packet.getSize() - packet.getReadPos() < 5) break;
             uint32_t immuneSpellId = packet.readUInt32();

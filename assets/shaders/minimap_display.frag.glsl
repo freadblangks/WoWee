@@ -48,9 +48,10 @@ void main() {
     vec2 local = center; // [-0.5, 0.5] around minimap center
     float ac = cos(push.arrowRotation);
     float as = sin(push.arrowRotation);
-    vec2 tip   = vec2(0.0,  0.09);
-    vec2 left  = vec2(-0.045, -0.02);
-    vec2 right = vec2( 0.045, -0.02);
+    // TexCoord Y grows downward on screen; use negative Y so 0-angle points North (up).
+    vec2 tip   = vec2(0.0, -0.09);
+    vec2 left  = vec2(-0.045, 0.02);
+    vec2 right = vec2( 0.045, 0.02);
     mat2 rot = mat2(ac, -as, as, ac);
     tip = rot * tip;
     left = rot * left;

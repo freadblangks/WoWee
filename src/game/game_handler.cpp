@@ -2760,25 +2760,55 @@ void GameHandler::handlePacket(network::Packet& packet) {
             uint64_t casterGuid = readSpellMissGuid();
             if (packet.getSize() - packet.getReadPos() < 5) break;
             /*uint8_t unk =*/ packet.readUInt8();
-            uint32_t count = packet.readUInt32();
-            for (uint32_t i = 0; i < count; ++i) {
+            const uint32_t rawCount = packet.readUInt32();
+            if (rawCount > 128) {
+                LOG_WARNING("SMSG_SPELLLOGMISS: miss count capped (requested=", rawCount, ")");
+            }
+            const uint32_t storedLimit = std::min<uint32_t>(rawCount, 128u);
+
+            struct SpellMissLogEntry {
+                uint64_t victimGuid = 0;
+                uint8_t missInfo = 0;
+            };
+            std::vector<SpellMissLogEntry> parsedMisses;
+            parsedMisses.reserve(storedLimit);
+
+            bool truncated = false;
+            for (uint32_t i = 0; i < rawCount; ++i) {
                 if (packet.getSize() - packet.getReadPos() < (spellMissUsesFullGuid ? 9u : 2u)
                     || (!spellMissUsesFullGuid && !hasFullPackedGuid(packet))) {
-                    packet.setReadPos(packet.getSize()); break;
+                    truncated = true;
+                    break;
                 }
-                uint64_t victimGuid = readSpellMissGuid();
-                if (packet.getSize() - packet.getReadPos() < 1) break;
-                uint8_t missInfo = packet.readUInt8();
+                const uint64_t victimGuid = readSpellMissGuid();
+                if (packet.getSize() - packet.getReadPos() < 1) {
+                    truncated = true;
+                    break;
+                }
+                const uint8_t missInfo = packet.readUInt8();
                 // REFLECT (11): extra uint32 reflectSpellId + uint8 reflectResult
                 if (missInfo == 11) {
                     if (packet.getSize() - packet.getReadPos() >= 5) {
                         /*uint32_t reflectSpellId =*/ packet.readUInt32();
                         /*uint8_t  reflectResult  =*/ packet.readUInt8();
                     } else {
-                        packet.setReadPos(packet.getSize());
+                        truncated = true;
                         break;
                     }
                 }
+                if (i < storedLimit) {
+                    parsedMisses.push_back({victimGuid, missInfo});
+                }
+            }
+
+            if (truncated) {
+                packet.setReadPos(packet.getSize());
+                break;
+            }
+
+            for (const auto& miss : parsedMisses) {
+                const uint64_t victimGuid = miss.victimGuid;
+                const uint8_t missInfo = miss.missInfo;
                 CombatTextEntry::Type ct = combatTextTypeFromSpellMissInfo(missInfo);
                 if (casterGuid == playerGuid) {
                     // We cast a spell and it missed the target

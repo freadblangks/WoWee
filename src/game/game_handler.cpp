@@ -6133,8 +6133,6 @@ void GameHandler::handlePacket(network::Packet& packet) {
         }
 
         // ---- Spell combat logs (consume) ----
-        case Opcode::SMSG_AURACASTLOG:
-        case Opcode::SMSG_SPELLBREAKLOG:
         case Opcode::SMSG_SPELLDAMAGESHIELD: {
             // Classic/TBC: uint64 victim + uint64 caster + spellId(4) + damage(4) + schoolMask(4)
             // WotLK:       packed_guid victim + packed_guid caster + spellId(4) + damage(4) + absorbed(4) + schoolMask(4)
@@ -6165,6 +6163,12 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
             break;
         }
+        case Opcode::SMSG_AURACASTLOG:
+        case Opcode::SMSG_SPELLBREAKLOG:
+            // These packets are not damage-shield events. Consume them without
+            // synthesizing reflected damage entries or misattributing GUIDs.
+            packet.setReadPos(packet.getSize());
+            break;
         case Opcode::SMSG_SPELLORDAMAGE_IMMUNE: {
             // WotLK: packed casterGuid + packed victimGuid + uint32 spellId + uint8 saveType
             // TBC/Classic: full uint64 casterGuid + full uint64 victimGuid + uint32 + uint8

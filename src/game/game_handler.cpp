@@ -6164,43 +6164,56 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // multi-aura packets down to the first entry only.
             std::vector<uint32_t> dispelledIds;
             dispelledIds.reserve(count);
-            std::string firstSpellName;
             for (uint32_t i = 0; i < count && packet.getSize() - packet.getReadPos() >= 5; ++i) {
                 uint32_t dispelledId = packet.readUInt32();
                 /*uint8_t isPositive =*/ packet.readUInt8();
                 if (dispelledId != 0) {
                     dispelledIds.push_back(dispelledId);
                 }
-                if (i == 0) {
-                    const std::string& nm = getSpellName(dispelledId);
-                    firstSpellName = nm.empty() ? ("spell " + std::to_string(dispelledId)) : nm;
-                }
             }
             // Show system message if player was victim or caster
             if (victimGuid == playerGuid || casterGuid == playerGuid) {
-                if (!firstSpellName.empty()) {
+                std::vector<uint32_t> loggedIds;
+                if (isStolen) {
+                    loggedIds.reserve(dispelledIds.size());
+                    for (uint32_t dispelledId : dispelledIds) {
+                        if (shouldLogSpellstealAura(casterGuid, victimGuid, dispelledId))
+                            loggedIds.push_back(dispelledId);
+                    }
+                } else {
+                    loggedIds = dispelledIds;
+                }
+
+                const uint32_t displaySpellId = !loggedIds.empty() ? loggedIds.front() : 0;
+                const std::string displaySpellName = displaySpellId != 0
+                    ? [&]() {
+                        const std::string& nm = getSpellName(displaySpellId);
+                        return nm.empty() ? ("spell " + std::to_string(displaySpellId)) : nm;
+                    }()
+                    : std::string{};
+                if (!displaySpellName.empty()) {
                     char buf[256];
                     if (isStolen) {
                         if (victimGuid == playerGuid && casterGuid != playerGuid)
-                            std::snprintf(buf, sizeof(buf), "%s was stolen.", firstSpellName.c_str());
+                            std::snprintf(buf, sizeof(buf), "%s was stolen.", displaySpellName.c_str());
                         else if (casterGuid == playerGuid)
-                            std::snprintf(buf, sizeof(buf), "You steal %s.", firstSpellName.c_str());
+                            std::snprintf(buf, sizeof(buf), "You steal %s.", displaySpellName.c_str());
                         else
-                            std::snprintf(buf, sizeof(buf), "%s was stolen.", firstSpellName.c_str());
+                            std::snprintf(buf, sizeof(buf), "%s was stolen.", displaySpellName.c_str());
                     } else {
                         if (victimGuid == playerGuid && casterGuid != playerGuid)
-                            std::snprintf(buf, sizeof(buf), "%s was dispelled.", firstSpellName.c_str());
+                            std::snprintf(buf, sizeof(buf), "%s was dispelled.", displaySpellName.c_str());
                         else if (casterGuid == playerGuid)
-                            std::snprintf(buf, sizeof(buf), "You dispel %s.", firstSpellName.c_str());
+                            std::snprintf(buf, sizeof(buf), "You dispel %s.", displaySpellName.c_str());
                         else
-                            std::snprintf(buf, sizeof(buf), "%s was dispelled.", firstSpellName.c_str());
+                            std::snprintf(buf, sizeof(buf), "%s was dispelled.", displaySpellName.c_str());
                     }
                     addSystemChatMessage(buf);
                 }
                 // Preserve stolen auras as spellsteal events so the log wording stays accurate.
-                if (!dispelledIds.empty()) {
+                if (!loggedIds.empty()) {
                     bool isPlayerCaster = (casterGuid == playerGuid);
-                    for (uint32_t dispelledId : dispelledIds) {
+                    for (uint32_t dispelledId : loggedIds) {
                         addCombatText(isStolen ? CombatTextEntry::STEAL : CombatTextEntry::DISPEL,
                                       0, dispelledId, isPlayerCaster, 0,
                                       casterGuid, victimGuid);
@@ -6236,31 +6249,41 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // Preserve every stolen aura in the combat log instead of only the first.
             std::vector<uint32_t> stolenIds;
             stolenIds.reserve(stealCount);
-            std::string stolenName;
             for (uint32_t i = 0; i < stealCount && packet.getSize() - packet.getReadPos() >= 5; ++i) {
                 uint32_t stolenId = packet.readUInt32();
                 /*uint8_t isPos  =*/ packet.readUInt8();
                 if (stolenId != 0) {
                     stolenIds.push_back(stolenId);
                 }
-                if (i == 0) {
-                    const std::string& nm = getSpellName(stolenId);
-                    stolenName = nm.empty() ? ("spell " + std::to_string(stolenId)) : nm;
-                }
             }
             if (stealCaster == playerGuid || stealVictim == playerGuid) {
-                if (!stolenName.empty()) {
+                std::vector<uint32_t> loggedIds;
+                loggedIds.reserve(stolenIds.size());
+                for (uint32_t stolenId : stolenIds) {
+                    if (shouldLogSpellstealAura(stealCaster, stealVictim, stolenId))
+                        loggedIds.push_back(stolenId);
+                }
+
+                const uint32_t displaySpellId = !loggedIds.empty() ? loggedIds.front() : 0;
+                const std::string displaySpellName = displaySpellId != 0
+                    ? [&]() {
+                        const std::string& nm = getSpellName(displaySpellId);
+                        return nm.empty() ? ("spell " + std::to_string(displaySpellId)) : nm;
+                    }()
+                    : std::string{};
+                if (!displaySpellName.empty()) {
                     char buf[256];
                     if (stealCaster == playerGuid)
-                        std::snprintf(buf, sizeof(buf), "You stole %s.", stolenName.c_str());
+                        std::snprintf(buf, sizeof(buf), "You stole %s.", displaySpellName.c_str());
                     else
-                        std::snprintf(buf, sizeof(buf), "%s was stolen.", stolenName.c_str());
+                        std::snprintf(buf, sizeof(buf), "%s was stolen.", displaySpellName.c_str());
                     addSystemChatMessage(buf);
                 }
-                // Preserve spellsteal as a distinct event so the UI wording stays accurate.
-                if (!stolenIds.empty()) {
+                // Some servers emit both SPELLDISPELLOG(isStolen=1) and SPELLSTEALLOG
+                // for the same aura. Keep the first event and suppress the duplicate.
+                if (!loggedIds.empty()) {
                     bool isPlayerCaster = (stealCaster == playerGuid);
-                    for (uint32_t stolenId : stolenIds) {
+                    for (uint32_t stolenId : loggedIds) {
                         addCombatText(CombatTextEntry::STEAL, 0, stolenId, isPlayerCaster, 0,
                                       stealCaster, stealVictim);
                     }
@@ -14078,6 +14101,31 @@ void GameHandler::addCombatText(CombatTextEntry::Type type, int32_t amount, uint
     if (combatLog_.size() >= MAX_COMBAT_LOG)
         combatLog_.pop_front();
     combatLog_.push_back(std::move(log));
+}
+
+bool GameHandler::shouldLogSpellstealAura(uint64_t casterGuid, uint64_t victimGuid, uint32_t spellId) {
+    if (spellId == 0) return false;
+
+    const auto now = std::chrono::steady_clock::now();
+    constexpr auto kRecentWindow = std::chrono::seconds(1);
+    while (!recentSpellstealLogs_.empty() &&
+           now - recentSpellstealLogs_.front().timestamp > kRecentWindow) {
+        recentSpellstealLogs_.pop_front();
+    }
+
+    for (auto it = recentSpellstealLogs_.begin(); it != recentSpellstealLogs_.end(); ++it) {
+        if (it->casterGuid == casterGuid &&
+            it->victimGuid == victimGuid &&
+            it->spellId == spellId) {
+            recentSpellstealLogs_.erase(it);
+            return false;
+        }
+    }
+
+    if (recentSpellstealLogs_.size() >= MAX_RECENT_SPELLSTEAL_LOGS)
+        recentSpellstealLogs_.pop_front();
+    recentSpellstealLogs_.push_back({casterGuid, victimGuid, spellId, now});
+    return true;
 }
 
 void GameHandler::updateCombatText(float deltaTime) {

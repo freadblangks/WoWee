@@ -2680,29 +2680,29 @@ void GameHandler::handlePacket(network::Packet& packet) {
         // ---- Spell log miss ----
         case Opcode::SMSG_SPELLLOGMISS: {
             // All expansions: uint32 spellId first.
-            // WotLK:       spellId(4) + packed_guid caster + uint8 unk + uint32 count
-            //              + count × (packed_guid victim + uint8 missInfo)
-            // TBC/Classic: spellId(4) + uint64 caster + uint8 unk + uint32 count
-            //              + count × (uint64 victim + uint8 missInfo)
+            // WotLK/Classic: spellId(4) + packed_guid caster + uint8 unk + uint32 count
+            //                 + count × (packed_guid victim + uint8 missInfo)
+            // TBC:            spellId(4) + uint64 caster + uint8 unk + uint32 count
+            //                 + count × (uint64 victim + uint8 missInfo)
             // All expansions append uint32 reflectSpellId + uint8 reflectResult when
             // missInfo==11 (REFLECT).
-            const bool spellMissTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
+            const bool spellMissUsesFullGuid = isActiveExpansion("tbc");
             auto readSpellMissGuid = [&]() -> uint64_t {
-                if (spellMissTbcLike)
+                if (spellMissUsesFullGuid)
                     return (packet.getSize() - packet.getReadPos() >= 8) ? packet.readUInt64() : 0;
                 return UpdateObjectParser::readPackedGuid(packet);
             };
             // spellId prefix present in all expansions
             if (packet.getSize() - packet.getReadPos() < 4) break;
             uint32_t spellId = packet.readUInt32();
-            if (packet.getSize() - packet.getReadPos() < (spellMissTbcLike ? 8 : 1)) break;
+            if (packet.getSize() - packet.getReadPos() < (spellMissUsesFullGuid ? 8u : 1u)) break;
             uint64_t casterGuid = readSpellMissGuid();
             if (packet.getSize() - packet.getReadPos() < 5) break;
             /*uint8_t unk =*/ packet.readUInt8();
             uint32_t count = packet.readUInt32();
             count = std::min(count, 32u);
             for (uint32_t i = 0; i < count; ++i) {
-                if (packet.getSize() - packet.getReadPos() < (spellMissTbcLike ? 9u : 2u)) break;
+                if (packet.getSize() - packet.getReadPos() < (spellMissUsesFullGuid ? 9u : 2u)) break;
                 uint64_t victimGuid = readSpellMissGuid();
                 if (packet.getSize() - packet.getReadPos() < 1) break;
                 uint8_t missInfo = packet.readUInt8();

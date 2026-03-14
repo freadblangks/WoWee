@@ -3632,8 +3632,9 @@ bool SpellStartParser::parse(network::Packet& packet, SpellStartData& data) {
 }
 
 bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
-    // Upfront validation: packed GUID(1-8) + packed GUID(1-8) + castCount(1) + spellId(4) + castFlags(4) + timestamp(4) + hitCount(1) + missCount(1) = 24 bytes minimum
-    if (packet.getSize() - packet.getReadPos() < 24) return false;
+    // Packed GUIDs are variable-length, so only require the smallest possible
+    // shape up front: 2 GUID masks + fixed fields through missCount.
+    if (packet.getSize() - packet.getReadPos() < 17) return false;
 
     size_t startPos = packet.getReadPos();
     data.casterGuid = UpdateObjectParser::readPackedGuid(packet);

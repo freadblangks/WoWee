@@ -3995,10 +3995,18 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     if (packet.getSize() - packet.getReadPos() < 12) break;
                     uint8_t powerType = static_cast<uint8_t>(packet.readUInt32());
                     uint32_t amount = packet.readUInt32();
-                    /*float multiplier =*/ packet.readUInt32();  // read as raw uint32 (float bits)
+                    float multiplier = packet.readFloat();
                     if (isPlayerVictim && amount > 0)
                         addCombatText(CombatTextEntry::POWER_DRAIN, static_cast<int32_t>(amount),
                                       spellId, false, powerType, casterGuid, victimGuid);
+                    if (isPlayerCaster && amount > 0 && multiplier > 0.0f && std::isfinite(multiplier)) {
+                        const uint32_t gainedAmount = static_cast<uint32_t>(
+                            std::lround(static_cast<double>(amount) * static_cast<double>(multiplier)));
+                        if (gainedAmount > 0) {
+                            addCombatText(CombatTextEntry::ENERGIZE, static_cast<int32_t>(gainedAmount),
+                                          spellId, true, powerType, casterGuid, casterGuid);
+                        }
+                    }
                 } else {
                     // Unknown/untracked aura type — stop parsing this event safely
                     packet.setReadPos(packet.getSize());
@@ -6458,18 +6466,30 @@ void GameHandler::handlePacket(network::Packet& packet) {
                         if (packet.getSize() - packet.getReadPos() < 12) { packet.setReadPos(packet.getSize()); break; }
                         uint32_t drainAmount = packet.readUInt32();
                         uint32_t drainPower  = packet.readUInt32(); // 0=mana,1=rage,3=energy,6=runic
-                        /*float    drainMult =*/ packet.readFloat();
+                        float drainMult = packet.readFloat();
                         if (drainAmount > 0) {
                             if (drainTarget == playerGuid)
                                 addCombatText(CombatTextEntry::POWER_DRAIN, static_cast<int32_t>(drainAmount), exeSpellId, false,
                                               static_cast<uint8_t>(drainPower),
                                               exeCaster, drainTarget);
-                            else if (isPlayerCaster)
-                                addCombatText(CombatTextEntry::ENERGIZE, static_cast<int32_t>(drainAmount), exeSpellId, true,
-                                              static_cast<uint8_t>(drainPower), exeCaster, exeCaster);
+                            if (isPlayerCaster) {
+                                if (drainTarget != playerGuid) {
+                                    addCombatText(CombatTextEntry::POWER_DRAIN, static_cast<int32_t>(drainAmount), exeSpellId, true,
+                                                  static_cast<uint8_t>(drainPower), exeCaster, drainTarget);
+                                }
+                                if (drainMult > 0.0f && std::isfinite(drainMult)) {
+                                    const uint32_t gainedAmount = static_cast<uint32_t>(
+                                        std::lround(static_cast<double>(drainAmount) * static_cast<double>(drainMult)));
+                                    if (gainedAmount > 0) {
+                                        addCombatText(CombatTextEntry::ENERGIZE, static_cast<int32_t>(gainedAmount), exeSpellId, true,
+                                                      static_cast<uint8_t>(drainPower), exeCaster, exeCaster);
+                                    }
+                                }
+                            }
                         }
                         LOG_DEBUG("SMSG_SPELLLOGEXECUTE POWER_DRAIN: spell=", exeSpellId,
-                                  " power=", drainPower, " amount=", drainAmount);
+                                  " power=", drainPower, " amount=", drainAmount,
+                                  " multiplier=", drainMult);
                     }
                 } else if (effectType == 11) {
                     // SPELL_EFFECT_HEALTH_LEECH: packed_guid target + uint32 amount + float multiplier

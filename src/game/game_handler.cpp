@@ -100,6 +100,22 @@ bool envFlagEnabled(const char* key, bool defaultValue = false) {
              raw[0] == 'n' || raw[0] == 'N');
 }
 
+bool hasFullPackedGuid(const network::Packet& packet) {
+    if (packet.getReadPos() >= packet.getSize()) {
+        return false;
+    }
+
+    const auto& rawData = packet.getData();
+    const uint8_t mask = rawData[packet.getReadPos()];
+    size_t guidBytes = 1;
+    for (int bit = 0; bit < 8; ++bit) {
+        if ((mask & (1u << bit)) != 0) {
+            ++guidBytes;
+        }
+    }
+    return packet.getSize() - packet.getReadPos() >= guidBytes;
+}
+
 std::string formatCopperAmount(uint32_t amount) {
     uint32_t gold = amount / 10000;
     uint32_t silver = (amount / 100) % 100;
@@ -2086,17 +2102,23 @@ void GameHandler::handlePacket(network::Packet& packet) {
 
         // ---- Spell proc resist log ----
         case Opcode::SMSG_PROCRESIST: {
-            // WotLK:       packed_guid caster + packed_guid victim + uint32 spellId + ...
-            // TBC/Classic: uint64 caster + uint64 victim + uint32 spellId + ...
-            const bool prTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
+            // WotLK/Classic/Turtle: packed_guid caster + packed_guid victim + uint32 spellId + ...
+            // TBC:                  uint64 caster + uint64 victim + uint32 spellId + ...
+            const bool prUsesFullGuid = isActiveExpansion("tbc");
             auto readPrGuid = [&]() -> uint64_t {
-                if (prTbcLike)
+                if (prUsesFullGuid)
                     return (packet.getSize() - packet.getReadPos() >= 8) ? packet.readUInt64() : 0;
                 return UpdateObjectParser::readPackedGuid(packet);
             };
-            if (packet.getSize() - packet.getReadPos() < (prTbcLike ? 8u : 1u)) break;
+            if (packet.getSize() - packet.getReadPos() < (prUsesFullGuid ? 8u : 1u)
+                || (!prUsesFullGuid && !hasFullPackedGuid(packet))) {
+                packet.setReadPos(packet.getSize()); break;
+            }
             uint64_t caster = readPrGuid();
-            if (packet.getSize() - packet.getReadPos() < (prTbcLike ? 8u : 1u)) break;
+            if (packet.getSize() - packet.getReadPos() < (prUsesFullGuid ? 8u : 1u)
+                || (!prUsesFullGuid && !hasFullPackedGuid(packet))) {
+                packet.setReadPos(packet.getSize()); break;
+            }
             uint64_t victim = readPrGuid();
             if (packet.getSize() - packet.getReadPos() < 4) break;
             uint32_t spellId = packet.readUInt32();
@@ -2695,14 +2717,20 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // spellId prefix present in all expansions
             if (packet.getSize() - packet.getReadPos() < 4) break;
             uint32_t spellId = packet.readUInt32();
-            if (packet.getSize() - packet.getReadPos() < (spellMissUsesFullGuid ? 8u : 1u)) break;
+            if (packet.getSize() - packet.getReadPos() < (spellMissUsesFullGuid ? 8u : 1u)
+                || (!spellMissUsesFullGuid && !hasFullPackedGuid(packet))) {
+                packet.setReadPos(packet.getSize()); break;
+            }
             uint64_t casterGuid = readSpellMissGuid();
             if (packet.getSize() - packet.getReadPos() < 5) break;
             /*uint8_t unk =*/ packet.readUInt8();
             uint32_t count = packet.readUInt32();
             count = std::min(count, 32u);
             for (uint32_t i = 0; i < count; ++i) {
-                if (packet.getSize() - packet.getReadPos() < (spellMissUsesFullGuid ? 9u : 2u)) break;
+                if (packet.getSize() - packet.getReadPos() < (spellMissUsesFullGuid ? 9u : 2u)
+                    || (!spellMissUsesFullGuid && !hasFullPackedGuid(packet))) {
+                    packet.setReadPos(packet.getSize()); break;
+                }
                 uint64_t victimGuid = readSpellMissGuid();
                 if (packet.getSize() - packet.getReadPos() < 1) break;
                 uint8_t missInfo = packet.readUInt8();
@@ -3239,12 +3267,14 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_DISPEL_FAILED: {
             // WotLK:       uint32 dispelSpellId + packed_guid caster + packed_guid victim
             //              [+ count × uint32 failedSpellId]
-            // TBC/Classic: uint64 caster + uint64 victim + uint32 spellId
+            // Classic:     uint32 dispelSpellId + packed_guid caster + packed_guid victim
             //              [+ count × uint32 failedSpellId]
-            const bool dispelTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
+            // TBC:         uint64 caster + uint64 victim + uint32 spellId
+            //              [+ count × uint32 failedSpellId]
+            const bool dispelUsesFullGuid = isActiveExpansion("tbc");
             uint32_t dispelSpellId = 0;
             uint64_t dispelCasterGuid = 0;
-            if (dispelTbcLike) {
+            if (dispelUsesFullGuid) {
                 if (packet.getSize() - packet.getReadPos() < 20) break;
                 dispelCasterGuid = packet.readUInt64();
                 /*uint64_t victim =*/ packet.readUInt64();
@@ -3252,9 +3282,13 @@ void GameHandler::handlePacket(network::Packet& packet) {
             } else {
                 if (packet.getSize() - packet.getReadPos() < 4) break;
                 dispelSpellId = packet.readUInt32();
-                if (packet.getSize() - packet.getReadPos() < 1) break;
+                if (!hasFullPackedGuid(packet)) {
+                    packet.setReadPos(packet.getSize()); break;
+                }
                 dispelCasterGuid = UpdateObjectParser::readPackedGuid(packet);
-                if (packet.getSize() - packet.getReadPos() < 1) break;
+                if (!hasFullPackedGuid(packet)) {
+                    packet.setReadPos(packet.getSize()); break;
+                }
                 /*uint64_t victim =*/ UpdateObjectParser::readPackedGuid(packet);
             }
             // Only show failure to the player who attempted the dispel
@@ -6142,23 +6176,34 @@ void GameHandler::handlePacket(network::Packet& packet) {
 
         // ---- Spell combat logs (consume) ----
         case Opcode::SMSG_SPELLDAMAGESHIELD: {
-            // Classic/TBC: uint64 victim + uint64 caster + spellId(4) + damage(4) + schoolMask(4)
-            // WotLK:       packed_guid victim + packed_guid caster + spellId(4) + damage(4) + absorbed(4) + schoolMask(4)
-            const bool shieldClassicLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
-            const size_t shieldMinSz = shieldClassicLike ? 24u : 2u;
+            // Classic: packed_guid victim + packed_guid caster + spellId(4) + damage(4) + schoolMask(4)
+            // TBC:     uint64 victim + uint64 caster + spellId(4) + damage(4) + schoolMask(4)
+            // WotLK:   packed_guid victim + packed_guid caster + spellId(4) + damage(4) + absorbed(4) + schoolMask(4)
+            const bool shieldTbc = isActiveExpansion("tbc");
+            const bool shieldWotlkLike = !isClassicLikeExpansion() && !shieldTbc;
+            const auto shieldRem = [&]() { return packet.getSize() - packet.getReadPos(); };
+            const size_t shieldMinSz = shieldTbc ? 24u : 2u;
             if (packet.getSize() - packet.getReadPos() < shieldMinSz) {
                 packet.setReadPos(packet.getSize()); break;
             }
-            uint64_t victimGuid = shieldClassicLike
+            if (!shieldTbc && (!hasFullPackedGuid(packet))) {
+                packet.setReadPos(packet.getSize()); break;
+            }
+            uint64_t victimGuid = shieldTbc
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
-            uint64_t casterGuid = shieldClassicLike
+            if (packet.getSize() - packet.getReadPos() < (shieldTbc ? 8u : 1u)
+                || (!shieldTbc && !hasFullPackedGuid(packet))) {
+                packet.setReadPos(packet.getSize()); break;
+            }
+            uint64_t casterGuid = shieldTbc
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
-            if (packet.getSize() - packet.getReadPos() < 12) {
+            const size_t shieldTailSize = shieldWotlkLike ? 16u : 12u;
+            if (shieldRem() < shieldTailSize) {
                 packet.setReadPos(packet.getSize()); break;
             }
             uint32_t shieldSpellId = packet.readUInt32();
             uint32_t damage        = packet.readUInt32();
-            if (!shieldClassicLike && packet.getSize() - packet.getReadPos() >= 4)
+            if (shieldWotlkLike)
                 /*uint32_t absorbed =*/ packet.readUInt32();
             /*uint32_t school =*/  packet.readUInt32();
             // Show combat text: damage shield reflect
@@ -6178,17 +6223,23 @@ void GameHandler::handlePacket(network::Packet& packet) {
             packet.setReadPos(packet.getSize());
             break;
         case Opcode::SMSG_SPELLORDAMAGE_IMMUNE: {
-            // WotLK: packed casterGuid + packed victimGuid + uint32 spellId + uint8 saveType
-            // TBC/Classic: full uint64 casterGuid + full uint64 victimGuid + uint32 + uint8
-            const bool immuneTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
-            const size_t minSz = immuneTbcLike ? 21u : 2u;
+            // WotLK/Classic/Turtle: packed casterGuid + packed victimGuid + uint32 spellId + uint8 saveType
+            // TBC:                  full uint64 casterGuid + full uint64 victimGuid + uint32 + uint8
+            const bool immuneUsesFullGuid = isActiveExpansion("tbc");
+            const size_t minSz = immuneUsesFullGuid ? 21u : 2u;
             if (packet.getSize() - packet.getReadPos() < minSz) {
                 packet.setReadPos(packet.getSize()); break;
             }
-            uint64_t casterGuid = immuneTbcLike
+            if (!immuneUsesFullGuid && !hasFullPackedGuid(packet)) {
+                packet.setReadPos(packet.getSize()); break;
+            }
+            uint64_t casterGuid = immuneUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
-            if (packet.getSize() - packet.getReadPos() < (immuneTbcLike ? 8u : 2u)) break;
-            uint64_t victimGuid = immuneTbcLike
+            if (packet.getSize() - packet.getReadPos() < (immuneUsesFullGuid ? 8u : 2u)
+                || (!immuneUsesFullGuid && !hasFullPackedGuid(packet))) {
+                packet.setReadPos(packet.getSize()); break;
+            }
+            uint64_t victimGuid = immuneUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
             if (packet.getSize() - packet.getReadPos() < 5) break;
             uint32_t immuneSpellId = packet.readUInt32();
@@ -6202,17 +6253,21 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
         case Opcode::SMSG_SPELLDISPELLOG: {
-            // WotLK: packed casterGuid + packed victimGuid + uint32 dispelSpell + uint8 isStolen
-            // TBC/Classic: full uint64 casterGuid + full uint64 victimGuid + ...
+            // WotLK/Classic/Turtle: packed casterGuid + packed victimGuid + uint32 dispelSpell + uint8 isStolen
+            // TBC:                  full uint64 casterGuid + full uint64 victimGuid + ...
             // + uint32 count + count × (uint32 dispelled_spellId + uint32 unk)
-            const bool dispelTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
-            if (packet.getSize() - packet.getReadPos() < (dispelTbcLike ? 8u : 2u)) {
+            const bool dispelUsesFullGuid = isActiveExpansion("tbc");
+            if (packet.getSize() - packet.getReadPos() < (dispelUsesFullGuid ? 8u : 1u)
+                || (!dispelUsesFullGuid && !hasFullPackedGuid(packet))) {
                 packet.setReadPos(packet.getSize()); break;
             }
-            uint64_t casterGuid = dispelTbcLike
+            uint64_t casterGuid = dispelUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
-            if (packet.getSize() - packet.getReadPos() < (dispelTbcLike ? 8u : 2u)) break;
-            uint64_t victimGuid = dispelTbcLike
+            if (packet.getSize() - packet.getReadPos() < (dispelUsesFullGuid ? 8u : 1u)
+                || (!dispelUsesFullGuid && !hasFullPackedGuid(packet))) {
+                packet.setReadPos(packet.getSize()); break;
+            }
+            uint64_t victimGuid = dispelUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
             if (packet.getSize() - packet.getReadPos() < 9) break;
             /*uint32_t dispelSpell =*/ packet.readUInt32();
@@ -6220,12 +6275,12 @@ void GameHandler::handlePacket(network::Packet& packet) {
             uint32_t count   = packet.readUInt32();
             // Preserve every dispelled aura in the combat log instead of collapsing
             // multi-aura packets down to the first entry only.
-            const size_t dispelEntrySize = dispelTbcLike ? 8u : 5u;
+            const size_t dispelEntrySize = dispelUsesFullGuid ? 8u : 5u;
             std::vector<uint32_t> dispelledIds;
             dispelledIds.reserve(count);
             for (uint32_t i = 0; i < count && packet.getSize() - packet.getReadPos() >= dispelEntrySize; ++i) {
                 uint32_t dispelledId = packet.readUInt32();
-                if (dispelTbcLike) {
+                if (dispelUsesFullGuid) {
                     /*uint32_t unk =*/ packet.readUInt32();
                 } else {
                     /*uint8_t isPositive =*/ packet.readUInt8();
@@ -6288,19 +6343,21 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_SPELLSTEALLOG: {
             // Sent to the CASTER (Mage) when Spellsteal succeeds.
             // Wire format mirrors SPELLDISPELLOG:
-            // WotLK: packed victim + packed caster + uint32 spellId + uint8 isStolen + uint32 count
-            //        + count × (uint32 stolenSpellId + uint8 isPositive)
-            // TBC/Classic: full uint64 victim + full uint64 caster + same tail
-            const bool stealTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
-            if (packet.getSize() - packet.getReadPos() < (stealTbcLike ? 8u : 2u)) {
+            // WotLK/Classic/Turtle: packed victim + packed caster + uint32 spellId + uint8 isStolen + uint32 count
+            //                        + count × (uint32 stolenSpellId + uint8 isPositive)
+            // TBC:                   full uint64 victim + full uint64 caster + same tail
+            const bool stealUsesFullGuid = isActiveExpansion("tbc");
+            if (packet.getSize() - packet.getReadPos() < (stealUsesFullGuid ? 8u : 1u)
+                || (!stealUsesFullGuid && !hasFullPackedGuid(packet))) {
                 packet.setReadPos(packet.getSize()); break;
             }
-            uint64_t stealVictim = stealTbcLike
+            uint64_t stealVictim = stealUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
-            if (packet.getSize() - packet.getReadPos() < (stealTbcLike ? 8u : 2u)) {
+            if (packet.getSize() - packet.getReadPos() < (stealUsesFullGuid ? 8u : 1u)
+                || (!stealUsesFullGuid && !hasFullPackedGuid(packet))) {
                 packet.setReadPos(packet.getSize()); break;
             }
-            uint64_t stealCaster = stealTbcLike
+            uint64_t stealCaster = stealUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
             if (packet.getSize() - packet.getReadPos() < 9) {
                 packet.setReadPos(packet.getSize()); break;
@@ -6309,12 +6366,12 @@ void GameHandler::handlePacket(network::Packet& packet) {
             /*uint8_t  isStolen    =*/ packet.readUInt8();
             uint32_t stealCount   = packet.readUInt32();
             // Preserve every stolen aura in the combat log instead of only the first.
-            const size_t stealEntrySize = stealTbcLike ? 8u : 5u;
+            const size_t stealEntrySize = stealUsesFullGuid ? 8u : 5u;
             std::vector<uint32_t> stolenIds;
             stolenIds.reserve(stealCount);
             for (uint32_t i = 0; i < stealCount && packet.getSize() - packet.getReadPos() >= stealEntrySize; ++i) {
                 uint32_t stolenId = packet.readUInt32();
-                if (stealTbcLike) {
+                if (stealUsesFullGuid) {
                     /*uint32_t unk =*/ packet.readUInt32();
                 } else {
                     /*uint8_t isPos  =*/ packet.readUInt8();
@@ -6355,19 +6412,21 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
         case Opcode::SMSG_SPELL_CHANCE_PROC_LOG: {
-            // WotLK:       packed_guid target + packed_guid caster + uint32 spellId + ...
-            // TBC/Classic: uint64 target + uint64 caster + uint32 spellId + ...
-            const bool procChanceTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
+            // WotLK/Classic/Turtle: packed_guid target + packed_guid caster + uint32 spellId + ...
+            // TBC:                  uint64 target + uint64 caster + uint32 spellId + ...
+            const bool procChanceUsesFullGuid = isActiveExpansion("tbc");
             auto readProcChanceGuid = [&]() -> uint64_t {
-                if (procChanceTbcLike)
+                if (procChanceUsesFullGuid)
                     return (packet.getSize() - packet.getReadPos() >= 8) ? packet.readUInt64() : 0;
                 return UpdateObjectParser::readPackedGuid(packet);
             };
-            if (packet.getSize() - packet.getReadPos() < (procChanceTbcLike ? 8u : 1u)) {
+            if (packet.getSize() - packet.getReadPos() < (procChanceUsesFullGuid ? 8u : 1u)
+                || (!procChanceUsesFullGuid && !hasFullPackedGuid(packet))) {
                 packet.setReadPos(packet.getSize()); break;
             }
             uint64_t procTargetGuid = readProcChanceGuid();
-            if (packet.getSize() - packet.getReadPos() < (procChanceTbcLike ? 8u : 1u)) {
+            if (packet.getSize() - packet.getReadPos() < (procChanceUsesFullGuid ? 8u : 1u)
+                || (!procChanceUsesFullGuid && !hasFullPackedGuid(packet))) {
                 packet.setReadPos(packet.getSize()); break;
             }
             uint64_t procCasterGuid = readProcChanceGuid();
@@ -6384,15 +6443,21 @@ void GameHandler::handlePacket(network::Packet& packet) {
         }
         case Opcode::SMSG_SPELLINSTAKILLLOG: {
             // Sent when a unit is killed by a spell with SPELL_ATTR_EX2_INSTAKILL (e.g. Execute, Obliterate, etc.)
-            // WotLK: packed_guid caster + packed_guid victim + uint32 spellId
-            // TBC/Classic: full uint64 caster + full uint64 victim + uint32 spellId
-            const bool ikTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
+            // WotLK/Classic/Turtle: packed_guid caster + packed_guid victim + uint32 spellId
+            // TBC:                  full uint64 caster + full uint64 victim + uint32 spellId
+            const bool ikUsesFullGuid = isActiveExpansion("tbc");
             auto ik_rem = [&]() { return packet.getSize() - packet.getReadPos(); };
-            if (ik_rem() < (ikTbcLike ? 8u : 1u)) { packet.setReadPos(packet.getSize()); break; }
-            uint64_t ikCaster = ikTbcLike
+            if (ik_rem() < (ikUsesFullGuid ? 8u : 1u)
+                || (!ikUsesFullGuid && !hasFullPackedGuid(packet))) {
+                packet.setReadPos(packet.getSize()); break;
+            }
+            uint64_t ikCaster = ikUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
-            if (ik_rem() < (ikTbcLike ? 8u : 1u)) { packet.setReadPos(packet.getSize()); break; }
-            uint64_t ikVictim = ikTbcLike
+            if (ik_rem() < (ikUsesFullGuid ? 8u : 1u)
+                || (!ikUsesFullGuid && !hasFullPackedGuid(packet))) {
+                packet.setReadPos(packet.getSize()); break;
+            }
+            uint64_t ikVictim = ikUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
             uint32_t ikSpell = (ik_rem() >= 4) ? packet.readUInt32() : 0;
             // Show kill/death feedback for the local player
@@ -6408,8 +6473,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
         case Opcode::SMSG_SPELLLOGEXECUTE: {
-            // WotLK: packed_guid caster + uint32 spellId + uint32 effectCount
-            // TBC/Classic: uint64 caster + uint32 spellId + uint32 effectCount
+            // WotLK/Classic/Turtle: packed_guid caster + uint32 spellId + uint32 effectCount
+            // TBC:                  uint64 caster + uint32 spellId + uint32 effectCount
             // Per-effect: uint8 effectType + uint32 effectLogCount + effect-specific data
             // Effect 10 = POWER_DRAIN:   packed_guid target + uint32 amount + uint32 powerType + float multiplier
             // Effect 11 = HEALTH_LEECH:  packed_guid target + uint32 amount + float multiplier
@@ -6417,28 +6482,14 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // Effect 26 = INTERRUPT_CAST: packed_guid target + uint32 interrupted_spell_id
             // Effect 49 = FEED_PET:      uint32 itemEntry
             // Effect 114= CREATE_ITEM2:  uint32 itemEntry (same layout as CREATE_ITEM)
-            const bool exeTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
-            const auto hasFullPackedGuid = [&packet]() -> bool {
-                if (packet.getReadPos() >= packet.getSize()) {
-                    return false;
-                }
-                const auto& rawData = packet.getData();
-                const uint8_t mask = rawData[packet.getReadPos()];
-                size_t guidBytes = 1;
-                for (int bit = 0; bit < 8; ++bit) {
-                    if ((mask & (1u << bit)) != 0) {
-                        ++guidBytes;
-                    }
-                }
-                return packet.getSize() - packet.getReadPos() >= guidBytes;
-            };
-            if (packet.getSize() - packet.getReadPos() < (exeTbcLike ? 8u : 1u)) {
+            const bool exeUsesFullGuid = isActiveExpansion("tbc");
+            if (packet.getSize() - packet.getReadPos() < (exeUsesFullGuid ? 8u : 1u)) {
                 packet.setReadPos(packet.getSize()); break;
             }
-            if (!exeTbcLike && !hasFullPackedGuid()) {
+            if (!exeUsesFullGuid && !hasFullPackedGuid(packet)) {
                 packet.setReadPos(packet.getSize()); break;
             }
-            uint64_t exeCaster = exeTbcLike
+            uint64_t exeCaster = exeUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
             if (packet.getSize() - packet.getReadPos() < 8) {
                 packet.setReadPos(packet.getSize()); break;
@@ -6456,11 +6507,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 if (effectType == 10) {
                     // SPELL_EFFECT_POWER_DRAIN: packed_guid target + uint32 amount + uint32 powerType + float multiplier
                     for (uint32_t li = 0; li < effectLogCount; ++li) {
-                        if (packet.getSize() - packet.getReadPos() < (exeTbcLike ? 8u : 1u)
-                            || (!exeTbcLike && !hasFullPackedGuid())) {
+                        if (packet.getSize() - packet.getReadPos() < (exeUsesFullGuid ? 8u : 1u)
+                            || (!exeUsesFullGuid && !hasFullPackedGuid(packet))) {
                             packet.setReadPos(packet.getSize()); break;
                         }
-                        uint64_t drainTarget = exeTbcLike
+                        uint64_t drainTarget = exeUsesFullGuid
                             ? packet.readUInt64()
                             : UpdateObjectParser::readPackedGuid(packet);
                         if (packet.getSize() - packet.getReadPos() < 12) { packet.setReadPos(packet.getSize()); break; }
@@ -6494,25 +6545,35 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 } else if (effectType == 11) {
                     // SPELL_EFFECT_HEALTH_LEECH: packed_guid target + uint32 amount + float multiplier
                     for (uint32_t li = 0; li < effectLogCount; ++li) {
-                        if (packet.getSize() - packet.getReadPos() < (exeTbcLike ? 8u : 1u)
-                            || (!exeTbcLike && !hasFullPackedGuid())) {
+                        if (packet.getSize() - packet.getReadPos() < (exeUsesFullGuid ? 8u : 1u)
+                            || (!exeUsesFullGuid && !hasFullPackedGuid(packet))) {
                             packet.setReadPos(packet.getSize()); break;
                         }
-                        uint64_t leechTarget = exeTbcLike
+                        uint64_t leechTarget = exeUsesFullGuid
                             ? packet.readUInt64()
                             : UpdateObjectParser::readPackedGuid(packet);
                         if (packet.getSize() - packet.getReadPos() < 8) { packet.setReadPos(packet.getSize()); break; }
                         uint32_t leechAmount = packet.readUInt32();
-                        /*float    leechMult =*/ packet.readFloat();
+                        float leechMult = packet.readFloat();
                         if (leechAmount > 0) {
-                            if (leechTarget == playerGuid)
+                            if (leechTarget == playerGuid) {
                                 addCombatText(CombatTextEntry::SPELL_DAMAGE, static_cast<int32_t>(leechAmount), exeSpellId, false, 0,
                                               exeCaster, leechTarget);
-                            else if (isPlayerCaster)
-                                addCombatText(CombatTextEntry::HEAL, static_cast<int32_t>(leechAmount), exeSpellId, true, 0,
-                                              exeCaster, exeCaster);
+                            } else if (isPlayerCaster) {
+                                addCombatText(CombatTextEntry::SPELL_DAMAGE, static_cast<int32_t>(leechAmount), exeSpellId, true, 0,
+                                              exeCaster, leechTarget);
+                            }
+                            if (isPlayerCaster && leechMult > 0.0f && std::isfinite(leechMult)) {
+                                const uint32_t gainedAmount = static_cast<uint32_t>(
+                                    std::lround(static_cast<double>(leechAmount) * static_cast<double>(leechMult)));
+                                if (gainedAmount > 0) {
+                                    addCombatText(CombatTextEntry::HEAL, static_cast<int32_t>(gainedAmount), exeSpellId, true, 0,
+                                                  exeCaster, exeCaster);
+                                }
+                            }
                         }
-                        LOG_DEBUG("SMSG_SPELLLOGEXECUTE HEALTH_LEECH: spell=", exeSpellId, " amount=", leechAmount);
+                        LOG_DEBUG("SMSG_SPELLLOGEXECUTE HEALTH_LEECH: spell=", exeSpellId,
+                                  " amount=", leechAmount, " multiplier=", leechMult);
                     }
                 } else if (effectType == 24 || effectType == 114) {
                     // SPELL_EFFECT_CREATE_ITEM / CREATE_ITEM2: uint32 itemEntry per log entry
@@ -6539,11 +6600,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 } else if (effectType == 26) {
                     // SPELL_EFFECT_INTERRUPT_CAST: packed_guid target + uint32 interrupted_spell_id
                     for (uint32_t li = 0; li < effectLogCount; ++li) {
-                        if (packet.getSize() - packet.getReadPos() < (exeTbcLike ? 8u : 1u)
-                            || (!exeTbcLike && !hasFullPackedGuid())) {
+                        if (packet.getSize() - packet.getReadPos() < (exeUsesFullGuid ? 8u : 1u)
+                            || (!exeUsesFullGuid && !hasFullPackedGuid(packet))) {
                             packet.setReadPos(packet.getSize()); break;
                         }
-                        uint64_t icTarget = exeTbcLike
+                        uint64_t icTarget = exeUsesFullGuid
                             ? packet.readUInt64()
                             : UpdateObjectParser::readPackedGuid(packet);
                         if (packet.getSize() - packet.getReadPos() < 4) { packet.setReadPos(packet.getSize()); break; }
@@ -6992,19 +7053,25 @@ void GameHandler::handlePacket(network::Packet& packet) {
 
         // ---- Resistance/combat log ----
         case Opcode::SMSG_RESISTLOG: {
-            // WotLK: uint32 hitInfo + packed_guid attacker + packed_guid victim + uint32 spellId
-            //        + float resistFactor + uint32 targetRes + uint32 resistedValue + ...
-            // TBC/Classic: same but full uint64 GUIDs
+            // WotLK/Classic/Turtle: uint32 hitInfo + packed_guid attacker + packed_guid victim + uint32 spellId
+            //                      + float resistFactor + uint32 targetRes + uint32 resistedValue + ...
+            // TBC:                 same layout but full uint64 GUIDs
             // Show RESIST combat text when player resists an incoming spell.
-            const bool rlTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
+            const bool rlUsesFullGuid = isActiveExpansion("tbc");
             auto rl_rem = [&]() { return packet.getSize() - packet.getReadPos(); };
             if (rl_rem() < 4) { packet.setReadPos(packet.getSize()); break; }
             /*uint32_t hitInfo =*/ packet.readUInt32();
-            if (rl_rem() < (rlTbcLike ? 8u : 1u)) { packet.setReadPos(packet.getSize()); break; }
-            uint64_t attackerGuid = rlTbcLike
+            if (rl_rem() < (rlUsesFullGuid ? 8u : 1u)
+                || (!rlUsesFullGuid && !hasFullPackedGuid(packet))) {
+                packet.setReadPos(packet.getSize()); break;
+            }
+            uint64_t attackerGuid = rlUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
-            if (rl_rem() < (rlTbcLike ? 8u : 1u)) { packet.setReadPos(packet.getSize()); break; }
-            uint64_t victimGuid = rlTbcLike
+            if (rl_rem() < (rlUsesFullGuid ? 8u : 1u)
+                || (!rlUsesFullGuid && !hasFullPackedGuid(packet))) {
+                packet.setReadPos(packet.getSize()); break;
+            }
+            uint64_t victimGuid = rlUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
             if (rl_rem() < 4) { packet.setReadPos(packet.getSize()); break; }
             uint32_t spellId = packet.readUInt32();

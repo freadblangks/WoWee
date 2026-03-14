@@ -16862,8 +16862,9 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
     // Clear unit cast bar when the spell lands (for any tracked unit)
     unitCastStates_.erase(data.casterUnit);
 
-    // Show miss/dodge/parry/etc combat text when player's spells miss targets
-    if (data.casterUnit == playerGuid && !data.missTargets.empty()) {
+    // Preserve spellId and actual participants for spell-go miss results.
+    // This keeps the persistent combat log aligned with the later GUID fixes.
+    if (!data.missTargets.empty()) {
         static const CombatTextEntry::Type missTypes[] = {
             CombatTextEntry::MISS,    // 0=MISS
             CombatTextEntry::DODGE,   // 1=DODGE
@@ -16875,10 +16876,15 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
             CombatTextEntry::ABSORB,  // 7=ABSORB
             CombatTextEntry::RESIST,  // 8=RESIST
         };
-        // Show text for each miss (usually just 1 target per spell go)
+        const uint64_t spellCasterGuid = data.casterUnit != 0 ? data.casterUnit : data.casterGuid;
+        const bool playerIsCaster = (spellCasterGuid == playerGuid);
+
         for (const auto& m : data.missTargets) {
+            if (!playerIsCaster && m.targetGuid != playerGuid) {
+                continue;
+            }
             CombatTextEntry::Type ct = (m.missType < 9) ? missTypes[m.missType] : CombatTextEntry::MISS;
-            addCombatText(ct, 0, 0, true);
+            addCombatText(ct, 0, data.spellId, playerIsCaster, 0, spellCasterGuid, m.targetGuid);
         }
     }
 

@@ -1168,6 +1168,7 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
     gpuModel.isLanternLike =
         (lowerName.find("lantern") != std::string::npos) ||
         (lowerName.find("lamp") != std::string::npos) ||
+        (lowerName.find("torch") != std::string::npos) ||
         (lowerName.find("light") != std::string::npos);
     gpuModel.isKoboldFlame =
         (lowerName.find("kobold") != std::string::npos) &&
@@ -1544,6 +1545,7 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
             const bool modelLanternFamily =
                 (lowerName.find("lantern") != std::string::npos) ||
                 (lowerName.find("lamp") != std::string::npos) ||
+                (lowerName.find("torch") != std::string::npos) ||
                 (lowerName.find("light") != std::string::npos);
             bgpu.lanternGlowHint =
                 exactLanternGlowTexture ||
@@ -2654,8 +2656,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     (batch.blendMode >= 3) ||
                     batch.colorKeyBlack ||
                     ((batch.materialFlags & 0x01) != 0);
-                if ((batch.glowCardLike && lanternLikeModel) ||
-                    (cardLikeSkipMesh && !lanternLikeModel)) {
+                if (cardLikeSkipMesh || (batch.glowCardLike && lanternLikeModel)) {
                     continue;
                 }
             }
@@ -2860,7 +2861,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                  (batch.colorKeyBlack && batchUnlit && batch.blendMode >= 1));
             if (shouldUseGlowSprite) {
                 const bool cardLikeSkipMesh = (batch.blendMode >= 3) || batch.colorKeyBlack || batchUnlit;
-                if ((batch.glowCardLike && model.isLanternLike) || (cardLikeSkipMesh && !model.isLanternLike))
+                if (cardLikeSkipMesh || (batch.glowCardLike && model.isLanternLike))
                     continue;
             }
 

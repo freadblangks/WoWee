@@ -19820,13 +19820,14 @@ void GameHandler::handleListInventory(network::Packet& packet) {
     bool savedCanRepair = currentVendorItems.canRepair;  // preserve armorer flag set via gossip path
     if (!ListInventoryParser::parse(packet, currentVendorItems)) return;
 
-    // Check NPC_FLAG_REPAIR (0x40) on the vendor entity — this handles vendors that open
+    // Check NPC_FLAG_REPAIR (0x1000) on the vendor entity — this handles vendors that open
     // directly without going through the gossip armorer option.
     if (!savedCanRepair && currentVendorItems.vendorGuid != 0) {
         auto entity = entityManager.getEntity(currentVendorItems.vendorGuid);
         if (entity && entity->getType() == ObjectType::UNIT) {
             auto unit = std::static_pointer_cast<Unit>(entity);
-            if (unit->getNpcFlags() & 0x40) {  // NPC_FLAG_REPAIR
+            // MaNGOS/Trinity: UNIT_NPC_FLAG_REPAIR = 0x00001000.
+            if (unit->getNpcFlags() & 0x1000) {
                 savedCanRepair = true;
             }
         }

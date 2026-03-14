@@ -100,6 +100,22 @@ bool envFlagEnabled(const char* key, bool defaultValue = false) {
              raw[0] == 'n' || raw[0] == 'N');
 }
 
+bool hasFullPackedGuid(const network::Packet& packet) {
+    if (packet.getReadPos() >= packet.getSize()) {
+        return false;
+    }
+
+    const auto& rawData = packet.getData();
+    const uint8_t mask = rawData[packet.getReadPos()];
+    size_t guidBytes = 1;
+    for (int bit = 0; bit < 8; ++bit) {
+        if ((mask & (1u << bit)) != 0) {
+            ++guidBytes;
+        }
+    }
+    return packet.getSize() - packet.getReadPos() >= guidBytes;
+}
+
 std::string formatCopperAmount(uint32_t amount) {
     uint32_t gold = amount / 10000;
     uint32_t silver = (amount / 100) % 100;
@@ -3254,9 +3270,13 @@ void GameHandler::handlePacket(network::Packet& packet) {
             } else {
                 if (packet.getSize() - packet.getReadPos() < 4) break;
                 dispelSpellId = packet.readUInt32();
-                if (packet.getSize() - packet.getReadPos() < 1) break;
+                if (!hasFullPackedGuid(packet)) {
+                    packet.setReadPos(packet.getSize()); break;
+                }
                 dispelCasterGuid = UpdateObjectParser::readPackedGuid(packet);
-                if (packet.getSize() - packet.getReadPos() < 1) break;
+                if (!hasFullPackedGuid(packet)) {
+                    packet.setReadPos(packet.getSize()); break;
+                }
                 /*uint64_t victim =*/ UpdateObjectParser::readPackedGuid(packet);
             }
             // Only show failure to the player who attempted the dispel
@@ -6208,12 +6228,16 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // TBC:                  full uint64 casterGuid + full uint64 victimGuid + ...
             // + uint32 count + count × (uint32 dispelled_spellId + uint32 unk)
             const bool dispelUsesFullGuid = isActiveExpansion("tbc");
-            if (packet.getSize() - packet.getReadPos() < (dispelUsesFullGuid ? 8u : 1u)) {
+            if (packet.getSize() - packet.getReadPos() < (dispelUsesFullGuid ? 8u : 1u)
+                || (!dispelUsesFullGuid && !hasFullPackedGuid(packet))) {
                 packet.setReadPos(packet.getSize()); break;
             }
             uint64_t casterGuid = dispelUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
-            if (packet.getSize() - packet.getReadPos() < (dispelUsesFullGuid ? 8u : 1u)) break;
+            if (packet.getSize() - packet.getReadPos() < (dispelUsesFullGuid ? 8u : 1u)
+                || (!dispelUsesFullGuid && !hasFullPackedGuid(packet))) {
+                packet.setReadPos(packet.getSize()); break;
+            }
             uint64_t victimGuid = dispelUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
             if (packet.getSize() - packet.getReadPos() < 9) break;
@@ -6294,12 +6318,14 @@ void GameHandler::handlePacket(network::Packet& packet) {
             //                        + count × (uint32 stolenSpellId + uint8 isPositive)
             // TBC:                   full uint64 victim + full uint64 caster + same tail
             const bool stealUsesFullGuid = isActiveExpansion("tbc");
-            if (packet.getSize() - packet.getReadPos() < (stealUsesFullGuid ? 8u : 1u)) {
+            if (packet.getSize() - packet.getReadPos() < (stealUsesFullGuid ? 8u : 1u)
+                || (!stealUsesFullGuid && !hasFullPackedGuid(packet))) {
                 packet.setReadPos(packet.getSize()); break;
             }
             uint64_t stealVictim = stealUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
-            if (packet.getSize() - packet.getReadPos() < (stealUsesFullGuid ? 8u : 1u)) {
+            if (packet.getSize() - packet.getReadPos() < (stealUsesFullGuid ? 8u : 1u)
+                || (!stealUsesFullGuid && !hasFullPackedGuid(packet))) {
                 packet.setReadPos(packet.getSize()); break;
             }
             uint64_t stealCaster = stealUsesFullGuid
@@ -6420,24 +6446,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // Effect 49 = FEED_PET:      uint32 itemEntry
             // Effect 114= CREATE_ITEM2:  uint32 itemEntry (same layout as CREATE_ITEM)
             const bool exeUsesFullGuid = isActiveExpansion("tbc");
-            const auto hasFullPackedGuid = [&packet]() -> bool {
-                if (packet.getReadPos() >= packet.getSize()) {
-                    return false;
-                }
-                const auto& rawData = packet.getData();
-                const uint8_t mask = rawData[packet.getReadPos()];
-                size_t guidBytes = 1;
-                for (int bit = 0; bit < 8; ++bit) {
-                    if ((mask & (1u << bit)) != 0) {
-                        ++guidBytes;
-                    }
-                }
-                return packet.getSize() - packet.getReadPos() >= guidBytes;
-            };
             if (packet.getSize() - packet.getReadPos() < (exeUsesFullGuid ? 8u : 1u)) {
                 packet.setReadPos(packet.getSize()); break;
             }
-            if (!exeUsesFullGuid && !hasFullPackedGuid()) {
+            if (!exeUsesFullGuid && !hasFullPackedGuid(packet)) {
                 packet.setReadPos(packet.getSize()); break;
             }
             uint64_t exeCaster = exeUsesFullGuid
@@ -6459,7 +6471,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     // SPELL_EFFECT_POWER_DRAIN: packed_guid target + uint32 amount + uint32 powerType + float multiplier
                     for (uint32_t li = 0; li < effectLogCount; ++li) {
                         if (packet.getSize() - packet.getReadPos() < (exeUsesFullGuid ? 8u : 1u)
-                            || (!exeUsesFullGuid && !hasFullPackedGuid())) {
+                            || (!exeUsesFullGuid && !hasFullPackedGuid(packet))) {
                             packet.setReadPos(packet.getSize()); break;
                         }
                         uint64_t drainTarget = exeUsesFullGuid
@@ -6497,7 +6509,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     // SPELL_EFFECT_HEALTH_LEECH: packed_guid target + uint32 amount + float multiplier
                     for (uint32_t li = 0; li < effectLogCount; ++li) {
                         if (packet.getSize() - packet.getReadPos() < (exeUsesFullGuid ? 8u : 1u)
-                            || (!exeUsesFullGuid && !hasFullPackedGuid())) {
+                            || (!exeUsesFullGuid && !hasFullPackedGuid(packet))) {
                             packet.setReadPos(packet.getSize()); break;
                         }
                         uint64_t leechTarget = exeUsesFullGuid
@@ -6552,7 +6564,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     // SPELL_EFFECT_INTERRUPT_CAST: packed_guid target + uint32 interrupted_spell_id
                     for (uint32_t li = 0; li < effectLogCount; ++li) {
                         if (packet.getSize() - packet.getReadPos() < (exeUsesFullGuid ? 8u : 1u)
-                            || (!exeUsesFullGuid && !hasFullPackedGuid())) {
+                            || (!exeUsesFullGuid && !hasFullPackedGuid(packet))) {
                             packet.setReadPos(packet.getSize()); break;
                         }
                         uint64_t icTarget = exeUsesFullGuid

@@ -22889,7 +22889,7 @@ void GameHandler::declineTradeRequest() {
 }
 
 void GameHandler::acceptTrade() {
-    if (tradeStatus_ != TradeStatus::Open || !socket) return;
+    if (!isTradeOpen() || !socket) return;
     tradeStatus_ = TradeStatus::Accepted;
     socket->send(AcceptTradePacket::build());
 }

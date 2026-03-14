@@ -14381,8 +14381,11 @@ void GameHandler::addCombatText(CombatTextEntry::Type type, int32_t amount, uint
     log.spellId  = spellId;
     log.isPlayerSource = isPlayerSource;
     log.timestamp = std::time(nullptr);
+    // If the caller provided an explicit destination GUID but left source GUID as 0,
+    // preserve "unknown/no source" (e.g. environmental damage) instead of
+    // backfilling from current target.
     uint64_t effectiveSrc = (srcGuid != 0) ? srcGuid
-                          : (isPlayerSource ? playerGuid : targetGuid);
+                          : ((dstGuid != 0) ? 0 : (isPlayerSource ? playerGuid : targetGuid));
     uint64_t effectiveDst = (dstGuid != 0) ? dstGuid
                           : (isPlayerSource ? targetGuid : playerGuid);
     log.sourceName = lookupName(effectiveSrc);

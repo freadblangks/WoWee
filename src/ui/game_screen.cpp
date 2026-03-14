@@ -848,6 +848,20 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         renderer->setInCombat(gameHandler.isInCombat() &&
                               !gameHandler.isPlayerDead() &&
                               !gameHandler.isPlayerGhost());
+        if (auto* cr = renderer->getCharacterRenderer()) {
+            uint32_t charInstId = renderer->getCharacterInstanceId();
+            if (charInstId != 0) {
+                const bool isGhost = gameHandler.isPlayerGhost();
+                if (!ghostOpacityStateKnown_ ||
+                    ghostOpacityLastState_ != isGhost ||
+                    ghostOpacityLastInstanceId_ != charInstId) {
+                    cr->setInstanceOpacity(charInstId, isGhost ? 0.5f : 1.0f);
+                    ghostOpacityStateKnown_ = true;
+                    ghostOpacityLastState_ = isGhost;
+                    ghostOpacityLastInstanceId_ = charInstId;
+                }
+            }
+        }
         static glm::vec3 targetGLPos;
         if (gameHandler.hasTarget()) {
             auto target = gameHandler.getTarget();

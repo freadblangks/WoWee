@@ -2086,17 +2086,17 @@ void GameHandler::handlePacket(network::Packet& packet) {
 
         // ---- Spell proc resist log ----
         case Opcode::SMSG_PROCRESIST: {
-            // WotLK:       packed_guid caster + packed_guid victim + uint32 spellId + ...
-            // TBC/Classic: uint64 caster + uint64 victim + uint32 spellId + ...
-            const bool prTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
+            // WotLK/Classic/Turtle: packed_guid caster + packed_guid victim + uint32 spellId + ...
+            // TBC:                  uint64 caster + uint64 victim + uint32 spellId + ...
+            const bool prUsesFullGuid = isActiveExpansion("tbc");
             auto readPrGuid = [&]() -> uint64_t {
-                if (prTbcLike)
+                if (prUsesFullGuid)
                     return (packet.getSize() - packet.getReadPos() >= 8) ? packet.readUInt64() : 0;
                 return UpdateObjectParser::readPackedGuid(packet);
             };
-            if (packet.getSize() - packet.getReadPos() < (prTbcLike ? 8u : 1u)) break;
+            if (packet.getSize() - packet.getReadPos() < (prUsesFullGuid ? 8u : 1u)) break;
             uint64_t caster = readPrGuid();
-            if (packet.getSize() - packet.getReadPos() < (prTbcLike ? 8u : 1u)) break;
+            if (packet.getSize() - packet.getReadPos() < (prUsesFullGuid ? 8u : 1u)) break;
             uint64_t victim = readPrGuid();
             if (packet.getSize() - packet.getReadPos() < 4) break;
             uint32_t spellId = packet.readUInt32();
@@ -6355,19 +6355,19 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
         case Opcode::SMSG_SPELL_CHANCE_PROC_LOG: {
-            // WotLK:       packed_guid target + packed_guid caster + uint32 spellId + ...
-            // TBC/Classic: uint64 target + uint64 caster + uint32 spellId + ...
-            const bool procChanceTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
+            // WotLK/Classic/Turtle: packed_guid target + packed_guid caster + uint32 spellId + ...
+            // TBC:                  uint64 target + uint64 caster + uint32 spellId + ...
+            const bool procChanceUsesFullGuid = isActiveExpansion("tbc");
             auto readProcChanceGuid = [&]() -> uint64_t {
-                if (procChanceTbcLike)
+                if (procChanceUsesFullGuid)
                     return (packet.getSize() - packet.getReadPos() >= 8) ? packet.readUInt64() : 0;
                 return UpdateObjectParser::readPackedGuid(packet);
             };
-            if (packet.getSize() - packet.getReadPos() < (procChanceTbcLike ? 8u : 1u)) {
+            if (packet.getSize() - packet.getReadPos() < (procChanceUsesFullGuid ? 8u : 1u)) {
                 packet.setReadPos(packet.getSize()); break;
             }
             uint64_t procTargetGuid = readProcChanceGuid();
-            if (packet.getSize() - packet.getReadPos() < (procChanceTbcLike ? 8u : 1u)) {
+            if (packet.getSize() - packet.getReadPos() < (procChanceUsesFullGuid ? 8u : 1u)) {
                 packet.setReadPos(packet.getSize()); break;
             }
             uint64_t procCasterGuid = readProcChanceGuid();

@@ -8388,6 +8388,16 @@ void GameScreen::renderCombatText(game::GameHandler& gameHandler) {
                         snprintf(text, sizeof(text), "Resisted");
                     color = ImVec4(0.7f, 0.7f, 0.7f, alpha);  // Grey for resist
                     break;
+                case game::CombatTextEntry::DEFLECT:
+                    snprintf(text, sizeof(text), outgoing ? "Deflect" : "You Deflect");
+                    color = outgoing ? ImVec4(0.7f, 0.7f, 0.7f, alpha)
+                                     : ImVec4(0.5f, 0.9f, 1.0f, alpha);
+                    break;
+                case game::CombatTextEntry::REFLECT:
+                    snprintf(text, sizeof(text), outgoing ? "Reflect" : "Reflected");
+                    color = outgoing ? ImVec4(0.85f, 0.75f, 1.0f, alpha)
+                                     : ImVec4(0.75f, 0.85f, 1.0f, alpha);
+                    break;
                 case game::CombatTextEntry::PROC_TRIGGER: {
                     const std::string& procName = entry.spellId ? gameHandler.getSpellName(entry.spellId) : "";
                     if (!procName.empty())
@@ -20280,6 +20290,20 @@ void GameScreen::renderCombatLog(game::GameHandler& gameHandler) {
                     else
                         snprintf(desc, sizeof(desc), "Resisted");
                     color = ImVec4(0.6f, 0.6f, 0.9f, 1.0f);
+                    break;
+                case T::DEFLECT:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s deflects %s's %s", tgt, src, spell);
+                    else
+                        snprintf(desc, sizeof(desc), "%s deflects %s's attack", tgt, src);
+                    color = ImVec4(0.65f, 0.8f, 0.95f, 1.0f);
+                    break;
+                case T::REFLECT:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s reflects %s's %s", tgt, src, spell);
+                    else
+                        snprintf(desc, sizeof(desc), "%s reflects %s's attack", tgt, src);
+                    color = ImVec4(0.8f, 0.7f, 1.0f, 1.0f);
                     break;
                 case T::ENVIRONMENTAL:
                     snprintf(desc, sizeof(desc), "Environmental damage: %d", e.amount);

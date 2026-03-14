@@ -2723,11 +2723,12 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     CombatTextEntry::BLOCK,   // 3=BLOCK
                     CombatTextEntry::MISS,    // 4=EVADE
                     CombatTextEntry::IMMUNE,  // 5=IMMUNE
-                    CombatTextEntry::MISS,    // 6=DEFLECT
+                    CombatTextEntry::DEFLECT, // 6=DEFLECT
                     CombatTextEntry::ABSORB,  // 7=ABSORB
                     CombatTextEntry::RESIST,  // 8=RESIST
                 };
-                CombatTextEntry::Type ct = (missInfo < 9) ? missTypes[missInfo] : CombatTextEntry::MISS;
+                CombatTextEntry::Type ct = (missInfo < 9) ? missTypes[missInfo]
+                    : (missInfo == 11 ? CombatTextEntry::REFLECT : CombatTextEntry::MISS);
                 if (casterGuid == playerGuid) {
                     // We cast a spell and it missed the target
                     addCombatText(ct, 0, spellId, true, 0, casterGuid, victimGuid);
@@ -16386,7 +16387,7 @@ void GameHandler::handleAttackerStateUpdate(network::Packet& packet) {
         addCombatText(CombatTextEntry::IMMUNE, 0, 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
     } else if (data.victimState == 7) {
         // VICTIMSTATE_DEFLECT: Attack was deflected (e.g. shield slam reflect).
-        addCombatText(CombatTextEntry::MISS, 0, 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
+        addCombatText(CombatTextEntry::DEFLECT, 0, 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
     } else {
         auto type = data.isCrit() ? CombatTextEntry::CRIT_DAMAGE : CombatTextEntry::MELEE_DAMAGE;
         addCombatText(type, data.totalDamage, 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
@@ -16998,7 +16999,7 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
             CombatTextEntry::BLOCK,   // 3=BLOCK
             CombatTextEntry::MISS,    // 4=EVADE
             CombatTextEntry::IMMUNE,  // 5=IMMUNE
-            CombatTextEntry::MISS,    // 6=DEFLECT
+            CombatTextEntry::DEFLECT, // 6=DEFLECT
             CombatTextEntry::ABSORB,  // 7=ABSORB
             CombatTextEntry::RESIST,  // 8=RESIST
         };
@@ -17009,7 +17010,8 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
             if (!playerIsCaster && m.targetGuid != playerGuid) {
                 continue;
             }
-            CombatTextEntry::Type ct = (m.missType < 9) ? missTypes[m.missType] : CombatTextEntry::MISS;
+            CombatTextEntry::Type ct = (m.missType < 9) ? missTypes[m.missType]
+                : (m.missType == 11 ? CombatTextEntry::REFLECT : CombatTextEntry::MISS);
             addCombatText(ct, 0, data.spellId, playerIsCaster, 0, spellCasterGuid, m.targetGuid);
         }
     }

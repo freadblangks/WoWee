@@ -6175,21 +6175,30 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
             // Show system message if player was victim or caster
             if (victimGuid == playerGuid || casterGuid == playerGuid) {
-                const char* verb = isStolen ? "stolen" : "dispelled";
                 if (!firstSpellName.empty()) {
                     char buf[256];
-                    if (victimGuid == playerGuid && casterGuid != playerGuid)
-                        std::snprintf(buf, sizeof(buf), "%s was %s.", firstSpellName.c_str(), verb);
-                    else if (casterGuid == playerGuid)
-                        std::snprintf(buf, sizeof(buf), "You %s %s.", verb, firstSpellName.c_str());
-                    else
-                        std::snprintf(buf, sizeof(buf), "%s %s.", firstSpellName.c_str(), verb);
+                    if (isStolen) {
+                        if (victimGuid == playerGuid && casterGuid != playerGuid)
+                            std::snprintf(buf, sizeof(buf), "%s was stolen.", firstSpellName.c_str());
+                        else if (casterGuid == playerGuid)
+                            std::snprintf(buf, sizeof(buf), "You steal %s.", firstSpellName.c_str());
+                        else
+                            std::snprintf(buf, sizeof(buf), "%s was stolen.", firstSpellName.c_str());
+                    } else {
+                        if (victimGuid == playerGuid && casterGuid != playerGuid)
+                            std::snprintf(buf, sizeof(buf), "%s was dispelled.", firstSpellName.c_str());
+                        else if (casterGuid == playerGuid)
+                            std::snprintf(buf, sizeof(buf), "You dispel %s.", firstSpellName.c_str());
+                        else
+                            std::snprintf(buf, sizeof(buf), "%s was dispelled.", firstSpellName.c_str());
+                    }
                     addSystemChatMessage(buf);
                 }
-                // Add dispel event to combat log
+                // Preserve stolen auras as spellsteal events so the log wording stays accurate.
                 if (firstDispelledId != 0) {
                     bool isPlayerCaster = (casterGuid == playerGuid);
-                    addCombatText(CombatTextEntry::DISPEL, 0, firstDispelledId, isPlayerCaster, 0,
+                    addCombatText(isStolen ? CombatTextEntry::STEAL : CombatTextEntry::DISPEL,
+                                  0, firstDispelledId, isPlayerCaster, 0,
                                   casterGuid, victimGuid);
                 }
             }

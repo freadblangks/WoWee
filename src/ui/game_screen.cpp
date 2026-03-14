@@ -13602,6 +13602,13 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
 
     bool open = true;
     if (ImGui::Begin("Trainer", &open)) {
+        // If user clicked window close, short-circuit before rendering large trainer tables.
+        if (!open) {
+            ImGui::End();
+            gameHandler.closeTrainer();
+            return;
+        }
+
         const auto& trainer = gameHandler.getTrainerSpells();
 
         // NPC name

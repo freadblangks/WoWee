@@ -6181,6 +6181,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // WotLK:   packed_guid victim + packed_guid caster + spellId(4) + damage(4) + absorbed(4) + schoolMask(4)
             const bool shieldTbc = isActiveExpansion("tbc");
             const bool shieldWotlkLike = !isClassicLikeExpansion() && !shieldTbc;
+            const auto shieldRem = [&]() { return packet.getSize() - packet.getReadPos(); };
             const size_t shieldMinSz = shieldTbc ? 24u : 2u;
             if (packet.getSize() - packet.getReadPos() < shieldMinSz) {
                 packet.setReadPos(packet.getSize()); break;
@@ -6196,12 +6197,13 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
             uint64_t casterGuid = shieldTbc
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
-            if (packet.getSize() - packet.getReadPos() < 12) {
+            const size_t shieldTailSize = shieldWotlkLike ? 16u : 12u;
+            if (shieldRem() < shieldTailSize) {
                 packet.setReadPos(packet.getSize()); break;
             }
             uint32_t shieldSpellId = packet.readUInt32();
             uint32_t damage        = packet.readUInt32();
-            if (shieldWotlkLike && packet.getSize() - packet.getReadPos() >= 4)
+            if (shieldWotlkLike)
                 /*uint32_t absorbed =*/ packet.readUInt32();
             /*uint32_t school =*/  packet.readUInt32();
             // Show combat text: damage shield reflect

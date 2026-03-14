@@ -1472,11 +1472,12 @@ bool TbcPacketParsers::parseSpellDamageLog(network::Packet& packet, SpellDamageL
     // targetGuid(8) + attackerGuid(8) + spellId(4) + damage(4) + schoolMask(1)
     // + absorbed(4) + resisted(4) + periodicLog(1) + unused(1) + blocked(4) + flags(4)
     // = 43 bytes
+    // Some servers append additional trailing fields; consume the canonical minimum
+    // and leave any extension bytes unread.
     if (packet.getSize() - packet.getReadPos() < 43) return false;
 
     data = SpellDamageLogData{};
 
-    const size_t startPos = packet.getReadPos();
     data.targetGuid   = packet.readUInt64();  // full GUID in TBC
     data.attackerGuid = packet.readUInt64();  // full GUID in TBC
     data.spellId      = packet.readUInt32();
@@ -1494,11 +1495,6 @@ bool TbcPacketParsers::parseSpellDamageLog(network::Packet& packet, SpellDamageL
 
     // TBC does not have an overkill field here
     data.overkill = 0;
-
-    if (packet.getReadPos() - startPos != 43) {
-        packet.setReadPos(startPos);
-        return false;
-    }
 
     LOG_DEBUG("[TBC] Spell damage: spellId=", data.spellId, " dmg=", data.damage,
               data.isCrit ? " CRIT" : "");

@@ -2110,9 +2110,15 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     return (packet.getSize() - packet.getReadPos() >= 8) ? packet.readUInt64() : 0;
                 return UpdateObjectParser::readPackedGuid(packet);
             };
-            if (packet.getSize() - packet.getReadPos() < (prUsesFullGuid ? 8u : 1u)) break;
+            if (packet.getSize() - packet.getReadPos() < (prUsesFullGuid ? 8u : 1u)
+                || (!prUsesFullGuid && !hasFullPackedGuid(packet))) {
+                packet.setReadPos(packet.getSize()); break;
+            }
             uint64_t caster = readPrGuid();
-            if (packet.getSize() - packet.getReadPos() < (prUsesFullGuid ? 8u : 1u)) break;
+            if (packet.getSize() - packet.getReadPos() < (prUsesFullGuid ? 8u : 1u)
+                || (!prUsesFullGuid && !hasFullPackedGuid(packet))) {
+                packet.setReadPos(packet.getSize()); break;
+            }
             uint64_t victim = readPrGuid();
             if (packet.getSize() - packet.getReadPos() < 4) break;
             uint32_t spellId = packet.readUInt32();
@@ -6391,11 +6397,13 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     return (packet.getSize() - packet.getReadPos() >= 8) ? packet.readUInt64() : 0;
                 return UpdateObjectParser::readPackedGuid(packet);
             };
-            if (packet.getSize() - packet.getReadPos() < (procChanceUsesFullGuid ? 8u : 1u)) {
+            if (packet.getSize() - packet.getReadPos() < (procChanceUsesFullGuid ? 8u : 1u)
+                || (!procChanceUsesFullGuid && !hasFullPackedGuid(packet))) {
                 packet.setReadPos(packet.getSize()); break;
             }
             uint64_t procTargetGuid = readProcChanceGuid();
-            if (packet.getSize() - packet.getReadPos() < (procChanceUsesFullGuid ? 8u : 1u)) {
+            if (packet.getSize() - packet.getReadPos() < (procChanceUsesFullGuid ? 8u : 1u)
+                || (!procChanceUsesFullGuid && !hasFullPackedGuid(packet))) {
                 packet.setReadPos(packet.getSize()); break;
             }
             uint64_t procCasterGuid = readProcChanceGuid();

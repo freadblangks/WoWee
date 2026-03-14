@@ -1306,6 +1306,13 @@ bool TbcPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& data) 
             SpellGoMissEntry m;
             m.targetGuid = packet.readUInt64();  // full GUID in TBC
             m.missType   = packet.readUInt8();
+            if (m.missType == 11) {
+                if (packet.getReadPos() + 5 > packet.getSize()) {
+                    break;
+                }
+                (void)packet.readUInt32();
+                (void)packet.readUInt8();
+            }
             data.missTargets.push_back(m);
         }
         // Check if we read all expected misses

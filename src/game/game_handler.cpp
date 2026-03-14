@@ -2761,7 +2761,6 @@ void GameHandler::handlePacket(network::Packet& packet) {
             if (packet.getSize() - packet.getReadPos() < 5) break;
             /*uint8_t unk =*/ packet.readUInt8();
             uint32_t count = packet.readUInt32();
-            count = std::min(count, 32u);
             for (uint32_t i = 0; i < count; ++i) {
                 if (packet.getSize() - packet.getReadPos() < (spellMissUsesFullGuid ? 9u : 2u)
                     || (!spellMissUsesFullGuid && !hasFullPackedGuid(packet))) {

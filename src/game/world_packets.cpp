@@ -1482,6 +1482,47 @@ bool MessageChatParser::parse(network::Packet& packet, MessageChatData& data) {
     // Read unknown field
     packet.readUInt32();
 
+    auto tryReadSizedCString = [&](std::string& out, uint32_t maxLen, size_t minTrailingBytes) -> bool {
+        size_t start = packet.getReadPos();
+        size_t remaining = packet.getSize() - start;
+        if (remaining < 4 + minTrailingBytes) return false;
+
+        uint32_t len = packet.readUInt32();
+        if (len < 2 || len > maxLen) {
+            packet.setReadPos(start);
+            return false;
+        }
+        if ((packet.getSize() - packet.getReadPos()) < (static_cast<size_t>(len) + minTrailingBytes)) {
+            packet.setReadPos(start);
+            return false;
+        }
+
+        std::string tmp;
+        tmp.resize(len);
+        for (uint32_t i = 0; i < len; ++i) {
+            tmp[i] = static_cast<char>(packet.readUInt8());
+        }
+        if (tmp.empty() || tmp.back() != '\0') {
+            packet.setReadPos(start);
+            return false;
+        }
+        tmp.pop_back();
+        if (tmp.empty()) {
+            packet.setReadPos(start);
+            return false;
+        }
+        for (char c : tmp) {
+            unsigned char uc = static_cast<unsigned char>(c);
+            if (uc < 32 || uc > 126) {
+                packet.setReadPos(start);
+                return false;
+            }
+        }
+
+        out = std::move(tmp);
+        return true;
+    };
+
     // Type-specific data
     // WoW 3.3.5 SMSG_MESSAGECHAT format: after senderGuid+unk, most types
     // have a receiverGuid (uint64). Some types have extra fields before it.
@@ -1534,6 +1575,27 @@ bool MessageChatParser::parse(network::Packet& packet, MessageChatData& data) {
         case ChatType::GUILD_ACHIEVEMENT: {
             // Read target GUID
             data.receiverGuid = packet.readUInt64();
+            break;
+        }
+
+        case ChatType::WHISPER:
+        case ChatType::WHISPER_INFORM: {
+            // Some cores include an explicit sized sender/receiver name for whisper chat.
+            // Consume it when present so /r has a reliable last whisper sender.
+            if (data.type == ChatType::WHISPER) {
+                tryReadSizedCString(data.senderName, 128, 8 + 4 + 1);
+            } else {
+                tryReadSizedCString(data.receiverName, 128, 8 + 4 + 1);
+            }
+
+            data.receiverGuid = packet.readUInt64();
+
+            // Optional trailing whisper target/source name on some formats.
+            if (data.type == ChatType::WHISPER && data.receiverName.empty()) {
+                tryReadSizedCString(data.receiverName, 128, 4 + 1);
+            } else if (data.type == ChatType::WHISPER_INFORM && data.senderName.empty()) {
+                tryReadSizedCString(data.senderName, 128, 4 + 1);
+            }
             break;
         }
 

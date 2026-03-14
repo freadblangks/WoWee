@@ -8405,6 +8405,15 @@ void GameScreen::renderCombatText(game::GameHandler& gameHandler) {
                     snprintf(text, sizeof(text), "Spellsteal");
                     color = ImVec4(0.8f, 0.7f, 1.0f, alpha);
                     break;
+                case game::CombatTextEntry::INTERRUPT: {
+                    const std::string& interruptedName = entry.spellId ? gameHandler.getSpellName(entry.spellId) : "";
+                    if (!interruptedName.empty())
+                        snprintf(text, sizeof(text), "Interrupt %s", interruptedName.c_str());
+                    else
+                        snprintf(text, sizeof(text), "Interrupt");
+                    color = ImVec4(1.0f, 0.6f, 0.9f, alpha);
+                    break;
+                }
                 default:
                     snprintf(text, sizeof(text), "%d", entry.amount);
                     color = ImVec4(1.0f, 1.0f, 1.0f, alpha);

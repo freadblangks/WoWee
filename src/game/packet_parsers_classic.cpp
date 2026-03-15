@@ -441,6 +441,18 @@ bool ClassicPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& da
     if (rawHitCount > 128) {
         LOG_WARNING("[Classic] Spell go: hitCount capped (requested=", (int)rawHitCount, ")");
     }
+    // Packed GUIDs are variable length, but each target needs at least 1 byte (mask).
+    // Require the minimum bytes before entering per-target parsing loops.
+    if (rem() < static_cast<size_t>(rawHitCount) + 1u) { // +1 for mandatory missCount byte
+        static uint32_t badHitCountTrunc = 0;
+        ++badHitCountTrunc;
+        if (badHitCountTrunc <= 10 || (badHitCountTrunc % 100) == 0) {
+            LOG_WARNING("[Classic] Spell go: invalid hitCount/remaining (hits=", (int)rawHitCount,
+                        " remaining=", rem(), " occurrence=", badHitCountTrunc, ")");
+        }
+        packet.setReadPos(startPos);
+        return false;
+    }
     const uint8_t storedHitLimit = std::min<uint8_t>(rawHitCount, 128);
     data.hitTargets.reserve(storedHitLimit);
     bool truncatedTargets = false;
@@ -471,6 +483,17 @@ bool ClassicPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& da
     const uint8_t rawMissCount = packet.readUInt8();
     if (rawMissCount > 128) {
         LOG_WARNING("[Classic] Spell go: missCount capped (requested=", (int)rawMissCount, ")");
+    }
+    // Each miss entry needs at least packed-guid mask (1) + missType (1).
+    if (rem() < static_cast<size_t>(rawMissCount) * 2u) {
+        static uint32_t badMissCountTrunc = 0;
+        ++badMissCountTrunc;
+        if (badMissCountTrunc <= 10 || (badMissCountTrunc % 100) == 0) {
+            LOG_WARNING("[Classic] Spell go: invalid missCount/remaining (misses=", (int)rawMissCount,
+                        " remaining=", rem(), " occurrence=", badMissCountTrunc, ")");
+        }
+        packet.setReadPos(startPos);
+        return false;
     }
     const uint8_t storedMissLimit = std::min<uint8_t>(rawMissCount, 128);
     data.missTargets.reserve(storedMissLimit);
@@ -1808,6 +1831,173 @@ bool TurtlePacketParsers::parseMovementBlock(network::Packet& packet, UpdateBloc
     }
 
     return true;
+}
+
+bool TurtlePacketParsers::parseUpdateObject(network::Packet& packet, UpdateObjectData& data) {
+    constexpr uint32_t kMaxReasonableUpdateBlocks = 4096;
+
+    auto parseWithLayout = [&](bool withHasTransportByte, UpdateObjectData& out) -> bool {
+        out = UpdateObjectData{};
+        const size_t start = packet.getReadPos();
+        if (packet.getSize() - start < 4) return false;
+
+        out.blockCount = packet.readUInt32();
+        if (out.blockCount > kMaxReasonableUpdateBlocks) {
+            packet.setReadPos(start);
+            return false;
+        }
+
+        if (withHasTransportByte) {
+            if (packet.getReadPos() >= packet.getSize()) {
+                packet.setReadPos(start);
+                return false;
+            }
+            /*uint8_t hasTransport =*/ packet.readUInt8();
+        }
+
+        if (packet.getReadPos() + 1 <= packet.getSize()) {
+            uint8_t firstByte = packet.readUInt8();
+            if (firstByte == static_cast<uint8_t>(UpdateType::OUT_OF_RANGE_OBJECTS)) {
+                if (packet.getReadPos() + 4 > packet.getSize()) {
+                    packet.setReadPos(start);
+                    return false;
+                }
+                uint32_t count = packet.readUInt32();
+                if (count > kMaxReasonableUpdateBlocks) {
+                    packet.setReadPos(start);
+                    return false;
+                }
+                for (uint32_t i = 0; i < count; ++i) {
+                    if (packet.getReadPos() >= packet.getSize()) {
+                        packet.setReadPos(start);
+                        return false;
+                    }
+                    out.outOfRangeGuids.push_back(UpdateObjectParser::readPackedGuid(packet));
+                }
+            } else {
+                packet.setReadPos(packet.getReadPos() - 1);
+            }
+        }
+
+        out.blocks.reserve(out.blockCount);
+        for (uint32_t i = 0; i < out.blockCount; ++i) {
+            if (packet.getReadPos() >= packet.getSize()) {
+                packet.setReadPos(start);
+                return false;
+            }
+
+            const size_t blockStart = packet.getReadPos();
+            uint8_t updateTypeVal = packet.readUInt8();
+            if (updateTypeVal > static_cast<uint8_t>(UpdateType::NEAR_OBJECTS)) {
+                packet.setReadPos(start);
+                return false;
+            }
+
+            const UpdateType updateType = static_cast<UpdateType>(updateTypeVal);
+            UpdateBlock block;
+            block.updateType = updateType;
+            bool ok = false;
+
+            auto parseMovementVariant = [&](auto&& movementParser, const char* layoutName) -> bool {
+                packet.setReadPos(blockStart + 1);
+                block = UpdateBlock{};
+                block.updateType = updateType;
+
+                switch (updateType) {
+                    case UpdateType::MOVEMENT:
+                        block.guid = UpdateObjectParser::readPackedGuid(packet);
+                        if (!movementParser(packet, block)) return false;
+                        LOG_DEBUG("[Turtle] Parsed MOVEMENT block via ", layoutName, " layout");
+                        return true;
+                    case UpdateType::CREATE_OBJECT:
+                    case UpdateType::CREATE_OBJECT2:
+                        block.guid = UpdateObjectParser::readPackedGuid(packet);
+                        if (packet.getReadPos() >= packet.getSize()) return false;
+                        block.objectType = static_cast<ObjectType>(packet.readUInt8());
+                        if (!movementParser(packet, block)) return false;
+                        if (!UpdateObjectParser::parseUpdateFields(packet, block)) return false;
+                        LOG_DEBUG("[Turtle] Parsed CREATE block via ", layoutName, " layout");
+                        return true;
+                    default:
+                        return false;
+                }
+            };
+
+            switch (updateType) {
+                case UpdateType::VALUES:
+                    block.guid = UpdateObjectParser::readPackedGuid(packet);
+                    ok = UpdateObjectParser::parseUpdateFields(packet, block);
+                    break;
+                case UpdateType::MOVEMENT:
+                case UpdateType::CREATE_OBJECT:
+                case UpdateType::CREATE_OBJECT2:
+                    ok = parseMovementVariant(
+                        [this](network::Packet& p, UpdateBlock& b) {
+                            return this->TurtlePacketParsers::parseMovementBlock(p, b);
+                        }, "turtle");
+                    if (!ok) {
+                        ok = parseMovementVariant(
+                            [this](network::Packet& p, UpdateBlock& b) {
+                                return this->ClassicPacketParsers::parseMovementBlock(p, b);
+                            }, "classic");
+                    }
+                    if (!ok) {
+                        ok = parseMovementVariant(
+                            [this](network::Packet& p, UpdateBlock& b) {
+                                return this->TbcPacketParsers::parseMovementBlock(p, b);
+                            }, "tbc");
+                    }
+                    break;
+                case UpdateType::OUT_OF_RANGE_OBJECTS:
+                case UpdateType::NEAR_OBJECTS:
+                    ok = true;
+                    break;
+                default:
+                    ok = false;
+                    break;
+            }
+
+            if (!ok) {
+                packet.setReadPos(start);
+                return false;
+            }
+
+            out.blocks.push_back(std::move(block));
+        }
+
+        return true;
+    };
+
+    const size_t startPos = packet.getReadPos();
+    UpdateObjectData parsed;
+    if (parseWithLayout(true, parsed)) {
+        data = std::move(parsed);
+        return true;
+    }
+
+    packet.setReadPos(startPos);
+    if (parseWithLayout(false, parsed)) {
+        LOG_DEBUG("[Turtle] SMSG_UPDATE_OBJECT parsed without has_transport byte fallback");
+        data = std::move(parsed);
+        return true;
+    }
+
+    packet.setReadPos(startPos);
+    if (ClassicPacketParsers::parseUpdateObject(packet, parsed)) {
+        LOG_DEBUG("[Turtle] SMSG_UPDATE_OBJECT parsed via full classic fallback");
+        data = std::move(parsed);
+        return true;
+    }
+
+    packet.setReadPos(startPos);
+    if (TbcPacketParsers::parseUpdateObject(packet, parsed)) {
+        LOG_DEBUG("[Turtle] SMSG_UPDATE_OBJECT parsed via full TBC fallback");
+        data = std::move(parsed);
+        return true;
+    }
+
+    packet.setReadPos(startPos);
+    return false;
 }
 
 bool TurtlePacketParsers::parseMonsterMove(network::Packet& packet, MonsterMoveData& data) {

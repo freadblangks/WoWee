@@ -296,7 +296,9 @@ private:
     std::unordered_map<VkTexture*, bool> textureColorKeyBlackByPtr_;
     std::unordered_map<std::string, VkTexture*> compositeCache_;  // key → texture for reuse
     std::unordered_set<std::string> failedTextureCache_;  // negative cache for budget exhaustion
+    std::unordered_map<std::string, uint64_t> failedTextureRetryAt_;
     std::unordered_set<std::string> loggedTextureLoadFails_;  // dedup warning logs
+    uint64_t textureLookupSerial_ = 0;
     size_t textureCacheBytes_ = 0;
     uint64_t textureCacheCounter_ = 0;
     size_t textureCacheBudgetBytes_ = 1024ull * 1024 * 1024;

@@ -714,7 +714,9 @@ void M2Renderer::shutdown() {
     textureHasAlphaByPtr_.clear();
     textureColorKeyBlackByPtr_.clear();
     failedTextureCache_.clear();
+    failedTextureRetryAt_.clear();
     loggedTextureLoadFails_.clear();
+    textureLookupSerial_ = 0;
     textureBudgetRejectWarnings_ = 0;
     whiteTexture_.reset();
     glowTexture_.reset();
@@ -4251,6 +4253,7 @@ void M2Renderer::cleanupUnusedModels() {
 }
 
 VkTexture* M2Renderer::loadTexture(const std::string& path, uint32_t texFlags) {
+    constexpr uint64_t kFailedTextureRetryLookups = 512;
     auto normalizeKey = [](std::string key) {
         std::replace(key.begin(), key.end(), '/', '\\');
         std::transform(key.begin(), key.end(), key.begin(),
@@ -4258,6 +4261,7 @@ VkTexture* M2Renderer::loadTexture(const std::string& path, uint32_t texFlags) {
         return key;
     };
     std::string key = normalizeKey(path);
+    const uint64_t lookupSerial = ++textureLookupSerial_;
 
     // Check cache
     auto it = textureCache.find(key);
@@ -4265,7 +4269,10 @@ VkTexture* M2Renderer::loadTexture(const std::string& path, uint32_t texFlags) {
         it->second.lastUse = ++textureCacheCounter_;
         return it->second.texture.get();
     }
-    // No negative cache check — allow retries for transiently missing textures
+    auto failIt = failedTextureRetryAt_.find(key);
+    if (failIt != failedTextureRetryAt_.end() && lookupSerial < failIt->second) {
+        return whiteTexture_.get();
+    }
 
     auto containsToken = [](const std::string& haystack, const char* token) {
         return haystack.find(token) != std::string::npos;
@@ -4296,8 +4303,9 @@ VkTexture* M2Renderer::loadTexture(const std::string& path, uint32_t texFlags) {
         blp = assetManager->loadTexture(key);
     }
     if (!blp.isValid()) {
-        // Return white fallback but don't cache the failure — MPQ reads can
-        // fail transiently during streaming; allow retry on next model load.
+        // Cache misses briefly to avoid repeated expensive MPQ/disk probes.
+        failedTextureCache_.insert(key);
+        failedTextureRetryAt_[key] = lookupSerial + kFailedTextureRetryLookups;
         if (loggedTextureLoadFails_.insert(key).second) {
             LOG_WARNING("M2: Failed to load texture: ", path);
         }
@@ -4312,6 +4320,7 @@ VkTexture* M2Renderer::loadTexture(const std::string& path, uint32_t texFlags) {
             // Cache budget-rejected keys too; without this we repeatedly decode/load
             // the same textures every frame once budget is saturated.
             failedTextureCache_.insert(key);
+            failedTextureRetryAt_[key] = lookupSerial + kFailedTextureRetryLookups;
         }
         if (textureBudgetRejectWarnings_ < 3) {
             LOG_WARNING("M2 texture cache full (", textureCacheBytes_ / (1024 * 1024),
@@ -4350,6 +4359,8 @@ VkTexture* M2Renderer::loadTexture(const std::string& path, uint32_t texFlags) {
     e.lastUse = ++textureCacheCounter_;
     textureCacheBytes_ += e.approxBytes;
     textureCache[key] = std::move(e);
+    failedTextureCache_.erase(key);
+    failedTextureRetryAt_.erase(key);
     textureHasAlphaByPtr_[texPtr] = hasAlpha;
     textureColorKeyBlackByPtr_[texPtr] = colorKeyBlackHint;
     LOG_DEBUG("M2: Loaded texture: ", path, " (", blp.width, "x", blp.height, ")");

@@ -307,7 +307,9 @@ void WMORenderer::shutdown() {
     textureCacheBytes_ = 0;
     textureCacheCounter_ = 0;
     failedTextureCache_.clear();
+    failedTextureRetryAt_.clear();
     loggedTextureLoadFails_.clear();
+    textureLookupSerial_ = 0;
     textureBudgetRejectWarnings_ = 0;
 
     // Free white texture and flat normal texture
@@ -1087,7 +1089,9 @@ void WMORenderer::clearAll() {
     textureCacheBytes_ = 0;
     textureCacheCounter_ = 0;
     failedTextureCache_.clear();
+    failedTextureRetryAt_.clear();
     loggedTextureLoadFails_.clear();
+    textureLookupSerial_ = 0;
     textureBudgetRejectWarnings_ = 0;
     precomputedFloorGrid.clear();
 
@@ -2237,6 +2241,7 @@ std::unique_ptr<VkTexture> WMORenderer::generateNormalHeightMap(
 }
 
 VkTexture* WMORenderer::loadTexture(const std::string& path) {
+    constexpr uint64_t kFailedTextureRetryLookups = 512;
     if (!assetManager || !vkCtx_) {
         return whiteTexture_.get();
     }
@@ -2312,7 +2317,19 @@ VkTexture* WMORenderer::loadTexture(const std::string& path) {
         }
     }
 
-    const auto& attemptedCandidates = uniqueCandidates;
+    const uint64_t lookupSerial = ++textureLookupSerial_;
+    std::vector<std::string> attemptedCandidates;
+    attemptedCandidates.reserve(uniqueCandidates.size());
+    for (const auto& c : uniqueCandidates) {
+        auto fit = failedTextureRetryAt_.find(c);
+        if (fit != failedTextureRetryAt_.end() && lookupSerial < fit->second) {
+            continue;
+        }
+        attemptedCandidates.push_back(c);
+    }
+    if (attemptedCandidates.empty()) {
+        return whiteTexture_.get();
+    }
 
     // Try loading all candidates until one succeeds
     // Check pre-decoded BLP cache first (populated by background worker threads)
@@ -2339,6 +2356,10 @@ VkTexture* WMORenderer::loadTexture(const std::string& path) {
         }
     }
     if (!blp.isValid()) {
+        for (const auto& c : attemptedCandidates) {
+            failedTextureCache_.insert(c);
+            failedTextureRetryAt_[c] = lookupSerial + kFailedTextureRetryLookups;
+        }
         if (loggedTextureLoadFails_.insert(key).second) {
             core::Logger::getInstance().warning("WMO: Failed to load texture: ", path);
         }
@@ -2353,6 +2374,10 @@ VkTexture* WMORenderer::loadTexture(const std::string& path) {
     size_t base = static_cast<size_t>(blp.width) * static_cast<size_t>(blp.height) * 4ull;
     size_t approxBytes = base + (base / 3);
     if (textureCacheBytes_ + approxBytes > textureCacheBudgetBytes_) {
+        for (const auto& c : attemptedCandidates) {
+            failedTextureCache_.insert(c);
+            failedTextureRetryAt_[c] = lookupSerial + kFailedTextureRetryLookups;
+        }
         if (textureBudgetRejectWarnings_ < 3) {
             core::Logger::getInstance().warning(
                 "WMO texture cache full (", textureCacheBytes_ / (1024 * 1024),
@@ -2394,8 +2419,12 @@ VkTexture* WMORenderer::loadTexture(const std::string& path) {
     textureCacheBytes_ += e.approxBytes;
     if (!resolvedKey.empty()) {
         textureCache[resolvedKey] = std::move(e);
+        failedTextureCache_.erase(resolvedKey);
+        failedTextureRetryAt_.erase(resolvedKey);
     } else {
         textureCache[key] = std::move(e);
+        failedTextureCache_.erase(key);
+        failedTextureRetryAt_.erase(key);
     }
     core::Logger::getInstance().debug("WMO: Loaded texture: ", path, " (", blp.width, "x", blp.height, ")");
 

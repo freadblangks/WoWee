@@ -272,9 +272,28 @@ bool WardenMemory::readMemory(uint32_t va, uint8_t length, uint8_t* outBuf) cons
         return true;
     }
 
-    // PE image range
-    if (!loaded_ || va < imageBase_) return false;
-    uint32_t offset = va - imageBase_;
+    if (!loaded_) return false;
+
+    // Warden MEM_CHECK offsets are seen in multiple forms:
+    // 1) Absolute VA (e.g. 0x00401337)
+    // 2) RVA (e.g. 0x000139A9)
+    // 3) Tiny module-relative offsets (e.g. 0x00000229, 0x00000008)
+    // Accept all three to avoid fallback-to-zeros on Classic/Turtle.
+    uint32_t offset = 0;
+    if (va >= imageBase_) {
+        // Absolute VA.
+        offset = va - imageBase_;
+    } else if (va < imageSize_) {
+        // RVA into WoW.exe image.
+        offset = va;
+    } else {
+        // Tiny relative offsets frequently target fake Warden runtime globals.
+        constexpr uint32_t kFakeWardenBase = 0xCE8000;
+        const uint32_t remappedVa = kFakeWardenBase + va;
+        if (remappedVa < imageBase_) return false;
+        offset = remappedVa - imageBase_;
+    }
+
     if (static_cast<uint64_t>(offset) + length > imageSize_) return false;
 
     std::memcpy(outBuf, image_.data() + offset, length);

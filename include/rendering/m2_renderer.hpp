@@ -477,7 +477,9 @@ private:
     uint64_t textureCacheCounter_ = 0;
     size_t textureCacheBudgetBytes_ = 2048ull * 1024 * 1024;
     std::unordered_set<std::string> failedTextureCache_;
+    std::unordered_map<std::string, uint64_t> failedTextureRetryAt_;
     std::unordered_set<std::string> loggedTextureLoadFails_;
+    uint64_t textureLookupSerial_ = 0;
     uint32_t textureBudgetRejectWarnings_ = 0;
     std::unique_ptr<VkTexture> whiteTexture_;
     std::unique_ptr<VkTexture> glowTexture_;

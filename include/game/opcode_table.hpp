@@ -49,12 +49,14 @@ public:
     /** Number of mapped opcodes. */
     size_t size() const { return logicalToWire_.size(); }
 
+    /** Get canonical enum name for a logical opcode. */
+    static const char* logicalToName(LogicalOpcode op);
+
 private:
     std::unordered_map<uint16_t, uint16_t> logicalToWire_;   // LogicalOpcode → wire
     std::unordered_map<uint16_t, uint16_t> wireToLogical_;   // wire → LogicalOpcode
 
     static std::optional<LogicalOpcode> nameToLogical(const std::string& name);
-    static const char* logicalToName(LogicalOpcode op);
 };
 
 /**

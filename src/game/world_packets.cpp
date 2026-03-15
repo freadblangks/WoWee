@@ -1344,8 +1344,10 @@ bool UpdateObjectParser::parseUpdateBlock(network::Packet& packet, UpdateBlock& 
 }
 
 bool UpdateObjectParser::parse(network::Packet& packet, UpdateObjectData& data) {
-    constexpr uint32_t kMaxReasonableUpdateBlocks = 4096;
-    constexpr uint32_t kMaxReasonableOutOfRangeGuids = 16384;
+    // Keep worst-case packet parsing bounded. Extremely large counts are typically
+    // malformed/desynced and can stall a frame long enough to trigger disconnects.
+    constexpr uint32_t kMaxReasonableUpdateBlocks = 1024;
+    constexpr uint32_t kMaxReasonableOutOfRangeGuids = 4096;
 
     // Read block count
     data.blockCount = packet.readUInt32();

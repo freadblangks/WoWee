@@ -671,7 +671,9 @@ private:
     uint64_t textureCacheCounter_ = 0;
     size_t textureCacheBudgetBytes_ = 8192ull * 1024 * 1024;  // 8 GB default, overridden at init
     std::unordered_set<std::string> failedTextureCache_;
+    std::unordered_map<std::string, uint64_t> failedTextureRetryAt_;
     std::unordered_set<std::string> loggedTextureLoadFails_;
+    uint64_t textureLookupSerial_ = 0;
     uint32_t textureBudgetRejectWarnings_ = 0;
 
     // Default white texture

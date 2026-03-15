@@ -824,6 +824,7 @@ void Application::logoutToLogin() {
         if (load.future.valid()) load.future.wait();
     }
     asyncCreatureLoads_.clear();
+    asyncCreatureDisplayLoads_.clear();
 
     // --- Creature spawn queues ---
     pendingCreatureSpawns_.clear();
@@ -842,6 +843,7 @@ void Application::logoutToLogin() {
     gameObjectInstances_.clear();
     pendingGameObjectSpawns_.clear();
     pendingTransportMoves_.clear();
+    pendingTransportRegistrations_.clear();
     pendingTransportDoodadBatches_.clear();
 
     world.reset();
@@ -1053,6 +1055,7 @@ void Application::update(float deltaTime) {
             updateCheckpoint = "in_game: gameobject/transport queues";
             runInGameStage("gameobject/transport queues", [&] {
                 processGameObjectSpawnQueue();
+                processPendingTransportRegistrations();
                 processPendingTransportDoodads();
             });
             inGameStep = "pending mount";
@@ -1725,6 +1728,19 @@ void Application::update(float deltaTime) {
             break;
     }
 
+    if (pendingWorldEntry_ && !loadingWorld_ && state != AppState::DISCONNECTED) {
+        auto entry = *pendingWorldEntry_;
+        pendingWorldEntry_.reset();
+        worldEntryMovementGraceTimer_ = 2.0f;
+        taxiLandingClampTimer_ = 0.0f;
+        lastTaxiFlight_ = false;
+        if (renderer && renderer->getCameraController()) {
+            renderer->getCameraController()->clearMovementInputs();
+            renderer->getCameraController()->suppressMovementFor(1.0f);
+        }
+        loadOnlineWorldTerrain(entry.mapId, entry.x, entry.y, entry.z);
+    }
+
     // Update renderer (camera, etc.) only when in-game
     updateCheckpoint = "renderer update";
     if (renderer && state == AppState::IN_GAME) {
@@ -2025,24 +2041,19 @@ void Application::setupUICallbacks() {
 
         // If a world load is already in progress (re-entrant call from
         // gameHandler->update() processing SMSG_NEW_WORLD during warmup),
-        // defer this entry.  The current load will pick it up when it finishes.
+        // defer this entry. The current load will pick it up when it finishes.
         if (loadingWorld_) {
             LOG_WARNING("World entry deferred: map ", mapId, " while loading (will process after current load)");
             pendingWorldEntry_ = {mapId, x, y, z};
             return;
         }
 
-        worldEntryMovementGraceTimer_ = 2.0f;
-        taxiLandingClampTimer_ = 0.0f;
-        lastTaxiFlight_ = false;
-        // Stop any movement that was active before the teleport
-        if (renderer && renderer->getCameraController()) {
-            renderer->getCameraController()->clearMovementInputs();
-            renderer->getCameraController()->suppressMovementFor(1.0f);
-        }
-        loadOnlineWorldTerrain(mapId, x, y, z);
-        // loadedMapId_ is set inside loadOnlineWorldTerrain (including
-        // any deferred entries it processes), so we must NOT override it here.
+        // Full world loads are expensive and `loadOnlineWorldTerrain()` itself
+        // drives `gameHandler->update()` during warmup. Queue the load here so
+        // it runs after the current packet handler returns instead of recursing
+        // from `SMSG_LOGIN_VERIFY_WORLD` / `SMSG_NEW_WORLD`.
+        LOG_WARNING("Queued world entry: map ", mapId, " pos=(", x, ", ", y, ", ", z, ")");
+        pendingWorldEntry_ = {mapId, x, y, z};
     });
 
     auto sampleBestFloorAt = [this](float x, float y, float probeZ) -> std::optional<float> {
@@ -2712,133 +2723,28 @@ void Application::setupUICallbacks() {
 
     // Transport spawn callback (online mode) - register transports with TransportManager
     gameHandler->setTransportSpawnCallback([this](uint64_t guid, uint32_t entry, uint32_t displayId, float x, float y, float z, float orientation) {
-        auto* transportManager = gameHandler->getTransportManager();
-        if (!transportManager || !renderer) return;
+        if (!renderer) return;
 
-        // Get the WMO instance ID from the GameObject spawn
+        // Get the GameObject instance now so late queue processing can rely on stable IDs.
         auto it = gameObjectInstances_.find(guid);
         if (it == gameObjectInstances_.end()) {
             LOG_WARNING("Transport spawn callback: GameObject instance not found for GUID 0x", std::hex, guid, std::dec);
             return;
         }
 
-        uint32_t wmoInstanceId = it->second.instanceId;
-        LOG_WARNING("Registering server transport: GUID=0x", std::hex, guid, std::dec,
-                 " entry=", entry, " displayId=", displayId, " wmoInstance=", wmoInstanceId,
-                 " pos=(", x, ", ", y, ", ", z, ")");
-
-        // TransportAnimation.dbc is indexed by GameObject entry
-        uint32_t pathId = entry;
-        const bool preferServerData = gameHandler && gameHandler->hasServerTransportUpdate(guid);
-
-        bool clientAnim = transportManager->isClientSideAnimation();
-        LOG_DEBUG("Transport spawn callback: clientAnimation=", clientAnim,
-                 " guid=0x", std::hex, guid, std::dec, " entry=", entry, " pathId=", pathId,
-                 " preferServer=", preferServerData);
-
-        // Coordinates are already canonical (converted in game_handler.cpp when entity was created)
-        glm::vec3 canonicalSpawnPos(x, y, z);
-
-        // Check if we have a real path from TransportAnimation.dbc (indexed by entry).
-        // AzerothCore transport entries are not always 1:1 with DBC path ids.
-        const bool shipOrZeppelinDisplay =
-            (displayId == 3015 || displayId == 3031 || displayId == 7546 ||
-             displayId == 7446 || displayId == 1587 || displayId == 2454 ||
-             displayId == 807 || displayId == 808);
-        bool hasUsablePath = transportManager->hasPathForEntry(entry);
-        if (shipOrZeppelinDisplay) {
-            // For true transports, reject tiny XY tracks that effectively look stationary.
-            hasUsablePath = transportManager->hasUsableMovingPathForEntry(entry, 25.0f);
-        }
-
-        LOG_WARNING("Transport path check: entry=", entry, " hasUsablePath=", hasUsablePath,
-                 " preferServerData=", preferServerData, " shipOrZepDisplay=", shipOrZeppelinDisplay);
-
-        if (preferServerData) {
-            // Strict server-authoritative mode: do not infer/remap fallback routes.
-            if (!hasUsablePath) {
-                std::vector<glm::vec3> path = { canonicalSpawnPos };
-                transportManager->loadPathFromNodes(pathId, path, false, 0.0f);
-                LOG_WARNING("Server-first strict registration: stationary fallback for GUID 0x",
-                         std::hex, guid, std::dec, " entry=", entry);
-            } else {
-                LOG_WARNING("Server-first transport registration: using entry DBC path for entry ", entry);
-            }
-        } else if (!hasUsablePath) {
-            // Remap/infer path by spawn position when entry doesn't map 1:1 to DBC ids.
-            // For elevators (TB lift platforms), we must allow z-only paths here.
-            bool allowZOnly = (displayId == 455 || displayId == 462);
-            uint32_t inferredPath = transportManager->inferDbcPathForSpawn(
-                canonicalSpawnPos, 1200.0f, allowZOnly);
-            if (inferredPath != 0) {
-                pathId = inferredPath;
-                LOG_WARNING("Using inferred transport path ", pathId, " for entry ", entry);
-            } else {
-                uint32_t remappedPath = transportManager->pickFallbackMovingPath(entry, displayId);
-                if (remappedPath != 0) {
-                    pathId = remappedPath;
-                    LOG_WARNING("Using remapped fallback transport path ", pathId,
-                             " for entry ", entry, " displayId=", displayId,
-                             " (usableEntryPath=", transportManager->hasPathForEntry(entry), ")");
-                } else {
-                    LOG_WARNING("No TransportAnimation.dbc path for entry ", entry,
-                                " - transport will be stationary");
-
-                    // Fallback: Stationary at spawn point (wait for server to send real position)
-                    std::vector<glm::vec3> path = { canonicalSpawnPos };
-                    transportManager->loadPathFromNodes(pathId, path, false, 0.0f);
-                }
-            }
+        auto pendingIt = std::find_if(
+            pendingTransportRegistrations_.begin(), pendingTransportRegistrations_.end(),
+            [guid](const PendingTransportRegistration& pending) { return pending.guid == guid; });
+        if (pendingIt != pendingTransportRegistrations_.end()) {
+            pendingIt->entry = entry;
+            pendingIt->displayId = displayId;
+            pendingIt->x = x;
+            pendingIt->y = y;
+            pendingIt->z = z;
+            pendingIt->orientation = orientation;
         } else {
-            LOG_WARNING("Using real transport path from TransportAnimation.dbc for entry ", entry);
-        }
-
-        // Register the transport with spawn position (prevents rendering at origin until server update)
-        transportManager->registerTransport(guid, wmoInstanceId, pathId, canonicalSpawnPos, entry);
-
-        // Mark M2 transports (e.g. Deeprun Tram cars) so TransportManager uses M2Renderer
-        if (!it->second.isWmo) {
-            if (auto* tr = transportManager->getTransport(guid)) {
-                tr->isM2 = true;
-            }
-        }
-
-        // Server-authoritative movement - set initial position from spawn data
-        glm::vec3 canonicalPos(x, y, z);
-        transportManager->updateServerTransport(guid, canonicalPos, orientation);
-
-        // If a move packet arrived before registration completed, replay latest now.
-        auto pendingIt = pendingTransportMoves_.find(guid);
-        if (pendingIt != pendingTransportMoves_.end()) {
-            const PendingTransportMove pending = pendingIt->second;
-            transportManager->updateServerTransport(guid, glm::vec3(pending.x, pending.y, pending.z), pending.orientation);
-            LOG_DEBUG("Replayed queued transport move for GUID=0x", std::hex, guid, std::dec,
-                     " pos=(", pending.x, ", ", pending.y, ", ", pending.z, ") orientation=", pending.orientation);
-            pendingTransportMoves_.erase(pendingIt);
-        }
-
-        // For MO_TRANSPORT at (0,0,0): check if GO data is already cached with a taxiPathId
-        if (glm::length(canonicalSpawnPos) < 1.0f && gameHandler) {
-            auto goData = gameHandler->getCachedGameObjectInfo(entry);
-            if (goData && goData->type == 15 && goData->hasData && goData->data[0] != 0) {
-                uint32_t taxiPathId = goData->data[0];
-                if (transportManager->hasTaxiPath(taxiPathId)) {
-                    transportManager->assignTaxiPathToTransport(entry, taxiPathId);
-                    LOG_DEBUG("Assigned cached TaxiPathNode path for MO_TRANSPORT entry=", entry,
-                             " taxiPathId=", taxiPathId);
-                }
-            }
-        }
-
-        if (auto* tr = transportManager->getTransport(guid); tr) {
-            LOG_WARNING("Transport registered: guid=0x", std::hex, guid, std::dec,
-                     " entry=", entry, " displayId=", displayId,
-                     " pathId=", tr->pathId,
-                     " mode=", (tr->useClientAnimation ? "client" : "server"),
-                     " serverUpdates=", tr->serverUpdateCount);
-        } else {
-            LOG_DEBUG("Transport registered: guid=0x", std::hex, guid, std::dec,
-                     " entry=", entry, " displayId=", displayId, " (TransportManager instance missing)");
+            pendingTransportRegistrations_.push_back(
+                PendingTransportRegistration{guid, entry, displayId, x, y, z, orientation});
         }
     });
 
@@ -2850,6 +2756,15 @@ void Application::setupUICallbacks() {
         auto* transportManager = gameHandler->getTransportManager();
         if (!transportManager) {
             LOG_WARNING("Transport move callback: TransportManager is null!");
+            return;
+        }
+
+        auto pendingRegIt = std::find_if(
+            pendingTransportRegistrations_.begin(), pendingTransportRegistrations_.end(),
+            [guid](const PendingTransportRegistration& pending) { return pending.guid == guid; });
+        if (pendingRegIt != pendingTransportRegistrations_.end()) {
+            pendingTransportMoves_[guid] = PendingTransportMove{x, y, z, orientation};
+            LOG_DEBUG("Queued transport move for pending registration GUID=0x", std::hex, guid, std::dec);
             return;
         }
 
@@ -4155,6 +4070,7 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
         deferredEquipmentQueue_.clear();
         pendingGameObjectSpawns_.clear();
         pendingTransportMoves_.clear();
+        pendingTransportRegistrations_.clear();
         pendingTransportDoodadBatches_.clear();
 
         if (renderer) {
@@ -4210,6 +4126,7 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
             if (load.future.valid()) load.future.wait();
         }
         asyncCreatureLoads_.clear();
+        asyncCreatureDisplayLoads_.clear();
 
         playerInstances_.clear();
         onlinePlayerAppearance_.clear();
@@ -4866,25 +4783,23 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
             if (world) world->update(1.0f / 60.0f);
             processPlayerSpawnQueue();
 
-            // During load screen warmup: lift per-frame budgets so GPU uploads
-            // and spawns happen in bulk while the loading screen is still visible.
-            processCreatureSpawnQueue(true);
-            processAsyncNpcCompositeResults(true);
-            // Process equipment queue more aggressively during warmup (multiple per iteration)
-            for (int i = 0; i < 8 && (!deferredEquipmentQueue_.empty() || !asyncEquipmentLoads_.empty()); i++) {
+            // Keep warmup bounded: unbounded queue draining can stall the main thread
+            // long enough to trigger socket timeouts.
+            processCreatureSpawnQueue(false);
+            processAsyncNpcCompositeResults(false);
+            // Process equipment queue with a small bounded burst during warmup.
+            for (int i = 0; i < 2 && (!deferredEquipmentQueue_.empty() || !asyncEquipmentLoads_.empty()); i++) {
                 processDeferredEquipmentQueue();
             }
             if (auto* cr = renderer ? renderer->getCharacterRenderer() : nullptr) {
-                cr->processPendingNormalMaps(INT_MAX);
+                cr->processPendingNormalMaps(4);
             }
 
-            // Process ALL pending game object spawns.
-            while (!pendingGameObjectSpawns_.empty()) {
-                auto& s = pendingGameObjectSpawns_.front();
-                spawnOnlineGameObject(s.guid, s.entry, s.displayId, s.x, s.y, s.z, s.orientation, s.scale);
-                pendingGameObjectSpawns_.erase(pendingGameObjectSpawns_.begin());
-            }
+            // Keep warmup responsive: process gameobject queue with the same bounded
+            // budget logic used in-world instead of draining everything in one tick.
+            processGameObjectSpawnQueue();
 
+            processPendingTransportRegistrations();
             processPendingTransportDoodads();
             processPendingMount();
             updateQuestMarkers();
@@ -7437,12 +7352,23 @@ void Application::spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_t 
 
 void Application::processAsyncCreatureResults(bool unlimited) {
     // Check completed async model loads and finalize on main thread (GPU upload + instance creation).
-    // Limit GPU model uploads per frame to avoid spikes, but always drain cheap bookkeeping.
-    // In unlimited mode (load screen), process all pending uploads without cap.
-    static constexpr int kMaxModelUploadsPerFrame = 1;
+    // Limit GPU model uploads per tick to avoid long main-thread stalls that can starve socket updates.
+    // Even in unlimited mode (load screen), keep a small cap and budget to prevent multi-second stalls.
+    static constexpr int kMaxModelUploadsPerTick = 1;
+    static constexpr int kMaxModelUploadsPerTickWarmup = 1;
+    static constexpr float kFinalizeBudgetMs = 2.0f;
+    static constexpr float kFinalizeBudgetWarmupMs = 2.0f;
+    const int maxUploadsThisTick = unlimited ? kMaxModelUploadsPerTickWarmup : kMaxModelUploadsPerTick;
+    const float budgetMs = unlimited ? kFinalizeBudgetWarmupMs : kFinalizeBudgetMs;
+    const auto tickStart = std::chrono::steady_clock::now();
     int modelUploads = 0;
 
     for (auto it = asyncCreatureLoads_.begin(); it != asyncCreatureLoads_.end(); ) {
+        if (std::chrono::duration<float, std::milli>(
+                std::chrono::steady_clock::now() - tickStart).count() >= budgetMs) {
+            break;
+        }
+
         if (!it->future.valid() ||
             it->future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
             ++it;
@@ -7451,12 +7377,13 @@ void Application::processAsyncCreatureResults(bool unlimited) {
 
         // Peek: if this result needs a NEW model upload (not cached) and we've hit
         // the upload budget, defer to next frame without consuming the future.
-        if (!unlimited && modelUploads >= kMaxModelUploadsPerFrame) {
+        if (modelUploads >= maxUploadsThisTick) {
             break;
         }
 
         auto result = it->future.get();
         it = asyncCreatureLoads_.erase(it);
+        asyncCreatureDisplayLoads_.erase(result.displayId);
 
         if (result.permanent_failure) {
             nonRenderableCreatureDisplayIds_.insert(result.displayId);
@@ -7471,12 +7398,37 @@ void Application::processAsyncCreatureResults(bool unlimited) {
             continue;
         }
 
+        // Another async result may have already uploaded this displayId while this
+        // task was still running; in that case, skip duplicate GPU upload.
+        if (displayIdModelCache_.find(result.displayId) != displayIdModelCache_.end()) {
+            pendingCreatureSpawnGuids_.erase(result.guid);
+            creatureSpawnRetryCounts_.erase(result.guid);
+            if (!creatureInstances_.count(result.guid) &&
+                !creaturePermanentFailureGuids_.count(result.guid)) {
+                PendingCreatureSpawn s{};
+                s.guid = result.guid;
+                s.displayId = result.displayId;
+                s.x = result.x;
+                s.y = result.y;
+                s.z = result.z;
+                s.orientation = result.orientation;
+                s.scale = result.scale;
+                pendingCreatureSpawns_.push_back(s);
+                pendingCreatureSpawnGuids_.insert(result.guid);
+            }
+            continue;
+        }
+
         // Model parsed on background thread — upload to GPU on main thread.
         auto* charRenderer = renderer ? renderer->getCharacterRenderer() : nullptr;
         if (!charRenderer) {
             pendingCreatureSpawnGuids_.erase(result.guid);
             continue;
         }
+
+        // Count upload attempts toward the frame budget even if upload fails.
+        // Otherwise repeated failures can consume an unbounded amount of frame time.
+        modelUploads++;
 
         // Upload model to GPU (must happen on main thread)
         // Use pre-decoded BLP cache to skip main-thread texture decode
@@ -7504,8 +7456,6 @@ void Application::processAsyncCreatureResults(bool unlimited) {
             displayIdPredecodedTextures_[result.displayId] = std::move(result.predecodedTextures);
         }
         displayIdModelCache_[result.displayId] = result.modelId;
-        modelUploads++;
-
         pendingCreatureSpawnGuids_.erase(result.guid);
         creatureSpawnRetryCounts_.erase(result.guid);
 
@@ -7659,6 +7609,14 @@ void Application::processCreatureSpawnQueue(bool unlimited) {
 
         // For new models: launch async load on background thread instead of blocking.
         if (needsNewModel) {
+            // Keep exactly one background load per displayId. Additional spawns for
+            // the same displayId stay queued and will spawn once cache is populated.
+            if (asyncCreatureDisplayLoads_.count(s.displayId)) {
+                pendingCreatureSpawns_.push_back(s);
+                rotationsLeft--;
+                continue;
+            }
+
             const int maxAsync = unlimited ? (MAX_ASYNC_CREATURE_LOADS * 4) : MAX_ASYNC_CREATURE_LOADS;
             if (static_cast<int>(asyncCreatureLoads_.size()) + asyncLaunched >= maxAsync) {
                 // Too many in-flight — defer to next frame
@@ -7904,6 +7862,7 @@ void Application::processCreatureSpawnQueue(bool unlimited) {
                     return result;
                 });
             asyncCreatureLoads_.push_back(std::move(load));
+            asyncCreatureDisplayLoads_.insert(s.displayId);
             asyncLaunched++;
             // Don't erase from pendingCreatureSpawnGuids_ — the async result handler will do it
             rotationsLeft = pendingCreatureSpawns_.size();
@@ -8301,6 +8260,151 @@ void Application::processGameObjectSpawnQueue() {
         // Cached WMO or M2 — spawn synchronously (cheap)
         spawnOnlineGameObject(s.guid, s.entry, s.displayId, s.x, s.y, s.z, s.orientation, s.scale);
         pendingGameObjectSpawns_.erase(pendingGameObjectSpawns_.begin());
+    }
+}
+
+void Application::processPendingTransportRegistrations() {
+    if (pendingTransportRegistrations_.empty()) return;
+    if (!gameHandler || !renderer) return;
+
+    auto* transportManager = gameHandler->getTransportManager();
+    if (!transportManager) return;
+
+    auto startTime = std::chrono::steady_clock::now();
+    static constexpr int kMaxRegistrationsPerFrame = 2;
+    static constexpr float kRegistrationBudgetMs = 2.0f;
+    int processed = 0;
+
+    for (auto it = pendingTransportRegistrations_.begin();
+         it != pendingTransportRegistrations_.end() && processed < kMaxRegistrationsPerFrame;) {
+        float elapsedMs = std::chrono::duration<float, std::milli>(
+            std::chrono::steady_clock::now() - startTime).count();
+        if (elapsedMs >= kRegistrationBudgetMs) break;
+
+        const PendingTransportRegistration pending = *it;
+        auto goIt = gameObjectInstances_.find(pending.guid);
+        if (goIt == gameObjectInstances_.end()) {
+            it = pendingTransportRegistrations_.erase(it);
+            continue;
+        }
+
+        if (transportManager->getTransport(pending.guid)) {
+            transportManager->updateServerTransport(
+                pending.guid, glm::vec3(pending.x, pending.y, pending.z), pending.orientation);
+            it = pendingTransportRegistrations_.erase(it);
+            continue;
+        }
+
+        const uint32_t wmoInstanceId = goIt->second.instanceId;
+        LOG_WARNING("Registering server transport: GUID=0x", std::hex, pending.guid, std::dec,
+                 " entry=", pending.entry, " displayId=", pending.displayId, " wmoInstance=", wmoInstanceId,
+                 " pos=(", pending.x, ", ", pending.y, ", ", pending.z, ")");
+
+        // TransportAnimation.dbc is indexed by GameObject entry.
+        uint32_t pathId = pending.entry;
+        const bool preferServerData = gameHandler->hasServerTransportUpdate(pending.guid);
+
+        bool clientAnim = transportManager->isClientSideAnimation();
+        LOG_DEBUG("Transport spawn callback: clientAnimation=", clientAnim,
+                 " guid=0x", std::hex, pending.guid, std::dec,
+                 " entry=", pending.entry, " pathId=", pathId,
+                 " preferServer=", preferServerData);
+
+        glm::vec3 canonicalSpawnPos(pending.x, pending.y, pending.z);
+        const bool shipOrZeppelinDisplay =
+            (pending.displayId == 3015 || pending.displayId == 3031 || pending.displayId == 7546 ||
+             pending.displayId == 7446 || pending.displayId == 1587 || pending.displayId == 2454 ||
+             pending.displayId == 807 || pending.displayId == 808);
+        bool hasUsablePath = transportManager->hasPathForEntry(pending.entry);
+        if (shipOrZeppelinDisplay) {
+            hasUsablePath = transportManager->hasUsableMovingPathForEntry(pending.entry, 25.0f);
+        }
+
+        LOG_WARNING("Transport path check: entry=", pending.entry, " hasUsablePath=", hasUsablePath,
+                 " preferServerData=", preferServerData, " shipOrZepDisplay=", shipOrZeppelinDisplay);
+
+        if (preferServerData) {
+            if (!hasUsablePath) {
+                std::vector<glm::vec3> path = { canonicalSpawnPos };
+                transportManager->loadPathFromNodes(pathId, path, false, 0.0f);
+                LOG_WARNING("Server-first strict registration: stationary fallback for GUID 0x",
+                         std::hex, pending.guid, std::dec, " entry=", pending.entry);
+            } else {
+                LOG_WARNING("Server-first transport registration: using entry DBC path for entry ", pending.entry);
+            }
+        } else if (!hasUsablePath) {
+            bool allowZOnly = (pending.displayId == 455 || pending.displayId == 462);
+            uint32_t inferredPath = transportManager->inferDbcPathForSpawn(
+                canonicalSpawnPos, 1200.0f, allowZOnly);
+            if (inferredPath != 0) {
+                pathId = inferredPath;
+                LOG_WARNING("Using inferred transport path ", pathId, " for entry ", pending.entry);
+            } else {
+                uint32_t remappedPath = transportManager->pickFallbackMovingPath(pending.entry, pending.displayId);
+                if (remappedPath != 0) {
+                    pathId = remappedPath;
+                    LOG_WARNING("Using remapped fallback transport path ", pathId,
+                             " for entry ", pending.entry, " displayId=", pending.displayId,
+                             " (usableEntryPath=", transportManager->hasPathForEntry(pending.entry), ")");
+                } else {
+                    LOG_WARNING("No TransportAnimation.dbc path for entry ", pending.entry,
+                                " - transport will be stationary");
+                    std::vector<glm::vec3> path = { canonicalSpawnPos };
+                    transportManager->loadPathFromNodes(pathId, path, false, 0.0f);
+                }
+            }
+        } else {
+            LOG_WARNING("Using real transport path from TransportAnimation.dbc for entry ", pending.entry);
+        }
+
+        transportManager->registerTransport(pending.guid, wmoInstanceId, pathId, canonicalSpawnPos, pending.entry);
+
+        if (!goIt->second.isWmo) {
+            if (auto* tr = transportManager->getTransport(pending.guid)) {
+                tr->isM2 = true;
+            }
+        }
+
+        transportManager->updateServerTransport(
+            pending.guid, glm::vec3(pending.x, pending.y, pending.z), pending.orientation);
+
+        auto moveIt = pendingTransportMoves_.find(pending.guid);
+        if (moveIt != pendingTransportMoves_.end()) {
+            const PendingTransportMove latestMove = moveIt->second;
+            transportManager->updateServerTransport(
+                pending.guid, glm::vec3(latestMove.x, latestMove.y, latestMove.z), latestMove.orientation);
+            LOG_DEBUG("Replayed queued transport move for GUID=0x", std::hex, pending.guid, std::dec,
+                     " pos=(", latestMove.x, ", ", latestMove.y, ", ", latestMove.z,
+                     ") orientation=", latestMove.orientation);
+            pendingTransportMoves_.erase(moveIt);
+        }
+
+        if (glm::length(canonicalSpawnPos) < 1.0f) {
+            auto goData = gameHandler->getCachedGameObjectInfo(pending.entry);
+            if (goData && goData->type == 15 && goData->hasData && goData->data[0] != 0) {
+                uint32_t taxiPathId = goData->data[0];
+                if (transportManager->hasTaxiPath(taxiPathId)) {
+                    transportManager->assignTaxiPathToTransport(pending.entry, taxiPathId);
+                    LOG_DEBUG("Assigned cached TaxiPathNode path for MO_TRANSPORT entry=", pending.entry,
+                             " taxiPathId=", taxiPathId);
+                }
+            }
+        }
+
+        if (auto* tr = transportManager->getTransport(pending.guid); tr) {
+            LOG_WARNING("Transport registered: guid=0x", std::hex, pending.guid, std::dec,
+                     " entry=", pending.entry, " displayId=", pending.displayId,
+                     " pathId=", tr->pathId,
+                     " mode=", (tr->useClientAnimation ? "client" : "server"),
+                     " serverUpdates=", tr->serverUpdateCount);
+        } else {
+            LOG_DEBUG("Transport registered: guid=0x", std::hex, pending.guid, std::dec,
+                     " entry=", pending.entry, " displayId=", pending.displayId,
+                     " (TransportManager instance missing)");
+        }
+
+        ++processed;
+        it = pendingTransportRegistrations_.erase(it);
     }
 }
 

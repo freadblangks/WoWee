@@ -343,6 +343,8 @@ void CharacterRenderer::shutdown() {
     // Clean up composite cache
     compositeCache_.clear();
     failedTextureCache_.clear();
+    failedTextureRetryAt_.clear();
+    textureLookupSerial_ = 0;
 
     whiteTexture_.reset();
     transparentTexture_.reset();
@@ -430,6 +432,8 @@ void CharacterRenderer::clear() {
     textureCacheBytes_ = 0;
     textureCacheCounter_ = 0;
     loggedTextureLoadFails_.clear();
+    failedTextureRetryAt_.clear();
+    textureLookupSerial_ = 0;
 
     // Clear composite and failed caches
     compositeCache_.clear();
@@ -604,6 +608,7 @@ CharacterRenderer::NormalMapResult CharacterRenderer::generateNormalHeightMapCPU
 }
 
 VkTexture* CharacterRenderer::loadTexture(const std::string& path) {
+    constexpr uint64_t kFailedTextureRetryLookups = 512;
     // Skip empty or whitespace-only paths (type-0 textures have no filename)
     if (path.empty()) return whiteTexture_.get();
     bool allWhitespace = true;
@@ -619,6 +624,7 @@ VkTexture* CharacterRenderer::loadTexture(const std::string& path) {
         return key;
     };
     std::string key = normalizeKey(path);
+    const uint64_t lookupSerial = ++textureLookupSerial_;
     auto containsToken = [](const std::string& haystack, const char* token) {
         return haystack.find(token) != std::string::npos;
     };
@@ -633,6 +639,10 @@ VkTexture* CharacterRenderer::loadTexture(const std::string& path) {
     if (it != textureCache.end()) {
         it->second.lastUse = ++textureCacheCounter_;
         return it->second.texture.get();
+    }
+    auto failIt = failedTextureRetryAt_.find(key);
+    if (failIt != failedTextureRetryAt_.end() && lookupSerial < failIt->second) {
+        return whiteTexture_.get();
     }
 
     if (!assetManager || !assetManager->isInitialized()) {
@@ -652,8 +662,9 @@ VkTexture* CharacterRenderer::loadTexture(const std::string& path) {
         blpImage = assetManager->loadTexture(key);
     }
     if (!blpImage.isValid()) {
-        // Return white fallback but don't cache the failure — allow retry
-        // on next character load in case the asset becomes available.
+        // Cache misses briefly to avoid repeated expensive MPQ/disk probes.
+        failedTextureCache_.insert(key);
+        failedTextureRetryAt_[key] = lookupSerial + kFailedTextureRetryLookups;
         if (loggedTextureLoadFails_.insert(key).second) {
             core::Logger::getInstance().warning("Failed to load texture: ", path);
         }
@@ -666,6 +677,7 @@ VkTexture* CharacterRenderer::loadTexture(const std::string& path) {
         if (failedTextureCache_.size() < kMaxFailedTextureCache) {
             // Budget is saturated; avoid repeatedly decoding/uploading this texture.
             failedTextureCache_.insert(key);
+            failedTextureRetryAt_[key] = lookupSerial + kFailedTextureRetryLookups;
         }
         if (textureBudgetRejectWarnings_ < 3) {
             core::Logger::getInstance().warning(
@@ -724,6 +736,8 @@ VkTexture* CharacterRenderer::loadTexture(const std::string& path) {
     textureHasAlphaByPtr_[texPtr] = hasAlpha;
     textureColorKeyBlackByPtr_[texPtr] = colorKeyBlackHint;
     textureCache[key] = std::move(e);
+    failedTextureCache_.erase(key);
+    failedTextureRetryAt_.erase(key);
 
     core::Logger::getInstance().debug("Loaded character texture: ", path, " (", blpImage.width, "x", blpImage.height, ")");
     return texPtr;

@@ -7,6 +7,7 @@
 #include "game/inventory.hpp"
 #include "game/spell_defines.hpp"
 #include "game/group_defines.hpp"
+#include "network/packet.hpp"
 #include <glm/glm.hpp>
 #include <memory>
 #include <string>
@@ -2089,6 +2090,15 @@ private:
      * Handle incoming packet from world server
      */
     void handlePacket(network::Packet& packet);
+    void enqueueIncomingPacket(const network::Packet& packet);
+    void enqueueIncomingPacketFront(network::Packet&& packet);
+    void processQueuedIncomingPackets();
+    void enqueueUpdateObjectWork(UpdateObjectData&& data);
+    void processPendingUpdateObjectWork(const std::chrono::steady_clock::time_point& start,
+                                        float budgetMs);
+    void processOutOfRangeObjects(const std::vector<uint64_t>& guids);
+    void applyUpdateObjectBlock(const UpdateBlock& block, bool& newItemCreated);
+    void finalizeUpdateObjectBatch(bool newItemCreated);
 
     /**
      * Handle SMSG_AUTH_CHALLENGE from server
@@ -2413,6 +2423,14 @@ private:
 
     // Network
     std::unique_ptr<network::WorldSocket> socket;
+    std::deque<network::Packet> pendingIncomingPackets_;
+    struct PendingUpdateObjectWork {
+        UpdateObjectData data;
+        size_t nextBlockIndex = 0;
+        bool outOfRangeProcessed = false;
+        bool newItemCreated = false;
+    };
+    std::deque<PendingUpdateObjectWork> pendingUpdateObjectWork_;
 
     // State
     WorldState state = WorldState::DISCONNECTED;

@@ -7,7 +7,13 @@
 #include "auth/vanilla_crypt.hpp"
 #include <functional>
 #include <vector>
+#include <deque>
 #include <cstdint>
+#include <chrono>
+#include <thread>
+#include <mutex>
+#include <atomic>
+#include <string>
 
 namespace wowee {
 namespace network {
@@ -66,6 +72,8 @@ public:
      */
     void initEncryption(const std::vector<uint8_t>& sessionKey, uint32_t build = 12340);
 
+    void tracePacketsFor(std::chrono::milliseconds duration, const std::string& reason);
+
     /**
      * Check if header encryption is enabled
      */
@@ -76,11 +84,23 @@ private:
      * Try to parse complete packets from receive buffer
      */
     void tryParsePackets();
+    void pumpNetworkIO();
+    void dispatchQueuedPackets();
+    void asyncPumpLoop();
+    void startAsyncPump();
+    void stopAsyncPump();
+    void closeSocketNoJoin();
 
     socket_t sockfd = INVALID_SOCK;
     bool connected = false;
     bool encryptionEnabled = false;
     bool useVanillaCrypt = false;  // true = XOR cipher, false = RC4
+    bool useAsyncPump_ = true;
+    std::thread asyncPumpThread_;
+    std::atomic<bool> asyncPumpStop_{false};
+    std::atomic<bool> asyncPumpRunning_{false};
+    mutable std::mutex ioMutex_;
+    mutable std::mutex callbackMutex_;
 
     // WotLK RC4 ciphers for header encryption/decryption
     auth::RC4 encryptCipher;
@@ -94,6 +114,8 @@ private:
     size_t receiveReadOffset_ = 0;
     // Optional reused packet queue (feature-gated) to reduce per-update allocations.
     std::vector<Packet> parsedPacketsScratch_;
+    // Parsed packets waiting for callback dispatch; drained with a strict per-update budget.
+    std::deque<Packet> pendingPacketCallbacks_;
 
     // Runtime-gated network optimization toggles (default off).
     bool useFastRecvAppend_ = false;
@@ -105,6 +127,9 @@ private:
 
     // Debug-only tracing window for post-auth packet framing verification.
     int headerTracePacketsLeft = 0;
+    std::chrono::steady_clock::time_point packetTraceStart_{};
+    std::chrono::steady_clock::time_point packetTraceUntil_{};
+    std::string packetTraceReason_;
 
     // Packet callback
     std::function<void(const Packet&)> packetCallback;

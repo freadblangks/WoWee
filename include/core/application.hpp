@@ -224,6 +224,7 @@ private:
         std::future<PreparedCreatureModel> future;
     };
     std::vector<AsyncCreatureLoad> asyncCreatureLoads_;
+    std::unordered_set<uint32_t> asyncCreatureDisplayLoads_; // displayIds currently loading in background
     void processAsyncCreatureResults(bool unlimited = false);
     static constexpr int MAX_ASYNC_CREATURE_LOADS = 4; // concurrent background loads
     std::unordered_set<uint64_t> deadCreatureGuids_;            // GUIDs that should spawn in corpse/death pose
@@ -280,7 +281,17 @@ private:
         float z = 0.0f;
         float orientation = 0.0f;
     };
+    struct PendingTransportRegistration {
+        uint64_t guid = 0;
+        uint32_t entry = 0;
+        uint32_t displayId = 0;
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+        float orientation = 0.0f;
+    };
     std::unordered_map<uint64_t, PendingTransportMove> pendingTransportMoves_; // guid -> latest pre-registration move
+    std::deque<PendingTransportRegistration> pendingTransportRegistrations_;
     uint32_t nextGameObjectModelId_ = 20000;
     uint32_t nextGameObjectWmoModelId_ = 40000;
     bool testTransportSetup_ = false;
@@ -433,6 +444,7 @@ private:
     };
     std::vector<PendingTransportDoodadBatch> pendingTransportDoodadBatches_;
     static constexpr size_t MAX_TRANSPORT_DOODADS_PER_FRAME = 4;
+    void processPendingTransportRegistrations();
     void processPendingTransportDoodads();
 
     // Quest marker billboard sprites (above NPCs)

@@ -54,9 +54,11 @@ int computeTerrainWorkerCount() {
 
     unsigned hc = std::thread::hardware_concurrency();
     if (hc > 0) {
-        // Use most cores for loading — leave 1-2 for render/update threads.
-        const unsigned reserved = (hc >= 8u) ? 2u : 1u;
-        const unsigned targetWorkers = std::max(4u, hc - reserved);
+        // Keep terrain workers conservative by default. Over-subscribing loader
+        // threads can starve main-thread networking/render updates on large-core CPUs.
+        const unsigned reserved = (hc >= 16u) ? 4u : ((hc >= 8u) ? 2u : 1u);
+        const unsigned maxDefaultWorkers = 8u;
+        const unsigned targetWorkers = std::max(4u, std::min(maxDefaultWorkers, hc - reserved));
         return static_cast<int>(targetWorkers);
     }
     return 4;  // Fallback
@@ -896,6 +898,9 @@ bool TerrainManager::advanceFinalization(FinalizingTile& ft) {
                 if (p.uniqueId != 0 && placedDoodadIds.count(p.uniqueId)) {
                     continue;
                 }
+                if (!m2Renderer->hasModel(p.modelId)) {
+                    continue;
+                }
                 uint32_t instId = m2Renderer->createInstance(p.modelId, p.position, p.rotation, p.scale);
                 if (instId) {
                     ft.m2InstanceIds.push_back(instId);
@@ -959,6 +964,9 @@ bool TerrainManager::advanceFinalization(FinalizingTile& ft) {
             while (ft.wmoInstanceIndex < pending->wmoModels.size() && created < kWmoInstancesPerStep) {
                 auto& wmoReady = pending->wmoModels[ft.wmoInstanceIndex++];
                 if (wmoReady.uniqueId != 0 && placedWmoIds.count(wmoReady.uniqueId)) {
+                    continue;
+                }
+                if (!wmoRenderer->isModelLoaded(wmoReady.modelId)) {
                     continue;
                 }
                 uint32_t wmoInstId = wmoRenderer->createInstance(wmoReady.modelId, wmoReady.position, wmoReady.rotation);

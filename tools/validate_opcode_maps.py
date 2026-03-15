@@ -17,6 +17,8 @@ import re
 from pathlib import Path
 from typing import Dict, Iterable, List, Set
 
+from opcode_map_utils import load_opcode_map
+
 
 RE_OPCODE_NAME = re.compile(r"^(?:CMSG|SMSG|MSG)_[A-Z0-9_]+$")
 RE_CODE_REF = re.compile(r"\bOpcode::((?:CMSG|SMSG|MSG)_[A-Z0-9_]+)\b")
@@ -53,12 +55,8 @@ def iter_expansion_files(expansions_dir: Path) -> Iterable[Path]:
 
 
 def load_expansion_names(path: Path) -> Dict[str, str]:
-    data = json.loads(path.read_text())
-    out: Dict[str, str] = {}
-    for k, v in data.items():
-        if RE_OPCODE_NAME.match(k):
-            out[k] = str(v)
-    return out
+    data = load_opcode_map(path)
+    return {k: str(v) for k, v in data.items() if RE_OPCODE_NAME.match(k)}
 
 
 def collect_code_refs(root: Path) -> Set[str]:

@@ -2007,10 +2007,17 @@ bool TurtlePacketParsers::parseUpdateObject(network::Packet& packet, UpdateObjec
 }
 
 bool TurtlePacketParsers::parseMonsterMove(network::Packet& packet, MonsterMoveData& data) {
-    // Turtle realms can emit both vanilla-like and WotLK-like monster move bodies.
-    // Try the canonical Turtle/vanilla parser first, then fall back to WotLK layout.
+    // Turtle realms can emit vanilla-like, TBC-like, and WotLK-like monster move
+    // bodies. Try the lower-expansion layouts first before the WotLK parser that
+    // expects an extra unk byte after the packed GUID.
     size_t start = packet.getReadPos();
     if (MonsterMoveParser::parseVanilla(packet, data)) {
+        return true;
+    }
+
+    packet.setReadPos(start);
+    if (TbcPacketParsers::parseMonsterMove(packet, data)) {
+        LOG_DEBUG("[Turtle] SMSG_MONSTER_MOVE parsed via TBC fallback layout");
         return true;
     }
 

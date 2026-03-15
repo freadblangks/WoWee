@@ -439,14 +439,16 @@ public:
 };
 
 /**
- * Turtle WoW (build 7234) packet parsers.
+ * Turtle WoW packet parsers.
  *
- * Turtle WoW is a heavily modified vanilla server that sends TBC-style
- * movement blocks (moveFlags2, transport timestamps, 8 speeds including flight)
- * while keeping all other Classic packet formats.
+ * Turtle is Classic-based but not wire-identical to vanilla MaNGOS. It keeps
+ * most Classic packet formats, while overriding the movement-bearing paths that
+ * have proven to vary in live traffic:
+ * - update-object movement blocks use a Turtle-specific hybrid layout
+ * - update-object parsing falls back through Classic/TBC/WotLK movement layouts
+ * - monster-move parsing falls back through Vanilla, TBC, and guarded WotLK layouts
  *
- * Inherits all Classic overrides (charEnum, chat, gossip, mail, items, etc.)
- * but delegates movement block parsing to TBC format.
+ * Everything else inherits the Classic parser behavior.
  */
 class TurtlePacketParsers : public ClassicPacketParsers {
 public:

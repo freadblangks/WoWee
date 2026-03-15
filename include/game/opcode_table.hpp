@@ -33,7 +33,10 @@ class OpcodeTable {
 public:
     /**
      * Load opcode mappings from a JSON file.
-     * Format: { "CMSG_PING": "0x1DC", "SMSG_AUTH_CHALLENGE": "0x1EC", ... }
+     * Format:
+     * { "CMSG_PING": "0x1DC", "SMSG_AUTH_CHALLENGE": "0x1EC", ... }
+     * or a delta file with:
+     * { "_extends": "../classic/opcodes.json", "_remove": ["MSG_FOO"], ...overrides }
      */
     bool loadFromJson(const std::string& path);
 

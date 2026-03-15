@@ -4,7 +4,9 @@
 #include <sstream>
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
 #include <string_view>
+#include <unordered_set>
 
 namespace wowee {
 namespace game {
@@ -47,6 +49,155 @@ static std::string_view canonicalOpcodeName(std::string_view name) {
     return name;
 }
 
+static std::optional<uint16_t> resolveLogicalOpcodeIndex(std::string_view name) {
+    const std::string_view canonical = canonicalOpcodeName(name);
+    for (size_t i = 0; i < kOpcodeNameCount; ++i) {
+        if (canonical == kOpcodeNames[i].name) {
+            return static_cast<uint16_t>(kOpcodeNames[i].op);
+        }
+    }
+    return std::nullopt;
+}
+
+static std::optional<std::string> parseStringField(const std::string& json, const char* fieldName) {
+    const std::string needle = std::string("\"") + fieldName + "\"";
+    size_t keyPos = json.find(needle);
+    if (keyPos == std::string::npos) return std::nullopt;
+
+    size_t colon = json.find(':', keyPos + needle.size());
+    if (colon == std::string::npos) return std::nullopt;
+
+    size_t valueStart = json.find('"', colon + 1);
+    if (valueStart == std::string::npos) return std::nullopt;
+    size_t valueEnd = json.find('"', valueStart + 1);
+    if (valueEnd == std::string::npos) return std::nullopt;
+    return json.substr(valueStart + 1, valueEnd - valueStart - 1);
+}
+
+static std::vector<std::string> parseStringArrayField(const std::string& json, const char* fieldName) {
+    std::vector<std::string> values;
+    const std::string needle = std::string("\"") + fieldName + "\"";
+    size_t keyPos = json.find(needle);
+    if (keyPos == std::string::npos) return values;
+
+    size_t colon = json.find(':', keyPos + needle.size());
+    if (colon == std::string::npos) return values;
+
+    size_t arrayStart = json.find('[', colon + 1);
+    if (arrayStart == std::string::npos) return values;
+    size_t arrayEnd = json.find(']', arrayStart + 1);
+    if (arrayEnd == std::string::npos) return values;
+
+    size_t pos = arrayStart + 1;
+    while (pos < arrayEnd) {
+        size_t valueStart = json.find('"', pos);
+        if (valueStart == std::string::npos || valueStart >= arrayEnd) break;
+        size_t valueEnd = json.find('"', valueStart + 1);
+        if (valueEnd == std::string::npos || valueEnd > arrayEnd) break;
+        values.push_back(json.substr(valueStart + 1, valueEnd - valueStart - 1));
+        pos = valueEnd + 1;
+    }
+    return values;
+}
+
+static bool loadOpcodeJsonRecursive(const std::filesystem::path& path,
+                                    std::unordered_map<uint16_t, uint16_t>& logicalToWire,
+                                    std::unordered_map<uint16_t, uint16_t>& wireToLogical,
+                                    std::unordered_set<std::string>& loadingStack) {
+    const std::filesystem::path canonicalPath = std::filesystem::weakly_canonical(path);
+    const std::string canonicalKey = canonicalPath.string();
+    if (!loadingStack.insert(canonicalKey).second) {
+        LOG_WARNING("OpcodeTable: inheritance cycle at ", canonicalKey);
+        return false;
+    }
+
+    std::ifstream f(canonicalPath);
+    if (!f.is_open()) {
+        LOG_WARNING("OpcodeTable: cannot open ", canonicalPath.string());
+        loadingStack.erase(canonicalKey);
+        return false;
+    }
+
+    std::string json((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    bool ok = true;
+
+    if (auto extends = parseStringField(json, "_extends")) {
+        ok = loadOpcodeJsonRecursive(canonicalPath.parent_path() / *extends,
+                                     logicalToWire, wireToLogical, loadingStack) && ok;
+    }
+
+    for (const std::string& removeName : parseStringArrayField(json, "_remove")) {
+        auto logical = resolveLogicalOpcodeIndex(removeName);
+        if (!logical) continue;
+        auto it = logicalToWire.find(*logical);
+        if (it != logicalToWire.end()) {
+            const uint16_t oldWire = it->second;
+            logicalToWire.erase(it);
+            auto wireIt = wireToLogical.find(oldWire);
+            if (wireIt != wireToLogical.end() && wireIt->second == *logical) {
+                wireToLogical.erase(wireIt);
+            }
+        }
+    }
+
+    size_t pos = 0;
+    while (pos < json.size()) {
+        size_t keyStart = json.find('"', pos);
+        if (keyStart == std::string::npos) break;
+        size_t keyEnd = json.find('"', keyStart + 1);
+        if (keyEnd == std::string::npos) break;
+        std::string key = json.substr(keyStart + 1, keyEnd - keyStart - 1);
+
+        size_t colon = json.find(':', keyEnd);
+        if (colon == std::string::npos) break;
+
+        size_t valStart = colon + 1;
+        while (valStart < json.size() && (json[valStart] == ' ' || json[valStart] == '\t' ||
+               json[valStart] == '\r' || json[valStart] == '\n' || json[valStart] == '"'))
+            ++valStart;
+
+        size_t valEnd = json.find_first_of(",}\"\r\n", valStart);
+        if (valEnd == std::string::npos) valEnd = json.size();
+        std::string valStr = json.substr(valStart, valEnd - valStart);
+
+        uint16_t wire = 0;
+        try {
+            if (valStr.size() > 2 && (valStr[0] == '0' && (valStr[1] == 'x' || valStr[1] == 'X'))) {
+                wire = static_cast<uint16_t>(std::stoul(valStr, nullptr, 16));
+            } else {
+                wire = static_cast<uint16_t>(std::stoul(valStr));
+            }
+        } catch (...) {
+            pos = valEnd + 1;
+            continue;
+        }
+
+        auto logical = resolveLogicalOpcodeIndex(key);
+        if (logical) {
+            auto oldLogicalIt = logicalToWire.find(*logical);
+            if (oldLogicalIt != logicalToWire.end()) {
+                const uint16_t oldWire = oldLogicalIt->second;
+                auto oldWireIt = wireToLogical.find(oldWire);
+                if (oldWireIt != wireToLogical.end() && oldWireIt->second == *logical) {
+                    wireToLogical.erase(oldWireIt);
+                }
+            }
+            auto oldWireIt = wireToLogical.find(wire);
+            if (oldWireIt != wireToLogical.end() && oldWireIt->second != *logical) {
+                logicalToWire.erase(oldWireIt->second);
+                wireToLogical.erase(oldWireIt);
+            }
+            logicalToWire[*logical] = wire;
+            wireToLogical[wire] = *logical;
+        }
+
+        pos = valEnd + 1;
+    }
+
+    loadingStack.erase(canonicalKey);
+    return ok;
+}
+
 std::optional<LogicalOpcode> OpcodeTable::nameToLogical(const std::string& name) {
     const std::string_view canonical = canonicalOpcodeName(name);
     for (size_t i = 0; i < kOpcodeNameCount; ++i) {
@@ -64,73 +215,18 @@ const char* OpcodeTable::logicalToName(LogicalOpcode op) {
 }
 
 bool OpcodeTable::loadFromJson(const std::string& path) {
-    std::ifstream f(path);
-    if (!f.is_open()) {
-        LOG_WARNING("OpcodeTable: cannot open ", path, ", using defaults");
-        return false;
-    }
-
-    std::string json((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-
-    // Start fresh — JSON is the single source of truth for opcode mappings.
+    // Start fresh — resolved JSON inheritance is the single source of truth for opcode mappings.
     logicalToWire_.clear();
     wireToLogical_.clear();
-
-    // Parse simple JSON: { "NAME": "0xHEX", ... } or { "NAME": 123, ... }
-    size_t pos = 0;
-    size_t loaded = 0;
-    while (pos < json.size()) {
-        // Find next quoted key
-        size_t keyStart = json.find('"', pos);
-        if (keyStart == std::string::npos) break;
-        size_t keyEnd = json.find('"', keyStart + 1);
-        if (keyEnd == std::string::npos) break;
-        std::string key = json.substr(keyStart + 1, keyEnd - keyStart - 1);
-
-        // Find colon then value
-        size_t colon = json.find(':', keyEnd);
-        if (colon == std::string::npos) break;
-
-        // Skip whitespace
-        size_t valStart = colon + 1;
-        while (valStart < json.size() && (json[valStart] == ' ' || json[valStart] == '\t' ||
-               json[valStart] == '\r' || json[valStart] == '\n' || json[valStart] == '"'))
-            ++valStart;
-
-        size_t valEnd = json.find_first_of(",}\"\r\n", valStart);
-        if (valEnd == std::string::npos) valEnd = json.size();
-        std::string valStr = json.substr(valStart, valEnd - valStart);
-
-        // Parse hex or decimal value
-        uint16_t wire = 0;
-        try {
-            if (valStr.size() > 2 && (valStr[0] == '0' && (valStr[1] == 'x' || valStr[1] == 'X'))) {
-                wire = static_cast<uint16_t>(std::stoul(valStr, nullptr, 16));
-            } else {
-                wire = static_cast<uint16_t>(std::stoul(valStr));
-            }
-        } catch (...) {
-            pos = valEnd + 1;
-            continue;
-        }
-
-        auto logOp = nameToLogical(key);
-        if (logOp) {
-            uint16_t logIdx = static_cast<uint16_t>(*logOp);
-            logicalToWire_[logIdx] = wire;
-            wireToLogical_[wire] = logIdx;
-            ++loaded;
-        }
-
-        pos = valEnd + 1;
-    }
-
-    if (loaded == 0) {
+    std::unordered_set<std::string> loadingStack;
+    if (!loadOpcodeJsonRecursive(std::filesystem::path(path),
+                                 logicalToWire_, wireToLogical_, loadingStack) ||
+        logicalToWire_.empty()) {
         LOG_WARNING("OpcodeTable: no opcodes loaded from ", path);
         return false;
     }
 
-    LOG_INFO("OpcodeTable: loaded ", loaded, " opcodes from ", path);
+    LOG_INFO("OpcodeTable: loaded ", logicalToWire_.size(), " opcodes from ", path);
     return true;
 }
 

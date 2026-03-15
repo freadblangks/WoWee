@@ -4261,8 +4261,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
         }
 
         case Opcode::SMSG_ACTION_BUTTONS: {
-            // packed: bits 0-23 = actionId, bits 24-31 = type
-            //   0x00 = spell (when id != 0), 0x80 = item, 0x40 = macro (skip)
+            // Slot encoding differs by expansion:
+            //   Classic/Turtle: uint16 actionId + uint8 type + uint8 misc
+            //     type: 0=spell, 1=item, 64=macro
+            //   TBC/WotLK: uint32 packed = actionId | (type << 24)
+            //     type: 0x00=spell, 0x80=item, 0x40=macro
             // Format differences:
             //   Classic 1.12: no mode byte, 120 slots (480 bytes)
             //   TBC 2.4.3:    no mode byte, 132 slots (528 bytes)
@@ -4292,12 +4295,20 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     // so we don't wipe hardcoded fallbacks when the server sends zeros.
                     continue;
                 }
-                uint8_t  type   = static_cast<uint8_t>((packed >> 24) & 0xFF);
-                uint32_t id     = packed & 0x00FFFFFFu;
+                uint8_t type = 0;
+                uint32_t id = 0;
+                if (isClassicLikeExpansion()) {
+                    id = packed & 0x0000FFFFu;
+                    type = static_cast<uint8_t>((packed >> 16) & 0xFF);
+                } else {
+                    type = static_cast<uint8_t>((packed >> 24) & 0xFF);
+                    id = packed & 0x00FFFFFFu;
+                }
                 if (id == 0) continue;
                 ActionBarSlot slot;
                 switch (type) {
                     case 0x00: slot.type = ActionBarSlot::SPELL; slot.id = id; break;
+                    case 0x01: slot.type = ActionBarSlot::ITEM;  slot.id = id; break;
                     case 0x80: slot.type = ActionBarSlot::ITEM;  slot.id = id; break;
                     default:   continue;  // macro or unknown — leave as-is
                 }

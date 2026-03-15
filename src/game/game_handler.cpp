@@ -16290,6 +16290,22 @@ void GameHandler::handleMonsterMove(network::Packet& packet) {
             LOG_WARNING(msg, " (occurrence=", failCount, ")");
         }
     };
+    auto logWrappedFallbackUsed = [&]() {
+        static uint32_t wrappedFallbackCount = 0;
+        ++wrappedFallbackCount;
+        if (wrappedFallbackCount <= 10 || (wrappedFallbackCount % 100) == 0) {
+            LOG_WARNING("SMSG_MONSTER_MOVE parsed via wrapped-subpacket fallback",
+                        " (occurrence=", wrappedFallbackCount, ")");
+        }
+    };
+    auto logWrappedUncompressedFallbackUsed = [&]() {
+        static uint32_t wrappedUncompressedFallbackCount = 0;
+        ++wrappedUncompressedFallbackCount;
+        if (wrappedUncompressedFallbackCount <= 10 || (wrappedUncompressedFallbackCount % 100) == 0) {
+            LOG_WARNING("SMSG_MONSTER_MOVE parsed via uncompressed wrapped-subpacket fallback",
+                        " (occurrence=", wrappedUncompressedFallbackCount, ")");
+        }
+    };
     auto stripWrappedSubpacket = [&](const std::vector<uint8_t>& bytes, std::vector<uint8_t>& stripped) -> bool {
         if (bytes.size() < 3) return false;
         uint8_t subSize = bytes[0];
@@ -16331,22 +16347,31 @@ void GameHandler::handleMonsterMove(network::Packet& packet) {
         std::vector<uint8_t> stripped;
         bool hasWrappedForm = stripWrappedSubpacket(decompressed, stripped);
 
-        // Try unwrapped payload first (common form), then wrapped-subpacket fallback.
-        network::Packet decompPacket(packet.getOpcode(), decompressed);
-        if (!packetParsers_->parseMonsterMove(decompPacket, data)) {
-            if (!hasWrappedForm) {
-                logMonsterMoveParseFailure("Failed to parse SMSG_MONSTER_MOVE (decompressed " +
-                                           std::to_string(destLen) + " bytes)");
-                return;
-            }
+        bool parsed = false;
+        if (hasWrappedForm) {
             network::Packet wrappedPacket(packet.getOpcode(), stripped);
-            if (!packetParsers_->parseMonsterMove(wrappedPacket, data)) {
+            if (packetParsers_->parseMonsterMove(wrappedPacket, data)) {
+                parsed = true;
+                logWrappedFallbackUsed();
+            }
+        }
+        if (!parsed) {
+            network::Packet decompPacket(packet.getOpcode(), decompressed);
+            if (packetParsers_->parseMonsterMove(decompPacket, data)) {
+                parsed = true;
+            }
+        }
+
+        if (!parsed) {
+            if (hasWrappedForm) {
                 logMonsterMoveParseFailure("Failed to parse SMSG_MONSTER_MOVE (decompressed " +
                                            std::to_string(destLen) + " bytes, wrapped payload " +
                                            std::to_string(stripped.size()) + " bytes)");
-                return;
+            } else {
+                logMonsterMoveParseFailure("Failed to parse SMSG_MONSTER_MOVE (decompressed " +
+                                           std::to_string(destLen) + " bytes)");
             }
-            LOG_WARNING("SMSG_MONSTER_MOVE parsed via wrapped-subpacket fallback");
+            return;
         }
     } else if (!packetParsers_->parseMonsterMove(packet, data)) {
         // Some realms occasionally embed an extra [size|opcode] wrapper even when the
@@ -16355,7 +16380,7 @@ void GameHandler::handleMonsterMove(network::Packet& packet) {
         if (stripWrappedSubpacket(rawData, stripped)) {
             network::Packet wrappedPacket(packet.getOpcode(), stripped);
             if (packetParsers_->parseMonsterMove(wrappedPacket, data)) {
-                LOG_WARNING("SMSG_MONSTER_MOVE parsed via uncompressed wrapped-subpacket fallback");
+                logWrappedUncompressedFallbackUsed();
             } else {
                 logMonsterMoveParseFailure("Failed to parse SMSG_MONSTER_MOVE");
                 return;

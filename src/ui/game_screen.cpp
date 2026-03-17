@@ -3508,6 +3508,10 @@ void GameScreen::renderPetFrame(game::GameHandler& gameHandler) {
                 // Use the authoritative autocast set from SMSG_PET_SPELLS spell list flags.
                 bool autocastOn   = gameHandler.isPetSpellAutocast(actionId);
 
+                // Cooldown tracking for pet spells (actionId > 6 are spell IDs)
+                float petCd = (actionId > 6) ? gameHandler.getSpellCooldown(actionId) : 0.0f;
+                bool petOnCd = (petCd > 0.0f);
+
                 ImGui::PushID(i);
                 if (rendered > 0) ImGui::SameLine(0.0f, spacing);
 
@@ -3522,9 +3526,10 @@ void GameScreen::renderPetFrame(game::GameHandler& gameHandler) {
                 else if (actionId == 6) builtinLabel = "Agg";
                 else if (assetMgr)      iconTex = getSpellIcon(actionId, assetMgr);
 
-                // Tint green when autocast is on.
-                ImVec4 tint = autocastOn ? ImVec4(0.6f, 1.0f, 0.6f, 1.0f)
-                                         : ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+                // Dim when on cooldown; tint green when autocast is on
+                ImVec4 tint = petOnCd
+                    ? ImVec4(0.35f, 0.35f, 0.35f, 0.7f)
+                    : (autocastOn ? ImVec4(0.6f, 1.0f, 0.6f, 1.0f) : ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
                 bool clicked = false;
                 if (iconTex) {
                     clicked = ImGui::ImageButton("##pa",
@@ -3542,14 +3547,35 @@ void GameScreen::renderPetFrame(game::GameHandler& gameHandler) {
                         if (nm.empty()) snprintf(label, sizeof(label), "?%u", actionId % 100);
                         else            snprintf(label, sizeof(label), "%.3s", nm.c_str());
                     }
-                    ImGui::PushStyleColor(ImGuiCol_Button,
-                        autocastOn ? ImVec4(0.2f,0.5f,0.2f,0.9f)
-                                   : ImVec4(0.2f,0.2f,0.3f,0.9f));
+                    ImVec4 btnCol = petOnCd ? ImVec4(0.1f,0.1f,0.15f,0.9f)
+                                   : (autocastOn ? ImVec4(0.2f,0.5f,0.2f,0.9f)
+                                                 : ImVec4(0.2f,0.2f,0.3f,0.9f));
+                    ImGui::PushStyleColor(ImGuiCol_Button, btnCol);
                     clicked = ImGui::Button(label, ImVec2(iconSz + 4.0f, iconSz));
                     ImGui::PopStyleColor();
                 }
 
-                if (clicked) {
+                // Cooldown overlay: dark fill + time text centered on the button
+                if (petOnCd && !builtinLabel) {
+                    ImVec2 bMin = ImGui::GetItemRectMin();
+                    ImVec2 bMax = ImGui::GetItemRectMax();
+                    auto* cdDL = ImGui::GetWindowDrawList();
+                    cdDL->AddRectFilled(bMin, bMax, IM_COL32(0, 0, 0, 140));
+                    char cdTxt[8];
+                    if (petCd >= 60.0f)
+                        snprintf(cdTxt, sizeof(cdTxt), "%dm", static_cast<int>(petCd / 60.0f));
+                    else if (petCd >= 1.0f)
+                        snprintf(cdTxt, sizeof(cdTxt), "%d", static_cast<int>(petCd));
+                    else
+                        snprintf(cdTxt, sizeof(cdTxt), "%.1f", petCd);
+                    ImVec2 tsz = ImGui::CalcTextSize(cdTxt);
+                    float cx = (bMin.x + bMax.x) * 0.5f;
+                    float cy = (bMin.y + bMax.y) * 0.5f;
+                    cdDL->AddText(ImVec2(cx - tsz.x * 0.5f, cy - tsz.y * 0.5f),
+                                  IM_COL32(255, 255, 255, 230), cdTxt);
+                }
+
+                if (clicked && !petOnCd) {
                     // Send pet action; use current target for spells.
                     uint64_t targetGuid = (actionId > 5) ? gameHandler.getTargetGuid() : 0u;
                     gameHandler.sendPetAction(slotVal, targetGuid);
@@ -3577,6 +3603,15 @@ void GameScreen::renderPetFrame(game::GameHandler& gameHandler) {
                         }
                         if (autocastOn)
                             ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Autocast: On");
+                        if (petOnCd) {
+                            if (petCd >= 60.0f)
+                                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
+                                    "Cooldown: %d min %d sec",
+                                    static_cast<int>(petCd) / 60, static_cast<int>(petCd) % 60);
+                            else
+                                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
+                                    "Cooldown: %.1f sec", petCd);
+                        }
                         ImGui::EndTooltip();
                     }
                 }

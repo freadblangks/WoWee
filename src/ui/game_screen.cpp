@@ -4344,17 +4344,21 @@ void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
         } else if (u->isHostile()) {
             uint32_t playerLv = gameHandler.getPlayerLevel();
             uint32_t mobLv = u->getLevel();
-            int32_t diff = static_cast<int32_t>(mobLv) - static_cast<int32_t>(playerLv);
-            if (game::GameHandler::killXp(playerLv, mobLv) == 0)
-                focusColor = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
-            else if (diff >= 10)
-                focusColor = ImVec4(1.0f, 0.1f, 0.1f, 1.0f);
-            else if (diff >= 5)
-                focusColor = ImVec4(1.0f, 0.5f, 0.1f, 1.0f);
-            else if (diff >= -2)
-                focusColor = ImVec4(1.0f, 1.0f, 0.1f, 1.0f);
-            else
-                focusColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f);
+            if (mobLv == 0) {
+                focusColor = ImVec4(1.0f, 0.1f, 0.1f, 1.0f); // ?? level = skull red
+            } else {
+                int32_t diff = static_cast<int32_t>(mobLv) - static_cast<int32_t>(playerLv);
+                if (game::GameHandler::killXp(playerLv, mobLv) == 0)
+                    focusColor = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
+                else if (diff >= 10)
+                    focusColor = ImVec4(1.0f, 0.1f, 0.1f, 1.0f);
+                else if (diff >= 5)
+                    focusColor = ImVec4(1.0f, 0.5f, 0.1f, 1.0f);
+                else if (diff >= -2)
+                    focusColor = ImVec4(1.0f, 1.0f, 0.1f, 1.0f);
+                else
+                    focusColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f);
+            }
         } else {
             focusColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f);
         }
@@ -4487,7 +4491,10 @@ void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
 
             // Level + health on same row
             ImGui::SameLine();
-            ImGui::TextDisabled("Lv %u", unit->getLevel());
+            if (unit->getLevel() == 0)
+                ImGui::TextDisabled("Lv ??");
+            else
+                ImGui::TextDisabled("Lv %u", unit->getLevel());
 
             uint32_t hp = unit->getHealth();
             uint32_t maxHp = unit->getMaxHealth();

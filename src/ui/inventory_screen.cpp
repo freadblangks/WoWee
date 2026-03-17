@@ -1069,20 +1069,29 @@ void InventoryScreen::renderBagWindow(const char* title, bool& isOpen,
         ImGui::PopID();
     }
 
-    if (bagIndex < 0) {
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.0f, 1.0f), "Keyring");
-        for (int i = 0; i < inventory.getKeyringSize(); ++i) {
-            if (i % columns != 0) ImGui::SameLine();
-            const auto& slot = inventory.getKeyringSlot(i);
-            char id[32];
-            snprintf(id, sizeof(id), "##skr_%d", i);
-            ImGui::PushID(id);
-            // Keyring is display-only for now.
-            renderItemSlot(inventory, slot, slotSize, nullptr,
-                           SlotKind::BACKPACK, -1, game::EquipSlot::NUM_SLOTS);
-            ImGui::PopID();
+    if (bagIndex < 0 && showKeyring_) {
+        constexpr float keySlotSize = 24.0f;
+        constexpr int keyCols = 8;
+        // Only show rows that contain items (round up to full row)
+        int lastOccupied = -1;
+        for (int i = inventory.getKeyringSize() - 1; i >= 0; --i) {
+            if (!inventory.getKeyringSlot(i).empty()) { lastOccupied = i; break; }
+        }
+        int visibleSlots = (lastOccupied < 0) ? 0 : ((lastOccupied / keyCols) + 1) * keyCols;
+        if (visibleSlots > 0) {
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.0f, 1.0f), "Keyring");
+            for (int i = 0; i < visibleSlots; ++i) {
+                if (i % keyCols != 0) ImGui::SameLine();
+                const auto& slot = inventory.getKeyringSlot(i);
+                char id[32];
+                snprintf(id, sizeof(id), "##skr_%d", i);
+                ImGui::PushID(id);
+                renderItemSlot(inventory, slot, keySlotSize, nullptr,
+                               SlotKind::BACKPACK, -1, game::EquipSlot::NUM_SLOTS);
+                ImGui::PopID();
+            }
         }
     }
 
@@ -2042,27 +2051,28 @@ void InventoryScreen::renderBackpackPanel(game::Inventory& inventory, bool colla
         }
     }
 
-    bool keyringHasAnyItems = false;
-    for (int i = 0; i < inventory.getKeyringSize(); ++i) {
-        if (!inventory.getKeyringSlot(i).empty()) {
-            keyringHasAnyItems = true;
-            break;
+    if (showKeyring_) {
+        constexpr float keySlotSize = 24.0f;
+        constexpr int keyCols = 8;
+        int lastOccupied = -1;
+        for (int i = inventory.getKeyringSize() - 1; i >= 0; --i) {
+            if (!inventory.getKeyringSlot(i).empty()) { lastOccupied = i; break; }
         }
-    }
-    if (!collapseEmptySections || keyringHasAnyItems) {
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.0f, 1.0f), "Keyring");
-        for (int i = 0; i < inventory.getKeyringSize(); ++i) {
-            if (i % columns != 0) ImGui::SameLine();
-            const auto& slot = inventory.getKeyringSlot(i);
-            char sid[32];
-            snprintf(sid, sizeof(sid), "##keyring_%d", i);
-            ImGui::PushID(sid);
-            // Keyring is display-only for now.
-            renderItemSlot(inventory, slot, slotSize, nullptr,
-                           SlotKind::BACKPACK, -1, game::EquipSlot::NUM_SLOTS);
-            ImGui::PopID();
+        int visibleSlots = (lastOccupied < 0) ? 0 : ((lastOccupied / keyCols) + 1) * keyCols;
+        if (visibleSlots > 0) {
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.0f, 1.0f), "Keyring");
+            for (int i = 0; i < visibleSlots; ++i) {
+                if (i % keyCols != 0) ImGui::SameLine();
+                const auto& slot = inventory.getKeyringSlot(i);
+                char sid[32];
+                snprintf(sid, sizeof(sid), "##keyring_%d", i);
+                ImGui::PushID(sid);
+                renderItemSlot(inventory, slot, keySlotSize, nullptr,
+                               SlotKind::BACKPACK, -1, game::EquipSlot::NUM_SLOTS);
+                ImGui::PopID();
+            }
         }
     }
 }

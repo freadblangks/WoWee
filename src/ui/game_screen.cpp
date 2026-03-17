@@ -15326,6 +15326,10 @@ void GameScreen::renderSettingsWindow() {
                     inventoryScreen.setSeparateBags(pendingSeparateBags);
                     saveSettings();
                 }
+                if (ImGui::Checkbox("Show Key Ring", &pendingShowKeyring)) {
+                    inventoryScreen.setShowKeyring(pendingShowKeyring);
+                    saveSettings();
+                }
 
                 ImGui::Spacing();
                 ImGui::Separator();
@@ -15341,6 +15345,8 @@ void GameScreen::renderSettingsWindow() {
                     pendingMinimapNpcDots = false;
                     pendingSeparateBags = true;
                     inventoryScreen.setSeparateBags(true);
+                    pendingShowKeyring = true;
+                    inventoryScreen.setShowKeyring(true);
                     uiOpacity_ = 0.65f;
                     minimapRotate_ = false;
                     minimapSquare_ = false;
@@ -17244,6 +17250,7 @@ void GameScreen::saveSettings() {
     out << "show_dps_meter=" << (showDPSMeter_ ? 1 : 0) << "\n";
     out << "show_cooldown_tracker=" << (showCooldownTracker_ ? 1 : 0) << "\n";
     out << "separate_bags=" << (pendingSeparateBags ? 1 : 0) << "\n";
+    out << "show_keyring=" << (pendingShowKeyring ? 1 : 0) << "\n";
     out << "action_bar_scale=" << pendingActionBarScale << "\n";
     out << "nameplate_scale=" << nameplateScale_ << "\n";
     out << "show_action_bar2=" << (pendingShowActionBar2 ? 1 : 0) << "\n";
@@ -17365,6 +17372,9 @@ void GameScreen::loadSettings() {
             } else if (key == "separate_bags") {
                 pendingSeparateBags = (std::stoi(val) != 0);
                 inventoryScreen.setSeparateBags(pendingSeparateBags);
+            } else if (key == "show_keyring") {
+                pendingShowKeyring = (std::stoi(val) != 0);
+                inventoryScreen.setShowKeyring(pendingShowKeyring);
             } else if (key == "action_bar_scale") {
                 pendingActionBarScale = std::clamp(std::stof(val), 0.5f, 1.5f);
             } else if (key == "nameplate_scale") {

@@ -39,6 +39,8 @@ public:
     bool isSeparateBags() const { return separateBags_; }
     void toggleCompactBags() { compactBags_ = !compactBags_; }
     bool isCompactBags() const { return compactBags_; }
+    void setShowKeyring(bool show) { showKeyring_ = show; }
+    bool isShowKeyring() const { return showKeyring_; }
     bool isBackpackOpen() const { return backpackOpen_; }
     bool isBagOpen(int idx) const { return idx >= 0 && idx < 4 ? bagOpen_[idx] : false; }
 
@@ -79,6 +81,7 @@ private:
     bool bKeyWasDown = false;
     bool separateBags_ = true;
     bool compactBags_ = false;
+    bool showKeyring_ = true;
     bool backpackOpen_ = false;
     std::array<bool, 4> bagOpen_{};
     bool cKeyWasDown = false;

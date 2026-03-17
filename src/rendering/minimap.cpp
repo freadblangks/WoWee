@@ -513,14 +513,15 @@ void Minimap::render(VkCommandBuffer cmd, const Camera& playerCamera,
 
     float arrowRotation = 0.0f;
     if (!rotateWithCamera) {
-        // Prefer authoritative orientation if provided. This value is expected
-        // to already match minimap shader rotation convention.
         if (hasPlayerOrientation) {
             arrowRotation = playerOrientation;
         } else {
             glm::vec3 fwd = playerCamera.getForward();
-            arrowRotation = std::atan2(-fwd.x, fwd.y);
+            arrowRotation = -std::atan2(-fwd.x, fwd.y);
         }
+    } else if (hasPlayerOrientation) {
+        // Show character facing relative to the rotated map
+        arrowRotation = playerOrientation + rotation;
     }
 
     MinimapDisplayPush push{};

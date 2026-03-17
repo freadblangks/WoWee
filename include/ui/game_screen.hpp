@@ -192,6 +192,7 @@ private:
     bool pendingMinimapNpcDots = false;
     bool pendingShowLatencyMeter = true;
     bool pendingSeparateBags = true;
+    bool pendingShowKeyring = true;
     bool pendingAutoLoot = false;
 
     // Keybinding customization

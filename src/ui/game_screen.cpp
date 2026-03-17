@@ -1649,6 +1649,138 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
         // Required level
         if (info->requiredLevel > 1)
             ImGui::TextDisabled("Requires Level %u", info->requiredLevel);
+        // Required skill (e.g. "Requires Blacksmithing (300)")
+        if (info->requiredSkill != 0 && info->requiredSkillRank > 0) {
+            static std::unordered_map<uint32_t, std::string> s_skillNames;
+            static bool s_skillNamesLoaded = false;
+            if (!s_skillNamesLoaded && assetMgr) {
+                s_skillNamesLoaded = true;
+                auto dbc = assetMgr->loadDBC("SkillLine.dbc");
+                if (dbc && dbc->isLoaded()) {
+                    const auto* layout = pipeline::getActiveDBCLayout()
+                        ? pipeline::getActiveDBCLayout()->getLayout("SkillLine") : nullptr;
+                    uint32_t idF   = layout ? (*layout)["ID"]   : 0u;
+                    uint32_t nameF = layout ? (*layout)["Name"] : 2u;
+                    for (uint32_t r = 0; r < dbc->getRecordCount(); ++r) {
+                        uint32_t sid = dbc->getUInt32(r, idF);
+                        if (!sid) continue;
+                        std::string sname = dbc->getString(r, nameF);
+                        if (!sname.empty()) s_skillNames[sid] = std::move(sname);
+                    }
+                }
+            }
+            uint32_t playerSkillVal = 0;
+            const auto& skills = gameHandler.getPlayerSkills();
+            auto skPit = skills.find(info->requiredSkill);
+            if (skPit != skills.end()) playerSkillVal = skPit->second.effectiveValue();
+            bool meetsSkill = (playerSkillVal == 0 || playerSkillVal >= info->requiredSkillRank);
+            ImVec4 skColor = meetsSkill ? ImVec4(1.0f, 1.0f, 1.0f, 0.75f) : ImVec4(1.0f, 0.5f, 0.5f, 1.0f);
+            auto skIt = s_skillNames.find(info->requiredSkill);
+            if (skIt != s_skillNames.end())
+                ImGui::TextColored(skColor, "Requires %s (%u)", skIt->second.c_str(), info->requiredSkillRank);
+            else
+                ImGui::TextColored(skColor, "Requires Skill %u (%u)", info->requiredSkill, info->requiredSkillRank);
+        }
+        // Required reputation (e.g. "Requires Exalted with Argent Dawn")
+        if (info->requiredReputationFaction != 0 && info->requiredReputationRank > 0) {
+            static std::unordered_map<uint32_t, std::string> s_factionNames;
+            static bool s_factionNamesLoaded = false;
+            if (!s_factionNamesLoaded && assetMgr) {
+                s_factionNamesLoaded = true;
+                auto dbc = assetMgr->loadDBC("Faction.dbc");
+                if (dbc && dbc->isLoaded()) {
+                    const auto* layout = pipeline::getActiveDBCLayout()
+                        ? pipeline::getActiveDBCLayout()->getLayout("Faction") : nullptr;
+                    uint32_t idF   = layout ? (*layout)["ID"]   : 0u;
+                    uint32_t nameF = layout ? (*layout)["Name"] : 20u;
+                    for (uint32_t r = 0; r < dbc->getRecordCount(); ++r) {
+                        uint32_t fid = dbc->getUInt32(r, idF);
+                        if (!fid) continue;
+                        std::string fname = dbc->getString(r, nameF);
+                        if (!fname.empty()) s_factionNames[fid] = std::move(fname);
+                    }
+                }
+            }
+            static const char* kRepRankNames[] = {
+                "Hated", "Hostile", "Unfriendly", "Neutral",
+                "Friendly", "Honored", "Revered", "Exalted"
+            };
+            const char* rankName = (info->requiredReputationRank < 8)
+                ? kRepRankNames[info->requiredReputationRank] : "Unknown";
+            auto fIt = s_factionNames.find(info->requiredReputationFaction);
+            ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 0.75f), "Requires %s with %s",
+                rankName,
+                fIt != s_factionNames.end() ? fIt->second.c_str() : "Unknown Faction");
+        }
+        // Class restriction (e.g. "Classes: Paladin, Warrior")
+        if (info->allowableClass != 0) {
+            static const struct { uint32_t mask; const char* name; } kClasses[] = {
+                { 1,    "Warrior" },
+                { 2,    "Paladin" },
+                { 4,    "Hunter" },
+                { 8,    "Rogue" },
+                { 16,   "Priest" },
+                { 32,   "Death Knight" },
+                { 64,   "Shaman" },
+                { 128,  "Mage" },
+                { 256,  "Warlock" },
+                { 1024, "Druid" },
+            };
+            int matchCount = 0;
+            for (const auto& kc : kClasses)
+                if (info->allowableClass & kc.mask) ++matchCount;
+            if (matchCount > 0 && matchCount < 10) {
+                char classBuf[128] = "Classes: ";
+                bool first = true;
+                for (const auto& kc : kClasses) {
+                    if (!(info->allowableClass & kc.mask)) continue;
+                    if (!first) strncat(classBuf, ", ", sizeof(classBuf) - strlen(classBuf) - 1);
+                    strncat(classBuf, kc.name, sizeof(classBuf) - strlen(classBuf) - 1);
+                    first = false;
+                }
+                uint8_t pc = gameHandler.getPlayerClass();
+                uint32_t pmask = (pc > 0 && pc <= 10) ? (1u << (pc - 1)) : 0u;
+                bool playerAllowed = (pmask == 0 || (info->allowableClass & pmask));
+                ImVec4 clColor = playerAllowed ? ImVec4(1.0f, 1.0f, 1.0f, 0.75f) : ImVec4(1.0f, 0.5f, 0.5f, 1.0f);
+                ImGui::TextColored(clColor, "%s", classBuf);
+            }
+        }
+        // Race restriction (e.g. "Races: Night Elf, Human")
+        if (info->allowableRace != 0) {
+            static const struct { uint32_t mask; const char* name; } kRaces[] = {
+                { 1,    "Human"      },
+                { 2,    "Orc"        },
+                { 4,    "Dwarf"      },
+                { 8,    "Night Elf"  },
+                { 16,   "Undead"     },
+                { 32,   "Tauren"     },
+                { 64,   "Gnome"      },
+                { 128,  "Troll"      },
+                { 512,  "Blood Elf"  },
+                { 1024, "Draenei"    },
+            };
+            constexpr uint32_t kAllPlayable = 1|2|4|8|16|32|64|128|512|1024;
+            if ((info->allowableRace & kAllPlayable) != kAllPlayable) {
+                int matchCount = 0;
+                for (const auto& kr : kRaces)
+                    if (info->allowableRace & kr.mask) ++matchCount;
+                if (matchCount > 0) {
+                    char raceBuf[160] = "Races: ";
+                    bool first = true;
+                    for (const auto& kr : kRaces) {
+                        if (!(info->allowableRace & kr.mask)) continue;
+                        if (!first) strncat(raceBuf, ", ", sizeof(raceBuf) - strlen(raceBuf) - 1);
+                        strncat(raceBuf, kr.name, sizeof(raceBuf) - strlen(raceBuf) - 1);
+                        first = false;
+                    }
+                    uint8_t pr = gameHandler.getPlayerRace();
+                    uint32_t pmask = (pr > 0 && pr <= 11) ? (1u << (pr - 1)) : 0u;
+                    bool playerAllowed = (pmask == 0 || (info->allowableRace & pmask));
+                    ImVec4 rColor = playerAllowed ? ImVec4(1.0f, 1.0f, 1.0f, 0.75f) : ImVec4(1.0f, 0.5f, 0.5f, 1.0f);
+                    ImGui::TextColored(rColor, "%s", raceBuf);
+                }
+            }
+        }
         // Flavor / lore text (shown in gold italic in WoW, use a yellow-ish dim color here)
         if (!info->description.empty()) {
             ImGui::Spacing();

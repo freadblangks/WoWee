@@ -171,7 +171,7 @@ private:
 
     // Descriptor pool for material sets
     VkDescriptorPool materialDescPool = VK_NULL_HANDLE;
-    static constexpr uint32_t MAX_MATERIAL_SETS = 16384;
+    static constexpr uint32_t MAX_MATERIAL_SETS = 65536;
 
     // Loaded terrain chunks
     std::vector<TerrainChunkGPU> chunks;

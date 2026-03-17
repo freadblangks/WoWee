@@ -5287,6 +5287,10 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
                     renderOverlay(tint, cmd);
                 }
             }
+            // Ghost mode desaturation: cold blue-grey overlay when dead/ghost
+            if (ghostMode_) {
+                renderOverlay(glm::vec4(0.30f, 0.35f, 0.42f, 0.45f), cmd);
+            }
             // Brightness overlay (applied before minimap so it doesn't affect UI)
             if (brightness_ < 0.99f) {
                 renderOverlay(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f - brightness_), cmd);
@@ -5427,6 +5431,10 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
                     : glm::vec4(0.03f, 0.09f, 0.18f, fogStrength);
                 renderOverlay(tint);
             }
+        }
+        // Ghost mode desaturation: cold blue-grey overlay when dead/ghost
+        if (ghostMode_) {
+            renderOverlay(glm::vec4(0.30f, 0.35f, 0.42f, 0.45f));
         }
         // Brightness overlay (applied before minimap so it doesn't affect UI)
         if (brightness_ < 0.99f) {

@@ -7300,10 +7300,35 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
 
-        // ---- Real group update (status flags) ----
-        case Opcode::SMSG_REAL_GROUP_UPDATE:
-            packet.setReadPos(packet.getSize());
+        // ---- Real group update (group type, local player flags, leader) ----
+        // Sent when the player's group configuration changes: group type,
+        // role/flags (assistant/MT/MA), or leader changes.
+        // Format: uint8 groupType | uint32 memberFlags | uint64 leaderGuid
+        case Opcode::SMSG_REAL_GROUP_UPDATE: {
+            auto rem = [&]() { return packet.getSize() - packet.getReadPos(); };
+            if (rem() < 1) break;
+            uint8_t newGroupType = packet.readUInt8();
+            if (rem() < 4) break;
+            uint32_t newMemberFlags = packet.readUInt32();
+            if (rem() < 8) break;
+            uint64_t newLeaderGuid = packet.readUInt64();
+
+            partyData.groupType = newGroupType;
+            partyData.leaderGuid = newLeaderGuid;
+
+            // Update local player's flags in the member list
+            uint64_t localGuid = playerGuid;
+            for (auto& m : partyData.members) {
+                if (m.guid == localGuid) {
+                    m.flags = static_cast<uint8_t>(newMemberFlags & 0xFF);
+                    break;
+                }
+            }
+            LOG_DEBUG("SMSG_REAL_GROUP_UPDATE groupType=", static_cast<int>(newGroupType),
+                      " memberFlags=0x", std::hex, newMemberFlags, std::dec,
+                      " leaderGuid=", newLeaderGuid);
             break;
+        }
 
         // ---- Play music (WotLK standard opcode) ----
         case Opcode::SMSG_PLAY_MUSIC: {

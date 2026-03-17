@@ -10235,8 +10235,6 @@ void GameHandler::handleWardenData(network::Packet& packet) {
 
             // Log synchronous round summary at WARNING level for diagnostics
             {
-                int syncCounts[10] = {};
-                // Re-count (we don't have per-check counters in sync path yet)
                 LOG_WARNING("Warden: (sync) Parsed ", checkCount, " checks, resultSize=", resultData.size());
                 std::string fullHex;
                 for (size_t bi = 0; bi < resultData.size(); bi++) {

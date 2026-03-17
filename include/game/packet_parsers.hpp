@@ -365,6 +365,9 @@ public:
     // TBC/Classic SMSG_QUESTGIVER_QUEST_DETAILS lacks informUnit(u64), flags(u32),
     // isFinished(u8) that WotLK added; uses variable item counts + emote section.
     bool parseQuestDetails(network::Packet& packet, QuestDetailsData& data) override;
+    // TBC 2.4.3 SMSG_GUILD_ROSTER: same rank structure as WotLK (variable rankCount +
+    // goldLimit + bank tabs), but NO gender byte per member (WotLK added it)
+    bool parseGuildRoster(network::Packet& packet, GuildRosterData& data) override;
 };
 
 /**

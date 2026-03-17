@@ -2849,10 +2849,19 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
             break;
         }
-        case Opcode::SMSG_LOOT_SLOT_CHANGED:
-            // uint64 objectGuid + uint32 slot + ... — consume
-            packet.setReadPos(packet.getSize());
+        case Opcode::SMSG_LOOT_SLOT_CHANGED: {
+            // uint8 slotIndex — another player took the item from this slot in group loot
+            if (packet.getSize() - packet.getReadPos() >= 1) {
+                uint8_t slotIndex = packet.readUInt8();
+                for (auto it = currentLoot.items.begin(); it != currentLoot.items.end(); ++it) {
+                    if (it->slotIndex == slotIndex) {
+                        currentLoot.items.erase(it);
+                        break;
+                    }
+                }
+            }
             break;
+        }
 
         // ---- Spell log miss ----
         case Opcode::SMSG_SPELLLOGMISS: {
@@ -17965,6 +17974,11 @@ void GameHandler::handleInitialSpells(network::Packet& packet) {
             }
         }
     }
+
+    // Pre-load skill line DBCs so isProfessionSpell() works immediately
+    // (not just after opening a trainer window)
+    loadSkillLineDbc();
+    loadSkillLineAbilityDbc();
 
     LOG_INFO("Learned ", knownSpells.size(), " spells");
 }

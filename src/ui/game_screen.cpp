@@ -1480,6 +1480,36 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
         if (info->armor > 0) {
             ImGui::Text("%d Armor", info->armor);
         }
+        // Extra stats (hit/crit/haste/sp/ap/expertise/resilience/etc.)
+        if (!info->extraStats.empty()) {
+            auto statName = [](uint32_t t) -> const char* {
+                switch (t) {
+                    case 12: return "Defense Rating";
+                    case 13: return "Dodge Rating";
+                    case 14: return "Parry Rating";
+                    case 15: return "Block Rating";
+                    case 16: case 17: case 18: case 31: return "Hit Rating";
+                    case 19: case 20: case 21: case 32: return "Critical Strike Rating";
+                    case 28: case 29: case 30: case 35: return "Haste Rating";
+                    case 34: return "Resilience Rating";
+                    case 36: return "Expertise Rating";
+                    case 37: return "Attack Power";
+                    case 38: return "Ranged Attack Power";
+                    case 45: return "Spell Power";
+                    case 46: return "Healing Power";
+                    case 47: return "Spell Damage";
+                    case 49: return "Mana per 5 sec.";
+                    case 43: return "Spell Penetration";
+                    case 44: return "Block Value";
+                    default: return nullptr;
+                }
+            };
+            for (const auto& es : info->extraStats) {
+                const char* nm = statName(es.statType);
+                if (nm && es.statValue > 0)
+                    ImGui::TextColored(green, "+%d %s", es.statValue, nm);
+            }
+        }
         // Required level
         if (info->requiredLevel > 1)
             ImGui::TextDisabled("Requires Level %u", info->requiredLevel);

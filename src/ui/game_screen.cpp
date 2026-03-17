@@ -1380,6 +1380,17 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
         }
         ImGui::TextColored(qColor, "%s", info->name.c_str());
 
+        // Bind type (appears right under name in WoW)
+        switch (info->bindType) {
+            case 1: ImGui::TextDisabled("Binds when picked up");   break;
+            case 2: ImGui::TextDisabled("Binds when equipped");    break;
+            case 3: ImGui::TextDisabled("Binds when used");        break;
+            case 4: ImGui::TextDisabled("Quest Item");             break;
+        }
+        // Unique
+        if (info->maxCount == 1)
+            ImGui::TextDisabled("Unique");
+
         // Slot type
         if (info->inventoryType > 0) {
             const char* slotName = "";
@@ -1432,10 +1443,23 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
         };
         const bool isWeapon = isWeaponInventoryType(info->inventoryType);
 
+        // Item level (after slot/subclass)
+        if (info->itemLevel > 0)
+            ImGui::TextDisabled("Item Level %u", info->itemLevel);
+
         if (isWeapon && info->damageMax > 0.0f && info->delayMs > 0) {
             float speed = static_cast<float>(info->delayMs) / 1000.0f;
             float dps = ((info->damageMin + info->damageMax) * 0.5f) / speed;
-            ImGui::Text("%.1f DPS", dps);
+            // WoW-style: "22 - 41 Damage" with speed right-aligned on same row
+            char dmgBuf[64], spdBuf[32];
+            std::snprintf(dmgBuf, sizeof(dmgBuf), "%d - %d Damage",
+                          static_cast<int>(info->damageMin), static_cast<int>(info->damageMax));
+            std::snprintf(spdBuf, sizeof(spdBuf), "Speed %.2f", speed);
+            float spdW = ImGui::CalcTextSize(spdBuf).x;
+            ImGui::Text("%s", dmgBuf);
+            ImGui::SameLine(ImGui::GetWindowWidth() - spdW - 16.0f);
+            ImGui::Text("%s", spdBuf);
+            ImGui::TextDisabled("(%.1f damage per second)", dps);
         }
         ImVec4 green(0.0f, 1.0f, 0.0f, 1.0f);
         auto appendBonus = [](std::string& out, int32_t val, const char* shortName) {
@@ -1456,6 +1480,9 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
         if (info->armor > 0) {
             ImGui::Text("%d Armor", info->armor);
         }
+        // Required level
+        if (info->requiredLevel > 1)
+            ImGui::TextDisabled("Requires Level %u", info->requiredLevel);
         if (info->sellPrice > 0) {
             uint32_t g = info->sellPrice / 10000;
             uint32_t s = (info->sellPrice / 100) % 100;
@@ -1478,7 +1505,15 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
                     eq->item.damageMax > 0.0f && eq->item.delayMs > 0) {
                     float speed = static_cast<float>(eq->item.delayMs) / 1000.0f;
                     float dps = ((eq->item.damageMin + eq->item.damageMax) * 0.5f) / speed;
-                    ImGui::Text("%.1f DPS", dps);
+                    char eqDmg[64], eqSpd[32];
+                    std::snprintf(eqDmg, sizeof(eqDmg), "%d - %d Damage",
+                                  static_cast<int>(eq->item.damageMin), static_cast<int>(eq->item.damageMax));
+                    std::snprintf(eqSpd, sizeof(eqSpd), "Speed %.2f", speed);
+                    float eqSpdW = ImGui::CalcTextSize(eqSpd).x;
+                    ImGui::Text("%s", eqDmg);
+                    ImGui::SameLine(ImGui::GetWindowWidth() - eqSpdW - 16.0f);
+                    ImGui::Text("%s", eqSpd);
+                    ImGui::TextDisabled("(%.1f damage per second)", dps);
                 }
                 if (eq->item.armor > 0) {
                     ImGui::Text("%d Armor", eq->item.armor);

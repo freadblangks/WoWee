@@ -3557,17 +3557,22 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
             // WoW level-based color for hostile mobs
             uint32_t playerLv = gameHandler.getPlayerLevel();
             uint32_t mobLv = u->getLevel();
-            int32_t diff = static_cast<int32_t>(mobLv) - static_cast<int32_t>(playerLv);
-            if (game::GameHandler::killXp(playerLv, mobLv) == 0) {
-                hostileColor = ImVec4(0.6f, 0.6f, 0.6f, 1.0f); // Grey - no XP
-            } else if (diff >= 10) {
-                hostileColor = ImVec4(1.0f, 0.1f, 0.1f, 1.0f); // Red - skull/very hard
-            } else if (diff >= 5) {
-                hostileColor = ImVec4(1.0f, 0.5f, 0.1f, 1.0f); // Orange - hard
-            } else if (diff >= -2) {
-                hostileColor = ImVec4(1.0f, 1.0f, 0.1f, 1.0f); // Yellow - even
+            if (mobLv == 0) {
+                // Level 0 = unknown/?? (e.g. high-level raid bosses) — always skull red
+                hostileColor = ImVec4(1.0f, 0.1f, 0.1f, 1.0f);
             } else {
-                hostileColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f); // Green - easy
+                int32_t diff = static_cast<int32_t>(mobLv) - static_cast<int32_t>(playerLv);
+                if (game::GameHandler::killXp(playerLv, mobLv) == 0) {
+                    hostileColor = ImVec4(0.6f, 0.6f, 0.6f, 1.0f); // Grey - no XP
+                } else if (diff >= 10) {
+                    hostileColor = ImVec4(1.0f, 0.1f, 0.1f, 1.0f); // Red - skull/very hard
+                } else if (diff >= 5) {
+                    hostileColor = ImVec4(1.0f, 0.5f, 0.1f, 1.0f); // Orange - hard
+                } else if (diff >= -2) {
+                    hostileColor = ImVec4(1.0f, 1.0f, 0.1f, 1.0f); // Yellow - even
+                } else {
+                    hostileColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f); // Green - easy
+                }
             }
         } else {
             hostileColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f); // Friendly
@@ -3745,7 +3750,10 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
             if (target->getType() == game::ObjectType::PLAYER) {
                 levelColor = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
             }
-            ImGui::TextColored(levelColor, "Lv %u", unit->getLevel());
+            if (unit->getLevel() == 0)
+                ImGui::TextColored(levelColor, "Lv ??");
+            else
+                ImGui::TextColored(levelColor, "Lv %u", unit->getLevel());
             // Classification badge: Elite / Rare Elite / Boss / Rare
             if (target->getType() == game::ObjectType::UNIT) {
                 int rank = gameHandler.getCreatureRank(unit->getEntry());

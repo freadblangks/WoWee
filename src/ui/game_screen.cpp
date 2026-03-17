@@ -7877,16 +7877,21 @@ void GameScreen::renderCastBar(game::GameHandler& gameHandler) {
             : ImVec4(0.8f, 0.6f, 0.2f, 1.0f);   // gold for casts
         ImGui::PushStyleColor(ImGuiCol_PlotHistogram, barColor);
 
-        char overlay[64];
+        char overlay[96];
         if (currentSpellId == 0) {
             snprintf(overlay, sizeof(overlay), "Opening... (%.1fs)", gameHandler.getCastTimeRemaining());
         } else {
             const std::string& spellName = gameHandler.getSpellName(currentSpellId);
             const char* verb = channeling ? "Channeling" : "Casting";
-            if (!spellName.empty())
-                snprintf(overlay, sizeof(overlay), "%s (%.1fs)", spellName.c_str(), gameHandler.getCastTimeRemaining());
-            else
+            int queueLeft = gameHandler.getCraftQueueRemaining();
+            if (!spellName.empty()) {
+                if (queueLeft > 0)
+                    snprintf(overlay, sizeof(overlay), "%s (%.1fs) [%d left]", spellName.c_str(), gameHandler.getCastTimeRemaining(), queueLeft);
+                else
+                    snprintf(overlay, sizeof(overlay), "%s (%.1fs)", spellName.c_str(), gameHandler.getCastTimeRemaining());
+            } else {
                 snprintf(overlay, sizeof(overlay), "%s... (%.1fs)", verb, gameHandler.getCastTimeRemaining());
+            }
         }
 
         if (iconTex) {

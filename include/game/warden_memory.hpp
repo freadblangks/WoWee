@@ -41,10 +41,12 @@ public:
      * @param expectedHash 20-byte expected HMAC-SHA1 digest
      * @param patternLen Length of the pattern to search for
      * @param imageOnly If true, search only executable sections (.text)
+     * @param hintOffset RVA hint from PAGE_A request — check this position first
      * @return true if a matching pattern was found in the PE image
      */
     bool searchCodePattern(const uint8_t seed[4], const uint8_t expectedHash[20],
-                           uint8_t patternLen, bool imageOnly) const;
+                           uint8_t patternLen, bool imageOnly,
+                           uint32_t hintOffset = 0, bool hintOnly = false) const;
 
     /** Write a little-endian uint32 at the given virtual address in the PE image. */
     void writeLE32(uint32_t va, uint32_t value);

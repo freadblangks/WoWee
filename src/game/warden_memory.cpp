@@ -1,5 +1,6 @@
 #include "game/warden_memory.hpp"
 #include "core/logger.hpp"
+#include <chrono>
 #include <fstream>
 #include <cstring>
 #include <cstdlib>
@@ -406,10 +407,31 @@ void WardenMemory::patchRuntimeGlobals() {
     writeLE32(WORLD_ENABLES, enables);
     LOG_WARNING("WardenMemory: Patched WorldEnables @0x", std::hex, WORLD_ENABLES, std::dec);
 
-    // LastHardwareAction
+    // LastHardwareAction — must be a recent GetTickCount()-style timestamp
+    // so the anti-AFK scan sees (currentTime - lastAction) < threshold.
     constexpr uint32_t LAST_HARDWARE_ACTION = 0xCF0BC8;
-    writeLE32(LAST_HARDWARE_ACTION, 60000);
+    uint32_t nowMs = static_cast<uint32_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+    writeLE32(LAST_HARDWARE_ACTION, nowMs - 2000);
     LOG_WARNING("WardenMemory: Patched LastHardwareAction @0x", std::hex, LAST_HARDWARE_ACTION, std::dec);
+
+    // Embed the 37-byte Warden module memcpy pattern in BSS so that
+    // FIND_CODE_BY_HASH (PAGE_B) brute-force search can find it.
+    // This is the pattern VMaNGOS's "Warden Memory Read check" looks for.
+    constexpr uint32_t MEMCPY_PATTERN_VA = 0xCE8700;
+    static const uint8_t kWardenMemcpyPattern[37] = {
+        0x56, 0x57, 0xFC, 0x8B, 0x54, 0x24, 0x14, 0x8B,
+        0x74, 0x24, 0x10, 0x8B, 0x44, 0x24, 0x0C, 0x8B,
+        0xCA, 0x8B, 0xF8, 0xC1, 0xE9, 0x02, 0x74, 0x02,
+        0xF3, 0xA5, 0xB1, 0x03, 0x23, 0xCA, 0x74, 0x02,
+        0xF3, 0xA4, 0x5F, 0x5E, 0xC3
+    };
+    uint32_t patRva = MEMCPY_PATTERN_VA - imageBase_;
+    if (patRva + sizeof(kWardenMemcpyPattern) <= imageSize_) {
+        std::memcpy(image_.data() + patRva, kWardenMemcpyPattern, sizeof(kWardenMemcpyPattern));
+        LOG_WARNING("WardenMemory: Embedded Warden memcpy pattern at 0x", std::hex, MEMCPY_PATTERN_VA, std::dec);
+    }
 }
 
 void WardenMemory::patchTurtleWowBinary() {
@@ -837,7 +859,8 @@ void WardenMemory::verifyWardenScanEntries() {
 }
 
 bool WardenMemory::searchCodePattern(const uint8_t seed[4], const uint8_t expectedHash[20],
-                                     uint8_t patternLen, bool imageOnly) const {
+                                     uint8_t patternLen, bool imageOnly,
+                                     uint32_t hintOffset, bool hintOnly) const {
     if (!loaded_ || patternLen == 0 || patternLen > 255) return false;
 
     // Build cache key from all inputs: seed(4) + hash(20) + patLen(1) + imageOnly(1)
@@ -849,21 +872,56 @@ bool WardenMemory::searchCodePattern(const uint8_t seed[4], const uint8_t expect
 
     auto cacheIt = codePatternCache_.find(cacheKey);
     if (cacheIt != codePatternCache_.end()) {
-        LOG_WARNING("WardenMemory: Code pattern cache HIT → ",
-                    cacheIt->second ? "found" : "not found");
         return cacheIt->second;
     }
 
-    // FIND_MEM_IMAGE_CODE_BY_HASH (imageOnly=true) searches ALL sections of
-    // the PE image — not just executable ones.  The original Warden module
-    // walks every PE section when scanning the WoW.exe memory image.
-    // FIND_CODE_BY_HASH (imageOnly=false) searches all process memory; since
-    // we only have the PE image, both cases search the full image.
+    // --- Fast path: check the hint offset directly (single HMAC) ---
+    // The PAGE_A offset field is the RVA where the server expects the pattern.
+    if (hintOffset > 0 && hintOffset + patternLen <= imageSize_) {
+        uint8_t hmacOut[20];
+        unsigned int hmacLen = 0;
+        HMAC(EVP_sha1(), seed, 4,
+             image_.data() + hintOffset, patternLen,
+             hmacOut, &hmacLen);
+        if (hmacLen == 20 && std::memcmp(hmacOut, expectedHash, 20) == 0) {
+            LOG_WARNING("WardenMemory: Code pattern found at hint RVA 0x", std::hex,
+                        hintOffset, std::dec, " (direct hit)");
+            codePatternCache_[cacheKey] = true;
+            return true;
+        }
+    }
+
+    // --- Wider hint window: search ±4096 bytes around hint offset ---
+    if (hintOffset > 0) {
+        size_t winStart = (hintOffset > 4096) ? hintOffset - 4096 : 0;
+        size_t winEnd = std::min(static_cast<size_t>(hintOffset) + 4096 + patternLen,
+                                 static_cast<size_t>(imageSize_));
+        if (winEnd > winStart + patternLen) {
+            for (size_t i = winStart; i + patternLen <= winEnd; i++) {
+                if (i == hintOffset) continue; // already checked
+                uint8_t hmacOut[20];
+                unsigned int hmacLen = 0;
+                HMAC(EVP_sha1(), seed, 4,
+                     image_.data() + i, patternLen,
+                     hmacOut, &hmacLen);
+                if (hmacLen == 20 && std::memcmp(hmacOut, expectedHash, 20) == 0) {
+                    LOG_WARNING("WardenMemory: Code pattern found at RVA 0x", std::hex, i,
+                                std::dec, " (hint window, delta=", static_cast<int>(i) - static_cast<int>(hintOffset), ")");
+                    codePatternCache_[cacheKey] = true;
+                    return true;
+                }
+            }
+        }
+    }
+
+    // If hint-only mode, skip the expensive brute-force search.
+    if (hintOnly) return false;
+
+    // --- Brute-force fallback: search all PE sections ---
     struct Range { size_t start; size_t end; };
     std::vector<Range> ranges;
 
     if (imageOnly && image_.size() >= 64) {
-        // Collect ALL PE sections (not just executable ones)
         uint32_t peOffset = image_[0x3C] | (uint32_t(image_[0x3D]) << 8)
                           | (uint32_t(image_[0x3E]) << 16) | (uint32_t(image_[0x3F]) << 24);
         if (peOffset + 4 + 20 <= image_.size()) {
@@ -885,10 +943,13 @@ bool WardenMemory::searchCodePattern(const uint8_t seed[4], const uint8_t expect
     }
 
     if (ranges.empty()) {
-        // Fallback: search entire image
         if (patternLen <= imageSize_)
             ranges.push_back({0, imageSize_});
     }
+
+    auto bruteStart = std::chrono::steady_clock::now();
+    LOG_WARNING("WardenMemory: Brute-force searching ", ranges.size(), " section(s), hint=0x",
+                std::hex, hintOffset, std::dec, " patLen=", (int)patternLen);
 
     size_t totalPositions = 0;
     for (const auto& r : ranges) {
@@ -900,8 +961,11 @@ bool WardenMemory::searchCodePattern(const uint8_t seed[4], const uint8_t expect
                  image_.data() + r.start + i, patternLen,
                  hmacOut, &hmacLen);
             if (hmacLen == 20 && std::memcmp(hmacOut, expectedHash, 20) == 0) {
+                auto elapsed = std::chrono::duration<float>(
+                    std::chrono::steady_clock::now() - bruteStart).count();
                 LOG_WARNING("WardenMemory: Code pattern found at RVA 0x", std::hex,
-                            r.start + i, std::dec, " (searched ", totalPositions + i + 1, " positions)");
+                            r.start + i, std::dec, " (searched ", totalPositions + i + 1,
+                            " positions in ", elapsed, "s)");
                 codePatternCache_[cacheKey] = true;
                 return true;
             }
@@ -909,8 +973,10 @@ bool WardenMemory::searchCodePattern(const uint8_t seed[4], const uint8_t expect
         totalPositions += positions;
     }
 
+    auto elapsed = std::chrono::duration<float>(
+        std::chrono::steady_clock::now() - bruteStart).count();
     LOG_WARNING("WardenMemory: Code pattern NOT found after ", totalPositions, " positions in ",
-                ranges.size(), " section(s)");
+                ranges.size(), " section(s), took ", elapsed, "s");
     codePatternCache_[cacheKey] = false;
     return false;
 }

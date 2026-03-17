@@ -9135,7 +9135,7 @@ bool GameHandler::loadWardenCRFile(const std::string& moduleHashHex) {
         for (int i = 0; i < 9; i++) {
             char s[16]; snprintf(s, sizeof(s), "%s=0x%02X ", names[i], wardenCheckOpcodes_[i]); opcHex += s;
         }
-        LOG_DEBUG("Warden: Check opcodes: ", opcHex);
+        LOG_WARNING("Warden: Check opcodes: ", opcHex);
     }
 
     size_t entryCount = (static_cast<size_t>(fileSize) - CR_HEADER_SIZE) / CR_ENTRY_SIZE;
@@ -9542,6 +9542,10 @@ void GameHandler::handleWardenData(network::Packet& packet) {
 
                                 switch (ct) {
                                 case CT_TIMING: {
+                                    // Result byte: 0x01 = timing check ran successfully,
+                                    // 0x00 = timing check failed (Wine/VM — server skips anti-AFK).
+                                    // We return 0x01 so the server validates normally; our
+                                    // LastHardwareAction (now-2000) ensures a clean 2s delta.
                                     resultData.push_back(0x01);
                                     uint32_t ticks = static_cast<uint32_t>(
                                         std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -9561,7 +9565,8 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                                     pos += 4;
                                     uint8_t readLen = decrypted[pos++];
                                     LOG_WARNING("Warden:   MEM offset=0x", [&]{char s[12];snprintf(s,12,"%08x",offset);return std::string(s);}(),
-                                             " len=", (int)readLen);
+                                             " len=", (int)readLen,
+                                             (strIdx ? " module=\"" + moduleName + "\"" : ""));
                                     if (offset == 0x00CF0BC8 && readLen == 4 && wardenMemory_ && wardenMemory_->isLoaded()) {
                                         uint32_t now = static_cast<uint32_t>(
                                             std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -9588,21 +9593,12 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                                             LOG_WARNING("Warden:   Applying 4-byte ULONG alignment padding for WinVersionGet");
                                         resultData.push_back(0x00);
                                         resultData.insert(resultData.end(), memBuf.begin(), memBuf.end());
-                                    } else if (wardenLoadedModule_ && wardenLoadedModule_->isLoaded()) {
-                                        // Try Warden module memory
-                                        uint32_t modBase = offset & ~0xFFFFu;
-                                        uint32_t modOfs = offset - modBase;
-                                        const auto& modData = wardenLoadedModule_->getDecompressedData();
-                                        if (modOfs + readLen <= modData.size()) {
-                                            std::memcpy(memBuf.data(), modData.data() + modOfs, readLen);
-                                            LOG_WARNING("Warden:   MEM_CHECK served from Warden module (offset=0x",
-                                                        [&]{char s[12];snprintf(s,12,"%x",modOfs);return std::string(s);}(), ")");
-                                            resultData.push_back(0x00);
-                                            resultData.insert(resultData.end(), memBuf.begin(), memBuf.end());
-                                        } else {
-                                            resultData.push_back(0xE9);
-                                        }
                                     } else {
+                                        // Address not in PE/KUSER — return 0xE9 (not readable).
+                                        // Real 32-bit WoW can't read kernel space (>=0x80000000)
+                                        // or arbitrary unallocated user-space addresses.
+                                        LOG_WARNING("Warden:   MEM_CHECK -> 0xE9 (unmapped 0x",
+                                                    [&]{char s[12];snprintf(s,12,"%08x",offset);return std::string(s);}(), ")");
                                         resultData.push_back(0xE9);
                                     }
                                     break;
@@ -9620,22 +9616,15 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                                     uint8_t patLen = p[28];
                                     bool found = false;
                                     bool turtleFallback = false;
-                                    // Turtle fallback: if offset is within PE image range,
-                                    // this is an integrity check — skip the expensive 25-second
-                                    // brute-force search and return "found" immediately to stay
-                                    // within the server's Warden response timeout.
-                                    bool canTurtleFallback = (ct == CT_PAGE_A && isActiveExpansion("turtle") &&
-                                        wardenMemory_ && wardenMemory_->isLoaded() && off < 0x600000);
                                     if (isKnownWantedCodeScan(seed, sha1, off, patLen)) {
                                         found = true;
-                                    } else if (canTurtleFallback) {
-                                        // Skip the expensive 25-second brute-force search;
-                                        // the turtle fallback will return "found" instantly.
-                                        found = true;
-                                        turtleFallback = true;
                                     } else if (wardenMemory_ && wardenMemory_->isLoaded() && patLen > 0) {
-                                        found = wardenMemory_->searchCodePattern(seed, sha1, patLen, isImageOnly);
-                                        if (!found && wardenLoadedModule_ && wardenLoadedModule_->isLoaded()) {
+                                        // Hint + nearby window search (instant).
+                                        // Skip full brute-force for Turtle PAGE_A to avoid
+                                        // 25s delay that triggers response timeout.
+                                        bool hintOnly = (ct == CT_PAGE_A && isActiveExpansion("turtle"));
+                                        found = wardenMemory_->searchCodePattern(seed, sha1, patLen, isImageOnly, off, hintOnly);
+                                        if (!found && !hintOnly && wardenLoadedModule_ && wardenLoadedModule_->isLoaded()) {
                                             const uint8_t* modMem = static_cast<const uint8_t*>(wardenLoadedModule_->getModuleMemory());
                                             size_t modSize = wardenLoadedModule_->getModuleSize();
                                             if (modMem && modSize >= patLen) {
@@ -9646,6 +9635,13 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                                                 }
                                             }
                                         }
+                                    }
+                                    // Turtle PAGE_A fallback: patterns at runtime-patched
+                                    // offsets don't exist in the on-disk PE. The server
+                                    // expects "found" for these code integrity checks.
+                                    if (!found && ct == CT_PAGE_A && isActiveExpansion("turtle") && off < 0x600000) {
+                                        found = true;
+                                        turtleFallback = true;
                                     }
                                     uint8_t pageResult = found ? 0x4A : 0x00;
                                     LOG_WARNING("Warden:   ", pageName, " offset=0x",
@@ -9703,9 +9699,23 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                                     bool isWanted = hmacSha1Matches(sb, "KERNEL32.DLL", rh);
                                     std::string mn = isWanted ? "KERNEL32.DLL" : "?";
                                     if (!isWanted) {
+                                        // Cheat modules (unwanted — report not found)
                                         if (hmacSha1Matches(sb,"WPESPY.DLL",rh)) mn = "WPESPY.DLL";
                                         else if (hmacSha1Matches(sb,"TAMIA.DLL",rh)) mn = "TAMIA.DLL";
                                         else if (hmacSha1Matches(sb,"PRXDRVPE.DLL",rh)) mn = "PRXDRVPE.DLL";
+                                        else if (hmacSha1Matches(sb,"SPEEDHACK-I386.DLL",rh)) mn = "SPEEDHACK-I386.DLL";
+                                        else if (hmacSha1Matches(sb,"D3DHOOK.DLL",rh)) mn = "D3DHOOK.DLL";
+                                        else if (hmacSha1Matches(sb,"NJUMD.DLL",rh)) mn = "NJUMD.DLL";
+                                        // System DLLs (wanted — report found)
+                                        else if (hmacSha1Matches(sb,"USER32.DLL",rh)) { mn = "USER32.DLL"; isWanted = true; }
+                                        else if (hmacSha1Matches(sb,"NTDLL.DLL",rh)) { mn = "NTDLL.DLL"; isWanted = true; }
+                                        else if (hmacSha1Matches(sb,"WS2_32.DLL",rh)) { mn = "WS2_32.DLL"; isWanted = true; }
+                                        else if (hmacSha1Matches(sb,"WSOCK32.DLL",rh)) { mn = "WSOCK32.DLL"; isWanted = true; }
+                                        else if (hmacSha1Matches(sb,"ADVAPI32.DLL",rh)) { mn = "ADVAPI32.DLL"; isWanted = true; }
+                                        else if (hmacSha1Matches(sb,"SHELL32.DLL",rh)) { mn = "SHELL32.DLL"; isWanted = true; }
+                                        else if (hmacSha1Matches(sb,"GDI32.DLL",rh)) { mn = "GDI32.DLL"; isWanted = true; }
+                                        else if (hmacSha1Matches(sb,"OPENGL32.DLL",rh)) { mn = "OPENGL32.DLL"; isWanted = true; }
+                                        else if (hmacSha1Matches(sb,"WINMM.DLL",rh)) { mn = "WINMM.DLL"; isWanted = true; }
                                     }
                                     uint8_t mr = isWanted ? 0x4A : 0x00;
                                     LOG_WARNING("Warden:   MODULE \"", mn, "\" -> 0x",
@@ -9886,7 +9896,9 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                 switch (ct) {
                     case CT_TIMING: {
                         // No additional request data
-                        // Response: [uint8 result=1][uint32 ticks]
+                        // Response: [uint8 result][uint32 ticks]
+                        // 0x01 = timing check ran successfully (server validates anti-AFK)
+                        // 0x00 = timing failed (Wine/VM — server skips check but flags client)
                         resultData.push_back(0x01);
                         uint32_t ticks = static_cast<uint32_t>(
                             std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -9895,6 +9907,7 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                         resultData.push_back((ticks >> 8) & 0xFF);
                         resultData.push_back((ticks >> 16) & 0xFF);
                         resultData.push_back((ticks >> 24) & 0xFF);
+                        LOG_WARNING("Warden:   (sync) TIMING ticks=", ticks);
                         break;
                     }
                     case CT_MEM: {
@@ -9918,31 +9931,27 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                             }
                         }
 
+                        // Dynamically update LastHardwareAction before reading
+                        // (anti-AFK scan compares this timestamp against TIMING ticks)
+                        if (offset == 0x00CF0BC8 && readLen == 4 && wardenMemory_ && wardenMemory_->isLoaded()) {
+                            uint32_t now = static_cast<uint32_t>(
+                                std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now().time_since_epoch()).count());
+                            wardenMemory_->writeLE32(0xCF0BC8, now - 2000);
+                        }
+
                         // Read bytes from PE image (includes patched runtime globals)
                         std::vector<uint8_t> memBuf(readLen, 0);
                         if (wardenMemory_->isLoaded() && wardenMemory_->readMemory(offset, readLen, memBuf.data())) {
                             LOG_DEBUG("Warden:   MEM_CHECK served from PE image");
-                        } else if (wardenLoadedModule_ && wardenLoadedModule_->isLoaded()) {
-                            // Try Warden module memory (addresses outside PE range)
-                            uint32_t modBase = offset & ~0xFFFFu; // 64KB-aligned base guess
-                            uint32_t modOfs = offset - modBase;
-                            const auto& modData = wardenLoadedModule_->getDecompressedData();
-                            if (modOfs + readLen <= modData.size()) {
-                                std::memcpy(memBuf.data(), modData.data() + modOfs, readLen);
-                                LOG_WARNING("Warden:   MEM_CHECK served from Warden module (base=0x",
-                                            [&]{char s[12];snprintf(s,12,"%08x",modBase);return std::string(s);}(),
-                                            " offset=0x",
-                                            [&]{char s[12];snprintf(s,12,"%x",modOfs);return std::string(s);}(), ")");
-                            } else {
-                                LOG_WARNING("Warden:   MEM_CHECK fallback to zeros for 0x",
-                                            [&]{char s[12];snprintf(s,12,"%08x",offset);return std::string(s);}());
-                            }
+                            resultData.push_back(0x00);
+                            resultData.insert(resultData.end(), memBuf.begin(), memBuf.end());
                         } else {
-                            LOG_WARNING("Warden:   MEM_CHECK fallback to zeros for 0x",
-                                        [&]{char s[12];snprintf(s,12,"%08x",offset);return std::string(s);}());
+                            // Address not in PE/KUSER — return 0xE9 (not readable).
+                            LOG_WARNING("Warden:   (sync) MEM_CHECK -> 0xE9 (unmapped 0x",
+                                        [&]{char s[12];snprintf(s,12,"%08x",offset);return std::string(s);}(), ")");
+                            resultData.push_back(0xE9);
                         }
-                        resultData.push_back(0x00);
-                        resultData.insert(resultData.end(), memBuf.begin(), memBuf.end());
                         break;
                     }
                     case CT_PAGE_A: {
@@ -9988,18 +9997,29 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                             if (isKnownWantedCodeScan(seedBytes, reqHash, off, len)) {
                                 pageResult = 0x4A;
                             } else if (wardenMemory_ && wardenMemory_->isLoaded() && len > 0) {
-                                if (wardenMemory_->searchCodePattern(seedBytes, reqHash, len, true))
+                                if (wardenMemory_->searchCodePattern(seedBytes, reqHash, len, true, off))
                                     pageResult = 0x4A;
                             }
-                            // Turtle fallback for integrity checks
+                            // Turtle PAGE_A fallback: runtime-patched offsets aren't in the
+                            // on-disk PE. Server expects "found" for code integrity checks.
                             if (pageResult == 0x00 && isActiveExpansion("turtle") && off < 0x600000) {
                                 pageResult = 0x4A;
                                 LOG_WARNING("Warden:   PAGE_A turtle-fallback for offset=0x",
                                             [&]{char s[12];snprintf(s,12,"%08x",off);return std::string(s);}());
                             }
                         }
-                        LOG_DEBUG("Warden:   PAGE_A request bytes=", consume,
-                                 " result=0x", [&]{char s[4];snprintf(s,4,"%02x",pageResult);return std::string(s);}());
+                        if (consume >= 29) {
+                            uint32_t off2 = uint32_t((decrypted.data()+pos)[24]) | (uint32_t((decrypted.data()+pos)[25])<<8) |
+                                            (uint32_t((decrypted.data()+pos)[26])<<16) | (uint32_t((decrypted.data()+pos)[27])<<24);
+                            uint8_t len2 = (decrypted.data()+pos)[28];
+                            LOG_WARNING("Warden:   (sync) PAGE_A offset=0x",
+                                        [&]{char s[12];snprintf(s,12,"%08x",off2);return std::string(s);}(),
+                                        " patLen=", (int)len2,
+                                        " result=0x", [&]{char s[4];snprintf(s,4,"%02x",pageResult);return std::string(s);}());
+                        } else {
+                            LOG_WARNING("Warden:   (sync) PAGE_A (short ", consume, "b) result=0x",
+                                        [&]{char s[4];snprintf(s,4,"%02x",pageResult);return std::string(s);}());
+                        }
                         pos += consume;
                         resultData.push_back(pageResult);
                         break;
@@ -10048,7 +10068,7 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                         if (pos + 1 > checkEnd) { pos = checkEnd; break; }
                         uint8_t strIdx = decrypted[pos++];
                         std::string filePath = resolveWardenString(strIdx);
-                        LOG_DEBUG("Warden:   MPQ file=\"", (filePath.empty() ? "?" : filePath), "\"");
+                        LOG_WARNING("Warden:   (sync) MPQ file=\"", (filePath.empty() ? "?" : filePath), "\"");
 
                         bool found = false;
                         std::vector<uint8_t> hash(20, 0);
@@ -10083,10 +10103,15 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                             }
                         }
 
-                        // Response: [uint8 result][20 sha1]
-                        // result=0 => found/success, result=1 => not found/failure
-                        resultData.push_back(found ? 0x00 : 0x01);
-                        resultData.insert(resultData.end(), hash.begin(), hash.end());
+                        // Response: result=0 + 20-byte SHA1 if found; result=1 (no hash) if not found.
+                        // Server only reads 20 hash bytes when result==0; extra bytes corrupt parsing.
+                        if (found) {
+                            resultData.push_back(0x00);
+                            resultData.insert(resultData.end(), hash.begin(), hash.end());
+                        } else {
+                            resultData.push_back(0x01);
+                        }
+                        LOG_WARNING("Warden:   (sync) MPQ result=", found ? "FOUND" : "NOT_FOUND");
                         break;
                     }
                     case CT_LUA: {
@@ -10094,7 +10119,7 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                         if (pos + 1 > checkEnd) { pos = checkEnd; break; }
                         uint8_t strIdx = decrypted[pos++];
                         std::string luaVar = resolveWardenString(strIdx);
-                        LOG_DEBUG("Warden:   LUA str=\"", (luaVar.empty() ? "?" : luaVar), "\"");
+                        LOG_WARNING("Warden:   (sync) LUA str=\"", (luaVar.empty() ? "?" : luaVar), "\"");
                         // Response: [uint8 result=0][uint16 len=0]
                         // Lua string doesn't exist
                         resultData.push_back(0x01); // not found
@@ -10106,9 +10131,10 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                         pos += 24; // skip seed + sha1
                         uint8_t strIdx = decrypted[pos++];
                         std::string driverName = resolveWardenString(strIdx);
-                        LOG_DEBUG("Warden:   DRIVER=\"", (driverName.empty() ? "?" : driverName), "\"");
-                        // Response: [uint8 result=1] (driver NOT found = clean)
-                        resultData.push_back(0x01);
+                        LOG_WARNING("Warden:   (sync) DRIVER=\"", (driverName.empty() ? "?" : driverName), "\" -> 0x00(not found)");
+                        // Response: [uint8 result=0] (driver NOT found = clean)
+                        // VMaNGOS: result != 0 means "found". 0x01 would mean VM driver detected!
+                        resultData.push_back(0x00);
                         break;
                     }
                     case CT_MODULE: {
@@ -10126,23 +10152,34 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                             std::memcpy(reqHash, p + 4, 20);
                             pos += moduleSize;
 
-                            // CMaNGOS uppercases module names before hashing.
-                            // DB module scans:
-                            //   KERNEL32.DLL (wanted=true)
-                            //   WPESPY.DLL / SPEEDHACK-I386.DLL / TAMIA.DLL (wanted=false)
                             bool shouldReportFound = false;
-                            if (hmacSha1Matches(seedBytes, "KERNEL32.DLL", reqHash)) {
-                                shouldReportFound = true;
-                            } else if (hmacSha1Matches(seedBytes, "WPESPY.DLL", reqHash) ||
-                                       hmacSha1Matches(seedBytes, "SPEEDHACK-I386.DLL", reqHash) ||
-                                       hmacSha1Matches(seedBytes, "TAMIA.DLL", reqHash)) {
-                                shouldReportFound = false;
-                            }
-                            resultData.push_back(shouldReportFound ? 0x4A : 0x01);
+                            std::string modName = "?";
+                            // Wanted system modules
+                            if (hmacSha1Matches(seedBytes, "KERNEL32.DLL", reqHash)) { modName = "KERNEL32.DLL"; shouldReportFound = true; }
+                            else if (hmacSha1Matches(seedBytes, "USER32.DLL", reqHash)) { modName = "USER32.DLL"; shouldReportFound = true; }
+                            else if (hmacSha1Matches(seedBytes, "NTDLL.DLL", reqHash)) { modName = "NTDLL.DLL"; shouldReportFound = true; }
+                            else if (hmacSha1Matches(seedBytes, "WS2_32.DLL", reqHash)) { modName = "WS2_32.DLL"; shouldReportFound = true; }
+                            else if (hmacSha1Matches(seedBytes, "WSOCK32.DLL", reqHash)) { modName = "WSOCK32.DLL"; shouldReportFound = true; }
+                            else if (hmacSha1Matches(seedBytes, "ADVAPI32.DLL", reqHash)) { modName = "ADVAPI32.DLL"; shouldReportFound = true; }
+                            else if (hmacSha1Matches(seedBytes, "SHELL32.DLL", reqHash)) { modName = "SHELL32.DLL"; shouldReportFound = true; }
+                            else if (hmacSha1Matches(seedBytes, "GDI32.DLL", reqHash)) { modName = "GDI32.DLL"; shouldReportFound = true; }
+                            else if (hmacSha1Matches(seedBytes, "OPENGL32.DLL", reqHash)) { modName = "OPENGL32.DLL"; shouldReportFound = true; }
+                            else if (hmacSha1Matches(seedBytes, "WINMM.DLL", reqHash)) { modName = "WINMM.DLL"; shouldReportFound = true; }
+                            // Unwanted cheat modules
+                            else if (hmacSha1Matches(seedBytes, "WPESPY.DLL", reqHash)) modName = "WPESPY.DLL";
+                            else if (hmacSha1Matches(seedBytes, "SPEEDHACK-I386.DLL", reqHash)) modName = "SPEEDHACK-I386.DLL";
+                            else if (hmacSha1Matches(seedBytes, "TAMIA.DLL", reqHash)) modName = "TAMIA.DLL";
+                            else if (hmacSha1Matches(seedBytes, "PRXDRVPE.DLL", reqHash)) modName = "PRXDRVPE.DLL";
+                            else if (hmacSha1Matches(seedBytes, "D3DHOOK.DLL", reqHash)) modName = "D3DHOOK.DLL";
+                            else if (hmacSha1Matches(seedBytes, "NJUMD.DLL", reqHash)) modName = "NJUMD.DLL";
+                            LOG_WARNING("Warden:   (sync) MODULE \"", modName,
+                                        "\" -> 0x", [&]{char s[4];snprintf(s,4,"%02x",shouldReportFound?0x4A:0x00);return std::string(s);}(),
+                                        "(", shouldReportFound ? "found" : "not found", ")");
+                            resultData.push_back(shouldReportFound ? 0x4A : 0x00);
                             break;
                         }
                         // Truncated module request fallback: module NOT loaded = clean
-                        resultData.push_back(0x01);
+                        resultData.push_back(0x00);
                         break;
                     }
                     case CT_PROC: {
@@ -10151,12 +10188,23 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                         int procSize = 30;
                         if (pos + procSize > checkEnd) { pos = checkEnd; break; }
                         pos += procSize;
+                        LOG_WARNING("Warden:   (sync) PROC check -> 0x01(not found)");
                         // Response: [uint8 result=1] (proc NOT found = clean)
                         resultData.push_back(0x01);
                         break;
                     }
                     default: {
-                        LOG_WARNING("Warden: Unknown check type, cannot parse remaining");
+                        uint8_t rawByte = decrypted[pos - 1];
+                        uint8_t decoded = rawByte ^ xorByte;
+                        LOG_WARNING("Warden: Unknown check type raw=0x",
+                                    [&]{char s[4];snprintf(s,4,"%02x",rawByte);return std::string(s);}(),
+                                    " decoded=0x",
+                                    [&]{char s[4];snprintf(s,4,"%02x",decoded);return std::string(s);}(),
+                                    " xorByte=0x",
+                                    [&]{char s[4];snprintf(s,4,"%02x",xorByte);return std::string(s);}(),
+                                    " opcodes=[",
+                                    [&]{std::string r;for(int i=0;i<9;i++){char s[6];snprintf(s,6,"0x%02x ",wardenCheckOpcodes_[i]);r+=s;}return r;}(),
+                                    "] pos=", pos, "/", checkEnd);
                         pos = checkEnd; // stop parsing
                         break;
                     }

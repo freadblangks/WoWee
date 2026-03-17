@@ -7694,7 +7694,8 @@ void GameScreen::renderXpBar(game::GameHandler& gameHandler) {
             uint32_t xpToLevel = (currentXp < nextLevelXp) ? (nextLevelXp - currentXp) : 0;
             ImGui::TextColored(ImVec4(0.9f, 0.85f, 1.0f, 1.0f), "Experience");
             ImGui::Separator();
-            ImGui::Text("Current: %u / %u XP", currentXp, nextLevelXp);
+            float xpPct = nextLevelXp > 0 ? (100.0f * currentXp / nextLevelXp) : 0.0f;
+            ImGui::Text("Current: %u / %u XP (%.1f%%)", currentXp, nextLevelXp, xpPct);
             ImGui::Text("To next level: %u XP", xpToLevel);
             if (restedXp > 0) {
                 float restedLevels = static_cast<float>(restedXp) / static_cast<float>(nextLevelXp);

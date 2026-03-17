@@ -9595,6 +9595,18 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                 if (member.roles & 0x08) { ImGui::SameLine(); ImGui::TextColored(ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "[D]"); }
             }
 
+            // Tactical role badge (MT/MA/Asst) from group flags
+            if (member.flags & 0x02) {
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.0f, 0.9f), "[MT]");
+            } else if (member.flags & 0x04) {
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(0.4f, 0.7f, 1.0f, 0.9f), "[MA]");
+            } else if (member.flags & 0x01) {
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(0.7f, 0.85f, 1.0f, 0.7f), "[A]");
+            }
+
             // Raid mark symbol — shown on same line as name when this party member has a mark
             {
                 static const struct { const char* sym; ImU32 col; } kPartyMarks[] = {

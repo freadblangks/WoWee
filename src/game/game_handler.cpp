@@ -6086,6 +6086,9 @@ void GameHandler::handlePacket(network::Packet& packet) {
 
         // ---- Talents involuntarily reset ----
         case Opcode::SMSG_TALENTS_INVOLUNTARILY_RESET:
+            // Clear cached talent data so the talent screen reflects the reset.
+            learnedTalents_[0].clear();
+            learnedTalents_[1].clear();
             addSystemChatMessage("Your talents have been reset by the server.");
             packet.setReadPos(packet.getSize());
             break;

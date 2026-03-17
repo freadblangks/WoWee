@@ -6713,6 +6713,7 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
 
         // Out-of-range check: red tint when a targeted spell cannot reach the current target.
         // Only applies to SPELL slots with a known max range (>5 yd) and an active target.
+        // Item range is checked below after barItemDef is populated.
         bool outOfRange = false;
         if (!slot.isEmpty() && slot.type == game::ActionBarSlot::SPELL && slot.id != 0
             && !onCooldown && gameHandler.hasTarget()) {
@@ -6801,6 +6802,33 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
         // Item-missing check: grey out item slots whose item is not in the player's inventory.
         const bool itemMissing = (slot.type == game::ActionBarSlot::ITEM && slot.id != 0
                                   && barItemDef == nullptr && !onCooldown);
+
+        // Ranged item out-of-range check (runs after barItemDef is populated above).
+        // invType 15=Ranged (bow/gun/crossbow), 26=Thrown, 28=RangedRight (wand/crossbow).
+        if (!outOfRange && slot.type == game::ActionBarSlot::ITEM && barItemDef
+            && !onCooldown && gameHandler.hasTarget()) {
+            constexpr uint8_t INVTYPE_RANGED      = 15;
+            constexpr uint8_t INVTYPE_THROWN      = 26;
+            constexpr uint8_t INVTYPE_RANGEDRIGHT = 28;
+            uint32_t itemMaxRange = 0;
+            if (barItemDef->inventoryType == INVTYPE_RANGED ||
+                barItemDef->inventoryType == INVTYPE_RANGEDRIGHT)
+                itemMaxRange = 40;
+            else if (barItemDef->inventoryType == INVTYPE_THROWN)
+                itemMaxRange = 30;
+            if (itemMaxRange > 0) {
+                auto& em = gameHandler.getEntityManager();
+                auto playerEnt = em.getEntity(gameHandler.getPlayerGuid());
+                auto targetEnt = em.getEntity(gameHandler.getTargetGuid());
+                if (playerEnt && targetEnt) {
+                    float dx = playerEnt->getX() - targetEnt->getX();
+                    float dy = playerEnt->getY() - targetEnt->getY();
+                    float dz = playerEnt->getZ() - targetEnt->getZ();
+                    if (std::sqrt(dx*dx + dy*dy + dz*dz) > static_cast<float>(itemMaxRange))
+                        outOfRange = true;
+                }
+            }
+        }
 
         bool clicked = false;
         if (iconTex) {

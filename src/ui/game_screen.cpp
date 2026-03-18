@@ -5534,6 +5534,41 @@ static std::string evaluateMacroConditionals(const std::string& rawArg,
             return true;
         }
 
+        // buff:SpellName / nobuff:SpellName — check if the effective target (or player
+        // if no target specified) has a buff with the given name.
+        // debuff:SpellName / nodebuff:SpellName — same for debuffs (harmful auras).
+        auto checkAuraByName = [&](const std::string& spellName, bool wantDebuff,
+                                   bool negate) -> bool {
+            // Determine which aura list to check: effective target or player
+            const std::vector<game::AuraSlot>* auras = nullptr;
+            if (tgt != static_cast<uint64_t>(-1) && tgt != 0 && tgt != gameHandler.getPlayerGuid()) {
+                // Check target's auras
+                auras = &gameHandler.getTargetAuras();
+            } else {
+                auras = &gameHandler.getPlayerAuras();
+            }
+            std::string nameLow = spellName;
+            for (char& ch : nameLow) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+            for (const auto& a : *auras) {
+                if (a.isEmpty() || a.spellId == 0) continue;
+                // Filter: debuffs have the HARMFUL flag (0x80) or spell has a dispel type
+                bool isDebuff = (a.flags & 0x80) != 0;
+                if (wantDebuff ? !isDebuff : isDebuff) continue;
+                std::string sn = gameHandler.getSpellName(a.spellId);
+                for (char& ch : sn) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+                if (sn == nameLow) return !negate;
+            }
+            return negate;
+        };
+        if (c.rfind("buff:", 0) == 0 && c.size() > 5)
+            return checkAuraByName(c.substr(5), false, false);
+        if (c.rfind("nobuff:", 0) == 0 && c.size() > 7)
+            return checkAuraByName(c.substr(7), false, true);
+        if (c.rfind("debuff:", 0) == 0 && c.size() > 7)
+            return checkAuraByName(c.substr(7), true, false);
+        if (c.rfind("nodebuff:", 0) == 0 && c.size() > 9)
+            return checkAuraByName(c.substr(9), true, true);
+
         // Unknown → permissive (don't block)
         return true;
     };

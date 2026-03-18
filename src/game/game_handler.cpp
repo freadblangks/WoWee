@@ -18894,6 +18894,7 @@ void GameHandler::handleGroupUninvite(network::Packet& packet) {
     msg.type = ChatType::SYSTEM;
     msg.language = ChatLanguage::UNIVERSAL;
     msg.message = "You have been removed from the group.";
+    addUIError("You have been removed from the group.");
     addLocalChatMessage(msg);
 }
 
@@ -18928,6 +18929,7 @@ void GameHandler::handlePartyCommandResult(network::Packet& packet) {
                           static_cast<uint32_t>(data.result));
         }
 
+        addUIError(buf);
         MessageChatData msg;
         msg.type = ChatType::SYSTEM;
         msg.language = ChatLanguage::UNIVERSAL;

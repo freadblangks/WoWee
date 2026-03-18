@@ -1176,6 +1176,11 @@ public:
     uint32_t getTalentWipeCost() const { return talentWipeCost_; }
     void confirmTalentWipe();
     void cancelTalentWipe() { talentWipePending_ = false; }
+    // Pet talent respec confirm
+    bool showPetUnlearnDialog() const { return petUnlearnPending_; }
+    uint32_t getPetUnlearnCost() const { return petUnlearnCost_; }
+    void confirmPetUnlearn();
+    void cancelPetUnlearn() { petUnlearnPending_ = false; }
     /** True when ghost is within 40 yards of corpse position (same map). */
     bool canReclaimCorpse() const;
     /** Distance (yards) from ghost to corpse, or -1 if no corpse data. */
@@ -3305,6 +3310,10 @@ private:
     bool talentWipePending_ = false;
     uint64_t talentWipeNpcGuid_ = 0;
     uint32_t talentWipeCost_ = 0;
+    // ---- Pet talent respec confirm dialog ----
+    bool petUnlearnPending_ = false;
+    uint64_t petUnlearnGuid_ = 0;
+    uint32_t petUnlearnCost_ = 0;
     bool resurrectIsSpiritHealer_ = false;  // true = SMSG_SPIRIT_HEALER_CONFIRM, false = SMSG_RESURRECT_REQUEST
     uint64_t resurrectCasterGuid_ = 0;
     std::string resurrectCasterName_;

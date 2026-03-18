@@ -7660,7 +7660,16 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_PET_GUIDS:
         case Opcode::SMSG_PET_DISMISS_SOUND:
         case Opcode::SMSG_PET_ACTION_SOUND:
-        case Opcode::SMSG_PET_UNLEARN_CONFIRM:
+        case Opcode::SMSG_PET_UNLEARN_CONFIRM: {
+            // uint64 petGuid + uint32 cost (copper)
+            if (packet.getSize() - packet.getReadPos() >= 12) {
+                petUnlearnGuid_ = packet.readUInt64();
+                petUnlearnCost_ = packet.readUInt32();
+                petUnlearnPending_ = true;
+            }
+            packet.setReadPos(packet.getSize());
+            break;
+        }
         case Opcode::SMSG_PET_UPDATE_COMBO_POINTS:
             packet.setReadPos(packet.getSize());
             break;
@@ -18865,6 +18874,20 @@ void GameHandler::switchTalentSpec(uint8_t newSpec) {
         msg += ")";
     }
     addSystemChatMessage(msg);
+}
+
+void GameHandler::confirmPetUnlearn() {
+    if (!petUnlearnPending_) return;
+    petUnlearnPending_ = false;
+    if (state != WorldState::IN_WORLD || !socket) return;
+
+    // Respond with CMSG_PET_UNLEARN_TALENTS (no payload in 3.3.5a)
+    network::Packet pkt(wireOpcode(Opcode::CMSG_PET_UNLEARN_TALENTS));
+    socket->send(pkt);
+    LOG_INFO("confirmPetUnlearn: sent CMSG_PET_UNLEARN_TALENTS");
+    addSystemChatMessage("Pet talent reset confirmed.");
+    petUnlearnGuid_ = 0;
+    petUnlearnCost_ = 0;
 }
 
 void GameHandler::confirmTalentWipe() {

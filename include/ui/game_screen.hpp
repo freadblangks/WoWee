@@ -358,6 +358,7 @@ private:
     void renderReclaimCorpseButton(game::GameHandler& gameHandler);
     void renderResurrectDialog(game::GameHandler& gameHandler);
     void renderTalentWipeConfirmDialog(game::GameHandler& gameHandler);
+    void renderPetUnlearnConfirmDialog(game::GameHandler& gameHandler);
     void renderEscapeMenu();
     void renderSettingsWindow();
     void applyGraphicsPreset(GraphicsPreset preset);

@@ -6452,6 +6452,15 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                 while (!useArg.empty() && useArg.front() == ' ') useArg.erase(useArg.begin());
                 while (!useArg.empty() && useArg.back()  == ' ') useArg.pop_back();
 
+                // Handle macro conditionals: /use [mod:shift] ItemName; OtherItem
+                if (!useArg.empty() && useArg.front() == '[') {
+                    uint64_t dummy = static_cast<uint64_t>(-1);
+                    useArg = evaluateMacroConditionals(useArg, gameHandler, dummy);
+                    if (useArg.empty()) { chatInputBuffer[0] = '\0'; return; }
+                    while (!useArg.empty() && useArg.front() == ' ') useArg.erase(useArg.begin());
+                    while (!useArg.empty() && useArg.back()  == ' ') useArg.pop_back();
+                }
+
                 // Check for bag/slot notation: two numbers separated by whitespace
                 {
                     std::istringstream iss(useArg);

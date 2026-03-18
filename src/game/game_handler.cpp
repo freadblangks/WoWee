@@ -4851,6 +4851,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                                     : (result == 2) ? "You are not at a barber shop."
                                     : (result == 3) ? "You must stand up to use the barber shop."
                                     : "Barber shop unavailable.";
+                    addUIError(msg);
                     addSystemChatMessage(msg);
                 }
                 LOG_DEBUG("SMSG_BARBER_SHOP_RESULT: result=", result);
@@ -6250,12 +6251,14 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 uint32_t result = packet.readUInt32();
                 (void)result;
             }
+            addUIError("Dungeon Finder: Auto-join failed.");
             addSystemChatMessage("Dungeon Finder: Auto-join failed.");
             packet.setReadPos(packet.getSize());
             break;
         }
         case Opcode::SMSG_LFG_AUTOJOIN_FAILED_NO_PLAYER:
             // No eligible players found for auto-join
+            addUIError("Dungeon Finder: No players available for auto-join.");
             addSystemChatMessage("Dungeon Finder: No players available for auto-join.");
             packet.setReadPos(packet.getSize());
             break;
@@ -7513,6 +7516,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
 
         // ---- NPC not responding ----
         case Opcode::SMSG_NPC_WONT_TALK:
+            addUIError("That creature can't talk to you right now.");
             addSystemChatMessage("That creature can't talk to you right now.");
             packet.setReadPos(packet.getSize());
             break;

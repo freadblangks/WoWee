@@ -438,6 +438,10 @@ private:
     char  achievementSearchBuf_[128] = {};
     void  renderAchievementWindow(game::GameHandler& gameHandler);
 
+    // Skills / Professions window (K key)
+    bool  showSkillsWindow_ = false;
+    void  renderSkillsWindow(game::GameHandler& gameHandler);
+
     // Titles window
     bool  showTitlesWindow_ = false;
     void  renderTitlesWindow(game::GameHandler& gameHandler);

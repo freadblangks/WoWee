@@ -125,6 +125,10 @@ public:
     int findFreeBackpackSlot() const;
     bool addItem(const ItemDef& item);
 
+    // Sort all bag slots (backpack + equip bags) by quality desc → itemId asc → stackCount desc.
+    // Purely client-side: reorders the local inventory struct without server interaction.
+    void sortBags();
+
     // Test data
     void populateTestItems();
 

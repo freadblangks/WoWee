@@ -1,5 +1,6 @@
 #include "game/inventory.hpp"
 #include "core/logger.hpp"
+#include <algorithm>
 
 namespace wowee {
 namespace game {
@@ -183,6 +184,44 @@ bool Inventory::addItem(const ItemDef& item) {
     if (slot < 0) return false;
     backpack[slot].item = item;
     return true;
+}
+
+void Inventory::sortBags() {
+    // Collect all items from backpack and equip bags into a flat list.
+    std::vector<ItemDef> items;
+    items.reserve(BACKPACK_SLOTS + NUM_BAG_SLOTS * MAX_BAG_SIZE);
+
+    for (int i = 0; i < BACKPACK_SLOTS; ++i) {
+        if (!backpack[i].empty())
+            items.push_back(backpack[i].item);
+    }
+    for (int b = 0; b < NUM_BAG_SLOTS; ++b) {
+        for (int s = 0; s < bags[b].size; ++s) {
+            if (!bags[b].slots[s].empty())
+                items.push_back(bags[b].slots[s].item);
+        }
+    }
+
+    // Sort: quality descending → itemId ascending → stackCount descending.
+    std::stable_sort(items.begin(), items.end(), [](const ItemDef& a, const ItemDef& b) {
+        if (a.quality != b.quality)
+            return static_cast<int>(a.quality) > static_cast<int>(b.quality);
+        if (a.itemId != b.itemId)
+            return a.itemId < b.itemId;
+        return a.stackCount > b.stackCount;
+    });
+
+    // Write sorted items back, filling backpack first then equip bags.
+    int idx = 0;
+    int n = static_cast<int>(items.size());
+
+    for (int i = 0; i < BACKPACK_SLOTS; ++i)
+        backpack[i].item = (idx < n) ? items[idx++] : ItemDef{};
+
+    for (int b = 0; b < NUM_BAG_SLOTS; ++b) {
+        for (int s = 0; s < bags[b].size; ++s)
+            bags[b].slots[s].item = (idx < n) ? items[idx++] : ItemDef{};
+    }
 }
 
 void Inventory::populateTestItems() {

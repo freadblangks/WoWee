@@ -1019,7 +1019,7 @@ void InventoryScreen::renderBagWindow(const char* title, bool& isOpen,
     float contentH = rows * (slotSize + 4.0f) + 10.0f;
     if (bagIndex < 0) {
         int keyringRows = (inventory.getKeyringSize() + columns - 1) / columns;
-        contentH += 25.0f; // money display for backpack
+        contentH += 36.0f; // separator + sort button + money display
         contentH += 30.0f + keyringRows * (slotSize + 4.0f); // keyring header + slots
     }
     float gridW = columns * (slotSize + 4.0f) + 30.0f;
@@ -1094,16 +1094,29 @@ void InventoryScreen::renderBagWindow(const char* title, bool& isOpen,
         }
     }
 
-    // Money display at bottom of backpack
-    if (bagIndex < 0 && moneyCopper > 0) {
+    // Footer for backpack: sort button + money display
+    if (bagIndex < 0) {
         ImGui::Spacing();
-        uint64_t gold = moneyCopper / 10000;
-        uint64_t silver = (moneyCopper / 100) % 100;
-        uint64_t copper = moneyCopper % 100;
-        ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.0f, 1.0f), "%llug %llus %lluc",
-                           static_cast<unsigned long long>(gold),
-                           static_cast<unsigned long long>(silver),
-                           static_cast<unsigned long long>(copper));
+        ImGui::Separator();
+
+        // Sort Bags button — client-side reorder by quality/type
+        if (ImGui::SmallButton("Sort Bags")) {
+            inventory.sortBags();
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Sort all bag slots by quality (highest first),\nthen by item ID, then by stack size.");
+        }
+
+        if (moneyCopper > 0) {
+            ImGui::SameLine();
+            uint64_t gold   = moneyCopper / 10000;
+            uint64_t silver = (moneyCopper / 100) % 100;
+            uint64_t copper = moneyCopper % 100;
+            ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.0f, 1.0f), "%llug %llus %lluc",
+                               static_cast<unsigned long long>(gold),
+                               static_cast<unsigned long long>(silver),
+                               static_cast<unsigned long long>(copper));
+        }
     }
 
     ImGui::End();

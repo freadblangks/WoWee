@@ -19653,18 +19653,28 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         nextIndicatorY += kIndicatorH;
     }
 
-    // Latency indicator — centered at top of screen
+    // Latency + FPS indicator — centered at top of screen
     uint32_t latMs = gameHandler.getLatencyMs();
-    if (showLatencyMeter_ && latMs > 0 && gameHandler.getState() == game::WorldState::IN_WORLD) {
+    if (showLatencyMeter_ && gameHandler.getState() == game::WorldState::IN_WORLD) {
+        float currentFps = ImGui::GetIO().Framerate;
         ImVec4 latColor;
         if      (latMs < 100) latColor = ImVec4(0.3f, 1.0f, 0.3f, 0.9f);
         else if (latMs < 250) latColor = ImVec4(1.0f, 1.0f, 0.3f, 0.9f);
         else if (latMs < 500) latColor = ImVec4(1.0f, 0.6f, 0.1f, 0.9f);
         else                  latColor = ImVec4(1.0f, 0.2f, 0.2f, 0.9f);
 
-        char latBuf[32];
-        snprintf(latBuf, sizeof(latBuf), "%u ms", latMs);
-        ImVec2 textSize = ImGui::CalcTextSize(latBuf);
+        ImVec4 fpsColor;
+        if      (currentFps >= 60.0f) fpsColor = ImVec4(0.3f, 1.0f, 0.3f, 0.9f);
+        else if (currentFps >= 30.0f) fpsColor = ImVec4(1.0f, 1.0f, 0.3f, 0.9f);
+        else                          fpsColor = ImVec4(1.0f, 0.3f, 0.3f, 0.9f);
+
+        char infoText[64];
+        if (latMs > 0)
+            snprintf(infoText, sizeof(infoText), "%.0f fps  |  %u ms", currentFps, latMs);
+        else
+            snprintf(infoText, sizeof(infoText), "%.0f fps", currentFps);
+
+        ImVec2 textSize = ImGui::CalcTextSize(infoText);
         float latW = textSize.x + 16.0f;
         float latH = textSize.y + 8.0f;
         ImGuiIO& lio = ImGui::GetIO();
@@ -19673,7 +19683,14 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         ImGui::SetNextWindowSize(ImVec2(latW, latH), ImGuiCond_Always);
         ImGui::SetNextWindowBgAlpha(0.45f);
         if (ImGui::Begin("##LatencyIndicator", nullptr, indicatorFlags)) {
-            ImGui::TextColored(latColor, "%s", latBuf);
+            // Color the FPS and latency portions differently
+            ImGui::TextColored(fpsColor, "%.0f fps", currentFps);
+            if (latMs > 0) {
+                ImGui::SameLine(0, 4);
+                ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 0.7f), "|");
+                ImGui::SameLine(0, 4);
+                ImGui::TextColored(latColor, "%u ms", latMs);
+            }
         }
         ImGui::End();
     }

@@ -4018,9 +4018,9 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
             worldStateMapId_ = packet.readUInt32();
             worldStateZoneId_ = packet.readUInt32();
-            // WotLK adds areaId (uint32) before count; detect by checking if payload would be consistent
+            // WotLK adds areaId (uint32) before count; Classic/TBC/Turtle use the shorter format
             size_t remaining = packet.getSize() - packet.getReadPos();
-            bool isWotLKFormat = isActiveExpansion("wotlk") || isActiveExpansion("turtle");
+            bool isWotLKFormat = isActiveExpansion("wotlk");
             if (isWotLKFormat && remaining >= 6) {
                 packet.readUInt32(); // areaId (WotLK only)
             }
@@ -19764,14 +19764,12 @@ void GameHandler::interactWithGameObject(uint64_t guid) {
 void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
     if (guid == 0) return;
     if (state != WorldState::IN_WORLD || !socket) return;
-    bool turtleMode = isActiveExpansion("turtle");
-
     // Rate-limit to prevent spamming the server
     static uint64_t lastInteractGuid = 0;
     static std::chrono::steady_clock::time_point lastInteractTime{};
     auto now = std::chrono::steady_clock::now();
     // Keep duplicate suppression, but allow quick retry clicks.
-    int64_t minRepeatMs = turtleMode ? 150 : 150;
+    constexpr int64_t minRepeatMs = 150;
     if (guid == lastInteractGuid &&
         std::chrono::duration_cast<std::chrono::milliseconds>(now - lastInteractTime).count() < minRepeatMs) {
         return;

@@ -2007,6 +2007,9 @@ public:
     void autoEquipItemInBag(int bagIndex, int slotIndex);
     void useItemBySlot(int backpackIndex);
     void useItemInBag(int bagIndex, int slotIndex);
+    // CMSG_OPEN_ITEM — for locked containers (lockboxes); server checks keyring automatically
+    void openItemBySlot(int backpackIndex);
+    void openItemInBag(int bagIndex, int slotIndex);
     void destroyItem(uint8_t bag, uint8_t slot, uint8_t count = 1);
     void swapContainerItems(uint8_t srcBag, uint8_t srcSlot, uint8_t dstBag, uint8_t dstSlot);
     void swapBagSlots(int srcBagIndex, int dstBagIndex);

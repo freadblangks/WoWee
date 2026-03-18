@@ -21165,6 +21165,26 @@ void GameHandler::useItemInBag(int bagIndex, int slotIndex) {
     }
 }
 
+void GameHandler::openItemBySlot(int backpackIndex) {
+    if (backpackIndex < 0 || backpackIndex >= inventory.getBackpackSize()) return;
+    if (inventory.getBackpackSlot(backpackIndex).empty()) return;
+    if (state != WorldState::IN_WORLD || !socket) return;
+    auto packet = OpenItemPacket::build(0xFF, static_cast<uint8_t>(23 + backpackIndex));
+    LOG_INFO("openItemBySlot: CMSG_OPEN_ITEM bag=0xFF slot=", (23 + backpackIndex));
+    socket->send(packet);
+}
+
+void GameHandler::openItemInBag(int bagIndex, int slotIndex) {
+    if (bagIndex < 0 || bagIndex >= inventory.NUM_BAG_SLOTS) return;
+    if (slotIndex < 0 || slotIndex >= inventory.getBagSize(bagIndex)) return;
+    if (inventory.getBagSlot(bagIndex, slotIndex).empty()) return;
+    if (state != WorldState::IN_WORLD || !socket) return;
+    uint8_t wowBag = static_cast<uint8_t>(19 + bagIndex);
+    auto packet = OpenItemPacket::build(wowBag, static_cast<uint8_t>(slotIndex));
+    LOG_INFO("openItemInBag: CMSG_OPEN_ITEM bag=", (int)wowBag, " slot=", slotIndex);
+    socket->send(packet);
+}
+
 void GameHandler::useItemById(uint32_t itemId) {
     if (itemId == 0) return;
     LOG_DEBUG("useItemById: searching for itemId=", itemId);

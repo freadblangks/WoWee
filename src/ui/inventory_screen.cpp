@@ -2356,7 +2356,14 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
                 } else if (item.inventoryType > 0) {
                     gameHandler_->autoEquipItemBySlot(backpackIndex);
                 } else {
-                    gameHandler_->useItemBySlot(backpackIndex);
+                    // itemClass==1 (Container) with inventoryType==0 means a lockbox;
+                    // use CMSG_OPEN_ITEM so the server checks keyring automatically.
+                    auto* info = gameHandler_->getItemInfo(item.itemId);
+                    if (info && info->valid && info->itemClass == 1) {
+                        gameHandler_->openItemBySlot(backpackIndex);
+                    } else {
+                        gameHandler_->useItemBySlot(backpackIndex);
+                    }
                 }
             } else if (kind == SlotKind::BACKPACK && isBagSlot) {
                 LOG_INFO("Right-click bag item: name='", item.name,
@@ -2369,7 +2376,12 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
                 } else if (item.inventoryType > 0) {
                     gameHandler_->autoEquipItemInBag(bagIndex, bagSlotIndex);
                 } else {
-                    gameHandler_->useItemInBag(bagIndex, bagSlotIndex);
+                    auto* info = gameHandler_->getItemInfo(item.itemId);
+                    if (info && info->valid && info->itemClass == 1) {
+                        gameHandler_->openItemInBag(bagIndex, bagSlotIndex);
+                    } else {
+                        gameHandler_->useItemInBag(bagIndex, bagSlotIndex);
+                    }
                 }
             }
         }

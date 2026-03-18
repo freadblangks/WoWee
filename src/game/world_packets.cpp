@@ -4271,6 +4271,13 @@ network::Packet UseItemPacket::build(uint8_t bagIndex, uint8_t slotIndex, uint64
     return packet;
 }
 
+network::Packet OpenItemPacket::build(uint8_t bagIndex, uint8_t slotIndex) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_OPEN_ITEM));
+    packet.writeUInt8(bagIndex);
+    packet.writeUInt8(slotIndex);
+    return packet;
+}
+
 network::Packet AutoEquipItemPacket::build(uint8_t srcBag, uint8_t srcSlot) {
     network::Packet packet(wireOpcode(Opcode::CMSG_AUTOEQUIP_ITEM));
     packet.writeUInt8(srcBag);

@@ -13937,6 +13937,7 @@ void GameHandler::releaseSpirit() {
         auto packet = RepopRequestPacket::build();
         socket->send(packet);
         releasedSpirit_ = true;
+        selfResAvailable_ = false;  // self-res window closes when spirit is released
         repopPending_ = true;
         lastRepopRequestMs_ = static_cast<uint64_t>(now);
         LOG_INFO("Sent CMSG_REPOP_REQUEST (Release Spirit)");

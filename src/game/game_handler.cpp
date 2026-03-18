@@ -4176,7 +4176,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
             if (delayMs == 0) break;
             float delaySec = delayMs / 1000.0f;
             if (caster == playerGuid) {
-                if (casting) castTimeRemaining += delaySec;
+                if (casting) {
+                    castTimeRemaining += delaySec;
+                    castTimeTotal     += delaySec;  // keep progress percentage correct
+                }
             } else {
                 auto it = unitCastStates_.find(caster);
                 if (it != unitCastStates_.end() && it->second.casting) {
@@ -13936,7 +13939,7 @@ void GameHandler::stopCasting() {
         socket->send(packet);
     }
 
-    // Reset casting state
+    // Reset casting state and clear any queued spell so it doesn't fire later
     casting = false;
     castIsChannel = false;
     currentCastSpellId = 0;
@@ -13944,6 +13947,10 @@ void GameHandler::stopCasting() {
     lastInteractedGoGuid_ = 0;
     castTimeRemaining = 0.0f;
     castTimeTotal = 0.0f;
+    craftQueueSpellId_ = 0;
+    craftQueueRemaining_ = 0;
+    queuedSpellId_ = 0;
+    queuedSpellTarget_ = 0;
 
     LOG_INFO("Cancelled spell cast");
 }
@@ -22050,6 +22057,12 @@ void GameHandler::handleNewWorld(network::Packet& packet) {
         hostileAttackers_.clear();
         stopAutoAttack();
         tabCycleStale = true;
+        casting = false;
+        castIsChannel = false;
+        currentCastSpellId = 0;
+        castTimeRemaining = 0.0f;
+        queuedSpellId_ = 0;
+        queuedSpellTarget_ = 0;
 
         if (socket) {
             network::Packet ack(wireOpcode(Opcode::MSG_MOVE_WORLDPORT_ACK));

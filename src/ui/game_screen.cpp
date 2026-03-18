@@ -13730,22 +13730,8 @@ void GameScreen::renderBgInvitePopup(game::GameHandler& gameHandler) {
         ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse;
 
     if (ImGui::Begin("Battleground Ready!", nullptr, popupFlags)) {
-        // BG name
-        std::string bgName;
-        if (slot->arenaType > 0) {
-            bgName = std::to_string(slot->arenaType) + "v" + std::to_string(slot->arenaType) + " Arena";
-        } else {
-            switch (slot->bgTypeId) {
-                case 1: bgName = "Alterac Valley"; break;
-                case 2: bgName = "Warsong Gulch"; break;
-                case 3: bgName = "Arathi Basin"; break;
-                case 7: bgName = "Eye of the Storm"; break;
-                case 9: bgName = "Strand of the Ancients"; break;
-                case 11: bgName = "Isle of Conquest"; break;
-                default: bgName = "Battleground"; break;
-            }
-        }
-
+        // BG name from stored queue data
+        std::string bgName = slot->bgName.empty() ? "Battleground" : slot->bgName;
         ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.2f, 1.0f), "%s", bgName.c_str());
         ImGui::TextWrapped("A spot has opened! You have %d seconds to enter.", static_cast<int>(remaining));
         ImGui::Spacing();

@@ -453,6 +453,7 @@ public:
         uint32_t avgWaitTimeSec = 0;   // server-estimated average wait (STATUS_WAIT_QUEUE)
         uint32_t timeInQueueSec = 0;   // time already spent in queue (STATUS_WAIT_QUEUE)
         std::chrono::steady_clock::time_point inviteReceivedTime{};
+        std::string bgName;            // human-readable BG/arena name
     };
 
     // Available BG list (populated by SMSG_BATTLEFIELD_LIST)

@@ -16119,7 +16119,7 @@ void GameHandler::handleBattlefieldStatus(network::Packet& packet) {
         {1,  "Alterac Valley"},
         {2,  "Warsong Gulch"},
         {3,  "Arathi Basin"},
-        {6,  "Eye of the Storm"},
+        {7,  "Eye of the Storm"},
         {9,  "Strand of the Ancients"},
         {11, "Isle of Conquest"},
         {30, "Nagrand Arena"},
@@ -16177,6 +16177,7 @@ void GameHandler::handleBattlefieldStatus(network::Packet& packet) {
         bgQueues_[queueSlot].bgTypeId = bgTypeId;
         bgQueues_[queueSlot].arenaType = arenaType;
         bgQueues_[queueSlot].statusId = statusId;
+        bgQueues_[queueSlot].bgName = bgName;
         if (statusId == 1) {
             bgQueues_[queueSlot].avgWaitTimeSec = avgWaitSec;
             bgQueues_[queueSlot].timeInQueueSec = timeInQueueSec;

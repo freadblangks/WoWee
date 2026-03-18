@@ -1396,6 +1396,8 @@ public:
     bool isAutoLoot() const { return autoLoot_; }
     void setAutoSellGrey(bool enabled) { autoSellGrey_ = enabled; }
     bool isAutoSellGrey() const { return autoSellGrey_; }
+    void setAutoRepair(bool enabled) { autoRepair_ = enabled; }
+    bool isAutoRepair() const { return autoRepair_; }
 
     // Master loot candidates (from SMSG_LOOT_MASTER_LIST)
     const std::vector<uint64_t>& getMasterLootCandidates() const { return masterLootCandidates_; }
@@ -2882,6 +2884,7 @@ private:
     bool lootWindowOpen = false;
     bool autoLoot_ = false;
     bool autoSellGrey_ = false;
+    bool autoRepair_ = false;
     LootResponseData currentLoot;
     std::vector<uint64_t> masterLootCandidates_;  // from SMSG_LOOT_MASTER_LIST
 

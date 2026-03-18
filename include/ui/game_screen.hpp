@@ -196,6 +196,7 @@ private:
     bool pendingShowKeyring = true;
     bool pendingAutoLoot = false;
     bool pendingAutoSellGrey = false;
+    bool pendingAutoRepair = false;
 
     // Keybinding customization
     int pendingRebindAction = -1;  // -1 = not rebinding, otherwise action index

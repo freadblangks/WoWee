@@ -595,6 +595,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     // Apply auto-loot / auto-sell settings to GameHandler every frame (cheap bool sync)
     gameHandler.setAutoLoot(pendingAutoLoot);
     gameHandler.setAutoSellGrey(pendingAutoSellGrey);
+    gameHandler.setAutoRepair(pendingAutoRepair);
 
     // Zone entry detection — fire a toast when the renderer's zone name changes
     if (auto* rend = core::Application::getInstance().getRenderer()) {
@@ -16334,6 +16335,11 @@ void GameScreen::renderSettingsWindow() {
                 }
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("Automatically sell all grey (poor quality) items when opening a vendor");
+                if (ImGui::Checkbox("Auto Repair", &pendingAutoRepair)) {
+                    saveSettings();
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Automatically repair all damaged equipment when opening an armorer vendor");
 
                 ImGui::Spacing();
                 ImGui::Text("Bags");
@@ -18335,6 +18341,7 @@ void GameScreen::saveSettings() {
     // Gameplay
     out << "auto_loot=" << (pendingAutoLoot ? 1 : 0) << "\n";
     out << "auto_sell_grey=" << (pendingAutoSellGrey ? 1 : 0) << "\n";
+    out << "auto_repair=" << (pendingAutoRepair ? 1 : 0) << "\n";
     out << "graphics_preset=" << static_cast<int>(currentGraphicsPreset) << "\n";
     out << "ground_clutter_density=" << pendingGroundClutterDensity << "\n";
     out << "shadows=" << (pendingShadows ? 1 : 0) << "\n";
@@ -18477,6 +18484,7 @@ void GameScreen::loadSettings() {
             // Gameplay
             else if (key == "auto_loot") pendingAutoLoot = (std::stoi(val) != 0);
             else if (key == "auto_sell_grey") pendingAutoSellGrey = (std::stoi(val) != 0);
+            else if (key == "auto_repair") pendingAutoRepair = (std::stoi(val) != 0);
             else if (key == "graphics_preset") {
                 int presetVal = std::clamp(std::stoi(val), 0, 4);
                 currentGraphicsPreset = static_cast<GraphicsPreset>(presetVal);

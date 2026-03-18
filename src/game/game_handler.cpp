@@ -21259,6 +21259,24 @@ void GameHandler::handleListInventory(network::Packet& packet) {
         }
     }
 
+    // Auto-repair all items if enabled and vendor can repair
+    if (autoRepair_ && currentVendorItems.canRepair && currentVendorItems.vendorGuid != 0) {
+        // Check that at least one equipped item is actually damaged to avoid no-op
+        bool anyDamaged = false;
+        for (int i = 0; i < Inventory::NUM_EQUIP_SLOTS; ++i) {
+            const auto& slot = inventory.getEquipSlot(static_cast<EquipSlot>(i));
+            if (!slot.empty() && slot.item.maxDurability > 0
+                    && slot.item.curDurability < slot.item.maxDurability) {
+                anyDamaged = true;
+                break;
+            }
+        }
+        if (anyDamaged) {
+            repairAll(currentVendorItems.vendorGuid, false);
+            addSystemChatMessage("|cffaaaaaaAuto-repair triggered.|r");
+        }
+    }
+
     // Play vendor sound
     if (npcVendorCallback_ && currentVendorItems.vendorGuid != 0) {
         auto entity = entityManager.getEntity(currentVendorItems.vendorGuid);

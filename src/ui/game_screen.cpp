@@ -744,7 +744,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderPvpHonorToasts();
     renderItemLootToasts();
     renderResurrectFlash();
-    renderZoneText();
+    renderZoneText(gameHandler);
     renderWeatherOverlay(gameHandler);
 
     // World map (M key toggle handled inside)
@@ -20496,15 +20496,31 @@ void GameScreen::renderWhisperToasts() {
 // Zone discovery text — "Entering: <ZoneName>" fades in/out at screen centre
 // ---------------------------------------------------------------------------
 
-void GameScreen::renderZoneText() {
-    // Poll the renderer for zone name changes
+void GameScreen::renderZoneText(game::GameHandler& gameHandler) {
+    // Poll worldStateZoneId for server-driven zone changes (fires on every zone crossing,
+    // including sub-zones like Ironforge within Dun Morogh).
+    uint32_t wsZoneId = gameHandler.getWorldStateZoneId();
+    if (wsZoneId != 0 && wsZoneId != lastKnownWorldStateZoneId_) {
+        lastKnownWorldStateZoneId_ = wsZoneId;
+        std::string wsName = gameHandler.getWhoAreaName(wsZoneId);
+        if (!wsName.empty()) {
+            zoneTextName_  = wsName;
+            zoneTextTimer_ = ZONE_TEXT_DURATION;
+        }
+    }
+
+    // Also poll the renderer for zone name changes (covers map-level transitions
+    // where worldStateZoneId may not change immediately).
     auto* appRenderer = core::Application::getInstance().getRenderer();
     if (appRenderer) {
         const std::string& zoneName = appRenderer->getCurrentZoneName();
         if (!zoneName.empty() && zoneName != lastKnownZoneName_) {
             lastKnownZoneName_ = zoneName;
-            zoneTextName_  = zoneName;
-            zoneTextTimer_ = ZONE_TEXT_DURATION;
+            // Only override if the worldState hasn't already queued this zone
+            if (zoneTextName_ != zoneName) {
+                zoneTextName_  = zoneName;
+                zoneTextTimer_ = ZONE_TEXT_DURATION;
+            }
         }
     }
 

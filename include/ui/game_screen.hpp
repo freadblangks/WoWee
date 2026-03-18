@@ -634,7 +634,8 @@ private:
     float zoneTextTimer_ = 0.0f;
     std::string zoneTextName_;
     std::string lastKnownZoneName_;
-    void renderZoneText();
+    uint32_t lastKnownWorldStateZoneId_ = 0;
+    void renderZoneText(game::GameHandler& gameHandler);
     void renderWeatherOverlay(game::GameHandler& gameHandler);
 
     // Cooldown tracker

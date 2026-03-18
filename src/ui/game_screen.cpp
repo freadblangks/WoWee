@@ -7511,6 +7511,8 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
                     if (ImGui::MenuItem("Use")) {
                         gameHandler.useItemById(slot.id);
                     }
+                } else if (slot.type == game::ActionBarSlot::MACRO) {
+                    ImGui::TextDisabled("Macro #%u", slot.id);
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Clear Slot")) {
@@ -7568,6 +7570,10 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
                     else
                         ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Cooldown: %.1f sec", cd);
                 }
+                ImGui::EndTooltip();
+            } else if (slot.type == game::ActionBarSlot::MACRO) {
+                ImGui::BeginTooltip();
+                ImGui::Text("Macro #%u", slot.id);
                 ImGui::EndTooltip();
             } else if (slot.type == game::ActionBarSlot::ITEM) {
                 ImGui::BeginTooltip();

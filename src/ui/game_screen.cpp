@@ -8616,9 +8616,20 @@ void GameScreen::renderCastBar(game::GameHandler& gameHandler) {
             ? (1.0f - gameHandler.getCastProgress())
             : gameHandler.getCastProgress();
 
-        ImVec4 barColor = channeling
-            ? ImVec4(0.3f, 0.6f, 0.9f, 1.0f)   // blue for channels
-            : ImVec4(0.8f, 0.6f, 0.2f, 1.0f);   // gold for casts
+        // Color by spell school for cast identification; channels always blue
+        ImVec4 barColor;
+        if (channeling) {
+            barColor = ImVec4(0.3f, 0.6f, 0.9f, 1.0f);  // blue for channels
+        } else {
+            uint32_t school = (currentSpellId != 0) ? gameHandler.getSpellSchoolMask(currentSpellId) : 0;
+            if      (school & 0x04) barColor = ImVec4(0.95f, 0.40f, 0.10f, 1.0f);  // Fire: orange-red
+            else if (school & 0x10) barColor = ImVec4(0.30f, 0.65f, 0.95f, 1.0f);  // Frost: icy blue
+            else if (school & 0x20) barColor = ImVec4(0.55f, 0.15f, 0.70f, 1.0f);  // Shadow: purple
+            else if (school & 0x40) barColor = ImVec4(0.65f, 0.30f, 0.85f, 1.0f);  // Arcane: violet
+            else if (school & 0x08) barColor = ImVec4(0.20f, 0.75f, 0.25f, 1.0f);  // Nature: green
+            else if (school & 0x02) barColor = ImVec4(0.90f, 0.80f, 0.30f, 1.0f);  // Holy: golden
+            else                    barColor = ImVec4(0.80f, 0.60f, 0.20f, 1.0f);  // Physical/default: gold
+        }
         ImGui::PushStyleColor(ImGuiCol_PlotHistogram, barColor);
 
         char overlay[96];

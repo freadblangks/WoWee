@@ -21576,6 +21576,13 @@ bool GameHandler::isSpellInterruptible(uint32_t spellId) const {
     return (it->second.attrEx & 0x00000010u) == 0;
 }
 
+uint32_t GameHandler::getSpellSchoolMask(uint32_t spellId) const {
+    if (spellId == 0) return 0;
+    const_cast<GameHandler*>(this)->loadSpellNameCache();
+    auto it = spellNameCache_.find(spellId);
+    return (it != spellNameCache_.end()) ? it->second.schoolMask : 0;
+}
+
 const std::string& GameHandler::getSkillLineName(uint32_t spellId) const {
     auto slIt = spellToSkillLine_.find(spellId);
     if (slIt == spellToSkillLine_.end()) return EMPTY_STRING;

@@ -2064,6 +2064,10 @@ public:
     /// Returns true if the spell can be interrupted by abilities like Kick/Counterspell.
     /// False for spells with SPELL_ATTR_EX_NOT_INTERRUPTIBLE (attrEx bit 4 = 0x10).
     bool isSpellInterruptible(uint32_t spellId) const;
+    /// Returns the school bitmask for the spell from Spell.dbc
+    /// (0x01=Physical, 0x02=Holy, 0x04=Fire, 0x08=Nature, 0x10=Frost, 0x20=Shadow, 0x40=Arcane).
+    /// Returns 0 if unknown.
+    uint32_t getSpellSchoolMask(uint32_t spellId) const;
 
     struct TrainerTab {
         std::string name;

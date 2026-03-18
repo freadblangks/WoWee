@@ -1849,12 +1849,15 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
         case Opcode::SMSG_CHAT_WRONG_FACTION:
+            addUIError("You cannot send messages to members of that faction.");
             addSystemChatMessage("You cannot send messages to members of that faction.");
             break;
         case Opcode::SMSG_CHAT_NOT_IN_PARTY:
+            addUIError("You are not in a party.");
             addSystemChatMessage("You are not in a party.");
             break;
         case Opcode::SMSG_CHAT_RESTRICTED:
+            addUIError("You cannot send chat messages in this area.");
             addSystemChatMessage("You cannot send chat messages in this area.");
             break;
 
@@ -7286,10 +7289,13 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_PLAYERBINDERROR: {
             if (packet.getSize() - packet.getReadPos() >= 4) {
                 uint32_t error = packet.readUInt32();
-                if (error == 0)
+                if (error == 0) {
+                    addUIError("Your hearthstone is not bound.");
                     addSystemChatMessage("Your hearthstone is not bound.");
-                else
+                } else {
+                    addUIError("Hearthstone bind failed.");
                     addSystemChatMessage("Hearthstone bind failed.");
+                }
             }
             break;
         }
@@ -7439,6 +7445,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             packet.setReadPos(packet.getSize());
             break;
         case Opcode::SMSG_READ_ITEM_FAILED:
+            addUIError("You cannot read this item.");
             addSystemChatMessage("You cannot read this item.");
             packet.setReadPos(packet.getSize());
             break;
@@ -7607,6 +7614,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             packet.setReadPos(packet.getSize());
             break;
         case Opcode::SMSG_PET_NAME_INVALID:
+            addUIError("That pet name is invalid. Please choose a different name.");
             addSystemChatMessage("That pet name is invalid. Please choose a different name.");
             packet.setReadPos(packet.getSize());
             break;
@@ -16211,6 +16219,7 @@ void GameHandler::handleLfgJoinResult(network::Packet& packet) {
     } else {
         const char* msg = lfgJoinResultString(result);
         std::string errMsg = std::string("Dungeon Finder: ") + (msg ? msg : "Join failed.");
+        addUIError(errMsg);
         addSystemChatMessage(errMsg);
         LOG_INFO("SMSG_LFG_JOIN_RESULT: result=", static_cast<int>(result),
                  " state=", static_cast<int>(state));
@@ -16256,6 +16265,7 @@ void GameHandler::handleLfgProposalUpdate(network::Packet& packet) {
         case 0:
             lfgState_      = LfgState::Queued;
             lfgProposalId_ = 0;
+            addUIError("Dungeon Finder: Group proposal failed.");
             addSystemChatMessage("Dungeon Finder: Group proposal failed.");
             break;
         case 1: {
@@ -16299,6 +16309,7 @@ void GameHandler::handleLfgRoleCheckUpdate(network::Packet& packet) {
         LOG_INFO("LFG role check finished");
     } else if (roleCheckState == 3) {
         lfgState_ = LfgState::None;
+        addUIError("Dungeon Finder: Role check failed — missing required role.");
         addSystemChatMessage("Dungeon Finder: Role check failed — missing required role.");
     } else if (roleCheckState == 2) {
         lfgState_ = LfgState::RoleCheck;
@@ -23969,6 +23980,7 @@ void GameHandler::handleAuctionCommandResult(network::Packet& packet) {
                                 "DB error", "Restricted account"};
         const char* errName = (result.errorCode < 9) ? errors[result.errorCode] : "Unknown";
         std::string msg = std::string("Auction ") + actionName + " failed: " + errName;
+        addUIError(msg);
         addSystemChatMessage(msg);
     }
     LOG_INFO("SMSG_AUCTION_COMMAND_RESULT: action=", actionName,

@@ -7630,9 +7630,13 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
         case Opcode::SMSG_PETITION_QUERY_RESPONSE:
+            handlePetitionQueryResponse(packet);
+            break;
         case Opcode::SMSG_PETITION_SHOW_SIGNATURES:
+            handlePetitionShowSignatures(packet);
+            break;
         case Opcode::SMSG_PETITION_SIGN_RESULTS:
-            packet.setReadPos(packet.getSize());
+            handlePetitionSignResults(packet);
             break;
 
         // ---- Pet system ----
@@ -19740,6 +19744,118 @@ void GameHandler::handlePetitionShowlist(network::Packet& packet) {
     petitionCost_ = data.cost;
     showPetitionDialog_ = true;
     LOG_INFO("Petition showlist: cost=", data.cost);
+}
+
+void GameHandler::handlePetitionQueryResponse(network::Packet& packet) {
+    // SMSG_PETITION_QUERY_RESPONSE (3.3.5a):
+    //   uint32 petitionEntry, uint64 petitionGuid, string guildName,
+    //   string bodyText (empty), uint32 flags, uint32 minSignatures,
+    //   uint32 maxSignatures, ...plus more fields we can skip
+    auto rem = [&]() { return packet.getSize() - packet.getReadPos(); };
+    if (rem() < 12) return;
+
+    /*uint32_t entry =*/ packet.readUInt32();
+    uint64_t petGuid  = packet.readUInt64();
+    std::string guildName = packet.readString();
+    /*std::string body =*/ packet.readString();
+
+    // Update petition info if it matches our current petition
+    if (petitionInfo_.petitionGuid == petGuid) {
+        petitionInfo_.guildName = guildName;
+    }
+
+    LOG_INFO("SMSG_PETITION_QUERY_RESPONSE: guid=", petGuid, " name=", guildName);
+    packet.setReadPos(packet.getSize()); // skip remaining fields
+}
+
+void GameHandler::handlePetitionShowSignatures(network::Packet& packet) {
+    // SMSG_PETITION_SHOW_SIGNATURES (3.3.5a):
+    //   uint64 itemGuid (petition item in inventory)
+    //   uint64 ownerGuid
+    //   uint32 petitionGuid (low part / entry)
+    //   uint8  signatureCount
+    //   For each signature:
+    //     uint64 playerGuid
+    //     uint32 unk (always 0)
+    auto rem = [&]() { return packet.getSize() - packet.getReadPos(); };
+    if (rem() < 21) return;
+
+    petitionInfo_ = PetitionInfo{};
+    petitionInfo_.petitionGuid = packet.readUInt64();
+    petitionInfo_.ownerGuid    = packet.readUInt64();
+    /*uint32_t petEntry =*/     packet.readUInt32();
+    uint8_t sigCount           = packet.readUInt8();
+
+    petitionInfo_.signatureCount = sigCount;
+    petitionInfo_.signatures.reserve(sigCount);
+
+    for (uint8_t i = 0; i < sigCount; ++i) {
+        if (rem() < 12) break;
+        PetitionSignature sig;
+        sig.playerGuid = packet.readUInt64();
+        /*uint32_t unk =*/ packet.readUInt32();
+        petitionInfo_.signatures.push_back(sig);
+    }
+
+    petitionInfo_.showUI = true;
+    LOG_INFO("SMSG_PETITION_SHOW_SIGNATURES: petGuid=", petitionInfo_.petitionGuid,
+             " owner=", petitionInfo_.ownerGuid,
+             " sigs=", sigCount);
+}
+
+void GameHandler::handlePetitionSignResults(network::Packet& packet) {
+    // SMSG_PETITION_SIGN_RESULTS (3.3.5a):
+    //   uint64 petitionGuid, uint64 playerGuid, uint32 result
+    auto rem = [&]() { return packet.getSize() - packet.getReadPos(); };
+    if (rem() < 20) return;
+
+    uint64_t petGuid    = packet.readUInt64();
+    uint64_t playerGuid = packet.readUInt64();
+    uint32_t result     = packet.readUInt32();
+
+    switch (result) {
+        case 0: // PETITION_SIGN_OK
+            addSystemChatMessage("Petition signed successfully.");
+            // Increment local count
+            if (petitionInfo_.petitionGuid == petGuid) {
+                petitionInfo_.signatureCount++;
+                PetitionSignature sig;
+                sig.playerGuid = playerGuid;
+                petitionInfo_.signatures.push_back(sig);
+            }
+            break;
+        case 1: // PETITION_SIGN_ALREADY_SIGNED
+            addSystemChatMessage("You have already signed that petition.");
+            break;
+        case 2: // PETITION_SIGN_ALREADY_IN_GUILD
+            addSystemChatMessage("You are already in a guild.");
+            break;
+        case 3: // PETITION_SIGN_CANT_SIGN_OWN
+            addSystemChatMessage("You cannot sign your own petition.");
+            break;
+        default:
+            addSystemChatMessage("Cannot sign petition (error " + std::to_string(result) + ").");
+            break;
+    }
+    LOG_INFO("SMSG_PETITION_SIGN_RESULTS: pet=", petGuid, " player=", playerGuid,
+             " result=", result);
+}
+
+void GameHandler::signPetition(uint64_t petitionGuid) {
+    if (!socket || state != WorldState::IN_WORLD) return;
+    network::Packet pkt(wireOpcode(Opcode::CMSG_PETITION_SIGN));
+    pkt.writeUInt64(petitionGuid);
+    pkt.writeUInt8(0); // unk
+    socket->send(pkt);
+    LOG_INFO("Signing petition: ", petitionGuid);
+}
+
+void GameHandler::turnInPetition(uint64_t petitionGuid) {
+    if (!socket || state != WorldState::IN_WORLD) return;
+    network::Packet pkt(wireOpcode(Opcode::CMSG_TURN_IN_PETITION));
+    pkt.writeUInt64(petitionGuid);
+    socket->send(pkt);
+    LOG_INFO("Turning in petition: ", petitionGuid);
 }
 
 void GameHandler::handleTurnInPetitionResults(network::Packet& packet) {

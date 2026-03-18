@@ -609,6 +609,26 @@ public:
     uint32_t getPetitionCost() const { return petitionCost_; }
     uint64_t getPetitionNpcGuid() const { return petitionNpcGuid_; }
 
+    // Petition signatures (guild charter signing flow)
+    struct PetitionSignature {
+        uint64_t playerGuid = 0;
+        std::string playerName; // resolved later or empty
+    };
+    struct PetitionInfo {
+        uint64_t petitionGuid = 0;
+        uint64_t ownerGuid = 0;
+        std::string guildName;
+        uint32_t signatureCount = 0;
+        uint32_t signaturesRequired = 9; // guild default; arena teams differ
+        std::vector<PetitionSignature> signatures;
+        bool showUI = false;
+    };
+    const PetitionInfo& getPetitionInfo() const { return petitionInfo_; }
+    bool hasPetitionSignaturesUI() const { return petitionInfo_.showUI; }
+    void clearPetitionSignaturesUI() { petitionInfo_.showUI = false; }
+    void signPetition(uint64_t petitionGuid);
+    void turnInPetition(uint64_t petitionGuid);
+
     // Guild name lookup for other players' nameplates
     // Returns the guild name for a given guildId, or empty if unknown.
     // Automatically queries the server for unknown guild IDs.
@@ -2375,6 +2395,9 @@ private:
     void handleGuildInvite(network::Packet& packet);
     void handleGuildCommandResult(network::Packet& packet);
     void handlePetitionShowlist(network::Packet& packet);
+    void handlePetitionQueryResponse(network::Packet& packet);
+    void handlePetitionShowSignatures(network::Packet& packet);
+    void handlePetitionSignResults(network::Packet& packet);
     void handlePetSpells(network::Packet& packet);
     void handleTurnInPetitionResults(network::Packet& packet);
 
@@ -2999,6 +3022,7 @@ private:
     bool showPetitionDialog_ = false;
     uint32_t petitionCost_ = 0;
     uint64_t petitionNpcGuid_ = 0;
+    PetitionInfo petitionInfo_;
 
     uint64_t activeCharacterGuid_ = 0;
     Race playerRace_ = Race::HUMAN;

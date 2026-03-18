@@ -13942,6 +13942,62 @@ void GameScreen::renderGuildRoster(game::GameHandler& gameHandler) {
         ImGui::EndPopup();
     }
 
+    // Petition signatures window (shown when a petition item is used or offered)
+    if (gameHandler.hasPetitionSignaturesUI()) {
+        ImGui::OpenPopup("PetitionSignatures");
+        gameHandler.clearPetitionSignaturesUI();
+    }
+    if (ImGui::BeginPopupModal("PetitionSignatures", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        const auto& pInfo = gameHandler.getPetitionInfo();
+        if (!pInfo.guildName.empty())
+            ImGui::Text("Guild Charter: %s", pInfo.guildName.c_str());
+        else
+            ImGui::Text("Guild Charter");
+        ImGui::Separator();
+
+        ImGui::Text("Signatures: %u / %u", pInfo.signatureCount, pInfo.signaturesRequired);
+        ImGui::Spacing();
+
+        if (!pInfo.signatures.empty()) {
+            for (size_t i = 0; i < pInfo.signatures.size(); ++i) {
+                const auto& sig = pInfo.signatures[i];
+                // Try to resolve name from entity manager
+                std::string sigName;
+                if (sig.playerGuid != 0) {
+                    auto entity = gameHandler.getEntityManager().getEntity(sig.playerGuid);
+                    if (entity) {
+                        auto* unit = dynamic_cast<game::Unit*>(entity.get());
+                        if (unit) sigName = unit->getName();
+                    }
+                }
+                if (sigName.empty())
+                    sigName = "Player " + std::to_string(i + 1);
+                ImGui::BulletText("%s", sigName.c_str());
+            }
+            ImGui::Spacing();
+        }
+
+        // If we're not the owner, show Sign button
+        bool isOwner = (pInfo.ownerGuid == gameHandler.getPlayerGuid());
+        if (!isOwner) {
+            if (ImGui::Button("Sign", ImVec2(120, 0))) {
+                gameHandler.signPetition(pInfo.petitionGuid);
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+        } else if (pInfo.signatureCount >= pInfo.signaturesRequired) {
+            // Owner with enough sigs — turn in
+            if (ImGui::Button("Turn In", ImVec2(120, 0))) {
+                gameHandler.turnInPetition(pInfo.petitionGuid);
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+        }
+        if (ImGui::Button("Close", ImVec2(120, 0)))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
     if (!showGuildRoster_) return;
 
     // Get zone manager for name lookup

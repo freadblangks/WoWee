@@ -17663,6 +17663,12 @@ void GameHandler::handleMonsterMoveTransport(network::Packet& packet) {
 
     if (packet.getReadPos() + 4 > packet.getSize()) return;
     uint32_t pointCount = packet.readUInt32();
+    constexpr uint32_t kMaxTransportSplinePoints = 1000;
+    if (pointCount > kMaxTransportSplinePoints) {
+        LOG_WARNING("SMSG_MONSTER_MOVE_TRANSPORT: pointCount=", pointCount,
+                    " clamped to ", kMaxTransportSplinePoints);
+        pointCount = kMaxTransportSplinePoints;
+    }
 
     // Read destination point (transport-local server coords)
     float destLocalX = localX, destLocalY = localY, destLocalZ = localZ;

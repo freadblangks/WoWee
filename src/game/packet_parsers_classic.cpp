@@ -1918,6 +1918,9 @@ namespace TurtleMoveFlags {
 }
 
 bool TurtlePacketParsers::parseMovementBlock(network::Packet& packet, UpdateBlock& block) {
+    auto rem = [&]() -> size_t { return packet.getSize() - packet.getReadPos(); };
+    if (rem() < 1) return false;
+
     uint8_t updateFlags = packet.readUInt8();
     block.updateFlags = static_cast<uint16_t>(updateFlags);
 
@@ -1931,6 +1934,8 @@ bool TurtlePacketParsers::parseMovementBlock(network::Packet& packet, UpdateBloc
     const uint8_t UPDATEFLAG_HAS_POSITION    = 0x40;
 
     if (updateFlags & UPDATEFLAG_LIVING) {
+        // Minimum: moveFlags(4)+time(4)+position(16)+fallTime(4)+speeds(24) = 52 bytes
+        if (rem() < 52) return false;
         size_t livingStart = packet.getReadPos();
 
         uint32_t moveFlags = packet.readUInt32();
@@ -1949,8 +1954,10 @@ bool TurtlePacketParsers::parseMovementBlock(network::Packet& packet, UpdateBloc
 
         // Transport — Classic flag position 0x02000000
         if (moveFlags & TurtleMoveFlags::ONTRANSPORT) {
+            if (rem() < 1) return false; // PackedGuid mask byte
             block.onTransport = true;
             block.transportGuid = UpdateObjectParser::readPackedGuid(packet);
+            if (rem() < 20) return false; // 4 floats + u32 timestamp
             block.transportX = packet.readFloat();
             block.transportY = packet.readFloat();
             block.transportZ = packet.readFloat();
@@ -1960,14 +1967,17 @@ bool TurtlePacketParsers::parseMovementBlock(network::Packet& packet, UpdateBloc
 
         // Pitch (swimming only, Classic-style)
         if (moveFlags & TurtleMoveFlags::SWIMMING) {
+            if (rem() < 4) return false;
             /*float pitch =*/ packet.readFloat();
         }
 
         // Fall time (always present)
+        if (rem() < 4) return false;
         /*uint32_t fallTime =*/ packet.readUInt32();
 
         // Jump data
         if (moveFlags & TurtleMoveFlags::JUMPING) {
+            if (rem() < 16) return false;
             /*float jumpVelocity =*/ packet.readFloat();
             /*float jumpSinAngle =*/ packet.readFloat();
             /*float jumpCosAngle =*/ packet.readFloat();
@@ -1976,10 +1986,12 @@ bool TurtlePacketParsers::parseMovementBlock(network::Packet& packet, UpdateBloc
 
         // Spline elevation
         if (moveFlags & TurtleMoveFlags::SPLINE_ELEVATION) {
+            if (rem() < 4) return false;
             /*float splineElevation =*/ packet.readFloat();
         }
 
         // Turtle: 6 speeds (same as Classic — no flight speeds)
+        if (rem() < 24) return false; // 6 × float
         float walkSpeed = packet.readFloat();
         float runSpeed = packet.readFloat();
         float runBackSpeed = packet.readFloat();
@@ -1997,17 +2009,23 @@ bool TurtlePacketParsers::parseMovementBlock(network::Packet& packet, UpdateBloc
         bool hasSpline = (moveFlags & TurtleMoveFlags::SPLINE_CLASSIC) ||
                          (moveFlags & TurtleMoveFlags::SPLINE_TBC);
         if (hasSpline) {
+            if (rem() < 4) return false;
             uint32_t splineFlags = packet.readUInt32();
             LOG_DEBUG("  [Turtle] Spline: flags=0x", std::hex, splineFlags, std::dec);
 
             if (splineFlags & 0x00010000) {
+                if (rem() < 12) return false;
                 packet.readFloat(); packet.readFloat(); packet.readFloat();
             } else if (splineFlags & 0x00020000) {
+                if (rem() < 8) return false;
                 packet.readUInt64();
             } else if (splineFlags & 0x00040000) {
+                if (rem() < 4) return false;
                 packet.readFloat();
             }
 
+            // timePassed + duration + splineId + pointCount = 16 bytes
+            if (rem() < 16) return false;
             /*uint32_t timePassed =*/ packet.readUInt32();
             /*uint32_t duration =*/ packet.readUInt32();
             /*uint32_t splineId =*/ packet.readUInt32();
@@ -2018,10 +2036,12 @@ bool TurtlePacketParsers::parseMovementBlock(network::Packet& packet, UpdateBloc
                 ++badTurtleSplineCount;
                 if (badTurtleSplineCount <= 5 || (badTurtleSplineCount % 100) == 0) {
                     LOG_WARNING("  [Turtle] Spline pointCount=", pointCount,
-                                " exceeds max, capping (occurrence=", badTurtleSplineCount, ")");
+                                " exceeds max (occurrence=", badTurtleSplineCount, ")");
                 }
-                pointCount = 0;
+                return false;
             }
+            // points + endPoint
+            if (rem() < static_cast<size_t>(pointCount) * 12 + 12) return false;
             for (uint32_t i = 0; i < pointCount; i++) {
                 packet.readFloat(); packet.readFloat(); packet.readFloat();
             }
@@ -2034,6 +2054,7 @@ bool TurtlePacketParsers::parseMovementBlock(network::Packet& packet, UpdateBloc
                   " bytes, readPos now=", packet.getReadPos());
     }
     else if (updateFlags & UPDATEFLAG_HAS_POSITION) {
+        if (rem() < 16) return false;
         block.x = packet.readFloat();
         block.y = packet.readFloat();
         block.z = packet.readFloat();
@@ -2045,18 +2066,22 @@ bool TurtlePacketParsers::parseMovementBlock(network::Packet& packet, UpdateBloc
 
     // High GUID — 1×u32
     if (updateFlags & UPDATEFLAG_HIGHGUID) {
+        if (rem() < 4) return false;
         /*uint32_t highGuid =*/ packet.readUInt32();
     }
 
     if (updateFlags & UPDATEFLAG_ALL) {
+        if (rem() < 4) return false;
         /*uint32_t unkAll =*/ packet.readUInt32();
     }
 
     if (updateFlags & UPDATEFLAG_MELEE_ATTACKING) {
+        if (rem() < 1) return false;
         /*uint64_t meleeTargetGuid =*/ UpdateObjectParser::readPackedGuid(packet);
     }
 
     if (updateFlags & UPDATEFLAG_TRANSPORT) {
+        if (rem() < 4) return false;
         /*uint32_t transportTime =*/ packet.readUInt32();
     }
 
@@ -2185,12 +2210,10 @@ bool TurtlePacketParsers::parseUpdateObject(network::Packet& packet, UpdateObjec
                                 return this->TbcPacketParsers::parseMovementBlock(p, b);
                             }, "tbc");
                     }
-                    if (!ok) {
-                        ok = parseMovementVariant(
-                            [](network::Packet& p, UpdateBlock& b) {
-                                return UpdateObjectParser::parseMovementBlock(p, b);
-                            }, "wotlk");
-                    }
+                    // NOTE: Do NOT fall back to WotLK parseMovementBlock here.
+                    // WotLK uses uint16 updateFlags and 9 speeds vs Classic's uint8
+                    // and 6 speeds. A false-positive WotLK parse consumes wrong bytes,
+                    // corrupting subsequent update fields and losing NPC data.
                     break;
                 case UpdateType::OUT_OF_RANGE_OBJECTS:
                 case UpdateType::NEAR_OBJECTS:

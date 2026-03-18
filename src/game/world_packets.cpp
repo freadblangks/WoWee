@@ -1024,7 +1024,7 @@ bool UpdateObjectParser::parseMovementBlock(network::Packet& packet, UpdateBlock
             /*float splineElevation =*/ packet.readFloat();
         }
 
-        // Speeds (7 speed values)
+        // Speeds (9 values in WotLK: walk/run/runBack/swim/swimBack/flight/flightBack/turn/pitch)
         /*float walkSpeed =*/ packet.readFloat();
         float runSpeed = packet.readFloat();
         /*float runBackSpeed =*/ packet.readFloat();

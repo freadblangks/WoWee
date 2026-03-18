@@ -15890,7 +15890,22 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
                 gameHandler.repairAll(vendor.vendorGuid, false);
             }
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Repair all equipped items using your gold");
+                // Show durability summary of all equipment
+                const auto& inv = gameHandler.getInventory();
+                int damagedCount = 0;
+                int brokenCount = 0;
+                for (int s = 0; s < static_cast<int>(game::EquipSlot::BAG1); s++) {
+                    const auto& slot = inv.getEquipSlot(static_cast<game::EquipSlot>(s));
+                    if (slot.empty() || slot.item.maxDurability == 0) continue;
+                    if (slot.item.curDurability == 0) brokenCount++;
+                    else if (slot.item.curDurability < slot.item.maxDurability) damagedCount++;
+                }
+                if (brokenCount > 0)
+                    ImGui::SetTooltip("Repair all equipped items\n%d damaged, %d broken", damagedCount, brokenCount);
+                else if (damagedCount > 0)
+                    ImGui::SetTooltip("Repair all equipped items\n%d item%s need repair", damagedCount, damagedCount > 1 ? "s" : "");
+                else
+                    ImGui::SetTooltip("All equipment is in good condition");
             }
             if (gameHandler.isInGuild()) {
                 ImGui::SameLine();

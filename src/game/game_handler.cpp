@@ -11293,10 +11293,10 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                 // Track player-on-transport state
                 if (block.guid == playerGuid) {
                     if (block.onTransport) {
-                        setPlayerOnTransport(block.transportGuid, glm::vec3(0.0f));
                         // Convert transport offset from server → canonical coordinates
                         glm::vec3 serverOffset(block.transportX, block.transportY, block.transportZ);
-                        playerTransportOffset_ = core::coords::serverToCanonical(serverOffset);
+                        glm::vec3 canonicalOffset = core::coords::serverToCanonical(serverOffset);
+                        setPlayerOnTransport(block.transportGuid, canonicalOffset);
                         if (transportManager_ && transportManager_->getTransport(playerTransportGuid_)) {
                             glm::vec3 composed = transportManager_->getPlayerWorldPosition(playerTransportGuid_, playerTransportOffset_);
                             entity->setPosition(composed.x, composed.y, composed.z, oCanonical);
@@ -12430,10 +12430,10 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
 
                     // Track player-on-transport state from MOVEMENT updates
                     if (block.onTransport) {
-                        setPlayerOnTransport(block.transportGuid, glm::vec3(0.0f));
                         // Convert transport offset from server → canonical coordinates
                         glm::vec3 serverOffset(block.transportX, block.transportY, block.transportZ);
-                        playerTransportOffset_ = core::coords::serverToCanonical(serverOffset);
+                        glm::vec3 canonicalOffset = core::coords::serverToCanonical(serverOffset);
+                        setPlayerOnTransport(block.transportGuid, canonicalOffset);
                         if (transportManager_ && transportManager_->getTransport(playerTransportGuid_)) {
                             glm::vec3 composed = transportManager_->getPlayerWorldPosition(playerTransportGuid_, playerTransportOffset_);
                             entity->setPosition(composed.x, composed.y, composed.z, oCanonical);

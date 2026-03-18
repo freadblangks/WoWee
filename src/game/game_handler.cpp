@@ -2344,7 +2344,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 /*uint32_t randProp   =*/ packet.readUInt32();
             }
             uint32_t countdown  = packet.readUInt32();
-            /*uint8_t  voteMask   =*/ packet.readUInt8();
+            uint8_t voteMask = packet.readUInt8();
             // Trigger the roll popup for local player
             pendingLootRollActive_      = true;
             pendingLootRoll_.objectGuid = objectGuid;
@@ -2358,9 +2358,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
             pendingLootRoll_.itemName    = info ? info->name : std::to_string(itemId);
             pendingLootRoll_.itemQuality = info ? static_cast<uint8_t>(info->quality) : 0;
             pendingLootRoll_.rollCountdownMs = (countdown > 0 && countdown <= 120000) ? countdown : 60000;
+            pendingLootRoll_.voteMask        = voteMask;
             pendingLootRoll_.rollStartedAt   = std::chrono::steady_clock::now();
             LOG_INFO("SMSG_LOOT_START_ROLL: item=", itemId, " (", pendingLootRoll_.itemName,
-                     ") slot=", slot);
+                     ") slot=", slot, " voteMask=0x", std::hex, (int)voteMask, std::dec);
             break;
         }
 

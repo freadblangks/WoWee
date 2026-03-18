@@ -1458,6 +1458,7 @@ public:
         std::string itemName;
         uint8_t  itemQuality   = 0;
         uint32_t rollCountdownMs = 60000; // Duration of roll window in ms
+        uint8_t  voteMask      = 0xFF;    // Bitmask: 0x01=pass, 0x02=need, 0x04=greed, 0x08=disenchant
         std::chrono::steady_clock::time_point rollStartedAt{};
 
         struct PlayerRollResult {

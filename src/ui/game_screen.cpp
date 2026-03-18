@@ -13198,20 +13198,30 @@ void GameScreen::renderLootRollPopup(game::GameHandler& gameHandler) {
         }
         ImGui::Spacing();
 
-        if (ImGui::Button("Need", ImVec2(80, 30))) {
-            gameHandler.sendLootRoll(roll.objectGuid, roll.slot, 0);
+        // voteMask bits: 0x01=pass, 0x02=need, 0x04=greed, 0x08=disenchant
+        const uint8_t vm = roll.voteMask;
+        bool first = true;
+        if (vm & 0x02) {
+            if (ImGui::Button("Need", ImVec2(80, 30)))
+                gameHandler.sendLootRoll(roll.objectGuid, roll.slot, 0);
+            first = false;
         }
-        ImGui::SameLine();
-        if (ImGui::Button("Greed", ImVec2(80, 30))) {
-            gameHandler.sendLootRoll(roll.objectGuid, roll.slot, 1);
+        if (vm & 0x04) {
+            if (!first) ImGui::SameLine();
+            if (ImGui::Button("Greed", ImVec2(80, 30)))
+                gameHandler.sendLootRoll(roll.objectGuid, roll.slot, 1);
+            first = false;
         }
-        ImGui::SameLine();
-        if (ImGui::Button("Disenchant", ImVec2(95, 30))) {
-            gameHandler.sendLootRoll(roll.objectGuid, roll.slot, 2);
+        if (vm & 0x08) {
+            if (!first) ImGui::SameLine();
+            if (ImGui::Button("Disenchant", ImVec2(95, 30)))
+                gameHandler.sendLootRoll(roll.objectGuid, roll.slot, 2);
+            first = false;
         }
-        ImGui::SameLine();
-        if (ImGui::Button("Pass", ImVec2(70, 30))) {
-            gameHandler.sendLootRoll(roll.objectGuid, roll.slot, 96);
+        if (vm & 0x01) {
+            if (!first) ImGui::SameLine();
+            if (ImGui::Button("Pass", ImVec2(70, 30)))
+                gameHandler.sendLootRoll(roll.objectGuid, roll.slot, 96);
         }
 
         // Live roll results from group members

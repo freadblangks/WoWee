@@ -674,6 +674,16 @@ public:
         auto it = creatureInfoCache.find(entry);
         return (it != creatureInfoCache.end()) ? static_cast<int>(it->second.rank) : -1;
     }
+    // Returns creature type (1=Beast,2=Dragonkin,...,7=Humanoid,...) or 0 if not cached
+    uint32_t getCreatureType(uint32_t entry) const {
+        auto it = creatureInfoCache.find(entry);
+        return (it != creatureInfoCache.end()) ? it->second.creatureType : 0;
+    }
+    // Returns creature family (e.g. pet family for beasts) or 0
+    uint32_t getCreatureFamily(uint32_t entry) const {
+        auto it = creatureInfoCache.find(entry);
+        return (it != creatureInfoCache.end()) ? it->second.family : 0;
+    }
 
     // ---- Phase 2: Combat ----
     void startAutoAttack(uint64_t targetGuid);

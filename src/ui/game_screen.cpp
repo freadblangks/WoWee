@@ -4291,6 +4291,30 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Rare — uncommon spawn with better loot");
                 }
             }
+            // Creature type label (Beast, Humanoid, Demon, etc.)
+            if (target->getType() == game::ObjectType::UNIT) {
+                uint32_t ctype = gameHandler.getCreatureType(unit->getEntry());
+                const char* ctypeName = nullptr;
+                switch (ctype) {
+                    case 1:  ctypeName = "Beast"; break;
+                    case 2:  ctypeName = "Dragonkin"; break;
+                    case 3:  ctypeName = "Demon"; break;
+                    case 4:  ctypeName = "Elemental"; break;
+                    case 5:  ctypeName = "Giant"; break;
+                    case 6:  ctypeName = "Undead"; break;
+                    case 7:  ctypeName = "Humanoid"; break;
+                    case 8:  ctypeName = "Critter"; break;
+                    case 9:  ctypeName = "Mechanical"; break;
+                    case 11: ctypeName = "Totem"; break;
+                    case 12: ctypeName = "Non-combat Pet"; break;
+                    case 13: ctypeName = "Gas Cloud"; break;
+                    default: break;
+                }
+                if (ctypeName) {
+                    ImGui::SameLine(0, 4);
+                    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 0.9f), "(%s)", ctypeName);
+                }
+            }
             if (confirmedCombatWithTarget) {
                 float cPulse = 0.75f + 0.25f * std::sin(static_cast<float>(ImGui::GetTime()) * 4.0f);
                 ImGui::SameLine();

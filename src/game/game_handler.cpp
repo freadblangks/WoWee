@@ -14050,7 +14050,11 @@ void GameHandler::releaseSpirit() {
         }
         auto packet = RepopRequestPacket::build();
         socket->send(packet);
-        releasedSpirit_ = true;
+        // Do NOT set releasedSpirit_ = true here.  Setting it optimistically races
+        // with PLAYER_FLAGS field updates that arrive before the server processes
+        // CMSG_REPOP_REQUEST: the PLAYER_FLAGS handler sees wasGhost=true/nowGhost=false
+        // and fires the "ghost cleared" path, wiping corpseMapId_/corpseGuid_.
+        // Let the server drive ghost state via PLAYER_FLAGS_GHOST (field update path).
         selfResAvailable_ = false;  // self-res window closes when spirit is released
         repopPending_ = true;
         lastRepopRequestMs_ = static_cast<uint64_t>(now);

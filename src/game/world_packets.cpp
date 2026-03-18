@@ -3252,12 +3252,11 @@ bool MonsterMoveParser::parse(network::Packet& packet, MonsterMoveData& data) {
 
     if (pointCount == 0) return true;
 
-    // Cap pointCount to prevent excessive iteration from malformed packets.
     constexpr uint32_t kMaxSplinePoints = 1000;
     if (pointCount > kMaxSplinePoints) {
         LOG_WARNING("SMSG_MONSTER_MOVE: pointCount=", pointCount, " exceeds max ", kMaxSplinePoints,
-                    " (guid=0x", std::hex, data.guid, std::dec, "), capping");
-        pointCount = kMaxSplinePoints;
+                    " (guid=0x", std::hex, data.guid, std::dec, ")");
+        return false;
     }
 
     // Catmullrom or Flying → all waypoints stored as absolute float3 (uncompressed).

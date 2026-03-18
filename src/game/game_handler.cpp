@@ -21253,8 +21253,8 @@ void GameHandler::unstuckHearth() {
 }
 
 void GameHandler::handleLootResponse(network::Packet& packet) {
-    // Classic 1.12 and TBC 2.4.3 use 14 bytes/item (no randomSuffix/randomProp fields);
-    // WotLK 3.3.5a uses 22 bytes/item.
+    // All expansions use 22 bytes/item (slot+itemId+count+displayInfo+randSuffix+randProp+slotType).
+    // WotLK adds a quest item list after the regular items.
     const bool wotlkLoot = isActiveExpansion("wotlk");
     if (!LootResponseParser::parse(packet, currentLoot, wotlkLoot)) return;
     const bool hasLoot = !currentLoot.items.empty() || currentLoot.gold > 0;

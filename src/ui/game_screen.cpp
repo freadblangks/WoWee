@@ -5070,10 +5070,40 @@ void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
             else if (fRank == 3) { ImGui::SameLine(0,4); ImGui::TextColored(ImVec4(1.0f,0.3f,0.3f,1.0f), "[Boss]"); }
             else if (fRank == 4) { ImGui::SameLine(0,4); ImGui::TextColored(ImVec4(0.5f,0.9f,1.0f,1.0f), "[Rare]"); }
 
+            // Creature type
+            {
+                uint32_t fctype = gameHandler.getCreatureType(focusUnit->getEntry());
+                const char* fctName = nullptr;
+                switch (fctype) {
+                    case 1: fctName="Beast"; break;     case 2: fctName="Dragonkin"; break;
+                    case 3: fctName="Demon"; break;     case 4: fctName="Elemental"; break;
+                    case 5: fctName="Giant"; break;     case 6: fctName="Undead"; break;
+                    case 7: fctName="Humanoid"; break;  case 8: fctName="Critter"; break;
+                    case 9: fctName="Mechanical"; break; case 11: fctName="Totem"; break;
+                    case 12: fctName="Non-combat Pet"; break; case 13: fctName="Gas Cloud"; break;
+                    default: break;
+                }
+                if (fctName) {
+                    ImGui::SameLine(0, 4);
+                    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 0.9f), "(%s)", fctName);
+                }
+            }
+
             // Creature subtitle
             const std::string fSub = gameHandler.getCachedCreatureSubName(focusUnit->getEntry());
             if (!fSub.empty())
                 ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 0.9f), "<%s>", fSub.c_str());
+        }
+
+        // Player guild name on focus frame
+        if (focus->getType() == game::ObjectType::PLAYER) {
+            uint32_t guildId = gameHandler.getEntityGuildId(focus->getGuid());
+            if (guildId != 0) {
+                const std::string& gn = gameHandler.lookupGuildName(guildId);
+                if (!gn.empty()) {
+                    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 0.9f), "<%s>", gn.c_str());
+                }
+            }
         }
 
         if (ImGui::BeginPopupContextItem("##FocusNameCtx")) {

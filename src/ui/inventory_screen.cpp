@@ -1738,11 +1738,26 @@ void InventoryScreen::renderStatsPanel(game::Inventory& inventory, uint32_t play
     ImVec4 gold(1.0f, 0.84f, 0.0f, 1.0f);
     ImVec4 gray(0.6f, 0.6f, 0.6f, 1.0f);
 
+    static const char* kStatTooltips[5] = {
+        "Increases your melee attack power by 2.\nIncreases your block value.",
+        "Increases your Armor.\nIncreases ranged attack power by 2.\nIncreases your chance to dodge attacks and score critical strikes.",
+        "Increases Health by 10 per point.",
+        "Increases your Mana pool.\nIncreases your chance to score a critical strike with spells.",
+        "Increases Health and Mana regeneration."
+    };
+
     // Armor (no base)
+    ImGui::BeginGroup();
     if (totalArmor > 0) {
         ImGui::TextColored(gold, "Armor: %d", totalArmor);
     } else {
         ImGui::TextColored(gray, "Armor: 0");
+    }
+    ImGui::EndGroup();
+    if (ImGui::IsItemHovered()) {
+        ImGui::BeginTooltip();
+        ImGui::TextWrapped("Reduces damage taken from physical attacks.");
+        ImGui::EndTooltip();
     }
 
     if (serverStats) {
@@ -1753,6 +1768,7 @@ void InventoryScreen::renderStatsPanel(game::Inventory& inventory, uint32_t play
         for (int i = 0; i < 5; ++i) {
             int32_t total = serverStats[i];
             int32_t bonus = itemBonuses[i];
+            ImGui::BeginGroup();
             if (bonus > 0) {
                 ImGui::TextColored(white, "%s: %d", statNames[i], total);
                 ImGui::SameLine();
@@ -1760,12 +1776,19 @@ void InventoryScreen::renderStatsPanel(game::Inventory& inventory, uint32_t play
             } else {
                 ImGui::TextColored(gray, "%s: %d", statNames[i], total);
             }
+            ImGui::EndGroup();
+            if (ImGui::IsItemHovered()) {
+                ImGui::BeginTooltip();
+                ImGui::TextWrapped("%s", kStatTooltips[i]);
+                ImGui::EndTooltip();
+            }
         }
     } else {
         // Fallback: estimated base (20 + level) plus item query bonuses.
         int32_t baseStat = 20 + static_cast<int32_t>(playerLevel);
-        auto renderStat = [&](const char* name, int32_t equipBonus) {
+        auto renderStat = [&](const char* name, int32_t equipBonus, const char* tooltip) {
             int32_t total = baseStat + equipBonus;
+            ImGui::BeginGroup();
             if (equipBonus > 0) {
                 ImGui::TextColored(white, "%s: %d", name, total);
                 ImGui::SameLine();
@@ -1773,12 +1796,18 @@ void InventoryScreen::renderStatsPanel(game::Inventory& inventory, uint32_t play
             } else {
                 ImGui::TextColored(gray, "%s: %d", name, total);
             }
+            ImGui::EndGroup();
+            if (ImGui::IsItemHovered()) {
+                ImGui::BeginTooltip();
+                ImGui::TextWrapped("%s", tooltip);
+                ImGui::EndTooltip();
+            }
         };
-        renderStat("Strength", itemStr);
-        renderStat("Agility", itemAgi);
-        renderStat("Stamina", itemSta);
-        renderStat("Intellect", itemInt);
-        renderStat("Spirit", itemSpi);
+        renderStat("Strength",  itemStr, kStatTooltips[0]);
+        renderStat("Agility",   itemAgi, kStatTooltips[1]);
+        renderStat("Stamina",   itemSta, kStatTooltips[2]);
+        renderStat("Intellect", itemInt, kStatTooltips[3]);
+        renderStat("Spirit",    itemSpi, kStatTooltips[4]);
     }
 
     // Secondary stats from equipped items
@@ -1789,27 +1818,34 @@ void InventoryScreen::renderStatsPanel(game::Inventory& inventory, uint32_t play
     if (hasSecondary) {
         ImGui::Spacing();
         ImGui::Separator();
-        auto renderSecondary = [&](const char* name, int32_t val) {
+        auto renderSecondary = [&](const char* name, int32_t val, const char* tooltip) {
             if (val > 0) {
+                ImGui::BeginGroup();
                 ImGui::TextColored(green, "+%d %s", val, name);
+                ImGui::EndGroup();
+                if (ImGui::IsItemHovered()) {
+                    ImGui::BeginTooltip();
+                    ImGui::TextWrapped("%s", tooltip);
+                    ImGui::EndTooltip();
+                }
             }
         };
-        renderSecondary("Attack Power",     itemAP);
-        renderSecondary("Spell Power",      itemSP);
-        renderSecondary("Hit Rating",       itemHit);
-        renderSecondary("Crit Rating",      itemCrit);
-        renderSecondary("Haste Rating",     itemHaste);
-        renderSecondary("Resilience",       itemResil);
-        renderSecondary("Expertise",        itemExpertise);
-        renderSecondary("Defense Rating",   itemDefense);
-        renderSecondary("Dodge Rating",     itemDodge);
-        renderSecondary("Parry Rating",     itemParry);
-        renderSecondary("Block Rating",     itemBlock);
-        renderSecondary("Block Value",      itemBlockVal);
-        renderSecondary("Armor Penetration",itemArmorPen);
-        renderSecondary("Spell Penetration",itemSpellPen);
-        renderSecondary("Mana per 5 sec",   itemMp5);
-        renderSecondary("Health per 5 sec", itemHp5);
+        renderSecondary("Attack Power",     itemAP,       "Increases the damage of your melee and ranged attacks.");
+        renderSecondary("Spell Power",      itemSP,       "Increases the damage and healing of your spells.");
+        renderSecondary("Hit Rating",       itemHit,      "Reduces the chance your attacks will miss.");
+        renderSecondary("Crit Rating",      itemCrit,     "Increases your critical strike chance.");
+        renderSecondary("Haste Rating",     itemHaste,    "Increases attack speed and spell casting speed.");
+        renderSecondary("Resilience",       itemResil,    "Reduces the chance you will be critically hit.\nReduces damage taken from critical hits.");
+        renderSecondary("Expertise",        itemExpertise,"Reduces the chance your attacks will be dodged or parried.");
+        renderSecondary("Defense Rating",   itemDefense,  "Reduces the chance enemies will critically hit you.");
+        renderSecondary("Dodge Rating",     itemDodge,    "Increases your chance to dodge attacks.");
+        renderSecondary("Parry Rating",     itemParry,    "Increases your chance to parry attacks.");
+        renderSecondary("Block Rating",     itemBlock,    "Increases your chance to block attacks with your shield.");
+        renderSecondary("Block Value",      itemBlockVal, "Increases the amount of damage your shield blocks.");
+        renderSecondary("Armor Penetration",itemArmorPen, "Reduces the armor of your target.");
+        renderSecondary("Spell Penetration",itemSpellPen, "Reduces your target's resistance to your spells.");
+        renderSecondary("Mana per 5 sec",   itemMp5,      "Restores mana every 5 seconds, even while casting.");
+        renderSecondary("Health per 5 sec", itemHp5,      "Restores health every 5 seconds.");
     }
 
     // Elemental resistances from server update fields

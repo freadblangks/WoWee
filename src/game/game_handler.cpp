@@ -5806,7 +5806,31 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_LFG_OFFER_CONTINUE:
             addSystemChatMessage("Dungeon Finder: You may continue your dungeon.");
             break;
-        case Opcode::SMSG_LFG_ROLE_CHOSEN:
+        case Opcode::SMSG_LFG_ROLE_CHOSEN: {
+            // uint64 guid + uint8 ready + uint32 roles
+            if (packet.getSize() - packet.getReadPos() >= 13) {
+                uint64_t roleGuid = packet.readUInt64();
+                uint8_t  ready    = packet.readUInt8();
+                uint32_t roles    = packet.readUInt32();
+                // Build a descriptive message for group chat
+                std::string roleName;
+                if (roles & 0x02) roleName += "Tank ";
+                if (roles & 0x04) roleName += "Healer ";
+                if (roles & 0x08) roleName += "DPS ";
+                if (roleName.empty()) roleName = "None";
+                // Find player name
+                std::string pName = "A player";
+                if (auto e = entityManager.getEntity(roleGuid))
+                    if (auto u = std::dynamic_pointer_cast<Unit>(e))
+                        pName = u->getName();
+                if (ready)
+                    addSystemChatMessage(pName + " has chosen: " + roleName);
+                LOG_DEBUG("SMSG_LFG_ROLE_CHOSEN: guid=", roleGuid,
+                          " ready=", (int)ready, " roles=", roles);
+            }
+            packet.setReadPos(packet.getSize());
+            break;
+        }
         case Opcode::SMSG_LFG_UPDATE_SEARCH:
         case Opcode::SMSG_UPDATE_LFG_LIST:
         case Opcode::SMSG_LFG_PLAYER_INFO:
@@ -7690,13 +7714,17 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
         case Opcode::SMSG_PET_CAST_FAILED: {
-            if (packet.getSize() - packet.getReadPos() >= 5) {
-                uint8_t  castCount = packet.readUInt8();
+            // WotLK: castCount(1) + spellId(4) + reason(1)
+            // Classic/TBC: spellId(4) + reason(1) (no castCount)
+            const bool hasCount = isActiveExpansion("wotlk");
+            const size_t minSize = hasCount ? 6u : 5u;
+            if (packet.getSize() - packet.getReadPos() >= minSize) {
+                if (hasCount) /*uint8_t castCount =*/ packet.readUInt8();
                 uint32_t spellId   = packet.readUInt32();
                 uint8_t  reason    = (packet.getSize() - packet.getReadPos() >= 1)
                                          ? packet.readUInt8() : 0;
                 LOG_DEBUG("SMSG_PET_CAST_FAILED: spell=", spellId,
-                          " reason=", (int)reason, " castCount=", (int)castCount);
+                          " reason=", (int)reason);
                 if (reason != 0) {
                     const char* reasonStr = getSpellCastResultString(reason);
                     const std::string& sName = getSpellName(spellId);

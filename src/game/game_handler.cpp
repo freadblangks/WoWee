@@ -2567,6 +2567,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
         case Opcode::SMSG_CORPSE_NOT_IN_INSTANCE:
+            addUIError("Your corpse is outside this instance.");
             addSystemChatMessage("Your corpse is outside this instance. Release spirit to retrieve it.");
             break;
         case Opcode::SMSG_CROSSED_INEBRIATION_THRESHOLD: {
@@ -3461,6 +3462,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 std::string msg = areaName.empty()
                     ? std::string("A zone is under attack!")
                     : (areaName + " is under attack!");
+                addUIError(msg);
                 addSystemChatMessage(msg);
             }
             break;
@@ -3592,6 +3594,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             partyData.members.clear();
             partyData.memberCount = 0;
             partyData.leaderGuid = 0;
+            addUIError("Your party has been disbanded.");
             addSystemChatMessage("Your party has been disbanded.");
             LOG_INFO("SMSG_GROUP_DESTROYED: party cleared");
             break;
@@ -4480,6 +4483,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 /*uint32_t len =*/ packet.readUInt32();
                 std::string msg = packet.readString();
                 if (!msg.empty()) {
+                    addUIError(msg);
                     addSystemChatMessage(msg);
                     areaTriggerMsgs_.push_back(msg);
                 }
@@ -4988,6 +4992,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                         auto go = std::static_pointer_cast<GameObject>(goEnt);
                         auto* info = getCachedGameObjectInfo(go->getEntry());
                         if (info && info->type == 17) {  // GO_TYPE_FISHINGNODE
+                            addUIError("A fish is on your line!");
                             addSystemChatMessage("A fish is on your line!");
                             // Play a distinctive UI sound to alert the player
                             if (auto* renderer = core::Application::getInstance().getRenderer()) {
@@ -5555,6 +5560,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             handleBattlefieldList(packet);
             break;
         case Opcode::SMSG_BATTLEFIELD_PORT_DENIED:
+            addUIError("Battlefield port denied.");
             addSystemChatMessage("Battlefield port denied.");
             break;
         case Opcode::MSG_BATTLEGROUND_PLAYER_POSITIONS:
@@ -5650,6 +5656,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 const char* reasonMsg = (reason < 5) ? resetFailReasons[reason] : "Unknown reason.";
                 std::string mapLabel = getMapName(mapId);
                 if (mapLabel.empty()) mapLabel = "instance #" + std::to_string(mapId);
+                addUIError("Cannot reset " + mapLabel + ": " + reasonMsg);
                 addSystemChatMessage("Cannot reset " + mapLabel + ": " + reasonMsg);
                 LOG_INFO("SMSG_INSTANCE_RESET_FAILED: mapId=", mapId, " reason=", reason);
             }

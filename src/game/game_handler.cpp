@@ -2656,14 +2656,19 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
         case Opcode::SMSG_DEATH_RELEASE_LOC: {
-            // uint32 mapId + float x + float y + float z — corpse/spirit healer position
+            // uint32 mapId + float x + float y + float z
+            // This is the GRAVEYARD / ghost-spawn position, NOT the actual corpse location.
+            // The corpse remains at the death position (already cached when health dropped to 0,
+            // and updated when the corpse object arrives via SMSG_UPDATE_OBJECT).
+            // Do NOT overwrite corpseX_/Y_/Z_/MapId_ here — that would break canReclaimCorpse()
+            // by making it check distance to the graveyard instead of the real corpse.
             if (packet.getSize() - packet.getReadPos() >= 16) {
-                corpseMapId_ = packet.readUInt32();
-                corpseX_     = packet.readFloat();
-                corpseY_     = packet.readFloat();
-                corpseZ_     = packet.readFloat();
-                LOG_INFO("SMSG_DEATH_RELEASE_LOC: map=", corpseMapId_,
-                         " x=", corpseX_, " y=", corpseY_, " z=", corpseZ_);
+                uint32_t relMapId = packet.readUInt32();
+                float relX = packet.readFloat();
+                float relY = packet.readFloat();
+                float relZ = packet.readFloat();
+                LOG_INFO("SMSG_DEATH_RELEASE_LOC (graveyard spawn): map=", relMapId,
+                         " x=", relX, " y=", relY, " z=", relZ);
             }
             break;
         }
@@ -13924,12 +13929,12 @@ void GameHandler::releaseSpirit() {
 }
 
 bool GameHandler::canReclaimCorpse() const {
-    if (!releasedSpirit_ || corpseMapId_ == 0) return false;
-    // Only if ghost is on the same map as their corpse
+    // Need: ghost state + corpse object GUID (required by CMSG_RECLAIM_CORPSE) +
+    // corpse map known + same map + within 40 yards.
+    if (!releasedSpirit_ || corpseGuid_ == 0 || corpseMapId_ == 0) return false;
     if (currentMapId_ != corpseMapId_) return false;
     // movementInfo.x/y are canonical (x=north=server_y, y=west=server_x).
     // corpseX_/Y_ are raw server coords (x=west, y=north).
-    // Convert corpse to canonical before comparing.
     float dx = movementInfo.x - corpseY_;  // canonical north - server.y
     float dy = movementInfo.y - corpseX_;  // canonical west  - server.x
     float dz = movementInfo.z - corpseZ_;
@@ -13938,12 +13943,15 @@ bool GameHandler::canReclaimCorpse() const {
 
 void GameHandler::reclaimCorpse() {
     if (!canReclaimCorpse() || !socket) return;
-    // Reclaim expects the corpse object guid when known; fallback to player guid.
-    uint64_t reclaimGuid = (corpseGuid_ != 0) ? corpseGuid_ : playerGuid;
-    auto packet = ReclaimCorpsePacket::build(reclaimGuid);
+    // CMSG_RECLAIM_CORPSE requires the corpse object's own GUID.
+    // Servers look up the corpse by this GUID; sending the player GUID silently fails.
+    if (corpseGuid_ == 0) {
+        LOG_WARNING("reclaimCorpse: corpse GUID not yet known (corpse object not received); cannot reclaim");
+        return;
+    }
+    auto packet = ReclaimCorpsePacket::build(corpseGuid_);
     socket->send(packet);
-    LOG_INFO("Sent CMSG_RECLAIM_CORPSE for guid=0x", std::hex, reclaimGuid, std::dec,
-             (corpseGuid_ == 0 ? " (fallback player guid)" : ""));
+    LOG_INFO("Sent CMSG_RECLAIM_CORPSE for corpse guid=0x", std::hex, corpseGuid_, std::dec);
 }
 
 void GameHandler::activateSpiritHealer(uint64_t npcGuid) {

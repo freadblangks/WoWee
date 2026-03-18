@@ -189,11 +189,8 @@ uint32_t classicWireMoveFlags(uint32_t internalFlags) {
 // Same as TBC: u8 UpdateFlags, JUMPING=0x2000, 8 speeds, no pitchRate
 // ============================================================================
 bool ClassicPacketParsers::parseMovementBlock(network::Packet& packet, UpdateBlock& block) {
-    // Validate minimum packet size for updateFlags byte
-    if (packet.getReadPos() >= packet.getSize()) {
-        LOG_WARNING("[Classic] Movement block packet too small (need at least 1 byte for updateFlags)");
-        return false;
-    }
+    auto rem = [&]() -> size_t { return packet.getSize() - packet.getReadPos(); };
+    if (rem() < 1) return false;
 
     // Classic: UpdateFlags is uint8 (same as TBC)
     uint8_t updateFlags = packet.readUInt8();
@@ -209,6 +206,9 @@ bool ClassicPacketParsers::parseMovementBlock(network::Packet& packet, UpdateBlo
     const uint8_t UPDATEFLAG_HAS_POSITION    = 0x40;
 
     if (updateFlags & UPDATEFLAG_LIVING) {
+        // Minimum: moveFlags(4)+time(4)+position(16)+fallTime(4)+speeds(24) = 52 bytes
+        if (rem() < 52) return false;
+
         // Movement flags (u32 only — NO extra flags byte in Classic)
         uint32_t moveFlags = packet.readUInt32();
         /*uint32_t time =*/ packet.readUInt32();
@@ -225,26 +225,29 @@ bool ClassicPacketParsers::parseMovementBlock(network::Packet& packet, UpdateBlo
 
         // Transport data (Classic: ONTRANSPORT=0x02000000, no timestamp)
         if (moveFlags & ClassicMoveFlags::ONTRANSPORT) {
+            if (rem() < 1) return false;
             block.onTransport = true;
             block.transportGuid = UpdateObjectParser::readPackedGuid(packet);
+            if (rem() < 16) return false; // 4 floats
             block.transportX = packet.readFloat();
             block.transportY = packet.readFloat();
             block.transportZ = packet.readFloat();
             block.transportO = packet.readFloat();
-            // Classic: NO transport timestamp (TBC adds u32 timestamp)
-            // Classic: NO transport seat byte
         }
 
         // Pitch (Classic: only SWIMMING, no FLYING or ONTRANSPORT pitch)
         if (moveFlags & ClassicMoveFlags::SWIMMING) {
+            if (rem() < 4) return false;
             /*float pitch =*/ packet.readFloat();
         }
 
         // Fall time (always present)
+        if (rem() < 4) return false;
         /*uint32_t fallTime =*/ packet.readUInt32();
 
         // Jumping (Classic: JUMPING=0x2000, same as TBC)
         if (moveFlags & ClassicMoveFlags::JUMPING) {
+            if (rem() < 16) return false;
             /*float jumpVelocity =*/ packet.readFloat();
             /*float jumpSinAngle =*/ packet.readFloat();
             /*float jumpCosAngle =*/ packet.readFloat();
@@ -253,12 +256,12 @@ bool ClassicPacketParsers::parseMovementBlock(network::Packet& packet, UpdateBlo
 
         // Spline elevation
         if (moveFlags & ClassicMoveFlags::SPLINE_ELEVATION) {
+            if (rem() < 4) return false;
             /*float splineElevation =*/ packet.readFloat();
         }
 
         // Speeds (Classic: 6 values — no flight speeds, no pitchRate)
-        // TBC added flying_speed + backwards_flying_speed (8 total)
-        // WotLK added pitchRate (9 total)
+        if (rem() < 24) return false;
         /*float walkSpeed =*/ packet.readFloat();
         float runSpeed = packet.readFloat();
         /*float runBackSpeed =*/ packet.readFloat();
@@ -271,34 +274,34 @@ bool ClassicPacketParsers::parseMovementBlock(network::Packet& packet, UpdateBlo
 
         // Spline data (Classic: SPLINE_ENABLED=0x00400000)
         if (moveFlags & ClassicMoveFlags::SPLINE_ENABLED) {
+            if (rem() < 4) return false;
             uint32_t splineFlags = packet.readUInt32();
             LOG_DEBUG("  [Classic] Spline: flags=0x", std::hex, splineFlags, std::dec);
 
             if (splineFlags & 0x00010000) { // FINAL_POINT
+                if (rem() < 12) return false;
                 /*float finalX =*/ packet.readFloat();
                 /*float finalY =*/ packet.readFloat();
                 /*float finalZ =*/ packet.readFloat();
             } else if (splineFlags & 0x00020000) { // FINAL_TARGET
+                if (rem() < 8) return false;
                 /*uint64_t finalTarget =*/ packet.readUInt64();
             } else if (splineFlags & 0x00040000) { // FINAL_ANGLE
+                if (rem() < 4) return false;
                 /*float finalAngle =*/ packet.readFloat();
             }
 
-            // Classic spline: timePassed, duration, id, nodes, finalNode (same as TBC)
+            // Classic spline: timePassed, duration, id, pointCount
+            if (rem() < 16) return false;
             /*uint32_t timePassed =*/ packet.readUInt32();
             /*uint32_t duration =*/ packet.readUInt32();
             /*uint32_t splineId =*/ packet.readUInt32();
 
             uint32_t pointCount = packet.readUInt32();
-            if (pointCount > 256) {
-                static uint32_t badClassicSplineCount = 0;
-                ++badClassicSplineCount;
-                if (badClassicSplineCount <= 5 || (badClassicSplineCount % 100) == 0) {
-                    LOG_WARNING("  [Classic] Spline pointCount=", pointCount,
-                                " exceeds max, capping (occurrence=", badClassicSplineCount, ")");
-                }
-                pointCount = 0;
-            }
+            if (pointCount > 256) return false;
+
+            // points + endPoint (no splineMode in Classic)
+            if (rem() < static_cast<size_t>(pointCount) * 12 + 12) return false;
             for (uint32_t i = 0; i < pointCount; i++) {
                 /*float px =*/ packet.readFloat();
                 /*float py =*/ packet.readFloat();
@@ -312,6 +315,7 @@ bool ClassicPacketParsers::parseMovementBlock(network::Packet& packet, UpdateBlo
         }
     }
     else if (updateFlags & UPDATEFLAG_HAS_POSITION) {
+        if (rem() < 16) return false;
         block.x = packet.readFloat();
         block.y = packet.readFloat();
         block.z = packet.readFloat();
@@ -323,21 +327,25 @@ bool ClassicPacketParsers::parseMovementBlock(network::Packet& packet, UpdateBlo
 
     // High GUID
     if (updateFlags & UPDATEFLAG_HIGHGUID) {
+        if (rem() < 4) return false;
         /*uint32_t highGuid =*/ packet.readUInt32();
     }
 
     // ALL/SELF extra uint32
     if (updateFlags & UPDATEFLAG_ALL) {
+        if (rem() < 4) return false;
         /*uint32_t unkAll =*/ packet.readUInt32();
     }
 
     // Current melee target as packed guid
     if (updateFlags & UPDATEFLAG_MELEE_ATTACKING) {
+        if (rem() < 1) return false;
         /*uint64_t meleeTargetGuid =*/ UpdateObjectParser::readPackedGuid(packet);
     }
 
     // Transport progress / world time
     if (updateFlags & UPDATEFLAG_TRANSPORT) {
+        if (rem() < 4) return false;
         /*uint32_t transportTime =*/ packet.readUInt32();
     }
 

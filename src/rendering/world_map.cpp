@@ -371,6 +371,7 @@ void WorldMap::loadZonesFromDBC() {
         }
     }
 
+    currentMapId_ = mapID;
     LOG_INFO("WorldMap: loaded ", zones.size(), " zones for mapID=", mapID,
              ", continentIdx=", continentIdx);
 }
@@ -1055,6 +1056,42 @@ void WorldMap::renderImGuiOverlay(const glm::vec3& playerRenderPos, int screenWi
                     float ty = py - nameSz.y - 7.0f;
                     drawList->AddText(ImVec2(tx + 1.0f, ty + 1.0f), IM_COL32(0, 0, 0, 180), dot.name.c_str());
                     drawList->AddText(ImVec2(tx, ty), IM_COL32(255, 255, 255, 220), dot.name.c_str());
+                }
+            }
+        }
+
+        // Taxi node markers — flight master icons on the map
+        if (currentIdx >= 0 && viewLevel != ViewLevel::WORLD && !taxiNodes_.empty()) {
+            ImVec2 mp = ImGui::GetMousePos();
+            for (const auto& node : taxiNodes_) {
+                if (!node.known) continue;
+                if (static_cast<int>(node.mapId) != currentMapId_) continue;
+
+                glm::vec3 rPos = core::coords::canonicalToRender(
+                    glm::vec3(node.wowX, node.wowY, node.wowZ));
+                glm::vec2 uv = renderPosToMapUV(rPos, currentIdx);
+                if (uv.x < 0.0f || uv.x > 1.0f || uv.y < 0.0f || uv.y > 1.0f) continue;
+
+                float px = imgMin.x + uv.x * displayW;
+                float py = imgMin.y + uv.y * displayH;
+
+                // Flight-master icon: yellow diamond with dark border
+                constexpr float H = 5.0f;  // half-size of diamond
+                ImVec2 top2(px,     py - H);
+                ImVec2 right2(px + H, py    );
+                ImVec2 bot2(px,     py + H);
+                ImVec2 left2(px - H, py    );
+                drawList->AddQuadFilled(top2, right2, bot2, left2,
+                                        IM_COL32(255, 215, 0, 230));
+                drawList->AddQuad(top2, right2, bot2, left2,
+                                  IM_COL32(80, 50, 0, 200), 1.2f);
+
+                // Tooltip on hover
+                if (!node.name.empty()) {
+                    float mdx = mp.x - px, mdy = mp.y - py;
+                    if (mdx * mdx + mdy * mdy < 49.0f) {
+                        ImGui::SetTooltip("%s\n(Flight Master)", node.name.c_str());
+                    }
                 }
             }
         }

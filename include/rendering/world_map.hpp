@@ -25,6 +25,15 @@ struct WorldMapPartyDot {
     std::string name;      ///< Member name (shown as tooltip on hover)
 };
 
+/// Taxi (flight master) node passed from the UI layer for world map overlay.
+struct WorldMapTaxiNode {
+    uint32_t  id = 0;      ///< TaxiNodes.dbc ID
+    uint32_t  mapId = 0;   ///< WoW internal map ID (0=EK,1=Kal,530=Outland,571=Northrend)
+    float     wowX = 0, wowY = 0, wowZ = 0;  ///< Canonical WoW coordinates
+    std::string name;      ///< Node name (shown as tooltip)
+    bool      known = false; ///< Player has discovered this node
+};
+
 struct WorldMapZone {
     uint32_t wmaID = 0;
     uint32_t areaID = 0;       // 0 = continent level
@@ -57,6 +66,7 @@ public:
     void setMapName(const std::string& name);
     void setServerExplorationMask(const std::vector<uint32_t>& masks, bool hasData);
     void setPartyDots(std::vector<WorldMapPartyDot> dots) { partyDots_ = std::move(dots); }
+    void setTaxiNodes(std::vector<WorldMapTaxiNode> nodes) { taxiNodes_ = std::move(nodes); }
     bool isOpen() const { return open; }
     void close() { open = false; }
 
@@ -126,6 +136,10 @@ private:
 
     // Party member dots (set each frame from the UI layer)
     std::vector<WorldMapPartyDot> partyDots_;
+
+    // Taxi node markers (set each frame from the UI layer)
+    std::vector<WorldMapTaxiNode> taxiNodes_;
+    int currentMapId_ = -1;  ///< WoW map ID currently loaded (set in loadZonesFromDBC)
 
     // Exploration / fog of war
     std::vector<uint32_t> serverExplorationMask;

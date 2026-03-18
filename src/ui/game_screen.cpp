@@ -7033,6 +7033,25 @@ void GameScreen::renderWorldMap(game::GameHandler& gameHandler) {
         wm->setPartyDots(std::move(dots));
     }
 
+    // Taxi node markers on world map
+    {
+        std::vector<rendering::WorldMapTaxiNode> taxiNodes;
+        const auto& nodes = gameHandler.getTaxiNodes();
+        taxiNodes.reserve(nodes.size());
+        for (const auto& [id, node] : nodes) {
+            rendering::WorldMapTaxiNode wtn;
+            wtn.id    = node.id;
+            wtn.mapId = node.mapId;
+            wtn.wowX  = node.x;
+            wtn.wowY  = node.y;
+            wtn.wowZ  = node.z;
+            wtn.name  = node.name;
+            wtn.known = gameHandler.isKnownTaxiNode(id);
+            taxiNodes.push_back(std::move(wtn));
+        }
+        wm->setTaxiNodes(std::move(taxiNodes));
+    }
+
     glm::vec3 playerPos = renderer->getCharacterPosition();
     float playerYaw = renderer->getCharacterYaw();
     auto* window = app.getWindow();

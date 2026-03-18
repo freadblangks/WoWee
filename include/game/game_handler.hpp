@@ -1919,6 +1919,11 @@ public:
         float x = 0, y = 0, z = 0;
     };
     const std::unordered_map<uint32_t, TaxiNode>& getTaxiNodes() const { return taxiNodes_; }
+    bool isKnownTaxiNode(uint32_t nodeId) const {
+        if (nodeId == 0 || nodeId > 384) return false;
+        uint32_t idx = nodeId - 1;
+        return (knownTaxiMask_[idx / 32] & (1u << (idx % 32))) != 0;
+    }
     uint32_t getTaxiCostTo(uint32_t destNodeId) const;
     bool taxiNpcHasRoutes(uint64_t guid) const {
         auto it = taxiNpcHasRoutes_.find(guid);

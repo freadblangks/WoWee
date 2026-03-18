@@ -258,6 +258,7 @@ bool GameScreen::shouldShowMessage(const game::MessageChatData& msg, int tabInde
 
 // Forward declaration — defined near sendChatMessage below
 static std::string firstMacroCommand(const std::string& macroText);
+static std::vector<std::string> allMacroCommands(const std::string& macroText);
 
 void GameScreen::render(game::GameHandler& gameHandler) {
     // Set up chat bubble callback (once)
@@ -2843,12 +2844,7 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                     } else if (bar[slotIdx].type == game::ActionBarSlot::ITEM && bar[slotIdx].id != 0) {
                         gameHandler.useItemById(bar[slotIdx].id);
                     } else if (bar[slotIdx].type == game::ActionBarSlot::MACRO) {
-                        std::string cmd = firstMacroCommand(gameHandler.getMacroText(bar[slotIdx].id));
-                        if (!cmd.empty()) {
-                            strncpy(chatInputBuffer, cmd.c_str(), sizeof(chatInputBuffer) - 1);
-                            chatInputBuffer[sizeof(chatInputBuffer) - 1] = '\0';
-                            sendChatMessage(gameHandler);
-                        }
+                        executeMacroText(gameHandler, gameHandler.getMacroText(bar[slotIdx].id));
                     }
                 }
             }
@@ -5263,6 +5259,34 @@ static std::string firstMacroCommand(const std::string& macroText) {
     return {};
 }
 
+// Collect all non-comment, non-empty lines from a macro body.
+static std::vector<std::string> allMacroCommands(const std::string& macroText) {
+    std::vector<std::string> cmds;
+    size_t pos = 0;
+    while (pos <= macroText.size()) {
+        size_t nl = macroText.find('\n', pos);
+        std::string line = (nl != std::string::npos) ? macroText.substr(pos, nl - pos) : macroText.substr(pos);
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        size_t start = line.find_first_not_of(" \t");
+        if (start != std::string::npos) line = line.substr(start);
+        if (!line.empty() && line.front() != '#')
+            cmds.push_back(std::move(line));
+        if (nl == std::string::npos) break;
+        pos = nl + 1;
+    }
+    return cmds;
+}
+
+// Execute all non-comment lines of a macro body in sequence.
+// In WoW, every line executes per click; the server enforces spell-cast limits.
+void GameScreen::executeMacroText(game::GameHandler& gameHandler, const std::string& macroText) {
+    for (const auto& cmd : allMacroCommands(macroText)) {
+        strncpy(chatInputBuffer, cmd.c_str(), sizeof(chatInputBuffer) - 1);
+        chatInputBuffer[sizeof(chatInputBuffer) - 1] = '\0';
+        sendChatMessage(gameHandler);
+    }
+}
+
 void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
     if (strlen(chatInputBuffer) > 0) {
         std::string input(chatInputBuffer);
@@ -7672,12 +7696,7 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
             } else if (slot.type == game::ActionBarSlot::ITEM && slot.id != 0) {
                 gameHandler.useItemById(slot.id);
             } else if (slot.type == game::ActionBarSlot::MACRO) {
-                std::string cmd = firstMacroCommand(gameHandler.getMacroText(slot.id));
-                if (!cmd.empty()) {
-                    strncpy(chatInputBuffer, cmd.c_str(), sizeof(chatInputBuffer) - 1);
-                    chatInputBuffer[sizeof(chatInputBuffer) - 1] = '\0';
-                    sendChatMessage(gameHandler);
-                }
+                executeMacroText(gameHandler, gameHandler.getMacroText(slot.id));
             }
         }
 
@@ -7710,12 +7729,7 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
                     ImGui::TextDisabled("Macro #%u", slot.id);
                     ImGui::Separator();
                     if (ImGui::MenuItem("Execute")) {
-                        std::string cmd = firstMacroCommand(gameHandler.getMacroText(slot.id));
-                        if (!cmd.empty()) {
-                            strncpy(chatInputBuffer, cmd.c_str(), sizeof(chatInputBuffer) - 1);
-                            chatInputBuffer[sizeof(chatInputBuffer) - 1] = '\0';
-                            sendChatMessage(gameHandler);
-                        }
+                        executeMacroText(gameHandler, gameHandler.getMacroText(slot.id));
                     }
                     if (ImGui::MenuItem("Edit")) {
                         const std::string& txt = gameHandler.getMacroText(slot.id);

@@ -23509,10 +23509,19 @@ void GameHandler::saveCharacterConfig() {
         out << "action_bar_" << i << "_id=" << actionBar[i].id << "\n";
     }
 
-    // Save client-side macro text
+    // Save client-side macro text (escape newlines as \n literal)
     for (const auto& [id, text] : macros_) {
-        if (!text.empty())
-            out << "macro_" << id << "_text=" << text << "\n";
+        if (!text.empty()) {
+            std::string escaped;
+            escaped.reserve(text.size());
+            for (char c : text) {
+                if (c == '\n') { escaped += "\\n"; }
+                else if (c == '\r') { /* skip CR */ }
+                else if (c == '\\') { escaped += "\\\\"; }
+                else { escaped += c; }
+            }
+            out << "macro_" << id << "_text=" << escaped << "\n";
+        }
     }
 
     // Save quest log
@@ -23562,8 +23571,21 @@ void GameHandler::loadCharacterConfig() {
             if (secondUnder == std::string::npos) continue;
             uint32_t macroId = 0;
             try { macroId = static_cast<uint32_t>(std::stoul(key.substr(firstUnder, secondUnder - firstUnder))); } catch (...) { continue; }
-            if (key.substr(secondUnder + 1) == "text" && !val.empty())
-                macros_[macroId] = val;
+            if (key.substr(secondUnder + 1) == "text" && !val.empty()) {
+                // Unescape \n and \\ sequences
+                std::string unescaped;
+                unescaped.reserve(val.size());
+                for (size_t i = 0; i < val.size(); ++i) {
+                    if (val[i] == '\\' && i + 1 < val.size()) {
+                        if (val[i+1] == 'n')  { unescaped += '\n'; ++i; }
+                        else if (val[i+1] == '\\') { unescaped += '\\'; ++i; }
+                        else { unescaped += val[i]; }
+                    } else {
+                        unescaped += val[i];
+                    }
+                }
+                macros_[macroId] = std::move(unescaped);
+            }
         } else if (key.rfind("action_bar_", 0) == 0) {
             // Parse action_bar_N_type or action_bar_N_id
             size_t firstUnderscore = 11; // length of "action_bar_"

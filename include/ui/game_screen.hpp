@@ -278,6 +278,7 @@ private:
      * Send chat message
      */
     void sendChatMessage(game::GameHandler& gameHandler);
+    void executeMacroText(game::GameHandler& gameHandler, const std::string& macroText);
 
     /**
      * Get chat type name

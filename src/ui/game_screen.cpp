@@ -5745,7 +5745,7 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                     "       /gleader  /groster  /ginfo  /gcreate  /gdisband",
                     "Combat: /startattack  /stopattack  /stopcasting  /cast <spell>  /duel  /pvp",
                     "        /forfeit  /follow  /stopfollow  /assist",
-                    "Items: /use <item name>  /equip <item name>",
+                    "Items: /use <item name>  /equip <item name>  /equipset [name]",
                     "Target: /target <name>  /cleartarget  /focus  /clearfocus",
                     "Movement: /sit  /stand  /kneel  /dismount",
                     "Misc: /played  /time  /zone  /afk [msg]  /dnd [msg]  /inspect",
@@ -6549,6 +6549,52 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
 
             if (cmdLower == "stopcasting") {
                 gameHandler.stopCasting();
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            // /equipset [name] — equip a saved equipment set by name (partial match, case-insensitive)
+            // /equipset          — list available sets in chat
+            if (cmdLower == "equipset") {
+                const auto& sets = gameHandler.getEquipmentSets();
+                auto sysSay = [&](const std::string& msg) {
+                    game::MessageChatData m;
+                    m.type = game::ChatType::SYSTEM;
+                    m.language = game::ChatLanguage::UNIVERSAL;
+                    m.message = msg;
+                    gameHandler.addLocalChatMessage(m);
+                };
+                if (spacePos == std::string::npos) {
+                    // No argument: list available sets
+                    if (sets.empty()) {
+                        sysSay("[System] No equipment sets saved.");
+                    } else {
+                        sysSay("[System] Equipment sets:");
+                        for (const auto& es : sets)
+                            sysSay("  " + es.name);
+                    }
+                } else {
+                    std::string setName = command.substr(spacePos + 1);
+                    while (!setName.empty() && setName.front() == ' ') setName.erase(setName.begin());
+                    while (!setName.empty() && setName.back()  == ' ') setName.pop_back();
+                    // Case-insensitive prefix match
+                    std::string setLower = setName;
+                    std::transform(setLower.begin(), setLower.end(), setLower.begin(), ::tolower);
+                    const game::GameHandler::EquipmentSetInfo* found = nullptr;
+                    for (const auto& es : sets) {
+                        std::string nameLow = es.name;
+                        std::transform(nameLow.begin(), nameLow.end(), nameLow.begin(), ::tolower);
+                        if (nameLow == setLower || nameLow.find(setLower) == 0) {
+                            found = &es;
+                            break;
+                        }
+                    }
+                    if (found) {
+                        gameHandler.useEquipmentSet(found->setId);
+                    } else {
+                        sysSay("[System] No equipment set matching '" + setName + "'.");
+                    }
+                }
                 chatInputBuffer[0] = '\0';
                 return;
             }

@@ -11125,8 +11125,28 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
                 ? IM_COL32(220,  80,  80, A(230))   // red  — hostile NPC
                 : IM_COL32(240, 200, 100, A(230));  // yellow — friendly NPC
         }
+        // Guild name for player nameplates: shift name up to make room
+        std::string guildTag;
+        if (isPlayer) {
+            uint32_t guildId = gameHandler.getEntityGuildId(guid);
+            if (guildId != 0) {
+                const std::string& gn = gameHandler.lookupGuildName(guildId);
+                if (!gn.empty()) guildTag = "<" + gn + ">";
+            }
+        }
+        if (!guildTag.empty()) nameY -= 10.0f;  // shift name up for guild line
+
         drawList->AddText(ImVec2(nameX + 1.0f, nameY + 1.0f), IM_COL32(0, 0, 0, A(160)), labelBuf);
         drawList->AddText(ImVec2(nameX,         nameY),         nameColor, labelBuf);
+
+        // Guild tag below the name (WoW-style <Guild Name> in lighter color)
+        if (!guildTag.empty()) {
+            ImVec2 guildSz = ImGui::CalcTextSize(guildTag.c_str());
+            float guildX = sx - guildSz.x * 0.5f;
+            float guildY = nameY + textSize.y + 1.0f;
+            drawList->AddText(ImVec2(guildX + 1.0f, guildY + 1.0f), IM_COL32(0, 0, 0, A(120)), guildTag.c_str());
+            drawList->AddText(ImVec2(guildX,         guildY),         IM_COL32(180, 180, 180, A(200)), guildTag.c_str());
+        }
 
         // Group leader crown to the right of the name on player nameplates
         if (isPlayer && gameHandler.isInGroup() &&

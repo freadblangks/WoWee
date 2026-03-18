@@ -608,6 +608,13 @@ public:
     uint32_t getPetitionCost() const { return petitionCost_; }
     uint64_t getPetitionNpcGuid() const { return petitionNpcGuid_; }
 
+    // Guild name lookup for other players' nameplates
+    // Returns the guild name for a given guildId, or empty if unknown.
+    // Automatically queries the server for unknown guild IDs.
+    const std::string& lookupGuildName(uint32_t guildId);
+    // Returns the guildId for a player entity (from PLAYER_GUILDID update field).
+    uint32_t getEntityGuildId(uint64_t guid) const;
+
     // Ready check
     struct ReadyCheckResult {
         std::string name;
@@ -2952,6 +2959,8 @@ private:
     GuildInfoData guildInfoData_;
     GuildQueryResponseData guildQueryData_;
     bool hasGuildRoster_ = false;
+    std::unordered_map<uint32_t, std::string> guildNameCache_;  // guildId → guild name
+    std::unordered_set<uint32_t> pendingGuildNameQueries_;      // in-flight guild queries
     bool pendingGuildInvite_ = false;
     std::string pendingGuildInviterName_;
     std::string pendingGuildInviteGuildName_;

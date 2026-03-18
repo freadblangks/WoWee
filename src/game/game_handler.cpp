@@ -759,6 +759,8 @@ void GameHandler::disconnect() {
     activeCharacterGuid_ = 0;
     playerNameCache.clear();
     pendingNameQueries.clear();
+    guildNameCache_.clear();
+    pendingGuildNameQueries_.clear();
     friendGuids_.clear();
     contacts_.clear();
     transportAttachments_.clear();
@@ -19577,6 +19579,28 @@ void GameHandler::queryGuildInfo(uint32_t guildId) {
     LOG_INFO("Querying guild info: guildId=", guildId);
 }
 
+static const std::string kEmptyString;
+
+const std::string& GameHandler::lookupGuildName(uint32_t guildId) {
+    if (guildId == 0) return kEmptyString;
+    auto it = guildNameCache_.find(guildId);
+    if (it != guildNameCache_.end()) return it->second;
+    // Query the server if we haven't already
+    if (pendingGuildNameQueries_.insert(guildId).second) {
+        queryGuildInfo(guildId);
+    }
+    return kEmptyString;
+}
+
+uint32_t GameHandler::getEntityGuildId(uint64_t guid) const {
+    auto entity = entityManager.getEntity(guid);
+    if (!entity || entity->getType() != ObjectType::PLAYER) return 0;
+    // PLAYER_GUILDID = UNIT_END + 3 across all expansions
+    const uint16_t ufUnitEnd = fieldIndex(UF::UNIT_END);
+    if (ufUnitEnd == 0xFFFF) return 0;
+    return entity->getField(ufUnitEnd + 3);
+}
+
 void GameHandler::createGuild(const std::string& guildName) {
     if (state != WorldState::IN_WORLD || !socket) return;
     auto packet = GuildCreatePacket::build(guildName);
@@ -19661,18 +19685,30 @@ void GameHandler::handleGuildQueryResponse(network::Packet& packet) {
     GuildQueryResponseData data;
     if (!packetParsers_->parseGuildQueryResponse(packet, data)) return;
 
-    const bool wasUnknown = guildName_.empty();
-    guildName_ = data.guildName;
-    guildQueryData_ = data;
-    guildRankNames_.clear();
-    for (uint32_t i = 0; i < 10; ++i) {
-        guildRankNames_.push_back(data.rankNames[i]);
+    // Always cache the guild name for nameplate lookups
+    if (data.guildId != 0 && !data.guildName.empty()) {
+        guildNameCache_[data.guildId] = data.guildName;
+        pendingGuildNameQueries_.erase(data.guildId);
     }
-    LOG_INFO("Guild name set to: ", guildName_);
-    // Only announce once — when we first learn our own guild name at login.
-    // Subsequent queries (e.g. querying other players' guilds) are silent.
-    if (wasUnknown && !guildName_.empty())
-        addSystemChatMessage("Guild: <" + guildName_ + ">");
+
+    // Check if this is the local player's guild
+    const Character* ch = getActiveCharacter();
+    bool isLocalGuild = (ch && ch->hasGuild() && ch->guildId == data.guildId);
+
+    if (isLocalGuild) {
+        const bool wasUnknown = guildName_.empty();
+        guildName_ = data.guildName;
+        guildQueryData_ = data;
+        guildRankNames_.clear();
+        for (uint32_t i = 0; i < 10; ++i) {
+            guildRankNames_.push_back(data.rankNames[i]);
+        }
+        LOG_INFO("Guild name set to: ", guildName_);
+        if (wasUnknown && !guildName_.empty())
+            addSystemChatMessage("Guild: <" + guildName_ + ">");
+    } else {
+        LOG_INFO("Cached guild name: id=", data.guildId, " name=", data.guildName);
+    }
 }
 
 void GameHandler::handleGuildEvent(network::Packet& packet) {

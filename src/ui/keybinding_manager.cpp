@@ -36,6 +36,7 @@ void KeybindingManager::initializeDefaults() {
     bindings_[static_cast<int>(Action::TOGGLE_NAMEPLATES)] = ImGuiKey_V;
     bindings_[static_cast<int>(Action::TOGGLE_RAID_FRAMES)] = ImGuiKey_F;  // Reassigned from R (now camera reset)
     bindings_[static_cast<int>(Action::TOGGLE_ACHIEVEMENTS)] = ImGuiKey_Y;  // WoW standard key (Shift+Y in retail)
+    bindings_[static_cast<int>(Action::TOGGLE_SKILLS)]      = ImGuiKey_K;  // WoW standard: K opens Skills/Professions
 }
 
 bool KeybindingManager::isActionPressed(Action action, bool repeat) {
@@ -93,6 +94,7 @@ const char* KeybindingManager::getActionName(Action action) {
         case Action::TOGGLE_NAMEPLATES: return "Nameplates";
         case Action::TOGGLE_RAID_FRAMES: return "Raid Frames";
         case Action::TOGGLE_ACHIEVEMENTS: return "Achievements";
+        case Action::TOGGLE_SKILLS: return "Skills / Professions";
         case Action::ACTION_COUNT: break;
     }
     return "Unknown";
@@ -158,6 +160,7 @@ void KeybindingManager::loadFromConfigFile(const std::string& filePath) {
         else if (action == "toggle_raid_frames") actionIdx = static_cast<int>(Action::TOGGLE_RAID_FRAMES);
         else if (action == "toggle_quest_log") actionIdx = static_cast<int>(Action::TOGGLE_QUESTS);  // legacy alias
         else if (action == "toggle_achievements") actionIdx = static_cast<int>(Action::TOGGLE_ACHIEVEMENTS);
+        else if (action == "toggle_skills") actionIdx = static_cast<int>(Action::TOGGLE_SKILLS);
 
         if (actionIdx < 0) continue;
 
@@ -254,6 +257,7 @@ void KeybindingManager::saveToConfigFile(const std::string& filePath) const {
         {Action::TOGGLE_NAMEPLATES, "toggle_nameplates"},
         {Action::TOGGLE_RAID_FRAMES, "toggle_raid_frames"},
         {Action::TOGGLE_ACHIEVEMENTS, "toggle_achievements"},
+        {Action::TOGGLE_SKILLS, "toggle_skills"},
     };
 
     for (const auto& [action, nameStr] : actionMap) {

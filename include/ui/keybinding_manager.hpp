@@ -30,6 +30,7 @@ public:
         TOGGLE_NAMEPLATES,
         TOGGLE_RAID_FRAMES,
         TOGGLE_ACHIEVEMENTS,
+        TOGGLE_SKILLS,
         ACTION_COUNT
     };
 

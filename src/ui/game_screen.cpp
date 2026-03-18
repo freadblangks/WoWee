@@ -6353,14 +6353,29 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
             }
 
             if (cmdLower == "startattack") {
-                if (gameHandler.hasTarget()) {
-                    gameHandler.startAutoAttack(gameHandler.getTargetGuid());
-                } else {
-                    game::MessageChatData msg;
-                    msg.type = game::ChatType::SYSTEM;
-                    msg.language = game::ChatLanguage::UNIVERSAL;
-                    msg.message = "You have no target.";
-                    gameHandler.addLocalChatMessage(msg);
+                // Support macro conditionals: /startattack [harm,nodead]
+                bool condPass = true;
+                uint64_t saOverride = static_cast<uint64_t>(-1);
+                if (spacePos != std::string::npos) {
+                    std::string saArg = command.substr(spacePos + 1);
+                    while (!saArg.empty() && saArg.front() == ' ') saArg.erase(saArg.begin());
+                    if (!saArg.empty() && saArg.front() == '[') {
+                        std::string result = evaluateMacroConditionals(saArg, gameHandler, saOverride);
+                        condPass = !(result.empty() && saOverride == static_cast<uint64_t>(-1));
+                    }
+                }
+                if (condPass) {
+                    uint64_t atkTarget = (saOverride != static_cast<uint64_t>(-1) && saOverride != 0)
+                        ? saOverride : (gameHandler.hasTarget() ? gameHandler.getTargetGuid() : 0);
+                    if (atkTarget != 0) {
+                        gameHandler.startAutoAttack(atkTarget);
+                    } else {
+                        game::MessageChatData msg;
+                        msg.type = game::ChatType::SYSTEM;
+                        msg.language = game::ChatLanguage::UNIVERSAL;
+                        msg.message = "You have no target.";
+                        gameHandler.addLocalChatMessage(msg);
+                    }
                 }
                 chatInputBuffer[0] = '\0';
                 return;
@@ -6643,7 +6658,18 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
 
             // Targeting commands
             if (cmdLower == "cleartarget") {
-                gameHandler.clearTarget();
+                // Support macro conditionals: /cleartarget [dead] clears only if target is dead
+                bool ctCondPass = true;
+                if (spacePos != std::string::npos) {
+                    std::string ctArg = command.substr(spacePos + 1);
+                    while (!ctArg.empty() && ctArg.front() == ' ') ctArg.erase(ctArg.begin());
+                    if (!ctArg.empty() && ctArg.front() == '[') {
+                        uint64_t ctOver = static_cast<uint64_t>(-1);
+                        std::string res = evaluateMacroConditionals(ctArg, gameHandler, ctOver);
+                        ctCondPass = !(res.empty() && ctOver == static_cast<uint64_t>(-1));
+                    }
+                }
+                if (ctCondPass) gameHandler.clearTarget();
                 chatInputBuffer[0] = '\0';
                 return;
             }

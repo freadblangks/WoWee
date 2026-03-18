@@ -11197,15 +11197,32 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
                 float castPct = std::clamp((cs->timeTotal - cs->timeRemaining) / cs->timeTotal, 0.0f, 1.0f);
                 const float cbH = 6.0f * nameplateScale_;
 
-                // Spell name above the cast bar
+                // Spell icon + name above the cast bar
                 const std::string& spellName = gameHandler.getSpellName(cs->spellId);
-                if (!spellName.empty()) {
-                    ImVec2 snSz = ImGui::CalcTextSize(spellName.c_str());
-                    float snX = sx - snSz.x * 0.5f;
-                    float snY = castBarBaseY;
-                    drawList->AddText(ImVec2(snX + 1.0f, snY + 1.0f), IM_COL32(0, 0, 0, A(140)), spellName.c_str());
-                    drawList->AddText(ImVec2(snX,         snY),         IM_COL32(255, 210, 100, A(220)), spellName.c_str());
-                    castBarBaseY += snSz.y + 2.0f;
+                {
+                    auto* castAm = core::Application::getInstance().getAssetManager();
+                    VkDescriptorSet castIcon = (cs->spellId && castAm)
+                        ? getSpellIcon(cs->spellId, castAm) : VK_NULL_HANDLE;
+                    float iconSz = cbH + 8.0f;
+                    if (castIcon) {
+                        // Draw icon to the left of the cast bar
+                        float iconX = barX - iconSz - 2.0f;
+                        float iconY = castBarBaseY;
+                        drawList->AddImage((ImTextureID)(uintptr_t)castIcon,
+                                           ImVec2(iconX, iconY),
+                                           ImVec2(iconX + iconSz, iconY + iconSz));
+                        drawList->AddRect(ImVec2(iconX - 1.0f, iconY - 1.0f),
+                                          ImVec2(iconX + iconSz + 1.0f, iconY + iconSz + 1.0f),
+                                          IM_COL32(0, 0, 0, A(180)), 1.0f);
+                    }
+                    if (!spellName.empty()) {
+                        ImVec2 snSz = ImGui::CalcTextSize(spellName.c_str());
+                        float snX = sx - snSz.x * 0.5f;
+                        float snY = castBarBaseY;
+                        drawList->AddText(ImVec2(snX + 1.0f, snY + 1.0f), IM_COL32(0, 0, 0, A(140)), spellName.c_str());
+                        drawList->AddText(ImVec2(snX,         snY),         IM_COL32(255, 210, 100, A(220)), spellName.c_str());
+                        castBarBaseY += snSz.y + 2.0f;
+                    }
                 }
 
                 // Cast bar: green = interruptible, red = uninterruptible; both pulse when >80% complete

@@ -67,6 +67,13 @@ public:
     void setServerExplorationMask(const std::vector<uint32_t>& masks, bool hasData);
     void setPartyDots(std::vector<WorldMapPartyDot> dots) { partyDots_ = std::move(dots); }
     void setTaxiNodes(std::vector<WorldMapTaxiNode> nodes) { taxiNodes_ = std::move(nodes); }
+    /// Set the player's corpse position for overlay rendering.
+    /// @param hasCorpse  True when the player is a ghost with an unclaimed corpse on this map.
+    /// @param renderPos  Corpse position in render-space coordinates.
+    void setCorpsePos(bool hasCorpse, glm::vec3 renderPos) {
+        hasCorpse_ = hasCorpse;
+        corpseRenderPos_ = renderPos;
+    }
     bool isOpen() const { return open; }
     void close() { open = false; }
 
@@ -140,6 +147,10 @@ private:
     // Taxi node markers (set each frame from the UI layer)
     std::vector<WorldMapTaxiNode> taxiNodes_;
     int currentMapId_ = -1;  ///< WoW map ID currently loaded (set in loadZonesFromDBC)
+
+    // Corpse marker (ghost state — set each frame from the UI layer)
+    bool      hasCorpse_        = false;
+    glm::vec3 corpseRenderPos_  = {};
 
     // Exploration / fog of war
     std::vector<uint32_t> serverExplorationMask;

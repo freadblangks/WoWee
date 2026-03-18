@@ -1096,6 +1096,33 @@ void WorldMap::renderImGuiOverlay(const glm::vec3& playerRenderPos, int screenWi
             }
         }
 
+        // Corpse marker — skull X shown when player is a ghost with unclaimed corpse
+        if (hasCorpse_ && currentIdx >= 0 && viewLevel != ViewLevel::WORLD) {
+            glm::vec2 uv = renderPosToMapUV(corpseRenderPos_, currentIdx);
+            if (uv.x >= 0.0f && uv.x <= 1.0f && uv.y >= 0.0f && uv.y <= 1.0f) {
+                float cx = imgMin.x + uv.x * displayW;
+                float cy = imgMin.y + uv.y * displayH;
+                constexpr float R = 5.0f;   // cross arm half-length
+                constexpr float T = 1.8f;   // line thickness
+                // Dark outline
+                drawList->AddLine(ImVec2(cx - R, cy - R), ImVec2(cx + R, cy + R),
+                                  IM_COL32(0, 0, 0, 220), T + 1.5f);
+                drawList->AddLine(ImVec2(cx + R, cy - R), ImVec2(cx - R, cy + R),
+                                  IM_COL32(0, 0, 0, 220), T + 1.5f);
+                // Bone-white X
+                drawList->AddLine(ImVec2(cx - R, cy - R), ImVec2(cx + R, cy + R),
+                                  IM_COL32(230, 220, 200, 240), T);
+                drawList->AddLine(ImVec2(cx + R, cy - R), ImVec2(cx - R, cy + R),
+                                  IM_COL32(230, 220, 200, 240), T);
+                // Tooltip on hover
+                ImVec2 mp = ImGui::GetMousePos();
+                float dx = mp.x - cx, dy = mp.y - cy;
+                if (dx * dx + dy * dy < 64.0f) {
+                    ImGui::SetTooltip("Your corpse");
+                }
+            }
+        }
+
         // Hover coordinate display — show WoW coordinates under cursor
         if (currentIdx >= 0 && viewLevel != ViewLevel::WORLD) {
             auto& io = ImGui::GetIO();

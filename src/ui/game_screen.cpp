@@ -7083,6 +7083,17 @@ void GameScreen::renderWorldMap(game::GameHandler& gameHandler) {
         wm->setTaxiNodes(std::move(taxiNodes));
     }
 
+    // Corpse marker: show skull X on world map when ghost with unclaimed corpse
+    {
+        float corpseCanX = 0.0f, corpseCanY = 0.0f;
+        bool ghostWithCorpse = gameHandler.isPlayerGhost() &&
+                               gameHandler.getCorpseCanonicalPos(corpseCanX, corpseCanY);
+        glm::vec3 corpseRender = ghostWithCorpse
+            ? core::coords::canonicalToRender(glm::vec3(corpseCanX, corpseCanY, 0.0f))
+            : glm::vec3{};
+        wm->setCorpsePos(ghostWithCorpse, corpseRender);
+    }
+
     glm::vec3 playerPos = renderer->getCharacterPosition();
     float playerYaw = renderer->getCharacterYaw();
     auto* window = app.getWindow();

@@ -225,25 +225,18 @@ bool WardenModule::processCheckRequest(const std::vector<uint8_t>& checkData,
     return false;
 }
 
-uint32_t WardenModule::tick([[maybe_unused]] uint32_t deltaMs) {
+uint32_t WardenModule::tick(uint32_t deltaMs) {
     if (!loaded_ || !funcList_.tick) {
-        return 0; // No tick needed
+        return 0;
     }
-
-    // TODO: Call module's Tick function
-    // return funcList_.tick(deltaMs);
-
-    return 0;
+    return funcList_.tick(deltaMs);
 }
 
-void WardenModule::generateRC4Keys([[maybe_unused]] uint8_t* packet) {
+void WardenModule::generateRC4Keys(uint8_t* packet) {
     if (!loaded_ || !funcList_.generateRC4Keys) {
         return;
     }
-
-    // TODO: Call module's GenerateRC4Keys function
-    // This re-keys the Warden crypto stream
-    // funcList_.generateRC4Keys(packet);
+    funcList_.generateRC4Keys(packet);
 }
 
 void WardenModule::unload() {
@@ -251,8 +244,7 @@ void WardenModule::unload() {
         // Call module's Unload() function if loaded
         if (loaded_ && funcList_.unload) {
             LOG_INFO("WardenModule: Calling module unload callback...");
-            // TODO: Implement callback when execution layer is complete
-            // funcList_.unload(nullptr);
+            funcList_.unload(nullptr);
         }
 
         // Free executable memory region

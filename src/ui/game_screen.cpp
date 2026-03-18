@@ -2594,16 +2594,19 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
                 for (auto& ch : lowerWord) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
 
                 static const std::vector<std::string> kCmds = {
-                    "/afk", "/away", "/cast", "/chathelp", "/clear",
+                    "/afk", "/away", "/cancelaura", "/cancelform", "/cancelshapeshift",
+                    "/cast", "/chathelp", "/clear",
                     "/dance", "/do", "/dnd", "/e", "/emote",
-                    "/cl", "/combatlog", "/equip", "/follow", "/g", "/guild", "/guildinfo",
+                    "/cl", "/combatlog", "/dismount", "/equip", "/follow",
+                    "/g", "/guild", "/guildinfo",
                     "/gmticket", "/grouploot", "/i", "/instance",
                     "/invite", "/j", "/join", "/kick",
                     "/l", "/leave", "/local", "/me",
                     "/p", "/party", "/r", "/raid",
                     "/raidwarning", "/random", "/reply", "/roll",
-                    "/s", "/say", "/setloot", "/shout",
-                    "/stopattack", "/stopfollow", "/t", "/time",
+                    "/s", "/say", "/setloot", "/shout", "/sit", "/stand",
+                    "/startattack", "/stopattack", "/stopfollow", "/stopcasting",
+                    "/t", "/target", "/time",
                     "/trade", "/uninvite", "/use", "/w", "/whisper",
                     "/who", "/wts", "/wtb", "/y", "/yell", "/zone"
                 };
@@ -5615,6 +5618,57 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
             // /dismount command
             if (cmdLower == "dismount") {
                 gameHandler.dismount();
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            // /cancelform / /cancelshapeshift — leave current shapeshift/stance
+            if (cmdLower == "cancelform" || cmdLower == "cancelshapeshift") {
+                // Cancel the first permanent shapeshift aura the player has
+                for (const auto& aura : gameHandler.getPlayerAuras()) {
+                    if (aura.spellId == 0) continue;
+                    // Permanent shapeshift auras have the permanent flag (0x20) set
+                    if (aura.flags & 0x20) {
+                        gameHandler.cancelAura(aura.spellId);
+                        break;
+                    }
+                }
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            // /cancelaura <spell name|#id> — cancel a specific buff by name or ID
+            if (cmdLower == "cancelaura" && spacePos != std::string::npos) {
+                std::string auraArg = command.substr(spacePos + 1);
+                while (!auraArg.empty() && auraArg.front() == ' ') auraArg.erase(auraArg.begin());
+                while (!auraArg.empty() && auraArg.back()  == ' ') auraArg.pop_back();
+                // Try numeric ID first
+                {
+                    std::string numStr = auraArg;
+                    if (!numStr.empty() && numStr.front() == '#') numStr.erase(numStr.begin());
+                    bool isNum = !numStr.empty() &&
+                        std::all_of(numStr.begin(), numStr.end(),
+                                    [](unsigned char c){ return std::isdigit(c); });
+                    if (isNum) {
+                        uint32_t spellId = 0;
+                        try { spellId = static_cast<uint32_t>(std::stoul(numStr)); } catch (...) {}
+                        if (spellId) gameHandler.cancelAura(spellId);
+                        chatInputBuffer[0] = '\0';
+                        return;
+                    }
+                }
+                // Name match against player auras
+                std::string argLow = auraArg;
+                for (char& c : argLow) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                for (const auto& aura : gameHandler.getPlayerAuras()) {
+                    if (aura.spellId == 0) continue;
+                    std::string sn = gameHandler.getSpellName(aura.spellId);
+                    for (char& c : sn) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                    if (sn == argLow) {
+                        gameHandler.cancelAura(aura.spellId);
+                        break;
+                    }
+                }
                 chatInputBuffer[0] = '\0';
                 return;
             }

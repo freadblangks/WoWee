@@ -35,9 +35,9 @@ Implemented (working in normal use):
 In progress / known gaps:
 
 - Transports: M2 transports (trams) working with position-delta riding; WMO transports (ships, zeppelins) working with path following; some edge cases remain
-- Visual edge cases: some M2/WMO rendering gaps (character shin mesh, some particle effects)
+- Visual edge cases: some M2/WMO rendering gaps (some particle effects)
 - Lava steam particles: sparse in some areas (tuning opportunity)
-- Water refraction: available in Settings; barrier srcAccessMask fix (2026-03-18) removed prior VK_ERROR_DEVICE_LOST on AMD/Mali GPUs
+- Water refraction: enabled by default; srcAccessMask barrier fix (2026-03-18) resolved prior VK_ERROR_DEVICE_LOST on AMD/Mali GPUs
 
 ## Where To Look
 

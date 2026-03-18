@@ -23222,36 +23222,36 @@ void GameScreen::renderDungeonFinderWindow(game::GameHandler& gameHandler) {
         ImGui::Text("Dungeon:");
 
         struct DungeonEntry { uint32_t id; const char* name; };
-        static const DungeonEntry kDungeons[] = {
-            { 861, "Random Dungeon" },
-            { 862, "Random Heroic" },
-            // Vanilla classics
-            {  36, "Deadmines" },
-            {  43, "Ragefire Chasm" },
-            {  47, "Razorfen Kraul" },
-            {  48, "Blackfathom Deeps" },
-            {  52, "Uldaman" },
-            {  57, "Dire Maul: East" },
-            {  70, "Onyxia's Lair" },
-            // TBC heroics
-            { 264, "The Blood Furnace" },
-            { 269, "The Shattered Halls" },
-            // WotLK normals/heroics
-            { 576, "The Nexus" },
-            { 578, "The Oculus" },
-            { 595, "The Culling of Stratholme" },
-            { 599, "Halls of Stone" },
-            { 600, "Drak'Tharon Keep" },
-            { 601, "Azjol-Nerub" },
-            { 604, "Gundrak" },
-            { 608, "Violet Hold" },
-            { 619, "Ahn'kahet: Old Kingdom" },
-            { 623, "Halls of Lightning" },
-            { 632, "The Forge of Souls" },
-            { 650, "Trial of the Champion" },
-            { 658, "Pit of Saron" },
-            { 668, "Halls of Reflection" },
+        // Category 0=Random, 1=Classic, 2=TBC, 3=WotLK
+        struct DungeonEntryEx { uint32_t id; const char* name; uint8_t cat; };
+        static const DungeonEntryEx kDungeons[] = {
+            { 861, "Random Dungeon",               0 },
+            { 862, "Random Heroic",                0 },
+            {  36, "Deadmines",                    1 },
+            {  43, "Ragefire Chasm",               1 },
+            {  47, "Razorfen Kraul",               1 },
+            {  48, "Blackfathom Deeps",            1 },
+            {  52, "Uldaman",                      1 },
+            {  57, "Dire Maul: East",              1 },
+            {  70, "Onyxia's Lair",                1 },
+            { 264, "The Blood Furnace",            2 },
+            { 269, "The Shattered Halls",          2 },
+            { 576, "The Nexus",                    3 },
+            { 578, "The Oculus",                   3 },
+            { 595, "The Culling of Stratholme",    3 },
+            { 599, "Halls of Stone",               3 },
+            { 600, "Drak'Tharon Keep",             3 },
+            { 601, "Azjol-Nerub",                  3 },
+            { 604, "Gundrak",                      3 },
+            { 608, "Violet Hold",                  3 },
+            { 619, "Ahn'kahet: Old Kingdom",       3 },
+            { 623, "Halls of Lightning",           3 },
+            { 632, "The Forge of Souls",           3 },
+            { 650, "Trial of the Champion",        3 },
+            { 658, "Pit of Saron",                 3 },
+            { 668, "Halls of Reflection",          3 },
         };
+        static const char* kCatHeaders[] = { nullptr, "-- Classic --", "-- TBC --", "-- WotLK --" };
 
         // Find current index
         int curIdx = 0;
@@ -23261,7 +23261,15 @@ void GameScreen::renderDungeonFinderWindow(game::GameHandler& gameHandler) {
 
         ImGui::SetNextItemWidth(-1);
         if (ImGui::BeginCombo("##dungeon", kDungeons[curIdx].name)) {
+            uint8_t lastCat = 255;
             for (int i = 0; i < (int)(sizeof(kDungeons)/sizeof(kDungeons[0])); ++i) {
+                if (kDungeons[i].cat != lastCat && kCatHeaders[kDungeons[i].cat]) {
+                    if (lastCat != 255) ImGui::Separator();
+                    ImGui::TextDisabled("%s", kCatHeaders[kDungeons[i].cat]);
+                    lastCat = kDungeons[i].cat;
+                } else if (kDungeons[i].cat != lastCat) {
+                    lastCat = kDungeons[i].cat;
+                }
                 bool selected = (kDungeons[i].id == lfgSelectedDungeon_);
                 if (ImGui::Selectable(kDungeons[i].name, selected))
                     lfgSelectedDungeon_ = kDungeons[i].id;

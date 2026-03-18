@@ -17772,7 +17772,15 @@ void GameHandler::handleAttackerStateUpdate(network::Packet& packet) {
         // VICTIMSTATE_DEFLECT: Attack was deflected (e.g. shield slam reflect).
         addCombatText(CombatTextEntry::DEFLECT, 0, 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
     } else {
-        auto type = data.isCrit() ? CombatTextEntry::CRIT_DAMAGE : CombatTextEntry::MELEE_DAMAGE;
+        CombatTextEntry::Type type;
+        if (data.isCrit())
+            type = CombatTextEntry::CRIT_DAMAGE;
+        else if (data.isCrushing())
+            type = CombatTextEntry::CRUSHING;
+        else if (data.isGlancing())
+            type = CombatTextEntry::GLANCING;
+        else
+            type = CombatTextEntry::MELEE_DAMAGE;
         addCombatText(type, data.totalDamage, 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
         // Show partial absorb/resist from sub-damage entries
         uint32_t totalAbsorbed = 0, totalResisted = 0;

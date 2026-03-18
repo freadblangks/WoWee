@@ -1719,8 +1719,10 @@ struct AttackerStateUpdateData {
     uint32_t blocked = 0;
 
     bool isValid() const { return attackerGuid != 0; }
-    bool isCrit() const { return (hitInfo & 0x200) != 0; }
-    bool isMiss() const { return (hitInfo & 0x10) != 0; }
+    bool isCrit() const     { return (hitInfo & 0x0200) != 0; }
+    bool isMiss() const     { return (hitInfo & 0x0010) != 0; }
+    bool isGlancing() const { return (hitInfo & 0x0800) != 0; }
+    bool isCrushing() const { return (hitInfo & 0x1000) != 0; }
 };
 
 class AttackerStateUpdateParser {

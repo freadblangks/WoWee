@@ -9273,6 +9273,18 @@ void GameScreen::renderCombatText(game::GameHandler& gameHandler) {
                     snprintf(text, sizeof(text), "+%d Honor", entry.amount);
                     color = ImVec4(1.0f, 0.85f, 0.0f, alpha);  // Gold for honor
                     break;
+                case game::CombatTextEntry::GLANCING:
+                    snprintf(text, sizeof(text), "~%d", entry.amount);
+                    color = outgoing ?
+                        ImVec4(0.75f, 0.75f, 0.5f, alpha) :   // Outgoing glancing = muted yellow
+                        ImVec4(0.75f, 0.35f, 0.35f, alpha);   // Incoming glancing = muted red
+                    break;
+                case game::CombatTextEntry::CRUSHING:
+                    snprintf(text, sizeof(text), "%d!", entry.amount);
+                    color = outgoing ?
+                        ImVec4(1.0f, 0.55f, 0.1f, alpha) :    // Outgoing crushing = orange
+                        ImVec4(1.0f, 0.15f, 0.15f, alpha);    // Incoming crushing = bright red
+                    break;
                 default:
                     snprintf(text, sizeof(text), "%d", entry.amount);
                     color = ImVec4(1.0f, 1.0f, 1.0f, alpha);
@@ -9343,6 +9355,8 @@ void GameScreen::renderDPSMeter(game::GameHandler& gameHandler) {
                 case game::CombatTextEntry::SPELL_DAMAGE:
                 case game::CombatTextEntry::CRIT_DAMAGE:
                 case game::CombatTextEntry::PERIODIC_DAMAGE:
+                case game::CombatTextEntry::GLANCING:
+                case game::CombatTextEntry::CRUSHING:
                     dpsEncounterDamage_ += static_cast<float>(e.amount);
                     break;
                 case game::CombatTextEntry::HEAL:
@@ -9367,6 +9381,8 @@ void GameScreen::renderDPSMeter(game::GameHandler& gameHandler) {
             case game::CombatTextEntry::SPELL_DAMAGE:
             case game::CombatTextEntry::CRIT_DAMAGE:
             case game::CombatTextEntry::PERIODIC_DAMAGE:
+            case game::CombatTextEntry::GLANCING:
+            case game::CombatTextEntry::CRUSHING:
                 totalDamage += static_cast<float>(e.amount);
                 break;
             case game::CombatTextEntry::HEAL:
@@ -21218,7 +21234,7 @@ void GameScreen::renderCombatLog(game::GameHandler& gameHandler) {
         using T = game::CombatTextEntry;
         return t == T::MELEE_DAMAGE || t == T::SPELL_DAMAGE ||
                t == T::CRIT_DAMAGE  || t == T::PERIODIC_DAMAGE ||
-               t == T::ENVIRONMENTAL;
+               t == T::ENVIRONMENTAL || t == T::GLANCING || t == T::CRUSHING;
     };
     auto isHealType = [](game::CombatTextEntry::Type t) {
         using T = game::CombatTextEntry;
@@ -21491,6 +21507,16 @@ void GameScreen::renderCombatLog(game::GameHandler& gameHandler) {
                 case T::HONOR_GAIN:
                     snprintf(desc, sizeof(desc), "You gain %d honor", e.amount);
                     color = ImVec4(1.0f, 0.85f, 0.0f, 1.0f);
+                    break;
+                case T::GLANCING:
+                    snprintf(desc, sizeof(desc), "%s glances %s for %d", src, tgt, e.amount);
+                    color = e.isPlayerSource ? ImVec4(0.75f, 0.75f, 0.5f, 1.0f)
+                                             : ImVec4(0.75f, 0.4f, 0.4f, 1.0f);
+                    break;
+                case T::CRUSHING:
+                    snprintf(desc, sizeof(desc), "%s crushes %s for %d!", src, tgt, e.amount);
+                    color = e.isPlayerSource ? ImVec4(1.0f, 0.55f, 0.1f, 1.0f)
+                                             : ImVec4(1.0f, 0.15f, 0.15f, 1.0f);
                     break;
                 default:
                     snprintf(desc, sizeof(desc), "Combat event (type %d, amount %d)", (int)e.type, e.amount);

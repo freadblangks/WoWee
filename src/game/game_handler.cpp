@@ -2372,7 +2372,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 case 0x06: msg = "Pet retrieved from stable."; break;
                 case 0x07: msg = "Stable slot purchased."; break;
                 case 0x08: msg = "Stable list updated."; break;
-                case 0x09: msg = "Stable failed: not enough money or other error."; break;
+                case 0x09: msg = "Stable failed: not enough money or other error.";
+                           addUIError(msg); break;
                 default:   break;
             }
             if (msg) addSystemChatMessage(msg);
@@ -2528,8 +2529,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
                         "Character name does not meet requirements.",    // 7
                     };
                     const char* errMsg = (result < 8) ? kRenameErrors[result] : nullptr;
-                    addSystemChatMessage(errMsg ? std::string("Rename failed: ") + errMsg
-                                               : "Character rename failed.");
+                    std::string renameErr = errMsg ? std::string("Rename failed: ") + errMsg
+                                                   : "Character rename failed.";
+                    addUIError(renameErr);
+                    addSystemChatMessage(renameErr);
                 }
                 LOG_INFO("SMSG_CHAR_RENAME: result=", result, " newName=", newName);
             }
@@ -3558,6 +3561,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 char buf[80];
                 std::snprintf(buf, sizeof(buf),
                     "You have lost %u%% of your gear's durability due to death.", pct);
+                addUIError(buf);
                 addSystemChatMessage(buf);
             }
             break;

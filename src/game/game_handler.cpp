@@ -3248,9 +3248,21 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
             break;
         case Opcode::SMSG_ATTACKSWING_NOTSTANDING:
-        case Opcode::SMSG_ATTACKSWING_CANT_ATTACK:
             autoAttackOutOfRange_ = false;
             autoAttackOutOfRangeTime_ = 0.0f;
+            if (autoAttackRangeWarnCooldown_ <= 0.0f) {
+                addSystemChatMessage("You need to stand up to fight.");
+                autoAttackRangeWarnCooldown_ = 1.25f;
+            }
+            break;
+        case Opcode::SMSG_ATTACKSWING_CANT_ATTACK:
+            // Target is permanently non-attackable (critter, civilian, already dead, etc.).
+            // Stop the auto-attack loop so the client doesn't spam the server.
+            stopAutoAttack();
+            if (autoAttackRangeWarnCooldown_ <= 0.0f) {
+                addSystemChatMessage("You can't attack that.");
+                autoAttackRangeWarnCooldown_ = 1.25f;
+            }
             break;
         case Opcode::SMSG_ATTACKERSTATEUPDATE:
             handleAttackerStateUpdate(packet);

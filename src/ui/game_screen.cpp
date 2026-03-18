@@ -4388,6 +4388,27 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                     if (ImGui::IsItemClicked()) {
                         gameHandler.setTarget(totGuid);
                     }
+
+                    // Compact health bar for the ToT — essential for healers tracking boss target
+                    if (totEnt) {
+                        auto totUnit = std::dynamic_pointer_cast<game::Unit>(totEnt);
+                        if (totUnit && totUnit->getMaxHealth() > 0) {
+                            uint32_t totHp    = totUnit->getHealth();
+                            uint32_t totMaxHp = totUnit->getMaxHealth();
+                            float totPct = static_cast<float>(totHp) / static_cast<float>(totMaxHp);
+                            ImVec4 totBarColor =
+                                totPct > 0.5f ? ImVec4(0.2f, 0.75f, 0.2f, 1.0f) :
+                                totPct > 0.2f ? ImVec4(0.75f, 0.75f, 0.2f, 1.0f) :
+                                               ImVec4(0.75f, 0.2f, 0.2f, 1.0f);
+                            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, totBarColor);
+                            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.15f, 0.8f));
+                            char totOverlay[32];
+                            snprintf(totOverlay, sizeof(totOverlay), "%u%%",
+                                     static_cast<unsigned>(totPct * 100.0f + 0.5f));
+                            ImGui::ProgressBar(totPct, ImVec2(-1, 10), totOverlay);
+                            ImGui::PopStyleColor(2);
+                        }
+                    }
                 }
             }
         }

@@ -4645,16 +4645,20 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                             ImGui::PopStyleColor();
                         }
 
-                        // ToT cast bar — orange-yellow, pulses when near completion
+                        // ToT cast bar — green if interruptible, red if not; pulses near completion
                         if (auto* totCs = gameHandler.getUnitCastState(totGuid)) {
                             float totCastPct = (totCs->timeTotal > 0.0f)
                                 ? (totCs->timeTotal - totCs->timeRemaining) / totCs->timeTotal : 0.0f;
                             ImVec4 tcColor;
                             if (totCastPct > 0.8f) {
                                 float pulse = 0.7f + 0.3f * std::sin(static_cast<float>(ImGui::GetTime()) * 8.0f);
-                                tcColor = ImVec4(1.0f * pulse, 0.5f * pulse, 0.0f, 1.0f);
+                                tcColor = totCs->interruptible
+                                    ? ImVec4(0.2f * pulse, 0.9f * pulse, 0.2f * pulse, 1.0f)
+                                    : ImVec4(1.0f * pulse, 0.1f * pulse, 0.1f * pulse, 1.0f);
                             } else {
-                                tcColor = ImVec4(0.8f, 0.5f, 0.1f, 1.0f);
+                                tcColor = totCs->interruptible
+                                    ? ImVec4(0.2f, 0.75f, 0.2f, 1.0f)
+                                    : ImVec4(0.85f, 0.15f, 0.15f, 1.0f);
                             }
                             ImGui::PushStyleColor(ImGuiCol_PlotHistogram, tcColor);
                             char tcLabel[48];

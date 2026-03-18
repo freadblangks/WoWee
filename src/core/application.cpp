@@ -1647,7 +1647,11 @@ void Application::update(float deltaTime) {
                         // startMoveTo() in handleMonsterMove, regardless of distance-cull.
                         // This correctly detects movement for distant creatures (> 150u)
                         // where updateMovement() is not called and getX/Y/Z() stays stale.
-                        const bool entityIsMoving = entity->isEntityMoving();
+                        // Use isActivelyMoving() (not isEntityMoving()) so the
+                        // Run/Walk animation stops when the creature reaches its
+                        // destination, rather than persisting through the dead-
+                        // reckoning overrun window.
+                        const bool entityIsMoving = entity->isActivelyMoving();
                         const bool isMovingNow = !deadOrCorpse && (entityIsMoving || planarDist > 0.03f || dz > 0.08f);
                         if (deadOrCorpse || largeCorrection) {
                             charRenderer->setInstancePosition(instanceId, renderPos);

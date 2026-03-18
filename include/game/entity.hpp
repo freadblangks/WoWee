@@ -135,6 +135,13 @@ public:
 
     bool isEntityMoving() const { return isMoving_; }
 
+    /// True only during the active interpolation phase (before reaching destination).
+    /// Unlike isEntityMoving(), this does NOT include the dead-reckoning overrun window,
+    /// so animations (Run/Walk) should use this to avoid "running in place" after arrival.
+    bool isActivelyMoving() const {
+        return isMoving_ && moveElapsed_ < moveDuration_;
+    }
+
     // Returns the latest server-authoritative position: destination if moving, current if not.
     // Unlike getX/Y/Z (which only update via updateMovement), this always reflects the
     // last known server position regardless of distance culling.

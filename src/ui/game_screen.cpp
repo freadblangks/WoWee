@@ -6200,11 +6200,17 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
             }
 
             if (cmdLower == "target" && spacePos != std::string::npos) {
-                // Search visible entities for name match (case-insensitive prefix)
+                // Search visible entities for name match (case-insensitive prefix).
+                // Among all matches, pick the nearest living unit to the player.
                 std::string targetArg = command.substr(spacePos + 1);
                 std::string targetArgLower = targetArg;
                 for (char& c : targetArgLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                 uint64_t bestGuid = 0;
+                float    bestDist = std::numeric_limits<float>::max();
+                const auto& pmi = gameHandler.getMovementInfo();
+                const float playerX = pmi.x;
+                const float playerY = pmi.y;
+                const float playerZ = pmi.z;
                 for (const auto& [guid, entity] : gameHandler.getEntityManager().getEntities()) {
                     if (!entity || entity->getType() == game::ObjectType::OBJECT) continue;
                     std::string name;
@@ -6217,8 +6223,14 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                     std::string nameLower = name;
                     for (char& c : nameLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                     if (nameLower.find(targetArgLower) == 0) {
-                        bestGuid = guid;
-                        if (nameLower == targetArgLower) break;  // Exact match wins
+                        float dx = entity->getX() - playerX;
+                        float dy = entity->getY() - playerY;
+                        float dz = entity->getZ() - playerZ;
+                        float dist = dx*dx + dy*dy + dz*dz;
+                        if (dist < bestDist) {
+                            bestDist = dist;
+                            bestGuid = guid;
+                        }
                     }
                 }
                 if (bestGuid) {

@@ -17572,8 +17572,15 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
     };
 
     // Zone name label above the minimap (centered, WoW-style)
+    // Prefer the server-reported zone/area name (from SMSG_INIT_WORLD_STATES) so sub-zones
+    // like Ironforge or Wailing Caverns display correctly; fall back to renderer zone name.
     {
-        const std::string& zoneName = renderer ? renderer->getCurrentZoneName() : std::string{};
+        std::string wsZoneName;
+        uint32_t wsZoneId = gameHandler.getWorldStateZoneId();
+        if (wsZoneId != 0)
+            wsZoneName = gameHandler.getWhoAreaName(wsZoneId);
+        const std::string& rendererZoneName = renderer ? renderer->getCurrentZoneName() : std::string{};
+        const std::string& zoneName = !wsZoneName.empty() ? wsZoneName : rendererZoneName;
         if (!zoneName.empty()) {
             auto* fgDl = ImGui::GetForegroundDrawList();
             float zoneTextY = centerY - mapRadius - 16.0f;

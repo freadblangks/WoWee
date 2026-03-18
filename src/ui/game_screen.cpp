@@ -5569,6 +5569,39 @@ static std::string evaluateMacroConditionals(const std::string& rawArg,
         if (c.rfind("nodebuff:", 0) == 0 && c.size() > 9)
             return checkAuraByName(c.substr(9), true, true);
 
+        // mounted / nomounted
+        if (c == "mounted")   return gameHandler.isMounted();
+        if (c == "nomounted") return !gameHandler.isMounted();
+
+        // group (any group) / nogroup / raid
+        if (c == "group")  return !gameHandler.getPartyData().isEmpty();
+        if (c == "nogroup") return gameHandler.getPartyData().isEmpty();
+        if (c == "raid")   {
+            const auto& pd = gameHandler.getPartyData();
+            return pd.groupType >= 1;  // groupType 1 = raid, 0 = party
+        }
+
+        // channeling:SpellName — player is currently channeling that spell
+        if (c.rfind("channeling:", 0) == 0 && c.size() > 11) {
+            if (!gameHandler.isChanneling()) return false;
+            std::string want = c.substr(11);
+            for (char& ch : want) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+            uint32_t castSpellId = gameHandler.getCurrentCastSpellId();
+            std::string sn = gameHandler.getSpellName(castSpellId);
+            for (char& ch : sn) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+            return sn == want;
+        }
+        if (c == "channeling") return gameHandler.isChanneling();
+        if (c == "nochanneling") return !gameHandler.isChanneling();
+
+        // casting (any active cast or channel)
+        if (c == "casting")   return gameHandler.isCasting();
+        if (c == "nocasting") return !gameHandler.isCasting();
+
+        // vehicle / novehicle (WotLK)
+        if (c == "vehicle")   return gameHandler.getVehicleId() != 0;
+        if (c == "novehicle") return gameHandler.getVehicleId() == 0;
+
         // Unknown → permissive (don't block)
         return true;
     };

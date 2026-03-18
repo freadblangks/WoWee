@@ -30,11 +30,8 @@ namespace TbcMoveFlags {
 // - Flag 0x08 (HIGH_GUID) reads 2 u32s (Classic: 1 u32)
 // ============================================================================
 bool TbcPacketParsers::parseMovementBlock(network::Packet& packet, UpdateBlock& block) {
-    // Validate minimum packet size for updateFlags byte
-    if (packet.getReadPos() >= packet.getSize()) {
-        LOG_WARNING("[TBC] Movement block packet too small (need at least 1 byte for updateFlags)");
-        return false;
-    }
+    auto rem = [&]() -> size_t { return packet.getSize() - packet.getReadPos(); };
+    if (rem() < 1) return false;
 
     // TBC 2.4.3: UpdateFlags is uint8 (1 byte)
     uint8_t updateFlags = packet.readUInt8();
@@ -58,6 +55,9 @@ bool TbcPacketParsers::parseMovementBlock(network::Packet& packet, UpdateBlock& 
     const uint8_t UPDATEFLAG_HIGHGUID            = 0x10;
 
     if (updateFlags & UPDATEFLAG_LIVING) {
+        // Minimum: moveFlags(4)+moveFlags2(1)+time(4)+position(16)+fallTime(4)+speeds(32) = 61
+        if (rem() < 61) return false;
+
         // Full movement block for living units
         uint32_t moveFlags = packet.readUInt32();
         uint8_t moveFlags2 = packet.readUInt8();  // TBC: uint8, not uint16
@@ -76,29 +76,33 @@ bool TbcPacketParsers::parseMovementBlock(network::Packet& packet, UpdateBlock& 
 
         // Transport data
         if (moveFlags & TbcMoveFlags::ON_TRANSPORT) {
+            if (rem() < 1) return false;
             block.onTransport = true;
             block.transportGuid = UpdateObjectParser::readPackedGuid(packet);
+            if (rem() < 20) return false; // 4 floats + 1 uint32
             block.transportX = packet.readFloat();
             block.transportY = packet.readFloat();
             block.transportZ = packet.readFloat();
             block.transportO = packet.readFloat();
             /*uint32_t tTime =*/ packet.readUInt32();
-            // TBC: NO transport seat byte
-            // TBC: NO interpolated movement check
         }
 
         // Pitch: SWIMMING, or else ONTRANSPORT (TBC-specific secondary pitch)
         if (moveFlags & TbcMoveFlags::SWIMMING) {
+            if (rem() < 4) return false;
             /*float pitch =*/ packet.readFloat();
         } else if (moveFlags & TbcMoveFlags::ONTRANSPORT) {
+            if (rem() < 4) return false;
             /*float pitch =*/ packet.readFloat();
         }
 
         // Fall time (always present)
+        if (rem() < 4) return false;
         /*uint32_t fallTime =*/ packet.readUInt32();
 
         // Jumping (TBC: JUMPING=0x2000, WotLK: FALLING=0x1000)
         if (moveFlags & TbcMoveFlags::JUMPING) {
+            if (rem() < 16) return false;
             /*float jumpVelocity =*/ packet.readFloat();
             /*float jumpSinAngle =*/ packet.readFloat();
             /*float jumpCosAngle =*/ packet.readFloat();
@@ -107,11 +111,12 @@ bool TbcPacketParsers::parseMovementBlock(network::Packet& packet, UpdateBlock& 
 
         // Spline elevation (TBC: 0x02000000, WotLK: 0x04000000)
         if (moveFlags & TbcMoveFlags::SPLINE_ELEVATION) {
+            if (rem() < 4) return false;
             /*float splineElevation =*/ packet.readFloat();
         }
 
         // Speeds (TBC: 8 values — walk, run, runBack, swim, fly, flyBack, swimBack, turn)
-        // WotLK adds pitchRate (9 total)
+        if (rem() < 32) return false;
         /*float walkSpeed =*/ packet.readFloat();
         float runSpeed = packet.readFloat();
         /*float runBackSpeed =*/ packet.readFloat();
@@ -126,49 +131,47 @@ bool TbcPacketParsers::parseMovementBlock(network::Packet& packet, UpdateBlock& 
 
         // Spline data (TBC/WotLK: SPLINE_ENABLED = 0x08000000)
         if (moveFlags & TbcMoveFlags::SPLINE_ENABLED) {
+            if (rem() < 4) return false;
             uint32_t splineFlags = packet.readUInt32();
             LOG_DEBUG("  [TBC] Spline: flags=0x", std::hex, splineFlags, std::dec);
 
             if (splineFlags & 0x00010000) { // FINAL_POINT
+                if (rem() < 12) return false;
                 /*float finalX =*/ packet.readFloat();
                 /*float finalY =*/ packet.readFloat();
                 /*float finalZ =*/ packet.readFloat();
             } else if (splineFlags & 0x00020000) { // FINAL_TARGET
+                if (rem() < 8) return false;
                 /*uint64_t finalTarget =*/ packet.readUInt64();
             } else if (splineFlags & 0x00040000) { // FINAL_ANGLE
+                if (rem() < 4) return false;
                 /*float finalAngle =*/ packet.readFloat();
             }
 
-            // TBC spline: timePassed, duration, id, nodes, finalNode
-            // (no durationMod, durationModNext, verticalAccel, effectStartTime, splineMode)
+            // TBC spline: timePassed, duration, id, pointCount
+            if (rem() < 16) return false;
             /*uint32_t timePassed =*/ packet.readUInt32();
             /*uint32_t duration =*/ packet.readUInt32();
             /*uint32_t splineId =*/ packet.readUInt32();
 
             uint32_t pointCount = packet.readUInt32();
-            if (pointCount > 256) {
-                static uint32_t badTbcSplineCount = 0;
-                ++badTbcSplineCount;
-                if (badTbcSplineCount <= 5 || (badTbcSplineCount % 100) == 0) {
-                    LOG_WARNING("  [TBC] Spline pointCount=", pointCount,
-                                " exceeds max, capping (occurrence=", badTbcSplineCount, ")");
-                }
-                pointCount = 0;
-            }
+            if (pointCount > 256) return false;
+
+            // points + endPoint (no splineMode in TBC)
+            if (rem() < static_cast<size_t>(pointCount) * 12 + 12) return false;
             for (uint32_t i = 0; i < pointCount; i++) {
                 /*float px =*/ packet.readFloat();
                 /*float py =*/ packet.readFloat();
                 /*float pz =*/ packet.readFloat();
             }
 
-            // TBC: NO splineMode byte (WotLK adds it)
             /*float endPointX =*/ packet.readFloat();
             /*float endPointY =*/ packet.readFloat();
             /*float endPointZ =*/ packet.readFloat();
         }
     }
     else if (updateFlags & UPDATEFLAG_HAS_POSITION) {
-        // TBC: Simple stationary position (same as WotLK STATIONARY)
+        if (rem() < 16) return false;
         block.x = packet.readFloat();
         block.y = packet.readFloat();
         block.z = packet.readFloat();
@@ -177,29 +180,29 @@ bool TbcPacketParsers::parseMovementBlock(network::Packet& packet, UpdateBlock& 
 
         LOG_DEBUG("  [TBC] STATIONARY: (", block.x, ", ", block.y, ", ", block.z, ")");
     }
-    // TBC: No UPDATEFLAG_POSITION (0x0100) code path
 
     // Target GUID
     if (updateFlags & UPDATEFLAG_HAS_TARGET) {
+        if (rem() < 1) return false;
         /*uint64_t targetGuid =*/ UpdateObjectParser::readPackedGuid(packet);
     }
 
     // Transport time
     if (updateFlags & UPDATEFLAG_TRANSPORT) {
+        if (rem() < 4) return false;
         /*uint32_t transportTime =*/ packet.readUInt32();
     }
 
-    // TBC: No VEHICLE flag (WotLK 0x0080)
-    // TBC: No ROTATION flag (WotLK 0x0200)
-
-    // HIGH_GUID (0x08) — TBC has 2 u32s, Classic has 1 u32
+    // LOWGUID (0x08) — TBC has 2 u32s, Classic has 1 u32
     if (updateFlags & UPDATEFLAG_LOWGUID) {
+        if (rem() < 8) return false;
         /*uint32_t unknown0 =*/ packet.readUInt32();
         /*uint32_t unknown1 =*/ packet.readUInt32();
     }
 
-    // ALL (0x10)
+    // HIGHGUID (0x10)
     if (updateFlags & UPDATEFLAG_HIGHGUID) {
+        if (rem() < 4) return false;
         /*uint32_t unknown2 =*/ packet.readUInt32();
     }
 

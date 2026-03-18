@@ -16588,8 +16588,8 @@ void GameScreen::renderDeathScreen(game::GameHandler& gameHandler) {
     // "Release Spirit" dialog centered on screen
     const bool hasSelfRes = gameHandler.canSelfRes();
     float dlgW = 280.0f;
-    // Extra height when self-res button is available
-    float dlgH = hasSelfRes ? 170.0f : 130.0f;
+    // Extra height when self-res button is available; +20 for the "wait for res" hint
+    float dlgH = hasSelfRes ? 190.0f : 150.0f;
     ImGui::SetNextWindowPos(ImVec2(screenW / 2 - dlgW / 2, screenH * 0.35f), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(dlgW, dlgH), ImGuiCond_Always);
 
@@ -16608,13 +16608,13 @@ void GameScreen::renderDeathScreen(game::GameHandler& gameHandler) {
         ImGui::SetCursorPosX((dlgW - textW) / 2);
         ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "%s", deathText);
 
-        // Respawn timer: show how long until forced release
+        // Respawn timer: show how long until the server auto-releases the spirit
         float timeLeft = kForcedReleaseSec - deathElapsed_;
         if (timeLeft > 0.0f) {
             int mins = static_cast<int>(timeLeft) / 60;
             int secs = static_cast<int>(timeLeft) % 60;
             char timerBuf[48];
-            snprintf(timerBuf, sizeof(timerBuf), "Release in %d:%02d", mins, secs);
+            snprintf(timerBuf, sizeof(timerBuf), "Auto-release in %d:%02d", mins, secs);
             float tw = ImGui::CalcTextSize(timerBuf).x;
             ImGui::SetCursorPosX((dlgW - tw) / 2);
             ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.65f, 1.0f), "%s", timerBuf);
@@ -16645,6 +16645,12 @@ void GameScreen::renderDeathScreen(game::GameHandler& gameHandler) {
             gameHandler.releaseSpirit();
         }
         ImGui::PopStyleColor(2);
+
+        // Hint: player can stay dead and wait for another player to cast Resurrection
+        const char* resHint = "Or wait for a player to resurrect you.";
+        float hw = ImGui::CalcTextSize(resHint).x;
+        ImGui::SetCursorPosX((dlgW - hw) / 2);
+        ImGui::TextColored(ImVec4(0.5f, 0.6f, 0.5f, 0.85f), "%s", resHint);
     }
     ImGui::End();
     ImGui::PopStyleColor(2);

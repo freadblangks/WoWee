@@ -4330,6 +4330,38 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
             }
         }
 
+        // Combo points — shown when the player has combo points on this target
+        {
+            uint8_t cp = gameHandler.getComboPoints();
+            if (cp > 0 && gameHandler.getComboTarget() == target->getGuid()) {
+                const float dotSize = 12.0f;
+                const float dotSpacing = 4.0f;
+                const int maxCP = 5;
+                float totalW = maxCP * dotSize + (maxCP - 1) * dotSpacing;
+                float startX = (frameW - totalW) * 0.5f;
+                ImGui::SetCursorPosX(startX);
+                ImVec2 cursor = ImGui::GetCursorScreenPos();
+                ImDrawList* dl = ImGui::GetWindowDrawList();
+                for (int ci = 0; ci < maxCP; ++ci) {
+                    float cx = cursor.x + ci * (dotSize + dotSpacing) + dotSize * 0.5f;
+                    float cy = cursor.y + dotSize * 0.5f;
+                    if (ci < static_cast<int>(cp)) {
+                        // Lit: yellow for 1-4, red glow for 5
+                        ImU32 col = (cp >= 5)
+                            ? IM_COL32(255, 50, 30, 255)
+                            : IM_COL32(255, 210, 30, 255);
+                        dl->AddCircleFilled(ImVec2(cx, cy), dotSize * 0.45f, col);
+                        // Subtle glow
+                        dl->AddCircle(ImVec2(cx, cy), dotSize * 0.5f, IM_COL32(255, 255, 200, 80), 0, 1.5f);
+                    } else {
+                        // Unlit: dark outline
+                        dl->AddCircle(ImVec2(cx, cy), dotSize * 0.4f, IM_COL32(80, 80, 80, 180), 0, 1.5f);
+                    }
+                }
+                ImGui::Dummy(ImVec2(totalW, dotSize + 2.0f));
+            }
+        }
+
         // Target cast bar — shown when the target is casting
         if (gameHandler.isTargetCasting()) {
             float castPct   = gameHandler.getTargetCastProgress();

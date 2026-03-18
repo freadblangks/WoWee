@@ -4854,24 +4854,42 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
 
         gameHandler->setNpcDeathCallback([cr, app](uint64_t guid) {
             app->deadCreatureGuids_.insert(guid);
+            uint32_t instanceId = 0;
             auto it = app->creatureInstances_.find(guid);
-            if (it != app->creatureInstances_.end() && cr) {
-                cr->playAnimation(it->second, 1, false); // animation ID 1 = Death
+            if (it != app->creatureInstances_.end()) instanceId = it->second;
+            else {
+                auto pit = app->playerInstances_.find(guid);
+                if (pit != app->playerInstances_.end()) instanceId = pit->second;
+            }
+            if (instanceId != 0 && cr) {
+                cr->playAnimation(instanceId, 1, false); // animation ID 1 = Death
             }
         });
 
         gameHandler->setNpcRespawnCallback([cr, app](uint64_t guid) {
             app->deadCreatureGuids_.erase(guid);
+            uint32_t instanceId = 0;
             auto it = app->creatureInstances_.find(guid);
-            if (it != app->creatureInstances_.end() && cr) {
-                cr->playAnimation(it->second, 0, true); // animation ID 0 = Idle
+            if (it != app->creatureInstances_.end()) instanceId = it->second;
+            else {
+                auto pit = app->playerInstances_.find(guid);
+                if (pit != app->playerInstances_.end()) instanceId = pit->second;
+            }
+            if (instanceId != 0 && cr) {
+                cr->playAnimation(instanceId, 0, true); // animation ID 0 = Idle
             }
         });
 
         gameHandler->setNpcSwingCallback([cr, app](uint64_t guid) {
+            uint32_t instanceId = 0;
             auto it = app->creatureInstances_.find(guid);
-            if (it != app->creatureInstances_.end() && cr) {
-                cr->playAnimation(it->second, 16, false); // animation ID 16 = Attack1
+            if (it != app->creatureInstances_.end()) instanceId = it->second;
+            else {
+                auto pit = app->playerInstances_.find(guid);
+                if (pit != app->playerInstances_.end()) instanceId = pit->second;
+            }
+            if (instanceId != 0 && cr) {
+                cr->playAnimation(instanceId, 16, false); // animation ID 16 = Attack1
             }
         });
     }

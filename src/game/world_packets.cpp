@@ -3912,14 +3912,13 @@ bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
             break;
         }
         m.missType = packet.readUInt8();
-        if (m.missType == 11) {
-            if (packet.getSize() - packet.getReadPos() < 5) {
+        if (m.missType == 11) { // SPELL_MISS_REFLECT
+            if (packet.getSize() - packet.getReadPos() < 1) {
                 LOG_WARNING("Spell go: truncated reflect payload at miss index ", i, "/", (int)rawMissCount);
                 truncatedTargets = true;
                 break;
             }
-            (void)packet.readUInt32();
-            (void)packet.readUInt8();
+            (void)packet.readUInt8(); // reflectResult
         }
         if (i < storedMissLimit) {
             data.missTargets.push_back(m);

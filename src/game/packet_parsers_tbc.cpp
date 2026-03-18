@@ -1403,15 +1403,14 @@ bool TbcPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& data) 
         SpellGoMissEntry m;
         m.targetGuid = packet.readUInt64();  // full GUID in TBC
         m.missType   = packet.readUInt8();
-        if (m.missType == 11) {
-            if (packet.getReadPos() + 5 > packet.getSize()) {
+        if (m.missType == 11) { // SPELL_MISS_REFLECT
+            if (packet.getReadPos() + 1 > packet.getSize()) {
                 LOG_WARNING("[TBC] Spell go: truncated reflect payload at miss index ", i,
                             "/", (int)rawMissCount);
                 truncatedTargets = true;
                 break;
             }
-            (void)packet.readUInt32();
-            (void)packet.readUInt8();
+            (void)packet.readUInt8(); // reflectResult
         }
         if (i < storedMissLimit) {
             data.missTargets.push_back(m);

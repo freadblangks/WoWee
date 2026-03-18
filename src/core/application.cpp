@@ -1990,7 +1990,7 @@ void Application::setupUICallbacks() {
             worldEntryMovementGraceTimer_ = 2.0f;
             taxiLandingClampTimer_ = 0.0f;
             lastTaxiFlight_ = false;
-            renderer->getTerrainManager()->processAllReadyTiles();
+            renderer->getTerrainManager()->processReadyTiles();
             {
                 auto [tileX, tileY] = core::coords::worldToTile(renderPos.x, renderPos.y);
                 std::vector<std::pair<int,int>> nearbyTiles;
@@ -2023,10 +2023,12 @@ void Application::setupUICallbacks() {
                 renderer->getCameraController()->clearMovementInputs();
                 renderer->getCameraController()->suppressMovementFor(0.5f);
             }
-            // Flush any tiles that finished background parsing during the cast
-            // (e.g. Hearthstone pre-loaded them) so they're GPU-uploaded before
-            // the first frame at the new position.
-            renderer->getTerrainManager()->processAllReadyTiles();
+            // Kick off async upload for any tiles that finished background
+            // parsing.  Use the bounded processReadyTiles() instead of
+            // processAllReadyTiles() to avoid multi-second main-thread stalls
+            // when many tiles are ready (the rest will finalize over subsequent
+            // frames via the normal terrain update loop).
+            renderer->getTerrainManager()->processReadyTiles();
 
             // Queue all remaining tiles within the load radius (8 tiles = 17x17)
             // at the new position. precacheTiles skips already-loaded/pending tiles,

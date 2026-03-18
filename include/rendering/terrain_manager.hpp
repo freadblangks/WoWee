@@ -279,6 +279,9 @@ public:
     /** Process one ready tile (for loading screens with per-tile progress updates) */
     void processOneReadyTile();
 
+    /** Process a bounded batch of ready tiles with async GPU upload (no sync wait) */
+    void processReadyTiles();
+
 private:
     /**
      * Get tile coordinates from GL world position
@@ -317,10 +320,6 @@ private:
      */
     void workerLoop();
 
-    /**
-     * Main thread: poll for completed tiles and upload to GPU
-     */
-    void processReadyTiles();
     void ensureGroundEffectTablesLoaded();
     void generateGroundClutterPlacements(std::shared_ptr<PendingTile>& pending,
                                          std::unordered_set<uint32_t>& preparedModelIds);

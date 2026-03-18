@@ -4185,6 +4185,39 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                           ImVec2(ImGui::CalcTextSize(name.c_str()).x, 0));
         ImGui::PopStyleColor(4);
 
+        // Right-click context menu on target frame
+        if (ImGui::BeginPopupContextItem("##TargetFrameCtx")) {
+            ImGui::TextDisabled("%s", name.c_str());
+            ImGui::Separator();
+            if (ImGui::MenuItem("Set Focus"))
+                gameHandler.setFocus(target->getGuid());
+            if (target->getType() == game::ObjectType::PLAYER) {
+                ImGui::Separator();
+                if (ImGui::MenuItem("Whisper")) {
+                    selectedChatType = 4;
+                    strncpy(whisperTargetBuffer, name.c_str(), sizeof(whisperTargetBuffer) - 1);
+                    whisperTargetBuffer[sizeof(whisperTargetBuffer) - 1] = '\0';
+                    refocusChatInput = true;
+                }
+                if (ImGui::MenuItem("Invite to Group"))
+                    gameHandler.inviteToGroup(name);
+                if (ImGui::MenuItem("Trade"))
+                    gameHandler.initiateTrade(target->getGuid());
+                if (ImGui::MenuItem("Duel"))
+                    gameHandler.proposeDuel(target->getGuid());
+                if (ImGui::MenuItem("Inspect")) {
+                    gameHandler.inspectTarget();
+                    showInspectWindow_ = true;
+                }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Add Friend"))
+                    gameHandler.addFriend(name);
+                if (ImGui::MenuItem("Ignore"))
+                    gameHandler.addIgnore(name);
+            }
+            ImGui::EndPopup();
+        }
+
         // Group leader crown — golden ♛ when the targeted player is the party/raid leader
         if (gameHandler.isInGroup() && target->getType() == game::ObjectType::PLAYER) {
             if (gameHandler.getPartyData().leaderGuid == target->getGuid()) {
@@ -5074,6 +5107,42 @@ void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
         ImGui::Selectable(focusName.c_str(), false, ImGuiSelectableFlags_DontClosePopups,
                           ImVec2(ImGui::CalcTextSize(focusName.c_str()).x, 0));
         ImGui::PopStyleColor(4);
+
+        // Right-click context menu on focus frame
+        if (ImGui::BeginPopupContextItem("##FocusFrameCtx")) {
+            ImGui::TextDisabled("%s", focusName.c_str());
+            ImGui::Separator();
+            if (ImGui::MenuItem("Target"))
+                gameHandler.setTarget(focus->getGuid());
+            if (ImGui::MenuItem("Clear Focus"))
+                gameHandler.clearFocus();
+            if (focus->getType() == game::ObjectType::PLAYER) {
+                ImGui::Separator();
+                if (ImGui::MenuItem("Whisper")) {
+                    selectedChatType = 4;
+                    strncpy(whisperTargetBuffer, focusName.c_str(), sizeof(whisperTargetBuffer) - 1);
+                    whisperTargetBuffer[sizeof(whisperTargetBuffer) - 1] = '\0';
+                    refocusChatInput = true;
+                }
+                if (ImGui::MenuItem("Invite to Group"))
+                    gameHandler.inviteToGroup(focusName);
+                if (ImGui::MenuItem("Trade"))
+                    gameHandler.initiateTrade(focus->getGuid());
+                if (ImGui::MenuItem("Duel"))
+                    gameHandler.proposeDuel(focus->getGuid());
+                if (ImGui::MenuItem("Inspect")) {
+                    gameHandler.setTarget(focus->getGuid());
+                    gameHandler.inspectTarget();
+                    showInspectWindow_ = true;
+                }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Add Friend"))
+                    gameHandler.addFriend(focusName);
+                if (ImGui::MenuItem("Ignore"))
+                    gameHandler.addIgnore(focusName);
+            }
+            ImGui::EndPopup();
+        }
 
         // Group leader crown — golden ♛ when the focused player is the party/raid leader
         if (gameHandler.isInGroup() && focus->getType() == game::ObjectType::PLAYER) {

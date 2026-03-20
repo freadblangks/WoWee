@@ -1800,7 +1800,7 @@ public:
 
     const std::string& getFactionNamePublic(uint32_t factionId) const;
     uint32_t getWatchedFactionId() const { return watchedFactionId_; }
-    void setWatchedFactionId(uint32_t id) { watchedFactionId_ = id; }
+    void setWatchedFactionId(uint32_t factionId);
     uint32_t getLastContactListMask() const { return lastContactListMask_; }
     uint32_t getLastContactListCount() const { return lastContactListCount_; }
     bool isServerMovementAllowed() const { return serverMovementAllowed_; }

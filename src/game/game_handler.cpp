@@ -25737,6 +25737,21 @@ uint32_t GameHandler::getRepListIdByFactionId(uint32_t factionId) const {
     return (it != factionIdToRepList_.end()) ? it->second : 0xFFFFFFFFu;
 }
 
+void GameHandler::setWatchedFactionId(uint32_t factionId) {
+    watchedFactionId_ = factionId;
+    if (state != WorldState::IN_WORLD || !socket) return;
+    // CMSG_SET_WATCHED_FACTION: int32 repListId (-1 = unwatch)
+    int32_t repListId = -1;
+    if (factionId != 0) {
+        uint32_t rl = getRepListIdByFactionId(factionId);
+        if (rl != 0xFFFFFFFFu) repListId = static_cast<int32_t>(rl);
+    }
+    network::Packet pkt(wireOpcode(Opcode::CMSG_SET_WATCHED_FACTION));
+    pkt.writeUInt32(static_cast<uint32_t>(repListId));
+    socket->send(pkt);
+    LOG_DEBUG("CMSG_SET_WATCHED_FACTION: repListId=", repListId, " (factionId=", factionId, ")");
+}
+
 std::string GameHandler::getFactionName(uint32_t factionId) const {
     auto it = factionNameCache_.find(factionId);
     if (it != factionNameCache_.end()) return it->second;

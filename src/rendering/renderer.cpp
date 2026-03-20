@@ -3017,6 +3017,12 @@ void Renderer::resetCombatVisualState() {
     targetPosition = nullptr;
     meleeSwingTimer = 0.0f;
     meleeSwingCooldown = 0.0f;
+    // Clear lingering spell visual instances from the previous map/combat session.
+    // Without this, old effects could remain visible after teleport or map change.
+    for (auto& sv : activeSpellVisuals_) {
+        if (m2Renderer) m2Renderer->removeInstance(sv.instanceId);
+    }
+    activeSpellVisuals_.clear();
 }
 
 bool Renderer::isMoving() const {

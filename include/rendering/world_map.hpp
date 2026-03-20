@@ -67,6 +67,13 @@ public:
     void setServerExplorationMask(const std::vector<uint32_t>& masks, bool hasData);
     void setPartyDots(std::vector<WorldMapPartyDot> dots) { partyDots_ = std::move(dots); }
     void setTaxiNodes(std::vector<WorldMapTaxiNode> nodes) { taxiNodes_ = std::move(nodes); }
+
+    /// Quest POI marker for world map overlay (from SMSG_QUEST_POI_QUERY_RESPONSE).
+    struct QuestPoi {
+        float wowX = 0, wowY = 0;  ///< Canonical WoW coordinates (centroid of POI area)
+        std::string name;           ///< Quest title
+    };
+    void setQuestPois(std::vector<QuestPoi> pois) { questPois_ = std::move(pois); }
     /// Set the player's corpse position for overlay rendering.
     /// @param hasCorpse  True when the player is a ghost with an unclaimed corpse on this map.
     /// @param renderPos  Corpse position in render-space coordinates.
@@ -147,6 +154,9 @@ private:
     // Taxi node markers (set each frame from the UI layer)
     std::vector<WorldMapTaxiNode> taxiNodes_;
     int currentMapId_ = -1;  ///< WoW map ID currently loaded (set in loadZonesFromDBC)
+
+    // Quest POI markers (set each frame from the UI layer)
+    std::vector<QuestPoi> questPois_;
 
     // Corpse marker (ghost state — set each frame from the UI layer)
     bool      hasCorpse_        = false;

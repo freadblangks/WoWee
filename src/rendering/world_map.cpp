@@ -1096,6 +1096,41 @@ void WorldMap::renderImGuiOverlay(const glm::vec3& playerRenderPos, int screenWi
             }
         }
 
+        // Quest POI markers — golden exclamation marks / question marks
+        if (currentIdx >= 0 && viewLevel != ViewLevel::WORLD && !questPois_.empty()) {
+            ImVec2 mp = ImGui::GetMousePos();
+            ImFont* qFont = ImGui::GetFont();
+            for (const auto& qp : questPois_) {
+                glm::vec3 rPos = core::coords::canonicalToRender(
+                    glm::vec3(qp.wowX, qp.wowY, 0.0f));
+                glm::vec2 uv = renderPosToMapUV(rPos, currentIdx);
+                if (uv.x < 0.0f || uv.x > 1.0f || uv.y < 0.0f || uv.y > 1.0f) continue;
+
+                float px = imgMin.x + uv.x * displayW;
+                float py = imgMin.y + uv.y * displayH;
+
+                // Cyan circle with golden ring (matches minimap POI style)
+                drawList->AddCircleFilled(ImVec2(px, py), 5.0f, IM_COL32(0, 210, 255, 220));
+                drawList->AddCircle(ImVec2(px, py), 5.0f, IM_COL32(255, 215, 0, 220), 0, 1.5f);
+
+                // Quest name label
+                if (!qp.name.empty()) {
+                    ImVec2 nameSz = qFont->CalcTextSizeA(ImGui::GetFontSize() * 0.85f, FLT_MAX, 0.0f, qp.name.c_str());
+                    float tx = px - nameSz.x * 0.5f;
+                    float ty = py - nameSz.y - 7.0f;
+                    drawList->AddText(qFont, ImGui::GetFontSize() * 0.85f,
+                                      ImVec2(tx + 1.0f, ty + 1.0f), IM_COL32(0, 0, 0, 180), qp.name.c_str());
+                    drawList->AddText(qFont, ImGui::GetFontSize() * 0.85f,
+                                      ImVec2(tx, ty), IM_COL32(255, 230, 100, 230), qp.name.c_str());
+                }
+                // Tooltip on hover
+                float mdx = mp.x - px, mdy = mp.y - py;
+                if (mdx * mdx + mdy * mdy < 49.0f && !qp.name.empty()) {
+                    ImGui::SetTooltip("%s\n(Quest Objective)", qp.name.c_str());
+                }
+            }
+        }
+
         // Corpse marker — skull X shown when player is a ghost with unclaimed corpse
         if (hasCorpse_ && currentIdx >= 0 && viewLevel != ViewLevel::WORLD) {
             glm::vec2 uv = renderPosToMapUV(corpseRenderPos_, currentIdx);

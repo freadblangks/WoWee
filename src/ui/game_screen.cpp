@@ -8539,6 +8539,19 @@ void GameScreen::renderWorldMap(game::GameHandler& gameHandler) {
         wm->setTaxiNodes(std::move(taxiNodes));
     }
 
+    // Quest POI markers on world map (from SMSG_QUEST_POI_QUERY_RESPONSE / gossip POIs)
+    {
+        std::vector<rendering::WorldMap::QuestPoi> qpois;
+        for (const auto& poi : gameHandler.getGossipPois()) {
+            rendering::WorldMap::QuestPoi qp;
+            qp.wowX = poi.x;
+            qp.wowY = poi.y;
+            qp.name = poi.name;
+            qpois.push_back(std::move(qp));
+        }
+        wm->setQuestPois(std::move(qpois));
+    }
+
     // Corpse marker: show skull X on world map when ghost with unclaimed corpse
     {
         float corpseCanX = 0.0f, corpseCanY = 0.0f;

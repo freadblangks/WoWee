@@ -2281,6 +2281,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
                                                 : ("Spell cast failed (error " + std::to_string(castResult) + ")");
                     addUIError(errMsg);
                     if (spellCastFailedCallback_) spellCastFailedCallback_(castResultSpellId);
+                    if (addonEventCallback_)
+                        addonEventCallback_("UNIT_SPELLCAST_FAILED", {"player", std::to_string(castResultSpellId)});
                     MessageChatData msg;
                     msg.type     = ChatType::SYSTEM;
                     msg.language = ChatLanguage::UNIVERSAL;
@@ -3380,6 +3382,15 @@ void GameHandler::handlePacket(network::Packet& packet) {
                         addLocalChatMessage(emsg);
                     }
                 }
+            }
+            // Fire UNIT_SPELLCAST_INTERRUPTED for Lua addons
+            if (addonEventCallback_) {
+                std::string unitId;
+                if (failGuid == playerGuid || failGuid == 0) unitId = "player";
+                else if (failGuid == targetGuid) unitId = "target";
+                else if (failGuid == focusGuid) unitId = "focus";
+                if (!unitId.empty())
+                    addonEventCallback_("UNIT_SPELLCAST_INTERRUPTED", {unitId});
             }
             if (failGuid == playerGuid || failGuid == 0) {
                 // Player's own cast failed — clear gather-node loot target so the
@@ -7302,6 +7313,15 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 }
                 LOG_DEBUG("MSG_CHANNEL_START: caster=0x", std::hex, chanCaster, std::dec,
                           " spell=", chanSpellId, " total=", chanTotalMs, "ms");
+                // Fire UNIT_SPELLCAST_CHANNEL_START for Lua addons
+                if (addonEventCallback_) {
+                    std::string unitId;
+                    if (chanCaster == playerGuid) unitId = "player";
+                    else if (chanCaster == targetGuid) unitId = "target";
+                    else if (chanCaster == focusGuid) unitId = "focus";
+                    if (!unitId.empty())
+                        addonEventCallback_("UNIT_SPELLCAST_CHANNEL_START", {unitId, std::to_string(chanSpellId)});
+                }
             }
             break;
         }
@@ -7329,6 +7349,15 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
             LOG_DEBUG("MSG_CHANNEL_UPDATE: caster=0x", std::hex, chanCaster2, std::dec,
                       " remaining=", chanRemainMs, "ms");
+            // Fire UNIT_SPELLCAST_CHANNEL_STOP when channel ends
+            if (chanRemainMs == 0 && addonEventCallback_) {
+                std::string unitId;
+                if (chanCaster2 == playerGuid) unitId = "player";
+                else if (chanCaster2 == targetGuid) unitId = "target";
+                else if (chanCaster2 == focusGuid) unitId = "focus";
+                if (!unitId.empty())
+                    addonEventCallback_("UNIT_SPELLCAST_CHANNEL_STOP", {unitId});
+            }
             break;
         }
 

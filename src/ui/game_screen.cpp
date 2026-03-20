@@ -2627,7 +2627,7 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
                     "/g", "/guild", "/guildinfo",
                     "/gmticket", "/grouploot", "/i", "/instance",
                     "/invite", "/j", "/join", "/kick",
-                    "/l", "/leave", "/local", "/me",
+                    "/l", "/leave", "/local", "/macrohelp", "/me",
                     "/p", "/party", "/petaggressive", "/petattack", "/petdefensive",
                     "/petdismiss", "/petfollow", "/pethalt", "/petpassive", "/petstay",
                     "/r", "/raid",
@@ -6117,6 +6117,31 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                 return;
             }
 
+            // /macrohelp command — list available macro conditionals
+            if (cmdLower == "macrohelp") {
+                static const char* kMacroHelp[] = {
+                    "--- Macro Conditionals ---",
+                    "Usage: /cast [cond1,cond2] Spell1; [cond3] Spell2; Default",
+                    "State:   [combat] [nocombat] [mounted] [nomounted]",
+                    "         [swimming] [flying] [stealthed] [channeling]",
+                    "Target:  [harm] [help] [exists] [noexists] [dead] [nodead]",
+                    "         [target=focus] [target=pet] [target=player]",
+                    "Form:    [noform] [nostance] [form:0]",
+                    "Keys:    [mod:shift] [mod:ctrl] [mod:alt]",
+                    "Aura:    [buff:Name] [nobuff:Name] [debuff:Name] [nodebuff:Name]",
+                    "Other:   #showtooltip, /stopmacro [cond], /castsequence",
+                };
+                for (const char* line : kMacroHelp) {
+                    game::MessageChatData m;
+                    m.type = game::ChatType::SYSTEM;
+                    m.language = game::ChatLanguage::UNIVERSAL;
+                    m.message = line;
+                    gameHandler.addLocalChatMessage(m);
+                }
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
             // /help command — list available slash commands
             if (cmdLower == "help" || cmdLower == "?") {
                 static const char* kHelpLines[] = {
@@ -6135,7 +6160,7 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                     "Movement: /sit  /stand  /kneel  /dismount",
                     "Misc: /played  /time  /zone  /loc  /afk [msg]  /dnd [msg]  /inspect",
                     "      /helm  /cloak  /trade  /join <channel>  /leave <channel>",
-                    "      /score  /unstuck  /logout  /ticket  /screenshot  /help",
+                    "      /score  /unstuck  /logout  /ticket  /screenshot  /macrohelp  /help",
                 };
                 for (const char* line : kHelpLines) {
                     game::MessageChatData helpMsg;

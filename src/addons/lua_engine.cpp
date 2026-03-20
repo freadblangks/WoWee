@@ -1,5 +1,6 @@
 #include "addons/lua_engine.hpp"
 #include "game/game_handler.hpp"
+#include "game/entity.hpp"
 #include "core/logger.hpp"
 
 extern "C" {
@@ -52,6 +53,154 @@ static int lua_wow_print(lua_State* L) {
 // WoW-compatible message() — same as print for now
 static int lua_wow_message(lua_State* L) {
     return lua_wow_print(L);
+}
+
+// Helper: get player Unit from game handler
+static game::Unit* getPlayerUnit(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) return nullptr;
+    auto entity = gh->getEntityManager().getEntity(gh->getPlayerGuid());
+    if (!entity) return nullptr;
+    return dynamic_cast<game::Unit*>(entity.get());
+}
+
+// Helper: resolve "player", "target", "focus", "pet" unit IDs to entity
+static game::Unit* resolveUnit(lua_State* L, const char* unitId) {
+    auto* gh = getGameHandler(L);
+    if (!gh || !unitId) return nullptr;
+    std::string uid(unitId);
+    for (char& c : uid) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+    uint64_t guid = 0;
+    if (uid == "player")      guid = gh->getPlayerGuid();
+    else if (uid == "target") guid = gh->getTargetGuid();
+    else if (uid == "focus")  guid = gh->getFocusGuid();
+    else if (uid == "pet")    guid = gh->getPetGuid();
+    else return nullptr;
+
+    if (guid == 0) return nullptr;
+    auto entity = gh->getEntityManager().getEntity(guid);
+    if (!entity) return nullptr;
+    return dynamic_cast<game::Unit*>(entity.get());
+}
+
+// --- WoW Unit API ---
+
+static int lua_UnitName(lua_State* L) {
+    const char* uid = luaL_optstring(L, 1, "player");
+    auto* unit = resolveUnit(L, uid);
+    if (unit && !unit->getName().empty()) {
+        lua_pushstring(L, unit->getName().c_str());
+    } else {
+        lua_pushstring(L, "Unknown");
+    }
+    return 1;
+}
+
+static int lua_UnitHealth(lua_State* L) {
+    const char* uid = luaL_optstring(L, 1, "player");
+    auto* unit = resolveUnit(L, uid);
+    lua_pushnumber(L, unit ? unit->getHealth() : 0);
+    return 1;
+}
+
+static int lua_UnitHealthMax(lua_State* L) {
+    const char* uid = luaL_optstring(L, 1, "player");
+    auto* unit = resolveUnit(L, uid);
+    lua_pushnumber(L, unit ? unit->getMaxHealth() : 0);
+    return 1;
+}
+
+static int lua_UnitPower(lua_State* L) {
+    const char* uid = luaL_optstring(L, 1, "player");
+    auto* unit = resolveUnit(L, uid);
+    lua_pushnumber(L, unit ? unit->getPower() : 0);
+    return 1;
+}
+
+static int lua_UnitPowerMax(lua_State* L) {
+    const char* uid = luaL_optstring(L, 1, "player");
+    auto* unit = resolveUnit(L, uid);
+    lua_pushnumber(L, unit ? unit->getMaxPower() : 0);
+    return 1;
+}
+
+static int lua_UnitLevel(lua_State* L) {
+    const char* uid = luaL_optstring(L, 1, "player");
+    auto* unit = resolveUnit(L, uid);
+    lua_pushnumber(L, unit ? unit->getLevel() : 0);
+    return 1;
+}
+
+static int lua_UnitExists(lua_State* L) {
+    const char* uid = luaL_optstring(L, 1, "player");
+    auto* unit = resolveUnit(L, uid);
+    lua_pushboolean(L, unit != nullptr);
+    return 1;
+}
+
+static int lua_UnitIsDead(lua_State* L) {
+    const char* uid = luaL_optstring(L, 1, "player");
+    auto* unit = resolveUnit(L, uid);
+    lua_pushboolean(L, unit && unit->getHealth() == 0);
+    return 1;
+}
+
+static int lua_UnitClass(lua_State* L) {
+    const char* uid = luaL_optstring(L, 1, "player");
+    auto* gh = getGameHandler(L);
+    auto* unit = resolveUnit(L, uid);
+    if (unit && gh) {
+        static const char* kClasses[] = {"", "Warrior","Paladin","Hunter","Rogue","Priest",
+            "Death Knight","Shaman","Mage","Warlock","","Druid"};
+        uint8_t classId = 0;
+        // For player, use character data; for others, use UNIT_FIELD_BYTES_0
+        std::string uidStr(uid);
+        for (char& c : uidStr) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (uidStr == "player") classId = gh->getPlayerClass();
+        const char* name = (classId < 12) ? kClasses[classId] : "Unknown";
+        lua_pushstring(L, name);
+        lua_pushstring(L, name);  // WoW returns localized + English
+        lua_pushnumber(L, classId);
+        return 3;
+    }
+    lua_pushstring(L, "Unknown");
+    lua_pushstring(L, "Unknown");
+    lua_pushnumber(L, 0);
+    return 3;
+}
+
+// --- Player/Game API ---
+
+static int lua_GetMoney(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    lua_pushnumber(L, gh ? static_cast<double>(gh->getMoneyCopper()) : 0.0);
+    return 1;
+}
+
+static int lua_IsInGroup(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    lua_pushboolean(L, gh && gh->isInGroup());
+    return 1;
+}
+
+static int lua_IsInRaid(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    lua_pushboolean(L, gh && gh->isInGroup() && gh->getPartyData().groupType == 1);
+    return 1;
+}
+
+static int lua_GetPlayerMapPosition(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (gh) {
+        const auto& mi = gh->getMovementInfo();
+        lua_pushnumber(L, mi.x);
+        lua_pushnumber(L, mi.y);
+        return 2;
+    }
+    lua_pushnumber(L, 0);
+    lua_pushnumber(L, 0);
+    return 2;
 }
 
 // Stub for GetTime() — returns elapsed seconds
@@ -126,6 +275,27 @@ void LuaEngine::registerCoreAPI() {
 
     lua_pushcfunction(L_, lua_wow_gettime);
     lua_setglobal(L_, "GetTime");
+
+    // Unit API
+    static const struct { const char* name; lua_CFunction func; } unitAPI[] = {
+        {"UnitName",      lua_UnitName},
+        {"UnitHealth",    lua_UnitHealth},
+        {"UnitHealthMax", lua_UnitHealthMax},
+        {"UnitPower",     lua_UnitPower},
+        {"UnitPowerMax",  lua_UnitPowerMax},
+        {"UnitLevel",     lua_UnitLevel},
+        {"UnitExists",    lua_UnitExists},
+        {"UnitIsDead",    lua_UnitIsDead},
+        {"UnitClass",     lua_UnitClass},
+        {"GetMoney",      lua_GetMoney},
+        {"IsInGroup",     lua_IsInGroup},
+        {"IsInRaid",      lua_IsInRaid},
+        {"GetPlayerMapPosition", lua_GetPlayerMapPosition},
+    };
+    for (const auto& [name, func] : unitAPI) {
+        lua_pushcfunction(L_, func);
+        lua_setglobal(L_, name);
+    }
 }
 
 bool LuaEngine::executeFile(const std::string& path) {

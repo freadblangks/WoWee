@@ -203,6 +203,104 @@ static int lua_GetPlayerMapPosition(lua_State* L) {
     return 2;
 }
 
+// --- Action API ---
+
+static int lua_SendChatMessage(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) return 0;
+    const char* msg = luaL_checkstring(L, 1);
+    const char* chatType = luaL_optstring(L, 2, "SAY");
+    // language arg (3) ignored — server determines language
+    const char* target = luaL_optstring(L, 4, "");
+
+    std::string typeStr(chatType);
+    for (char& c : typeStr) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+
+    game::ChatType ct = game::ChatType::SAY;
+    if (typeStr == "SAY")            ct = game::ChatType::SAY;
+    else if (typeStr == "YELL")      ct = game::ChatType::YELL;
+    else if (typeStr == "PARTY")     ct = game::ChatType::PARTY;
+    else if (typeStr == "GUILD")     ct = game::ChatType::GUILD;
+    else if (typeStr == "OFFICER")   ct = game::ChatType::OFFICER;
+    else if (typeStr == "RAID")      ct = game::ChatType::RAID;
+    else if (typeStr == "WHISPER")   ct = game::ChatType::WHISPER;
+    else if (typeStr == "BATTLEGROUND") ct = game::ChatType::BATTLEGROUND;
+
+    std::string targetStr(target && *target ? target : "");
+    gh->sendChatMessage(ct, msg, targetStr);
+    return 0;
+}
+
+static int lua_CastSpellByName(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) return 0;
+    const char* name = luaL_checkstring(L, 1);
+    if (!name || !*name) return 0;
+
+    // Find highest rank of spell by name (same logic as /cast)
+    std::string nameLow(name);
+    for (char& c : nameLow) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+    uint32_t bestId = 0;
+    int bestRank = -1;
+    for (uint32_t sid : gh->getKnownSpells()) {
+        std::string sn = gh->getSpellName(sid);
+        for (char& c : sn) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (sn != nameLow) continue;
+        int rank = 0;
+        const std::string& rk = gh->getSpellRank(sid);
+        if (!rk.empty()) {
+            std::string rkl = rk;
+            for (char& c : rkl) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (rkl.rfind("rank ", 0) == 0) {
+                try { rank = std::stoi(rkl.substr(5)); } catch (...) {}
+            }
+        }
+        if (rank > bestRank) { bestRank = rank; bestId = sid; }
+    }
+    if (bestId != 0) {
+        uint64_t target = gh->hasTarget() ? gh->getTargetGuid() : 0;
+        gh->castSpell(bestId, target);
+    }
+    return 0;
+}
+
+static int lua_IsSpellKnown(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    uint32_t spellId = static_cast<uint32_t>(luaL_checknumber(L, 1));
+    lua_pushboolean(L, gh && gh->getKnownSpells().count(spellId));
+    return 1;
+}
+
+static int lua_GetSpellCooldown(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushnumber(L, 0); lua_pushnumber(L, 0); return 2; }
+    // Accept spell name or ID
+    uint32_t spellId = 0;
+    if (lua_isnumber(L, 1)) {
+        spellId = static_cast<uint32_t>(lua_tonumber(L, 1));
+    } else {
+        const char* name = luaL_checkstring(L, 1);
+        std::string nameLow(name);
+        for (char& c : nameLow) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        for (uint32_t sid : gh->getKnownSpells()) {
+            std::string sn = gh->getSpellName(sid);
+            for (char& c : sn) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (sn == nameLow) { spellId = sid; break; }
+        }
+    }
+    float cd = gh->getSpellCooldown(spellId);
+    lua_pushnumber(L, 0);   // start time (not tracked precisely, return 0)
+    lua_pushnumber(L, cd);  // duration remaining
+    return 2;
+}
+
+static int lua_HasTarget(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    lua_pushboolean(L, gh && gh->hasTarget());
+    return 1;
+}
+
 // Stub for GetTime() — returns elapsed seconds
 static int lua_wow_gettime(lua_State* L) {
     static auto start = std::chrono::steady_clock::now();
@@ -292,6 +390,11 @@ void LuaEngine::registerCoreAPI() {
         {"IsInGroup",     lua_IsInGroup},
         {"IsInRaid",      lua_IsInRaid},
         {"GetPlayerMapPosition", lua_GetPlayerMapPosition},
+        {"SendChatMessage",   lua_SendChatMessage},
+        {"CastSpellByName",   lua_CastSpellByName},
+        {"IsSpellKnown",      lua_IsSpellKnown},
+        {"GetSpellCooldown",  lua_GetSpellCooldown},
+        {"HasTarget",         lua_HasTarget},
     };
     for (const auto& [name, func] : unitAPI) {
         lua_pushcfunction(L_, func);

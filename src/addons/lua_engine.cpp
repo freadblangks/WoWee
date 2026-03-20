@@ -282,6 +282,54 @@ static int lua_InCombatLockdown(lua_State* L) {
     return 1;
 }
 
+// UnitBuff(unitId, index) / UnitDebuff(unitId, index)
+// Returns: name, rank, icon, count, debuffType, duration, expirationTime, caster, isStealable, shouldConsolidate, spellId
+static int lua_UnitAura(lua_State* L, bool wantBuff) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushnil(L); return 1; }
+    const char* uid = luaL_optstring(L, 1, "player");
+    int index = static_cast<int>(luaL_optnumber(L, 2, 1));
+    if (index < 1) { lua_pushnil(L); return 1; }
+
+    std::string uidStr(uid);
+    for (char& c : uidStr) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+    const std::vector<game::AuraSlot>* auras = nullptr;
+    if (uidStr == "player")      auras = &gh->getPlayerAuras();
+    else if (uidStr == "target") auras = &gh->getTargetAuras();
+    if (!auras) { lua_pushnil(L); return 1; }
+
+    // Filter to buffs or debuffs and find the Nth one
+    int found = 0;
+    for (const auto& aura : *auras) {
+        if (aura.isEmpty() || aura.spellId == 0) continue;
+        bool isDebuff = (aura.flags & 0x80) != 0;
+        if (wantBuff ? isDebuff : !isDebuff) continue;
+        found++;
+        if (found == index) {
+            // Return: name, rank, icon, count, debuffType, duration, expirationTime, ...spellId
+            std::string name = gh->getSpellName(aura.spellId);
+            lua_pushstring(L, name.empty() ? "Unknown" : name.c_str()); // name
+            lua_pushstring(L, "");           // rank
+            lua_pushnil(L);                  // icon (texture path — not implemented)
+            lua_pushnumber(L, aura.charges); // count
+            lua_pushnil(L);                  // debuffType
+            lua_pushnumber(L, aura.maxDurationMs > 0 ? aura.maxDurationMs / 1000.0 : 0); // duration
+            lua_pushnumber(L, 0);            // expirationTime (would need absolute time)
+            lua_pushnil(L);                  // caster
+            lua_pushboolean(L, 0);           // isStealable
+            lua_pushboolean(L, 0);           // shouldConsolidate
+            lua_pushnumber(L, aura.spellId); // spellId
+            return 11;
+        }
+    }
+    lua_pushnil(L);
+    return 1;
+}
+
+static int lua_UnitBuff(lua_State* L) { return lua_UnitAura(L, true); }
+static int lua_UnitDebuff(lua_State* L) { return lua_UnitAura(L, false); }
+
 // --- Action API ---
 
 static int lua_SendChatMessage(lua_State* L) {
@@ -711,6 +759,8 @@ void LuaEngine::registerCoreAPI() {
         {"UnitGUID",          lua_UnitGUID},
         {"UnitIsPlayer",      lua_UnitIsPlayer},
         {"InCombatLockdown",  lua_InCombatLockdown},
+        {"UnitBuff",          lua_UnitBuff},
+        {"UnitDebuff",        lua_UnitDebuff},
         // Utilities
         {"strsplit",          lua_strsplit},
         {"strtrim",           lua_strtrim},

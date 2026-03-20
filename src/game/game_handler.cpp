@@ -5076,12 +5076,27 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_ENCHANTMENTLOG: {
             // uint64 targetGuid + uint64 casterGuid + uint32 spellId + uint32 displayId + uint32 animType
             if (packet.getSize() - packet.getReadPos() >= 28) {
-                /*uint64_t targetGuid =*/ packet.readUInt64();
-                /*uint64_t casterGuid =*/ packet.readUInt64();
-                uint32_t spellId = packet.readUInt32();
+                uint64_t enchTargetGuid = packet.readUInt64();
+                uint64_t enchCasterGuid = packet.readUInt64();
+                uint32_t enchSpellId = packet.readUInt32();
                 /*uint32_t displayId =*/ packet.readUInt32();
                 /*uint32_t animType =*/ packet.readUInt32();
-                LOG_DEBUG("SMSG_ENCHANTMENTLOG: spellId=", spellId);
+                LOG_DEBUG("SMSG_ENCHANTMENTLOG: spellId=", enchSpellId);
+                // Show enchant message if the player is involved
+                if (enchTargetGuid == playerGuid || enchCasterGuid == playerGuid) {
+                    const std::string& enchName = getSpellName(enchSpellId);
+                    std::string casterName = lookupName(enchCasterGuid);
+                    if (!enchName.empty()) {
+                        std::string msg;
+                        if (enchCasterGuid == playerGuid)
+                            msg = "You enchant with " + enchName + ".";
+                        else if (!casterName.empty())
+                            msg = casterName + " enchants your item with " + enchName + ".";
+                        else
+                            msg = "Your item has been enchanted with " + enchName + ".";
+                        addSystemChatMessage(msg);
+                    }
+                }
             }
             break;
         }
@@ -22795,7 +22810,18 @@ void GameHandler::handleXpGain(network::Packet& packet) {
     // but we can show combat text for XP gains
     addCombatText(CombatTextEntry::XP_GAIN, static_cast<int32_t>(data.totalXp), 0, true);
 
-    std::string msg = "You gain " + std::to_string(data.totalXp) + " experience.";
+    // Build XP message with source creature name when available
+    std::string msg;
+    if (data.victimGuid != 0 && data.type == 0) {
+        // Kill XP — resolve creature name
+        std::string victimName = lookupName(data.victimGuid);
+        if (!victimName.empty())
+            msg = victimName + " dies, you gain " + std::to_string(data.totalXp) + " experience.";
+        else
+            msg = "You gain " + std::to_string(data.totalXp) + " experience.";
+    } else {
+        msg = "You gain " + std::to_string(data.totalXp) + " experience.";
+    }
     if (data.groupBonus > 0) {
         msg += " (+" + std::to_string(data.groupBonus) + " group bonus)";
     }

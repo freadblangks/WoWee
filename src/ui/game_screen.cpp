@@ -8886,12 +8886,13 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
         }
 
         // Macro icon: #showtooltip [SpellName] → show that spell's icon on the button
+        bool macroIsUseCmd = false;  // tracks if the macro's primary command is /use (for item icon fallback)
         if (slot.type == game::ActionBarSlot::MACRO && slot.id != 0 && !iconTex) {
             const std::string& macroText = gameHandler.getMacroText(slot.id);
             if (!macroText.empty()) {
                 std::string showArg = getMacroShowtooltipArg(macroText);
                 if (showArg.empty() || showArg == "__auto__") {
-                    // No explicit #showtooltip arg — derive spell from first /cast or /castsequence line
+                    // No explicit #showtooltip arg — derive spell from first /cast, /castsequence, or /use line
                     for (const auto& cmdLine : allMacroCommands(macroText)) {
                         if (cmdLine.size() < 6) continue;
                         std::string cl = cmdLine;
@@ -8899,6 +8900,7 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
                         bool isCastCmd = (cl.rfind("/cast ", 0) == 0 || cl == "/cast");
                         bool isCastSeqCmd = (cl.rfind("/castsequence ", 0) == 0);
                         bool isUseCmd = (cl.rfind("/use ", 0) == 0);
+                        if (isUseCmd) macroIsUseCmd = true;
                         if (!isCastCmd && !isCastSeqCmd && !isUseCmd) continue;
                         size_t sp2 = cmdLine.find(' ');
                         if (sp2 == std::string::npos) continue;
@@ -8944,6 +8946,18 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
                         if (snl == showLower) {
                             iconTex = assetMgr ? getSpellIcon(sid, assetMgr) : VK_NULL_HANDLE;
                             if (iconTex) break;
+                        }
+                    }
+                    // Fallback for /use macros: if no spell matched, search item cache for the item icon
+                    if (!iconTex && macroIsUseCmd) {
+                        for (const auto& [entry, info] : gameHandler.getItemInfoCache()) {
+                            if (!info.valid) continue;
+                            std::string iName = info.name;
+                            for (char& c : iName) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                            if (iName == showLower && info.displayInfoId != 0) {
+                                iconTex = inventoryScreen.getItemIcon(info.displayInfoId);
+                                break;
+                            }
                         }
                     }
                 }

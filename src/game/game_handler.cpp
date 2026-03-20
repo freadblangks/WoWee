@@ -24225,6 +24225,16 @@ void GameHandler::saveCharacterConfig() {
         out << "quest_" << i << "_complete=" << (quest.complete ? 1 : 0) << "\n";
     }
 
+    // Save tracked quest IDs so the quest tracker restores on login
+    if (!trackedQuestIds_.empty()) {
+        std::string ids;
+        for (uint32_t qid : trackedQuestIds_) {
+            if (!ids.empty()) ids += ',';
+            ids += std::to_string(qid);
+        }
+        out << "tracked_quests=" << ids << "\n";
+    }
+
     LOG_INFO("Character config saved to ", path);
 }
 
@@ -24277,6 +24287,21 @@ void GameHandler::loadCharacterConfig() {
                     }
                 }
                 macros_[macroId] = std::move(unescaped);
+            }
+        } else if (key == "tracked_quests" && !val.empty()) {
+            // Parse comma-separated quest IDs
+            trackedQuestIds_.clear();
+            size_t tqPos = 0;
+            while (tqPos <= val.size()) {
+                size_t comma = val.find(',', tqPos);
+                std::string idStr = (comma != std::string::npos)
+                    ? val.substr(tqPos, comma - tqPos) : val.substr(tqPos);
+                try {
+                    uint32_t qid = static_cast<uint32_t>(std::stoul(idStr));
+                    if (qid != 0) trackedQuestIds_.insert(qid);
+                } catch (...) {}
+                if (comma == std::string::npos) break;
+                tqPos = comma + 1;
             }
         } else if (key.rfind("action_bar_", 0) == 0) {
             // Parse action_bar_N_type or action_bar_N_id

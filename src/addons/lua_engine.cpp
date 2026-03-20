@@ -691,6 +691,47 @@ void LuaEngine::registerCoreAPI() {
     // OnUpdate frame tracking table
     lua_newtable(L_);
     lua_setglobal(L_, "__WoweeOnUpdateFrames");
+
+    // C_Timer implementation via Lua (uses OnUpdate internally)
+    luaL_dostring(L_,
+        "C_Timer = {}\n"
+        "local timers = {}\n"
+        "local timerFrame = CreateFrame('Frame', '__WoweeTimerFrame')\n"
+        "timerFrame:SetScript('OnUpdate', function(self, elapsed)\n"
+        "    local i = 1\n"
+        "    while i <= #timers do\n"
+        "        timers[i].remaining = timers[i].remaining - elapsed\n"
+        "        if timers[i].remaining <= 0 then\n"
+        "            local cb = timers[i].callback\n"
+        "            table.remove(timers, i)\n"
+        "            cb()\n"
+        "        else\n"
+        "            i = i + 1\n"
+        "        end\n"
+        "    end\n"
+        "    if #timers == 0 then self:Hide() end\n"
+        "end)\n"
+        "timerFrame:Hide()\n"
+        "function C_Timer.After(seconds, callback)\n"
+        "    tinsert(timers, {remaining = seconds, callback = callback})\n"
+        "    timerFrame:Show()\n"
+        "end\n"
+        "function C_Timer.NewTicker(seconds, callback, iterations)\n"
+        "    local count = 0\n"
+        "    local maxIter = iterations or -1\n"
+        "    local ticker = {cancelled = false}\n"
+        "    local function tick()\n"
+        "        if ticker.cancelled then return end\n"
+        "        count = count + 1\n"
+        "        callback(ticker)\n"
+        "        if maxIter > 0 and count >= maxIter then return end\n"
+        "        C_Timer.After(seconds, tick)\n"
+        "    end\n"
+        "    C_Timer.After(seconds, tick)\n"
+        "    function ticker:Cancel() self.cancelled = true end\n"
+        "    return ticker\n"
+        "end\n"
+    );
 }
 
 // ---- Event System ----

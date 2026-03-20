@@ -388,6 +388,7 @@ private:
     void renderBgInvitePopup(game::GameHandler& gameHandler);
     void renderBfMgrInvitePopup(game::GameHandler& gameHandler);
     void renderLfgProposalPopup(game::GameHandler& gameHandler);
+    void renderLfgRoleCheckPopup(game::GameHandler& gameHandler);
     void renderChatBubbles(game::GameHandler& gameHandler);
     void renderMailWindow(game::GameHandler& gameHandler);
     void renderMailComposeWindow(game::GameHandler& gameHandler);

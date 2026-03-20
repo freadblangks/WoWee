@@ -1442,6 +1442,7 @@ public:
     // roles bitmask: 0x02=tank, 0x04=healer, 0x08=dps; pass LFGDungeonEntry ID
     void lfgJoin(uint32_t dungeonId, uint8_t roles);
     void lfgLeave();
+    void lfgSetRoles(uint8_t roles);
     void lfgAcceptProposal(uint32_t proposalId, bool accept);
     void lfgSetBootVote(bool vote);
     void lfgTeleport(bool toLfgDungeon = true);

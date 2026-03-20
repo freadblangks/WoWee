@@ -17172,6 +17172,17 @@ void GameHandler::lfgLeave() {
     LOG_INFO("Sent CMSG_LFG_LEAVE");
 }
 
+void GameHandler::lfgSetRoles(uint8_t roles) {
+    if (state != WorldState::IN_WORLD || !socket) return;
+    const uint32_t wire = wireOpcode(Opcode::CMSG_LFG_SET_ROLES);
+    if (wire == 0xFFFF) return;
+
+    network::Packet pkt(static_cast<uint16_t>(wire));
+    pkt.writeUInt8(roles);
+    socket->send(pkt);
+    LOG_INFO("Sent CMSG_LFG_SET_ROLES: roles=", static_cast<int>(roles));
+}
+
 void GameHandler::lfgAcceptProposal(uint32_t proposalId, bool accept) {
     if (!socket) return;
 

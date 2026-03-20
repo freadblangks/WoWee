@@ -5742,6 +5742,32 @@ static std::string evaluateMacroConditionals(const std::string& rawArg,
         if (c == "harm" || c == "nohelp") { return unitHostile(effTarget()); }
         if (c == "help" || c == "noharm") { return !unitHostile(effTarget()); }
 
+        // mounted / nomounted
+        if (c == "mounted")   return gameHandler.isMounted();
+        if (c == "nomounted") return !gameHandler.isMounted();
+
+        // swimming / noswimming
+        if (c == "swimming")   return gameHandler.isSwimming();
+        if (c == "noswimming") return !gameHandler.isSwimming();
+
+        // flying / noflying (CAN_FLY + FLYING flags active)
+        if (c == "flying")   return gameHandler.isPlayerFlying();
+        if (c == "noflying") return !gameHandler.isPlayerFlying();
+
+        // channeling / nochanneling
+        if (c == "channeling")   return gameHandler.isCasting() && gameHandler.isChanneling();
+        if (c == "nochanneling") return !(gameHandler.isCasting() && gameHandler.isChanneling());
+
+        // stealthed / nostealthed (unit flag 0x02000000 = UNIT_FLAG_SNEAKING)
+        auto isStealthedFn = [&]() -> bool {
+            auto pe = gameHandler.getEntityManager().getEntity(gameHandler.getPlayerGuid());
+            if (!pe) return false;
+            auto pu = std::dynamic_pointer_cast<game::Unit>(pe);
+            return pu && (pu->getUnitFlags() & 0x02000000u) != 0;
+        };
+        if (c == "stealthed")   return isStealthedFn();
+        if (c == "nostealthed") return !isStealthedFn();
+
         // noform / nostance — player is NOT in a shapeshift/stance
         if (c == "noform" || c == "nostance") {
             for (const auto& a : gameHandler.getPlayerAuras())

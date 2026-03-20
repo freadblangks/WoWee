@@ -932,6 +932,36 @@ void LuaEngine::registerCoreAPI() {
         "end\n"
         "ChatFrame1 = DEFAULT_CHAT_FRAME\n"
     );
+
+    // hooksecurefunc — hook a function to run additional code after it
+    luaL_dostring(L_,
+        "function hooksecurefunc(tblOrName, nameOrFunc, funcOrNil)\n"
+        "    local tbl, name, hook\n"
+        "    if type(tblOrName) == 'table' then\n"
+        "        tbl, name, hook = tblOrName, nameOrFunc, funcOrNil\n"
+        "    else\n"
+        "        tbl, name, hook = _G, tblOrName, nameOrFunc\n"
+        "    end\n"
+        "    local orig = tbl[name]\n"
+        "    if type(orig) ~= 'function' then return end\n"
+        "    tbl[name] = function(...)\n"
+        "        local r = {orig(...)}\n"
+        "        hook(...)\n"
+        "        return unpack(r)\n"
+        "    end\n"
+        "end\n"
+    );
+
+    // Noop stubs for commonly called functions that don't need implementation
+    luaL_dostring(L_,
+        "function SetDesaturation() end\n"
+        "function SetPortraitTexture() end\n"
+        "function PlaySound() end\n"
+        "function PlaySoundFile() end\n"
+        "function UIParent_OnEvent() end\n"
+        "UIParent = CreateFrame('Frame', 'UIParent')\n"
+        "WorldFrame = CreateFrame('Frame', 'WorldFrame')\n"
+    );
 }
 
 // ---- Event System ----

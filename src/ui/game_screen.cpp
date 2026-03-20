@@ -8970,8 +8970,14 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
         }
 
         // Error-flash overlay: red fade on spell cast failure (~0.5 s).
-        if (slot.type == game::ActionBarSlot::SPELL && slot.id != 0) {
-            auto flashIt = actionFlashEndTimes_.find(slot.id);
+        // Check both spell slots directly and macro slots via their primary spell.
+        {
+            uint32_t flashSpellId = 0;
+            if (slot.type == game::ActionBarSlot::SPELL && slot.id != 0)
+                flashSpellId = slot.id;
+            else if (slot.type == game::ActionBarSlot::MACRO && slot.id != 0)
+                flashSpellId = resolveMacroPrimarySpellId(slot.id, gameHandler);
+            auto flashIt = (flashSpellId != 0) ? actionFlashEndTimes_.find(flashSpellId) : actionFlashEndTimes_.end();
             if (flashIt != actionFlashEndTimes_.end()) {
                 float now = static_cast<float>(ImGui::GetTime());
                 float remaining = flashIt->second - now;

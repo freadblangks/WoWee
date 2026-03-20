@@ -4554,11 +4554,16 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
             break;
         }
-        case Opcode::SMSG_TRIGGER_CINEMATIC:
-            // uint32 cinematicId — we don't play cinematics; consume and skip.
+        case Opcode::SMSG_TRIGGER_CINEMATIC: {
+            // uint32 cinematicId — we don't play cinematics; acknowledge immediately.
             packet.setReadPos(packet.getSize());
-            LOG_DEBUG("SMSG_TRIGGER_CINEMATIC: skipped");
+            // Send CMSG_NEXT_CINEMATIC_CAMERA to signal cinematic completion;
+            // servers may block further packets until this is received.
+            network::Packet ack(wireOpcode(Opcode::CMSG_NEXT_CINEMATIC_CAMERA));
+            socket->send(ack);
+            LOG_DEBUG("SMSG_TRIGGER_CINEMATIC: skipped, sent CMSG_NEXT_CINEMATIC_CAMERA");
             break;
+        }
 
         case Opcode::SMSG_LOOT_MONEY_NOTIFY: {
             // Format: uint32 money + uint8 soleLooter
@@ -6298,9 +6303,19 @@ void GameHandler::handlePacket(network::Packet& packet) {
         }
 
         // ---- Movie trigger ----
-        case Opcode::SMSG_TRIGGER_MOVIE:
+        case Opcode::SMSG_TRIGGER_MOVIE: {
+            // uint32 movieId — we don't play movies; acknowledge immediately.
             packet.setReadPos(packet.getSize());
+            // WotLK servers expect CMSG_COMPLETE_MOVIE after the movie finishes;
+            // without it, the server may hang or disconnect the client.
+            uint16_t wire = wireOpcode(Opcode::CMSG_COMPLETE_MOVIE);
+            if (wire != 0xFFFF) {
+                network::Packet ack(wire);
+                socket->send(ack);
+                LOG_DEBUG("SMSG_TRIGGER_MOVIE: skipped, sent CMSG_COMPLETE_MOVIE");
+            }
             break;
+        }
 
         // ---- Equipment sets ----
         case Opcode::SMSG_EQUIPMENT_SET_LIST:

@@ -6186,21 +6186,21 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
             if (cmdLower == "help" || cmdLower == "?") {
                 static const char* kHelpLines[] = {
                     "--- Wowee Slash Commands ---",
-                    "Chat: /s /y /p /g /raid /rw /o /bg /w <name> [msg]  /r [msg]",
-                    "Social: /who [filter]  /whois <name>  /friend add/remove <name>",
-                    "        /ignore <name>  /unignore <name>",
-                    "Party: /invite <name>  /uninvite <name>  /leave  /readycheck",
-                    "       /maintank  /mainassist  /roll [min-max]",
+                    "Chat: /s /y /p /g /raid /rw /o /bg /w <name> /r  /join /leave",
+                    "Social: /who  /friend add/remove  /ignore  /unignore",
+                    "Party: /invite  /uninvite  /leave  /readycheck  /mark  /roll",
+                    "       /maintank  /mainassist  /raidinfo",
                     "Guild: /ginvite  /gkick  /gquit  /gpromote  /gdemote  /gmotd",
                     "       /gleader  /groster  /ginfo  /gcreate  /gdisband",
-                    "Combat: /startattack  /stopattack  /stopcasting  /cast <spell>  /duel  /pvp",
-                    "        /forfeit  /follow  /stopfollow  /assist",
-                    "Items: /use <item name>  /equip <item name>  /equipset [name]",
-                    "Target: /target <name>  /cleartarget  /focus  /clearfocus",
+                    "Combat: /cast  /castsequence  /use  /startattack  /stopattack",
+                    "        /stopcasting  /duel  /forfeit  /pvp  /assist",
+                    "        /follow  /stopfollow  /threat  /combatlog",
+                    "Items: /use <item>  /equip <item>  /equipset [name]",
+                    "Target: /target  /cleartarget  /focus  /clearfocus  /inspect",
                     "Movement: /sit  /stand  /kneel  /dismount",
-                    "Misc: /played  /time  /zone  /loc  /afk [msg]  /dnd [msg]  /inspect",
-                    "      /helm  /cloak  /trade  /join <channel>  /leave <channel>",
-                    "      /score  /unstuck  /logout  /ticket  /screenshot  /macrohelp  /help",
+                    "Misc: /played  /time  /zone  /loc  /afk  /dnd  /helm  /cloak",
+                    "      /trade  /score  /unstuck  /logout  /ticket  /screenshot",
+                    "      /macrohelp  /chathelp  /help",
                 };
                 for (const char* line : kHelpLines) {
                     game::MessageChatData helpMsg;

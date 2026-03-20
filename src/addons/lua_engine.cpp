@@ -641,6 +641,74 @@ static int lua_GetCurrentMapAreaID(lua_State* L) {
     return 1;
 }
 
+// --- Player State API ---
+// These replace the hardcoded "return false" Lua stubs with real game state.
+
+static int lua_IsMounted(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    lua_pushboolean(L, gh && gh->isMounted());
+    return 1;
+}
+
+static int lua_IsFlying(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    lua_pushboolean(L, gh && gh->isPlayerFlying());
+    return 1;
+}
+
+static int lua_IsSwimming(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    lua_pushboolean(L, gh && gh->isSwimming());
+    return 1;
+}
+
+static int lua_IsResting(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    lua_pushboolean(L, gh && gh->isPlayerResting());
+    return 1;
+}
+
+static int lua_IsFalling(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    // Check FALLING movement flag
+    if (!gh) { lua_pushboolean(L, 0); return 1; }
+    const auto& mi = gh->getMovementInfo();
+    lua_pushboolean(L, (mi.flags & 0x2000) != 0); // MOVEFLAG_FALLING = 0x2000
+    return 1;
+}
+
+static int lua_IsStealthed(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushboolean(L, 0); return 1; }
+    // Check for stealth auras (aura flags bit 0x40 = is harmful, stealth is a buff)
+    // WoW detects stealth via unit flags: UNIT_FLAG_IMMUNE (0x02) or specific aura IDs
+    // Simplified: check player auras for known stealth spell IDs
+    bool stealthed = false;
+    for (const auto& a : gh->getPlayerAuras()) {
+        if (a.isEmpty() || a.spellId == 0) continue;
+        // Common stealth IDs: 1784 (Stealth), 5215 (Prowl), 66 (Invisibility)
+        if (a.spellId == 1784 || a.spellId == 5215 || a.spellId == 66 ||
+            a.spellId == 1785 || a.spellId == 1786 || a.spellId == 1787 ||
+            a.spellId == 11305 || a.spellId == 11306) {
+            stealthed = true;
+            break;
+        }
+    }
+    lua_pushboolean(L, stealthed);
+    return 1;
+}
+
+static int lua_GetUnitSpeed(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    const char* uid = luaL_optstring(L, 1, "player");
+    if (!gh || std::string(uid) != "player") {
+        lua_pushnumber(L, 0);
+        return 1;
+    }
+    lua_pushnumber(L, gh->getServerRunSpeed());
+    return 1;
+}
+
 // --- Frame System ---
 // Minimal WoW-compatible frame objects with RegisterEvent/SetScript/GetScript.
 // Frames are Lua tables with a metatable that provides methods.
@@ -982,6 +1050,14 @@ void LuaEngine::registerCoreAPI() {
         {"GetLocale",         lua_GetLocale},
         {"GetBuildInfo",      lua_GetBuildInfo},
         {"GetCurrentMapAreaID", lua_GetCurrentMapAreaID},
+        // Player state (replaces hardcoded stubs)
+        {"IsMounted",         lua_IsMounted},
+        {"IsFlying",          lua_IsFlying},
+        {"IsSwimming",        lua_IsSwimming},
+        {"IsResting",         lua_IsResting},
+        {"IsFalling",         lua_IsFalling},
+        {"IsStealthed",       lua_IsStealthed},
+        {"GetUnitSpeed",      lua_GetUnitSpeed},
         // Utilities
         {"strsplit",          lua_strsplit},
         {"strtrim",           lua_strtrim},
@@ -1151,12 +1227,8 @@ void LuaEngine::registerCoreAPI() {
         "function GetFramerate() return 60 end\n"
         "function GetNetStats() return 0, 0, 0, 0 end\n"
         "function IsLoggedIn() return true end\n"
-        "function IsResting() return false end\n"
-        "function IsMounted() return false end\n"
-        "function IsFlying() return false end\n"
-        "function IsSwimming() return false end\n"
-        "function IsFalling() return false end\n"
-        "function IsStealthed() return false end\n"
+        // IsMounted, IsFlying, IsSwimming, IsResting, IsFalling, IsStealthed
+        // are now C functions registered in registerCoreAPI() with real game state
         "function GetNumLootItems() return 0 end\n"
         "function StaticPopup_Show() end\n"
         "function StaticPopup_Hide() end\n"

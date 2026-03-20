@@ -3476,6 +3476,7 @@ void Renderer::update(float deltaTime) {
     uint32_t insideWmoId = 0;
     const bool insideWmo = canQueryWmo &&
         wmoRenderer->isInsideWMO(camPos.x, camPos.y, camPos.z, &insideWmoId);
+    playerIndoors_ = insideWmo;
 
     // Ambient environmental sounds: fireplaces, water, birds, etc.
     if (ambientSoundManager && camera && wmoRenderer && cameraController) {

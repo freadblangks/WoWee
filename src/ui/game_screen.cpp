@@ -5772,6 +5772,16 @@ static std::string evaluateMacroConditionals(const std::string& rawArg,
         if (c == "pet")   return gameHandler.hasPet();
         if (c == "nopet") return !gameHandler.hasPet();
 
+        // indoors / outdoors — WMO interior detection (affects mount type selection)
+        if (c == "indoors" || c == "nooutdoors") {
+            auto* r = core::Application::getInstance().getRenderer();
+            return r && r->isPlayerIndoors();
+        }
+        if (c == "outdoors" || c == "noindoors") {
+            auto* r = core::Application::getInstance().getRenderer();
+            return !r || !r->isPlayerIndoors();
+        }
+
         // group / nogroup — player is in a party or raid
         if (c == "group" || c == "party") return gameHandler.isInGroup();
         if (c == "nogroup")               return !gameHandler.isInGroup();
@@ -6131,7 +6141,8 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                     "--- Macro Conditionals ---",
                     "Usage: /cast [cond1,cond2] Spell1; [cond3] Spell2; Default",
                     "State:   [combat] [mounted] [swimming] [flying] [stealthed]",
-                    "         [channeling] [pet] [group]  (prefix no- to negate)",
+                    "         [channeling] [pet] [group] [indoors] [outdoors]",
+                    "         (prefix no- to negate any condition)",
                     "Target:  [harm] [help] [exists] [noexists] [dead] [nodead]",
                     "         [target=focus] [target=pet] [target=player]",
                     "Form:    [noform] [nostance] [form:0]",

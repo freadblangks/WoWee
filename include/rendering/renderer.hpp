@@ -139,6 +139,7 @@ public:
     QuestMarkerRenderer* getQuestMarkerRenderer() const { return questMarkerRenderer.get(); }
     SkySystem* getSkySystem() const { return skySystem.get(); }
     const std::string& getCurrentZoneName() const { return currentZoneName; }
+    bool isPlayerIndoors() const { return playerIndoors_; }
     VkContext* getVkContext() const { return vkCtx; }
     VkDescriptorSetLayout getPerFrameSetLayout() const { return perFrameSetLayout; }
     VkRenderPass getShadowRenderPass() const { return shadowRenderPass; }
@@ -356,6 +357,7 @@ private:
     std::string currentZoneName;
     bool inTavern_ = false;
     bool inBlacksmith_ = false;
+    bool playerIndoors_ = false;  // Cached WMO inside state for macro conditionals
     float musicSwitchCooldown_ = 0.0f;
     bool deferredWorldInitEnabled_ = true;
     bool deferredWorldInitPending_ = false;

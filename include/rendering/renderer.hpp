@@ -7,6 +7,7 @@
 #include <future>
 #include <cstddef>
 #include <unordered_map>
+#include <unordered_set>
 #include <glm/glm.hpp>
 #include <vulkan/vulkan.h>
 #include <vk_mem_alloc.h>
@@ -343,6 +344,7 @@ private:
     std::unordered_map<uint32_t, std::string> spellVisualCastPath_;   // visualId → cast M2 path
     std::unordered_map<uint32_t, std::string> spellVisualImpactPath_; // visualId → impact M2 path
     std::unordered_map<std::string, uint32_t> spellVisualModelIds_;   // M2 path → M2Renderer modelId
+    std::unordered_set<uint32_t> spellVisualFailedModels_;           // modelIds that failed to load (negative cache)
     uint32_t nextSpellVisualModelId_ = 999000; // Reserved range 999000-999799
     bool spellVisualDbcLoaded_ = false;
     void loadSpellVisualDbc();

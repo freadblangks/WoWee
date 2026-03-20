@@ -2860,16 +2860,21 @@ void Renderer::playSpellVisual(uint32_t visualId, const glm::vec3& worldPosition
         spellVisualModelIds_[modelPath] = modelId;
     }
 
+    // Skip models that have previously failed to load (avoid repeated I/O)
+    if (spellVisualFailedModels_.count(modelId)) return;
+
     // Load the M2 model if not already loaded
     if (!m2Renderer->hasModel(modelId)) {
         auto m2Data = cachedAssetManager->readFile(modelPath);
         if (m2Data.empty()) {
             LOG_DEBUG("SpellVisual: could not read model: ", modelPath);
+            spellVisualFailedModels_.insert(modelId);
             return;
         }
         pipeline::M2Model model = pipeline::M2Loader::load(m2Data);
         if (model.vertices.empty() && model.particleEmitters.empty()) {
             LOG_DEBUG("SpellVisual: empty model: ", modelPath);
+            spellVisualFailedModels_.insert(modelId);
             return;
         }
         // Load skin file for WotLK-format M2s
@@ -2880,6 +2885,7 @@ void Renderer::playSpellVisual(uint32_t visualId, const glm::vec3& worldPosition
         }
         if (!m2Renderer->loadModel(model, modelId)) {
             LOG_WARNING("SpellVisual: failed to load model to GPU: ", modelPath);
+            spellVisualFailedModels_.insert(modelId);
             return;
         }
         LOG_DEBUG("SpellVisual: loaded model id=", modelId, " path=", modelPath);

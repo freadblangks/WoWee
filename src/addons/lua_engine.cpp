@@ -301,6 +301,152 @@ static int lua_HasTarget(lua_State* L) {
     return 1;
 }
 
+// --- Frame System ---
+// Minimal WoW-compatible frame objects with RegisterEvent/SetScript/GetScript.
+// Frames are Lua tables with a metatable that provides methods.
+
+// Frame method: frame:RegisterEvent("EVENT")
+static int lua_Frame_RegisterEvent(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);  // self
+    const char* eventName = luaL_checkstring(L, 2);
+
+    // Get frame's registered events table (create if needed)
+    lua_getfield(L, 1, "__events");
+    if (lua_isnil(L, -1)) {
+        lua_pop(L, 1);
+        lua_newtable(L);
+        lua_pushvalue(L, -1);
+        lua_setfield(L, 1, "__events");
+    }
+    lua_pushboolean(L, 1);
+    lua_setfield(L, -2, eventName);
+    lua_pop(L, 1);
+
+    // Also register in global __WoweeFrameEvents for dispatch
+    lua_getglobal(L, "__WoweeFrameEvents");
+    if (lua_isnil(L, -1)) {
+        lua_pop(L, 1);
+        lua_newtable(L);
+        lua_pushvalue(L, -1);
+        lua_setglobal(L, "__WoweeFrameEvents");
+    }
+    lua_getfield(L, -1, eventName);
+    if (lua_isnil(L, -1)) {
+        lua_pop(L, 1);
+        lua_newtable(L);
+        lua_pushvalue(L, -1);
+        lua_setfield(L, -3, eventName);
+    }
+    // Append frame reference
+    int len = static_cast<int>(lua_objlen(L, -1));
+    lua_pushvalue(L, 1);  // push frame
+    lua_rawseti(L, -2, len + 1);
+    lua_pop(L, 2);  // pop list + __WoweeFrameEvents
+    return 0;
+}
+
+// Frame method: frame:UnregisterEvent("EVENT")
+static int lua_Frame_UnregisterEvent(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    const char* eventName = luaL_checkstring(L, 2);
+
+    // Remove from frame's own events
+    lua_getfield(L, 1, "__events");
+    if (lua_istable(L, -1)) {
+        lua_pushnil(L);
+        lua_setfield(L, -2, eventName);
+    }
+    lua_pop(L, 1);
+    return 0;
+}
+
+// Frame method: frame:SetScript("handler", func)
+static int lua_Frame_SetScript(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    const char* scriptType = luaL_checkstring(L, 2);
+    // arg 3 can be function or nil
+    lua_getfield(L, 1, "__scripts");
+    if (lua_isnil(L, -1)) {
+        lua_pop(L, 1);
+        lua_newtable(L);
+        lua_pushvalue(L, -1);
+        lua_setfield(L, 1, "__scripts");
+    }
+    lua_pushvalue(L, 3);
+    lua_setfield(L, -2, scriptType);
+    lua_pop(L, 1);
+    return 0;
+}
+
+// Frame method: frame:GetScript("handler")
+static int lua_Frame_GetScript(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    const char* scriptType = luaL_checkstring(L, 2);
+    lua_getfield(L, 1, "__scripts");
+    if (lua_istable(L, -1)) {
+        lua_getfield(L, -1, scriptType);
+    } else {
+        lua_pushnil(L);
+    }
+    return 1;
+}
+
+// Frame method: frame:GetName()
+static int lua_Frame_GetName(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    lua_getfield(L, 1, "__name");
+    return 1;
+}
+
+// Frame method: frame:Show() / frame:Hide() / frame:IsShown() / frame:IsVisible()
+static int lua_Frame_Show(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    lua_pushboolean(L, 1);
+    lua_setfield(L, 1, "__visible");
+    return 0;
+}
+static int lua_Frame_Hide(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    lua_pushboolean(L, 0);
+    lua_setfield(L, 1, "__visible");
+    return 0;
+}
+static int lua_Frame_IsShown(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    lua_getfield(L, 1, "__visible");
+    lua_pushboolean(L, lua_toboolean(L, -1));
+    return 1;
+}
+
+// CreateFrame(frameType, name, parent, template)
+static int lua_CreateFrame(lua_State* L) {
+    const char* frameType = luaL_optstring(L, 1, "Frame");
+    const char* name = luaL_optstring(L, 2, nullptr);
+    (void)frameType; // All frame types use the same table structure for now
+
+    // Create the frame table
+    lua_newtable(L);
+
+    // Set frame name
+    if (name && *name) {
+        lua_pushstring(L, name);
+        lua_setfield(L, -2, "__name");
+        // Also set as a global so other addons can find it by name
+        lua_pushvalue(L, -1);
+        lua_setglobal(L, name);
+    }
+
+    // Set initial visibility
+    lua_pushboolean(L, 1);
+    lua_setfield(L, -2, "__visible");
+
+    // Apply frame metatable with methods
+    lua_getglobal(L, "__WoweeFrameMT");
+    lua_setmetatable(L, -2);
+
+    return 1;
+}
+
 // --- WoW Utility Functions ---
 
 // strsplit(delimiter, str) — WoW's string split
@@ -497,7 +643,36 @@ void LuaEngine::registerCoreAPI() {
     lua_newtable(L_);
     lua_setglobal(L_, "SlashCmdList");
 
-    // SLASH_* globals will be set by addons, dispatched by the /run command handler
+    // Frame metatable with methods
+    lua_newtable(L_);  // metatable
+    lua_pushvalue(L_, -1);
+    lua_setfield(L_, -2, "__index"); // metatable.__index = metatable
+
+    static const struct luaL_Reg frameMethods[] = {
+        {"RegisterEvent",   lua_Frame_RegisterEvent},
+        {"UnregisterEvent", lua_Frame_UnregisterEvent},
+        {"SetScript",       lua_Frame_SetScript},
+        {"GetScript",       lua_Frame_GetScript},
+        {"GetName",         lua_Frame_GetName},
+        {"Show",            lua_Frame_Show},
+        {"Hide",            lua_Frame_Hide},
+        {"IsShown",         lua_Frame_IsShown},
+        {"IsVisible",       lua_Frame_IsShown}, // alias
+        {nullptr, nullptr}
+    };
+    for (const luaL_Reg* r = frameMethods; r->name; r++) {
+        lua_pushcfunction(L_, r->func);
+        lua_setfield(L_, -2, r->name);
+    }
+    lua_setglobal(L_, "__WoweeFrameMT");
+
+    // CreateFrame function
+    lua_pushcfunction(L_, lua_CreateFrame);
+    lua_setglobal(L_, "CreateFrame");
+
+    // Frame event dispatch table
+    lua_newtable(L_);
+    lua_setglobal(L_, "__WoweeFrameEvents");
 }
 
 // ---- Event System ----
@@ -609,6 +784,40 @@ void LuaEngine::fireEvent(const std::string& eventName,
         }
     }
     lua_pop(L_, 2);  // pop handler list + WoweeEvents
+
+    // Also dispatch to frames that registered for this event via frame:RegisterEvent()
+    lua_getglobal(L_, "__WoweeFrameEvents");
+    if (lua_istable(L_, -1)) {
+        lua_getfield(L_, -1, eventName.c_str());
+        if (lua_istable(L_, -1)) {
+            int frameCount = static_cast<int>(lua_objlen(L_, -1));
+            for (int i = 1; i <= frameCount; i++) {
+                lua_rawgeti(L_, -1, i);
+                if (!lua_istable(L_, -1)) { lua_pop(L_, 1); continue; }
+
+                // Get the frame's OnEvent script
+                lua_getfield(L_, -1, "__scripts");
+                if (lua_istable(L_, -1)) {
+                    lua_getfield(L_, -1, "OnEvent");
+                    if (lua_isfunction(L_, -1)) {
+                        lua_pushvalue(L_, -3);  // self (frame)
+                        lua_pushstring(L_, eventName.c_str());
+                        for (const auto& arg : args) lua_pushstring(L_, arg.c_str());
+                        int nargs = 2 + static_cast<int>(args.size());
+                        if (lua_pcall(L_, nargs, 0, 0) != 0) {
+                            LOG_ERROR("LuaEngine: frame OnEvent error: ", lua_tostring(L_, -1));
+                            lua_pop(L_, 1);
+                        }
+                    } else {
+                        lua_pop(L_, 1); // pop non-function
+                    }
+                }
+                lua_pop(L_, 2); // pop __scripts + frame
+            }
+        }
+        lua_pop(L_, 1); // pop event frame list
+    }
+    lua_pop(L_, 1); // pop __WoweeFrameEvents
 }
 
 bool LuaEngine::dispatchSlashCommand(const std::string& command, const std::string& args) {

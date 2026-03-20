@@ -1,24 +1,28 @@
--- HelloWorld addon — test the WoWee addon system
-print("|cff00ff00[HelloWorld]|r Addon loaded! Lua 5.1 is working.")
+-- HelloWorld addon — demonstrates the WoWee addon system
 
--- Register for game events
-RegisterEvent("PLAYER_ENTERING_WORLD", function(event)
-    local name = UnitName("player")
-    local level = UnitLevel("player")
-    local health = UnitHealth("player")
-    local maxHealth = UnitHealthMax("player")
-    local _, _, classId = UnitClass("player")
-    local gold = math.floor(GetMoney() / 10000)
+-- Create a frame and register for events (standard WoW addon pattern)
+local f = CreateFrame("Frame", "HelloWorldFrame")
+f:RegisterEvent("PLAYER_ENTERING_WORLD")
+f:RegisterEvent("CHAT_MSG_SAY")
 
-    print("|cff00ff00[HelloWorld]|r Welcome, " .. name .. "! (Level " .. level .. ")")
-    if maxHealth > 0 then
-        print("|cff00ff00[HelloWorld]|r Health: " .. health .. "/" .. maxHealth)
-    end
-    if gold > 0 then
-        print("|cff00ff00[HelloWorld]|r Gold: " .. gold .. "g")
+f:SetScript("OnEvent", function(self, event, ...)
+    if event == "PLAYER_ENTERING_WORLD" then
+        local name = UnitName("player")
+        local level = UnitLevel("player")
+        print("|cff00ff00[HelloWorld]|r Welcome, " .. name .. "! (Level " .. level .. ")")
+    elseif event == "CHAT_MSG_SAY" then
+        local msg, sender = ...
+        if msg and sender then
+            print("|cff00ff00[HelloWorld]|r " .. sender .. " said: " .. msg)
+        end
     end
 end)
 
-RegisterEvent("PLAYER_LEAVING_WORLD", function(event)
-    print("|cff00ff00[HelloWorld]|r Goodbye!")
-end)
+-- Register a custom slash command
+SLASH_HELLOWORLD1 = "/hello"
+SLASH_HELLOWORLD2 = "/hw"
+SlashCmdList["HELLOWORLD"] = function(args)
+    print("|cff00ff00[HelloWorld]|r Hello! " .. (args ~= "" and args or "Type /hello <message>"))
+end
+
+print("|cff00ff00[HelloWorld]|r Addon loaded. Type /hello to test slash commands.")

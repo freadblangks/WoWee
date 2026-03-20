@@ -18753,10 +18753,12 @@ void GameHandler::handleInitialSpells(network::Packet& packet) {
     knownSpells.insert(6603u);
     knownSpells.insert(8690u);
 
-    // Set initial cooldowns
+    // Set initial cooldowns — use the longer of individual vs category cooldown.
+    // Spells like potions have cooldownMs=0 but categoryCooldownMs=120000.
     for (const auto& cd : data.cooldowns) {
-        if (cd.cooldownMs > 0) {
-            spellCooldowns[cd.spellId] = cd.cooldownMs / 1000.0f;
+        uint32_t effectiveMs = std::max(cd.cooldownMs, cd.categoryCooldownMs);
+        if (effectiveMs > 0) {
+            spellCooldowns[cd.spellId] = effectiveMs / 1000.0f;
         }
     }
 

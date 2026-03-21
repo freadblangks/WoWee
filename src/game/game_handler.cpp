@@ -20130,6 +20130,40 @@ void GameHandler::handlePartyMemberStats(network::Packet& packet, bool isFull) {
     LOG_DEBUG("Party member stats for ", member->name,
               ": HP=", member->curHealth, "/", member->maxHealth,
               " Level=", member->level);
+
+    // Fire addon events for party/raid member health/power/aura changes
+    if (addonEventCallback_) {
+        // Resolve unit ID for this member (party1..4 or raid1..40)
+        std::string unitId;
+        if (partyData.groupType == 1) {
+            // Raid: find 1-based index
+            for (size_t i = 0; i < partyData.members.size(); ++i) {
+                if (partyData.members[i].guid == memberGuid) {
+                    unitId = "raid" + std::to_string(i + 1);
+                    break;
+                }
+            }
+        } else {
+            // Party: find 1-based index excluding self
+            int found = 0;
+            for (const auto& m : partyData.members) {
+                if (m.guid == playerGuid) continue;
+                ++found;
+                if (m.guid == memberGuid) {
+                    unitId = "party" + std::to_string(found);
+                    break;
+                }
+            }
+        }
+        if (!unitId.empty()) {
+            if (updateFlags & (0x0002 | 0x0004)) // CUR_HP or MAX_HP
+                addonEventCallback_("UNIT_HEALTH", {unitId});
+            if (updateFlags & (0x0010 | 0x0020)) // CUR_POWER or MAX_POWER
+                addonEventCallback_("UNIT_POWER", {unitId});
+            if (updateFlags & 0x0200) // AURAS
+                addonEventCallback_("UNIT_AURA", {unitId});
+        }
+    }
 }
 
 // ============================================================
@@ -20660,6 +20694,7 @@ void GameHandler::lootItem(uint8_t slotIndex) {
 void GameHandler::closeLoot() {
     if (!lootWindowOpen) return;
     lootWindowOpen = false;
+    if (addonEventCallback_) addonEventCallback_("LOOT_CLOSED", {});
     masterLootCandidates_.clear();
     if (currentLoot.lootGuid != 0 && targetGuid == currentLoot.lootGuid) {
         clearTarget();

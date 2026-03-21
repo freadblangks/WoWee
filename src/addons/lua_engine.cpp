@@ -1194,6 +1194,42 @@ static int lua_UnitCreatureType(lua_State* L) {
     return 1;
 }
 
+// IsInInstance() → isInstance, instanceType
+static int lua_IsInInstance(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushboolean(L, 0); lua_pushstring(L, "none"); return 2; }
+    bool inInstance = gh->isInInstance();
+    lua_pushboolean(L, inInstance);
+    lua_pushstring(L, inInstance ? "party" : "none");  // simplified: "none", "party", "raid", "pvp", "arena"
+    return 2;
+}
+
+// GetInstanceInfo() → name, type, difficultyIndex, difficultyName, maxPlayers, ...
+static int lua_GetInstanceInfo(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) {
+        lua_pushstring(L, ""); lua_pushstring(L, "none"); lua_pushnumber(L, 0);
+        lua_pushstring(L, "Normal"); lua_pushnumber(L, 0);
+        return 5;
+    }
+    std::string mapName = gh->getMapName(gh->getCurrentMapId());
+    lua_pushstring(L, mapName.c_str());                    // 1: name
+    lua_pushstring(L, gh->isInInstance() ? "party" : "none"); // 2: instanceType
+    lua_pushnumber(L, gh->getInstanceDifficulty());        // 3: difficultyIndex
+    static const char* kDiff[] = {"Normal", "Heroic", "25 Normal", "25 Heroic"};
+    uint32_t diff = gh->getInstanceDifficulty();
+    lua_pushstring(L, (diff < 4) ? kDiff[diff] : "Normal"); // 4: difficultyName
+    lua_pushnumber(L, 5);                                   // 5: maxPlayers (default 5-man)
+    return 5;
+}
+
+// GetInstanceDifficulty() → difficulty (1=normal, 2=heroic, 3=25normal, 4=25heroic)
+static int lua_GetInstanceDifficulty(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    lua_pushnumber(L, gh ? (gh->getInstanceDifficulty() + 1) : 1);  // WoW returns 1-based
+    return 1;
+}
+
 // UnitClassification(unit) → "normal", "elite", "rareelite", "worldboss", "rare"
 static int lua_UnitClassification(lua_State* L) {
     auto* gh = getGameHandler(L);
@@ -1586,6 +1622,9 @@ void LuaEngine::registerCoreAPI() {
         {"UnitIsEnemy",         lua_UnitIsEnemy},
         {"UnitCreatureType",    lua_UnitCreatureType},
         {"UnitClassification",  lua_UnitClassification},
+        {"IsInInstance",         lua_IsInInstance},
+        {"GetInstanceInfo",      lua_GetInstanceInfo},
+        {"GetInstanceDifficulty", lua_GetInstanceDifficulty},
         // Container/bag API
         {"GetContainerNumSlots",    lua_GetContainerNumSlots},
         {"GetContainerItemInfo",    lua_GetContainerItemInfo},

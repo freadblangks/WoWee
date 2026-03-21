@@ -3295,8 +3295,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     sendMovement(Opcode::MSG_MOVE_STOP_TURN);
                     sendMovement(Opcode::MSG_MOVE_STOP_SWIM);
                     addSystemChatMessage("Movement disabled by server.");
+                    if (addonEventCallback_) addonEventCallback_("PLAYER_CONTROL_LOST", {});
                 } else if (changed && allowMovement) {
                     addSystemChatMessage("Movement re-enabled.");
+                    if (addonEventCallback_) addonEventCallback_("PLAYER_CONTROL_GAINED", {});
                 }
             }
             break;

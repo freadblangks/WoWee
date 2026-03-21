@@ -851,6 +851,64 @@ static int lua_GetContainerNumFreeSlots(lua_State* L) {
     return 2;
 }
 
+// --- Quest Log API ---
+
+static int lua_GetNumQuestLogEntries(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushnumber(L, 0); lua_pushnumber(L, 0); return 2; }
+    const auto& ql = gh->getQuestLog();
+    lua_pushnumber(L, ql.size());  // numEntries
+    lua_pushnumber(L, 0);          // numQuests (headers not tracked)
+    return 2;
+}
+
+// GetQuestLogTitle(index) → title, level, suggestedGroup, isHeader, isCollapsed, isComplete, frequency, questID
+static int lua_GetQuestLogTitle(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int index = static_cast<int>(luaL_checknumber(L, 1));
+    if (!gh || index < 1) { lua_pushnil(L); return 1; }
+    const auto& ql = gh->getQuestLog();
+    if (index > static_cast<int>(ql.size())) { lua_pushnil(L); return 1; }
+    const auto& q = ql[index - 1];  // 1-based
+    lua_pushstring(L, q.title.c_str());  // title
+    lua_pushnumber(L, 0);                // level (not tracked)
+    lua_pushnumber(L, 0);                // suggestedGroup
+    lua_pushboolean(L, 0);               // isHeader
+    lua_pushboolean(L, 0);               // isCollapsed
+    lua_pushboolean(L, q.complete);      // isComplete
+    lua_pushnumber(L, 0);                // frequency
+    lua_pushnumber(L, q.questId);        // questID
+    return 8;
+}
+
+// GetQuestLogQuestText(index) → description, objectives
+static int lua_GetQuestLogQuestText(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int index = static_cast<int>(luaL_checknumber(L, 1));
+    if (!gh || index < 1) { lua_pushnil(L); return 1; }
+    const auto& ql = gh->getQuestLog();
+    if (index > static_cast<int>(ql.size())) { lua_pushnil(L); return 1; }
+    const auto& q = ql[index - 1];
+    lua_pushstring(L, "");                    // description (not stored)
+    lua_pushstring(L, q.objectives.c_str());  // objectives
+    return 2;
+}
+
+// IsQuestComplete(questID) → boolean
+static int lua_IsQuestComplete(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    uint32_t questId = static_cast<uint32_t>(luaL_checknumber(L, 1));
+    if (!gh) { lua_pushboolean(L, 0); return 1; }
+    for (const auto& q : gh->getQuestLog()) {
+        if (q.questId == questId) {
+            lua_pushboolean(L, q.complete);
+            return 1;
+        }
+    }
+    lua_pushboolean(L, 0);
+    return 1;
+}
+
 // --- Additional WoW API ---
 
 static int lua_UnitAffectingCombat(lua_State* L) {
@@ -1353,6 +1411,11 @@ void LuaEngine::registerCoreAPI() {
         {"GetContainerItemInfo",    lua_GetContainerItemInfo},
         {"GetContainerItemLink",    lua_GetContainerItemLink},
         {"GetContainerNumFreeSlots", lua_GetContainerNumFreeSlots},
+        // Quest log API
+        {"GetNumQuestLogEntries",   lua_GetNumQuestLogEntries},
+        {"GetQuestLogTitle",        lua_GetQuestLogTitle},
+        {"GetQuestLogQuestText",    lua_GetQuestLogQuestText},
+        {"IsQuestComplete",         lua_IsQuestComplete},
         // Utilities
         {"strsplit",          lua_strsplit},
         {"strtrim",           lua_strtrim},

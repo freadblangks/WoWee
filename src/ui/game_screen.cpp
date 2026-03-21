@@ -11695,8 +11695,16 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
             barColor = IM_COL32(140, 140, 140, A(200));
             bgColor  = IM_COL32(70,  70,  70,  A(160));
         } else if (unit->isHostile()) {
-            barColor = IM_COL32(220, 60,  60,  A(200));
-            bgColor  = IM_COL32(100, 25,  25,  A(160));
+            // Check if mob is tapped by another player (grey nameplate)
+            uint32_t dynFlags = unit->getDynamicFlags();
+            bool tappedByOther = (dynFlags & 0x0004) != 0 && (dynFlags & 0x0008) == 0; // TAPPED but not TAPPED_BY_ALL_THREAT_LIST
+            if (tappedByOther) {
+                barColor = IM_COL32(160, 160, 160, A(200));
+                bgColor  = IM_COL32(80,  80,  80,  A(160));
+            } else {
+                barColor = IM_COL32(220, 60,  60,  A(200));
+                bgColor  = IM_COL32(100, 25,  25,  A(160));
+            }
         } else if (isPlayer) {
             // Player nameplates: use class color for easy identification
             uint8_t cid = entityClassId(unit);

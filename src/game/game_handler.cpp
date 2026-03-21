@@ -3776,6 +3776,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 ? "Ready check initiated!"
                 : readyCheckInitiator_ + " initiated a ready check!");
             LOG_INFO("MSG_RAID_READY_CHECK: initiator=", readyCheckInitiator_);
+            if (addonEventCallback_)
+                addonEventCallback_("READY_CHECK", {readyCheckInitiator_});
             break;
         }
         case Opcode::MSG_RAID_READY_CHECK_CONFIRM: {
@@ -3804,6 +3806,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 std::snprintf(rbuf, sizeof(rbuf), "%s is %s.", rname.c_str(), isReady ? "Ready" : "Not Ready");
                 addSystemChatMessage(rbuf);
             }
+            if (addonEventCallback_) {
+                char guidBuf[32];
+                snprintf(guidBuf, sizeof(guidBuf), "0x%016llX", (unsigned long long)respGuid);
+                addonEventCallback_("READY_CHECK_CONFIRM", {guidBuf, isReady ? "1" : "0"});
+            }
             break;
         }
         case Opcode::MSG_RAID_READY_CHECK_FINISHED: {
@@ -3816,6 +3823,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
             readyCheckReadyCount_    = 0;
             readyCheckNotReadyCount_ = 0;
             readyCheckResults_.clear();
+            if (addonEventCallback_)
+                addonEventCallback_("READY_CHECK_FINISHED", {});
             break;
         }
         case Opcode::SMSG_RAID_INSTANCE_INFO:

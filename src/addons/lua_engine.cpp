@@ -2394,11 +2394,26 @@ static int lua_IsUsableAction(lua_State* L) {
     }
     const auto& action = bar[slot];
     bool usable = action.isReady();
+    bool noMana = false;
     if (action.type == game::ActionBarSlot::SPELL) {
         usable = usable && gh->getKnownSpells().count(action.id);
+        // Check power cost
+        if (usable && action.id != 0) {
+            auto spellData = gh->getSpellData(action.id);
+            if (spellData.manaCost > 0) {
+                auto pe = gh->getEntityManager().getEntity(gh->getPlayerGuid());
+                if (pe) {
+                    auto* unit = dynamic_cast<game::Unit*>(pe.get());
+                    if (unit && unit->getPower() < spellData.manaCost) {
+                        noMana = true;
+                        usable = false;
+                    }
+                }
+            }
+        }
     }
     lua_pushboolean(L, usable ? 1 : 0);
-    lua_pushboolean(L, 0); // notEnoughMana (can't determine without cost data)
+    lua_pushboolean(L, noMana ? 1 : 0);
     return 2;
 }
 

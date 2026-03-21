@@ -25855,6 +25855,8 @@ void GameHandler::handleSummonRequest(network::Packet& packet) {
     addSystemChatMessage(msg);
     LOG_INFO("SMSG_SUMMON_REQUEST: summoner=", summonerName_,
              " zoneId=", zoneId, " timeout=", summonTimeoutSec_, "s");
+    if (addonEventCallback_)
+        addonEventCallback_("CONFIRM_SUMMON", {});
 }
 
 void GameHandler::acceptSummon() {

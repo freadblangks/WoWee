@@ -30,6 +30,7 @@ public:
 
     void setProgress(float progress) { loadProgress = progress; }
     void setStatus(const std::string& status) { statusText = status; }
+    void setZoneName(const std::string& name) { zoneName = name; }
 
     // Must be set before initialize() for Vulkan texture upload
     void setVkContext(VkContext* ctx) { vkCtx = ctx; }
@@ -53,6 +54,7 @@ private:
 
     float loadProgress = 0.0f;
     std::string statusText = "Loading...";
+    std::string zoneName;
 
     int imageWidth = 0;
     int imageHeight = 0;

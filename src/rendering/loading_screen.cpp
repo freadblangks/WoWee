@@ -261,6 +261,20 @@ void LoadingScreen::renderOverlay() {
             ImVec2(0, 0), ImVec2(screenW, screenH));
     }
 
+    // Zone name header
+    if (!zoneName.empty()) {
+        ImFont* font = ImGui::GetFont();
+        float zoneTextSize = 24.0f;
+        ImVec2 zoneSize = font->CalcTextSizeA(zoneTextSize, FLT_MAX, 0.0f, zoneName.c_str());
+        float zoneX = (screenW - zoneSize.x) * 0.5f;
+        float zoneY = screenH * 0.06f - 44.0f;
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddText(font, zoneTextSize, ImVec2(zoneX + 2.0f, zoneY + 2.0f),
+                    IM_COL32(0, 0, 0, 200), zoneName.c_str());
+        dl->AddText(font, zoneTextSize, ImVec2(zoneX, zoneY),
+                    IM_COL32(255, 220, 120, 255), zoneName.c_str());
+    }
+
     // Progress bar
     {
         const float barWidthFrac = 0.6f;
@@ -330,6 +344,22 @@ void LoadingScreen::render() {
         ImGui::GetWindowDrawList()->AddImage(
             reinterpret_cast<ImTextureID>(bgDescriptorSet),
             ImVec2(0, 0), ImVec2(screenW, screenH));
+    }
+
+    // Zone name header (large text centered above progress bar)
+    if (!zoneName.empty()) {
+        ImFont* font = ImGui::GetFont();
+        float zoneTextSize = 24.0f;
+        ImVec2 zoneSize = font->CalcTextSizeA(zoneTextSize, FLT_MAX, 0.0f, zoneName.c_str());
+        float zoneX = (screenW - zoneSize.x) * 0.5f;
+        float zoneY = screenH * 0.06f - 44.0f;  // above percentage text
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        // Drop shadow
+        dl->AddText(font, zoneTextSize, ImVec2(zoneX + 2.0f, zoneY + 2.0f),
+                    IM_COL32(0, 0, 0, 200), zoneName.c_str());
+        // Gold text
+        dl->AddText(font, zoneTextSize, ImVec2(zoneX, zoneY),
+                    IM_COL32(255, 220, 120, 255), zoneName.c_str());
     }
 
     // Progress bar (top of screen)

@@ -4286,6 +4286,15 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
         window->swapBuffers();
     };
 
+    // Set zone name on loading screen from Map.dbc
+    if (gameHandler) {
+        std::string mapDisplayName = gameHandler->getMapName(mapId);
+        if (!mapDisplayName.empty())
+            loadingScreen.setZoneName(mapDisplayName);
+        else
+            loadingScreen.setZoneName("Loading...");
+    }
+
     showProgress("Entering world...", 0.0f);
 
     // --- Clean up previous map's state on map change ---

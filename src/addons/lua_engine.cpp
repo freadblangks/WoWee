@@ -600,6 +600,37 @@ static int lua_GetAddOnInfo(lua_State* L) {
     return 5;
 }
 
+// GetAddOnMetadata(addonNameOrIndex, key) → value
+static int lua_GetAddOnMetadata(lua_State* L) {
+    lua_getfield(L, LUA_REGISTRYINDEX, "wowee_addon_info");
+    if (!lua_istable(L, -1)) { lua_pop(L, 1); lua_pushnil(L); return 1; }
+
+    int idx = 0;
+    if (lua_isnumber(L, 1)) {
+        idx = static_cast<int>(lua_tonumber(L, 1));
+    } else if (lua_isstring(L, 1)) {
+        const char* name = lua_tostring(L, 1);
+        int count = static_cast<int>(lua_objlen(L, -1));
+        for (int i = 1; i <= count; i++) {
+            lua_rawgeti(L, -1, i);
+            lua_getfield(L, -1, "name");
+            const char* aName = lua_tostring(L, -1);
+            lua_pop(L, 1);
+            if (aName && strcmp(aName, name) == 0) { idx = i; lua_pop(L, 1); break; }
+            lua_pop(L, 1);
+        }
+    }
+    if (idx < 1) { lua_pop(L, 1); lua_pushnil(L); return 1; }
+
+    const char* key = luaL_checkstring(L, 2);
+    lua_rawgeti(L, -1, idx);
+    if (!lua_istable(L, -1)) { lua_pop(L, 2); lua_pushnil(L); return 1; }
+    lua_getfield(L, -1, "metadata");
+    if (!lua_istable(L, -1)) { lua_pop(L, 3); lua_pushnil(L); return 1; }
+    lua_getfield(L, -1, key);
+    return 1;
+}
+
 // UnitBuff(unitId, index) / UnitDebuff(unitId, index)
 // Returns: name, rank, icon, count, debuffType, duration, expirationTime, caster, isStealable, shouldConsolidate, spellId
 static int lua_UnitAura(lua_State* L, bool wantBuff) {
@@ -3081,6 +3112,7 @@ void LuaEngine::registerCoreAPI() {
         {"UnitAura",          lua_UnitAuraGeneric},
         {"GetNumAddOns",      lua_GetNumAddOns},
         {"GetAddOnInfo",      lua_GetAddOnInfo},
+        {"GetAddOnMetadata",  lua_GetAddOnMetadata},
         {"GetSpellInfo",      lua_GetSpellInfo},
         {"GetSpellTexture",   lua_GetSpellTexture},
         {"GetItemInfo",       lua_GetItemInfo},
@@ -3995,6 +4027,13 @@ void LuaEngine::setAddonList(const std::vector<TocFile>& addons) {
         auto notesIt = addons[i].directives.find("Notes");
         lua_pushstring(L_, notesIt != addons[i].directives.end() ? notesIt->second.c_str() : "");
         lua_setfield(L_, -2, "notes");
+        // Store all TOC directives for GetAddOnMetadata
+        lua_newtable(L_);
+        for (const auto& [key, val] : addons[i].directives) {
+            lua_pushstring(L_, val.c_str());
+            lua_setfield(L_, -2, key.c_str());
+        }
+        lua_setfield(L_, -2, "metadata");
         lua_rawseti(L_, -2, static_cast<int>(i + 1));
     }
     lua_setfield(L_, LUA_REGISTRYINDEX, "wowee_addon_info");

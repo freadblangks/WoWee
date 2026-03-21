@@ -2420,6 +2420,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
             pendingLootRoll_.rollStartedAt   = std::chrono::steady_clock::now();
             LOG_INFO("SMSG_LOOT_START_ROLL: item=", itemId, " (", pendingLootRoll_.itemName,
                      ") slot=", slot, " voteMask=0x", std::hex, (int)voteMask, std::dec);
+            if (addonEventCallback_)
+                addonEventCallback_("START_LOOT_ROLL", {std::to_string(slot), std::to_string(countdown)});
             break;
         }
 
@@ -14261,6 +14263,7 @@ void GameHandler::handleDuelRequested(network::Packet& packet) {
     }
     LOG_INFO("SMSG_DUEL_REQUESTED: challenger=0x", std::hex, duelChallengerGuid_,
              " flag=0x", duelFlagGuid_, std::dec, " name=", duelChallengerName_);
+    if (addonEventCallback_) addonEventCallback_("DUEL_REQUESTED", {duelChallengerName_});
 }
 
 void GameHandler::handleDuelComplete(network::Packet& packet) {
@@ -14273,6 +14276,7 @@ void GameHandler::handleDuelComplete(network::Packet& packet) {
         addSystemChatMessage("The duel was cancelled.");
     }
     LOG_INFO("SMSG_DUEL_COMPLETE: started=", static_cast<int>(started));
+    if (addonEventCallback_) addonEventCallback_("DUEL_FINISHED", {});
 }
 
 void GameHandler::handleDuelWinner(network::Packet& packet) {
@@ -22280,6 +22284,8 @@ void GameHandler::handleLootRemoved(network::Packet& packet) {
                     sfx->playLootItem();
             }
             currentLoot.items.erase(it);
+            if (addonEventCallback_)
+                addonEventCallback_("LOOT_SLOT_CLEARED", {std::to_string(slotIndex + 1)});
             break;
         }
     }
@@ -25749,6 +25755,7 @@ void GameHandler::handleTradeStatus(network::Packet& packet) {
             }
             tradeStatus_ = TradeStatus::PendingIncoming;
             addSystemChatMessage(tradePeerName_ + " wants to trade with you.");
+            if (addonEventCallback_) addonEventCallback_("TRADE_REQUEST", {});
             break;
         }
         case 2: // OPEN_WINDOW
@@ -25758,22 +25765,27 @@ void GameHandler::handleTradeStatus(network::Packet& packet) {
             peerTradeGold_ = 0;
             tradeStatus_ = TradeStatus::Open;
             addSystemChatMessage("Trade window opened.");
+            if (addonEventCallback_) addonEventCallback_("TRADE_SHOW", {});
             break;
         case 3:  // CANCELLED
         case 12: // CLOSE_WINDOW
             resetTradeState();
             addSystemChatMessage("Trade cancelled.");
+            if (addonEventCallback_) addonEventCallback_("TRADE_CLOSED", {});
             break;
         case 9: // REJECTED — other player clicked Decline
             resetTradeState();
             addSystemChatMessage("Trade declined.");
+            if (addonEventCallback_) addonEventCallback_("TRADE_CLOSED", {});
             break;
         case 4: // ACCEPTED (partner accepted)
             tradeStatus_ = TradeStatus::Accepted;
             addSystemChatMessage("Trade accepted. Awaiting other player...");
+            if (addonEventCallback_) addonEventCallback_("TRADE_ACCEPT_UPDATE", {});
             break;
         case 8: // COMPLETE
             addSystemChatMessage("Trade complete!");
+            if (addonEventCallback_) addonEventCallback_("TRADE_CLOSED", {});
             resetTradeState();
             break;
         case 7: // BACK_TO_TRADE (unaccepted after a change)

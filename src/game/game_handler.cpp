@@ -11915,7 +11915,17 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                                 addonEventCallback_("UNIT_FACTION", {uid});
                         }
                     }
-                    else if (key == ufFlags) { unit->setUnitFlags(val); }
+                    else if (key == ufFlags) {
+                        unit->setUnitFlags(val);
+                        if (addonEventCallback_) {
+                            std::string uid;
+                            if (block.guid == playerGuid) uid = "player";
+                            else if (block.guid == targetGuid) uid = "target";
+                            else if (block.guid == focusGuid) uid = "focus";
+                            if (!uid.empty())
+                                addonEventCallback_("UNIT_FLAGS", {uid});
+                        }
+                    }
                     else if (key == ufBytes0) {
                         unit->setPowerType(static_cast<uint8_t>((val >> 24) & 0xFF));
                     } else if (key == ufDisplayId) {

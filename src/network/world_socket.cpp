@@ -668,7 +668,7 @@ void WorldSocket::tryParsePackets() {
             closeSocketNoJoin();
             return;
         }
-        constexpr uint16_t kMaxWorldPacketSize = 0x4000;
+        constexpr uint16_t kMaxWorldPacketSize = 0x8000;  // 32KB — allows large guild rosters, auction lists
         if (size > kMaxWorldPacketSize) {
             LOG_ERROR("World packet framing desync: oversized packet size=", size,
                       " rawHdr=", std::hex,

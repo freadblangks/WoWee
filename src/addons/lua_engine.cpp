@@ -540,6 +540,49 @@ static int lua_UnitDetailedThreatSituation(lua_State* L) {
     return 5;
 }
 
+// IsSpellInRange(spellName, unit) → 0 or 1 (nil if can't determine)
+static int lua_IsSpellInRange(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushnil(L); return 1; }
+    const char* spellNameOrId = luaL_checkstring(L, 1);
+    const char* uid = luaL_optstring(L, 2, "target");
+
+    // Resolve spell ID
+    uint32_t spellId = 0;
+    if (spellNameOrId[0] >= '0' && spellNameOrId[0] <= '9') {
+        spellId = static_cast<uint32_t>(strtoul(spellNameOrId, nullptr, 10));
+    } else {
+        std::string nameLow(spellNameOrId);
+        for (char& c : nameLow) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        for (uint32_t sid : gh->getKnownSpells()) {
+            std::string sn = gh->getSpellName(sid);
+            for (char& c : sn) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (sn == nameLow) { spellId = sid; break; }
+        }
+    }
+    if (spellId == 0) { lua_pushnil(L); return 1; }
+
+    // Get spell max range from DBC
+    auto data = gh->getSpellData(spellId);
+    if (data.maxRange <= 0.0f) { lua_pushnil(L); return 1; }
+
+    // Resolve target position
+    std::string uidStr(uid);
+    for (char& c : uidStr) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    uint64_t guid = resolveUnitGuid(gh, uidStr);
+    if (guid == 0) { lua_pushnil(L); return 1; }
+    auto targetEnt = gh->getEntityManager().getEntity(guid);
+    auto playerEnt = gh->getEntityManager().getEntity(gh->getPlayerGuid());
+    if (!targetEnt || !playerEnt) { lua_pushnil(L); return 1; }
+
+    float dx = playerEnt->getX() - targetEnt->getX();
+    float dy = playerEnt->getY() - targetEnt->getY();
+    float dz = playerEnt->getZ() - targetEnt->getZ();
+    float dist = std::sqrt(dx*dx + dy*dy + dz*dz);
+    lua_pushnumber(L, dist <= data.maxRange ? 1 : 0);
+    return 1;
+}
+
 // UnitIsVisible(unit) → boolean (entity exists in the client's entity manager)
 static int lua_UnitIsVisible(lua_State* L) {
     const char* uid = luaL_optstring(L, 1, "target");
@@ -3371,6 +3414,7 @@ void LuaEngine::registerCoreAPI() {
         {"IsSpellKnown",      lua_IsSpellKnown},
         {"GetSpellCooldown",  lua_GetSpellCooldown},
         {"GetSpellPowerCost", lua_GetSpellPowerCost},
+        {"IsSpellInRange",    lua_IsSpellInRange},
         {"HasTarget",         lua_HasTarget},
         {"TargetUnit",        lua_TargetUnit},
         {"ClearTarget",       lua_ClearTarget},

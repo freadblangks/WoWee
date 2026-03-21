@@ -294,6 +294,14 @@ public:
         return spellIconPathResolver_ ? spellIconPathResolver_(spellId) : std::string{};
     }
 
+    // Random property/suffix name resolver: randomPropertyId -> suffix name (e.g., "of the Eagle")
+    // Positive IDs → ItemRandomProperties.dbc; negative IDs → ItemRandomSuffix.dbc (abs value)
+    using RandomPropertyNameResolver = std::function<std::string(int32_t)>;
+    void setRandomPropertyNameResolver(RandomPropertyNameResolver r) { randomPropertyNameResolver_ = std::move(r); }
+    std::string getRandomPropertyName(int32_t id) const {
+        return randomPropertyNameResolver_ ? randomPropertyNameResolver_(id) : std::string{};
+    }
+
     // Emote animation callback: (entityGuid, animationId)
     using EmoteAnimCallback = std::function<void(uint64_t, uint32_t)>;
     void setEmoteAnimCallback(EmoteAnimCallback cb) { emoteAnimCallback_ = std::move(cb); }
@@ -2654,6 +2662,7 @@ private:
     AddonChatCallback addonChatCallback_;
     AddonEventCallback addonEventCallback_;
     SpellIconPathResolver spellIconPathResolver_;
+    RandomPropertyNameResolver randomPropertyNameResolver_;
     EmoteAnimCallback emoteAnimCallback_;
 
     // Targeting

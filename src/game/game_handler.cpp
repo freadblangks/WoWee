@@ -1978,7 +1978,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 /*uint32_t itemSlot =*/ packet.readUInt32();
                 uint32_t itemId = packet.readUInt32();
                 /*uint32_t suffixFactor =*/ packet.readUInt32();
-                /*int32_t randomProp =*/ static_cast<int32_t>(packet.readUInt32());
+                int32_t randomProp = static_cast<int32_t>(packet.readUInt32());
                 uint32_t count = packet.readUInt32();
                 /*uint32_t totalCount =*/ packet.readUInt32();
 
@@ -1987,6 +1987,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     if (const ItemQueryResponseData* info = getItemInfo(itemId)) {
                         // Item info already cached — emit immediately.
                         std::string itemName = info->name.empty() ? ("item #" + std::to_string(itemId)) : info->name;
+                        // Append random suffix name (e.g., "of the Eagle") if present
+                        if (randomProp != 0) {
+                            std::string suffix = getRandomPropertyName(randomProp);
+                            if (!suffix.empty()) itemName += " " + suffix;
+                        }
                         uint32_t quality = info->quality;
                         std::string link = buildItemLink(itemId, quality, itemName);
                         std::string msg = "Received: " + link;

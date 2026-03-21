@@ -413,6 +413,38 @@ bool Application::initialize() {
                     return pit->second;
                 });
             }
+            // Wire random property/suffix name resolver for item display
+            {
+                auto propNames   = std::make_shared<std::unordered_map<int32_t, std::string>>();
+                auto propLoaded  = std::make_shared<bool>(false);
+                auto* amPtr = assetManager.get();
+                gameHandler->setRandomPropertyNameResolver([propNames, propLoaded, amPtr](int32_t id) -> std::string {
+                    if (!amPtr || id == 0) return {};
+                    if (!*propLoaded) {
+                        *propLoaded = true;
+                        // ItemRandomProperties.dbc: ID=0, Name=4 (string)
+                        if (auto dbc = amPtr->loadDBC("ItemRandomProperties.dbc"); dbc && dbc->isLoaded()) {
+                            uint32_t nameField = (dbc->getFieldCount() > 4) ? 4 : 1;
+                            for (uint32_t r = 0; r < dbc->getRecordCount(); ++r) {
+                                int32_t rid = static_cast<int32_t>(dbc->getUInt32(r, 0));
+                                std::string name = dbc->getString(r, nameField);
+                                if (!name.empty() && rid > 0) (*propNames)[rid] = name;
+                            }
+                        }
+                        // ItemRandomSuffix.dbc: ID=0, Name=4 (string) — stored as negative IDs
+                        if (auto dbc = amPtr->loadDBC("ItemRandomSuffix.dbc"); dbc && dbc->isLoaded()) {
+                            uint32_t nameField = (dbc->getFieldCount() > 4) ? 4 : 1;
+                            for (uint32_t r = 0; r < dbc->getRecordCount(); ++r) {
+                                int32_t rid = static_cast<int32_t>(dbc->getUInt32(r, 0));
+                                std::string name = dbc->getString(r, nameField);
+                                if (!name.empty() && rid > 0) (*propNames)[-rid] = name;
+                            }
+                        }
+                    }
+                    auto it = propNames->find(id);
+                    return (it != propNames->end()) ? it->second : std::string{};
+                });
+            }
             LOG_INFO("Addon system initialized, found ", addonManager_->getAddons().size(), " addon(s)");
         } else {
             LOG_WARNING("Failed to initialize addon system");

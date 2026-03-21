@@ -4237,6 +4237,12 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
         if (u->getHealth() == 0 && u->getMaxHealth() > 0) {
             hostileColor = ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
         } else if (u->isHostile()) {
+            // Check tapped-by-other: grey name for mobs tagged by someone else
+            uint32_t tgtDynFlags = u->getDynamicFlags();
+            bool tgtTapped = (tgtDynFlags & 0x0004) != 0 && (tgtDynFlags & 0x0008) == 0;
+            if (tgtTapped) {
+                hostileColor = ImVec4(0.6f, 0.6f, 0.6f, 1.0f); // Grey — tapped by other
+            } else {
             // WoW level-based color for hostile mobs
             uint32_t playerLv = gameHandler.getPlayerLevel();
             uint32_t mobLv = u->getLevel();
@@ -4257,6 +4263,7 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                     hostileColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f); // Green - easy
                 }
             }
+            } // end tapped else
         } else {
             hostileColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f); // Friendly
         }

@@ -1003,6 +1003,23 @@ static int lua_UnitXPMax(lua_State* L) {
     return 1;
 }
 
+// GetXPExhaustion() → rested XP pool remaining (nil if none)
+static int lua_GetXPExhaustion(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushnil(L); return 1; }
+    uint32_t rested = gh->getPlayerRestedXp();
+    if (rested > 0) lua_pushnumber(L, rested);
+    else lua_pushnil(L);
+    return 1;
+}
+
+// GetRestState() → 1 = normal, 2 = rested
+static int lua_GetRestState(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    lua_pushnumber(L, (gh && gh->isPlayerResting()) ? 2 : 1);
+    return 1;
+}
+
 // --- Quest Log API ---
 
 static int lua_GetNumQuestLogEntries(lua_State* L) {
@@ -1675,6 +1692,8 @@ void LuaEngine::registerCoreAPI() {
         {"GetServerTime",           lua_GetServerTime},
         {"UnitXP",                  lua_UnitXP},
         {"UnitXPMax",               lua_UnitXPMax},
+        {"GetXPExhaustion",         lua_GetXPExhaustion},
+        {"GetRestState",            lua_GetRestState},
         // Quest log API
         {"GetNumQuestLogEntries",   lua_GetNumQuestLogEntries},
         {"GetQuestLogTitle",        lua_GetQuestLogTitle},

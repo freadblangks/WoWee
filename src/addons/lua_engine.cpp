@@ -1113,6 +1113,107 @@ static int lua_IsQuestComplete(lua_State* L) {
     return 1;
 }
 
+// --- Loot API ---
+
+// GetNumLootItems() → count
+static int lua_GetNumLootItems(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh || !gh->isLootWindowOpen()) { lua_pushnumber(L, 0); return 1; }
+    lua_pushnumber(L, gh->getCurrentLoot().items.size());
+    return 1;
+}
+
+// GetLootSlotInfo(slot) → texture, name, quantity, quality, locked
+static int lua_GetLootSlotInfo(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int slot = static_cast<int>(luaL_checknumber(L, 1)); // 1-indexed
+    if (!gh || !gh->isLootWindowOpen()) {
+        lua_pushnil(L); return 1;
+    }
+    const auto& loot = gh->getCurrentLoot();
+    if (slot < 1 || slot > static_cast<int>(loot.items.size())) {
+        lua_pushnil(L); return 1;
+    }
+    const auto& item = loot.items[slot - 1];
+    const auto* info = gh->getItemInfo(item.itemId);
+
+    // texture (icon path — nil if not available)
+    std::string icon;
+    if (info) {
+        // Try spell icon resolver as fallback for item icon
+        icon = gh->getSpellIconPath(item.itemId);
+    }
+    if (!icon.empty()) lua_pushstring(L, icon.c_str());
+    else lua_pushnil(L);
+
+    // name
+    if (info && !info->name.empty()) lua_pushstring(L, info->name.c_str());
+    else lua_pushstring(L, ("Item #" + std::to_string(item.itemId)).c_str());
+
+    lua_pushnumber(L, item.count);                           // quantity
+    lua_pushnumber(L, info ? info->quality : 1);             // quality
+    lua_pushboolean(L, 0);                                   // locked (not tracked)
+    return 5;
+}
+
+// GetLootSlotLink(slot) → itemLink
+static int lua_GetLootSlotLink(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int slot = static_cast<int>(luaL_checknumber(L, 1));
+    if (!gh || !gh->isLootWindowOpen()) { lua_pushnil(L); return 1; }
+    const auto& loot = gh->getCurrentLoot();
+    if (slot < 1 || slot > static_cast<int>(loot.items.size())) {
+        lua_pushnil(L); return 1;
+    }
+    const auto& item = loot.items[slot - 1];
+    const auto* info = gh->getItemInfo(item.itemId);
+    if (!info || info->name.empty()) { lua_pushnil(L); return 1; }
+    static const char* kQH[] = {"9d9d9d","ffffff","1eff00","0070dd","a335ee","ff8000","e6cc80","e6cc80"};
+    uint32_t qi = info->quality < 8 ? info->quality : 1u;
+    char link[256];
+    snprintf(link, sizeof(link), "|cff%s|Hitem:%u:0:0:0:0:0:0:0|h[%s]|h|r",
+             kQH[qi], item.itemId, info->name.c_str());
+    lua_pushstring(L, link);
+    return 1;
+}
+
+// LootSlot(slot) — take item from loot
+static int lua_LootSlot(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int slot = static_cast<int>(luaL_checknumber(L, 1));
+    if (!gh || !gh->isLootWindowOpen()) return 0;
+    const auto& loot = gh->getCurrentLoot();
+    if (slot < 1 || slot > static_cast<int>(loot.items.size())) return 0;
+    gh->lootItem(loot.items[slot - 1].slotIndex);
+    return 0;
+}
+
+// CloseLoot() — close loot window
+static int lua_CloseLoot(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (gh) gh->closeLoot();
+    return 0;
+}
+
+// GetLootMethod() → "freeforall"|"roundrobin"|"master"|"group"|"needbeforegreed", partyLoot, raidLoot
+static int lua_GetLootMethod(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushstring(L, "freeforall"); lua_pushnumber(L, 0); lua_pushnumber(L, 0); return 3; }
+    const auto& pd = gh->getPartyData();
+    const char* method = "freeforall";
+    switch (pd.lootMethod) {
+        case 0: method = "freeforall"; break;
+        case 1: method = "roundrobin"; break;
+        case 2: method = "master"; break;
+        case 3: method = "group"; break;
+        case 4: method = "needbeforegreed"; break;
+    }
+    lua_pushstring(L, method);
+    lua_pushnumber(L, 0); // partyLootMaster (index)
+    lua_pushnumber(L, 0); // raidLootMaster (index)
+    return 3;
+}
+
 // --- Additional WoW API ---
 
 static int lua_UnitAffectingCombat(lua_State* L) {
@@ -2002,6 +2103,13 @@ void LuaEngine::registerCoreAPI() {
         {"IsCurrentAction",     lua_IsCurrentAction},
         {"IsUsableAction",      lua_IsUsableAction},
         {"GetActionCooldown",   lua_GetActionCooldown},
+        // Loot API
+        {"GetNumLootItems",     lua_GetNumLootItems},
+        {"GetLootSlotInfo",     lua_GetLootSlotInfo},
+        {"GetLootSlotLink",     lua_GetLootSlotLink},
+        {"LootSlot",            lua_LootSlot},
+        {"CloseLoot",           lua_CloseLoot},
+        {"GetLootMethod",       lua_GetLootMethod},
         // Utilities
         {"strsplit",          lua_strsplit},
         {"strtrim",           lua_strtrim},

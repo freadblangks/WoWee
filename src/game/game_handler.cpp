@@ -22926,6 +22926,8 @@ void GameHandler::handleXpGain(network::Packet& packet) {
         msg += " (+" + std::to_string(data.groupBonus) + " group bonus)";
     }
     addSystemChatMessage(msg);
+    if (addonEventCallback_)
+        addonEventCallback_("CHAT_MSG_COMBAT_XP_GAIN", {msg, std::to_string(data.totalXp)});
 }
 
 
@@ -22940,6 +22942,8 @@ void GameHandler::addMoneyCopper(uint32_t amount) {
     msg += std::to_string(silver) + "s ";
     msg += std::to_string(copper) + "c.";
     addSystemChatMessage(msg);
+    if (addonEventCallback_)
+        addonEventCallback_("CHAT_MSG_MONEY", {msg});
 }
 
 void GameHandler::addSystemChatMessage(const std::string& message) {

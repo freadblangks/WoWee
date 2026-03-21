@@ -5743,6 +5743,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 if (!leaderName.empty())
                     addSystemChatMessage(leaderName + " is now the group leader.");
                 LOG_INFO("SMSG_GROUP_SET_LEADER: ", leaderName);
+                if (addonEventCallback_) {
+                    addonEventCallback_("PARTY_LEADER_CHANGED", {});
+                    addonEventCallback_("GROUP_ROSTER_UPDATE", {});
+                }
             }
             break;
         }
@@ -7716,6 +7720,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
             LOG_DEBUG("SMSG_REAL_GROUP_UPDATE groupType=", static_cast<int>(newGroupType),
                       " memberFlags=0x", std::hex, newMemberFlags, std::dec,
                       " leaderGuid=", newLeaderGuid);
+            if (addonEventCallback_) {
+                addonEventCallback_("PARTY_LEADER_CHANGED", {});
+                addonEventCallback_("GROUP_ROSTER_UPDATE", {});
+            }
             break;
         }
 

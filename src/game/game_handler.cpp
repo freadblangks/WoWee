@@ -23063,7 +23063,24 @@ void GameHandler::handleNewWorld(network::Packet& packet) {
         mountCallback_(0);
     }
 
-    // Clear world state for the new map
+    // Invoke despawn callbacks for all entities before clearing, so the renderer
+    // can release M2 instances, character models, and associated resources.
+    for (const auto& [guid, entity] : entityManager.getEntities()) {
+        if (guid == playerGuid) continue;  // skip self
+        if (entity->getType() == ObjectType::UNIT && creatureDespawnCallback_) {
+            creatureDespawnCallback_(guid);
+        } else if (entity->getType() == ObjectType::PLAYER && playerDespawnCallback_) {
+            playerDespawnCallback_(guid);
+        } else if (entity->getType() == ObjectType::GAMEOBJECT && gameObjectDespawnCallback_) {
+            gameObjectDespawnCallback_(guid);
+        }
+    }
+    otherPlayerVisibleItemEntries_.clear();
+    otherPlayerVisibleDirty_.clear();
+    otherPlayerMoveTimeMs_.clear();
+    unitCastStates_.clear();
+    unitAurasCache_.clear();
+    combatText.clear();
     entityManager.clear();
     hostileAttackers_.clear();
     worldStates_.clear();

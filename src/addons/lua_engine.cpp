@@ -1189,6 +1189,51 @@ static int lua_IsQuestComplete(lua_State* L) {
     return 1;
 }
 
+// --- Skill Line API ---
+
+// GetNumSkillLines() → count
+static int lua_GetNumSkillLines(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushnumber(L, 0); return 1; }
+    lua_pushnumber(L, gh->getPlayerSkills().size());
+    return 1;
+}
+
+// GetSkillLineInfo(index) → skillName, isHeader, isExpanded, skillRank, numTempPoints, skillModifier, skillMaxRank, isAbandonable, stepCost, rankCost, minLevel, skillCostType
+static int lua_GetSkillLineInfo(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int index = static_cast<int>(luaL_checknumber(L, 1));
+    if (!gh || index < 1) {
+        lua_pushnil(L);
+        return 1;
+    }
+    const auto& skills = gh->getPlayerSkills();
+    if (index > static_cast<int>(skills.size())) {
+        lua_pushnil(L);
+        return 1;
+    }
+    // Skills are in a map — iterate to the Nth entry
+    auto it = skills.begin();
+    std::advance(it, index - 1);
+    const auto& skill = it->second;
+    std::string name = gh->getSkillName(skill.skillId);
+    if (name.empty()) name = "Skill " + std::to_string(skill.skillId);
+
+    lua_pushstring(L, name.c_str());                    // 1: skillName
+    lua_pushboolean(L, 0);                              // 2: isHeader (false — flat list)
+    lua_pushboolean(L, 1);                              // 3: isExpanded
+    lua_pushnumber(L, skill.effectiveValue());           // 4: skillRank
+    lua_pushnumber(L, skill.bonusTemp);                  // 5: numTempPoints
+    lua_pushnumber(L, skill.bonusPerm);                  // 6: skillModifier
+    lua_pushnumber(L, skill.maxValue);                   // 7: skillMaxRank
+    lua_pushboolean(L, 0);                              // 8: isAbandonable
+    lua_pushnumber(L, 0);                               // 9: stepCost
+    lua_pushnumber(L, 0);                               // 10: rankCost
+    lua_pushnumber(L, 0);                               // 11: minLevel
+    lua_pushnumber(L, 0);                               // 12: skillCostType
+    return 12;
+}
+
 // --- Loot API ---
 
 // GetNumLootItems() → count
@@ -2416,6 +2461,9 @@ void LuaEngine::registerCoreAPI() {
         {"GetQuestLogTitle",        lua_GetQuestLogTitle},
         {"GetQuestLogQuestText",    lua_GetQuestLogQuestText},
         {"IsQuestComplete",         lua_IsQuestComplete},
+        // Skill line API
+        {"GetNumSkillLines",        lua_GetNumSkillLines},
+        {"GetSkillLineInfo",        lua_GetSkillLineInfo},
         // Reaction/connection queries
         {"UnitReaction",        lua_UnitReaction},
         {"UnitIsConnected",     lua_UnitIsConnected},

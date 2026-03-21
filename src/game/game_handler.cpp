@@ -6151,6 +6151,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
             talentWipePending_ = true;
             LOG_INFO("MSG_TALENT_WIPE_CONFIRM: npc=0x", std::hex, talentWipeNpcGuid_,
                      std::dec, " cost=", talentWipeCost_);
+            if (addonEventCallback_)
+                addonEventCallback_("CONFIRM_TALENT_WIPE", {std::to_string(talentWipeCost_)});
             break;
         }
 

@@ -7140,6 +7140,12 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                 return;
             }
 
+            if (cmdLower == "cancelqueuedspell" || cmdLower == "stopspellqueue") {
+                gameHandler.cancelQueuedSpell();
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
             // /equipset [name] — equip a saved equipment set by name (partial match, case-insensitive)
             // /equipset          — list available sets in chat
             if (cmdLower == "equipset") {

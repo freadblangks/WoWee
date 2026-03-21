@@ -868,6 +868,7 @@ public:
 
     // 400ms spell-queue window: next spell to cast when current finishes
     uint32_t getQueuedSpellId() const { return queuedSpellId_; }
+    void cancelQueuedSpell() { queuedSpellId_ = 0; queuedSpellTarget_ = 0; }
 
     // Unit cast state (tracked per GUID for target frame + boss frames)
     struct UnitCastState {

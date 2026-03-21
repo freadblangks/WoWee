@@ -540,6 +540,35 @@ static int lua_UnitDetailedThreatSituation(lua_State* L) {
     return 5;
 }
 
+// UnitCreatureFamily(unit) → familyName or nil
+static int lua_UnitCreatureFamily(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushnil(L); return 1; }
+    const char* uid = luaL_optstring(L, 1, "target");
+    std::string uidStr(uid);
+    for (char& c : uidStr) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    uint64_t guid = resolveUnitGuid(gh, uidStr);
+    if (guid == 0) { lua_pushnil(L); return 1; }
+    auto entity = gh->getEntityManager().getEntity(guid);
+    if (!entity || entity->getType() == game::ObjectType::PLAYER) { lua_pushnil(L); return 1; }
+    auto unit = std::dynamic_pointer_cast<game::Unit>(entity);
+    if (!unit) { lua_pushnil(L); return 1; }
+    uint32_t family = gh->getCreatureFamily(unit->getEntry());
+    if (family == 0) { lua_pushnil(L); return 1; }
+    static const char* kFamilies[] = {
+        "", "Wolf", "Cat", "Spider", "Bear", "Boar", "Crocolisk", "Carrion Bird",
+        "Crab", "Gorilla", "Raptor", "", "Tallstrider", "", "", "Felhunter",
+        "Voidwalker", "Succubus", "", "Doomguard", "Scorpid", "Turtle", "",
+        "Imp", "Bat", "Hyena", "Bird of Prey", "Wind Serpent", "", "Dragonhawk",
+        "Ravager", "Warp Stalker", "Sporebat", "Nether Ray", "Serpent", "Moth",
+        "Chimaera", "Devilsaur", "Ghoul", "Silithid", "Worm", "Rhino", "Wasp",
+        "Core Hound", "Spirit Beast"
+    };
+    lua_pushstring(L, (family < sizeof(kFamilies)/sizeof(kFamilies[0]) && kFamilies[family][0])
+        ? kFamilies[family] : "Beast");
+    return 1;
+}
+
 // UnitOnTaxi(unit) → boolean (true if on a flight path)
 static int lua_UnitOnTaxi(lua_State* L) {
     const char* uid = luaL_optstring(L, 1, "player");
@@ -3255,6 +3284,7 @@ void LuaEngine::registerCoreAPI() {
         {"UnitIsTapped",        lua_UnitIsTapped},
         {"UnitIsTappedByPlayer", lua_UnitIsTappedByPlayer},
         {"UnitIsTappedByAllThreatList", lua_UnitIsTappedByAllThreatList},
+        {"UnitCreatureFamily",  lua_UnitCreatureFamily},
         {"UnitOnTaxi",          lua_UnitOnTaxi},
         {"UnitThreatSituation", lua_UnitThreatSituation},
         {"UnitDetailedThreatSituation", lua_UnitDetailedThreatSituation},

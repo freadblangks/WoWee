@@ -16043,6 +16043,8 @@ void GameHandler::stopAutoAttack() {
         socket->send(packet);
     }
     LOG_INFO("Stopping auto-attack");
+    if (addonEventCallback_)
+        addonEventCallback_("PLAYER_LEAVE_COMBAT", {});
 }
 
 void GameHandler::addCombatText(CombatTextEntry::Type type, int32_t amount, uint32_t spellId, bool isPlayerSource, uint8_t powerType,
@@ -16164,6 +16166,8 @@ void GameHandler::handleAttackStart(network::Packet& packet) {
         autoAttacking = true;
         autoAttackRetryPending_ = false;
         autoAttackTarget = data.victimGuid;
+        if (addonEventCallback_)
+            addonEventCallback_("PLAYER_ENTER_COMBAT", {});
     } else if (data.victimGuid == playerGuid && data.attackerGuid != 0) {
         hostileAttackers_.insert(data.attackerGuid);
         autoTargetAttacker(data.attackerGuid);

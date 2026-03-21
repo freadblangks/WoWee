@@ -954,6 +954,55 @@ static int lua_GetInventoryItemTexture(lua_State* L) {
     return 1;
 }
 
+// --- Time & XP API ---
+
+static int lua_GetGameTime(lua_State* L) {
+    // Returns server game time as hours, minutes
+    auto* gh = getGameHandler(L);
+    if (gh) {
+        float gt = gh->getGameTime();
+        int hours = static_cast<int>(gt) % 24;
+        int mins = static_cast<int>((gt - static_cast<int>(gt)) * 60.0f);
+        lua_pushnumber(L, hours);
+        lua_pushnumber(L, mins);
+    } else {
+        lua_pushnumber(L, 12);
+        lua_pushnumber(L, 0);
+    }
+    return 2;
+}
+
+static int lua_GetServerTime(lua_State* L) {
+    lua_pushnumber(L, static_cast<double>(std::time(nullptr)));
+    return 1;
+}
+
+static int lua_UnitXP(lua_State* L) {
+    const char* uid = luaL_optstring(L, 1, "player");
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushnumber(L, 0); return 1; }
+    std::string u(uid);
+    for (char& c : u) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (u == "player") lua_pushnumber(L, gh->getPlayerXp());
+    else lua_pushnumber(L, 0);
+    return 1;
+}
+
+static int lua_UnitXPMax(lua_State* L) {
+    const char* uid = luaL_optstring(L, 1, "player");
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushnumber(L, 1); return 1; }
+    std::string u(uid);
+    for (char& c : u) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (u == "player") {
+        uint32_t nlxp = gh->getPlayerNextLevelXp();
+        lua_pushnumber(L, nlxp > 0 ? nlxp : 1);
+    } else {
+        lua_pushnumber(L, 1);
+    }
+    return 1;
+}
+
 // --- Quest Log API ---
 
 static int lua_GetNumQuestLogEntries(lua_State* L) {
@@ -1518,6 +1567,11 @@ void LuaEngine::registerCoreAPI() {
         {"GetInventoryItemLink",    lua_GetInventoryItemLink},
         {"GetInventoryItemID",      lua_GetInventoryItemID},
         {"GetInventoryItemTexture", lua_GetInventoryItemTexture},
+        // Time/XP API
+        {"GetGameTime",             lua_GetGameTime},
+        {"GetServerTime",           lua_GetServerTime},
+        {"UnitXP",                  lua_UnitXP},
+        {"UnitXPMax",               lua_UnitXPMax},
         // Quest log API
         {"GetNumQuestLogEntries",   lua_GetNumQuestLogEntries},
         {"GetQuestLogTitle",        lua_GetQuestLogTitle},

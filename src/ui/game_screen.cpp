@@ -268,6 +268,7 @@ static std::string evaluateMacroConditionals(const std::string& rawArg,
 static std::string getMacroShowtooltipArg(const std::string& macroText);
 
 void GameScreen::render(game::GameHandler& gameHandler) {
+    cachedGameHandler_ = &gameHandler;
     // Set up chat bubble callback (once)
     if (!chatBubbleCallbackSet_) {
         gameHandler.setChatBubbleCallback([this](uint64_t guid, const std::string& msg, bool isYell) {
@@ -2673,6 +2674,107 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
                     std::string newBuf = match + rest;
                     data->DeleteChars(0, data->BufTextLen);
                     data->InsertChars(0, newBuf.c_str());
+                }
+            } else if (data->BufTextLen > 0) {
+                // Player name tab-completion for commands like /w, /whisper, /invite, /trade, /duel
+                // Also works for plain text (completes nearby player names)
+                std::string fullBuf(data->Buf, data->BufTextLen);
+                size_t spacePos = fullBuf.find(' ');
+                bool isNameCommand = false;
+                std::string namePrefix;
+                size_t replaceStart = 0;
+
+                if (fullBuf[0] == '/' && spacePos != std::string::npos) {
+                    std::string cmd = fullBuf.substr(0, spacePos);
+                    for (char& c : cmd) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                    // Commands that take a player name as the first argument after the command
+                    if (cmd == "/w" || cmd == "/whisper" || cmd == "/invite" ||
+                        cmd == "/trade" || cmd == "/duel" || cmd == "/follow" ||
+                        cmd == "/inspect" || cmd == "/friend" || cmd == "/removefriend" ||
+                        cmd == "/ignore" || cmd == "/unignore" || cmd == "/who" ||
+                        cmd == "/t" || cmd == "/target" || cmd == "/kick" ||
+                        cmd == "/uninvite" || cmd == "/ginvite" || cmd == "/gkick") {
+                        // Extract the partial name after the space
+                        namePrefix = fullBuf.substr(spacePos + 1);
+                        // Only complete the first word after the command
+                        size_t nameSpace = namePrefix.find(' ');
+                        if (nameSpace == std::string::npos) {
+                            isNameCommand = true;
+                            replaceStart = spacePos + 1;
+                        }
+                    }
+                }
+
+                if (isNameCommand && !namePrefix.empty()) {
+                    std::string lowerPrefix = namePrefix;
+                    for (char& c : lowerPrefix) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+                    if (self->chatTabMatchIdx_ < 0 || self->chatTabPrefix_ != lowerPrefix) {
+                        self->chatTabPrefix_ = lowerPrefix;
+                        self->chatTabMatches_.clear();
+                        // Search player name cache and nearby entities
+                        auto* gh = self->cachedGameHandler_;
+                        // Party/raid members
+                        for (const auto& m : gh->getPartyData().members) {
+                            if (m.name.empty()) continue;
+                            std::string lname = m.name;
+                            for (char& c : lname) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                            if (lname.compare(0, lowerPrefix.size(), lowerPrefix) == 0)
+                                self->chatTabMatches_.push_back(m.name);
+                        }
+                        // Friends
+                        for (const auto& c : gh->getContacts()) {
+                            if (!c.isFriend() || c.name.empty()) continue;
+                            std::string lname = c.name;
+                            for (char& cc : lname) cc = static_cast<char>(std::tolower(static_cast<unsigned char>(cc)));
+                            if (lname.compare(0, lowerPrefix.size(), lowerPrefix) == 0) {
+                                // Avoid duplicates from party
+                                bool dup = false;
+                                for (const auto& em : self->chatTabMatches_)
+                                    if (em == c.name) { dup = true; break; }
+                                if (!dup) self->chatTabMatches_.push_back(c.name);
+                            }
+                        }
+                        // Nearby visible players
+                        for (const auto& [guid, entity] : gh->getEntityManager().getEntities()) {
+                            if (!entity || entity->getType() != game::ObjectType::PLAYER) continue;
+                            auto player = std::static_pointer_cast<game::Player>(entity);
+                            if (player->getName().empty()) continue;
+                            std::string lname = player->getName();
+                            for (char& cc : lname) cc = static_cast<char>(std::tolower(static_cast<unsigned char>(cc)));
+                            if (lname.compare(0, lowerPrefix.size(), lowerPrefix) == 0) {
+                                bool dup = false;
+                                for (const auto& em : self->chatTabMatches_)
+                                    if (em == player->getName()) { dup = true; break; }
+                                if (!dup) self->chatTabMatches_.push_back(player->getName());
+                            }
+                        }
+                        // Last whisper sender
+                        if (!gh->getLastWhisperSender().empty()) {
+                            std::string lname = gh->getLastWhisperSender();
+                            for (char& cc : lname) cc = static_cast<char>(std::tolower(static_cast<unsigned char>(cc)));
+                            if (lname.compare(0, lowerPrefix.size(), lowerPrefix) == 0) {
+                                bool dup = false;
+                                for (const auto& em : self->chatTabMatches_)
+                                    if (em == gh->getLastWhisperSender()) { dup = true; break; }
+                                if (!dup) self->chatTabMatches_.insert(self->chatTabMatches_.begin(), gh->getLastWhisperSender());
+                            }
+                        }
+                        self->chatTabMatchIdx_ = 0;
+                    } else {
+                        ++self->chatTabMatchIdx_;
+                        if (self->chatTabMatchIdx_ >= static_cast<int>(self->chatTabMatches_.size()))
+                            self->chatTabMatchIdx_ = 0;
+                    }
+
+                    if (!self->chatTabMatches_.empty()) {
+                        std::string match = self->chatTabMatches_[self->chatTabMatchIdx_];
+                        std::string prefix = fullBuf.substr(0, replaceStart);
+                        std::string newBuf = prefix + match;
+                        if (self->chatTabMatches_.size() == 1) newBuf += ' ';
+                        data->DeleteChars(0, data->BufTextLen);
+                        data->InsertChars(0, newBuf.c_str());
+                    }
                 }
             }
             return 0;

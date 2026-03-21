@@ -62,7 +62,10 @@ private:
     // Populated by the SpellCastFailedCallback; queried during action bar button rendering.
     std::unordered_map<uint32_t, float> actionFlashEndTimes_;
 
-    // Tab-completion state for slash commands
+    // Cached game handler for input callbacks (set each frame in render)
+    game::GameHandler* cachedGameHandler_ = nullptr;
+
+    // Tab-completion state for slash commands and player names
     std::string chatTabPrefix_;            // prefix captured on first Tab press
     std::vector<std::string> chatTabMatches_;  // matching command list
     int chatTabMatchIdx_ = -1;             // active match index (-1 = inactive)

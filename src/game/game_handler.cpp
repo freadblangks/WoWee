@@ -2002,6 +2002,9 @@ void GameHandler::handlePacket(network::Packet& packet) {
                                 sfx->playLootItem();
                         }
                         if (itemLootCallback_) itemLootCallback_(itemId, count, quality, itemName);
+                        // Fire CHAT_MSG_LOOT for loot tracking addons
+                        if (addonEventCallback_)
+                            addonEventCallback_("CHAT_MSG_LOOT", {msg, "", std::to_string(itemId), std::to_string(count)});
                     } else {
                         // Item info not yet cached; defer until SMSG_ITEM_QUERY_SINGLE_RESPONSE.
                         pendingItemPushNotifs_.push_back({itemId, count});

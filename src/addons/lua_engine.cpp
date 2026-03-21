@@ -2928,6 +2928,69 @@ void LuaEngine::registerCoreAPI() {
         "end\n"
         "GetCoinText = GetCoinTextureString\n"
     );
+
+    // UIDropDownMenu framework — minimal compat for addons using dropdown menus
+    luaL_dostring(L_,
+        "UIDROPDOWNMENU_MENU_LEVEL = 1\n"
+        "UIDROPDOWNMENU_MENU_VALUE = nil\n"
+        "UIDROPDOWNMENU_OPEN_MENU = nil\n"
+        "local _ddMenuList = {}\n"
+        "function UIDropDownMenu_Initialize(frame, initFunc, displayMode, level, menuList)\n"
+        "    if frame then frame.__initFunc = initFunc end\n"
+        "end\n"
+        "function UIDropDownMenu_CreateInfo() return {} end\n"
+        "function UIDropDownMenu_AddButton(info, level) table.insert(_ddMenuList, info) end\n"
+        "function UIDropDownMenu_SetWidth(frame, width) end\n"
+        "function UIDropDownMenu_SetButtonWidth(frame, width) end\n"
+        "function UIDropDownMenu_SetText(frame, text)\n"
+        "    if frame then frame.__text = text end\n"
+        "end\n"
+        "function UIDropDownMenu_GetText(frame)\n"
+        "    return frame and frame.__text or ''\n"
+        "end\n"
+        "function UIDropDownMenu_SetSelectedID(frame, id) end\n"
+        "function UIDropDownMenu_SetSelectedValue(frame, value) end\n"
+        "function UIDropDownMenu_GetSelectedID(frame) return 1 end\n"
+        "function UIDropDownMenu_GetSelectedValue(frame) return nil end\n"
+        "function UIDropDownMenu_JustifyText(frame, justify) end\n"
+        "function UIDropDownMenu_EnableDropDown(frame) end\n"
+        "function UIDropDownMenu_DisableDropDown(frame) end\n"
+        "function CloseDropDownMenus() end\n"
+        "function ToggleDropDownMenu(level, value, frame, anchor, xOfs, yOfs) end\n"
+    );
+
+    // UISpecialFrames: frames in this list close on Escape key
+    luaL_dostring(L_,
+        "UISpecialFrames = {}\n"
+        // Font object stubs — addons reference these for CreateFontString templates
+        "GameFontNormal = {}\n"
+        "GameFontNormalSmall = {}\n"
+        "GameFontNormalLarge = {}\n"
+        "GameFontHighlight = {}\n"
+        "GameFontHighlightSmall = {}\n"
+        "GameFontHighlightLarge = {}\n"
+        "GameFontDisable = {}\n"
+        "GameFontDisableSmall = {}\n"
+        "GameFontWhite = {}\n"
+        "GameFontRed = {}\n"
+        "GameFontGreen = {}\n"
+        "NumberFontNormal = {}\n"
+        "ChatFontNormal = {}\n"
+        "SystemFont = {}\n"
+        // InterfaceOptionsFrame: addons register settings panels here
+        "InterfaceOptionsFrame = CreateFrame('Frame', 'InterfaceOptionsFrame')\n"
+        "InterfaceOptionsFramePanelContainer = CreateFrame('Frame', 'InterfaceOptionsFramePanelContainer')\n"
+        "function InterfaceOptions_AddCategory(panel) end\n"
+        "function InterfaceOptionsFrame_OpenToCategory(panel) end\n"
+        // Commonly expected global tables
+        "SLASH_RELOAD1 = '/reload'\n"
+        "SLASH_RELOADUI1 = '/reloadui'\n"
+        "GRAY_FONT_COLOR = {r=0.5,g=0.5,b=0.5}\n"
+        "NORMAL_FONT_COLOR = {r=1.0,g=0.82,b=0.0}\n"
+        "HIGHLIGHT_FONT_COLOR = {r=1.0,g=1.0,b=1.0}\n"
+        "GREEN_FONT_COLOR = {r=0.1,g=1.0,b=0.1}\n"
+        "RED_FONT_COLOR = {r=1.0,g=0.1,b=0.1}\n"
+    );
 }
 
 // ---- Event System ----

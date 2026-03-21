@@ -295,14 +295,9 @@ static int lua_UnitClass(lua_State* L) {
                     classId = static_cast<uint8_t>((bytes0 >> 8) & 0xFF);
                 }
             }
-            // Fallback: check party/raid member data
+            // Fallback: check name query class/race cache
             if (classId == 0 && guid != 0) {
-                for (const auto& m : gh->getPartyData().members) {
-                    if (m.guid == guid && m.hasPartyStats) {
-                        // Party stats don't have class, but check guild roster
-                        break;
-                    }
-                }
+                classId = gh->lookupPlayerClass(guid);
             }
         }
         const char* name = (classId > 0 && classId < 12) ? kClasses[classId] : "Unknown";
@@ -493,6 +488,8 @@ static int lua_UnitRace(lua_State* L) {
                     game::fieldIndex(game::UF::UNIT_FIELD_BYTES_0));
                 raceId = static_cast<uint8_t>(bytes0 & 0xFF);
             }
+            // Fallback: name query class/race cache
+            if (raceId == 0) raceId = gh->lookupPlayerRace(guid);
         }
     }
     const char* name = (raceId > 0 && raceId < 12) ? kRaces[raceId] : "Unknown";

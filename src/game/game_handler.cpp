@@ -14819,6 +14819,10 @@ void GameHandler::handleNameQueryResponse(network::Packet& packet) {
 
     if (data.isValid()) {
         playerNameCache[data.guid] = data.name;
+        // Cache class/race from name query for UnitClass/UnitRace fallback
+        if (data.classId != 0 || data.race != 0) {
+            playerClassRaceCache_[data.guid] = {data.classId, data.race};
+        }
         // Update entity name
         auto entity = entityManager.getEntity(data.guid);
         if (entity && entity->getType() == ObjectType::PLAYER) {

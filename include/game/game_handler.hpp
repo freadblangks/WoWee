@@ -1235,6 +1235,16 @@ public:
     // Player GUID
     uint64_t getPlayerGuid() const { return playerGuid; }
 
+    // Look up class/race for a player GUID from name query cache. Returns 0 if unknown.
+    uint8_t lookupPlayerClass(uint64_t guid) const {
+        auto it = playerClassRaceCache_.find(guid);
+        return it != playerClassRaceCache_.end() ? it->second.classId : 0;
+    }
+    uint8_t lookupPlayerRace(uint64_t guid) const {
+        auto it = playerClassRaceCache_.find(guid);
+        return it != playerClassRaceCache_.end() ? it->second.raceId : 0;
+    }
+
     // Look up a display name for any guid: checks playerNameCache then entity manager.
     // Returns empty string if unknown. Used by chat display to resolve names at render time.
     const std::string& lookupName(uint64_t guid) const {
@@ -2710,6 +2720,9 @@ private:
 
     // ---- Phase 1: Name caches ----
     std::unordered_map<uint64_t, std::string> playerNameCache;
+    // Class/race cache from SMSG_NAME_QUERY_RESPONSE (guid → {classId, raceId})
+    struct PlayerClassRace { uint8_t classId = 0; uint8_t raceId = 0; };
+    std::unordered_map<uint64_t, PlayerClassRace> playerClassRaceCache_;
     std::unordered_set<uint64_t> pendingNameQueries;
     std::unordered_map<uint32_t, CreatureQueryResponseData> creatureInfoCache;
     std::unordered_set<uint32_t> pendingCreatureQueries;

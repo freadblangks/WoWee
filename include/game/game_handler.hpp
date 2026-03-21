@@ -294,6 +294,14 @@ public:
         return spellIconPathResolver_ ? spellIconPathResolver_(spellId) : std::string{};
     }
 
+    // Spell data resolver: spellId -> {castTimeMs, minRange, maxRange}
+    struct SpellDataInfo { uint32_t castTimeMs = 0; float minRange = 0; float maxRange = 0; };
+    using SpellDataResolver = std::function<SpellDataInfo(uint32_t)>;
+    void setSpellDataResolver(SpellDataResolver r) { spellDataResolver_ = std::move(r); }
+    SpellDataInfo getSpellData(uint32_t spellId) const {
+        return spellDataResolver_ ? spellDataResolver_(spellId) : SpellDataInfo{};
+    }
+
     // Item icon path resolver: displayInfoId -> texture path (e.g., "Interface\\Icons\\INV_Sword_04")
     using ItemIconPathResolver = std::function<std::string(uint32_t)>;
     void setItemIconPathResolver(ItemIconPathResolver r) { itemIconPathResolver_ = std::move(r); }
@@ -2680,6 +2688,7 @@ private:
     AddonEventCallback addonEventCallback_;
     SpellIconPathResolver spellIconPathResolver_;
     ItemIconPathResolver itemIconPathResolver_;
+    SpellDataResolver spellDataResolver_;
     RandomPropertyNameResolver randomPropertyNameResolver_;
     EmoteAnimCallback emoteAnimCallback_;
 

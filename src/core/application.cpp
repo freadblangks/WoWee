@@ -439,6 +439,76 @@ bool Application::initialize() {
                     return "Interface\\Icons\\" + it->second;
                 });
             }
+            // Wire spell data resolver: spellId -> {castTimeMs, minRange, maxRange}
+            {
+                auto castTimeMap = std::make_shared<std::unordered_map<uint32_t, uint32_t>>();
+                auto rangeMap    = std::make_shared<std::unordered_map<uint32_t, std::pair<float,float>>>();
+                auto spellCastIdx = std::make_shared<std::unordered_map<uint32_t, uint32_t>>(); // spellId→castTimeIdx
+                auto spellRangeIdx = std::make_shared<std::unordered_map<uint32_t, uint32_t>>(); // spellId→rangeIdx
+                auto loaded = std::make_shared<bool>(false);
+                auto* am = assetManager.get();
+                gameHandler->setSpellDataResolver([castTimeMap, rangeMap, spellCastIdx, spellRangeIdx, loaded, am](uint32_t spellId) -> game::GameHandler::SpellDataInfo {
+                    if (!am) return {};
+                    if (!*loaded) {
+                        *loaded = true;
+                        // Load SpellCastTimes.dbc
+                        auto ctDbc = am->loadDBC("SpellCastTimes.dbc");
+                        if (ctDbc && ctDbc->isLoaded()) {
+                            for (uint32_t i = 0; i < ctDbc->getRecordCount(); ++i) {
+                                uint32_t id = ctDbc->getUInt32(i, 0);
+                                int32_t base = static_cast<int32_t>(ctDbc->getUInt32(i, 1));
+                                if (id > 0 && base > 0) (*castTimeMap)[id] = static_cast<uint32_t>(base);
+                            }
+                        }
+                        // Load SpellRange.dbc
+                        const auto* srL = pipeline::getActiveDBCLayout() ? pipeline::getActiveDBCLayout()->getLayout("SpellRange") : nullptr;
+                        uint32_t minRField = srL ? (*srL)["MinRange"] : 1;
+                        uint32_t maxRField = srL ? (*srL)["MaxRange"] : 4;
+                        auto rDbc = am->loadDBC("SpellRange.dbc");
+                        if (rDbc && rDbc->isLoaded()) {
+                            for (uint32_t i = 0; i < rDbc->getRecordCount(); ++i) {
+                                uint32_t id = rDbc->getUInt32(i, 0);
+                                float minR = rDbc->getFloat(i, minRField);
+                                float maxR = rDbc->getFloat(i, maxRField);
+                                if (id > 0) (*rangeMap)[id] = {minR, maxR};
+                            }
+                        }
+                        // Load Spell.dbc: extract castTimeIndex and rangeIndex per spell
+                        auto sDbc = am->loadDBC("Spell.dbc");
+                        const auto* spL = pipeline::getActiveDBCLayout() ? pipeline::getActiveDBCLayout()->getLayout("Spell") : nullptr;
+                        if (sDbc && sDbc->isLoaded()) {
+                            uint32_t idF = spL ? (*spL)["ID"] : 0;
+                            uint32_t ctF = spL ? (*spL)["CastingTimeIndex"] : 134; // WotLK default
+                            uint32_t rF  = spL ? (*spL)["RangeIndex"] : 132;
+                            for (uint32_t i = 0; i < sDbc->getRecordCount(); ++i) {
+                                uint32_t id = sDbc->getUInt32(i, idF);
+                                if (id == 0) continue;
+                                uint32_t ct = sDbc->getUInt32(i, ctF);
+                                uint32_t ri = sDbc->getUInt32(i, rF);
+                                if (ct > 0) (*spellCastIdx)[id] = ct;
+                                if (ri > 0) (*spellRangeIdx)[id] = ri;
+                            }
+                        }
+                        LOG_INFO("SpellDataResolver: loaded ", spellCastIdx->size(), " cast indices, ",
+                                 spellRangeIdx->size(), " range indices");
+                    }
+                    game::GameHandler::SpellDataInfo info;
+                    auto ciIt = spellCastIdx->find(spellId);
+                    if (ciIt != spellCastIdx->end()) {
+                        auto ctIt = castTimeMap->find(ciIt->second);
+                        if (ctIt != castTimeMap->end()) info.castTimeMs = ctIt->second;
+                    }
+                    auto riIt = spellRangeIdx->find(spellId);
+                    if (riIt != spellRangeIdx->end()) {
+                        auto rIt = rangeMap->find(riIt->second);
+                        if (rIt != rangeMap->end()) {
+                            info.minRange = rIt->second.first;
+                            info.maxRange = rIt->second.second;
+                        }
+                    }
+                    return info;
+                });
+            }
             // Wire random property/suffix name resolver for item display
             {
                 auto propNames   = std::make_shared<std::unordered_map<int32_t, std::string>>();

@@ -990,9 +990,11 @@ static int lua_GetSpellInfo(lua_State* L) {
     std::string iconPath = gh->getSpellIconPath(spellId);
     if (!iconPath.empty()) lua_pushstring(L, iconPath.c_str());
     else lua_pushnil(L);                                     // 3: icon texture path
-    lua_pushnumber(L, 0);                                    // 4: castTime (ms) — not tracked
-    lua_pushnumber(L, 0);                                    // 5: minRange
-    lua_pushnumber(L, 0);                                    // 6: maxRange
+    // Resolve cast time and range from Spell.dbc → SpellCastTimes.dbc / SpellRange.dbc
+    auto spellData = gh->getSpellData(spellId);
+    lua_pushnumber(L, spellData.castTimeMs);                 // 4: castTime (ms)
+    lua_pushnumber(L, spellData.minRange);                   // 5: minRange (yards)
+    lua_pushnumber(L, spellData.maxRange);                   // 6: maxRange (yards)
     lua_pushnumber(L, spellId);                              // 7: spellId
     return 7;
 }

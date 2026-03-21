@@ -1774,6 +1774,58 @@ static int lua_GetActionCooldown(lua_State* L) {
     return 3;
 }
 
+// UseAction(slot, checkCursor, onSelf) — activate action bar slot (1-indexed)
+static int lua_UseAction(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) return 0;
+    int slot = static_cast<int>(luaL_checknumber(L, 1)) - 1;
+    const auto& bar = gh->getActionBar();
+    if (slot < 0 || slot >= static_cast<int>(bar.size()) || bar[slot].isEmpty()) return 0;
+    const auto& action = bar[slot];
+    if (action.type == game::ActionBarSlot::SPELL && action.isReady()) {
+        uint64_t target = gh->hasTarget() ? gh->getTargetGuid() : 0;
+        gh->castSpell(action.id, target);
+    } else if (action.type == game::ActionBarSlot::ITEM && action.id != 0) {
+        gh->useItemById(action.id);
+    }
+    // Macro execution requires GameScreen context; not available from pure Lua API
+    return 0;
+}
+
+// CancelUnitBuff(unit, index) — cancel a buff by index (1-indexed)
+static int lua_CancelUnitBuff(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) return 0;
+    const char* uid = luaL_optstring(L, 1, "player");
+    std::string uidStr(uid);
+    for (char& c : uidStr) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (uidStr != "player") return 0; // Can only cancel own buffs
+    int index = static_cast<int>(luaL_checknumber(L, 2));
+    const auto& auras = gh->getPlayerAuras();
+    // Find the Nth buff (non-debuff)
+    int buffCount = 0;
+    for (const auto& a : auras) {
+        if (a.isEmpty()) continue;
+        if ((a.flags & 0x80) != 0) continue; // skip debuffs
+        if (++buffCount == index) {
+            gh->cancelAura(a.spellId);
+            break;
+        }
+    }
+    return 0;
+}
+
+// CastSpellByID(spellId) — cast spell by numeric ID
+static int lua_CastSpellByID(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) return 0;
+    uint32_t spellId = static_cast<uint32_t>(luaL_checknumber(L, 1));
+    if (spellId == 0) return 0;
+    uint64_t target = gh->hasTarget() ? gh->getTargetGuid() : 0;
+    gh->castSpell(spellId, target);
+    return 0;
+}
+
 // --- Frame System ---
 // Minimal WoW-compatible frame objects with RegisterEvent/SetScript/GetScript.
 // Frames are Lua tables with a metatable that provides methods.
@@ -2374,6 +2426,9 @@ void LuaEngine::registerCoreAPI() {
         {"IsCurrentAction",     lua_IsCurrentAction},
         {"IsUsableAction",      lua_IsUsableAction},
         {"GetActionCooldown",   lua_GetActionCooldown},
+        {"UseAction",           lua_UseAction},
+        {"CancelUnitBuff",      lua_CancelUnitBuff},
+        {"CastSpellByID",       lua_CastSpellByID},
         // Loot API
         {"GetNumLootItems",     lua_GetNumLootItems},
         {"GetLootSlotInfo",     lua_GetLootSlotInfo},

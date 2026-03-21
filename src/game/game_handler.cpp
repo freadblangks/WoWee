@@ -8060,6 +8060,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
             LOG_INFO("SMSG_INSPECT (Classic): ", playerName, " has gear in ",
                      std::count_if(items.begin(), items.end(),
                                    [](uint32_t e) { return e != 0; }), "/19 slots");
+            if (addonEventCallback_) {
+                char guidBuf[32];
+                snprintf(guidBuf, sizeof(guidBuf), "0x%016llX", (unsigned long long)guid);
+                addonEventCallback_("INSPECT_READY", {guidBuf});
+            }
             break;
         }
 
@@ -15245,6 +15250,11 @@ void GameHandler::handleInspectResults(network::Packet& packet) {
 
     LOG_INFO("Inspect results for ", playerName, ": ", totalTalents, " talents, ",
              unspentTalents, " unspent, ", (int)talentGroupCount, " specs");
+    if (addonEventCallback_) {
+        char guidBuf[32];
+        snprintf(guidBuf, sizeof(guidBuf), "0x%016llX", (unsigned long long)guid);
+        addonEventCallback_("INSPECT_READY", {guidBuf});
+    }
 }
 
 uint64_t GameHandler::resolveOnlineItemGuid(uint32_t itemId) const {

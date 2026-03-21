@@ -13018,8 +13018,21 @@ void GameHandler::handleDestroyObject(network::Packet& packet) {
     // Clean up quest giver status
     npcQuestStatus_.erase(data.guid);
 
+    // Remove combat text entries referencing the destroyed entity so floating
+    // damage numbers don't linger after the source/target despawns.
+    combatText.erase(
+        std::remove_if(combatText.begin(), combatText.end(),
+            [&data](const CombatTextEntry& e) {
+                return e.dstGuid == data.guid;
+            }),
+        combatText.end());
+
+    // Clean up unit cast state (cast bar) for the destroyed unit
+    unitCastStates_.erase(data.guid);
+    // Clean up cached auras
+    unitAurasCache_.erase(data.guid);
+
     tabCycleStale = true;
-    // Entity count logging disabled
 }
 
 void GameHandler::sendChatMessage(ChatType type, const std::string& message, const std::string& target) {

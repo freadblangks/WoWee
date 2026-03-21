@@ -534,9 +534,20 @@ static int lua_GetSpellCooldown(lua_State* L) {
         }
     }
     float cd = gh->getSpellCooldown(spellId);
-    lua_pushnumber(L, 0);   // start time (not tracked precisely, return 0)
-    lua_pushnumber(L, cd);  // duration remaining
-    return 2;
+    // WoW returns (start, duration, enabled) where remaining = start + duration - GetTime()
+    // Compute start = GetTime() - elapsed, duration = total cooldown
+    static auto sStart = std::chrono::steady_clock::now();
+    double nowSec = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - sStart).count();
+    if (cd > 0.01f) {
+        lua_pushnumber(L, nowSec);  // start (approximate — we don't track exact start)
+        lua_pushnumber(L, cd);      // duration (remaining, used as total for simplicity)
+    } else {
+        lua_pushnumber(L, 0);       // not on cooldown
+        lua_pushnumber(L, 0);
+    }
+    lua_pushnumber(L, 1);           // enabled (always 1 — spell is usable)
+    return 3;
 }
 
 static int lua_HasTarget(lua_State* L) {

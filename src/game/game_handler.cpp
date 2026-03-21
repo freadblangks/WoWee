@@ -20629,8 +20629,10 @@ void GameHandler::handleGuildQueryResponse(network::Packet& packet) {
             guildRankNames_.push_back(data.rankNames[i]);
         }
         LOG_INFO("Guild name set to: ", guildName_);
-        if (wasUnknown && !guildName_.empty())
+        if (wasUnknown && !guildName_.empty()) {
             addSystemChatMessage("Guild: <" + guildName_ + ">");
+            if (addonEventCallback_) addonEventCallback_("PLAYER_GUILD_UPDATE", {});
+        }
     } else {
         LOG_INFO("Cached guild name: id=", data.guildId, " name=", data.guildName);
     }
@@ -20680,6 +20682,7 @@ void GameHandler::handleGuildEvent(network::Packet& packet) {
             guildRankNames_.clear();
             guildRoster_ = GuildRosterData{};
             hasGuildRoster_ = false;
+            if (addonEventCallback_) addonEventCallback_("PLAYER_GUILD_UPDATE", {});
             break;
         case GuildEvent::SIGNED_ON:
             if (data.numStrings >= 1)

@@ -734,6 +734,123 @@ static int lua_GetUnitSpeed(lua_State* L) {
     return 1;
 }
 
+// --- Container/Bag API ---
+// WoW bags: container 0 = backpack (16 slots), containers 1-4 = equipped bags
+
+static int lua_GetContainerNumSlots(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int container = static_cast<int>(luaL_checknumber(L, 1));
+    if (!gh) { lua_pushnumber(L, 0); return 1; }
+    const auto& inv = gh->getInventory();
+    if (container == 0) {
+        lua_pushnumber(L, inv.getBackpackSize());
+    } else if (container >= 1 && container <= 4) {
+        lua_pushnumber(L, inv.getBagSize(container - 1));
+    } else {
+        lua_pushnumber(L, 0);
+    }
+    return 1;
+}
+
+// GetContainerItemInfo(container, slot) → texture, count, locked, quality, readable, lootable, link
+static int lua_GetContainerItemInfo(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int container = static_cast<int>(luaL_checknumber(L, 1));
+    int slot = static_cast<int>(luaL_checknumber(L, 2));
+    if (!gh) { lua_pushnil(L); return 1; }
+
+    const auto& inv = gh->getInventory();
+    const game::ItemSlot* itemSlot = nullptr;
+
+    if (container == 0 && slot >= 1 && slot <= inv.getBackpackSize()) {
+        itemSlot = &inv.getBackpackSlot(slot - 1);  // WoW uses 1-based
+    } else if (container >= 1 && container <= 4) {
+        int bagIdx = container - 1;
+        int bagSize = inv.getBagSize(bagIdx);
+        if (slot >= 1 && slot <= bagSize)
+            itemSlot = &inv.getBagSlot(bagIdx, slot - 1);
+    }
+
+    if (!itemSlot || itemSlot->empty()) { lua_pushnil(L); return 1; }
+
+    // Get item info for quality/icon
+    const auto* info = gh->getItemInfo(itemSlot->item.itemId);
+
+    lua_pushnil(L);  // texture (icon path — would need ItemDisplayInfo icon resolver)
+    lua_pushnumber(L, itemSlot->item.stackCount);  // count
+    lua_pushboolean(L, 0);  // locked
+    lua_pushnumber(L, info ? info->quality : 0);  // quality
+    lua_pushboolean(L, 0);  // readable
+    lua_pushboolean(L, 0);  // lootable
+    // Build item link with quality color
+    std::string name = info ? info->name : ("Item #" + std::to_string(itemSlot->item.itemId));
+    uint32_t q = info ? info->quality : 0;
+    static const char* kQH[] = {"9d9d9d","ffffff","1eff00","0070dd","a335ee","ff8000","e6cc80","e6cc80"};
+    uint32_t qi = q < 8 ? q : 1u;
+    char link[256];
+    snprintf(link, sizeof(link), "|cff%s|Hitem:%u:0:0:0:0:0:0:0|h[%s]|h|r",
+             kQH[qi], itemSlot->item.itemId, name.c_str());
+    lua_pushstring(L, link);  // link
+    return 7;
+}
+
+// GetContainerItemLink(container, slot) → item link string
+static int lua_GetContainerItemLink(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int container = static_cast<int>(luaL_checknumber(L, 1));
+    int slot = static_cast<int>(luaL_checknumber(L, 2));
+    if (!gh) { lua_pushnil(L); return 1; }
+
+    const auto& inv = gh->getInventory();
+    const game::ItemSlot* itemSlot = nullptr;
+
+    if (container == 0 && slot >= 1 && slot <= inv.getBackpackSize()) {
+        itemSlot = &inv.getBackpackSlot(slot - 1);
+    } else if (container >= 1 && container <= 4) {
+        int bagIdx = container - 1;
+        int bagSize = inv.getBagSize(bagIdx);
+        if (slot >= 1 && slot <= bagSize)
+            itemSlot = &inv.getBagSlot(bagIdx, slot - 1);
+    }
+
+    if (!itemSlot || itemSlot->empty()) { lua_pushnil(L); return 1; }
+    const auto* info = gh->getItemInfo(itemSlot->item.itemId);
+    std::string name = info ? info->name : ("Item #" + std::to_string(itemSlot->item.itemId));
+    uint32_t q = info ? info->quality : 0;
+    char link[256];
+    static const char* kQH[] = {"9d9d9d","ffffff","1eff00","0070dd","a335ee","ff8000","e6cc80","e6cc80"};
+    uint32_t qi = q < 8 ? q : 1u;
+    snprintf(link, sizeof(link), "|cff%s|Hitem:%u:0:0:0:0:0:0:0|h[%s]|h|r",
+             kQH[qi], itemSlot->item.itemId, name.c_str());
+    lua_pushstring(L, link);
+    return 1;
+}
+
+// GetContainerNumFreeSlots(container) → numFreeSlots, bagType
+static int lua_GetContainerNumFreeSlots(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int container = static_cast<int>(luaL_checknumber(L, 1));
+    if (!gh) { lua_pushnumber(L, 0); lua_pushnumber(L, 0); return 2; }
+
+    const auto& inv = gh->getInventory();
+    int freeSlots = 0;
+    int totalSlots = 0;
+
+    if (container == 0) {
+        totalSlots = inv.getBackpackSize();
+        for (int i = 0; i < totalSlots; ++i)
+            if (inv.getBackpackSlot(i).empty()) ++freeSlots;
+    } else if (container >= 1 && container <= 4) {
+        totalSlots = inv.getBagSize(container - 1);
+        for (int i = 0; i < totalSlots; ++i)
+            if (inv.getBagSlot(container - 1, i).empty()) ++freeSlots;
+    }
+
+    lua_pushnumber(L, freeSlots);
+    lua_pushnumber(L, 0);  // bagType (0 = normal)
+    return 2;
+}
+
 // --- Additional WoW API ---
 
 static int lua_UnitAffectingCombat(lua_State* L) {
@@ -1231,6 +1348,11 @@ void LuaEngine::registerCoreAPI() {
         {"UnitIsFriend",        lua_UnitIsFriend},
         {"UnitIsEnemy",         lua_UnitIsEnemy},
         {"UnitCreatureType",    lua_UnitCreatureType},
+        // Container/bag API
+        {"GetContainerNumSlots",    lua_GetContainerNumSlots},
+        {"GetContainerItemInfo",    lua_GetContainerItemInfo},
+        {"GetContainerItemLink",    lua_GetContainerItemLink},
+        {"GetContainerNumFreeSlots", lua_GetContainerNumFreeSlots},
         // Utilities
         {"strsplit",          lua_strsplit},
         {"strtrim",           lua_strtrim},

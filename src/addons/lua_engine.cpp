@@ -2691,6 +2691,57 @@ void LuaEngine::registerCoreAPI() {
     }
     lua_setglobal(L_, "__WoweeFrameMT");
 
+    // Add commonly called no-op frame methods to prevent addon errors
+    luaL_dostring(L_,
+        "local mt = __WoweeFrameMT\n"
+        "function mt:SetFrameLevel(level) self.__frameLevel = level end\n"
+        "function mt:GetFrameLevel() return self.__frameLevel or 1 end\n"
+        "function mt:SetFrameStrata(strata) self.__strata = strata end\n"
+        "function mt:GetFrameStrata() return self.__strata or 'MEDIUM' end\n"
+        "function mt:EnableMouse(enable) end\n"
+        "function mt:EnableMouseWheel(enable) end\n"
+        "function mt:SetMovable(movable) end\n"
+        "function mt:SetResizable(resizable) end\n"
+        "function mt:RegisterForDrag(...) end\n"
+        "function mt:SetClampedToScreen(clamped) end\n"
+        "function mt:SetBackdrop(backdrop) end\n"
+        "function mt:SetBackdropColor(...) end\n"
+        "function mt:SetBackdropBorderColor(...) end\n"
+        "function mt:ClearAllPoints() end\n"
+        "function mt:SetID(id) self.__id = id end\n"
+        "function mt:GetID() return self.__id or 0 end\n"
+        "function mt:SetScale(scale) self.__scale = scale end\n"
+        "function mt:GetScale() return self.__scale or 1.0 end\n"
+        "function mt:GetEffectiveScale() return self.__scale or 1.0 end\n"
+        "function mt:SetToplevel(top) end\n"
+        "function mt:Raise() end\n"
+        "function mt:Lower() end\n"
+        "function mt:GetLeft() return 0 end\n"
+        "function mt:GetRight() return 0 end\n"
+        "function mt:GetTop() return 0 end\n"
+        "function mt:GetBottom() return 0 end\n"
+        "function mt:GetNumPoints() return 0 end\n"
+        "function mt:GetPoint(n) return 'CENTER', nil, 'CENTER', 0, 0 end\n"
+        "function mt:SetHitRectInsets(...) end\n"
+        "function mt:RegisterForClicks(...) end\n"
+        "function mt:SetAttribute(name, value) self['attr_'..name] = value end\n"
+        "function mt:GetAttribute(name) return self['attr_'..name] end\n"
+        "function mt:HookScript(scriptType, fn)\n"
+        "    local orig = self.__scripts and self.__scripts[scriptType]\n"
+        "    if orig then\n"
+        "        self:SetScript(scriptType, function(...) orig(...); fn(...) end)\n"
+        "    else\n"
+        "        self:SetScript(scriptType, fn)\n"
+        "    end\n"
+        "end\n"
+        "function mt:SetMinResize(...) end\n"
+        "function mt:SetMaxResize(...) end\n"
+        "function mt:StartMoving() end\n"
+        "function mt:StopMovingOrSizing() end\n"
+        "function mt:IsMouseOver() return false end\n"
+        "function mt:GetObjectType() return 'Frame' end\n"
+    );
+
     // CreateFrame function
     lua_pushcfunction(L_, lua_CreateFrame);
     lua_setglobal(L_, "CreateFrame");

@@ -11964,6 +11964,8 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                             uint32_t old = currentMountDisplayId_;
                             currentMountDisplayId_ = val;
                             if (val != old && mountCallback_) mountCallback_(val);
+                            if (val != old && addonEventCallback_)
+                                addonEventCallback_("UNIT_MODEL_CHANGED", {"player"});
                             if (old == 0 && val != 0) {
                                 // Just mounted — find the mount aura (indefinite duration, self-cast)
                                 mountAuraSpellId_ = 0;

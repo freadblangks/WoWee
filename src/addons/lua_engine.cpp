@@ -1194,6 +1194,33 @@ static int lua_UnitCreatureType(lua_State* L) {
     return 1;
 }
 
+// UnitClassification(unit) → "normal", "elite", "rareelite", "worldboss", "rare"
+static int lua_UnitClassification(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushstring(L, "normal"); return 1; }
+    const char* uid = luaL_optstring(L, 1, "target");
+    std::string uidStr(uid);
+    for (char& c : uidStr) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    uint64_t guid = resolveUnitGuid(gh, uidStr);
+    if (guid == 0) { lua_pushstring(L, "normal"); return 1; }
+    auto entity = gh->getEntityManager().getEntity(guid);
+    if (!entity || entity->getType() == game::ObjectType::PLAYER) {
+        lua_pushstring(L, "normal");
+        return 1;
+    }
+    auto unit = std::dynamic_pointer_cast<game::Unit>(entity);
+    if (!unit) { lua_pushstring(L, "normal"); return 1; }
+    int rank = gh->getCreatureRank(unit->getEntry());
+    switch (rank) {
+        case 1:  lua_pushstring(L, "elite"); break;
+        case 2:  lua_pushstring(L, "rareelite"); break;
+        case 3:  lua_pushstring(L, "worldboss"); break;
+        case 4:  lua_pushstring(L, "rare"); break;
+        default: lua_pushstring(L, "normal"); break;
+    }
+    return 1;
+}
+
 // --- Frame System ---
 // Minimal WoW-compatible frame objects with RegisterEvent/SetScript/GetScript.
 // Frames are Lua tables with a metatable that provides methods.
@@ -1558,6 +1585,7 @@ void LuaEngine::registerCoreAPI() {
         {"UnitIsFriend",        lua_UnitIsFriend},
         {"UnitIsEnemy",         lua_UnitIsEnemy},
         {"UnitCreatureType",    lua_UnitCreatureType},
+        {"UnitClassification",  lua_UnitClassification},
         // Container/bag API
         {"GetContainerNumSlots",    lua_GetContainerNumSlots},
         {"GetContainerItemInfo",    lua_GetContainerItemInfo},

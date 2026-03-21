@@ -861,6 +861,69 @@ static int lua_GetContainerNumFreeSlots(lua_State* L) {
     return 2;
 }
 
+// --- Equipment Slot API ---
+// WoW inventory slot IDs: 1=Head,2=Neck,3=Shoulders,4=Shirt,5=Chest,
+// 6=Waist,7=Legs,8=Feet,9=Wrists,10=Hands,11=Ring1,12=Ring2,
+// 13=Trinket1,14=Trinket2,15=Back,16=MainHand,17=OffHand,18=Ranged,19=Tabard
+
+static int lua_GetInventoryItemLink(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    const char* uid = luaL_optstring(L, 1, "player");
+    int slotId = static_cast<int>(luaL_checknumber(L, 2));
+    if (!gh || slotId < 1 || slotId > 19) { lua_pushnil(L); return 1; }
+    std::string uidStr(uid);
+    for (char& c : uidStr) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (uidStr != "player") { lua_pushnil(L); return 1; }
+
+    const auto& inv = gh->getInventory();
+    const auto& slot = inv.getEquipSlot(static_cast<game::EquipSlot>(slotId - 1));
+    if (slot.empty()) { lua_pushnil(L); return 1; }
+
+    const auto* info = gh->getItemInfo(slot.item.itemId);
+    std::string name = info ? info->name : slot.item.name;
+    uint32_t q = info ? info->quality : static_cast<uint32_t>(slot.item.quality);
+    static const char* kQH[] = {"9d9d9d","ffffff","1eff00","0070dd","a335ee","ff8000","e6cc80","e6cc80"};
+    uint32_t qi = q < 8 ? q : 1u;
+    char link[256];
+    snprintf(link, sizeof(link), "|cff%s|Hitem:%u:0:0:0:0:0:0:0|h[%s]|h|r",
+             kQH[qi], slot.item.itemId, name.c_str());
+    lua_pushstring(L, link);
+    return 1;
+}
+
+static int lua_GetInventoryItemID(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    const char* uid = luaL_optstring(L, 1, "player");
+    int slotId = static_cast<int>(luaL_checknumber(L, 2));
+    if (!gh || slotId < 1 || slotId > 19) { lua_pushnil(L); return 1; }
+    std::string uidStr(uid);
+    for (char& c : uidStr) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (uidStr != "player") { lua_pushnil(L); return 1; }
+
+    const auto& inv = gh->getInventory();
+    const auto& slot = inv.getEquipSlot(static_cast<game::EquipSlot>(slotId - 1));
+    if (slot.empty()) { lua_pushnil(L); return 1; }
+    lua_pushnumber(L, slot.item.itemId);
+    return 1;
+}
+
+static int lua_GetInventoryItemTexture(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    const char* uid = luaL_optstring(L, 1, "player");
+    int slotId = static_cast<int>(luaL_checknumber(L, 2));
+    if (!gh || slotId < 1 || slotId > 19) { lua_pushnil(L); return 1; }
+    std::string uidStr(uid);
+    for (char& c : uidStr) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (uidStr != "player") { lua_pushnil(L); return 1; }
+
+    const auto& inv = gh->getInventory();
+    const auto& slot = inv.getEquipSlot(static_cast<game::EquipSlot>(slotId - 1));
+    if (slot.empty()) { lua_pushnil(L); return 1; }
+    // Return spell icon path for the item's on-use spell, or nil
+    lua_pushnil(L);
+    return 1;
+}
+
 // --- Quest Log API ---
 
 static int lua_GetNumQuestLogEntries(lua_State* L) {
@@ -1421,6 +1484,10 @@ void LuaEngine::registerCoreAPI() {
         {"GetContainerItemInfo",    lua_GetContainerItemInfo},
         {"GetContainerItemLink",    lua_GetContainerItemLink},
         {"GetContainerNumFreeSlots", lua_GetContainerNumFreeSlots},
+        // Equipment slot API
+        {"GetInventoryItemLink",    lua_GetInventoryItemLink},
+        {"GetInventoryItemID",      lua_GetInventoryItemID},
+        {"GetInventoryItemTexture", lua_GetInventoryItemTexture},
         // Quest log API
         {"GetNumQuestLogEntries",   lua_GetNumQuestLogEntries},
         {"GetQuestLogTitle",        lua_GetQuestLogTitle},

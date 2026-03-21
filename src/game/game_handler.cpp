@@ -4056,6 +4056,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     resurrectCasterName_ = (nit != playerNameCache.end()) ? nit->second : "";
                 }
                 resurrectRequestPending_ = true;
+                if (addonEventCallback_)
+                    addonEventCallback_("RESURRECT_REQUEST", {resurrectCasterName_});
             }
             break;
         }

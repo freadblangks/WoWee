@@ -354,6 +354,20 @@ bool Application::initialize() {
                     case game::ChatType::CHANNEL:       eventName = "CHAT_MSG_CHANNEL"; break;
                     case game::ChatType::EMOTE:
                     case game::ChatType::TEXT_EMOTE:    eventName = "CHAT_MSG_EMOTE"; break;
+                    case game::ChatType::ACHIEVEMENT:   eventName = "CHAT_MSG_ACHIEVEMENT"; break;
+                    case game::ChatType::GUILD_ACHIEVEMENT: eventName = "CHAT_MSG_GUILD_ACHIEVEMENT"; break;
+                    case game::ChatType::WHISPER_INFORM: eventName = "CHAT_MSG_WHISPER_INFORM"; break;
+                    case game::ChatType::RAID_LEADER:   eventName = "CHAT_MSG_RAID_LEADER"; break;
+                    case game::ChatType::BATTLEGROUND_LEADER: eventName = "CHAT_MSG_BATTLEGROUND_LEADER"; break;
+                    case game::ChatType::MONSTER_SAY:    eventName = "CHAT_MSG_MONSTER_SAY"; break;
+                    case game::ChatType::MONSTER_YELL:   eventName = "CHAT_MSG_MONSTER_YELL"; break;
+                    case game::ChatType::MONSTER_EMOTE:  eventName = "CHAT_MSG_MONSTER_EMOTE"; break;
+                    case game::ChatType::MONSTER_WHISPER: eventName = "CHAT_MSG_MONSTER_WHISPER"; break;
+                    case game::ChatType::RAID_BOSS_EMOTE: eventName = "CHAT_MSG_RAID_BOSS_EMOTE"; break;
+                    case game::ChatType::RAID_BOSS_WHISPER: eventName = "CHAT_MSG_RAID_BOSS_WHISPER"; break;
+                    case game::ChatType::BG_SYSTEM_NEUTRAL:  eventName = "CHAT_MSG_BG_SYSTEM_NEUTRAL"; break;
+                    case game::ChatType::BG_SYSTEM_ALLIANCE: eventName = "CHAT_MSG_BG_SYSTEM_ALLIANCE"; break;
+                    case game::ChatType::BG_SYSTEM_HORDE:    eventName = "CHAT_MSG_BG_SYSTEM_HORDE"; break;
                     default: break;
                 }
                 if (eventName) {

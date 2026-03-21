@@ -26312,6 +26312,8 @@ void GameHandler::handleAchievementEarned(network::Packet& packet) {
     LOG_INFO("SMSG_ACHIEVEMENT_EARNED: guid=0x", std::hex, guid, std::dec,
              " achievementId=", achievementId, " self=", isSelf,
              achName.empty() ? "" : " name=", achName);
+    if (addonEventCallback_)
+        addonEventCallback_("ACHIEVEMENT_EARNED", {std::to_string(achievementId)});
 }
 
 // ---------------------------------------------------------------------------

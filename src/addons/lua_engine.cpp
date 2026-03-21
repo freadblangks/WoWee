@@ -3820,8 +3820,9 @@ void LuaEngine::fireEvent(const std::string& eventName,
         int nargs = 1 + static_cast<int>(args.size());
         if (lua_pcall(L_, nargs, 0, 0) != 0) {
             const char* err = lua_tostring(L_, -1);
-            LOG_ERROR("LuaEngine: event '", eventName, "' handler error: ",
-                      err ? err : "(unknown)");
+            std::string errStr = err ? err : "(unknown)";
+            LOG_ERROR("LuaEngine: event '", eventName, "' handler error: ", errStr);
+            if (luaErrorCallback_) luaErrorCallback_(errStr);
             lua_pop(L_, 1);
         }
     }
@@ -3847,7 +3848,10 @@ void LuaEngine::fireEvent(const std::string& eventName,
                         for (const auto& arg : args) lua_pushstring(L_, arg.c_str());
                         int nargs = 2 + static_cast<int>(args.size());
                         if (lua_pcall(L_, nargs, 0, 0) != 0) {
-                            LOG_ERROR("LuaEngine: frame OnEvent error: ", lua_tostring(L_, -1));
+                            const char* ferr = lua_tostring(L_, -1);
+                            std::string ferrStr = ferr ? ferr : "(unknown)";
+                            LOG_ERROR("LuaEngine: frame OnEvent error: ", ferrStr);
+                            if (luaErrorCallback_) luaErrorCallback_(ferrStr);
                             lua_pop(L_, 1);
                         }
                     } else {

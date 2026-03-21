@@ -335,6 +335,10 @@ bool Application::initialize() {
         if (addonManager_->initialize(gameHandler.get())) {
             std::string addonsDir = assetPath + "/interface/AddOns";
             addonManager_->scanAddons(addonsDir);
+            // Wire Lua errors to UI error display
+            addonManager_->getLuaEngine()->setLuaErrorCallback([gh = gameHandler.get()](const std::string& err) {
+                if (gh) gh->addUIError(err);
+            });
             // Wire chat messages to addon event dispatch
             gameHandler->setAddonChatCallback([this](const game::MessageChatData& msg) {
                 if (!addonManager_ || !addonsLoaded_) return;

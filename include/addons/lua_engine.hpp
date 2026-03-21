@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -47,9 +48,14 @@ public:
     lua_State* getState() { return L_; }
     bool isInitialized() const { return L_ != nullptr; }
 
+    // Optional callback for Lua errors (displayed as UI errors to the player)
+    using LuaErrorCallback = std::function<void(const std::string&)>;
+    void setLuaErrorCallback(LuaErrorCallback cb) { luaErrorCallback_ = std::move(cb); }
+
 private:
     lua_State* L_ = nullptr;
     game::GameHandler* gameHandler_ = nullptr;
+    LuaErrorCallback luaErrorCallback_;
 
     void registerCoreAPI();
     void registerEventAPI();

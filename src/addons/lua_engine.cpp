@@ -3891,7 +3891,10 @@ void LuaEngine::dispatchOnUpdate(float elapsed) {
                 lua_pushvalue(L_, -3);  // self (frame)
                 lua_pushnumber(L_, static_cast<double>(elapsed));
                 if (lua_pcall(L_, 2, 0, 0) != 0) {
-                    LOG_ERROR("LuaEngine: OnUpdate error: ", lua_tostring(L_, -1));
+                    const char* uerr = lua_tostring(L_, -1);
+                    std::string uerrStr = uerr ? uerr : "(unknown)";
+                    LOG_ERROR("LuaEngine: OnUpdate error: ", uerrStr);
+                    if (luaErrorCallback_) luaErrorCallback_(uerrStr);
                     lua_pop(L_, 1);
                 }
             } else {
@@ -4098,6 +4101,7 @@ bool LuaEngine::executeFile(const std::string& path) {
         const char* errMsg = lua_tostring(L_, -1);
         std::string msg = errMsg ? errMsg : "(unknown error)";
         LOG_ERROR("LuaEngine: error loading '", path, "': ", msg);
+        if (luaErrorCallback_) luaErrorCallback_(msg);
         if (gameHandler_) {
             game::MessageChatData errChat;
             errChat.type = game::ChatType::SYSTEM;
@@ -4119,6 +4123,7 @@ bool LuaEngine::executeString(const std::string& code) {
         const char* errMsg = lua_tostring(L_, -1);
         std::string msg = errMsg ? errMsg : "(unknown error)";
         LOG_ERROR("LuaEngine: script error: ", msg);
+        if (luaErrorCallback_) luaErrorCallback_(msg);
         if (gameHandler_) {
             game::MessageChatData errChat;
             errChat.type = game::ChatType::SYSTEM;

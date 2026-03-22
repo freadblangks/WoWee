@@ -12039,7 +12039,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                             }
                         }
                         unit->setMountDisplayId(val);
-                    } else if (key == ufNpcFlags) { unit->setNpcFlags(val); }
+                    }
                 }
                 if (block.guid == playerGuid) {
                     constexpr uint32_t UNIT_FLAG_TAXI_FLIGHT = 0x00000100;
@@ -12587,6 +12587,8 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                                 uint32_t old = currentMountDisplayId_;
                                 currentMountDisplayId_ = val;
                                 if (val != old && mountCallback_) mountCallback_(val);
+                                if (val != old && addonEventCallback_)
+                                    addonEventCallback_("UNIT_MODEL_CHANGED", {"player"});
                                 if (old == 0 && val != 0) {
                                     mountAuraSpellId_ = 0;
                                     for (const auto& a : playerAuras) {
@@ -12731,6 +12733,15 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                             network::Packet qsPkt(wireOpcode(Opcode::CMSG_QUESTGIVER_STATUS_QUERY));
                             qsPkt.writeUInt64(block.guid);
                             socket->send(qsPkt);
+                        }
+                        // Fire UNIT_MODEL_CHANGED for addons that track model swaps
+                        if (addonEventCallback_) {
+                            std::string uid;
+                            if (block.guid == targetGuid) uid = "target";
+                            else if (block.guid == focusGuid) uid = "focus";
+                            else if (block.guid == petGuid_) uid = "pet";
+                            if (!uid.empty())
+                                addonEventCallback_("UNIT_MODEL_CHANGED", {uid});
                         }
                     }
                 }

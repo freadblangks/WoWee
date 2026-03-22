@@ -909,6 +909,50 @@ static int lua_GetPlayerMapPosition(lua_State* L) {
     return 2;
 }
 
+// GetPlayerFacing() → radians (0 = north, increasing counter-clockwise)
+static int lua_GetPlayerFacing(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (gh) {
+        float facing = gh->getMovementInfo().orientation;
+        // Normalize to [0, 2π)
+        while (facing < 0) facing += 6.2831853f;
+        while (facing >= 6.2831853f) facing -= 6.2831853f;
+        lua_pushnumber(L, facing);
+    } else {
+        lua_pushnumber(L, 0);
+    }
+    return 1;
+}
+
+// GetCVar(name) → value string (stub for most, real for a few)
+static int lua_GetCVar(lua_State* L) {
+    const char* name = luaL_checkstring(L, 1);
+    std::string n(name);
+    // Return sensible defaults for commonly queried CVars
+    if (n == "uiScale") lua_pushstring(L, "1");
+    else if (n == "useUIScale") lua_pushstring(L, "1");
+    else if (n == "screenWidth" || n == "gxResolution") {
+        auto* win = core::Application::getInstance().getWindow();
+        lua_pushstring(L, std::to_string(win ? win->getWidth() : 1920).c_str());
+    } else if (n == "screenHeight" || n == "gxFullscreenResolution") {
+        auto* win = core::Application::getInstance().getWindow();
+        lua_pushstring(L, std::to_string(win ? win->getHeight() : 1080).c_str());
+    } else if (n == "nameplateShowFriends") lua_pushstring(L, "1");
+    else if (n == "nameplateShowEnemies") lua_pushstring(L, "1");
+    else if (n == "Sound_EnableSFX") lua_pushstring(L, "1");
+    else if (n == "Sound_EnableMusic") lua_pushstring(L, "1");
+    else if (n == "chatBubbles") lua_pushstring(L, "1");
+    else if (n == "autoLootDefault") lua_pushstring(L, "1");
+    else lua_pushstring(L, "0");
+    return 1;
+}
+
+// SetCVar(name, value) — no-op stub (log for debugging)
+static int lua_SetCVar(lua_State* L) {
+    (void)L;
+    return 0;
+}
+
 static int lua_UnitRace(lua_State* L) {
     auto* gh = getGameHandler(L);
     if (!gh) { lua_pushstring(L, "Unknown"); lua_pushstring(L, "Unknown"); lua_pushnumber(L, 0); return 3; }
@@ -3989,6 +4033,9 @@ void LuaEngine::registerCoreAPI() {
         {"IsInGroup",     lua_IsInGroup},
         {"IsInRaid",      lua_IsInRaid},
         {"GetPlayerMapPosition", lua_GetPlayerMapPosition},
+        {"GetPlayerFacing",     lua_GetPlayerFacing},
+        {"GetCVar",             lua_GetCVar},
+        {"SetCVar",             lua_SetCVar},
         {"SendChatMessage",   lua_SendChatMessage},
         {"SendAddonMessage",  lua_SendAddonMessage},
         {"RegisterAddonMessagePrefix", lua_RegisterAddonMessagePrefix},

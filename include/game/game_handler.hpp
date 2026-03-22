@@ -1674,6 +1674,8 @@ public:
         std::array<QuestRewardItem, 6> rewardChoiceItems{}; // player picks one of these
     };
     const std::vector<QuestLogEntry>& getQuestLog() const { return questLog_; }
+    int getSelectedQuestLogIndex() const { return selectedQuestLogIndex_; }
+    void setSelectedQuestLogIndex(int idx) { selectedQuestLogIndex_ = idx; }
     void abandonQuest(uint32_t questId);
     void shareQuestWithParty(uint32_t questId);  // CMSG_PUSHQUESTTOPARTY
     bool requestQuestQuery(uint32_t questId, bool force = false);
@@ -3187,6 +3189,7 @@ private:
 
     // Quest log
     std::vector<QuestLogEntry> questLog_;
+    int selectedQuestLogIndex_ = 0;
     std::unordered_set<uint32_t> pendingQuestQueryIds_;
     std::unordered_set<uint32_t> trackedQuestIds_;
     bool pendingLoginQuestResync_ = false;

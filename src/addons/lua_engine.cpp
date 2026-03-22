@@ -2150,6 +2150,103 @@ static int lua_IsQuestComplete(lua_State* L) {
     return 1;
 }
 
+// SelectQuestLogEntry(index) — select a quest in the quest log
+static int lua_SelectQuestLogEntry(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int index = static_cast<int>(luaL_checknumber(L, 1));
+    if (gh) gh->setSelectedQuestLogIndex(index);
+    return 0;
+}
+
+// GetQuestLogSelection() → index
+static int lua_GetQuestLogSelection(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    lua_pushnumber(L, gh ? gh->getSelectedQuestLogIndex() : 0);
+    return 1;
+}
+
+// GetNumQuestWatches() → count
+static int lua_GetNumQuestWatches(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    lua_pushnumber(L, gh ? gh->getTrackedQuestIds().size() : 0);
+    return 1;
+}
+
+// GetQuestIndexForWatch(watchIndex) → questLogIndex
+// Maps the Nth watched quest to its quest log index (1-based)
+static int lua_GetQuestIndexForWatch(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int watchIdx = static_cast<int>(luaL_checknumber(L, 1));
+    if (!gh || watchIdx < 1) { lua_pushnil(L); return 1; }
+    const auto& ql = gh->getQuestLog();
+    const auto& tracked = gh->getTrackedQuestIds();
+    int found = 0;
+    for (size_t i = 0; i < ql.size(); ++i) {
+        if (tracked.count(ql[i].questId)) {
+            found++;
+            if (found == watchIdx) {
+                lua_pushnumber(L, static_cast<int>(i) + 1); // 1-based
+                return 1;
+            }
+        }
+    }
+    lua_pushnil(L);
+    return 1;
+}
+
+// AddQuestWatch(questLogIndex) — add a quest to the watch list
+static int lua_AddQuestWatch(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int index = static_cast<int>(luaL_checknumber(L, 1));
+    if (!gh || index < 1) return 0;
+    const auto& ql = gh->getQuestLog();
+    if (index <= static_cast<int>(ql.size())) {
+        gh->setQuestTracked(ql[index - 1].questId, true);
+    }
+    return 0;
+}
+
+// RemoveQuestWatch(questLogIndex) — remove a quest from the watch list
+static int lua_RemoveQuestWatch(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int index = static_cast<int>(luaL_checknumber(L, 1));
+    if (!gh || index < 1) return 0;
+    const auto& ql = gh->getQuestLog();
+    if (index <= static_cast<int>(ql.size())) {
+        gh->setQuestTracked(ql[index - 1].questId, false);
+    }
+    return 0;
+}
+
+// IsQuestWatched(questLogIndex) → boolean
+static int lua_IsQuestWatched(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int index = static_cast<int>(luaL_checknumber(L, 1));
+    if (!gh || index < 1) { lua_pushboolean(L, 0); return 1; }
+    const auto& ql = gh->getQuestLog();
+    if (index <= static_cast<int>(ql.size())) {
+        lua_pushboolean(L, gh->isQuestTracked(ql[index - 1].questId) ? 1 : 0);
+    } else {
+        lua_pushboolean(L, 0);
+    }
+    return 1;
+}
+
+// GetQuestLink(questLogIndex) → "|cff...|Hquest:id:level|h[title]|h|r"
+static int lua_GetQuestLink(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int index = static_cast<int>(luaL_checknumber(L, 1));
+    if (!gh || index < 1) { lua_pushnil(L); return 1; }
+    const auto& ql = gh->getQuestLog();
+    if (index > static_cast<int>(ql.size())) { lua_pushnil(L); return 1; }
+    const auto& q = ql[index - 1];
+    // Yellow quest link format matching WoW
+    std::string link = "|cff808000|Hquest:" + std::to_string(q.questId) +
+                       ":0|h[" + q.title + "]|h|r";
+    lua_pushstring(L, link.c_str());
+    return 1;
+}
+
 // --- Skill Line API ---
 
 // GetNumSkillLines() → count
@@ -3906,6 +4003,14 @@ void LuaEngine::registerCoreAPI() {
         {"GetQuestLogTitle",        lua_GetQuestLogTitle},
         {"GetQuestLogQuestText",    lua_GetQuestLogQuestText},
         {"IsQuestComplete",         lua_IsQuestComplete},
+        {"SelectQuestLogEntry",     lua_SelectQuestLogEntry},
+        {"GetQuestLogSelection",    lua_GetQuestLogSelection},
+        {"GetNumQuestWatches",      lua_GetNumQuestWatches},
+        {"GetQuestIndexForWatch",   lua_GetQuestIndexForWatch},
+        {"AddQuestWatch",           lua_AddQuestWatch},
+        {"RemoveQuestWatch",        lua_RemoveQuestWatch},
+        {"IsQuestWatched",          lua_IsQuestWatched},
+        {"GetQuestLink",            lua_GetQuestLink},
         // Skill line API
         {"GetNumSkillLines",        lua_GetNumSkillLines},
         {"GetSkillLineInfo",        lua_GetSkillLineInfo},

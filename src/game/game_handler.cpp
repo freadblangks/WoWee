@@ -23033,6 +23033,62 @@ void GameHandler::loadSkillLineAbilityDbc() {
     }
 }
 
+const std::vector<GameHandler::SpellBookTab>& GameHandler::getSpellBookTabs() {
+    // Rebuild when spell count changes (learns/unlearns)
+    static size_t lastSpellCount = 0;
+    if (lastSpellCount == knownSpells.size() && !spellBookTabsDirty_)
+        return spellBookTabs_;
+    lastSpellCount = knownSpells.size();
+    spellBookTabsDirty_ = false;
+    spellBookTabs_.clear();
+
+    static constexpr uint32_t SKILLLINE_CATEGORY_CLASS = 7;
+
+    // Group known spells by class skill line
+    std::map<uint32_t, std::vector<uint32_t>> bySkillLine;
+    std::vector<uint32_t> general;
+
+    for (uint32_t spellId : knownSpells) {
+        auto slIt = spellToSkillLine_.find(spellId);
+        if (slIt != spellToSkillLine_.end()) {
+            uint32_t skillLineId = slIt->second;
+            auto catIt = skillLineCategories_.find(skillLineId);
+            if (catIt != skillLineCategories_.end() && catIt->second == SKILLLINE_CATEGORY_CLASS) {
+                bySkillLine[skillLineId].push_back(spellId);
+                continue;
+            }
+        }
+        general.push_back(spellId);
+    }
+
+    // Sort spells within each group by name
+    auto byName = [this](uint32_t a, uint32_t b) {
+        return getSpellName(a) < getSpellName(b);
+    };
+
+    // "General" tab first (spells not in a class skill line)
+    if (!general.empty()) {
+        std::sort(general.begin(), general.end(), byName);
+        spellBookTabs_.push_back({"General", "Interface\\Icons\\INV_Misc_Book_09", std::move(general)});
+    }
+
+    // Class skill line tabs, sorted by name
+    std::vector<std::pair<std::string, std::vector<uint32_t>>> named;
+    for (auto& [skillLineId, spells] : bySkillLine) {
+        auto nameIt = skillLineNames_.find(skillLineId);
+        std::string tabName = (nameIt != skillLineNames_.end()) ? nameIt->second : "Unknown";
+        std::sort(spells.begin(), spells.end(), byName);
+        named.emplace_back(std::move(tabName), std::move(spells));
+    }
+    std::sort(named.begin(), named.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+
+    for (auto& [name, spells] : named) {
+        spellBookTabs_.push_back({std::move(name), "Interface\\Icons\\INV_Misc_Book_09", std::move(spells)});
+    }
+
+    return spellBookTabs_;
+}
+
 void GameHandler::categorizeTrainerSpells() {
     trainerTabs_.clear();
 

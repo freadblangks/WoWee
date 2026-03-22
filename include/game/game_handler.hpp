@@ -830,6 +830,14 @@ public:
     void togglePetSpellAutocast(uint32_t spellId);
     const std::unordered_set<uint32_t>& getKnownSpells() const { return knownSpells; }
 
+    // Spell book tabs — groups known spells by class skill line for Lua API
+    struct SpellBookTab {
+        std::string name;
+        std::string texture; // icon path
+        std::vector<uint32_t> spellIds; // spells in this tab
+    };
+    const std::vector<SpellBookTab>& getSpellBookTabs();
+
     // ---- Pet Stable ----
     struct StabledPet {
         uint32_t petNumber  = 0;   // server-side pet number (used for unstable/swap)
@@ -3443,6 +3451,8 @@ private:
     std::unordered_map<uint32_t, std::string> skillLineNames_;
     std::unordered_map<uint32_t, uint32_t> skillLineCategories_;
     std::unordered_map<uint32_t, uint32_t> spellToSkillLine_;      // spellID -> skillLineID
+    std::vector<SpellBookTab> spellBookTabs_;
+    bool spellBookTabsDirty_ = true;
     bool skillLineDbcLoaded_ = false;
     bool skillLineAbilityLoaded_ = false;
     static constexpr size_t PLAYER_EXPLORED_ZONES_COUNT = 128;

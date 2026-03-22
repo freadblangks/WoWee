@@ -1396,6 +1396,86 @@ static int lua_IsSpellKnown(lua_State* L) {
     return 1;
 }
 
+// --- Spell Book Tab API ---
+
+// GetNumSpellTabs() → count
+static int lua_GetNumSpellTabs(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushnumber(L, 0); return 1; }
+    lua_pushnumber(L, gh->getSpellBookTabs().size());
+    return 1;
+}
+
+// GetSpellTabInfo(tabIndex) → name, texture, offset, numSpells
+// tabIndex is 1-based; offset is 1-based global spell book slot
+static int lua_GetSpellTabInfo(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int tabIdx = static_cast<int>(luaL_checknumber(L, 1));
+    if (!gh || tabIdx < 1) {
+        lua_pushnil(L); return 1;
+    }
+    const auto& tabs = gh->getSpellBookTabs();
+    if (tabIdx > static_cast<int>(tabs.size())) {
+        lua_pushnil(L); return 1;
+    }
+    // Compute offset: sum of spells in all preceding tabs (1-based)
+    int offset = 0;
+    for (int i = 0; i < tabIdx - 1; ++i)
+        offset += static_cast<int>(tabs[i].spellIds.size());
+    const auto& tab = tabs[tabIdx - 1];
+    lua_pushstring(L, tab.name.c_str());           // name
+    lua_pushstring(L, tab.texture.c_str());        // texture
+    lua_pushnumber(L, offset);                     // offset (0-based for WoW compat)
+    lua_pushnumber(L, tab.spellIds.size());        // numSpells
+    return 4;
+}
+
+// GetSpellBookItemInfo(slot, bookType) → "SPELL", spellId
+// slot is 1-based global spell book index
+static int lua_GetSpellBookItemInfo(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int slot = static_cast<int>(luaL_checknumber(L, 1));
+    if (!gh || slot < 1) {
+        lua_pushstring(L, "SPELL");
+        lua_pushnumber(L, 0);
+        return 2;
+    }
+    const auto& tabs = gh->getSpellBookTabs();
+    int idx = slot; // 1-based
+    for (const auto& tab : tabs) {
+        if (idx <= static_cast<int>(tab.spellIds.size())) {
+            lua_pushstring(L, "SPELL");
+            lua_pushnumber(L, tab.spellIds[idx - 1]);
+            return 2;
+        }
+        idx -= static_cast<int>(tab.spellIds.size());
+    }
+    lua_pushstring(L, "SPELL");
+    lua_pushnumber(L, 0);
+    return 2;
+}
+
+// GetSpellBookItemName(slot, bookType) → name, subName
+static int lua_GetSpellBookItemName(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int slot = static_cast<int>(luaL_checknumber(L, 1));
+    if (!gh || slot < 1) { lua_pushnil(L); return 1; }
+    const auto& tabs = gh->getSpellBookTabs();
+    int idx = slot;
+    for (const auto& tab : tabs) {
+        if (idx <= static_cast<int>(tab.spellIds.size())) {
+            uint32_t spellId = tab.spellIds[idx - 1];
+            const std::string& name = gh->getSpellName(spellId);
+            lua_pushstring(L, name.empty() ? "Unknown" : name.c_str());
+            lua_pushstring(L, ""); // subName/rank
+            return 2;
+        }
+        idx -= static_cast<int>(tab.spellIds.size());
+    }
+    lua_pushnil(L);
+    return 1;
+}
+
 static int lua_GetSpellCooldown(lua_State* L) {
     auto* gh = getGameHandler(L);
     if (!gh) { lua_pushnumber(L, 0); lua_pushnumber(L, 0); return 2; }
@@ -3915,6 +3995,10 @@ void LuaEngine::registerCoreAPI() {
         {"IsAddonMessagePrefixRegistered", lua_IsAddonMessagePrefixRegistered},
         {"CastSpellByName",   lua_CastSpellByName},
         {"IsSpellKnown",      lua_IsSpellKnown},
+        {"GetNumSpellTabs",   lua_GetNumSpellTabs},
+        {"GetSpellTabInfo",   lua_GetSpellTabInfo},
+        {"GetSpellBookItemInfo", lua_GetSpellBookItemInfo},
+        {"GetSpellBookItemName", lua_GetSpellBookItemName},
         {"GetSpellCooldown",  lua_GetSpellCooldown},
         {"GetSpellPowerCost", lua_GetSpellPowerCost},
         {"IsSpellInRange",    lua_IsSpellInRange},

@@ -779,6 +779,63 @@ static int lua_GetMoney(lua_State* L) {
     return 1;
 }
 
+// --- Merchant/Vendor API ---
+
+static int lua_GetMerchantNumItems(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushnumber(L, 0); return 1; }
+    lua_pushnumber(L, gh->getVendorItems().items.size());
+    return 1;
+}
+
+// GetMerchantItemInfo(index) → name, texture, price, stackCount, numAvailable, isUsable
+static int lua_GetMerchantItemInfo(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int index = static_cast<int>(luaL_checknumber(L, 1));
+    if (!gh || index < 1) { lua_pushnil(L); return 1; }
+    const auto& items = gh->getVendorItems().items;
+    if (index > static_cast<int>(items.size())) { lua_pushnil(L); return 1; }
+    const auto& vi = items[index - 1];
+    const auto* info = gh->getItemInfo(vi.itemId);
+    std::string name = info ? info->name : ("Item #" + std::to_string(vi.itemId));
+    lua_pushstring(L, name.c_str());                    // name
+    // texture
+    std::string iconPath;
+    if (info && info->displayInfoId != 0)
+        iconPath = gh->getItemIconPath(info->displayInfoId);
+    if (!iconPath.empty()) lua_pushstring(L, iconPath.c_str());
+    else lua_pushnil(L);
+    lua_pushnumber(L, vi.buyPrice);                     // price (copper)
+    lua_pushnumber(L, vi.stackCount > 0 ? vi.stackCount : 1); // stackCount
+    lua_pushnumber(L, vi.maxCount == -1 ? -1 : vi.maxCount);  // numAvailable (-1=unlimited)
+    lua_pushboolean(L, 1);                              // isUsable
+    return 6;
+}
+
+// GetMerchantItemLink(index) → item link
+static int lua_GetMerchantItemLink(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int index = static_cast<int>(luaL_checknumber(L, 1));
+    if (!gh || index < 1) { lua_pushnil(L); return 1; }
+    const auto& items = gh->getVendorItems().items;
+    if (index > static_cast<int>(items.size())) { lua_pushnil(L); return 1; }
+    const auto& vi = items[index - 1];
+    const auto* info = gh->getItemInfo(vi.itemId);
+    if (!info) { lua_pushnil(L); return 1; }
+    static const char* kQH[] = {"ff9d9d9d","ffffffff","ff1eff00","ff0070dd","ffa335ee","ffff8000","ffe6cc80","ff00ccff"};
+    const char* ch = (info->quality < 8) ? kQH[info->quality] : "ffffffff";
+    char link[256];
+    snprintf(link, sizeof(link), "|c%s|Hitem:%u:0:0:0:0:0:0:0|h[%s]|h|r", ch, vi.itemId, info->name.c_str());
+    lua_pushstring(L, link);
+    return 1;
+}
+
+static int lua_CanMerchantRepair(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    lua_pushboolean(L, gh && gh->getVendorItems().canRepair ? 1 : 0);
+    return 1;
+}
+
 // UnitStat(unit, statIndex) → base, effective, posBuff, negBuff
 // statIndex: 1=STR, 2=AGI, 3=STA, 4=INT, 5=SPI (1-indexed per WoW API)
 static int lua_UnitStat(lua_State* L) {
@@ -4725,6 +4782,10 @@ void LuaEngine::registerCoreAPI() {
         {"UnitSex",       lua_UnitSex},
         {"UnitClass",     lua_UnitClass},
         {"GetMoney",      lua_GetMoney},
+        {"GetMerchantNumItems",  lua_GetMerchantNumItems},
+        {"GetMerchantItemInfo",  lua_GetMerchantItemInfo},
+        {"GetMerchantItemLink",  lua_GetMerchantItemLink},
+        {"CanMerchantRepair",    lua_CanMerchantRepair},
         {"UnitStat",      lua_UnitStat},
         {"GetDodgeChance",    lua_GetDodgeChance},
         {"GetParryChance",    lua_GetParryChance},

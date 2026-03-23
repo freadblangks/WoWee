@@ -5182,6 +5182,38 @@ void LuaEngine::registerCoreAPI() {
             if (gh) gh->requestPvpLog();
             return 0;
         }},
+        // --- Chat Channels ---
+        {"JoinChannelByName", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            const char* name = luaL_checkstring(L, 1);
+            const char* pw = luaL_optstring(L, 2, "");
+            if (gh) gh->joinChannel(name, pw);
+            return 0;
+        }},
+        {"LeaveChannelByName", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            const char* name = luaL_checkstring(L, 1);
+            if (gh) gh->leaveChannel(name);
+            return 0;
+        }},
+        {"GetChannelName", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            int index = static_cast<int>(luaL_checknumber(L, 1));
+            if (!gh || index < 1) { lua_pushnil(L); return 1; }
+            std::string name = gh->getChannelByIndex(index - 1);
+            if (!name.empty()) {
+                lua_pushstring(L, name.c_str());
+                lua_pushstring(L, ""); // header
+                lua_pushboolean(L, 0); // collapsed
+                lua_pushnumber(L, index); // channelNumber
+                lua_pushnumber(L, 0); // count
+                lua_pushboolean(L, 1); // active
+                lua_pushstring(L, "CHANNEL_CATEGORY_CUSTOM"); // category
+                return 7;
+            }
+            lua_pushnil(L);
+            return 1;
+        }},
         // --- System Commands ---
         {"Logout", [](lua_State* L) -> int {
             auto* gh = getGameHandler(L);

@@ -1624,6 +1624,16 @@ static int lua_GetSpellBookItemName(lua_State* L) {
     return 1;
 }
 
+// GetSpellDescription(spellId) → description string
+static int lua_GetSpellDescription(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushstring(L, ""); return 1; }
+    uint32_t spellId = static_cast<uint32_t>(luaL_checknumber(L, 1));
+    const std::string& desc = gh->getSpellDescription(spellId);
+    lua_pushstring(L, desc.c_str());
+    return 1;
+}
+
 static int lua_GetSpellCooldown(lua_State* L) {
     auto* gh = getGameHandler(L);
     if (!gh) { lua_pushnumber(L, 0); lua_pushnumber(L, 0); return 2; }
@@ -4929,6 +4939,7 @@ void LuaEngine::registerCoreAPI() {
         {"GetSpellBookItemName", lua_GetSpellBookItemName},
         {"GetSpellCooldown",  lua_GetSpellCooldown},
         {"GetSpellPowerCost", lua_GetSpellPowerCost},
+        {"GetSpellDescription", lua_GetSpellDescription},
         {"IsSpellInRange",    lua_IsSpellInRange},
         {"UnitDistanceSquared", lua_UnitDistanceSquared},
         {"CheckInteractDistance", lua_CheckInteractDistance},
@@ -5592,6 +5603,11 @@ void LuaEngine::registerCoreAPI() {
         "            self:AddDoubleLine(string.format('%.1f sec cast', castTime / 1000), '', 1,1,1, 1,1,1)\n"
         "        else\n"
         "            self:AddDoubleLine('Instant', '', 1,1,1, 1,1,1)\n"
+        "        end\n"
+        "        -- Description\n"
+        "        local desc = GetSpellDescription(spellId)\n"
+        "        if desc and desc ~= '' then\n"
+        "            self:AddLine(desc, 1, 0.82, 0)\n"
         "        end\n"
         "        -- Cooldown\n"
         "        local start, dur = GetSpellCooldown(spellId)\n"

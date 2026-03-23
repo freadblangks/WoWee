@@ -5062,6 +5062,73 @@ void LuaEngine::registerCoreAPI() {
             lua_pushboolean(L, 1);                               // isCastable
             return 4;
         }},
+        // --- Auction House API ---
+        {"GetNumAuctionItems", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            const char* listType = luaL_optstring(L, 1, "list");
+            if (!gh) { lua_pushnumber(L, 0); lua_pushnumber(L, 0); return 2; }
+            std::string t(listType);
+            const game::AuctionListResult* r = nullptr;
+            if (t == "list" || t == "browse") r = &gh->getAuctionBrowseResults();
+            else if (t == "owner") r = &gh->getAuctionOwnerResults();
+            else if (t == "bidder") r = &gh->getAuctionBidderResults();
+            lua_pushnumber(L, r ? r->auctions.size() : 0);
+            lua_pushnumber(L, r ? r->totalCount : 0);
+            return 2;
+        }},
+        {"GetAuctionItemInfo", [](lua_State* L) -> int {
+            // GetAuctionItemInfo(type, index) → name, texture, count, quality, canUse, level, levelColHeader, minBid, minIncrement, buyoutPrice, bidAmount, highBidder, bidderFullName, owner, ownerFullName, saleStatus, itemId
+            auto* gh = getGameHandler(L);
+            const char* listType = luaL_checkstring(L, 1);
+            int index = static_cast<int>(luaL_checknumber(L, 2));
+            if (!gh || index < 1) { lua_pushnil(L); return 1; }
+            std::string t(listType);
+            const game::AuctionListResult* r = nullptr;
+            if (t == "list") r = &gh->getAuctionBrowseResults();
+            else if (t == "owner") r = &gh->getAuctionOwnerResults();
+            else if (t == "bidder") r = &gh->getAuctionBidderResults();
+            if (!r || index > static_cast<int>(r->auctions.size())) { lua_pushnil(L); return 1; }
+            const auto& a = r->auctions[index - 1];
+            const auto* info = gh->getItemInfo(a.itemEntry);
+            std::string name = info ? info->name : "Item #" + std::to_string(a.itemEntry);
+            std::string icon = (info && info->displayInfoId != 0) ? gh->getItemIconPath(info->displayInfoId) : "";
+            uint32_t quality = info ? info->quality : 1;
+            lua_pushstring(L, name.c_str());        // name
+            lua_pushstring(L, icon.empty() ? "Interface\\Icons\\INV_Misc_QuestionMark" : icon.c_str()); // texture
+            lua_pushnumber(L, a.stackCount);        // count
+            lua_pushnumber(L, quality);             // quality
+            lua_pushboolean(L, 1);                  // canUse
+            lua_pushnumber(L, info ? info->requiredLevel : 0); // level
+            lua_pushstring(L, "");                  // levelColHeader
+            lua_pushnumber(L, a.startBid);          // minBid
+            lua_pushnumber(L, a.minBidIncrement);   // minIncrement
+            lua_pushnumber(L, a.buyoutPrice);       // buyoutPrice
+            lua_pushnumber(L, a.currentBid);        // bidAmount
+            lua_pushboolean(L, a.bidderGuid != 0 ? 1 : 0); // highBidder
+            lua_pushstring(L, "");                  // bidderFullName
+            lua_pushstring(L, "");                  // owner
+            lua_pushstring(L, "");                  // ownerFullName
+            lua_pushnumber(L, 0);                   // saleStatus
+            lua_pushnumber(L, a.itemEntry);         // itemId
+            return 17;
+        }},
+        {"GetAuctionItemTimeLeft", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            const char* listType = luaL_checkstring(L, 1);
+            int index = static_cast<int>(luaL_checknumber(L, 2));
+            if (!gh || index < 1) { lua_pushnumber(L, 4); return 1; }
+            std::string t(listType);
+            const game::AuctionListResult* r = nullptr;
+            if (t == "list") r = &gh->getAuctionBrowseResults();
+            else if (t == "owner") r = &gh->getAuctionOwnerResults();
+            else if (t == "bidder") r = &gh->getAuctionBidderResults();
+            if (!r || index > static_cast<int>(r->auctions.size())) { lua_pushnumber(L, 4); return 1; }
+            // Return 1=short(<30m), 2=medium(<2h), 3=long(<12h), 4=very long(>12h)
+            uint32_t ms = r->auctions[index - 1].timeLeftMs;
+            int cat = (ms < 1800000) ? 1 : (ms < 7200000) ? 2 : (ms < 43200000) ? 3 : 4;
+            lua_pushnumber(L, cat);
+            return 1;
+        }},
         // --- Mail API ---
         {"GetInboxNumItems", [](lua_State* L) -> int {
             auto* gh = getGameHandler(L);

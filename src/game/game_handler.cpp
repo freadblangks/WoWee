@@ -19327,6 +19327,11 @@ void GameHandler::setActionBarSlot(int slot, ActionBarSlot::Type type, uint32_t 
         queryItemInfo(id, 0);
     }
     saveCharacterConfig();
+    // Notify Lua addons that the action bar changed
+    if (addonEventCallback_) {
+        addonEventCallback_("ACTIONBAR_SLOT_CHANGED", {std::to_string(slot + 1)});
+        addonEventCallback_("ACTIONBAR_UPDATE_STATE", {});
+    }
     // Notify the server so the action bar persists across relogs.
     if (state == WorldState::IN_WORLD && socket) {
         const bool classic = isClassicLikeExpansion();

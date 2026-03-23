@@ -13528,19 +13528,24 @@ void GameHandler::handleMessageChat(network::Packet& packet) {
     LOG_DEBUG("[", getChatTypeString(data.type), "] ", channelInfo, senderInfo, ": ", data.message);
 
     // Detect addon messages: format is "prefix\ttext" in the message body.
-    // Fire CHAT_MSG_ADDON instead of the regular chat event for these.
-    if (addonEventCallback_) {
+    // Only treat as addon message if prefix is short (<=16 chars, WoW limit),
+    // contains no spaces (real prefixes are identifiers like "DBM4" or "BigWigs"),
+    // and the message isn't a SAY/YELL/EMOTE (those are always player chat).
+    if (addonEventCallback_ &&
+        data.type != ChatType::SAY && data.type != ChatType::YELL &&
+        data.type != ChatType::EMOTE && data.type != ChatType::TEXT_EMOTE &&
+        data.type != ChatType::MONSTER_SAY && data.type != ChatType::MONSTER_YELL) {
         auto tabPos = data.message.find('\t');
-        if (tabPos != std::string::npos && tabPos > 0 && tabPos < data.message.size() - 1) {
+        if (tabPos != std::string::npos && tabPos > 0 && tabPos <= 16 &&
+            tabPos < data.message.size() - 1) {
             std::string prefix = data.message.substr(0, tabPos);
-            std::string body = data.message.substr(tabPos + 1);
-            std::string channel = getChatTypeString(data.type);
-            char guidBuf2[32];
-            snprintf(guidBuf2, sizeof(guidBuf2), "0x%016llX", (unsigned long long)data.senderGuid);
-            // Fire CHAT_MSG_ADDON: prefix, message, channel, sender
-            addonEventCallback_("CHAT_MSG_ADDON", {prefix, body, channel, data.senderName});
-            // Also add to chat history but don't show the raw addon message in chat
-            return;
+            // Addon prefixes are identifier-like: no spaces
+            if (prefix.find(' ') == std::string::npos) {
+                std::string body = data.message.substr(tabPos + 1);
+                std::string channel = getChatTypeString(data.type);
+                addonEventCallback_("CHAT_MSG_ADDON", {prefix, body, channel, data.senderName});
+                return;
+            }
         }
     }
 

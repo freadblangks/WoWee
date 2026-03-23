@@ -5182,6 +5182,30 @@ void LuaEngine::registerCoreAPI() {
             if (gh) gh->requestPvpLog();
             return 0;
         }},
+        // --- Player Info ---
+        {"GetHonorCurrency", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            lua_pushnumber(L, gh ? gh->getHonorPoints() : 0);
+            return 1;
+        }},
+        {"GetArenaCurrency", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            lua_pushnumber(L, gh ? gh->getArenaPoints() : 0);
+            return 1;
+        }},
+        {"GetTimePlayed", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (!gh) { lua_pushnumber(L, 0); lua_pushnumber(L, 0); return 2; }
+            lua_pushnumber(L, gh->getTotalTimePlayed());
+            lua_pushnumber(L, gh->getLevelTimePlayed());
+            return 2;
+        }},
+        {"GetBindLocation", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (!gh) { lua_pushstring(L, "Unknown"); return 1; }
+            lua_pushstring(L, gh->getWhoAreaName(gh->getHomeBindZoneId()).c_str());
+            return 1;
+        }},
         // --- Instance Lockouts ---
         {"GetNumSavedInstances", [](lua_State* L) -> int {
             auto* gh = getGameHandler(L);

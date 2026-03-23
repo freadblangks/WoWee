@@ -1787,10 +1787,21 @@ static int lua_GetItemInfo(lua_State* L) {
     if (!info) { lua_pushnil(L); return 1; }
 
     lua_pushstring(L, info->name.c_str());          // 1: name
-    // Build item link string: |cFFFFFFFF|Hitem:ID:0:0:0:0:0:0:0|h[Name]|h|r
+    // Build item link with quality-colored text
+    static const char* kQualityHex[] = {
+        "ff9d9d9d", // 0 Poor (gray)
+        "ffffffff", // 1 Common (white)
+        "ff1eff00", // 2 Uncommon (green)
+        "ff0070dd", // 3 Rare (blue)
+        "ffa335ee", // 4 Epic (purple)
+        "ffff8000", // 5 Legendary (orange)
+        "ffe6cc80", // 6 Artifact (gold)
+        "ff00ccff", // 7 Heirloom (cyan)
+    };
+    const char* colorHex = (info->quality < 8) ? kQualityHex[info->quality] : "ffffffff";
     char link[256];
-    snprintf(link, sizeof(link), "|cFFFFFFFF|Hitem:%u:0:0:0:0:0:0:0|h[%s]|h|r",
-             itemId, info->name.c_str());
+    snprintf(link, sizeof(link), "|c%s|Hitem:%u:0:0:0:0:0:0:0|h[%s]|h|r",
+             colorHex, itemId, info->name.c_str());
     lua_pushstring(L, link);                         // 2: link
     lua_pushnumber(L, info->quality);                // 3: quality
     lua_pushnumber(L, info->itemLevel);              // 4: iLevel
@@ -4993,7 +5004,8 @@ void LuaEngine::registerCoreAPI() {
         "function GameTooltip:GetItem()\n"
         "    if self.__itemId and self.__itemId > 0 then\n"
         "        local name = GetItemInfo(self.__itemId)\n"
-        "        return name, '|cffffffff|Hitem:'..self.__itemId..':0|h['..tostring(name)..']|h|r'\n"
+        "        local _, itemLink = GetItemInfo(self.__itemId)\n"
+        "        return name, itemLink or ('|cffffffff|Hitem:'..self.__itemId..':0|h['..tostring(name)..']|h|r')\n"
         "    end\n"
         "    return nil\n"
         "end\n"

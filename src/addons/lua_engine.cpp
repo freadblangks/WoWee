@@ -18,6 +18,14 @@ extern "C" {
 
 namespace wowee::addons {
 
+// Shared GetTime() epoch — all time-returning functions must use this same origin
+// so that addon calculations like (start + duration - GetTime()) are consistent.
+static const auto kLuaTimeEpoch = std::chrono::steady_clock::now();
+
+static double luaGetTimeNow() {
+    return std::chrono::duration<double>(std::chrono::steady_clock::now() - kLuaTimeEpoch).count();
+}
+
 // Retrieve GameHandler pointer stored in Lua registry
 static game::GameHandler* getGameHandler(lua_State* L) {
     lua_getfield(L, LUA_REGISTRYINDEX, "wowee_game_handler");
@@ -1184,11 +1192,7 @@ static int lua_UnitAura(lua_State* L, bool wantBuff) {
                     std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::steady_clock::now().time_since_epoch()).count());
                 int32_t remMs = aura.getRemainingMs(auraNowMs);
-                // GetTime epoch = steady_clock relative to engine start
-                static auto sStart = std::chrono::steady_clock::now();
-                double nowSec = std::chrono::duration<double>(
-                    std::chrono::steady_clock::now() - sStart).count();
-                lua_pushnumber(L, nowSec + remMs / 1000.0);
+                lua_pushnumber(L, luaGetTimeNow() + remMs / 1000.0);
             } else {
                 lua_pushnumber(L, 0);  // permanent aura
             }
@@ -1244,10 +1248,8 @@ static int lua_UnitCastInfo(lua_State* L, bool wantChannel) {
     const char* uid = luaL_optstring(L, 1, "player");
     std::string uidStr(uid ? uid : "player");
 
-    // GetTime epoch for consistent time values
-    static auto sStart = std::chrono::steady_clock::now();
-    double nowSec = std::chrono::duration<double>(
-        std::chrono::steady_clock::now() - sStart).count();
+    // Use shared GetTime() epoch for consistent timestamps
+    double nowSec = luaGetTimeNow();
 
     // Resolve cast state for the unit
     bool isCasting = false;
@@ -1544,9 +1546,7 @@ static int lua_GetSpellCooldown(lua_State* L) {
     float gcdTotal = gh->getGCDTotal();
 
     // WoW returns (start, duration, enabled) where remaining = start + duration - GetTime()
-    static auto sStart = std::chrono::steady_clock::now();
-    double nowSec = std::chrono::duration<double>(
-        std::chrono::steady_clock::now() - sStart).count();
+    double nowSec = luaGetTimeNow();
 
     if (cd > 0.01f) {
         // Spell-specific cooldown (longer than GCD)
@@ -4537,12 +4537,9 @@ static int lua_wow_time(lua_State* L) {
     return 1;
 }
 
-// Stub for GetTime() — returns elapsed seconds
+// GetTime() — returns elapsed seconds since engine start (shared epoch)
 static int lua_wow_gettime(lua_State* L) {
-    static auto start = std::chrono::steady_clock::now();
-    auto now = std::chrono::steady_clock::now();
-    double elapsed = std::chrono::duration<double>(now - start).count();
-    lua_pushnumber(L, elapsed);
+    lua_pushnumber(L, luaGetTimeNow());
     return 1;
 }
 

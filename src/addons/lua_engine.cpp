@@ -5686,6 +5686,15 @@ void LuaEngine::registerCoreAPI() {
         {"IsInGuild",               lua_IsInGuild},
         {"GetGuildInfo",            lua_GetGuildInfoFunc},
         {"GetNumGuildMembers",      lua_GetNumGuildMembers},
+        {"GuildRoster", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh) gh->requestGuildRoster();
+            return 0;
+        }},
+        {"SortGuildRoster", [](lua_State* L) -> int {
+            (void)L; // Sorting is client-side display only
+            return 0;
+        }},
         {"GetGuildRosterInfo",      lua_GetGuildRosterInfo},
         {"GetGuildRosterMOTD",      lua_GetGuildRosterMOTD},
         {"GetNumFriends",           lua_GetNumFriends},

@@ -5182,6 +5182,25 @@ void LuaEngine::registerCoreAPI() {
             if (gh) gh->requestPvpLog();
             return 0;
         }},
+        // --- Network & BG Queue ---
+        {"GetNetStats", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            uint32_t ms = gh ? gh->getLatencyMs() : 0;
+            lua_pushnumber(L, 0);   // bandwidthIn
+            lua_pushnumber(L, 0);   // bandwidthOut
+            lua_pushnumber(L, ms);  // latencyHome
+            lua_pushnumber(L, ms);  // latencyWorld
+            return 4;
+        }},
+        {"AcceptBattlefieldPort", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            int accept = lua_toboolean(L, 2);
+            if (gh) {
+                if (accept) gh->acceptBattlefield();
+                else gh->declineBattlefield();
+            }
+            return 0;
+        }},
         // --- Taxi/Flight Paths ---
         {"NumTaxiNodes", [](lua_State* L) -> int {
             auto* gh = getGameHandler(L);

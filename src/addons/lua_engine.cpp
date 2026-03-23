@@ -5182,6 +5182,22 @@ void LuaEngine::registerCoreAPI() {
             if (gh) gh->requestPvpLog();
             return 0;
         }},
+        // --- Party/Group Management ---
+        {"InviteUnit", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh) gh->inviteToGroup(luaL_checkstring(L, 1));
+            return 0;
+        }},
+        {"UninviteUnit", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh) gh->uninvitePlayer(luaL_checkstring(L, 1));
+            return 0;
+        }},
+        {"LeaveParty", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh) gh->leaveGroup();
+            return 0;
+        }},
         // --- Guild Management ---
         {"GuildInvite", [](lua_State* L) -> int {
             auto* gh = getGameHandler(L);

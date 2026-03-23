@@ -2677,10 +2677,11 @@ void WMORenderer::GroupResources::buildCollisionGrid() {
         triNormals[i / 3] = normal;
 
         // Classify floor vs wall by normal.
-        // Wall threshold matches the runtime skip in checkWallCollision (absNz >= 0.35).
+        // Wall threshold matches MAX_WALK_SLOPE (cos 50° ≈ 0.6428): surfaces steeper
+        // than 50° from horizontal are walls. Must match checkWallCollision runtime skip.
         float absNz = std::abs(normal.z);
-        bool isFloor = (absNz >= 0.35f);  // ~70° max slope (relaxed for steep stairs)
-        bool isWall = (absNz < 0.35f);    // Matches checkWallCollision skip threshold
+        bool isFloor = (absNz >= 0.65f);
+        bool isWall = (absNz < 0.65f);
 
         int cellMinX = std::max(0, static_cast<int>((triMinX - gridOrigin.x) * invCellW));
         int cellMinY = std::max(0, static_cast<int>((triMinY - gridOrigin.y) * invCellH));
@@ -3273,9 +3274,11 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
                 float horizDist = glm::length(glm::vec2(delta.x, delta.y));
 
                 if (horizDist <= PLAYER_RADIUS) {
-                    // Skip floor-like surfaces — grounding handles them, not wall collision
+                    // Skip floor-like surfaces — grounding handles them, not wall collision.
+                    // Threshold matches MAX_WALK_SLOPE (cos 50° ≈ 0.6428): surfaces steeper
+                    // than 50° from horizontal must be tested as walls to prevent clip-through.
                     float absNz = std::abs(normal.z);
-                    if (absNz >= 0.35f) continue;
+                    if (absNz >= 0.65f) continue;
 
                     const float SKIN = 0.005f;        // small separation so we don't re-collide immediately
                     // Push must cover full penetration to prevent gradual clip-through
@@ -3578,7 +3581,7 @@ float WMORenderer::raycastBoundingBoxes(const glm::vec3& origin, const glm::vec3
                 const glm::vec3& v2 = verts[indices[triStart + 2]];
                 glm::vec3 triNormal = group.triNormals[triStart / 3];
                 if (glm::dot(triNormal, triNormal) < 0.5f) continue;  // degenerate
-                // Wall list pre-filters at 0.35; apply stricter camera threshold
+                // Wall list pre-filters at 0.65; apply stricter camera threshold
                 if (std::abs(triNormal.z) > MAX_WALKABLE_ABS_NORMAL_Z) {
                     continue;
                 }

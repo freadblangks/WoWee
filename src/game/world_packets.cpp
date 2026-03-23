@@ -1057,6 +1057,7 @@ bool UpdateObjectParser::parseMovementBlock(network::Packet& packet, UpdateBlock
         if (moveFlags & 0x08000000) { // MOVEMENTFLAG_SPLINE_ENABLED
             auto bytesAvailable = [&](size_t n) -> bool { return packet.getReadPos() + n <= packet.getSize(); };
             if (!bytesAvailable(4)) return false;
+            size_t splineStart = packet.getReadPos();
             uint32_t splineFlags = packet.readUInt32();
             LOG_DEBUG("  Spline: flags=0x", std::hex, splineFlags, std::dec);
 
@@ -1085,34 +1086,43 @@ bool UpdateObjectParser::parseMovementBlock(network::Packet& packet, UpdateBlock
             /*uint32_t splineId =*/ packet.readUInt32();
             const size_t afterSplineId = packet.getReadPos();
 
-            // Helper: try to parse uncompressed spline points from current read position.
-            auto tryParseUncompressedSpline = [&](const char* tag) -> bool {
+            // Helper: parse spline points + splineMode + endPoint.
+            // WotLK uses compressed points by default (first=12 bytes, rest=4 bytes packed).
+            // Classic/Turtle uses all uncompressed (12 bytes each).
+            // The 'compressed' parameter selects which format.
+            auto tryParseSplinePoints = [&](bool compressed, const char* tag) -> bool {
                 if (!bytesAvailable(4)) return false;
                 size_t prePointCount = packet.getReadPos();
                 uint32_t pc = packet.readUInt32();
                 if (pc > 256) return false;
-                size_t needed = static_cast<size_t>(pc) * 12ull + 13ull;
-                if (!bytesAvailable(needed)) return false;
-                for (uint32_t i = 0; i < pc; i++) {
-                    packet.readFloat(); packet.readFloat(); packet.readFloat();
+                size_t pointsBytes;
+                if (compressed && pc > 0) {
+                    // First point = 3 floats (12 bytes), rest = packed uint32 (4 bytes each)
+                    pointsBytes = 12ull + (pc > 1 ? static_cast<size_t>(pc - 1) * 4ull : 0ull);
+                } else {
+                    // All uncompressed: 3 floats each
+                    pointsBytes = static_cast<size_t>(pc) * 12ull;
                 }
+                size_t needed = pointsBytes + 13ull; // + splineMode(1) + endPoint(12)
+                if (!bytesAvailable(needed)) {
+                    packet.setReadPos(prePointCount);
+                    return false;
+                }
+                packet.setReadPos(packet.getReadPos() + pointsBytes);
                 uint8_t splineMode = packet.readUInt8();
-                // Validate splineMode (0=Linear, 1=CatmullRom, 2=BezierSpline, 3=unused)
-                // Values > 3 indicate we misidentified the format (e.g. WotLK durationMod=0.0
-                // was read as pointCount=0, causing garbage to be read as splineMode).
                 if (splineMode > 3) {
                     packet.setReadPos(prePointCount);
                     return false;
                 }
                 packet.readFloat(); packet.readFloat(); packet.readFloat(); // endPoint
-                LOG_DEBUG("  Spline pointCount=", pc, " (", tag, ")");
+                LOG_DEBUG("  Spline pointCount=", pc, " compressed=", compressed, " (", tag, ")");
                 return true;
             };
 
-            // --- Try 1: Classic format (pointCount immediately after splineId) ---
-            bool splineParsed = tryParseUncompressedSpline("classic");
+            // --- Try 1: Classic format (uncompressed points immediately after splineId) ---
+            bool splineParsed = tryParseSplinePoints(false, "classic");
 
-            // --- Try 2: WotLK format (durationMod+durationModNext+conditional+pointCount) ---
+            // --- Try 2: WotLK format (durationMod+durationModNext+conditional+compressed points) ---
             if (!splineParsed) {
                 packet.setReadPos(afterSplineId);
                 bool wotlkOk = bytesAvailable(8); // durationMod + durationModNext
@@ -1124,58 +1134,22 @@ bool UpdateObjectParser::parseMovementBlock(network::Packet& packet, UpdateBlock
                         else { packet.readUInt8(); packet.readUInt32(); }
                     }
                 }
-                if (wotlkOk && (splineFlags & 0x00000800)) { // SPLINEFLAG_PARABOLIC
+                // AzerothCore/ChromieCraft always writes verticalAcceleration(float)
+                // + effectStartTime(uint32) unconditionally — NOT gated by PARABOLIC flag.
+                if (wotlkOk) {
                     if (!bytesAvailable(8)) { wotlkOk = false; }
-                    else { packet.readFloat(); packet.readUInt32(); }
+                    else { /*float vertAccel =*/ packet.readFloat(); /*uint32_t effectStart =*/ packet.readUInt32(); }
                 }
                 if (wotlkOk) {
-                    splineParsed = tryParseUncompressedSpline("wotlk");
-                }
-            }
-
-            // --- Try 3: Compact layout (compressed points) as final recovery ---
-            if (!splineParsed) {
-            packet.setReadPos(legacyStart);
-            const size_t afterFinalFacingPos = packet.getReadPos();
-            if (splineFlags & 0x00400000) { // Animation
-                if (!bytesAvailable(5)) return false;
-                /*uint8_t animType =*/ packet.readUInt8();
-                /*uint32_t animStart =*/ packet.readUInt32();
-            }
-            if (!bytesAvailable(4)) return false;
-            /*uint32_t duration =*/ packet.readUInt32();
-            if (splineFlags & 0x00000800) { // Parabolic
-                if (!bytesAvailable(8)) return false;
-                /*float verticalAccel =*/ packet.readFloat();
-                /*uint32_t effectStartTime =*/ packet.readUInt32();
-            }
-            if (!bytesAvailable(4)) return false;
-            const uint32_t compactPointCount = packet.readUInt32();
-            if (compactPointCount > 16384) {
-                static uint32_t badSplineCount = 0;
-                ++badSplineCount;
-                if (badSplineCount <= 5 || (badSplineCount % 100) == 0) {
-                    LOG_WARNING("  Spline invalid (classic+wotlk+compact) at readPos=",
-                                afterFinalFacingPos, "/", packet.getSize(),
-                                ", occurrence=", badSplineCount);
-                }
-                return false;
-            }
-            const bool uncompressed = (splineFlags & (0x00080000 | 0x00002000)) != 0;
-            size_t compactPayloadBytes = 0;
-            if (compactPointCount > 0) {
-                if (uncompressed) {
-                    compactPayloadBytes = static_cast<size_t>(compactPointCount) * 12ull;
-                } else {
-                    compactPayloadBytes = 12ull;
-                    if (compactPointCount > 1) {
-                        compactPayloadBytes += static_cast<size_t>(compactPointCount - 1) * 4ull;
+                    // WotLK: compressed unless CYCLIC(0x80000) or ENTER_CYCLE(0x2000) set
+                    bool useCompressed = (splineFlags & (0x00080000 | 0x00002000)) == 0;
+                    splineParsed = tryParseSplinePoints(useCompressed, "wotlk-compressed");
+                    // Fallback: try uncompressed WotLK if compressed didn't work
+                    if (!splineParsed) {
+                        splineParsed = tryParseSplinePoints(false, "wotlk-uncompressed");
                     }
                 }
-                if (!bytesAvailable(compactPayloadBytes)) return false;
-                packet.setReadPos(packet.getReadPos() + compactPayloadBytes);
             }
-            } // end compact fallback
         }
     }
     else if (updateFlags & UPDATEFLAG_POSITION) {
@@ -1271,6 +1245,18 @@ bool UpdateObjectParser::parseUpdateFields(network::Packet& packet, UpdateBlock&
 
     if (blockCount == 0) {
         return true; // No fields to update
+    }
+
+    // Sanity check: UNIT_END=148 needs 5 mask blocks, PLAYER_END=1472 needs 46.
+    // Values significantly above these indicate the movement block was misparsed.
+    uint8_t maxExpectedBlocks = (block.objectType == ObjectType::PLAYER) ? 55 : 10;
+    if (blockCount > maxExpectedBlocks) {
+        LOG_WARNING("UpdateObjectParser: suspicious maskBlockCount=", (int)blockCount,
+                    " for objectType=", (int)block.objectType,
+                    " guid=0x", std::hex, block.guid, std::dec,
+                    " updateFlags=0x", std::hex, block.updateFlags, std::dec,
+                    " moveFlags=0x", std::hex, block.moveFlags, std::dec,
+                    " readPos=", packet.getReadPos(), " size=", packet.getSize());
     }
 
     uint32_t fieldsCapacity = blockCount * 32;

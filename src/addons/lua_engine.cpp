@@ -5136,11 +5136,51 @@ void LuaEngine::registerCoreAPI() {
             return 1;
         }},
         {"GetBattlefieldStatus", [](lua_State* L) -> int {
-            // Stub: return "none" for slot 1
-            lua_pushstring(L, "none"); // status
-            lua_pushnumber(L, 0);      // mapName
-            lua_pushnumber(L, 0);      // instanceID
+            lua_pushstring(L, "none");
+            lua_pushnumber(L, 0);
+            lua_pushnumber(L, 0);
             return 3;
+        }},
+        {"GetNumBattlefieldScores", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            const auto* sb = gh ? gh->getBgScoreboard() : nullptr;
+            lua_pushnumber(L, sb ? sb->players.size() : 0);
+            return 1;
+        }},
+        {"GetBattlefieldScore", [](lua_State* L) -> int {
+            // GetBattlefieldScore(index) → name, killingBlows, honorableKills, deaths, honorGained, faction, rank, race, class, classToken, damageDone, healingDone
+            auto* gh = getGameHandler(L);
+            int index = static_cast<int>(luaL_checknumber(L, 1));
+            const auto* sb = gh ? gh->getBgScoreboard() : nullptr;
+            if (!sb || index < 1 || index > static_cast<int>(sb->players.size())) {
+                lua_pushnil(L); return 1;
+            }
+            const auto& p = sb->players[index - 1];
+            lua_pushstring(L, p.name.c_str());     // name
+            lua_pushnumber(L, p.killingBlows);      // killingBlows
+            lua_pushnumber(L, p.honorableKills);    // honorableKills
+            lua_pushnumber(L, p.deaths);            // deaths
+            lua_pushnumber(L, p.bonusHonor);        // honorGained
+            lua_pushnumber(L, p.team);              // faction (0=Horde,1=Alliance)
+            lua_pushnumber(L, 0);                   // rank
+            lua_pushstring(L, "");                  // race
+            lua_pushstring(L, "");                  // class
+            lua_pushstring(L, "WARRIOR");           // classToken
+            lua_pushnumber(L, 0);                   // damageDone
+            lua_pushnumber(L, 0);                   // healingDone
+            return 12;
+        }},
+        {"GetBattlefieldWinner", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            const auto* sb = gh ? gh->getBgScoreboard() : nullptr;
+            if (sb && sb->hasWinner) lua_pushnumber(L, sb->winner);
+            else lua_pushnil(L);
+            return 1;
+        }},
+        {"RequestBattlefieldScoreData", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh) gh->requestPvpLog();
+            return 0;
         }},
         // --- Calendar ---
         {"CalendarGetDate", [](lua_State* L) -> int {

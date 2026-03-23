@@ -5182,6 +5182,28 @@ void LuaEngine::registerCoreAPI() {
             if (gh) gh->requestPvpLog();
             return 0;
         }},
+        // --- System Commands ---
+        {"Logout", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh) gh->requestLogout();
+            return 0;
+        }},
+        {"CancelLogout", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh) gh->cancelLogout();
+            return 0;
+        }},
+        {"RandomRoll", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            int mn = static_cast<int>(luaL_optnumber(L, 1, 1));
+            int mx = static_cast<int>(luaL_optnumber(L, 2, 100));
+            if (gh) gh->randomRoll(mn, mx);
+            return 0;
+        }},
+        {"FollowUnit", [](lua_State* L) -> int {
+            (void)L; // Follow requires movement system integration
+            return 0;
+        }},
         // --- Party/Group Management ---
         {"InviteUnit", [](lua_State* L) -> int {
             auto* gh = getGameHandler(L);

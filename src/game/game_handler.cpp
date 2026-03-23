@@ -23200,7 +23200,31 @@ void GameHandler::loadSpellNameCache() {
                 if (f1 != 0xFFFFFFFF) entry.effectBasePoints[1] = static_cast<int32_t>(dbc->getUInt32(i, f1));
                 if (f2 != 0xFFFFFFFF) entry.effectBasePoints[2] = static_cast<int32_t>(dbc->getUInt32(i, f2));
             }
+            // Duration: read DurationIndex and resolve via SpellDuration.dbc later
+            if (spellL) {
+                uint32_t durF = spellL->field("DurationIndex");
+                if (durF != 0xFFFFFFFF)
+                    entry.durationSec = static_cast<float>(dbc->getUInt32(i, durF)); // store index temporarily
+            }
             spellNameCache_[id] = std::move(entry);
+        }
+    }
+    // Resolve DurationIndex → seconds via SpellDuration.dbc
+    auto durDbc = am->loadDBC("SpellDuration.dbc");
+    if (durDbc && durDbc->isLoaded()) {
+        std::unordered_map<uint32_t, float> durMap;
+        for (uint32_t di = 0; di < durDbc->getRecordCount(); ++di) {
+            uint32_t durId = durDbc->getUInt32(di, 0);
+            int32_t baseMs = static_cast<int32_t>(durDbc->getUInt32(di, 1));
+            if (baseMs > 0 && baseMs < 100000000) // filter out absurd values
+                durMap[durId] = baseMs / 1000.0f;
+        }
+        for (auto& [sid, entry] : spellNameCache_) {
+            uint32_t durIdx = static_cast<uint32_t>(entry.durationSec);
+            if (durIdx > 0) {
+                auto it = durMap.find(durIdx);
+                entry.durationSec = (it != durMap.end()) ? it->second : 0.0f;
+            }
         }
     }
     LOG_INFO("Trainer: Loaded ", spellNameCache_.size(), " spell names from Spell.dbc");
@@ -23443,6 +23467,12 @@ const int32_t* GameHandler::getSpellEffectBasePoints(uint32_t spellId) const {
     const_cast<GameHandler*>(this)->loadSpellNameCache();
     auto it = spellNameCache_.find(spellId);
     return (it != spellNameCache_.end()) ? it->second.effectBasePoints : nullptr;
+}
+
+float GameHandler::getSpellDuration(uint32_t spellId) const {
+    const_cast<GameHandler*>(this)->loadSpellNameCache();
+    auto it = spellNameCache_.find(spellId);
+    return (it != spellNameCache_.end()) ? it->second.durationSec : 0.0f;
 }
 
 const std::string& GameHandler::getSpellName(uint32_t spellId) const {

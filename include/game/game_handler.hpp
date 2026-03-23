@@ -2245,6 +2245,7 @@ public:
     /// Returns the tooltip/description text from Spell.dbc (empty if unknown or has no text).
     const std::string& getSpellDescription(uint32_t spellId) const;
     const int32_t* getSpellEffectBasePoints(uint32_t spellId) const;
+    float getSpellDuration(uint32_t spellId) const;
     std::string getEnchantName(uint32_t enchantId) const;
     const std::string& getSkillLineName(uint32_t spellId) const;
     /// Returns the DispelType for a spell (0=none,1=magic,2=curse,3=disease,4=poison,5+=other)
@@ -3327,6 +3328,7 @@ private:
         std::string name; std::string rank; std::string description;
         uint32_t schoolMask = 0; uint8_t dispelType = 0; uint32_t attrEx = 0;
         int32_t effectBasePoints[3] = {0, 0, 0};
+        float durationSec = 0.0f; // resolved from DurationIndex → SpellDuration.dbc
     };
     std::unordered_map<uint32_t, SpellNameEntry> spellNameCache_;
     bool spellNameCacheLoaded_ = false;

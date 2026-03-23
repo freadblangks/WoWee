@@ -1627,7 +1627,7 @@ static int lua_GetSpellBookItemName(lua_State* L) {
 
 // GetSpellDescription(spellId) → description string
 // Clean spell description template variables for display
-static std::string cleanSpellDescription(const std::string& raw, const int32_t effectBase[3] = nullptr) {
+static std::string cleanSpellDescription(const std::string& raw, const int32_t effectBase[3] = nullptr, float durationSec = 0.0f) {
     if (raw.empty() || raw.find('$') == std::string::npos) return raw;
     std::string result;
     result.reserve(raw.size());
@@ -1657,8 +1657,15 @@ static std::string cleanSpellDescription(const std::string& raw, const int32_t e
                 i += 1;
                 while (i + 1 < raw.size() && raw[i + 1] >= '0' && raw[i + 1] <= '9') ++i;
             } else if (next == 'd' || next == 'D') {
-                // $d = duration — replace with "X sec"
-                result += "X sec";
+                // $d = duration
+                if (durationSec > 0.0f) {
+                    if (durationSec >= 60.0f)
+                        result += std::to_string(static_cast<int>(durationSec / 60.0f)) + " min";
+                    else
+                        result += std::to_string(static_cast<int>(durationSec)) + " sec";
+                } else {
+                    result += "X sec";
+                }
                 ++i;
                 while (i + 1 < raw.size() && raw[i + 1] >= '0' && raw[i + 1] <= '9') ++i;
             } else if (next == 'a' || next == 'A') {
@@ -1698,7 +1705,8 @@ static int lua_GetSpellDescription(lua_State* L) {
     uint32_t spellId = static_cast<uint32_t>(luaL_checknumber(L, 1));
     const std::string& desc = gh->getSpellDescription(spellId);
     const int32_t* ebp = gh->getSpellEffectBasePoints(spellId);
-    std::string cleaned = cleanSpellDescription(desc, ebp);
+    float dur = gh->getSpellDuration(spellId);
+    std::string cleaned = cleanSpellDescription(desc, ebp, dur);
     lua_pushstring(L, cleaned.c_str());
     return 1;
 }

@@ -1819,10 +1819,37 @@ static int lua_GetItemInfo(lua_State* L) {
     lua_pushnumber(L, info->quality);                // 3: quality
     lua_pushnumber(L, info->itemLevel);              // 4: iLevel
     lua_pushnumber(L, info->requiredLevel);          // 5: requiredLevel
-    lua_pushstring(L, "");                           // 6: class (type string)
-    lua_pushstring(L, "");                           // 7: subclass
+    // 6: class (type string) — map itemClass to display name
+    {
+        static const char* kItemClasses[] = {
+            "Consumable", "Bag", "Weapon", "Gem", "Armor", "Reagent", "Projectile",
+            "Trade Goods", "Generic", "Recipe", "Money", "Quiver", "Quest", "Key",
+            "Permanent", "Miscellaneous", "Glyph"
+        };
+        if (info->itemClass < 17)
+            lua_pushstring(L, kItemClasses[info->itemClass]);
+        else
+            lua_pushstring(L, "Miscellaneous");
+    }
+    // 7: subclass — use subclassName from ItemDef if available, else generic
+    lua_pushstring(L, info->subclassName.empty() ? "" : info->subclassName.c_str());
     lua_pushnumber(L, info->maxStack > 0 ? info->maxStack : 1); // 8: maxStack
-    lua_pushstring(L, "");                           // 9: equipSlot
+    // 9: equipSlot — WoW inventoryType to INVTYPE string
+    {
+        static const char* kInvTypes[] = {
+            "", "INVTYPE_HEAD", "INVTYPE_NECK", "INVTYPE_SHOULDER",
+            "INVTYPE_BODY", "INVTYPE_CHEST", "INVTYPE_WAIST", "INVTYPE_LEGS",
+            "INVTYPE_FEET", "INVTYPE_WRIST", "INVTYPE_HAND", "INVTYPE_FINGER",
+            "INVTYPE_TRINKET", "INVTYPE_WEAPON", "INVTYPE_SHIELD",
+            "INVTYPE_RANGED", "INVTYPE_CLOAK", "INVTYPE_2HWEAPON",
+            "INVTYPE_BAG", "INVTYPE_TABARD", "INVTYPE_ROBE",
+            "INVTYPE_WEAPONMAINHAND", "INVTYPE_WEAPONOFFHAND", "INVTYPE_HOLDABLE",
+            "INVTYPE_AMMO", "INVTYPE_THROWN", "INVTYPE_RANGEDRIGHT",
+            "INVTYPE_QUIVER", "INVTYPE_RELIC"
+        };
+        uint32_t invType = info->inventoryType;
+        lua_pushstring(L, invType < 29 ? kInvTypes[invType] : "");
+    }
     // 10: texture (icon path from ItemDisplayInfo.dbc)
     if (info->displayInfoId != 0) {
         std::string iconPath = gh->getItemIconPath(info->displayInfoId);

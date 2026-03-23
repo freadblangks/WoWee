@@ -23431,6 +23431,21 @@ const std::string& GameHandler::getSpellDescription(uint32_t spellId) const {
     return (it != spellNameCache_.end()) ? it->second.description : EMPTY_STRING;
 }
 
+std::string GameHandler::getEnchantName(uint32_t enchantId) const {
+    if (enchantId == 0) return {};
+    auto* am = core::Application::getInstance().getAssetManager();
+    if (!am || !am->isInitialized()) return {};
+    auto dbc = am->loadDBC("SpellItemEnchantment.dbc");
+    if (!dbc || !dbc->isLoaded()) return {};
+    // Name is at field 14 (consistent across Classic/TBC/WotLK)
+    for (uint32_t i = 0; i < dbc->getRecordCount(); ++i) {
+        if (dbc->getUInt32(i, 0) == enchantId) {
+            return dbc->getString(i, 14);
+        }
+    }
+    return {};
+}
+
 uint8_t GameHandler::getSpellDispelType(uint32_t spellId) const {
     const_cast<GameHandler*>(this)->loadSpellNameCache();
     auto it = spellNameCache_.find(spellId);

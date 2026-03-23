@@ -2243,6 +2243,7 @@ public:
     const std::string& getSpellRank(uint32_t spellId) const;
     /// Returns the tooltip/description text from Spell.dbc (empty if unknown or has no text).
     const std::string& getSpellDescription(uint32_t spellId) const;
+    std::string getEnchantName(uint32_t enchantId) const;
     const std::string& getSkillLineName(uint32_t spellId) const;
     /// Returns the DispelType for a spell (0=none,1=magic,2=curse,3=disease,4=poison,5+=other)
     uint8_t getSpellDispelType(uint32_t spellId) const;

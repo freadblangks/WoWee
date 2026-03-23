@@ -1687,6 +1687,17 @@ static int lua_GetSpellDescription(lua_State* L) {
     return 1;
 }
 
+// GetEnchantInfo(enchantId) → name or nil
+static int lua_GetEnchantInfo(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushnil(L); return 1; }
+    uint32_t enchantId = static_cast<uint32_t>(luaL_checknumber(L, 1));
+    std::string name = gh->getEnchantName(enchantId);
+    if (name.empty()) { lua_pushnil(L); return 1; }
+    lua_pushstring(L, name.c_str());
+    return 1;
+}
+
 static int lua_GetSpellCooldown(lua_State* L) {
     auto* gh = getGameHandler(L);
     if (!gh) { lua_pushnumber(L, 0); lua_pushnumber(L, 0); return 2; }
@@ -5049,6 +5060,7 @@ void LuaEngine::registerCoreAPI() {
         {"GetSpellCooldown",  lua_GetSpellCooldown},
         {"GetSpellPowerCost", lua_GetSpellPowerCost},
         {"GetSpellDescription", lua_GetSpellDescription},
+        {"GetEnchantInfo",     lua_GetEnchantInfo},
         {"IsSpellInRange",    lua_IsSpellInRange},
         {"UnitDistanceSquared", lua_UnitDistanceSquared},
         {"CheckInteractDistance", lua_CheckInteractDistance},

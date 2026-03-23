@@ -1969,6 +1969,25 @@ static int lua_GetItemTooltipData(lua_State* L) {
     // Required level
     lua_pushnumber(L, info->requiredLevel);
     lua_setfield(L, -2, "requiredLevel");
+    // Extra stats (hit, crit, haste, AP, SP, etc.) as array of {type, value} pairs
+    if (!info->extraStats.empty()) {
+        lua_newtable(L);
+        for (size_t i = 0; i < info->extraStats.size(); ++i) {
+            lua_newtable(L);
+            lua_pushnumber(L, info->extraStats[i].statType);
+            lua_setfield(L, -2, "type");
+            lua_pushnumber(L, info->extraStats[i].statValue);
+            lua_setfield(L, -2, "value");
+            lua_rawseti(L, -2, static_cast<int>(i) + 1);
+        }
+        lua_setfield(L, -2, "extraStats");
+    }
+    // Resistances
+    if (info->fireRes != 0) { lua_pushnumber(L, info->fireRes); lua_setfield(L, -2, "fireRes"); }
+    if (info->natureRes != 0) { lua_pushnumber(L, info->natureRes); lua_setfield(L, -2, "natureRes"); }
+    if (info->frostRes != 0) { lua_pushnumber(L, info->frostRes); lua_setfield(L, -2, "frostRes"); }
+    if (info->shadowRes != 0) { lua_pushnumber(L, info->shadowRes); lua_setfield(L, -2, "shadowRes"); }
+    if (info->arcaneRes != 0) { lua_pushnumber(L, info->arcaneRes); lua_setfield(L, -2, "arcaneRes"); }
     return 1;
 }
 
@@ -5320,6 +5339,32 @@ void LuaEngine::registerCoreAPI() {
         "        if data.agility then self:AddLine('+'..data.agility..' Agility', 0, 1, 0) end\n"
         "        if data.intellect then self:AddLine('+'..data.intellect..' Intellect', 0, 1, 0) end\n"
         "        if data.spirit then self:AddLine('+'..data.spirit..' Spirit', 0, 1, 0) end\n"
+        "        -- Extra stats (hit, crit, haste, AP, SP, etc.)\n"
+        "        if data.extraStats then\n"
+        "            local statNames = {[3]='Agility',[4]='Strength',[5]='Intellect',[6]='Spirit',[7]='Stamina',\n"
+        "                [12]='Defense Rating',[13]='Dodge Rating',[14]='Parry Rating',[15]='Block Rating',\n"
+        "                [16]='Melee Hit Rating',[17]='Ranged Hit Rating',[18]='Spell Hit Rating',\n"
+        "                [19]='Melee Crit Rating',[20]='Ranged Crit Rating',[21]='Spell Crit Rating',\n"
+        "                [28]='Melee Haste Rating',[29]='Ranged Haste Rating',[30]='Spell Haste Rating',\n"
+        "                [31]='Hit Rating',[32]='Crit Rating',[36]='Haste Rating',\n"
+        "                [33]='Resilience Rating',[34]='Attack Power',[35]='Spell Power',\n"
+        "                [37]='Expertise Rating',[38]='Attack Power',[39]='Ranged Attack Power',\n"
+        "                [43]='Mana per 5 sec.',[44]='Armor Penetration Rating',\n"
+        "                [45]='Spell Power',[46]='Health per 5 sec.',[47]='Spell Penetration'}\n"
+        "            for _, stat in ipairs(data.extraStats) do\n"
+        "                local name = statNames[stat.type]\n"
+        "                if name and stat.value ~= 0 then\n"
+        "                    local prefix = stat.value > 0 and '+' or ''\n"
+        "                    self:AddLine(prefix..stat.value..' '..name, 0, 1, 0)\n"
+        "                end\n"
+        "            end\n"
+        "        end\n"
+        "        -- Resistances\n"
+        "        if data.fireRes and data.fireRes ~= 0 then self:AddLine('+'..data.fireRes..' Fire Resistance', 0, 1, 0) end\n"
+        "        if data.natureRes and data.natureRes ~= 0 then self:AddLine('+'..data.natureRes..' Nature Resistance', 0, 1, 0) end\n"
+        "        if data.frostRes and data.frostRes ~= 0 then self:AddLine('+'..data.frostRes..' Frost Resistance', 0, 1, 0) end\n"
+        "        if data.shadowRes and data.shadowRes ~= 0 then self:AddLine('+'..data.shadowRes..' Shadow Resistance', 0, 1, 0) end\n"
+        "        if data.arcaneRes and data.arcaneRes ~= 0 then self:AddLine('+'..data.arcaneRes..' Arcane Resistance', 0, 1, 0) end\n"
         "        -- Required level\n"
         "        if data.requiredLevel and data.requiredLevel > 1 then\n"
         "            self:AddLine('Requires Level '..data.requiredLevel, 1, 1, 1)\n"

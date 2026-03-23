@@ -5062,6 +5062,36 @@ void LuaEngine::registerCoreAPI() {
             lua_pushboolean(L, 1);                               // isCastable
             return 4;
         }},
+        // --- Glyph API (WotLK) ---
+        {"GetNumGlyphSockets", [](lua_State* L) -> int {
+            lua_pushnumber(L, game::GameHandler::MAX_GLYPH_SLOTS);
+            return 1;
+        }},
+        {"GetGlyphSocketInfo", [](lua_State* L) -> int {
+            // GetGlyphSocketInfo(index [, talentGroup]) → enabled, glyphType, glyphSpellID, icon
+            auto* gh = getGameHandler(L);
+            int index = static_cast<int>(luaL_checknumber(L, 1));
+            int spec = static_cast<int>(luaL_optnumber(L, 2, 0));
+            if (!gh || index < 1 || index > game::GameHandler::MAX_GLYPH_SLOTS) {
+                lua_pushboolean(L, 0); lua_pushnumber(L, 0); lua_pushnil(L); lua_pushnil(L);
+                return 4;
+            }
+            const auto& glyphs = (spec >= 1 && spec <= 2)
+                ? gh->getGlyphs(static_cast<uint8_t>(spec - 1)) : gh->getGlyphs();
+            uint16_t glyphId = glyphs[index - 1];
+            // Glyph type: slots 1,2,3 = major (1), slots 4,5,6 = minor (2)
+            int glyphType = (index <= 3) ? 1 : 2;
+            lua_pushboolean(L, 1);              // enabled
+            lua_pushnumber(L, glyphType);       // glyphType (1=major, 2=minor)
+            if (glyphId != 0) {
+                lua_pushnumber(L, glyphId);     // glyphSpellID
+                lua_pushstring(L, "Interface\\Icons\\INV_Glyph_MajorWarrior"); // placeholder icon
+            } else {
+                lua_pushnil(L);
+                lua_pushnil(L);
+            }
+            return 4;
+        }},
         // --- Achievement API ---
         {"GetNumCompletedAchievements", [](lua_State* L) -> int {
             auto* gh = getGameHandler(L);

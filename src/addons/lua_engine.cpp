@@ -5118,6 +5118,38 @@ void LuaEngine::registerCoreAPI() {
                 gh->sendPetAction(0x00000007 | (0u << 16), 0); // REACT_PASSIVE
             return 0;
         }},
+        {"CastPetAction", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            int index = static_cast<int>(luaL_checknumber(L, 1));
+            if (!gh || !gh->hasPet() || index < 1 || index > game::GameHandler::PET_ACTION_BAR_SLOTS) return 0;
+            uint32_t packed = gh->getPetActionSlot(index - 1);
+            uint32_t spellId = packed & 0x00FFFFFF;
+            if (spellId != 0) {
+                uint64_t target = gh->hasTarget() ? gh->getTargetGuid() : gh->getPetGuid();
+                gh->sendPetAction(packed, target);
+            }
+            return 0;
+        }},
+        {"TogglePetAutocast", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            int index = static_cast<int>(luaL_checknumber(L, 1));
+            if (!gh || !gh->hasPet() || index < 1 || index > game::GameHandler::PET_ACTION_BAR_SLOTS) return 0;
+            uint32_t packed = gh->getPetActionSlot(index - 1);
+            uint32_t spellId = packed & 0x00FFFFFF;
+            if (spellId != 0) gh->togglePetSpellAutocast(spellId);
+            return 0;
+        }},
+        {"PetDismiss", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh && gh->hasPet())
+                gh->sendPetAction(0x00000007 | (3u << 24), 0); // CMD_DISMISS
+            return 0;
+        }},
+        {"IsPetAttackActive", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            lua_pushboolean(L, gh && gh->getPetCommand() == 2 ? 1 : 0); // 2=attack
+            return 1;
+        }},
         {"PetDefensiveMode", [](lua_State* L) -> int {
             auto* gh = getGameHandler(L);
             if (gh && gh->hasPet())

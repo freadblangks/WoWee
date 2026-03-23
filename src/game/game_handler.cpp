@@ -2265,6 +2265,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
             comboTarget_ = target;
             LOG_DEBUG("SMSG_UPDATE_COMBO_POINTS: target=0x", std::hex, target,
                       std::dec, " points=", static_cast<int>(comboPoints_));
+            if (addonEventCallback_)
+                addonEventCallback_("PLAYER_COMBO_POINTS", {});
             break;
         }
 
@@ -22652,7 +22654,10 @@ void GameHandler::handleLootResponse(network::Packet& packet) {
         return;
     }
     lootWindowOpen = true;
-    if (addonEventCallback_) addonEventCallback_("LOOT_OPENED", {});
+    if (addonEventCallback_) {
+        addonEventCallback_("LOOT_OPENED", {});
+        addonEventCallback_("LOOT_READY", {});
+    }
     lastInteractedGoGuid_ = 0; // loot opened — no need to re-send in handleSpellGo
     pendingGameObjectLootOpens_.erase(
         std::remove_if(pendingGameObjectLootOpens_.begin(), pendingGameObjectLootOpens_.end(),

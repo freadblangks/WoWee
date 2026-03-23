@@ -1932,6 +1932,46 @@ static int lua_UseContainerItem(lua_State* L) {
     return 0;
 }
 
+// _GetItemTooltipData(itemId) → table with armor, bind, stats, damage, description
+// Returns a Lua table with detailed item info for tooltip building
+static int lua_GetItemTooltipData(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    uint32_t itemId = static_cast<uint32_t>(luaL_checknumber(L, 1));
+    if (!gh || itemId == 0) { lua_pushnil(L); return 1; }
+    const auto* info = gh->getItemInfo(itemId);
+    if (!info) { lua_pushnil(L); return 1; }
+
+    lua_newtable(L);
+    // Bind type
+    lua_pushnumber(L, info->bindType);
+    lua_setfield(L, -2, "bindType");
+    // Armor
+    lua_pushnumber(L, info->armor);
+    lua_setfield(L, -2, "armor");
+    // Damage
+    lua_pushnumber(L, info->damageMin);
+    lua_setfield(L, -2, "damageMin");
+    lua_pushnumber(L, info->damageMax);
+    lua_setfield(L, -2, "damageMax");
+    lua_pushnumber(L, info->delayMs);
+    lua_setfield(L, -2, "speed");
+    // Primary stats
+    if (info->stamina != 0) { lua_pushnumber(L, info->stamina); lua_setfield(L, -2, "stamina"); }
+    if (info->strength != 0) { lua_pushnumber(L, info->strength); lua_setfield(L, -2, "strength"); }
+    if (info->agility != 0) { lua_pushnumber(L, info->agility); lua_setfield(L, -2, "agility"); }
+    if (info->intellect != 0) { lua_pushnumber(L, info->intellect); lua_setfield(L, -2, "intellect"); }
+    if (info->spirit != 0) { lua_pushnumber(L, info->spirit); lua_setfield(L, -2, "spirit"); }
+    // Description
+    if (!info->description.empty()) {
+        lua_pushstring(L, info->description.c_str());
+        lua_setfield(L, -2, "description");
+    }
+    // Required level
+    lua_pushnumber(L, info->requiredLevel);
+    lua_setfield(L, -2, "requiredLevel");
+    return 1;
+}
+
 // --- Locale/Build/Realm info ---
 
 static int lua_GetLocale(lua_State* L) {
@@ -4742,6 +4782,7 @@ void LuaEngine::registerCoreAPI() {
         {"GetSpellTexture",   lua_GetSpellTexture},
         {"GetItemInfo",       lua_GetItemInfo},
         {"GetItemQualityColor", lua_GetItemQualityColor},
+        {"_GetItemTooltipData", lua_GetItemTooltipData},
         {"GetItemCount",      lua_GetItemCount},
         {"UseContainerItem",  lua_UseContainerItem},
         {"GetLocale",         lua_GetLocale},
@@ -5252,6 +5293,39 @@ void LuaEngine::registerCoreAPI() {
         "        end\n"
         "    elseif class and class ~= '' then\n"
         "        self:AddLine(class, 1, 1, 1)\n"
+        "    end\n"
+        "    -- Fetch detailed stats from C side\n"
+        "    local data = _GetItemTooltipData(itemId)\n"
+        "    if data then\n"
+        "        -- Bind type\n"
+        "        if data.bindType == 1 then self:AddLine('Binds when picked up', 1, 1, 1)\n"
+        "        elseif data.bindType == 2 then self:AddLine('Binds when equipped', 1, 1, 1)\n"
+        "        elseif data.bindType == 3 then self:AddLine('Binds when used', 1, 1, 1) end\n"
+        "        -- Armor\n"
+        "        if data.armor and data.armor > 0 then\n"
+        "            self:AddLine(data.armor..' Armor', 1, 1, 1)\n"
+        "        end\n"
+        "        -- Weapon damage and speed\n"
+        "        if data.damageMin and data.damageMax and data.damageMin > 0 then\n"
+        "            local speed = (data.speed or 0) / 1000\n"
+        "            if speed > 0 then\n"
+        "                self:AddDoubleLine(string.format('%.0f - %.0f Damage', data.damageMin, data.damageMax), string.format('Speed %.2f', speed), 1,1,1, 1,1,1)\n"
+        "                local dps = (data.damageMin + data.damageMax) / 2 / speed\n"
+        "                self:AddLine(string.format('(%.1f damage per second)', dps), 1, 1, 1)\n"
+        "            end\n"
+        "        end\n"
+        "        -- Stats\n"
+        "        if data.stamina then self:AddLine('+'..data.stamina..' Stamina', 0, 1, 0) end\n"
+        "        if data.strength then self:AddLine('+'..data.strength..' Strength', 0, 1, 0) end\n"
+        "        if data.agility then self:AddLine('+'..data.agility..' Agility', 0, 1, 0) end\n"
+        "        if data.intellect then self:AddLine('+'..data.intellect..' Intellect', 0, 1, 0) end\n"
+        "        if data.spirit then self:AddLine('+'..data.spirit..' Spirit', 0, 1, 0) end\n"
+        "        -- Required level\n"
+        "        if data.requiredLevel and data.requiredLevel > 1 then\n"
+        "            self:AddLine('Requires Level '..data.requiredLevel, 1, 1, 1)\n"
+        "        end\n"
+        "        -- Flavor text\n"
+        "        if data.description then self:AddLine('\"'..data.description..'\"', 1, 0.82, 0) end\n"
         "    end\n"
         "    self.__itemId = itemId\n"
         "    return true\n"

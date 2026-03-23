@@ -5456,6 +5456,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
             if (addonEventCallback_)
                 addonEventCallback_("QUEST_LOG_UPDATE", {});
+                    addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
             // Re-query all nearby quest giver NPCs so markers refresh
             if (socket) {
                 for (const auto& [guid, entity] : entityManager.getEntities()) {
@@ -5526,6 +5527,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                         if (addonEventCallback_) {
                             addonEventCallback_("QUEST_WATCH_UPDATE", {std::to_string(questId)});
                             addonEventCallback_("QUEST_LOG_UPDATE", {});
+                    addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
                         }
 
                         LOG_INFO("Updated kill count for quest ", questId, ": ",
@@ -5607,6 +5609,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 if (addonEventCallback_ && updatedAny) {
                     addonEventCallback_("QUEST_WATCH_UPDATE", {});
                     addonEventCallback_("QUEST_LOG_UPDATE", {});
+                    addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
                 }
                 LOG_INFO("Quest item update: itemId=", itemId, " count=", count,
                          " trackedQuestsUpdated=", updatedAny);
@@ -5721,6 +5724,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 }
                 if (addonEventCallback_) {
                     addonEventCallback_("QUEST_LOG_UPDATE", {});
+                    addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
                     addonEventCallback_("QUEST_REMOVED", {std::to_string(questId)});
                 }
             }
@@ -21657,6 +21661,7 @@ void GameHandler::addQuestToLocalLogIfMissing(uint32_t questId, const std::strin
     if (addonEventCallback_) {
         addonEventCallback_("QUEST_ACCEPTED", {std::to_string(questId)});
         addonEventCallback_("QUEST_LOG_UPDATE", {});
+                    addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
     }
 }
 
@@ -21957,6 +21962,7 @@ void GameHandler::abandonQuest(uint32_t questId) {
         questLog_.erase(questLog_.begin() + static_cast<ptrdiff_t>(localIndex));
         if (addonEventCallback_) {
             addonEventCallback_("QUEST_LOG_UPDATE", {});
+                    addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
             addonEventCallback_("QUEST_REMOVED", {std::to_string(questId)});
         }
     }

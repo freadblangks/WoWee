@@ -5182,6 +5182,37 @@ void LuaEngine::registerCoreAPI() {
             if (gh) gh->requestPvpLog();
             return 0;
         }},
+        // --- Guild Management ---
+        {"GuildInvite", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh) gh->inviteToGuild(luaL_checkstring(L, 1));
+            return 0;
+        }},
+        {"GuildUninvite", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh) gh->kickGuildMember(luaL_checkstring(L, 1));
+            return 0;
+        }},
+        {"GuildPromote", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh) gh->promoteGuildMember(luaL_checkstring(L, 1));
+            return 0;
+        }},
+        {"GuildDemote", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh) gh->demoteGuildMember(luaL_checkstring(L, 1));
+            return 0;
+        }},
+        {"GuildLeave", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh) gh->leaveGuild();
+            return 0;
+        }},
+        {"GuildSetPublicNote", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh) gh->setGuildPublicNote(luaL_checkstring(L, 1), luaL_checkstring(L, 2));
+            return 0;
+        }},
         // --- Emotes ---
         {"DoEmote", [](lua_State* L) -> int {
             auto* gh = getGameHandler(L);

@@ -5013,6 +5013,33 @@ void LuaEngine::registerCoreAPI() {
         {"IsInRaid",      lua_IsInRaid},
         {"GetPlayerMapPosition", lua_GetPlayerMapPosition},
         {"GetPlayerFacing",     lua_GetPlayerFacing},
+        {"GetShapeshiftForm", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            lua_pushnumber(L, gh ? gh->getShapeshiftFormId() : 0);
+            return 1;
+        }},
+        {"GetNumShapeshiftForms", [](lua_State* L) -> int {
+            // Return count based on player class
+            auto* gh = getGameHandler(L);
+            if (!gh) { lua_pushnumber(L, 0); return 1; }
+            uint8_t classId = gh->getPlayerClass();
+            // Druid: Bear(1), Aquatic(2), Cat(3), Travel(4), Moonkin/Tree(5/6)
+            // Warrior: Battle(1), Defensive(2), Berserker(3)
+            // Rogue: Stealth(1)
+            // Priest: Shadowform(1)
+            // Paladin: varies by level/talents
+            // DK: Blood Presence, Frost, Unholy (3)
+            switch (classId) {
+                case 1: lua_pushnumber(L, 3); break;  // Warrior
+                case 2: lua_pushnumber(L, 3); break;  // Paladin (auras)
+                case 4: lua_pushnumber(L, 1); break;  // Rogue
+                case 5: lua_pushnumber(L, 1); break;  // Priest
+                case 6: lua_pushnumber(L, 3); break;  // Death Knight
+                case 11: lua_pushnumber(L, 6); break; // Druid
+                default: lua_pushnumber(L, 0); break;
+            }
+            return 1;
+        }},
         {"GetMaxPlayerLevel", [](lua_State* L) -> int {
             auto* reg = core::Application::getInstance().getExpansionRegistry();
             auto* prof = reg ? reg->getActive() : nullptr;

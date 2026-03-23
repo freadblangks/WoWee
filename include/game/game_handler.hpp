@@ -1722,6 +1722,7 @@ public:
 
     // Combo points
     uint8_t  getComboPoints() const { return comboPoints_; }
+    uint8_t  getShapeshiftFormId() const { return shapeshiftFormId_; }
     uint64_t getComboTarget() const { return comboTarget_; }
 
     // Death Knight rune state (6 runes: 0-1=Blood, 2-3=Unholy, 4-5=Frost; may become Death=3)
@@ -2995,6 +2996,8 @@ private:
     // Mirror timers (0=fatigue, 1=breath, 2=feigndeath)
     MirrorTimer mirrorTimers_[3];
 
+    // Shapeshift form (from UNIT_FIELD_BYTES_1 byte 3)
+    uint8_t  shapeshiftFormId_ = 0;
     // Combo points (rogues/druids)
     uint8_t  comboPoints_ = 0;
     uint64_t comboTarget_ = 0;

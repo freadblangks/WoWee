@@ -12500,6 +12500,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                     const uint16_t ufMountDisplayId = fieldIndex(UF::UNIT_FIELD_MOUNTDISPLAYID);
                     const uint16_t ufNpcFlags = fieldIndex(UF::UNIT_NPC_FLAGS);
                     const uint16_t ufBytes0 = fieldIndex(UF::UNIT_FIELD_BYTES_0);
+                    const uint16_t ufBytes1 = fieldIndex(UF::UNIT_FIELD_BYTES_1);
                     for (const auto& [key, val] : block.fields) {
                         if (key == ufHealth) {
                             uint32_t oldHealth = unit->getHealth();
@@ -12569,6 +12570,17 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                                     addonEventCallback_("UNIT_DISPLAYPOWER", {uid});
                             }
                         } else if (key == ufFlags) { unit->setUnitFlags(val); }
+                        else if (ufBytes1 != 0xFFFF && key == ufBytes1 && block.guid == playerGuid) {
+                            uint8_t newForm = static_cast<uint8_t>((val >> 24) & 0xFF);
+                            if (newForm != shapeshiftFormId_) {
+                                shapeshiftFormId_ = newForm;
+                                LOG_INFO("Shapeshift form changed: ", (int)newForm);
+                                if (addonEventCallback_) {
+                                    addonEventCallback_("UPDATE_SHAPESHIFT_FORM", {});
+                                    addonEventCallback_("UPDATE_SHAPESHIFT_FORMS", {});
+                                }
+                            }
+                        }
                         else if (key == ufDynFlags) {
                             uint32_t oldDyn = unit->getDynamicFlags();
                             unit->setDynamicFlags(val);

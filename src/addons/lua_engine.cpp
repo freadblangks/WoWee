@@ -2252,6 +2252,11 @@ static int lua_GetItemTooltipData(lua_State* L) {
         lua_pushnumber(L, info->itemSetId);
         lua_setfield(L, -2, "itemSetId");
     }
+    // Quest-starting item
+    if (info->startQuestId != 0) {
+        lua_pushboolean(L, 1);
+        lua_setfield(L, -2, "startsQuest");
+    }
     return 1;
 }
 
@@ -6277,6 +6282,7 @@ void LuaEngine::registerCoreAPI() {
         "        end\n"
         "        -- Flavor text\n"
         "        if data.description then self:AddLine('\"'..data.description..'\"', 1, 0.82, 0) end\n"
+        "        if data.startsQuest then self:AddLine('This Item Begins a Quest', 1, 0.82, 0) end\n"
         "    end\n"
         "    -- Sell price from GetItemInfo\n"
         "    if sellPrice and sellPrice > 0 then\n"

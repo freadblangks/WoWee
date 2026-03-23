@@ -5182,6 +5182,34 @@ void LuaEngine::registerCoreAPI() {
             if (gh) gh->requestPvpLog();
             return 0;
         }},
+        // --- Player Commands ---
+        {"ShowHelm", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh) gh->toggleHelm(); // Toggles helm visibility
+            return 0;
+        }},
+        {"ShowCloak", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh) gh->toggleCloak();
+            return 0;
+        }},
+        {"TogglePVP", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh) gh->togglePvp();
+            return 0;
+        }},
+        {"Minimap_Ping", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            float x = static_cast<float>(luaL_optnumber(L, 1, 0));
+            float y = static_cast<float>(luaL_optnumber(L, 2, 0));
+            if (gh) gh->sendMinimapPing(x, y);
+            return 0;
+        }},
+        {"RequestTimePlayed", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh) gh->requestPlayedTime();
+            return 0;
+        }},
         // --- Chat Channels ---
         {"JoinChannelByName", [](lua_State* L) -> int {
             auto* gh = getGameHandler(L);

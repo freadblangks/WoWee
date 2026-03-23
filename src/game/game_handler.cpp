@@ -12515,6 +12515,8 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                                     LOG_INFO("Player died! Corpse position cached at server=(",
                                              corpseX_, ",", corpseY_, ",", corpseZ_,
                                              ") map=", corpseMapId_);
+                                    if (addonEventCallback_)
+                                        addonEventCallback_("PLAYER_DEAD", {});
                                 }
                                 if ((entity->getType() == ObjectType::UNIT || entity->getType() == ObjectType::PLAYER) && npcDeathCallback_) {
                                     npcDeathCallback_(block.guid);
@@ -12522,11 +12524,17 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                                 }
                             } else if (oldHealth == 0 && val > 0) {
                                 if (block.guid == playerGuid) {
+                                    bool wasGhost = releasedSpirit_;
                                     playerDead_ = false;
-                                    if (!releasedSpirit_) {
+                                    if (!wasGhost) {
                                         LOG_INFO("Player resurrected!");
+                                        if (addonEventCallback_)
+                                            addonEventCallback_("PLAYER_ALIVE", {});
                                     } else {
                                         LOG_INFO("Player entered ghost form");
+                                        releasedSpirit_ = false;
+                                        if (addonEventCallback_)
+                                            addonEventCallback_("PLAYER_UNGHOST", {});
                                     }
                                 }
                                 if ((entity->getType() == ObjectType::UNIT || entity->getType() == ObjectType::PLAYER) && npcRespawnCallback_) {

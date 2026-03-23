@@ -5062,6 +5062,54 @@ void LuaEngine::registerCoreAPI() {
             lua_pushboolean(L, 1);                               // isCastable
             return 4;
         }},
+        // --- Mail API ---
+        {"GetInboxNumItems", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            lua_pushnumber(L, gh ? gh->getMailInbox().size() : 0);
+            return 1;
+        }},
+        {"GetInboxHeaderInfo", [](lua_State* L) -> int {
+            // GetInboxHeaderInfo(index) → packageIcon, stationeryIcon, sender, subject, money, COD, daysLeft, hasItem, wasRead, wasReturned, textCreated, canReply, isGM
+            auto* gh = getGameHandler(L);
+            int index = static_cast<int>(luaL_checknumber(L, 1));
+            if (!gh || index < 1) { lua_pushnil(L); return 1; }
+            const auto& inbox = gh->getMailInbox();
+            if (index > static_cast<int>(inbox.size())) { lua_pushnil(L); return 1; }
+            const auto& mail = inbox[index - 1];
+            lua_pushstring(L, "Interface\\Icons\\INV_Letter_15"); // packageIcon
+            lua_pushstring(L, "Interface\\Icons\\INV_Letter_15"); // stationeryIcon
+            lua_pushstring(L, mail.senderName.c_str());           // sender
+            lua_pushstring(L, mail.subject.c_str());              // subject
+            lua_pushnumber(L, mail.money);                        // money (copper)
+            lua_pushnumber(L, mail.cod);                          // COD
+            lua_pushnumber(L, mail.expirationTime / 86400.0f);   // daysLeft
+            lua_pushboolean(L, mail.attachments.empty() ? 0 : 1); // hasItem
+            lua_pushboolean(L, mail.read ? 1 : 0);               // wasRead
+            lua_pushboolean(L, 0);                                // wasReturned
+            lua_pushboolean(L, !mail.body.empty() ? 1 : 0);      // textCreated
+            lua_pushboolean(L, mail.messageType == 0 ? 1 : 0);   // canReply (player mail only)
+            lua_pushboolean(L, 0);                                // isGM
+            return 13;
+        }},
+        {"GetInboxText", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            int index = static_cast<int>(luaL_checknumber(L, 1));
+            if (!gh || index < 1) { lua_pushnil(L); return 1; }
+            const auto& inbox = gh->getMailInbox();
+            if (index > static_cast<int>(inbox.size())) { lua_pushnil(L); return 1; }
+            lua_pushstring(L, inbox[index - 1].body.c_str());
+            return 1;
+        }},
+        {"HasNewMail", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (!gh) { lua_pushboolean(L, 0); return 1; }
+            bool hasNew = false;
+            for (const auto& m : gh->getMailInbox()) {
+                if (!m.read) { hasNew = true; break; }
+            }
+            lua_pushboolean(L, hasNew ? 1 : 0);
+            return 1;
+        }},
         // --- Glyph API (WotLK) ---
         {"GetNumGlyphSockets", [](lua_State* L) -> int {
             lua_pushnumber(L, game::GameHandler::MAX_GLYPH_SLOTS);

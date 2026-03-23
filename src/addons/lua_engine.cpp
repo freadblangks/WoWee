@@ -5182,6 +5182,36 @@ void LuaEngine::registerCoreAPI() {
             if (gh) gh->requestPvpLog();
             return 0;
         }},
+        // --- Connection & Equipment ---
+        {"IsConnectedToServer", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            lua_pushboolean(L, gh && gh->isConnected() ? 1 : 0);
+            return 1;
+        }},
+        {"UnequipItemSlot", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            int slot = static_cast<int>(luaL_checknumber(L, 1));
+            if (gh && slot >= 1 && slot <= 19)
+                gh->unequipToBackpack(static_cast<game::EquipSlot>(slot - 1));
+            return 0;
+        }},
+        {"HasFocus", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            lua_pushboolean(L, gh && gh->hasFocus() ? 1 : 0);
+            return 1;
+        }},
+        {"GetRealmName", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh) {
+                const auto* ac = gh->getActiveCharacter();
+                lua_pushstring(L, ac ? "WoWee" : "Unknown");
+            } else lua_pushstring(L, "Unknown");
+            return 1;
+        }},
+        {"GetNormalizedRealmName", [](lua_State* L) -> int {
+            lua_pushstring(L, "WoWee");
+            return 1;
+        }},
         // --- Player Commands ---
         {"ShowHelm", [](lua_State* L) -> int {
             auto* gh = getGameHandler(L);

@@ -3140,6 +3140,62 @@ static int lua_UnitInRaid(lua_State* L) {
     return 1;
 }
 
+// GetRaidRosterInfo(index) → name, rank, subgroup, level, class, fileName, zone, online, isDead, role, isML
+static int lua_GetRaidRosterInfo(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int index = static_cast<int>(luaL_checknumber(L, 1));
+    if (!gh || index < 1) { lua_pushnil(L); return 1; }
+    const auto& pd = gh->getPartyData();
+    if (index > static_cast<int>(pd.members.size())) { lua_pushnil(L); return 1; }
+    const auto& m = pd.members[index - 1];
+    lua_pushstring(L, m.name.c_str());       // name
+    lua_pushnumber(L, m.guid == pd.leaderGuid ? 2 : (m.flags & 0x01 ? 1 : 0)); // rank (0=member, 1=assist, 2=leader)
+    lua_pushnumber(L, m.subGroup + 1);       // subgroup (1-indexed)
+    lua_pushnumber(L, m.level);              // level
+    // Class: resolve from entity if available
+    std::string className = "Unknown";
+    auto entity = gh->getEntityManager().getEntity(m.guid);
+    if (entity) {
+        uint32_t bytes0 = entity->getField(game::fieldIndex(game::UF::UNIT_FIELD_BYTES_0));
+        uint8_t classId = static_cast<uint8_t>((bytes0 >> 8) & 0xFF);
+        static const char* kClasses[] = {"","Warrior","Paladin","Hunter","Rogue","Priest",
+            "Death Knight","Shaman","Mage","Warlock","","Druid"};
+        if (classId > 0 && classId < 12) className = kClasses[classId];
+    }
+    lua_pushstring(L, className.c_str());    // class (localized)
+    lua_pushstring(L, className.c_str());    // fileName
+    lua_pushstring(L, "");                   // zone
+    lua_pushboolean(L, m.isOnline);          // online
+    lua_pushboolean(L, m.curHealth == 0);    // isDead
+    lua_pushstring(L, "NONE");               // role
+    lua_pushboolean(L, pd.looterGuid == m.guid ? 1 : 0); // isML
+    return 11;
+}
+
+// GetThreatStatusColor(statusIndex) → r, g, b
+static int lua_GetThreatStatusColor(lua_State* L) {
+    int status = static_cast<int>(luaL_optnumber(L, 1, 0));
+    switch (status) {
+        case 0: lua_pushnumber(L, 0.69f); lua_pushnumber(L, 0.69f); lua_pushnumber(L, 0.69f); break; // gray (no threat)
+        case 1: lua_pushnumber(L, 1.0f);  lua_pushnumber(L, 1.0f);  lua_pushnumber(L, 0.47f); break; // yellow (threat)
+        case 2: lua_pushnumber(L, 1.0f);  lua_pushnumber(L, 0.6f);  lua_pushnumber(L, 0.0f);  break; // orange (high threat)
+        case 3: lua_pushnumber(L, 1.0f);  lua_pushnumber(L, 0.0f);  lua_pushnumber(L, 0.0f);  break; // red (tanking)
+        default: lua_pushnumber(L, 1.0f); lua_pushnumber(L, 1.0f);  lua_pushnumber(L, 1.0f);  break;
+    }
+    return 3;
+}
+
+// GetReadyCheckStatus(unit) → status string
+static int lua_GetReadyCheckStatus(lua_State* L) {
+    (void)L;
+    lua_pushnil(L); // No ready check in progress
+    return 1;
+}
+
+// RegisterUnitWatch / UnregisterUnitWatch — secure unit frame stubs
+static int lua_RegisterUnitWatch(lua_State* L) { (void)L; return 0; }
+static int lua_UnregisterUnitWatch(lua_State* L) { (void)L; return 0; }
+
 static int lua_UnitIsUnit(lua_State* L) {
     auto* gh = getGameHandler(L);
     if (!gh) { lua_pushboolean(L, 0); return 1; }
@@ -4534,6 +4590,11 @@ void LuaEngine::registerCoreAPI() {
         {"GetNumPartyMembers",  lua_GetNumPartyMembers},
         {"UnitInParty",         lua_UnitInParty},
         {"UnitInRaid",          lua_UnitInRaid},
+        {"GetRaidRosterInfo",   lua_GetRaidRosterInfo},
+        {"GetThreatStatusColor", lua_GetThreatStatusColor},
+        {"GetReadyCheckStatus", lua_GetReadyCheckStatus},
+        {"RegisterUnitWatch",   lua_RegisterUnitWatch},
+        {"UnregisterUnitWatch", lua_UnregisterUnitWatch},
         {"UnitIsUnit",          lua_UnitIsUnit},
         {"UnitIsFriend",        lua_UnitIsFriend},
         {"UnitIsEnemy",         lua_UnitIsEnemy},

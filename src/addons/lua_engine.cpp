@@ -5182,6 +5182,31 @@ void LuaEngine::registerCoreAPI() {
             if (gh) gh->requestPvpLog();
             return 0;
         }},
+        // --- Instance Lockouts ---
+        {"GetNumSavedInstances", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            lua_pushnumber(L, gh ? gh->getInstanceLockouts().size() : 0);
+            return 1;
+        }},
+        {"GetSavedInstanceInfo", [](lua_State* L) -> int {
+            // GetSavedInstanceInfo(index) → name, id, reset, difficulty, locked, extended, instanceIDMostSig, isRaid, maxPlayers
+            auto* gh = getGameHandler(L);
+            int index = static_cast<int>(luaL_checknumber(L, 1));
+            if (!gh || index < 1) { lua_pushnil(L); return 1; }
+            const auto& lockouts = gh->getInstanceLockouts();
+            if (index > static_cast<int>(lockouts.size())) { lua_pushnil(L); return 1; }
+            const auto& l = lockouts[index - 1];
+            lua_pushstring(L, ("Instance " + std::to_string(l.mapId)).c_str()); // name (would need MapDBC for real names)
+            lua_pushnumber(L, l.mapId);             // id
+            lua_pushnumber(L, static_cast<double>(l.resetTime - static_cast<uint64_t>(time(nullptr)))); // reset (seconds until)
+            lua_pushnumber(L, l.difficulty);        // difficulty
+            lua_pushboolean(L, l.locked ? 1 : 0);  // locked
+            lua_pushboolean(L, l.extended ? 1 : 0); // extended
+            lua_pushnumber(L, 0);                   // instanceIDMostSig
+            lua_pushboolean(L, l.difficulty >= 2 ? 1 : 0); // isRaid (25-man = raid)
+            lua_pushnumber(L, l.difficulty >= 2 ? 25 : (l.difficulty >= 1 ? 10 : 5)); // maxPlayers
+            return 9;
+        }},
         // --- Calendar ---
         {"CalendarGetDate", [](lua_State* L) -> int {
             // CalendarGetDate() → weekday, month, day, year

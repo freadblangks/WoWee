@@ -5062,6 +5062,37 @@ void LuaEngine::registerCoreAPI() {
             lua_pushboolean(L, 1);                               // isCastable
             return 4;
         }},
+        {"GetActionBarPage", [](lua_State* L) -> int {
+            // Return current action bar page (1-6)
+            lua_getglobal(L, "__WoweeActionBarPage");
+            if (lua_isnil(L, -1)) { lua_pop(L, 1); lua_pushnumber(L, 1); }
+            return 1;
+        }},
+        {"ChangeActionBarPage", [](lua_State* L) -> int {
+            int page = static_cast<int>(luaL_checknumber(L, 1));
+            if (page < 1) page = 1;
+            if (page > 6) page = 6;
+            lua_pushnumber(L, page);
+            lua_setglobal(L, "__WoweeActionBarPage");
+            // Fire ACTIONBAR_PAGE_CHANGED via the frame event system
+            lua_getglobal(L, "__WoweeEvents");
+            if (!lua_isnil(L, -1)) {
+                lua_getfield(L, -1, "ACTIONBAR_PAGE_CHANGED");
+                if (!lua_isnil(L, -1)) {
+                    int n = static_cast<int>(lua_objlen(L, -1));
+                    for (int i = 1; i <= n; i++) {
+                        lua_rawgeti(L, -1, i);
+                        if (lua_isfunction(L, -1)) {
+                            lua_pushstring(L, "ACTIONBAR_PAGE_CHANGED");
+                            lua_pcall(L, 1, 0, 0);
+                        } else lua_pop(L, 1);
+                    }
+                }
+                lua_pop(L, 1);
+            }
+            lua_pop(L, 1);
+            return 0;
+        }},
         {"CastShapeshiftForm", [](lua_State* L) -> int {
             // CastShapeshiftForm(index) — cast the spell for the given form slot
             auto* gh = getGameHandler(L);

@@ -38,6 +38,15 @@ bool Window::initialize() {
     // clear error and avoids the misleading "not configured in SDL" message.
     // SDL 2.28+ uses LoadLibraryExW(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS) which does
     // not search System32, so fall back to the explicit path on Windows if needed.
+    //
+    // On macOS, MoltenVK is a Vulkan "portability" driver.  The Vulkan loader
+    // hides portability drivers (and their extensions like VK_KHR_surface) from
+    // pre-instance enumeration unless told otherwise.  Setting this env var
+    // makes the loader include portability ICDs so SDL's VK_KHR_surface check
+    // succeeds.
+#ifdef __APPLE__
+    setenv("VK_LOADER_ENABLE_PORTABILITY_DRIVERS", "1", 0 /*don't overwrite*/);
+#endif
     bool vulkanLoaded = (SDL_Vulkan_LoadLibrary(nullptr) == 0);
 #ifdef _WIN32
     if (!vulkanLoaded) {

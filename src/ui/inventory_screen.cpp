@@ -941,6 +941,14 @@ void InventoryScreen::renderAggregateBags(game::Inventory& inventory, uint64_t m
         return;
     }
 
+    // Reset to bottom-right if the window ended up outside the screen (resolution change)
+    ImVec2 winPos = ImGui::GetWindowPos();
+    ImVec2 winSize = ImGui::GetWindowSize();
+    if (winPos.x > screenW || winPos.y > screenH ||
+        winPos.x + winSize.x < 0 || winPos.y + winSize.y < 0) {
+        ImGui::SetWindowPos(ImVec2(posX, posY));
+    }
+
     renderBackpackPanel(inventory, compactBags_);
 
     ImGui::Spacing();

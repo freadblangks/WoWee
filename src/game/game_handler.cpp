@@ -21335,12 +21335,12 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
              " name='", goName, "' chestLike=", chestLike, " isMailbox=", isMailbox);
 
     if (chestLike) {
-        // For chest-like GOs (quest objects, treasure chests, etc.), send CMSG_LOOT
-        // directly with the GO GUID — same as creature corpse looting. The server's
-        // LOOT handler activates the GO, generates loot, and sends SMSG_LOOT_RESPONSE
-        // in a single step. Sending CMSG_GAMEOBJ_USE + delayed CMSG_LOOT doesn't work
-        // because the USE handler opens+despawns the GO before CMSG_LOOT arrives, and
-        // CMSG_LOOT's DoLootRelease() closes any loot the USE handler already opened.
+        // For chest-like GOs: send CMSG_GAMEOBJ_USE (opens the chest) followed
+        // immediately by CMSG_LOOT (requests loot contents). Both sent in the
+        // same frame so the server processes them sequentially: USE transitions
+        // the GO to lootable state, then LOOT reads the contents.
+        auto usePacket = GameObjectUsePacket::build(guid);
+        socket->send(usePacket);
         lootTarget(guid);
         lastInteractedGoGuid_ = guid;
     } else {

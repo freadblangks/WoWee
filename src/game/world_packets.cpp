@@ -1057,7 +1057,6 @@ bool UpdateObjectParser::parseMovementBlock(network::Packet& packet, UpdateBlock
         if (moveFlags & 0x08000000) { // MOVEMENTFLAG_SPLINE_ENABLED
             auto bytesAvailable = [&](size_t n) -> bool { return packet.getReadPos() + n <= packet.getSize(); };
             if (!bytesAvailable(4)) return false;
-            size_t splineStart = packet.getReadPos();
             uint32_t splineFlags = packet.readUInt32();
             LOG_DEBUG("  Spline: flags=0x", std::hex, splineFlags, std::dec);
 
@@ -1079,7 +1078,6 @@ bool UpdateObjectParser::parseMovementBlock(network::Packet& packet, UpdateBlock
             //   WotLK: timePassed(4)+duration(4)+splineId(4)+durationMod(4)+durationModNext(4)
             //          +[ANIMATION(5)]+[PARABOLIC(8)]+pointCount(4)+points+mode(1)+endPoint(12)
             // Since the parser has no expansion context, auto-detect by trying Classic first.
-            const size_t legacyStart = packet.getReadPos();
             if (!bytesAvailable(16)) return false; // minimum: 12 common + 4 pointCount
             /*uint32_t timePassed =*/ packet.readUInt32();
             /*uint32_t duration =*/ packet.readUInt32();

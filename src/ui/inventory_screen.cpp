@@ -710,10 +710,6 @@ void InventoryScreen::toggleBackpack() {
 void InventoryScreen::toggleBag(int idx) {
     if (idx >= 0 && idx < 4) {
         bagOpen_[idx] = !bagOpen_[idx];
-        if (bagOpen_[idx]) {
-            // Keep backpack as the anchor window at the bottom of the stack.
-            backpackOpen_ = true;
-        }
     }
 }
 

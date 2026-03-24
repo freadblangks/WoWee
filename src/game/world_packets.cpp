@@ -1248,8 +1248,14 @@ bool UpdateObjectParser::parseUpdateFields(network::Packet& packet, UpdateBlock&
     }
 
     // Sanity check: UNIT_END=148 needs 5 mask blocks, PLAYER_END=1472 needs 46.
-    // Values significantly above these indicate the movement block was misparsed.
-    uint8_t maxExpectedBlocks = (block.objectType == ObjectType::PLAYER) ? 55 : 10;
+    // VALUES updates don't carry objectType (defaults to 0), so allow up to 55
+    // for any VALUES update (could be a PLAYER). Only flag CREATE_OBJECT blocks
+    // with genuinely excessive block counts.
+    bool isCreateBlock = (block.updateType == UpdateType::CREATE_OBJECT ||
+                          block.updateType == UpdateType::CREATE_OBJECT2);
+    uint8_t maxExpectedBlocks = isCreateBlock
+        ? ((block.objectType == ObjectType::PLAYER) ? 55 : 10)
+        : 55;  // VALUES: allow PLAYER-sized masks
     if (blockCount > maxExpectedBlocks) {
         LOG_WARNING("UpdateObjectParser: suspicious maskBlockCount=", (int)blockCount,
                     " for objectType=", (int)block.objectType,

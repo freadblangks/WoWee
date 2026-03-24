@@ -5311,6 +5311,14 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
 
     showProgress("Entering world...", 1.0f);
 
+    // Ensure all GPU resources (textures, buffers, pipelines) created during
+    // world load are fully flushed before the first render frame. Without this,
+    // vkCmdBeginRenderPass can crash on NVIDIA 590.x when resources from async
+    // uploads haven't completed their queue operations.
+    if (renderer && renderer->getVkContext()) {
+        vkDeviceWaitIdle(renderer->getVkContext()->getDevice());
+    }
+
     if (loadingScreenOk) {
         loadingScreen.shutdown();
     }

@@ -1801,7 +1801,7 @@ void GameHandler::registerOpcodeHandlers() {
     // -----------------------------------------------------------------------
     dispatchTable_[Opcode::SMSG_HEALTH_UPDATE] = [this](network::Packet& packet) {
         const bool huTbc = isActiveExpansion("tbc");
-        if (packet.getRemainingSize() < (huTbc ? 8u : 2u)) return;
+        if (!packet.hasRemaining(huTbc ? 8u : 2u) ) return;
         uint64_t guid = huTbc ? packet.readUInt64() : packet.readPackedGuid();
         if (!packet.hasRemaining(4)) return;
         uint32_t hp = packet.readUInt32();
@@ -1813,7 +1813,7 @@ void GameHandler::registerOpcodeHandlers() {
     };
     dispatchTable_[Opcode::SMSG_POWER_UPDATE] = [this](network::Packet& packet) {
         const bool puTbc = isActiveExpansion("tbc");
-        if (packet.getRemainingSize() < (puTbc ? 8u : 2u)) return;
+        if (!packet.hasRemaining(puTbc ? 8u : 2u) ) return;
         uint64_t guid = puTbc ? packet.readUInt64() : packet.readPackedGuid();
         if (!packet.hasRemaining(5)) return;
         uint8_t  powerType = packet.readUInt8();
@@ -1859,7 +1859,7 @@ void GameHandler::registerOpcodeHandlers() {
     };
     dispatchTable_[Opcode::SMSG_UPDATE_COMBO_POINTS] = [this](network::Packet& packet) {
         const bool cpTbc = isActiveExpansion("tbc");
-        if (packet.getRemainingSize() < (cpTbc ? 8u : 2u)) return;
+        if (!packet.hasRemaining(cpTbc ? 8u : 2u) ) return;
         uint64_t target = cpTbc ? packet.readUInt64() : packet.readPackedGuid();
         if (!packet.hasRemaining(1)) return;
         comboPoints_ = packet.readUInt8();
@@ -1965,11 +1965,9 @@ void GameHandler::registerOpcodeHandlers() {
                 return (packet.hasRemaining(8)) ? packet.readUInt64() : 0;
             return packet.readPackedGuid();
         };
-        if (packet.getRemainingSize() < (prUsesFullGuid ? 8u : 1u)
-            || (!prUsesFullGuid && !packet.hasFullPackedGuid())) { packet.skipAll(); return; }
+        if (!packet.hasRemaining(prUsesFullGuid ? 8u : 1u)             || (!prUsesFullGuid && !packet.hasFullPackedGuid())) { packet.skipAll(); return; }
         uint64_t caster = readPrGuid();
-        if (packet.getRemainingSize() < (prUsesFullGuid ? 8u : 1u)
-            || (!prUsesFullGuid && !packet.hasFullPackedGuid())) { packet.skipAll(); return; }
+        if (!packet.hasRemaining(prUsesFullGuid ? 8u : 1u)             || (!prUsesFullGuid && !packet.hasFullPackedGuid())) { packet.skipAll(); return; }
         uint64_t victim = readPrGuid();
         if (!packet.hasRemaining(4)) return;
         uint32_t spellId = packet.readUInt32();
@@ -2913,7 +2911,7 @@ void GameHandler::registerOpcodeHandlers() {
     // Minimap ping
     dispatchTable_[Opcode::MSG_MINIMAP_PING] = [this](network::Packet& packet) {
         const bool mmTbcLike = isPreWotlk();
-        if (packet.getRemainingSize() < (mmTbcLike ? 8u : 1u)) return;
+        if (!packet.hasRemaining(mmTbcLike ? 8u : 1u) ) return;
         uint64_t senderGuid = mmTbcLike
             ? packet.readUInt64() : packet.readPackedGuid();
         if (!packet.hasRemaining(8)) return;
@@ -3054,7 +3052,7 @@ void GameHandler::registerOpcodeHandlers() {
     // Spell delayed
     dispatchTable_[Opcode::SMSG_SPELL_DELAYED] = [this](network::Packet& packet) {
         const bool spellDelayTbcLike = isPreWotlk();
-        if (packet.getRemainingSize() < (spellDelayTbcLike ? 8u : 1u)) return;
+        if (!packet.hasRemaining(spellDelayTbcLike ? 8u : 1u) ) return;
         uint64_t caster = spellDelayTbcLike
             ? packet.readUInt64() : packet.readPackedGuid();
         if (!packet.hasRemaining(4)) return;
@@ -3591,8 +3589,7 @@ void GameHandler::registerOpcodeHandlers() {
         // spellId prefix present in all expansions
         if (!packet.hasRemaining(4)) return;
         uint32_t spellId = packet.readUInt32();
-        if (packet.getRemainingSize() < (spellMissUsesFullGuid ? 8u : 1u)
-            || (!spellMissUsesFullGuid && !packet.hasFullPackedGuid())) {
+        if (!packet.hasRemaining(spellMissUsesFullGuid ? 8u : 1u)             || (!spellMissUsesFullGuid && !packet.hasFullPackedGuid())) {
             packet.skipAll(); return;
         }
         uint64_t casterGuid = readSpellMissGuid();
@@ -3614,8 +3611,7 @@ void GameHandler::registerOpcodeHandlers() {
 
         bool truncated = false;
         for (uint32_t i = 0; i < rawCount; ++i) {
-            if (packet.getRemainingSize() < (spellMissUsesFullGuid ? 9u : 2u)
-                || (!spellMissUsesFullGuid && !packet.hasFullPackedGuid())) {
+            if (!packet.hasRemaining(spellMissUsesFullGuid ? 9u : 2u)                 || (!spellMissUsesFullGuid && !packet.hasFullPackedGuid())) {
                 truncated = true;
                 return;
             }
@@ -3909,7 +3905,7 @@ void GameHandler::registerOpcodeHandlers() {
         // WotLK:       uint8 slot + packed_guid + uint32 duration + uint32 spellId
         // TBC/Classic: uint8 slot + uint64 guid  + uint32 duration + uint32 spellId
         const bool totemTbcLike = isPreWotlk();
-        if (packet.getRemainingSize() < (totemTbcLike ? 17u : 9u)) return;
+        if (!packet.hasRemaining(totemTbcLike ? 17u : 9u) ) return;
         uint8_t slot = packet.readUInt8();
         if (totemTbcLike)
             /*uint64_t guid =*/ packet.readUInt64();
@@ -4279,7 +4275,7 @@ void GameHandler::registerOpcodeHandlers() {
     // ---- SMSG_SELL_ITEM ----
     dispatchTable_[Opcode::SMSG_SELL_ITEM] = [this](network::Packet& packet) {
         // uint64 vendorGuid, uint64 itemGuid, uint8 result
-        if ((packet.getRemainingSize()) >= 17) {
+        if (packet.hasRemaining(17)) {
             uint64_t vendorGuid = packet.readUInt64();
             uint64_t itemGuid = packet.readUInt64();
             uint8_t result = packet.readUInt8();
@@ -4336,7 +4332,7 @@ void GameHandler::registerOpcodeHandlers() {
 
     // ---- SMSG_INVENTORY_CHANGE_FAILURE ----
     dispatchTable_[Opcode::SMSG_INVENTORY_CHANGE_FAILURE] = [this](network::Packet& packet) {
-        if ((packet.getRemainingSize()) >= 1) {
+        if (packet.hasRemaining(1)) {
             uint8_t error = packet.readUInt8();
             if (error != 0) {
                 LOG_WARNING("SMSG_INVENTORY_CHANGE_FAILURE: error=", static_cast<int>(error));
@@ -4793,13 +4789,11 @@ void GameHandler::registerOpcodeHandlers() {
                 return (packet.hasRemaining(8)) ? packet.readUInt64() : 0;
             return packet.readPackedGuid();
         };
-        if (packet.getRemainingSize() < (energizeTbc ? 8u : 1u)
-            || (!energizeTbc && !packet.hasFullPackedGuid())) {
+        if (!packet.hasRemaining(energizeTbc ? 8u : 1u)             || (!energizeTbc && !packet.hasFullPackedGuid())) {
             packet.skipAll(); return;
         }
         uint64_t victimGuid = readEnergizeGuid();
-        if (packet.getRemainingSize() < (energizeTbc ? 8u : 1u)
-            || (!energizeTbc && !packet.hasFullPackedGuid())) {
+        if (!packet.hasRemaining(energizeTbc ? 8u : 1u)             || (!energizeTbc && !packet.hasFullPackedGuid())) {
             packet.skipAll(); return;
         }
         uint64_t casterGuid = readEnergizeGuid();
@@ -5927,8 +5921,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
         uint64_t victimGuid = shieldTbc
             ? packet.readUInt64() : packet.readPackedGuid();
-        if (packet.getRemainingSize() < (shieldTbc ? 8u : 1u)
-            || (!shieldTbc && !packet.hasFullPackedGuid())) {
+        if (!packet.hasRemaining(shieldTbc ? 8u : 1u)             || (!shieldTbc && !packet.hasFullPackedGuid())) {
             packet.skipAll(); return;
         }
         uint64_t casterGuid = shieldTbc
@@ -5966,8 +5959,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
         uint64_t casterGuid = immuneUsesFullGuid
             ? packet.readUInt64() : packet.readPackedGuid();
-        if (packet.getRemainingSize() < (immuneUsesFullGuid ? 8u : 2u)
-            || (!immuneUsesFullGuid && !packet.hasFullPackedGuid())) {
+        if (!packet.hasRemaining(immuneUsesFullGuid ? 8u : 2u)             || (!immuneUsesFullGuid && !packet.hasFullPackedGuid())) {
             packet.skipAll(); return;
         }
         uint64_t victimGuid = immuneUsesFullGuid
@@ -5990,14 +5982,12 @@ void GameHandler::registerOpcodeHandlers() {
         // TBC:                  full uint64 casterGuid + full uint64 victimGuid + ...
         // + uint32 count + count × (uint32 dispelled_spellId + uint32 unk)
         const bool dispelUsesFullGuid = isActiveExpansion("tbc");
-        if (packet.getRemainingSize() < (dispelUsesFullGuid ? 8u : 1u)
-            || (!dispelUsesFullGuid && !packet.hasFullPackedGuid())) {
+        if (!packet.hasRemaining(dispelUsesFullGuid ? 8u : 1u)             || (!dispelUsesFullGuid && !packet.hasFullPackedGuid())) {
             packet.skipAll(); return;
         }
         uint64_t casterGuid = dispelUsesFullGuid
             ? packet.readUInt64() : packet.readPackedGuid();
-        if (packet.getRemainingSize() < (dispelUsesFullGuid ? 8u : 1u)
-            || (!dispelUsesFullGuid && !packet.hasFullPackedGuid())) {
+        if (!packet.hasRemaining(dispelUsesFullGuid ? 8u : 1u)             || (!dispelUsesFullGuid && !packet.hasFullPackedGuid())) {
             packet.skipAll(); return;
         }
         uint64_t victimGuid = dispelUsesFullGuid
@@ -6084,14 +6074,12 @@ void GameHandler::registerOpcodeHandlers() {
         //                        + count × (uint32 stolenSpellId + uint8 isPositive)
         // TBC:                   full uint64 victim + full uint64 caster + same tail
         const bool stealUsesFullGuid = isActiveExpansion("tbc");
-        if (packet.getRemainingSize() < (stealUsesFullGuid ? 8u : 1u)
-            || (!stealUsesFullGuid && !packet.hasFullPackedGuid())) {
+        if (!packet.hasRemaining(stealUsesFullGuid ? 8u : 1u)             || (!stealUsesFullGuid && !packet.hasFullPackedGuid())) {
             packet.skipAll(); return;
         }
         uint64_t stealVictim = stealUsesFullGuid
             ? packet.readUInt64() : packet.readPackedGuid();
-        if (packet.getRemainingSize() < (stealUsesFullGuid ? 8u : 1u)
-            || (!stealUsesFullGuid && !packet.hasFullPackedGuid())) {
+        if (!packet.hasRemaining(stealUsesFullGuid ? 8u : 1u)             || (!stealUsesFullGuid && !packet.hasFullPackedGuid())) {
             packet.skipAll(); return;
         }
         uint64_t stealCaster = stealUsesFullGuid
@@ -6158,13 +6146,11 @@ void GameHandler::registerOpcodeHandlers() {
                 return (packet.hasRemaining(8)) ? packet.readUInt64() : 0;
             return packet.readPackedGuid();
         };
-        if (packet.getRemainingSize() < (procChanceUsesFullGuid ? 8u : 1u)
-            || (!procChanceUsesFullGuid && !packet.hasFullPackedGuid())) {
+        if (!packet.hasRemaining(procChanceUsesFullGuid ? 8u : 1u)             || (!procChanceUsesFullGuid && !packet.hasFullPackedGuid())) {
             packet.skipAll(); return;
         }
         uint64_t procTargetGuid = readProcChanceGuid();
-        if (packet.getRemainingSize() < (procChanceUsesFullGuid ? 8u : 1u)
-            || (!procChanceUsesFullGuid && !packet.hasFullPackedGuid())) {
+        if (!packet.hasRemaining(procChanceUsesFullGuid ? 8u : 1u)             || (!procChanceUsesFullGuid && !packet.hasFullPackedGuid())) {
             packet.skipAll(); return;
         }
         uint64_t procCasterGuid = readProcChanceGuid();
@@ -6235,7 +6221,7 @@ void GameHandler::registerOpcodeHandlers() {
         // Effect 49 = FEED_PET:      uint32 itemEntry
         // Effect 114= CREATE_ITEM2:  uint32 itemEntry (same layout as CREATE_ITEM)
         const bool exeUsesFullGuid = isActiveExpansion("tbc");
-        if (packet.getRemainingSize() < (exeUsesFullGuid ? 8u : 1u)) {
+        if (!packet.hasRemaining(exeUsesFullGuid ? 8u : 1u) ) {
             packet.skipAll(); return;
         }
         if (!exeUsesFullGuid && !packet.hasFullPackedGuid()) {
@@ -6259,8 +6245,7 @@ void GameHandler::registerOpcodeHandlers() {
             if (effectType == 10) {
                 // SPELL_EFFECT_POWER_DRAIN: packed_guid target + uint32 amount + uint32 powerType + float multiplier
                 for (uint32_t li = 0; li < effectLogCount; ++li) {
-                    if (packet.getRemainingSize() < (exeUsesFullGuid ? 8u : 1u)
-                        || (!exeUsesFullGuid && !packet.hasFullPackedGuid())) {
+                    if (!packet.hasRemaining(exeUsesFullGuid ? 8u : 1u)                         || (!exeUsesFullGuid && !packet.hasFullPackedGuid())) {
                         packet.skipAll(); break;
                     }
                     uint64_t drainTarget = exeUsesFullGuid
@@ -6297,8 +6282,7 @@ void GameHandler::registerOpcodeHandlers() {
             } else if (effectType == 11) {
                 // SPELL_EFFECT_HEALTH_LEECH: packed_guid target + uint32 amount + float multiplier
                 for (uint32_t li = 0; li < effectLogCount; ++li) {
-                    if (packet.getRemainingSize() < (exeUsesFullGuid ? 8u : 1u)
-                        || (!exeUsesFullGuid && !packet.hasFullPackedGuid())) {
+                    if (!packet.hasRemaining(exeUsesFullGuid ? 8u : 1u)                         || (!exeUsesFullGuid && !packet.hasFullPackedGuid())) {
                         packet.skipAll(); break;
                     }
                     uint64_t leechTarget = exeUsesFullGuid
@@ -6359,8 +6343,7 @@ void GameHandler::registerOpcodeHandlers() {
             } else if (effectType == 26) {
                 // SPELL_EFFECT_INTERRUPT_CAST: packed_guid target + uint32 interrupted_spell_id
                 for (uint32_t li = 0; li < effectLogCount; ++li) {
-                    if (packet.getRemainingSize() < (exeUsesFullGuid ? 8u : 1u)
-                        || (!exeUsesFullGuid && !packet.hasFullPackedGuid())) {
+                    if (!packet.hasRemaining(exeUsesFullGuid ? 8u : 1u)                         || (!exeUsesFullGuid && !packet.hasFullPackedGuid())) {
                         packet.skipAll(); break;
                     }
                     uint64_t icTarget = exeUsesFullGuid
@@ -14398,7 +14381,7 @@ void GameHandler::handleInspectResults(network::Packet& packet) {
     // talentType == 1: inspect result
     // WotLK: packed GUID; TBC: full uint64
     const bool talentTbc = isPreWotlk();
-    if (packet.getRemainingSize() < (talentTbc ? 8u : 2u)) return;
+    if (!packet.hasRemaining(talentTbc ? 8u : 2u) ) return;
 
     uint64_t guid = talentTbc
         ? packet.readUInt64() : packet.readPackedGuid();
@@ -15626,7 +15609,7 @@ void GameHandler::handleForceMoveRootState(network::Packet& packet, bool rooted)
     // TBC/Classic: full uint64 + uint32 counter
     // We always ACK with current movement state, same pattern as speed-change ACKs.
     const bool rootTbc = isPreWotlk();
-    if (packet.getRemainingSize() < (rootTbc ? 8u : 2u)) return;
+    if (!packet.hasRemaining(rootTbc ? 8u : 2u) ) return;
     uint64_t guid = rootTbc
         ? packet.readUInt64() : packet.readPackedGuid();
     if (!packet.hasRemaining(4)) return;
@@ -15686,7 +15669,7 @@ void GameHandler::handleForceMoveFlagChange(network::Packet& packet, const char*
                                              Opcode ackOpcode, uint32_t flag, bool set) {
     // WotLK: packed GUID; TBC/Classic: full uint64
     const bool fmfTbcLike = isPreWotlk();
-    if (packet.getRemainingSize() < (fmfTbcLike ? 8u : 2u)) return;
+    if (!packet.hasRemaining(fmfTbcLike ? 8u : 2u) ) return;
     uint64_t guid = fmfTbcLike
         ? packet.readUInt64() : packet.readPackedGuid();
     if (!packet.hasRemaining(4)) return;
@@ -15746,7 +15729,7 @@ void GameHandler::handleMoveSetCollisionHeight(network::Packet& packet) {
     // SMSG_MOVE_SET_COLLISION_HGT: packed guid + counter + float (height)
     // ACK: CMSG_MOVE_SET_COLLISION_HGT_ACK = packed guid + counter + movement block + float (height)
     const bool legacyGuid = isPreWotlk();
-    if (packet.getRemainingSize() < (legacyGuid ? 8u : 2u)) return;
+    if (!packet.hasRemaining(legacyGuid ? 8u : 2u) ) return;
     uint64_t guid = legacyGuid ? packet.readUInt64() : packet.readPackedGuid();
     if (!packet.hasRemaining(8)) return;  // counter(4) + height(4)
     uint32_t counter = packet.readUInt32();
@@ -15786,7 +15769,7 @@ void GameHandler::handleMoveSetCollisionHeight(network::Packet& packet) {
 void GameHandler::handleMoveKnockBack(network::Packet& packet) {
     // WotLK: packed GUID; TBC/Classic: full uint64
     const bool mkbTbc = isPreWotlk();
-    if (packet.getRemainingSize() < (mkbTbc ? 8u : 2u)) return;
+    if (!packet.hasRemaining(mkbTbc ? 8u : 2u) ) return;
     uint64_t guid = mkbTbc
         ? packet.readUInt64() : packet.readPackedGuid();
     if (!packet.hasRemaining(20)) return;  // counter(4) + vcos(4) + vsin(4) + hspeed(4) + vspeed(4)
@@ -22469,7 +22452,7 @@ void GameHandler::handleTeleportAck(network::Packet& packet) {
     // WotLK: packed GUID + u32 counter + u32 time + movement info with new position
     // TBC/Classic: uint64 + u32 counter + u32 time + movement info
     const bool taTbc = isPreWotlk();
-    if (packet.getRemainingSize() < (taTbc ? 8u : 4u)) {
+    if (!packet.hasRemaining(taTbc ? 8u : 4u) ) {
         LOG_WARNING("MSG_MOVE_TELEPORT_ACK too short");
         return;
     }
@@ -25267,7 +25250,7 @@ void GameHandler::handleTradeStatusExtended(network::Packet& packet) {
 
     auto& slots = isSelf ? myTradeSlots_ : peerTradeSlots_;
 
-    for (uint32_t i = 0; i < slotCount && (packet.getRemainingSize()) >= 14; ++i) {
+    for (uint32_t i = 0; i < slotCount && packet.hasRemaining(14); ++i) {
         uint8_t  slotIdx    = packet.readUInt8();
         uint32_t itemId     = packet.readUInt32();
         uint32_t displayId  = packet.readUInt32();

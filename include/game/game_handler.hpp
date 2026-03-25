@@ -2513,6 +2513,9 @@ private:
     void clearPendingQuestAccept(uint32_t questId);
     void triggerQuestAcceptResync(uint32_t questId, uint64_t npcGuid, const char* reason);
     bool hasQuestInLog(uint32_t questId) const;
+    std::string guidToUnitId(uint64_t guid) const;
+    std::string getQuestTitle(uint32_t questId) const;
+    const QuestLogEntry* findQuestLogEntry(uint32_t questId) const;
     int findQuestLogSlotIndexFromServer(uint32_t questId) const;
     void addQuestToLocalLogIfMissing(uint32_t questId, const std::string& title, const std::string& objectives);
     bool resyncQuestLogFromServerSlots(bool forceQueryMetadata);

@@ -1805,9 +1805,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_QUESTUPDATE_FAILED] = [this](network::Packet& packet) {
         if (packet.getSize() - packet.getReadPos() >= 4) {
             uint32_t questId = packet.readUInt32();
-            std::string questTitle;
-            for (const auto& q : questLog_)
-                if (q.questId == questId && !q.title.empty()) { questTitle = q.title; break; }
+            auto questTitle = getQuestTitle(questId);
             addSystemChatMessage(questTitle.empty() ? std::string("Quest failed!")
                                                     : ('"' + questTitle + "\" failed!"));
         }
@@ -1815,9 +1813,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_QUESTUPDATE_FAILEDTIMER] = [this](network::Packet& packet) {
         if (packet.getSize() - packet.getReadPos() >= 4) {
             uint32_t questId = packet.readUInt32();
-            std::string questTitle;
-            for (const auto& q : questLog_)
-                if (q.questId == questId && !q.title.empty()) { questTitle = q.title; break; }
+            auto questTitle = getQuestTitle(questId);
             addSystemChatMessage(questTitle.empty() ? std::string("Quest timed out!")
                                                     : ('"' + questTitle + "\" has timed out."));
         }
@@ -1835,11 +1831,7 @@ void GameHandler::registerOpcodeHandlers() {
         auto entity = entityManager.getEntity(guid);
         if (auto* unit = dynamic_cast<Unit*>(entity.get())) unit->setHealth(hp);
         if (addonEventCallback_ && guid != 0) {
-            std::string unitId;
-            if (guid == playerGuid)      unitId = "player";
-            else if (guid == targetGuid) unitId = "target";
-            else if (guid == focusGuid)  unitId = "focus";
-            else if (guid == petGuid_)   unitId = "pet";
+            auto unitId = guidToUnitId(guid);
             if (!unitId.empty()) addonEventCallback_("UNIT_HEALTH", {unitId});
         }
     };
@@ -1853,11 +1845,7 @@ void GameHandler::registerOpcodeHandlers() {
         auto entity = entityManager.getEntity(guid);
         if (auto* unit = dynamic_cast<Unit*>(entity.get())) unit->setPowerByType(powerType, value);
         if (addonEventCallback_ && guid != 0) {
-            std::string unitId;
-            if (guid == playerGuid)      unitId = "player";
-            else if (guid == targetGuid) unitId = "target";
-            else if (guid == focusGuid)  unitId = "focus";
-            else if (guid == petGuid_)   unitId = "pet";
+            auto unitId = guidToUnitId(guid);
             if (!unitId.empty()) {
                 addonEventCallback_("UNIT_POWER", {unitId});
                 if (guid == playerGuid) {
@@ -3855,11 +3843,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
         // Fire UNIT_SPELLCAST_INTERRUPTED for Lua addons
         if (addonEventCallback_) {
-            std::string unitId;
-            if (failGuid == playerGuid || failGuid == 0) unitId = "player";
-            else if (failGuid == targetGuid) unitId = "target";
-            else if (failGuid == focusGuid) unitId = "focus";
-            else if (failGuid == petGuid_) unitId = "pet";
+            auto unitId = (failGuid == 0) ? std::string("player") : guidToUnitId(failGuid);
             if (!unitId.empty()) {
                 addonEventCallback_("UNIT_SPELLCAST_INTERRUPTED", {unitId});
                 addonEventCallback_("UNIT_SPELLCAST_STOP", {unitId});
@@ -4715,9 +4699,7 @@ void GameHandler::registerOpcodeHandlers() {
         if (packet.getSize() - packet.getReadPos() >= 8) {
             uint32_t questId = packet.readUInt32();
             uint32_t reason = packet.readUInt32();
-            std::string questTitle;
-            for (const auto& q : questLog_)
-                if (q.questId == questId && !q.title.empty()) { questTitle = q.title; break; }
+            auto questTitle = getQuestTitle(questId);
             const char* reasonStr = nullptr;
             switch (reason) {
                 case 1: reasonStr = "failed conditions"; break;
@@ -6678,11 +6660,7 @@ void GameHandler::registerOpcodeHandlers() {
                       " spell=", chanSpellId, " total=", chanTotalMs, "ms");
             // Fire UNIT_SPELLCAST_CHANNEL_START for Lua addons
             if (addonEventCallback_) {
-                std::string unitId;
-                if (chanCaster == playerGuid) unitId = "player";
-                else if (chanCaster == targetGuid) unitId = "target";
-                else if (chanCaster == focusGuid) unitId = "focus";
-                else if (chanCaster == petGuid_) unitId = "pet";
+                auto unitId = guidToUnitId(chanCaster);
                 if (!unitId.empty())
                     addonEventCallback_("UNIT_SPELLCAST_CHANNEL_START", {unitId, std::to_string(chanSpellId)});
             }
@@ -6715,11 +6693,7 @@ void GameHandler::registerOpcodeHandlers() {
                   " remaining=", chanRemainMs, "ms");
         // Fire UNIT_SPELLCAST_CHANNEL_STOP when channel ends
         if (chanRemainMs == 0 && addonEventCallback_) {
-            std::string unitId;
-            if (chanCaster2 == playerGuid) unitId = "player";
-            else if (chanCaster2 == targetGuid) unitId = "target";
-            else if (chanCaster2 == focusGuid) unitId = "focus";
-            else if (chanCaster2 == petGuid_) unitId = "pet";
+            auto unitId = guidToUnitId(chanCaster2);
             if (!unitId.empty())
                 addonEventCallback_("UNIT_SPELLCAST_CHANNEL_STOP", {unitId});
         }
@@ -11115,10 +11089,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                     } else if (key == ufFaction) {
                         unit->setFactionTemplate(val);
                         if (addonEventCallback_) {
-                            std::string uid;
-                            if (block.guid == playerGuid) uid = "player";
-                            else if (block.guid == targetGuid) uid = "target";
-                            else if (block.guid == focusGuid) uid = "focus";
+                            auto uid = guidToUnitId(block.guid);
                             if (!uid.empty())
                                 addonEventCallback_("UNIT_FACTION", {uid});
                         }
@@ -11126,10 +11097,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                     else if (key == ufFlags) {
                         unit->setUnitFlags(val);
                         if (addonEventCallback_) {
-                            std::string uid;
-                            if (block.guid == playerGuid) uid = "player";
-                            else if (block.guid == targetGuid) uid = "target";
-                            else if (block.guid == focusGuid) uid = "focus";
+                            auto uid = guidToUnitId(block.guid);
                             if (!uid.empty())
                                 addonEventCallback_("UNIT_FLAGS", {uid});
                         }
@@ -11139,11 +11107,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                     } else if (key == ufDisplayId) {
                         unit->setDisplayId(val);
                         if (addonEventCallback_) {
-                            std::string uid;
-                            if (block.guid == playerGuid) uid = "player";
-                            else if (block.guid == targetGuid) uid = "target";
-                            else if (block.guid == focusGuid) uid = "focus";
-                            else if (block.guid == petGuid_) uid = "pet";
+                            auto uid = guidToUnitId(block.guid);
                             if (!uid.empty())
                                 addonEventCallback_("UNIT_MODEL_CHANGED", {uid});
                         }
@@ -11705,11 +11669,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                             uint8_t oldPT = unit->getPowerType();
                             unit->setPowerType(static_cast<uint8_t>((val >> 24) & 0xFF));
                             if (unit->getPowerType() != oldPT && addonEventCallback_) {
-                                std::string uid;
-                                if (block.guid == playerGuid) uid = "player";
-                                else if (block.guid == targetGuid) uid = "target";
-                                else if (block.guid == focusGuid) uid = "focus";
-                                else if (block.guid == petGuid_) uid = "pet";
+                                auto uid = guidToUnitId(block.guid);
                                 if (!uid.empty())
                                     addonEventCallback_("UNIT_DISPLAYPOWER", {uid});
                             }
@@ -11764,11 +11724,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                             uint32_t oldLvl = unit->getLevel();
                             unit->setLevel(val);
                             if (val != oldLvl && addonEventCallback_) {
-                                std::string uid;
-                                if (block.guid == playerGuid) uid = "player";
-                                else if (block.guid == targetGuid) uid = "target";
-                                else if (block.guid == focusGuid) uid = "focus";
-                                else if (block.guid == petGuid_) uid = "pet";
+                                auto uid = guidToUnitId(block.guid);
                                 if (!uid.empty())
                                     addonEventCallback_("UNIT_LEVEL", {uid});
                             }
@@ -11835,11 +11791,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
 
                     // Fire UNIT_HEALTH / UNIT_POWER events for Lua addons
                     if (addonEventCallback_ && (healthChanged || powerChanged)) {
-                        std::string unitId;
-                        if (block.guid == playerGuid) unitId = "player";
-                        else if (block.guid == targetGuid) unitId = "target";
-                        else if (block.guid == focusGuid) unitId = "focus";
-                        else if (block.guid == petGuid_) unitId = "pet";
+                        auto unitId = guidToUnitId(block.guid);
                         if (!unitId.empty()) {
                             if (healthChanged) addonEventCallback_("UNIT_HEALTH", {unitId});
                             if (powerChanged) {
@@ -18763,11 +18715,7 @@ void GameHandler::handleSpellStart(network::Packet& packet) {
 
     // Fire UNIT_SPELLCAST_START for Lua addons
     if (addonEventCallback_) {
-        std::string unitId;
-        if (data.casterUnit == playerGuid) unitId = "player";
-        else if (data.casterUnit == targetGuid) unitId = "target";
-        else if (data.casterUnit == focusGuid) unitId = "focus";
-        else if (data.casterUnit == petGuid_) unitId = "pet";
+        auto unitId = guidToUnitId(data.casterUnit);
         if (!unitId.empty())
             addonEventCallback_("UNIT_SPELLCAST_START", {unitId, std::to_string(data.spellId)});
     }
@@ -18913,11 +18861,7 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
     }
     // Fire UNIT_SPELLCAST_SUCCEEDED for Lua addons
     if (addonEventCallback_) {
-        std::string unitId;
-        if (data.casterUnit == playerGuid) unitId = "player";
-        else if (data.casterUnit == targetGuid) unitId = "target";
-        else if (data.casterUnit == focusGuid) unitId = "focus";
-        else if (data.casterUnit == petGuid_) unitId = "pet";
+        auto unitId = guidToUnitId(data.casterUnit);
         if (!unitId.empty())
             addonEventCallback_("UNIT_SPELLCAST_SUCCEEDED", {unitId, std::to_string(data.spellId)});
     }
@@ -19050,11 +18994,7 @@ void GameHandler::handleAuraUpdate(network::Packet& packet, bool isAll) {
 
         // Fire UNIT_AURA event for Lua addons
         if (addonEventCallback_) {
-            std::string unitId;
-            if (data.guid == playerGuid) unitId = "player";
-            else if (data.guid == targetGuid) unitId = "target";
-            else if (data.guid == focusGuid) unitId = "focus";
-            else if (data.guid == petGuid_) unitId = "pet";
+            auto unitId = guidToUnitId(data.guid);
             if (!unitId.empty())
                 addonEventCallback_("UNIT_AURA", {unitId});
         }
@@ -20592,13 +20532,7 @@ void GameHandler::selectGossipQuest(uint32_t questId) {
     if (state != WorldState::IN_WORLD || !socket || !gossipWindowOpen) return;
 
     // Keep quest-log fallback for servers that don't provide stable icon semantics.
-    const QuestLogEntry* activeQuest = nullptr;
-    for (const auto& q : questLog_) {
-        if (q.questId == questId) {
-            activeQuest = &q;
-            break;
-        }
-    }
+    const QuestLogEntry* activeQuest = findQuestLogEntry(questId);
 
     // Validate against server-auth quest slot fields to avoid stale local entries
     // forcing turn-in flow for quests that are not actually accepted.
@@ -20618,12 +20552,7 @@ void GameHandler::selectGossipQuest(uint32_t questId) {
     if (questInServerLog && !activeQuest) {
         addQuestToLocalLogIfMissing(questId, "Quest #" + std::to_string(questId), "");
         requestQuestQuery(questId, false);
-        for (const auto& q : questLog_) {
-            if (q.questId == questId) {
-                activeQuest = &q;
-                break;
-            }
-        }
+        activeQuest = findQuestLogEntry(questId);
     }
     const bool activeQuestConfirmedByServer = questInServerLog;
     // Only trust server quest-log slots for deciding "already accepted" flow.
@@ -20706,10 +20635,7 @@ void GameHandler::handleQuestPoiQueryResponse(network::Packet& packet) {
             gossipPois_.end());
 
         // Find the quest title for the marker label.
-        std::string questTitle;
-        for (const auto& q : questLog_) {
-            if (q.questId == questId) { questTitle = q.title; break; }
-        }
+        auto questTitle = getQuestTitle(questId);
 
         for (uint32_t pi = 0; pi < poiCount; ++pi) {
             if (packet.getSize() - packet.getReadPos() < 28) return;
@@ -20782,6 +20708,26 @@ bool GameHandler::hasQuestInLog(uint32_t questId) const {
         if (q.questId == questId) return true;
     }
     return false;
+}
+
+std::string GameHandler::guidToUnitId(uint64_t guid) const {
+    if (guid == playerGuid)      return "player";
+    if (guid == targetGuid)      return "target";
+    if (guid == focusGuid)       return "focus";
+    if (guid == petGuid_)        return "pet";
+    return {};
+}
+
+std::string GameHandler::getQuestTitle(uint32_t questId) const {
+    for (const auto& q : questLog_)
+        if (q.questId == questId && !q.title.empty()) return q.title;
+    return {};
+}
+
+const GameHandler::QuestLogEntry* GameHandler::findQuestLogEntry(uint32_t questId) const {
+    for (const auto& q : questLog_)
+        if (q.questId == questId) return &q;
+    return nullptr;
 }
 
 int GameHandler::findQuestLogSlotIndexFromServer(uint32_t questId) const {
@@ -21134,13 +21080,9 @@ void GameHandler::shareQuestWithParty(uint32_t questId) {
     pkt.writeUInt32(questId);
     socket->send(pkt);
     // Local feedback: find quest title
-    for (const auto& q : questLog_) {
-        if (q.questId == questId && !q.title.empty()) {
-            addSystemChatMessage("Sharing quest: " + q.title);
-            return;
-        }
-    }
-    addSystemChatMessage("Quest shared.");
+    auto questTitle = getQuestTitle(questId);
+    addSystemChatMessage(questTitle.empty() ? std::string("Quest shared.")
+                                            : ("Sharing quest: " + questTitle));
 }
 
 void GameHandler::handleQuestRequestItems(network::Packet& packet) {

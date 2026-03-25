@@ -418,14 +418,14 @@ bool RealmListResponseParser::parse(network::Packet& packet, RealmListResponse& 
             realm.patchVersion = packet.readUInt8();
             realm.build = packet.readUInt16();
 
-            LOG_DEBUG("  Realm ", (int)i, " (", realm.name, ") version: ",
-                      (int)realm.majorVersion, ".", (int)realm.minorVersion, ".",
-                      (int)realm.patchVersion, " (", realm.build, ")");
+            LOG_DEBUG("  Realm ", static_cast<int>(i), " (", realm.name, ") version: ",
+                      static_cast<int>(realm.majorVersion), ".", static_cast<int>(realm.minorVersion), ".",
+                      static_cast<int>(realm.patchVersion), " (", realm.build, ")");
         } else {
-            LOG_DEBUG("  Realm ", (int)i, " (", realm.name, ") - no version info");
+            LOG_DEBUG("  Realm ", static_cast<int>(i), " (", realm.name, ") - no version info");
         }
 
-        LOG_DEBUG("  Realm ", (int)i, " details:");
+        LOG_DEBUG("  Realm ", static_cast<int>(i), " details:");
         LOG_DEBUG("    Name: ", realm.name);
         LOG_DEBUG("    Address: ", realm.address);
         LOG_DEBUG("    ID: ", (int)realm.id);

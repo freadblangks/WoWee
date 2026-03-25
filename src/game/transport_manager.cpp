@@ -264,11 +264,11 @@ void TransportManager::updateTransportMovement(ActiveTransport& transport, float
 
     if (transport.hasServerClock) {
         // Predict server time using clock offset (works for both client and server-driven modes)
-        int64_t serverTimeMs = (int64_t)nowMs + transport.serverClockOffsetMs;
-        int64_t mod = (int64_t)path.durationMs;
+        int64_t serverTimeMs = static_cast<int64_t>(nowMs) + transport.serverClockOffsetMs;
+        int64_t mod = static_cast<int64_t>(path.durationMs);
         int64_t wrapped = serverTimeMs % mod;
         if (wrapped < 0) wrapped += mod;
-        pathTimeMs = (uint32_t)wrapped;
+        pathTimeMs = static_cast<uint32_t>(wrapped);
     } else if (transport.useClientAnimation) {
         // Pure local clock (no server sync yet, client-driven)
         uint32_t dtMs = static_cast<uint32_t>(deltaTime * 1000.0f);

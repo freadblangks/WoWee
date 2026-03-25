@@ -2325,17 +2325,6 @@ void TerrainManager::streamTiles() {
     }
 
     if (!tilesToUnload.empty()) {
-        // Don't clean up models during streaming - keep them in VRAM for performance
-        // Modern GPUs have 8-16GB VRAM, models are only ~hundreds of MB
-        // Cleanup can be done manually when memory pressure is detected
-        // NOTE: Disabled permanent model cleanup to leverage modern VRAM capacity
-        // if (m2Renderer) {
-        //     m2Renderer->cleanupUnusedModels();
-        // }
-        // if (wmoRenderer) {
-        //     wmoRenderer->cleanupUnusedModels();
-        // }
-
         LOG_INFO("Unloaded ", tilesToUnload.size(), " distant tiles, ",
                  loadedTiles.size(), " remain (models kept in VRAM)");
     }

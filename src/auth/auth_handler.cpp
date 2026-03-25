@@ -391,10 +391,10 @@ void AuthHandler::handleRealmListResponse(network::Packet& packet) {
         LOG_INFO("  Address: ", realm.address);
         LOG_INFO("  ID: ", (int)realm.id);
         LOG_INFO("  Population: ", realm.population);
-        LOG_INFO("  Characters: ", (int)realm.characters);
+        LOG_INFO("  Characters: ", static_cast<int>(realm.characters));
         if (realm.hasVersionInfo()) {
-            LOG_INFO("  Version: ", (int)realm.majorVersion, ".",
-                     (int)realm.minorVersion, ".", (int)realm.patchVersion,
+            LOG_INFO("  Version: ", static_cast<int>(realm.majorVersion), ".",
+                     static_cast<int>(realm.minorVersion), ".", static_cast<int>(realm.patchVersion),
                      " (build ", realm.build, ")");
         }
     }

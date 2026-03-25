@@ -22035,7 +22035,7 @@ void GameHandler::closeTrainer() {
     trainerTabs_.clear();
 }
 
-void GameHandler::loadSpellNameCache() {
+void GameHandler::loadSpellNameCache() const {
     if (spellNameCacheLoaded_) return;
     spellNameCacheLoaded_ = true;
 
@@ -22388,13 +22388,13 @@ void GameHandler::loadTalentDbc() {
 static const std::string EMPTY_STRING;
 
 const int32_t* GameHandler::getSpellEffectBasePoints(uint32_t spellId) const {
-    const_cast<GameHandler*>(this)->loadSpellNameCache();
+    loadSpellNameCache();
     auto it = spellNameCache_.find(spellId);
     return (it != spellNameCache_.end()) ? it->second.effectBasePoints : nullptr;
 }
 
 float GameHandler::getSpellDuration(uint32_t spellId) const {
-    const_cast<GameHandler*>(this)->loadSpellNameCache();
+    loadSpellNameCache();
     auto it = spellNameCache_.find(spellId);
     return (it != spellNameCache_.end()) ? it->second.durationSec : 0.0f;
 }
@@ -22410,7 +22410,7 @@ const std::string& GameHandler::getSpellRank(uint32_t spellId) const {
 }
 
 const std::string& GameHandler::getSpellDescription(uint32_t spellId) const {
-    const_cast<GameHandler*>(this)->loadSpellNameCache();
+    loadSpellNameCache();
     auto it = spellNameCache_.find(spellId);
     return (it != spellNameCache_.end()) ? it->second.description : EMPTY_STRING;
 }
@@ -22431,14 +22431,14 @@ std::string GameHandler::getEnchantName(uint32_t enchantId) const {
 }
 
 uint8_t GameHandler::getSpellDispelType(uint32_t spellId) const {
-    const_cast<GameHandler*>(this)->loadSpellNameCache();
+    loadSpellNameCache();
     auto it = spellNameCache_.find(spellId);
     return (it != spellNameCache_.end()) ? it->second.dispelType : 0;
 }
 
 bool GameHandler::isSpellInterruptible(uint32_t spellId) const {
     if (spellId == 0) return true;
-    const_cast<GameHandler*>(this)->loadSpellNameCache();
+    loadSpellNameCache();
     auto it = spellNameCache_.find(spellId);
     if (it == spellNameCache_.end()) return true;  // assume interruptible if unknown
     // SPELL_ATTR_EX_NOT_INTERRUPTIBLE = bit 4 of AttributesEx (0x00000010)
@@ -22447,7 +22447,7 @@ bool GameHandler::isSpellInterruptible(uint32_t spellId) const {
 
 uint32_t GameHandler::getSpellSchoolMask(uint32_t spellId) const {
     if (spellId == 0) return 0;
-    const_cast<GameHandler*>(this)->loadSpellNameCache();
+    loadSpellNameCache();
     auto it = spellNameCache_.find(spellId);
     return (it != spellNameCache_.end()) ? it->second.schoolMask : 0;
 }
@@ -25596,7 +25596,7 @@ void GameHandler::sendLootRoll(uint64_t objectGuid, uint32_t slot, uint8_t rollT
 //   PackedTime date      — uint32 bitfield (seconds since epoch)
 //   uint32 realmFirst    — how many on realm also got it (0 = realm first)
 // ---------------------------------------------------------------------------
-void GameHandler::loadTitleNameCache() {
+void GameHandler::loadTitleNameCache() const {
     if (titleNameCacheLoaded_) return;
     titleNameCacheLoaded_ = true;
 
@@ -25624,7 +25624,7 @@ void GameHandler::loadTitleNameCache() {
 }
 
 std::string GameHandler::getFormattedTitle(uint32_t bit) const {
-    const_cast<GameHandler*>(this)->loadTitleNameCache();
+    loadTitleNameCache();
     auto it = titleNameCache_.find(bit);
     if (it == titleNameCache_.end() || it->second.empty()) return {};
 
@@ -25840,7 +25840,7 @@ void GameHandler::handleRespondInspectAchievements(network::Packet& packet) {
 // Faction name cache (lazily loaded from Faction.dbc)
 // ---------------------------------------------------------------------------
 
-void GameHandler::loadFactionNameCache() {
+void GameHandler::loadFactionNameCache() const {
     if (factionNameCacheLoaded_) return;
     factionNameCacheLoaded_ = true;
 
@@ -25897,13 +25897,13 @@ void GameHandler::loadFactionNameCache() {
 }
 
 uint32_t GameHandler::getFactionIdByRepListId(uint32_t repListId) const {
-    const_cast<GameHandler*>(this)->loadFactionNameCache();
+    loadFactionNameCache();
     auto it = factionRepListToId_.find(repListId);
     return (it != factionRepListToId_.end()) ? it->second : 0u;
 }
 
 uint32_t GameHandler::getRepListIdByFactionId(uint32_t factionId) const {
-    const_cast<GameHandler*>(this)->loadFactionNameCache();
+    loadFactionNameCache();
     auto it = factionIdToRepList_.find(factionId);
     return (it != factionIdToRepList_.end()) ? it->second : 0xFFFFFFFFu;
 }
@@ -25930,7 +25930,7 @@ std::string GameHandler::getFactionName(uint32_t factionId) const {
 }
 
 const std::string& GameHandler::getFactionNamePublic(uint32_t factionId) const {
-    const_cast<GameHandler*>(this)->loadFactionNameCache();
+    loadFactionNameCache();
     auto it = factionNameCache_.find(factionId);
     if (it != factionNameCache_.end()) return it->second;
     static const std::string empty;
@@ -25941,7 +25941,7 @@ const std::string& GameHandler::getFactionNamePublic(uint32_t factionId) const {
 // Area name cache (lazy-loaded from WorldMapArea.dbc)
 // ---------------------------------------------------------------------------
 
-void GameHandler::loadAreaNameCache() {
+void GameHandler::loadAreaNameCache() const {
     if (areaNameCacheLoaded_) return;
     areaNameCacheLoaded_ = true;
 
@@ -25971,12 +25971,12 @@ void GameHandler::loadAreaNameCache() {
 
 std::string GameHandler::getAreaName(uint32_t areaId) const {
     if (areaId == 0) return {};
-    const_cast<GameHandler*>(this)->loadAreaNameCache();
+    loadAreaNameCache();
     auto it = areaNameCache_.find(areaId);
     return (it != areaNameCache_.end()) ? it->second : std::string{};
 }
 
-void GameHandler::loadMapNameCache() {
+void GameHandler::loadMapNameCache() const {
     if (mapNameCacheLoaded_) return;
     mapNameCacheLoaded_ = true;
 
@@ -26000,7 +26000,7 @@ void GameHandler::loadMapNameCache() {
 
 std::string GameHandler::getMapName(uint32_t mapId) const {
     if (mapId == 0) return {};
-    const_cast<GameHandler*>(this)->loadMapNameCache();
+    loadMapNameCache();
     auto it = mapNameCache_.find(mapId);
     return (it != mapNameCache_.end()) ? it->second : std::string{};
 }
@@ -26009,7 +26009,7 @@ std::string GameHandler::getMapName(uint32_t mapId) const {
 // LFG dungeon name cache (WotLK: LFGDungeons.dbc)
 // ---------------------------------------------------------------------------
 
-void GameHandler::loadLfgDungeonDbc() {
+void GameHandler::loadLfgDungeonDbc() const {
     if (lfgDungeonNameCacheLoaded_) return;
     lfgDungeonNameCacheLoaded_ = true;
 
@@ -26036,7 +26036,7 @@ void GameHandler::loadLfgDungeonDbc() {
 
 std::string GameHandler::getLfgDungeonName(uint32_t dungeonId) const {
     if (dungeonId == 0) return {};
-    const_cast<GameHandler*>(this)->loadLfgDungeonDbc();
+    loadLfgDungeonDbc();
     auto it = lfgDungeonNameCache_.find(dungeonId);
     return (it != lfgDungeonNameCache_.end()) ? it->second : std::string{};
 }

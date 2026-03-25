@@ -3056,13 +3056,13 @@ private:
     // Faction standings (factionId → absolute standing value)
     std::unordered_map<uint32_t, int32_t> factionStandings_;
     // Faction name cache (factionId → name), populated lazily from Faction.dbc
-    std::unordered_map<uint32_t, std::string> factionNameCache_;
+    mutable std::unordered_map<uint32_t, std::string> factionNameCache_;
     // repListId → factionId mapping (populated with factionNameCache)
-    std::unordered_map<uint32_t, uint32_t> factionRepListToId_;
+    mutable std::unordered_map<uint32_t, uint32_t> factionRepListToId_;
     // factionId → repListId reverse mapping
-    std::unordered_map<uint32_t, uint32_t> factionIdToRepList_;
-    bool factionNameCacheLoaded_ = false;
-    void loadFactionNameCache();
+    mutable std::unordered_map<uint32_t, uint32_t> factionIdToRepList_;
+    mutable bool factionNameCacheLoaded_ = false;
+    void loadFactionNameCache() const;
     std::string getFactionName(uint32_t factionId) const;
 
     // ---- Phase 4: Group ----
@@ -3342,14 +3342,14 @@ private:
         int32_t effectBasePoints[3] = {0, 0, 0};
         float durationSec = 0.0f; // resolved from DurationIndex → SpellDuration.dbc
     };
-    std::unordered_map<uint32_t, SpellNameEntry> spellNameCache_;
-    bool spellNameCacheLoaded_ = false;
+    mutable std::unordered_map<uint32_t, SpellNameEntry> spellNameCache_;
+    mutable bool spellNameCacheLoaded_ = false;
 
     // Title cache: maps titleBit → title string (lazy-loaded from CharTitles.dbc)
     // The strings use "%s" as a player-name placeholder (e.g. "Commander %s", "%s the Explorer").
-    std::unordered_map<uint32_t, std::string> titleNameCache_;
-    bool titleNameCacheLoaded_ = false;
-    void loadTitleNameCache();
+    mutable std::unordered_map<uint32_t, std::string> titleNameCache_;
+    mutable bool titleNameCacheLoaded_ = false;
+    void loadTitleNameCache() const;
     // Set of title bit-indices known to the player (from SMSG_TITLE_EARNED).
     std::unordered_set<uint32_t> knownTitleBits_;
     // Currently selected title bit, or -1 for no title. Updated from PLAYER_CHOSEN_TITLE.
@@ -3375,24 +3375,24 @@ private:
     void handleRespondInspectAchievements(network::Packet& packet);
 
     // Area name cache (lazy-loaded from WorldMapArea.dbc; maps AreaTable ID → display name)
-    std::unordered_map<uint32_t, std::string> areaNameCache_;
-    bool areaNameCacheLoaded_ = false;
-    void loadAreaNameCache();
+    mutable std::unordered_map<uint32_t, std::string> areaNameCache_;
+    mutable bool areaNameCacheLoaded_ = false;
+    void loadAreaNameCache() const;
     std::string getAreaName(uint32_t areaId) const;
 
     // Map name cache (lazy-loaded from Map.dbc; maps mapId → localized display name)
-    std::unordered_map<uint32_t, std::string> mapNameCache_;
-    bool mapNameCacheLoaded_ = false;
-    void loadMapNameCache();
+    mutable std::unordered_map<uint32_t, std::string> mapNameCache_;
+    mutable bool mapNameCacheLoaded_ = false;
+    void loadMapNameCache() const;
 
     // LFG dungeon name cache (lazy-loaded from LFGDungeons.dbc; WotLK only)
-    std::unordered_map<uint32_t, std::string> lfgDungeonNameCache_;
-    bool lfgDungeonNameCacheLoaded_ = false;
-    void loadLfgDungeonDbc();
+    mutable std::unordered_map<uint32_t, std::string> lfgDungeonNameCache_;
+    mutable bool lfgDungeonNameCacheLoaded_ = false;
+    void loadLfgDungeonDbc() const;
     std::string getLfgDungeonName(uint32_t dungeonId) const;
     std::vector<TrainerTab> trainerTabs_;
     void handleTrainerList(network::Packet& packet);
-    void loadSpellNameCache();
+    void loadSpellNameCache() const;
     void categorizeTrainerSpells();
 
     // Callbacks

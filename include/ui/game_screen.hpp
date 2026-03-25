@@ -385,6 +385,8 @@ private:
     void renderSettingsAudioTab();
     void renderSettingsChatTab();
     void renderSettingsAboutTab();
+    void renderSettingsGameplayTab();
+    void renderSettingsControlsTab();
     void applyGraphicsPreset(GraphicsPreset preset);
     void updateGraphicsPresetFromCurrentSettings();
     void renderQuestMarkers(game::GameHandler& gameHandler);

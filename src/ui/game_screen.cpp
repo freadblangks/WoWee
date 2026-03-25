@@ -18203,6 +18203,269 @@ void GameScreen::renderPetUnlearnConfirmDialog(game::GameHandler& gameHandler) {
 // Settings Window
 // ============================================================
 
+void GameScreen::renderSettingsGameplayTab() {
+    auto* renderer = core::Application::getInstance().getRenderer();
+ImGui::Spacing();
+
+ImGui::Text("Controls");
+ImGui::Separator();
+if (ImGui::SliderFloat("Mouse Sensitivity", &pendingMouseSensitivity, 0.05f, 1.0f, "%.2f")) {
+    if (renderer) {
+        if (auto* cameraController = renderer->getCameraController()) {
+            cameraController->setMouseSensitivity(pendingMouseSensitivity);
+        }
+    }
+    saveSettings();
+}
+if (ImGui::Checkbox("Invert Mouse", &pendingInvertMouse)) {
+    if (renderer) {
+        if (auto* cameraController = renderer->getCameraController()) {
+            cameraController->setInvertMouse(pendingInvertMouse);
+        }
+    }
+    saveSettings();
+}
+if (ImGui::Checkbox("Extended Camera Zoom", &pendingExtendedZoom)) {
+    if (renderer) {
+        if (auto* cameraController = renderer->getCameraController()) {
+            cameraController->setExtendedZoom(pendingExtendedZoom);
+        }
+    }
+    saveSettings();
+}
+if (ImGui::IsItemHovered())
+    ImGui::SetTooltip("Allow the camera to zoom out further than normal");
+
+if (ImGui::SliderFloat("Field of View", &pendingFov, 45.0f, 110.0f, "%.0f°")) {
+    if (renderer) {
+        if (auto* camera = renderer->getCamera()) {
+            camera->setFov(pendingFov);
+        }
+    }
+    saveSettings();
+}
+if (ImGui::IsItemHovered())
+    ImGui::SetTooltip("Camera field of view in degrees (default: 70)");
+
+ImGui::Spacing();
+ImGui::Spacing();
+
+ImGui::Text("Interface");
+ImGui::Separator();
+if (ImGui::SliderInt("UI Opacity", &pendingUiOpacity, 20, 100, "%d%%")) {
+    uiOpacity_ = static_cast<float>(pendingUiOpacity) / 100.0f;
+    saveSettings();
+}
+if (ImGui::Checkbox("Rotate Minimap", &pendingMinimapRotate)) {
+    // Force north-up minimap.
+    minimapRotate_ = false;
+    pendingMinimapRotate = false;
+    if (renderer) {
+        if (auto* minimap = renderer->getMinimap()) {
+            minimap->setRotateWithCamera(false);
+        }
+    }
+    saveSettings();
+}
+if (ImGui::Checkbox("Square Minimap", &pendingMinimapSquare)) {
+    minimapSquare_ = pendingMinimapSquare;
+    if (renderer) {
+        if (auto* minimap = renderer->getMinimap()) {
+            minimap->setSquareShape(minimapSquare_);
+        }
+    }
+    saveSettings();
+}
+if (ImGui::Checkbox("Show Nearby NPC Dots", &pendingMinimapNpcDots)) {
+    minimapNpcDots_ = pendingMinimapNpcDots;
+    saveSettings();
+}
+// Zoom controls
+ImGui::Text("Minimap Zoom:");
+ImGui::SameLine();
+if (ImGui::Button("  -  ")) {
+    if (renderer) {
+        if (auto* minimap = renderer->getMinimap()) {
+            minimap->zoomOut();
+            saveSettings();
+        }
+    }
+}
+ImGui::SameLine();
+if (ImGui::Button("  +  ")) {
+    if (renderer) {
+        if (auto* minimap = renderer->getMinimap()) {
+            minimap->zoomIn();
+            saveSettings();
+        }
+    }
+}
+
+ImGui::Spacing();
+ImGui::Text("Loot");
+ImGui::Separator();
+if (ImGui::Checkbox("Auto Loot", &pendingAutoLoot)) {
+    saveSettings();  // per-frame sync applies pendingAutoLoot to gameHandler
+}
+if (ImGui::IsItemHovered())
+    ImGui::SetTooltip("Automatically pick up all items when looting");
+if (ImGui::Checkbox("Auto Sell Greys", &pendingAutoSellGrey)) {
+    saveSettings();
+}
+if (ImGui::IsItemHovered())
+    ImGui::SetTooltip("Automatically sell all grey (poor quality) items when opening a vendor");
+if (ImGui::Checkbox("Auto Repair", &pendingAutoRepair)) {
+    saveSettings();
+}
+if (ImGui::IsItemHovered())
+    ImGui::SetTooltip("Automatically repair all damaged equipment when opening an armorer vendor");
+
+ImGui::Spacing();
+ImGui::Text("Bags");
+ImGui::Separator();
+if (ImGui::Checkbox("Separate Bag Windows", &pendingSeparateBags)) {
+    inventoryScreen.setSeparateBags(pendingSeparateBags);
+    saveSettings();
+}
+if (ImGui::Checkbox("Show Key Ring", &pendingShowKeyring)) {
+    inventoryScreen.setShowKeyring(pendingShowKeyring);
+    saveSettings();
+}
+
+ImGui::Spacing();
+ImGui::Separator();
+ImGui::Spacing();
+
+if (ImGui::Button("Restore Gameplay Defaults", ImVec2(-1, 0))) {
+    pendingMouseSensitivity = 0.2f;
+    pendingInvertMouse = false;
+    pendingExtendedZoom = false;
+    pendingUiOpacity = 65;
+    pendingMinimapRotate = false;
+    pendingMinimapSquare = false;
+    pendingMinimapNpcDots = false;
+    pendingSeparateBags = true;
+    inventoryScreen.setSeparateBags(true);
+    pendingShowKeyring = true;
+    inventoryScreen.setShowKeyring(true);
+    uiOpacity_ = 0.65f;
+    minimapRotate_ = false;
+    minimapSquare_ = false;
+    minimapNpcDots_ = false;
+    if (renderer) {
+        if (auto* cameraController = renderer->getCameraController()) {
+            cameraController->setMouseSensitivity(pendingMouseSensitivity);
+            cameraController->setInvertMouse(pendingInvertMouse);
+            cameraController->setExtendedZoom(pendingExtendedZoom);
+        }
+        if (auto* minimap = renderer->getMinimap()) {
+            minimap->setRotateWithCamera(minimapRotate_);
+            minimap->setSquareShape(minimapSquare_);
+        }
+    }
+    saveSettings();
+}
+
+}
+
+void GameScreen::renderSettingsControlsTab() {
+ImGui::Spacing();
+
+ImGui::Text("Keybindings");
+ImGui::Separator();
+
+auto& km = ui::KeybindingManager::getInstance();
+int numActions = km.getActionCount();
+
+for (int i = 0; i < numActions; ++i) {
+    auto action = static_cast<ui::KeybindingManager::Action>(i);
+    const char* actionName = km.getActionName(action);
+    ImGuiKey currentKey = km.getKeyForAction(action);
+
+    // Display current binding
+    ImGui::Text("%s:", actionName);
+    ImGui::SameLine(200);
+
+    // Get human-readable key name (basic implementation)
+    const char* keyName = "Unknown";
+    if (currentKey >= ImGuiKey_A && currentKey <= ImGuiKey_Z) {
+        static char keyBuf[16];
+        snprintf(keyBuf, sizeof(keyBuf), "%c", 'A' + (currentKey - ImGuiKey_A));
+        keyName = keyBuf;
+    } else if (currentKey >= ImGuiKey_0 && currentKey <= ImGuiKey_9) {
+        static char keyBuf[16];
+        snprintf(keyBuf, sizeof(keyBuf), "%c", '0' + (currentKey - ImGuiKey_0));
+        keyName = keyBuf;
+    } else if (currentKey == ImGuiKey_Escape) {
+        keyName = "Escape";
+    } else if (currentKey == ImGuiKey_Enter) {
+        keyName = "Enter";
+    } else if (currentKey == ImGuiKey_Tab) {
+        keyName = "Tab";
+    } else if (currentKey == ImGuiKey_Space) {
+        keyName = "Space";
+    } else if (currentKey >= ImGuiKey_F1 && currentKey <= ImGuiKey_F12) {
+        static char keyBuf[16];
+        snprintf(keyBuf, sizeof(keyBuf), "F%d", 1 + (currentKey - ImGuiKey_F1));
+        keyName = keyBuf;
+    }
+
+    ImGui::Text("[%s]", keyName);
+
+    // Rebind button
+    ImGui::SameLine(350);
+    if (ImGui::Button(awaitingKeyPress && pendingRebindAction == i ? "Waiting..." : "Rebind", ImVec2(100, 0))) {
+        pendingRebindAction = i;
+        awaitingKeyPress = true;
+    }
+}
+
+// Handle key press during rebinding
+if (awaitingKeyPress && pendingRebindAction >= 0) {
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Text("Press any key to bind to this action (Esc to cancel)...");
+
+    // Check for any key press
+    bool foundKey = false;
+    ImGuiKey newKey = ImGuiKey_None;
+    for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_NamedKey_END; ++k) {
+        if (ImGui::IsKeyPressed(static_cast<ImGuiKey>(k), false)) {
+            if (k == ImGuiKey_Escape) {
+                // Cancel rebinding
+                awaitingKeyPress = false;
+                pendingRebindAction = -1;
+                foundKey = true;
+                break;
+            }
+            newKey = static_cast<ImGuiKey>(k);
+            foundKey = true;
+            break;
+        }
+    }
+
+    if (foundKey && newKey != ImGuiKey_None) {
+        auto action = static_cast<ui::KeybindingManager::Action>(pendingRebindAction);
+        km.setKeyForAction(action, newKey);
+        awaitingKeyPress = false;
+        pendingRebindAction = -1;
+        saveSettings();
+    }
+}
+
+ImGui::Spacing();
+ImGui::Separator();
+ImGui::Spacing();
+
+if (ImGui::Button("Reset to Defaults", ImVec2(-1, 0))) {
+    km.resetToDefaults();
+    awaitingKeyPress = false;
+    pendingRebindAction = -1;
+    saveSettings();
+}
+
+}
+
 void GameScreen::renderSettingsAudioTab() {
     auto* renderer = core::Application::getInstance().getRenderer();
 ImGui::Spacing();
@@ -18934,167 +19197,7 @@ void GameScreen::renderSettingsWindow() {
             // GAMEPLAY TAB
             // ============================================================
             if (ImGui::BeginTabItem("Gameplay")) {
-                ImGui::Spacing();
-
-                ImGui::Text("Controls");
-                ImGui::Separator();
-                if (ImGui::SliderFloat("Mouse Sensitivity", &pendingMouseSensitivity, 0.05f, 1.0f, "%.2f")) {
-                    if (renderer) {
-                        if (auto* cameraController = renderer->getCameraController()) {
-                            cameraController->setMouseSensitivity(pendingMouseSensitivity);
-                        }
-                    }
-                    saveSettings();
-                }
-                if (ImGui::Checkbox("Invert Mouse", &pendingInvertMouse)) {
-                    if (renderer) {
-                        if (auto* cameraController = renderer->getCameraController()) {
-                            cameraController->setInvertMouse(pendingInvertMouse);
-                        }
-                    }
-                    saveSettings();
-                }
-                if (ImGui::Checkbox("Extended Camera Zoom", &pendingExtendedZoom)) {
-                    if (renderer) {
-                        if (auto* cameraController = renderer->getCameraController()) {
-                            cameraController->setExtendedZoom(pendingExtendedZoom);
-                        }
-                    }
-                    saveSettings();
-                }
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("Allow the camera to zoom out further than normal");
-
-                if (ImGui::SliderFloat("Field of View", &pendingFov, 45.0f, 110.0f, "%.0f°")) {
-                    if (renderer) {
-                        if (auto* camera = renderer->getCamera()) {
-                            camera->setFov(pendingFov);
-                        }
-                    }
-                    saveSettings();
-                }
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("Camera field of view in degrees (default: 70)");
-
-                ImGui::Spacing();
-                ImGui::Spacing();
-
-                ImGui::Text("Interface");
-                ImGui::Separator();
-                if (ImGui::SliderInt("UI Opacity", &pendingUiOpacity, 20, 100, "%d%%")) {
-                    uiOpacity_ = static_cast<float>(pendingUiOpacity) / 100.0f;
-                    saveSettings();
-                }
-                if (ImGui::Checkbox("Rotate Minimap", &pendingMinimapRotate)) {
-                    // Force north-up minimap.
-                    minimapRotate_ = false;
-                    pendingMinimapRotate = false;
-                    if (renderer) {
-                        if (auto* minimap = renderer->getMinimap()) {
-                            minimap->setRotateWithCamera(false);
-                        }
-                    }
-                    saveSettings();
-                }
-                if (ImGui::Checkbox("Square Minimap", &pendingMinimapSquare)) {
-                    minimapSquare_ = pendingMinimapSquare;
-                    if (renderer) {
-                        if (auto* minimap = renderer->getMinimap()) {
-                            minimap->setSquareShape(minimapSquare_);
-                        }
-                    }
-                    saveSettings();
-                }
-                if (ImGui::Checkbox("Show Nearby NPC Dots", &pendingMinimapNpcDots)) {
-                    minimapNpcDots_ = pendingMinimapNpcDots;
-                    saveSettings();
-                }
-                // Zoom controls
-                ImGui::Text("Minimap Zoom:");
-                ImGui::SameLine();
-                if (ImGui::Button("  -  ")) {
-                    if (renderer) {
-                        if (auto* minimap = renderer->getMinimap()) {
-                            minimap->zoomOut();
-                            saveSettings();
-                        }
-                    }
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("  +  ")) {
-                    if (renderer) {
-                        if (auto* minimap = renderer->getMinimap()) {
-                            minimap->zoomIn();
-                            saveSettings();
-                        }
-                    }
-                }
-
-                ImGui::Spacing();
-                ImGui::Text("Loot");
-                ImGui::Separator();
-                if (ImGui::Checkbox("Auto Loot", &pendingAutoLoot)) {
-                    saveSettings();  // per-frame sync applies pendingAutoLoot to gameHandler
-                }
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("Automatically pick up all items when looting");
-                if (ImGui::Checkbox("Auto Sell Greys", &pendingAutoSellGrey)) {
-                    saveSettings();
-                }
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("Automatically sell all grey (poor quality) items when opening a vendor");
-                if (ImGui::Checkbox("Auto Repair", &pendingAutoRepair)) {
-                    saveSettings();
-                }
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("Automatically repair all damaged equipment when opening an armorer vendor");
-
-                ImGui::Spacing();
-                ImGui::Text("Bags");
-                ImGui::Separator();
-                if (ImGui::Checkbox("Separate Bag Windows", &pendingSeparateBags)) {
-                    inventoryScreen.setSeparateBags(pendingSeparateBags);
-                    saveSettings();
-                }
-                if (ImGui::Checkbox("Show Key Ring", &pendingShowKeyring)) {
-                    inventoryScreen.setShowKeyring(pendingShowKeyring);
-                    saveSettings();
-                }
-
-                ImGui::Spacing();
-                ImGui::Separator();
-                ImGui::Spacing();
-
-                if (ImGui::Button("Restore Gameplay Defaults", ImVec2(-1, 0))) {
-                    pendingMouseSensitivity = kDefaultMouseSensitivity;
-                    pendingInvertMouse = kDefaultInvertMouse;
-                    pendingExtendedZoom = false;
-                    pendingUiOpacity = 65;
-                    pendingMinimapRotate = false;
-                    pendingMinimapSquare = false;
-                    pendingMinimapNpcDots = false;
-                    pendingSeparateBags = true;
-                    inventoryScreen.setSeparateBags(true);
-                    pendingShowKeyring = true;
-                    inventoryScreen.setShowKeyring(true);
-                    uiOpacity_ = 0.65f;
-                    minimapRotate_ = false;
-                    minimapSquare_ = false;
-                    minimapNpcDots_ = false;
-                    if (renderer) {
-                        if (auto* cameraController = renderer->getCameraController()) {
-                            cameraController->setMouseSensitivity(pendingMouseSensitivity);
-                            cameraController->setInvertMouse(pendingInvertMouse);
-                            cameraController->setExtendedZoom(pendingExtendedZoom);
-                        }
-                        if (auto* minimap = renderer->getMinimap()) {
-                            minimap->setRotateWithCamera(minimapRotate_);
-                            minimap->setSquareShape(minimapSquare_);
-                        }
-                    }
-                    saveSettings();
-                }
-
+                renderSettingsGameplayTab();
                 ImGui::EndTabItem();
             }
 
@@ -19102,101 +19205,7 @@ void GameScreen::renderSettingsWindow() {
             // CONTROLS TAB
             // ============================================================
             if (ImGui::BeginTabItem("Controls")) {
-                ImGui::Spacing();
-
-                ImGui::Text("Keybindings");
-                ImGui::Separator();
-
-                auto& km = ui::KeybindingManager::getInstance();
-                int numActions = km.getActionCount();
-
-                for (int i = 0; i < numActions; ++i) {
-                    auto action = static_cast<ui::KeybindingManager::Action>(i);
-                    const char* actionName = km.getActionName(action);
-                    ImGuiKey currentKey = km.getKeyForAction(action);
-
-                    // Display current binding
-                    ImGui::Text("%s:", actionName);
-                    ImGui::SameLine(200);
-
-                    // Get human-readable key name (basic implementation)
-                    const char* keyName = "Unknown";
-                    if (currentKey >= ImGuiKey_A && currentKey <= ImGuiKey_Z) {
-                        static char keyBuf[16];
-                        snprintf(keyBuf, sizeof(keyBuf), "%c", 'A' + (currentKey - ImGuiKey_A));
-                        keyName = keyBuf;
-                    } else if (currentKey >= ImGuiKey_0 && currentKey <= ImGuiKey_9) {
-                        static char keyBuf[16];
-                        snprintf(keyBuf, sizeof(keyBuf), "%c", '0' + (currentKey - ImGuiKey_0));
-                        keyName = keyBuf;
-                    } else if (currentKey == ImGuiKey_Escape) {
-                        keyName = "Escape";
-                    } else if (currentKey == ImGuiKey_Enter) {
-                        keyName = "Enter";
-                    } else if (currentKey == ImGuiKey_Tab) {
-                        keyName = "Tab";
-                    } else if (currentKey == ImGuiKey_Space) {
-                        keyName = "Space";
-                    } else if (currentKey >= ImGuiKey_F1 && currentKey <= ImGuiKey_F12) {
-                        static char keyBuf[16];
-                        snprintf(keyBuf, sizeof(keyBuf), "F%d", 1 + (currentKey - ImGuiKey_F1));
-                        keyName = keyBuf;
-                    }
-
-                    ImGui::Text("[%s]", keyName);
-
-                    // Rebind button
-                    ImGui::SameLine(350);
-                    if (ImGui::Button(awaitingKeyPress && pendingRebindAction == i ? "Waiting..." : "Rebind", ImVec2(100, 0))) {
-                        pendingRebindAction = i;
-                        awaitingKeyPress = true;
-                    }
-                }
-
-                // Handle key press during rebinding
-                if (awaitingKeyPress && pendingRebindAction >= 0) {
-                    ImGui::Spacing();
-                    ImGui::Separator();
-                    ImGui::Text("Press any key to bind to this action (Esc to cancel)...");
-
-                    // Check for any key press
-                    bool foundKey = false;
-                    ImGuiKey newKey = ImGuiKey_None;
-                    for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_NamedKey_END; ++k) {
-                        if (ImGui::IsKeyPressed(static_cast<ImGuiKey>(k), false)) {
-                            if (k == ImGuiKey_Escape) {
-                                // Cancel rebinding
-                                awaitingKeyPress = false;
-                                pendingRebindAction = -1;
-                                foundKey = true;
-                                break;
-                            }
-                            newKey = static_cast<ImGuiKey>(k);
-                            foundKey = true;
-                            break;
-                        }
-                    }
-
-                    if (foundKey && newKey != ImGuiKey_None) {
-                        auto action = static_cast<ui::KeybindingManager::Action>(pendingRebindAction);
-                        km.setKeyForAction(action, newKey);
-                        awaitingKeyPress = false;
-                        pendingRebindAction = -1;
-                        saveSettings();
-                    }
-                }
-
-                ImGui::Spacing();
-                ImGui::Separator();
-                ImGui::Spacing();
-
-                if (ImGui::Button("Reset to Defaults", ImVec2(-1, 0))) {
-                    km.resetToDefaults();
-                    awaitingKeyPress = false;
-                    pendingRebindAction = -1;
-                    saveSettings();
-                }
-
+                renderSettingsControlsTab();
                 ImGui::EndTabItem();
             }
 

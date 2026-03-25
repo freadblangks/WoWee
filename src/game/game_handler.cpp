@@ -928,36 +928,7 @@ void GameHandler::updateNetworking(float deltaTime) {
     }
 }
 
-void GameHandler::update(float deltaTime) {
-    // Fire deferred char-create callback (outside ImGui render)
-    if (pendingCharCreateResult_) {
-        pendingCharCreateResult_ = false;
-        if (charCreateCallback_) {
-            charCreateCallback_(pendingCharCreateSuccess_, pendingCharCreateMsg_);
-        }
-    }
-
-    if (!socket) {
-        return;
-    }
-
-    updateNetworking(deltaTime);
-    if (!socket) return;  // disconnect() may have been called
-
-    // Validate target still exists
-    if (targetGuid != 0 && !entityManager.hasEntity(targetGuid)) {
-        clearTarget();
-    }
-
-    // Detect combat state transitions → fire PLAYER_REGEN_DISABLED / PLAYER_REGEN_ENABLED
-    {
-        bool combatNow = isInCombat();
-        if (combatNow != wasCombat_) {
-            wasCombat_ = combatNow;
-                fireAddonEvent(combatNow ? "PLAYER_REGEN_DISABLED" : "PLAYER_REGEN_ENABLED", {});
-        }
-    }
-
+void GameHandler::updateTimers(float deltaTime) {
     if (auctionSearchDelayTimer_ > 0.0f) {
         auctionSearchDelayTimer_ -= deltaTime;
         if (auctionSearchDelayTimer_ < 0.0f) auctionSearchDelayTimer_ = 0.0f;
@@ -1122,6 +1093,40 @@ void GameHandler::update(float deltaTime) {
             LOG_DEBUG("Sent CMSG_INSPECT for player 0x", std::hex, guid, std::dec);
         }
     }
+}
+
+void GameHandler::update(float deltaTime) {
+    // Fire deferred char-create callback (outside ImGui render)
+    if (pendingCharCreateResult_) {
+        pendingCharCreateResult_ = false;
+        if (charCreateCallback_) {
+            charCreateCallback_(pendingCharCreateSuccess_, pendingCharCreateMsg_);
+        }
+    }
+
+    if (!socket) {
+        return;
+    }
+
+    updateNetworking(deltaTime);
+    if (!socket) return;  // disconnect() may have been called
+
+    // Validate target still exists
+    if (targetGuid != 0 && !entityManager.hasEntity(targetGuid)) {
+        clearTarget();
+    }
+
+    // Detect combat state transitions → fire PLAYER_REGEN_DISABLED / PLAYER_REGEN_ENABLED
+    {
+        bool combatNow = isInCombat();
+        if (combatNow != wasCombat_) {
+            wasCombat_ = combatNow;
+                fireAddonEvent(combatNow ? "PLAYER_REGEN_DISABLED" : "PLAYER_REGEN_ENABLED", {});
+        }
+    }
+
+    updateTimers(deltaTime);
+
 
     // Send periodic heartbeat if in world
     if (state == WorldState::IN_WORLD) {

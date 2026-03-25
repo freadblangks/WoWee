@@ -942,9 +942,7 @@ void GameHandler::update(float deltaTime) {
         bool combatNow = isInCombat();
         if (combatNow != wasCombat_) {
             wasCombat_ = combatNow;
-            if (addonEventCallback_) {
                 fireAddonEvent(combatNow ? "PLAYER_REGEN_DISABLED" : "PLAYER_REGEN_ENABLED", {});
-            }
         }
     }
 
@@ -1720,10 +1718,8 @@ void GameHandler::registerOpcodeHandlers() {
                     pendingItemPushNotifs_.push_back({itemId, count});
                 }
             }
-            if (addonEventCallback_) {
                 fireAddonEvent("BAG_UPDATE", {});
                 fireAddonEvent("UNIT_INVENTORY_CHANGED", {"player"});
-            }
             LOG_INFO("Item push: itemId=", itemId, " count=", count, " showInChat=", static_cast<int>(showInChat));
         }
     };
@@ -1949,10 +1945,8 @@ void GameHandler::registerOpcodeHandlers() {
                                             : ("Spell cast failed (error " + std::to_string(castResult) + ")");
                 addUIError(errMsg);
                 if (spellCastFailedCallback_) spellCastFailedCallback_(castResultSpellId);
-                if (addonEventCallback_) {
                     fireAddonEvent("UNIT_SPELLCAST_FAILED", {"player", std::to_string(castResultSpellId)});
                     fireAddonEvent("UNIT_SPELLCAST_STOP",   {"player", std::to_string(castResultSpellId)});
-                }
                 MessageChatData msg;
                 msg.type     = ChatType::SYSTEM;
                 msg.language = ChatLanguage::UNIVERSAL;
@@ -2692,10 +2686,8 @@ void GameHandler::registerOpcodeHandlers() {
         partyData.leaderGuid = 0;
         addUIError("Your party has been disbanded.");
         addSystemChatMessage("Your party has been disbanded.");
-        if (addonEventCallback_) {
             fireAddonEvent("GROUP_ROSTER_UPDATE", {});
             fireAddonEvent("PARTY_MEMBERS_CHANGED", {});
-        }
     };
     dispatchTable_[Opcode::SMSG_GROUP_CANCEL] = [this](network::Packet& /*packet*/) {
         addSystemChatMessage("Group invite cancelled.");
@@ -2932,10 +2924,8 @@ void GameHandler::registerOpcodeHandlers() {
         if (auto* renderer = core::Application::getInstance().getRenderer()) {
             if (auto* sfx = renderer->getUiSoundManager()) sfx->playQuestActivate();
         }
-        if (addonEventCallback_) {
             fireAddonEvent("TRAINER_UPDATE", {});
             fireAddonEvent("SPELLS_CHANGED", {});
-        }
     };
     dispatchTable_[Opcode::SMSG_TRAINER_BUY_FAILED] = [this](network::Packet& packet) {
         /*uint64_t trainerGuid =*/ packet.readUInt64();
@@ -3050,10 +3040,8 @@ void GameHandler::registerOpcodeHandlers() {
                 addSystemChatMessage(buf);
                 watchedFactionId_ = factionId;
                 if (repChangeCallback_) repChangeCallback_(name, delta, standing);
-                if (addonEventCallback_) {
                     fireAddonEvent("UPDATE_FACTION", {});
                     fireAddonEvent("CHAT_MSG_COMBAT_FACTION_CHANGE", {std::string(buf)});
-                }
             }
         }
     };
@@ -3566,10 +3554,8 @@ void GameHandler::registerOpcodeHandlers() {
         }
         if (!leaderName.empty())
             addSystemChatMessage(leaderName + " is now the group leader.");
-        if (addonEventCallback_) {
             fireAddonEvent("PARTY_LEADER_CHANGED", {});
             fireAddonEvent("GROUP_ROSTER_UPDATE", {});
-        }
     };
 
     // Gameobject / page text
@@ -4174,10 +4160,8 @@ void GameHandler::registerOpcodeHandlers() {
             uint32_t newZoneId = packet.readUInt32();
             if (newZoneId != worldStateZoneId_ && newZoneId != 0) {
                 worldStateZoneId_ = newZoneId;
-                if (addonEventCallback_) {
                     fireAddonEvent("ZONE_CHANGED_NEW_AREA", {});
                     fireAddonEvent("ZONE_CHANGED", {});
-                }
             } else {
                 worldStateZoneId_ = newZoneId;
             }
@@ -4362,10 +4346,8 @@ void GameHandler::registerOpcodeHandlers() {
                     if (auto* sfx = renderer->getUiSoundManager())
                         sfx->playDropOnGround();
                 }
-                if (addonEventCallback_) {
                     fireAddonEvent("BAG_UPDATE", {});
                     fireAddonEvent("PLAYER_MONEY", {});
-                }
             } else {
                 bool removedPending = false;
                 auto it = pendingSellToBuyback_.find(itemGuid);
@@ -4605,10 +4587,8 @@ void GameHandler::registerOpcodeHandlers() {
             }
             pendingBuyItemId_   = 0;
             pendingBuyItemSlot_ = 0;
-            if (addonEventCallback_) {
                 fireAddonEvent("MERCHANT_UPDATE", {});
                 fireAddonEvent("BAG_UPDATE", {});
-            }
         }
     };
 
@@ -5068,10 +5048,8 @@ void GameHandler::registerOpcodeHandlers() {
                 }
             }
         }
-        if (addonEventCallback_) {
             fireAddonEvent("QUEST_LOG_UPDATE", {});
             fireAddonEvent("UNIT_QUEST_LOG_CHANGED", {"player"});
-        }
         // Re-query all nearby quest giver NPCs so markers refresh
         if (socket) {
             for (const auto& [guid, entity] : entityManager.getEntities()) {
@@ -5140,11 +5118,9 @@ void GameHandler::registerOpcodeHandlers() {
                     if (questProgressCallback_) {
                         questProgressCallback_(quest.title, creatureName, count, reqCount);
                     }
-                    if (addonEventCallback_) {
                         fireAddonEvent("QUEST_WATCH_UPDATE", {std::to_string(questId)});
                         fireAddonEvent("QUEST_LOG_UPDATE", {});
                         fireAddonEvent("UNIT_QUEST_LOG_CHANGED", {"player"});
-                    }
 
                     LOG_INFO("Updated kill count for quest ", questId, ": ",
                              count, "/", reqCount);
@@ -5341,11 +5317,9 @@ void GameHandler::registerOpcodeHandlers() {
             } else {
                 addSystemChatMessage("Quest removed (ID " + std::to_string(questId) + ").");
             }
-            if (addonEventCallback_) {
                 fireAddonEvent("QUEST_LOG_UPDATE", {});
                 fireAddonEvent("UNIT_QUEST_LOG_CHANGED", {"player"});
                 fireAddonEvent("QUEST_REMOVED", {std::to_string(questId)});
-            }
         }
     };
     dispatchTable_[Opcode::SMSG_QUEST_QUERY_RESPONSE] = [this](network::Packet& packet) {
@@ -6817,10 +6791,8 @@ void GameHandler::registerOpcodeHandlers() {
         LOG_DEBUG("SMSG_REAL_GROUP_UPDATE groupType=", static_cast<int>(newGroupType),
                   " memberFlags=0x", std::hex, newMemberFlags, std::dec,
                   " leaderGuid=", newLeaderGuid);
-        if (addonEventCallback_) {
             fireAddonEvent("PARTY_LEADER_CHANGED", {});
             fireAddonEvent("GROUP_ROSTER_UPDATE", {});
-        }
     };
     dispatchTable_[Opcode::SMSG_PLAY_MUSIC] = [this](network::Packet& packet) {
         if (packet.getSize() - packet.getReadPos() >= 4) {
@@ -11659,10 +11631,8 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                             if (newForm != shapeshiftFormId_) {
                                 shapeshiftFormId_ = newForm;
                                 LOG_INFO("Shapeshift form changed: ", static_cast<int>(newForm));
-                                if (addonEventCallback_) {
                                     fireAddonEvent("UPDATE_SHAPESHIFT_FORM", {});
                                     fireAddonEvent("UPDATE_SHAPESHIFT_FORMS", {});
-                                }
                             }
                         }
                         else if (key == ufDynFlags) {
@@ -12191,10 +12161,8 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                     }
                     if (inventoryChanged) {
                         rebuildOnlineInventory();
-                        if (addonEventCallback_) {
                             fireAddonEvent("BAG_UPDATE", {});
                             fireAddonEvent("UNIT_INVENTORY_CHANGED", {"player"});
-                        }
                     }
                 }
                 if (block.hasMovement && entity->getType() == ObjectType::GAMEOBJECT) {
@@ -18338,10 +18306,8 @@ done:
     LOG_INFO("SMSG_PET_SPELLS: petGuid=0x", std::hex, petGuid_, std::dec,
              " react=", static_cast<int>(petReact_), " command=", static_cast<int>(petCommand_),
              " spells=", petSpellList_.size());
-    if (addonEventCallback_) {
         fireAddonEvent("UNIT_PET", {"player"});
         fireAddonEvent("PET_BAR_UPDATE", {});
-    }
 }
 
 void GameHandler::sendPetAction(uint32_t action, uint64_t targetGuid) {
@@ -18466,10 +18432,8 @@ void GameHandler::setActionBarSlot(int slot, ActionBarSlot::Type type, uint32_t 
     }
     saveCharacterConfig();
     // Notify Lua addons that the action bar changed
-    if (addonEventCallback_) {
         fireAddonEvent("ACTIONBAR_SLOT_CHANGED", {std::to_string(slot + 1)});
         fireAddonEvent("ACTIONBAR_UPDATE_STATE", {});
-    }
     // Notify the server so the action bar persists across relogs.
     if (state == WorldState::IN_WORLD && socket) {
         const bool classic = isClassicLikeExpansion();
@@ -18550,10 +18514,8 @@ void GameHandler::handleInitialSpells(network::Packet& packet) {
     LOG_INFO("Learned ", knownSpells.size(), " spells");
 
     // Notify addons that the full spell list is now available
-    if (addonEventCallback_) {
         fireAddonEvent("SPELLS_CHANGED", {});
         fireAddonEvent("LEARNED_SPELL_IN_TAB", {});
-    }
 }
 
 void GameHandler::handleCastFailed(network::Packet& packet) {
@@ -18602,10 +18564,8 @@ void GameHandler::handleCastFailed(network::Packet& packet) {
     }
 
     // Fire UNIT_SPELLCAST_FAILED + UNIT_SPELLCAST_STOP so Lua addons can react
-    if (addonEventCallback_) {
         fireAddonEvent("UNIT_SPELLCAST_FAILED", {"player", std::to_string(data.spellId)});
         fireAddonEvent("UNIT_SPELLCAST_STOP", {"player", std::to_string(data.spellId)});
-    }
     if (spellCastFailedCallback_) spellCastFailedCallback_(data.spellId);
 }
 
@@ -18902,10 +18862,8 @@ void GameHandler::handleSpellCooldown(network::Packet& packet) {
     }
     LOG_DEBUG("handleSpellCooldown: parsed for ",
               isClassicFormat ? "Classic" : "TBC/WotLK", " format");
-    if (addonEventCallback_) {
         fireAddonEvent("SPELL_UPDATE_COOLDOWN", {});
         fireAddonEvent("ACTIONBAR_UPDATE_COOLDOWN", {});
-    }
 }
 
 void GameHandler::handleCooldownEvent(network::Packet& packet) {
@@ -18921,10 +18879,8 @@ void GameHandler::handleCooldownEvent(network::Packet& packet) {
             slot.cooldownRemaining = 0.0f;
         }
     }
-    if (addonEventCallback_) {
         fireAddonEvent("SPELL_UPDATE_COOLDOWN", {});
         fireAddonEvent("ACTIONBAR_UPDATE_COOLDOWN", {});
-    }
 }
 
 void GameHandler::handleAuraUpdate(network::Packet& packet, bool isAll) {
@@ -19008,10 +18964,8 @@ void GameHandler::handleLearnedSpell(network::Packet& packet) {
                 LOG_INFO("Talent learned: id=", talentId, " rank=", static_cast<int>(newRank),
                          " (spell ", spellId, ") in spec ", static_cast<int>(activeTalentSpec_));
                 isTalentSpell = true;
-                if (addonEventCallback_) {
                     fireAddonEvent("CHARACTER_POINTS_CHANGED", {});
                     fireAddonEvent("PLAYER_TALENT_UPDATE", {});
-                }
                 break;
             }
         }
@@ -19204,11 +19158,9 @@ void GameHandler::handleTalentsInfo(network::Packet& packet) {
              " learned=", learnedTalents_[activeTalentGroup].size());
 
     // Fire talent-related events for addons
-    if (addonEventCallback_) {
         fireAddonEvent("CHARACTER_POINTS_CHANGED", {});
         fireAddonEvent("ACTIVE_TALENT_GROUP_CHANGED", {});
         fireAddonEvent("PLAYER_TALENT_UPDATE", {});
-    }
 
     if (!talentsInitialized_) {
         talentsInitialized_ = true;
@@ -19339,10 +19291,8 @@ void GameHandler::leaveGroup() {
     socket->send(packet);
     partyData = GroupListData{};
     LOG_INFO("Left group");
-    if (addonEventCallback_) {
         fireAddonEvent("GROUP_ROSTER_UPDATE", {});
         fireAddonEvent("PARTY_MEMBERS_CHANGED", {});
-    }
 }
 
 void GameHandler::handleGroupInvite(network::Packet& packet) {
@@ -19418,11 +19368,9 @@ void GameHandler::handleGroupUninvite(network::Packet& packet) {
     partyData = GroupListData{};
     LOG_INFO("Removed from group");
 
-    if (addonEventCallback_) {
         fireAddonEvent("GROUP_ROSTER_UPDATE", {});
         fireAddonEvent("PARTY_MEMBERS_CHANGED", {});
         fireAddonEvent("RAID_ROSTER_UPDATE", {});
-    }
 
     MessageChatData msg;
     msg.type = ChatType::SYSTEM;
@@ -20719,11 +20667,9 @@ void GameHandler::addQuestToLocalLogIfMissing(uint32_t questId, const std::strin
     entry.title = title.empty() ? ("Quest #" + std::to_string(questId)) : title;
     entry.objectives = objectives;
     questLog_.push_back(std::move(entry));
-    if (addonEventCallback_) {
         fireAddonEvent("QUEST_ACCEPTED", {std::to_string(questId)});
         fireAddonEvent("QUEST_LOG_UPDATE", {});
         fireAddonEvent("UNIT_QUEST_LOG_CHANGED", {"player"});
-    }
 }
 
 bool GameHandler::resyncQuestLogFromServerSlots(bool forceQueryMetadata) {
@@ -21021,11 +20967,9 @@ void GameHandler::abandonQuest(uint32_t questId) {
 
     if (localIndex >= 0) {
         questLog_.erase(questLog_.begin() + static_cast<ptrdiff_t>(localIndex));
-        if (addonEventCallback_) {
             fireAddonEvent("QUEST_LOG_UPDATE", {});
             fireAddonEvent("UNIT_QUEST_LOG_CHANGED", {"player"});
             fireAddonEvent("QUEST_REMOVED", {std::to_string(questId)});
-        }
     }
 
     // Remove any quest POI minimap markers for this quest.
@@ -21704,10 +21648,8 @@ void GameHandler::handleLootResponse(network::Packet& packet) {
         return;
     }
     lootWindowOpen = true;
-    if (addonEventCallback_) {
         fireAddonEvent("LOOT_OPENED", {});
         fireAddonEvent("LOOT_READY", {});
-    }
     lastInteractedGoGuid_ = 0; // loot opened — no need to re-send in handleSpellGo
     pendingGameObjectLootOpens_.erase(
         std::remove_if(pendingGameObjectLootOpens_.begin(), pendingGameObjectLootOpens_.end(),
@@ -22913,10 +22855,8 @@ void GameHandler::handleNewWorld(network::Packet& packet) {
     }
 
     // Fire PLAYER_ENTERING_WORLD for teleports / zone transitions
-    if (addonEventCallback_) {
         fireAddonEvent("PLAYER_ENTERING_WORLD", {"0"});
         fireAddonEvent("ZONE_CHANGED_NEW_AREA", {});
-    }
 }
 
 // ============================================================

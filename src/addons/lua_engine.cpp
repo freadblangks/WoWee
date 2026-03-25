@@ -22,7 +22,7 @@ extern "C" {
 namespace wowee::addons {
 
 static void toLowerInPlace(std::string& s) {
-    toLowerInPlace(s);
+    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 }
 
 // Shared GetTime() epoch — all time-returning functions must use this same origin

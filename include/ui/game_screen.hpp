@@ -16,6 +16,7 @@
 
 namespace wowee {
 namespace pipeline { class AssetManager; }
+namespace rendering { class Renderer; }
 namespace ui {
 
 /**
@@ -40,6 +41,7 @@ public:
 
     void saveSettings();
     void loadSettings();
+    void applyAudioVolumes(rendering::Renderer* renderer);
 
 private:
     // Chat state

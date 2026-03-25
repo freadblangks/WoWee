@@ -495,38 +495,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     if (!volumeSettingsApplied_) {
         auto* renderer = core::Application::getInstance().getRenderer();
         if (renderer && renderer->getUiSoundManager()) {
-            float masterScale = soundMuted_ ? 0.0f : static_cast<float>(pendingMasterVolume) / 100.0f;
-            audio::AudioEngine::instance().setMasterVolume(masterScale);
-            if (auto* music = renderer->getMusicManager()) {
-                music->setVolume(pendingMusicVolume);
-            }
-            if (auto* ambient = renderer->getAmbientSoundManager()) {
-                ambient->setVolumeScale(pendingAmbientVolume / 100.0f);
-            }
-            if (auto* ui = renderer->getUiSoundManager()) {
-                ui->setVolumeScale(pendingUiVolume / 100.0f);
-            }
-            if (auto* combat = renderer->getCombatSoundManager()) {
-                combat->setVolumeScale(pendingCombatVolume / 100.0f);
-            }
-            if (auto* spell = renderer->getSpellSoundManager()) {
-                spell->setVolumeScale(pendingSpellVolume / 100.0f);
-            }
-            if (auto* movement = renderer->getMovementSoundManager()) {
-                movement->setVolumeScale(pendingMovementVolume / 100.0f);
-            }
-            if (auto* footstep = renderer->getFootstepManager()) {
-                footstep->setVolumeScale(pendingFootstepVolume / 100.0f);
-            }
-            if (auto* npcVoice = renderer->getNpcVoiceManager()) {
-                npcVoice->setVolumeScale(pendingNpcVoiceVolume / 100.0f);
-            }
-            if (auto* mount = renderer->getMountSoundManager()) {
-                mount->setVolumeScale(pendingMountVolume / 100.0f);
-            }
-            if (auto* activity = renderer->getActivitySoundManager()) {
-                activity->setVolumeScale(pendingActivityVolume / 100.0f);
-            }
+            applyAudioVolumes(renderer);
             volumeSettingsApplied_ = true;
         }
     }
@@ -18772,39 +18741,7 @@ void GameScreen::renderSettingsWindow() {
 
                 // Helper lambda to apply audio settings
                 auto applyAudioSettings = [&]() {
-                    if (!renderer) return;
-                    float masterScale = soundMuted_ ? 0.0f : static_cast<float>(pendingMasterVolume) / 100.0f;
-                    audio::AudioEngine::instance().setMasterVolume(masterScale);
-                    if (auto* music = renderer->getMusicManager()) {
-                        music->setVolume(pendingMusicVolume);
-                    }
-                    if (auto* ambient = renderer->getAmbientSoundManager()) {
-                        ambient->setVolumeScale(pendingAmbientVolume / 100.0f);
-                    }
-                    if (auto* ui = renderer->getUiSoundManager()) {
-                        ui->setVolumeScale(pendingUiVolume / 100.0f);
-                    }
-                    if (auto* combat = renderer->getCombatSoundManager()) {
-                        combat->setVolumeScale(pendingCombatVolume / 100.0f);
-                    }
-                    if (auto* spell = renderer->getSpellSoundManager()) {
-                        spell->setVolumeScale(pendingSpellVolume / 100.0f);
-                    }
-                    if (auto* movement = renderer->getMovementSoundManager()) {
-                        movement->setVolumeScale(pendingMovementVolume / 100.0f);
-                    }
-                    if (auto* footstep = renderer->getFootstepManager()) {
-                        footstep->setVolumeScale(pendingFootstepVolume / 100.0f);
-                    }
-                    if (auto* npcVoice = renderer->getNpcVoiceManager()) {
-                        npcVoice->setVolumeScale(pendingNpcVoiceVolume / 100.0f);
-                    }
-                    if (auto* mount = renderer->getMountSoundManager()) {
-                        mount->setVolumeScale(pendingMountVolume / 100.0f);
-                    }
-                    if (auto* activity = renderer->getActivitySoundManager()) {
-                        activity->setVolumeScale(pendingActivityVolume / 100.0f);
-                    }
+                    applyAudioVolumes(renderer);
                     saveSettings();
                 };
 
@@ -21148,6 +21085,32 @@ void GameScreen::renderChatBubbles(game::GameHandler& gameHandler) {
         ImGui::End();
         ImGui::PopStyleVar(2);
     }
+}
+
+void GameScreen::applyAudioVolumes(rendering::Renderer* renderer) {
+    if (!renderer) return;
+    float masterScale = soundMuted_ ? 0.0f : static_cast<float>(pendingMasterVolume) / 100.0f;
+    audio::AudioEngine::instance().setMasterVolume(masterScale);
+    if (auto* music = renderer->getMusicManager())
+        music->setVolume(pendingMusicVolume);
+    if (auto* ambient = renderer->getAmbientSoundManager())
+        ambient->setVolumeScale(pendingAmbientVolume / 100.0f);
+    if (auto* ui = renderer->getUiSoundManager())
+        ui->setVolumeScale(pendingUiVolume / 100.0f);
+    if (auto* combat = renderer->getCombatSoundManager())
+        combat->setVolumeScale(pendingCombatVolume / 100.0f);
+    if (auto* spell = renderer->getSpellSoundManager())
+        spell->setVolumeScale(pendingSpellVolume / 100.0f);
+    if (auto* movement = renderer->getMovementSoundManager())
+        movement->setVolumeScale(pendingMovementVolume / 100.0f);
+    if (auto* footstep = renderer->getFootstepManager())
+        footstep->setVolumeScale(pendingFootstepVolume / 100.0f);
+    if (auto* npcVoice = renderer->getNpcVoiceManager())
+        npcVoice->setVolumeScale(pendingNpcVoiceVolume / 100.0f);
+    if (auto* mount = renderer->getMountSoundManager())
+        mount->setVolumeScale(pendingMountVolume / 100.0f);
+    if (auto* activity = renderer->getActivitySoundManager())
+        activity->setVolumeScale(pendingActivityVolume / 100.0f);
 }
 
 void GameScreen::saveSettings() {

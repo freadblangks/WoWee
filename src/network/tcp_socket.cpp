@@ -185,7 +185,7 @@ void TCPSocket::tryParsePackets() {
 
         if (expectedSize == 0) {
             // Unknown opcode or need more data to determine size
-            LOG_WARNING("Unknown opcode or indeterminate size: 0x", std::hex, (int)opcode, std::dec);
+            LOG_WARNING("Unknown opcode or indeterminate size: 0x", std::hex, static_cast<int>(opcode), std::dec);
             break;
         }
 
@@ -197,7 +197,7 @@ void TCPSocket::tryParsePackets() {
         }
 
         // We have a complete packet!
-        LOG_DEBUG("Parsing packet: opcode=0x", std::hex, (int)opcode, std::dec,
+        LOG_DEBUG("Parsing packet: opcode=0x", std::hex, static_cast<int>(opcode), std::dec,
                  " size=", expectedSize, " bytes");
 
         // Create packet from buffer data
@@ -285,7 +285,7 @@ size_t TCPSocket::getExpectedPacketSize(uint8_t opcode) {
             return 0;  // Need more data to read size field
 
         default:
-            LOG_WARNING("Unknown auth packet opcode: 0x", std::hex, (int)opcode, std::dec);
+            LOG_WARNING("Unknown auth packet opcode: 0x", std::hex, static_cast<int>(opcode), std::dec);
             return 0;
     }
 }

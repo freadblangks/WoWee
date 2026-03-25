@@ -2177,8 +2177,8 @@ std::unique_ptr<VkTexture> WMORenderer::generateNormalHeightMap(
 
     // Step 1.5: Box blur the height map to reduce noise from diffuse textures
     auto wrapSample = [&](const std::vector<float>& map, int x, int y) -> float {
-        x = ((x % (int)width) + (int)width) % (int)width;
-        y = ((y % (int)height) + (int)height) % (int)height;
+        x = ((x % static_cast<int>(width)) + static_cast<int>(width)) % static_cast<int>(width);
+        y = ((y % static_cast<int>(height)) + static_cast<int>(height)) % static_cast<int>(height);
         return map[y * width + x];
     };
 
@@ -2200,8 +2200,8 @@ std::unique_ptr<VkTexture> WMORenderer::generateNormalHeightMap(
     std::vector<uint8_t> output(totalPixels * 4);
 
     auto sampleH = [&](int x, int y) -> float {
-        x = ((x % (int)width) + (int)width) % (int)width;
-        y = ((y % (int)height) + (int)height) % (int)height;
+        x = ((x % static_cast<int>(width)) + static_cast<int>(width)) % static_cast<int>(width);
+        y = ((y % static_cast<int>(height)) + static_cast<int>(height)) % static_cast<int>(height);
         return heightMap[y * width + x];
     };
 

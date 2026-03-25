@@ -49,6 +49,15 @@
 #include <unordered_set>
 
 namespace {
+    // Common ImGui colors
+    constexpr ImVec4 kColorRed    = {1.0f, 0.3f, 0.3f, 1.0f};
+    constexpr ImVec4 kColorGreen  = {0.4f, 1.0f, 0.4f, 1.0f};
+    constexpr ImVec4 kColorYellow = {1.0f, 1.0f, 0.3f, 1.0f};
+    constexpr ImVec4 kColorGray   = {0.6f, 0.6f, 0.6f, 1.0f};
+
+    // Common ImGui window flags for popup dialogs
+    const ImGuiWindowFlags kDialogFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize;
+
     // Build a WoW-format item link string for chat insertion.
     // Format: |cff<qualHex>|Hitem:<itemId>:0:0:0:0:0:0:0:0|h[<name>]|h|r
     std::string buildItemChatLink(uint32_t itemId, uint8_t quality, const std::string& name) {
@@ -1140,13 +1149,13 @@ void GameScreen::renderPlayerInfo(game::GameHandler& gameHandler) {
             ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "In World");
             break;
         case game::WorldState::AUTHENTICATED:
-            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "Authenticated");
+            ImGui::TextColored(kColorYellow, "Authenticated");
             break;
         case game::WorldState::ENTERING_WORLD:
-            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "Entering World...");
+            ImGui::TextColored(kColorYellow, "Entering World...");
             break;
         default:
-            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "State: %d", static_cast<int>(state));
+            ImGui::TextColored(kColorRed, "State: %d", static_cast<int>(state));
             break;
     }
     ImGui::Unindent();
@@ -1199,7 +1208,7 @@ void GameScreen::renderEntityList(game::GameHandler& gameHandler) {
                         ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Player");
                         break;
                     case game::ObjectType::UNIT:
-                        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "Unit");
+                        ImGui::TextColored(kColorYellow, "Unit");
                         break;
                     case game::ObjectType::GAMEOBJECT:
                         ImGui::TextColored(ImVec4(0.3f, 0.8f, 1.0f, 1.0f), "GameObject");
@@ -1267,7 +1276,7 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
         ImGui::SetNextWindowSize(ImVec2(chatW, chatH), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowPos(chatWindowPos_, ImGuiCond_FirstUseEver);
     }
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize;
+    ImGuiWindowFlags flags = kDialogFlags;
     if (chatWindowLocked) {
         flags |= ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar;
     }
@@ -2576,7 +2585,7 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
     // Color the input text based on current chat type
     ImVec4 inputColor;
     switch (selectedChatType) {
-        case 1: inputColor = ImVec4(1.0f, 0.3f, 0.3f, 1.0f); break;  // YELL - red
+        case 1: inputColor = kColorRed; break;  // YELL - red
         case 2: inputColor = ImVec4(0.4f, 0.6f, 1.0f, 1.0f); break;  // PARTY - blue
         case 3: inputColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f); break;  // GUILD - green
         case 4: inputColor = ImVec4(1.0f, 0.5f, 1.0f, 1.0f); break;  // WHISPER - pink
@@ -4103,16 +4112,16 @@ void GameScreen::renderPetFrame(game::GameHandler& gameHandler) {
                             ImGui::Text("%s", nm.c_str());
                         }
                         ImGui::TextColored(autocastOn
-                            ? ImVec4(0.4f, 1.0f, 0.4f, 1.0f)
-                            : ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
+                            ? kColorGreen
+                            : kColorGray,
                             "Autocast: %s (right-click to toggle)", autocastOn ? "On" : "Off");
                         if (petOnCd) {
                             if (petCd >= 60.0f)
-                                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
+                                ImGui::TextColored(kColorRed,
                                     "Cooldown: %d min %d sec",
                                     static_cast<int>(petCd) / 60, static_cast<int>(petCd) % 60);
                             else
-                                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
+                                ImGui::TextColored(kColorRed,
                                     "Cooldown: %.1f sec", petCd);
                         }
                         ImGui::EndTooltip();
@@ -4241,7 +4250,7 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
             uint32_t tgtDynFlags = u->getDynamicFlags();
             bool tgtTapped = (tgtDynFlags & 0x0004) != 0 && (tgtDynFlags & 0x0008) == 0;
             if (tgtTapped) {
-                hostileColor = ImVec4(0.6f, 0.6f, 0.6f, 1.0f); // Grey — tapped by other
+                hostileColor = kColorGray; // Grey — tapped by other
             } else {
             // WoW level-based color for hostile mobs
             uint32_t playerLv = gameHandler.getPlayerLevel();
@@ -4252,7 +4261,7 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
             } else {
                 int32_t diff = static_cast<int32_t>(mobLv) - static_cast<int32_t>(playerLv);
                 if (game::GameHandler::killXp(playerLv, mobLv) == 0) {
-                    hostileColor = ImVec4(0.6f, 0.6f, 0.6f, 1.0f); // Grey - no XP
+                    hostileColor = kColorGray; // Grey - no XP
                 } else if (diff >= 10) {
                     hostileColor = ImVec4(1.0f, 0.1f, 0.1f, 1.0f); // Red - skull/very hard
                 } else if (diff >= 5) {
@@ -4378,7 +4387,7 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("Has a quest available");
             } else if (qgs == QGS::AVAILABLE_LOW) {
                 ImGui::SameLine(0, 4);
-                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "!");
+                ImGui::TextColored(kColorGray, "!");
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("Has a low-level quest available");
             } else if (qgs == QGS::REWARD || qgs == QGS::REWARD_REP) {
                 ImGui::SameLine(0, 4);
@@ -4386,7 +4395,7 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("Quest ready to turn in");
             } else if (qgs == QGS::INCOMPLETE) {
                 ImGui::SameLine(0, 4);
-                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "?");
+                ImGui::TextColored(kColorGray, "?");
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("Quest incomplete");
             }
         }
@@ -4501,7 +4510,7 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Rare Elite — uncommon spawn, group recommended");
                 } else if (rank == 3) {
                     ImGui::SameLine(0, 4);
-                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "[Boss]");
+                    ImGui::TextColored(kColorRed, "[Boss]");
                     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Boss — raid / dungeon boss");
                 } else if (rank == 4) {
                     ImGui::SameLine(0, 4);
@@ -5192,7 +5201,7 @@ void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
             uint32_t focDynFlags = u->getDynamicFlags();
             bool focTapped = (focDynFlags & 0x0004) != 0 && (focDynFlags & 0x0008) == 0;
             if (focTapped) {
-                focusColor = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
+                focusColor = kColorGray;
             } else {
             uint32_t playerLv = gameHandler.getPlayerLevel();
             uint32_t mobLv = u->getLevel();
@@ -5201,7 +5210,7 @@ void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
             } else {
                 int32_t diff = static_cast<int32_t>(mobLv) - static_cast<int32_t>(playerLv);
                 if (game::GameHandler::killXp(playerLv, mobLv) == 0)
-                    focusColor = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
+                    focusColor = kColorGray;
                 else if (diff >= 10)
                     focusColor = ImVec4(1.0f, 0.1f, 0.1f, 1.0f);
                 else if (diff >= 5)
@@ -5314,13 +5323,13 @@ void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
                     ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.0f, 1.0f), "!");
                 } else if (qgs == QGS::AVAILABLE_LOW) {
                     ImGui::SameLine(0, 4);
-                    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "!");
+                    ImGui::TextColored(kColorGray, "!");
                 } else if (qgs == QGS::REWARD || qgs == QGS::REWARD_REP) {
                     ImGui::SameLine(0, 4);
                     ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.0f, 1.0f), "?");
                 } else if (qgs == QGS::INCOMPLETE) {
                     ImGui::SameLine(0, 4);
-                    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "?");
+                    ImGui::TextColored(kColorGray, "?");
                 }
             }
 
@@ -8323,7 +8332,7 @@ ImVec4 GameScreen::getChatTypeColor(game::ChatType type) const {
         case game::ChatType::SAY:
             return ImVec4(1.0f, 1.0f, 1.0f, 1.0f);  // White
         case game::ChatType::YELL:
-            return ImVec4(1.0f, 0.3f, 0.3f, 1.0f);  // Red
+            return kColorRed;  // Red
         case game::ChatType::EMOTE:
             return ImVec4(1.0f, 0.7f, 0.3f, 1.0f);  // Orange
         case game::ChatType::TEXT_EMOTE:
@@ -8349,11 +8358,11 @@ ImVec4 GameScreen::getChatTypeColor(game::ChatType type) const {
         case game::ChatType::WHISPER_INFORM:
             return ImVec4(1.0f, 0.5f, 1.0f, 1.0f);  // Pink
         case game::ChatType::SYSTEM:
-            return ImVec4(1.0f, 1.0f, 0.3f, 1.0f);  // Yellow
+            return kColorYellow;  // Yellow
         case game::ChatType::MONSTER_SAY:
             return ImVec4(1.0f, 1.0f, 1.0f, 1.0f);  // White (same as SAY)
         case game::ChatType::MONSTER_YELL:
-            return ImVec4(1.0f, 0.3f, 0.3f, 1.0f);  // Red (same as YELL)
+            return kColorRed;  // Red (same as YELL)
         case game::ChatType::MONSTER_EMOTE:
             return ImVec4(1.0f, 0.7f, 0.3f, 1.0f);  // Orange (same as EMOTE)
         case game::ChatType::CHANNEL:
@@ -8378,7 +8387,7 @@ ImVec4 GameScreen::getChatTypeColor(game::ChatType type) const {
         case game::ChatType::BG_SYSTEM_ALLIANCE:
             return ImVec4(0.3f, 0.6f, 1.0f, 1.0f);  // Blue
         case game::ChatType::BG_SYSTEM_HORDE:
-            return ImVec4(1.0f, 0.3f, 0.3f, 1.0f);  // Red
+            return kColorRed;  // Red
         case game::ChatType::AFK:
         case game::ChatType::DND:
             return ImVec4(0.85f, 0.85f, 0.85f, 0.8f); // Light gray
@@ -9414,10 +9423,10 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
                 if (onCooldown) {
                     float cd = slot.cooldownRemaining;
                     if (cd >= 60.0f)
-                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
+                        ImGui::TextColored(kColorRed,
                             "Cooldown: %d min %d sec", static_cast<int>(cd)/60, static_cast<int>(cd)%60);
                     else
-                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Cooldown: %.1f sec", cd);
+                        ImGui::TextColored(kColorRed, "Cooldown: %.1f sec", cd);
                 }
                 ImGui::EndTooltip();
             } else if (slot.type == game::ActionBarSlot::MACRO) {
@@ -9430,10 +9439,10 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
                     if (onCooldown && macroCooldownRemaining > 0.0f) {
                         float cd = macroCooldownRemaining;
                         if (cd >= 60.0f)
-                            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
+                            ImGui::TextColored(kColorRed,
                                 "Cooldown: %d min %d sec", static_cast<int>(cd)/60, static_cast<int>(cd)%60);
                         else
-                            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Cooldown: %.1f sec", cd);
+                            ImGui::TextColored(kColorRed, "Cooldown: %.1f sec", cd);
                     }
                 }
                 if (!showedRich) {
@@ -9493,10 +9502,10 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
                 if (onCooldown) {
                     float cd = slot.cooldownRemaining;
                     if (cd >= 60.0f)
-                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
+                        ImGui::TextColored(kColorRed,
                             "Cooldown: %d min %d sec", static_cast<int>(cd)/60, static_cast<int>(cd)%60);
                     else
-                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Cooldown: %.1f sec", cd);
+                        ImGui::TextColored(kColorRed, "Cooldown: %.1f sec", cd);
                 }
                 ImGui::EndTooltip();
             }
@@ -10659,7 +10668,7 @@ void GameScreen::renderMirrorTimers(game::GameHandler& gameHandler) {
     static const struct { const char* label; ImVec4 color; } kTimerInfo[3] = {
         { "Fatigue", ImVec4(0.8f, 0.4f, 0.1f, 1.0f) },
         { "Breath",  ImVec4(0.2f, 0.5f, 1.0f, 1.0f) },
-        { "Feign",   ImVec4(0.6f, 0.6f, 0.6f, 1.0f) },
+        { "Feign",   kColorGray },
     };
 
     float barW  = 280.0f;
@@ -10771,9 +10780,9 @@ void GameScreen::renderCooldownTracker(game::GameHandler& gameHandler) {
                 snprintf(timeStr, sizeof(timeStr), "%.0fs", cd.remaining);
 
             // Color: red > 30s, orange > 10s, yellow > 5s, green otherwise
-            ImVec4 cdColor = cd.remaining > 30.0f ? ImVec4(1.0f, 0.3f, 0.3f, 1.0f) :
+            ImVec4 cdColor = cd.remaining > 30.0f ? kColorRed :
                              cd.remaining > 10.0f ? ImVec4(1.0f, 0.6f, 0.2f, 1.0f) :
-                             cd.remaining > 5.0f  ? ImVec4(1.0f, 1.0f, 0.3f, 1.0f) :
+                             cd.remaining > 5.0f  ? kColorYellow :
                                                     ImVec4(0.5f, 1.0f, 0.5f, 1.0f);
 
             // Truncate name to fit
@@ -10911,7 +10920,7 @@ void GameScreen::renderQuestObjectiveTracker(game::GameHandler& gameHandler) {
                 // Kill counts — green when complete, gray when in progress
                 for (const auto& [entry, progress] : q.killCounts) {
                     bool objDone = (progress.first >= progress.second && progress.second > 0);
-                    ImVec4 objColor = objDone ? ImVec4(0.4f, 1.0f, 0.4f, 1.0f)
+                    ImVec4 objColor = objDone ? kColorGreen
                                               : ImVec4(0.75f, 0.75f, 0.75f, 1.0f);
                     std::string name = gameHandler.getCachedCreatureName(entry);
                     if (name.empty()) {
@@ -10933,7 +10942,7 @@ void GameScreen::renderQuestObjectiveTracker(game::GameHandler& gameHandler) {
                     auto reqIt = q.requiredItemCounts.find(itemId);
                     if (reqIt != q.requiredItemCounts.end()) required = reqIt->second;
                     bool objDone = (count >= required);
-                    ImVec4 objColor = objDone ? ImVec4(0.4f, 1.0f, 0.4f, 1.0f)
+                    ImVec4 objColor = objDone ? kColorGreen
                                               : ImVec4(0.75f, 0.75f, 0.75f, 1.0f);
                     const auto* info = gameHandler.getItemInfo(itemId);
                     const char* itemName = (info && !info->name.empty()) ? info->name.c_str() : nullptr;
@@ -13614,7 +13623,7 @@ void GameScreen::renderGroupInvitePopup(game::GameHandler& gameHandler) {
     ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 150, 200), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(300, 0), ImGuiCond_Always);
 
-    if (ImGui::Begin("Group Invite", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+    if (ImGui::Begin("Group Invite", nullptr, kDialogFlags)) {
         ImGui::Text("%s has invited you to a group.", gameHandler.getPendingInviterName().c_str());
         ImGui::Spacing();
 
@@ -13638,7 +13647,7 @@ void GameScreen::renderDuelRequestPopup(game::GameHandler& gameHandler) {
     ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 150, 250), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(300, 0), ImGuiCond_Always);
 
-    if (ImGui::Begin("Duel Request", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+    if (ImGui::Begin("Duel Request", nullptr, kDialogFlags)) {
         ImGui::Text("%s challenges you to a duel!", gameHandler.getDuelChallengerName().c_str());
         ImGui::Spacing();
 
@@ -13739,7 +13748,7 @@ void GameScreen::renderSharedQuestPopup(game::GameHandler& gameHandler) {
     ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 175, 490), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(350, 0), ImGuiCond_Always);
 
-    if (ImGui::Begin("Shared Quest", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+    if (ImGui::Begin("Shared Quest", nullptr, kDialogFlags)) {
         ImGui::Text("%s has shared a quest with you:", gameHandler.getSharedQuestSharerName().c_str());
         ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.0f, 1.0f), "\"%s\"", gameHandler.getSharedQuestTitle().c_str());
         ImGui::Spacing();
@@ -13769,7 +13778,7 @@ void GameScreen::renderSummonRequestPopup(game::GameHandler& gameHandler) {
     ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 175, 430), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(350, 0), ImGuiCond_Always);
 
-    if (ImGui::Begin("Summon Request", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+    if (ImGui::Begin("Summon Request", nullptr, kDialogFlags)) {
         ImGui::Text("%s is summoning you.", gameHandler.getSummonerName().c_str());
         float t = gameHandler.getSummonTimeoutSec();
         if (t > 0.0f) {
@@ -13797,7 +13806,7 @@ void GameScreen::renderTradeRequestPopup(game::GameHandler& gameHandler) {
     ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 150, 370), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(300, 0), ImGuiCond_Always);
 
-    if (ImGui::Begin("Trade Request", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+    if (ImGui::Begin("Trade Request", nullptr, kDialogFlags)) {
         ImGui::Text("%s wants to trade with you.", gameHandler.getTradePeerName().c_str());
         ImGui::Spacing();
 
@@ -13830,7 +13839,7 @@ void GameScreen::renderTradeWindow(game::GameHandler& gameHandler) {
 
     bool open = true;
     if (ImGui::Begin(("Trade with " + peerName).c_str(), &open,
-                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+                     kDialogFlags)) {
 
         auto formatGold = [](uint64_t copper, char* buf, size_t bufsz) {
             uint64_t g = copper / 10000;
@@ -13987,10 +13996,10 @@ void GameScreen::renderLootRollPopup(game::GameHandler& gameHandler) {
     ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 175, 310), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(350, 0), ImGuiCond_Always);
 
-    if (ImGui::Begin("Loot Roll", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+    if (ImGui::Begin("Loot Roll", nullptr, kDialogFlags)) {
         // Quality color for item name
         static const ImVec4 kQualityColors[] = {
-            ImVec4(0.6f, 0.6f, 0.6f, 1.0f),  // 0=poor (grey)
+            kColorGray,  // 0=poor (grey)
             ImVec4(1.0f, 1.0f, 1.0f, 1.0f),  // 1=common (white)
             ImVec4(0.1f, 1.0f, 0.1f, 1.0f),  // 2=uncommon (green)
             ImVec4(0.0f, 0.44f, 0.87f, 1.0f),// 3=rare (blue)
@@ -14143,7 +14152,7 @@ void GameScreen::renderGuildInvitePopup(game::GameHandler& gameHandler) {
     ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 175, 250), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(350, 0), ImGuiCond_Always);
 
-    if (ImGui::Begin("Guild Invite", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+    if (ImGui::Begin("Guild Invite", nullptr, kDialogFlags)) {
         ImGui::TextWrapped("%s has invited you to join %s.",
                            gameHandler.getPendingGuildInviterName().c_str(),
                            gameHandler.getPendingGuildInviteGuildName().c_str());
@@ -14170,7 +14179,7 @@ void GameScreen::renderReadyCheckPopup(game::GameHandler& gameHandler) {
     ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 175, screenH / 2 - 60), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(350, 0), ImGuiCond_Always);
 
-    if (ImGui::Begin("Ready Check", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+    if (ImGui::Begin("Ready Check", nullptr, kDialogFlags)) {
         const std::string& initiator = gameHandler.getReadyCheckInitiator();
         if (initiator.empty()) {
             ImGui::Text("A ready check has been initiated!");
@@ -14371,7 +14380,7 @@ void GameScreen::renderLfgProposalPopup(game::GameHandler& gameHandler) {
         ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse;
 
     if (ImGui::Begin("Dungeon Finder", nullptr, flags)) {
-        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "A group has been found!");
+        ImGui::TextColored(kColorGreen, "A group has been found!");
         ImGui::Spacing();
         ImGui::TextWrapped("Please accept or decline to join the dungeon.");
         ImGui::Spacing();
@@ -16107,7 +16116,7 @@ void GameScreen::renderGossipWindow(game::GameHandler& gameHandler) {
         if (!gossip.quests.empty()) {
             ImGui::Spacing();
             ImGui::Separator();
-            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "Quests:");
+            ImGui::TextColored(kColorYellow, "Quests:");
             for (size_t qi = 0; qi < gossip.quests.size(); qi++) {
                 const auto& quest = gossip.quests[qi];
                 ImGui::PushID(static_cast<int>(qi));
@@ -16116,7 +16125,7 @@ void GameScreen::renderGossipWindow(game::GameHandler& gameHandler) {
                 // 5=INCOMPLETE (gray?), 6=REWARD_REP (yellow?), 7=AVAILABLE_LOW (gray!),
                 // 8=AVAILABLE (yellow!), 10=REWARD (yellow?)
                 const char* statusIcon = "!";
-                ImVec4 statusColor = ImVec4(1.0f, 1.0f, 0.3f, 1.0f); // yellow
+                ImVec4 statusColor = kColorYellow; // yellow
                 switch (quest.questIcon) {
                     case 5:  // INCOMPLETE — in progress but not done
                         statusIcon = "?";
@@ -16125,7 +16134,7 @@ void GameScreen::renderGossipWindow(game::GameHandler& gameHandler) {
                     case 6:  // REWARD_REP — repeatable, ready to turn in
                     case 10: // REWARD — ready to turn in
                         statusIcon = "?";
-                        statusColor = ImVec4(1.0f, 1.0f, 0.3f, 1.0f); // yellow
+                        statusColor = kColorYellow; // yellow
                         break;
                     case 7:  // AVAILABLE_LOW — available but gray (low-level)
                         statusIcon = "!";
@@ -16133,7 +16142,7 @@ void GameScreen::renderGossipWindow(game::GameHandler& gameHandler) {
                         break;
                     default: // AVAILABLE (8) and any others
                         statusIcon = "!";
-                        statusColor = ImVec4(1.0f, 1.0f, 0.3f, 1.0f); // yellow
+                        statusColor = kColorYellow; // yellow
                         break;
                 }
 
@@ -16806,7 +16815,7 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
                     if (canAfford) {
                         renderCoinsText(g, s, c);
                     } else {
-                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%ug %us %uc", g, s, c);
+                        ImGui::TextColored(kColorRed, "%ug %us %uc", g, s, c);
                     }
                     ImGui::TableSetColumnIndex(3);
                     if (!canAfford) ImGui::BeginDisabled();
@@ -16918,7 +16927,7 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
                         if (canAfford) {
                             renderCoinsText(g, s, c);
                         } else {
-                            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%ug %us %uc", g, s, c);
+                            ImGui::TextColored(kColorRed, "%ug %us %uc", g, s, c);
                         }
                         // Show additional token cost if both gold and tokens are required
                         if (item.extendedCost != 0) {
@@ -16933,7 +16942,7 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
                     if (item.maxCount < 0) {
                         ImGui::TextDisabled("Inf");
                     } else if (item.maxCount == 0) {
-                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Out");
+                        ImGui::TextColored(kColorRed, "Out");
                     } else if (item.maxCount <= 5) {
                         ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.1f, 1.0f), "%d", item.maxCount);
                     } else {
@@ -17170,8 +17179,8 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
                     if (ImGui::IsItemHovered()) {
                         ImGui::BeginTooltip();
                         if (!name.empty()) {
-                            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "%s", name.c_str());
-                            if (!rank.empty()) ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "%s", rank.c_str());
+                            ImGui::TextColored(kColorYellow, "%s", name.c_str());
+                            if (!rank.empty()) ImGui::TextColored(kColorGray, "%s", rank.c_str());
                         }
                         const std::string& spDesc = gameHandler.getSpellDescription(spell->spellId);
                         if (!spDesc.empty()) {
@@ -17183,7 +17192,7 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
                         }
                         ImGui::TextDisabled("Status: %s", statusLabel);
                         if (spell->reqLevel > 0) {
-                            ImVec4 lvlColor = levelMet ? ImVec4(0.7f, 0.7f, 0.7f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+                            ImVec4 lvlColor = levelMet ? ImVec4(0.7f, 0.7f, 0.7f, 1.0f) : kColorRed;
                             ImGui::TextColored(lvlColor, "Required Level: %u", spell->reqLevel);
                         }
                         if (spell->reqSkill > 0) ImGui::Text("Required Skill: %u (value %u)", spell->reqSkill, spell->reqSkillValue);
@@ -17191,7 +17200,7 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
                             if (node == 0) return;
                             bool met = isKnown(node);
                             const std::string& pname = gameHandler.getSpellName(node);
-                            ImVec4 pcolor = met ? ImVec4(0.3f, 0.9f, 0.3f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+                            ImVec4 pcolor = met ? ImVec4(0.3f, 0.9f, 0.3f, 1.0f) : kColorRed;
                             if (!pname.empty())
                                 ImGui::TextColored(pcolor, "Requires: %s%s", pname.c_str(), met ? " (known)" : "");
                             else
@@ -17217,7 +17226,7 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
                         if (canAfford) {
                             renderCoinsText(g, s, c);
                         } else {
-                            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%ug %us %uc", g, s, c);
+                            ImGui::TextColored(kColorRed, "%ug %us %uc", g, s, c);
                         }
                     } else {
                         ImGui::TextColored(color, "Free");
@@ -17651,7 +17660,7 @@ void GameScreen::renderStableWindow(game::GameHandler& gameHandler) {
 
     bool open = true;
     if (!ImGui::Begin("Pet Stable", &open,
-                      ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+                      kDialogFlags)) {
         ImGui::End();
         if (!open) {
             // User closed the window; clear stable state
@@ -21519,7 +21528,7 @@ void GameScreen::renderMailWindow(game::GameHandler& gameHandler) {
                 }
 
                 // Sub-info line
-                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "  From: %s", mail.senderName.c_str());
+                ImGui::TextColored(kColorGray, "  From: %s", mail.senderName.c_str());
                 if (mail.money > 0) {
                     ImGui::SameLine();
                     ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.0f, 1.0f), " [G]");
@@ -21579,10 +21588,10 @@ void GameScreen::renderMailWindow(game::GameHandler& gameHandler) {
                         const char* mname = kMon[tmExp->tm_mon];
                         int daysLeft = static_cast<int>(secsLeft / 86400.0f);
                         if (secsLeft <= 0.0f) {
-                            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
+                            ImGui::TextColored(kColorGray,
                                 "Expired: %s %d, %d", mname, tmExp->tm_mday, 1900 + tmExp->tm_year);
                         } else if (secsLeft < 3.0f * 86400.0f) {
-                            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
+                            ImGui::TextColored(kColorRed,
                                 "Expires: %s %d, %d (%d day%s!)",
                                 mname, tmExp->tm_mday, 1900 + tmExp->tm_year,
                                 daysLeft, daysLeft == 1 ? "" : "s");
@@ -21618,7 +21627,7 @@ void GameScreen::renderMailWindow(game::GameHandler& gameHandler) {
                     uint32_t g = mail.cod / 10000;
                     uint32_t s = (mail.cod / 100) % 100;
                     uint32_t c = mail.cod % 100;
-                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
+                    ImGui::TextColored(kColorRed,
                         "COD: %ug %us %uc (you pay this to take items)", g, s, c);
                 }
 
@@ -21780,7 +21789,7 @@ void GameScreen::renderMailComposeWindow(game::GameHandler& gameHandler) {
         int attachCount = gameHandler.getMailAttachmentCount();
         ImGui::Text("Attachments (%d/12):", attachCount);
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Right-click items in bags to attach");
+        ImGui::TextColored(kColorGray, "Right-click items in bags to attach");
 
         const auto& attachments = gameHandler.getMailAttachments();
         // Show attachment slots in a grid (6 per row)
@@ -21851,7 +21860,7 @@ void GameScreen::renderMailComposeWindow(game::GameHandler& gameHandler) {
                               static_cast<uint32_t>(mailComposeMoney_[2]);
 
         uint32_t sendCost = attachCount > 0 ? static_cast<uint32_t>(30 * attachCount) : 30u;
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Sending cost: %uc", sendCost);
+        ImGui::TextColored(kColorGray, "Sending cost: %uc", sendCost);
 
         ImGui::Spacing();
         bool canSend = (strlen(mailRecipientBuffer_) > 0);
@@ -23763,7 +23772,7 @@ void GameScreen::renderDungeonFinderWindow(game::GameHandler& gameHandler) {
     // ---- Status banner ----
     switch (state) {
         case LfgState::None:
-            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Status: Not queued");
+            ImGui::TextColored(kColorGray, "Status: Not queued");
             break;
         case LfgState::RoleCheck:
             ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Status: Role check in progress...");
@@ -23796,7 +23805,7 @@ void GameScreen::renderDungeonFinderWindow(game::GameHandler& gameHandler) {
             break;
         }
         case LfgState::Boot:
-            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Status: Vote kick in progress");
+            ImGui::TextColored(kColorRed, "Status: Vote kick in progress");
             break;
         case LfgState::InDungeon: {
             std::string dName = gameHandler.getCurrentLfgDungeonName();
@@ -23843,7 +23852,7 @@ void GameScreen::renderDungeonFinderWindow(game::GameHandler& gameHandler) {
 
     // ---- Vote-to-kick buttons ----
     if (state == LfgState::Boot) {
-        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Vote to kick in progress:");
+        ImGui::TextColored(kColorRed, "Vote to kick in progress:");
         const std::string& bootTarget = gameHandler.getLfgBootTargetName();
         const std::string& bootReason = gameHandler.getLfgBootReason();
         if (!bootTarget.empty()) {
@@ -24006,7 +24015,7 @@ void GameScreen::renderInstanceLockouts(game::GameHandler& gameHandler) {
     const auto& lockouts = gameHandler.getInstanceLockouts();
 
     if (lockouts.empty()) {
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "No active instance lockouts.");
+        ImGui::TextColored(kColorGray, "No active instance lockouts.");
     } else {
         auto difficultyLabel = [](uint32_t diff) -> const char* {
             switch (diff) {
@@ -24430,7 +24439,7 @@ void GameScreen::renderCombatLog(game::GameHandler& gameHandler) {
                         snprintf(desc, sizeof(desc), "%s heals %s for %d (%s)", src, tgt, e.amount, spell);
                     else
                         snprintf(desc, sizeof(desc), "%s heals %s for %d", src, tgt, e.amount);
-                    color = ImVec4(0.4f, 1.0f, 0.4f, 1.0f);
+                    color = kColorGreen;
                     break;
                 case T::CRIT_HEAL:
                     if (spell)
@@ -24898,7 +24907,7 @@ void GameScreen::renderGmTicketWindow(game::GameHandler& gameHandler) {
 
     // Show existing open ticket if any
     if (gameHandler.hasActiveGmTicket()) {
-        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "You have an open GM ticket.");
+        ImGui::TextColored(kColorGreen, "You have an open GM ticket.");
         const std::string& existingText = gameHandler.getGmTicketText();
         if (!existingText.empty()) {
             ImGui::TextWrapped("Current ticket: %s", existingText.c_str());
@@ -25024,7 +25033,7 @@ void GameScreen::renderThreatWindow(game::GameHandler& gameHandler) {
         // Colour: gold for #1 (tank), red if player is highest, white otherwise
         ImVec4 col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
         if (rank == 1) col = ImVec4(1.0f, 0.82f, 0.0f, 1.0f);      // gold
-        if (isPlayer && rank == 1) col = ImVec4(1.0f, 0.3f, 0.3f, 1.0f); // red — you have aggro
+        if (isPlayer && rank == 1) col = kColorRed; // red — you have aggro
 
         // Threat bar
         float pct = (maxThreat > 0) ? static_cast<float>(entry.threat) / static_cast<float>(maxThreat) : 0.0f;

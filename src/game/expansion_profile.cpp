@@ -85,7 +85,7 @@ namespace game {
 
 std::string ExpansionProfile::versionString() const {
     std::ostringstream ss;
-    ss << (int)majorVersion << "." << (int)minorVersion << "." << (int)patchVersion;
+    ss << static_cast<int>(majorVersion) << "." << static_cast<int>(minorVersion) << "." << static_cast<int>(patchVersion);
     // Append letter suffix for known builds
     if (majorVersion == 3 && minorVersion == 3 && patchVersion == 5) ss << "a";
     else if (majorVersion == 2 && minorVersion == 4 && patchVersion == 3) ss << "";

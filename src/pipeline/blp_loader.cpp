@@ -126,8 +126,8 @@ BLPImage BLPLoader::loadBLP2(const uint8_t* data, size_t size) {
 
     LOG_DEBUG("Loading BLP2: ", image.width, "x", image.height, " ",
               getCompressionName(image.compression),
-              " (comp=", (int)header.compression, " alphaDepth=", (int)header.alphaDepth,
-              " alphaEnc=", (int)header.alphaEncoding, " mipOfs=", header.mipOffsets[0],
+              " (comp=", static_cast<int>(header.compression), " alphaDepth=", static_cast<int>(header.alphaDepth),
+              " alphaEnc=", static_cast<int>(header.alphaEncoding), " mipOfs=", header.mipOffsets[0],
               " mipSize=", header.mipSizes[0], ")");
 
     // Get first mipmap (full resolution)

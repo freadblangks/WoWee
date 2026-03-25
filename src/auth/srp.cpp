@@ -100,7 +100,7 @@ void SRP::feed(const std::vector<uint8_t>& B_bytes,
     auto hexStr = [](const std::vector<uint8_t>& v, size_t maxBytes = 8) -> std::string {
         std::ostringstream ss;
         for (size_t i = 0; i < std::min(v.size(), maxBytes); ++i)
-            ss << std::hex << std::setfill('0') << std::setw(2) << (int)v[i];
+            ss << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(v[i]);
         if (v.size() > maxBytes) ss << "...";
         return ss.str();
     };

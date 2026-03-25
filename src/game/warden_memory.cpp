@@ -949,7 +949,7 @@ bool WardenMemory::searchCodePattern(const uint8_t seed[4], const uint8_t expect
 
     auto bruteStart = std::chrono::steady_clock::now();
     LOG_WARNING("WardenMemory: Brute-force searching ", ranges.size(), " section(s), hint=0x",
-                std::hex, hintOffset, std::dec, " patLen=", (int)patternLen);
+                std::hex, hintOffset, std::dec, " patLen=", static_cast<int>(patternLen));
 
     size_t totalPositions = 0;
     for (const auto& r : ranges) {

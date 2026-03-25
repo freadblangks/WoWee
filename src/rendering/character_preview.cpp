@@ -536,9 +536,9 @@ bool CharacterPreview::loadCharacter(game::Race race, game::Gender gender,
 
     modelLoaded_ = true;
     LOG_INFO("CharacterPreview: loaded ", m2Path,
-             " skin=", (int)skin, " face=", (int)face,
-             " hair=", (int)hairStyle, " hairColor=", (int)hairColor,
-             " facial=", (int)facialHair);
+             " skin=", static_cast<int>(skin), " face=", static_cast<int>(face),
+             " hair=", static_cast<int>(hairStyle), " hairColor=", static_cast<int>(hairColor),
+             " facial=", static_cast<int>(facialHair));
     return true;
 }
 

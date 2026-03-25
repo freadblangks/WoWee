@@ -37,7 +37,7 @@ static std::string trimAscii(std::string s) {
 static std::string hexEncode(const std::vector<uint8_t>& data) {
     std::ostringstream ss;
     for (uint8_t b : data)
-        ss << std::hex << std::setfill('0') << std::setw(2) << (int)b;
+        ss << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(b);
     return ss.str();
 }
 

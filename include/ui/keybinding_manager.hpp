@@ -1,5 +1,4 @@
-#ifndef WOWEE_KEYBINDING_MANAGER_HPP
-#define WOWEE_KEYBINDING_MANAGER_HPP
+#pragma once
 
 #include <imgui.h>
 #include <string>
@@ -86,5 +85,3 @@ private:
 };
 
 }  // namespace wowee::ui
-
-#endif  // WOWEE_KEYBINDING_MANAGER_HPP

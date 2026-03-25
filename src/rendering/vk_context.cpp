@@ -1657,7 +1657,7 @@ VkCommandBuffer VkContext::beginFrame(uint32_t& imageIndex) {
         return VK_NULL_HANDLE;
     }
     if (fenceResult != VK_SUCCESS) {
-        LOG_ERROR("beginFrame[", beginFrameCounter, "] fence wait failed: ", (int)fenceResult);
+        LOG_ERROR("beginFrame[", beginFrameCounter, "] fence wait failed: ", static_cast<int>(fenceResult));
         if (fenceResult == VK_ERROR_DEVICE_LOST) {
             deviceLost_ = true;
         }
@@ -1698,7 +1698,7 @@ void VkContext::endFrame(VkCommandBuffer cmd, uint32_t imageIndex) {
 
     VkResult endResult = vkEndCommandBuffer(cmd);
     if (endResult != VK_SUCCESS) {
-        LOG_ERROR("endFrame[", endFrameCounter, "] vkEndCommandBuffer FAILED: ", (int)endResult);
+        LOG_ERROR("endFrame[", endFrameCounter, "] vkEndCommandBuffer FAILED: ", static_cast<int>(endResult));
     }
 
     auto& frame = frames[currentFrame];
@@ -1717,7 +1717,7 @@ void VkContext::endFrame(VkCommandBuffer cmd, uint32_t imageIndex) {
 
     VkResult submitResult = vkQueueSubmit(graphicsQueue, 1, &submitInfo, frame.inFlightFence);
     if (submitResult != VK_SUCCESS) {
-        LOG_ERROR("endFrame[", endFrameCounter, "] vkQueueSubmit FAILED: ", (int)submitResult);
+        LOG_ERROR("endFrame[", endFrameCounter, "] vkQueueSubmit FAILED: ", static_cast<int>(submitResult));
         if (submitResult == VK_ERROR_DEVICE_LOST) {
             deviceLost_ = true;
         }

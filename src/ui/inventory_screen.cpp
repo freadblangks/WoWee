@@ -2436,12 +2436,12 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
         // Right-click: bank deposit (if bank open), vendor sell (if vendor mode), or auto-equip/use
         // Note: InvisibleButton only tracks left-click by default, so use IsItemHovered+IsMouseClicked
         if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !holdingItem && !ImGui::GetIO().KeyShift && gameHandler_) {
-            LOG_WARNING("Right-click slot: kind=", (int)kind,
+            LOG_WARNING("Right-click slot: kind=", static_cast<int>(kind),
                      " backpackIndex=", backpackIndex,
                      " bagIndex=", bagIndex, " bagSlotIndex=", bagSlotIndex,
                      " vendorMode=", vendorMode_,
                      " bankOpen=", gameHandler_->isBankOpen(),
-                     " item='", item.name, "' invType=", (int)item.inventoryType);
+                     " item='", item.name, "' invType=", static_cast<int>(item.inventoryType));
             if (gameHandler_->isMailComposeOpen() && kind == SlotKind::BACKPACK && backpackIndex >= 0) {
                 gameHandler_->attachItemFromBackpack(backpackIndex);
             } else if (gameHandler_->isMailComposeOpen() && kind == SlotKind::BACKPACK && isBagSlot) {
@@ -2455,11 +2455,11 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
             } else if (vendorMode_ && kind == SlotKind::BACKPACK && isBagSlot) {
                 gameHandler_->sellItemInBag(bagIndex, bagSlotIndex);
             } else if (kind == SlotKind::EQUIPMENT) {
-                LOG_INFO("UI unequip request: equipSlot=", (int)equipSlot);
+                LOG_INFO("UI unequip request: equipSlot=", static_cast<int>(equipSlot));
                 gameHandler_->unequipToBackpack(equipSlot);
             } else if (kind == SlotKind::BACKPACK && backpackIndex >= 0) {
                 LOG_INFO("Right-click backpack item: name='", item.name,
-                         "' inventoryType=", (int)item.inventoryType,
+                         "' inventoryType=", static_cast<int>(item.inventoryType),
                          " itemId=", item.itemId,
                          " startQuestId=", item.startQuestId);
                 if (item.startQuestId != 0) {
@@ -2479,7 +2479,7 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
                 }
             } else if (kind == SlotKind::BACKPACK && isBagSlot) {
                 LOG_INFO("Right-click bag item: name='", item.name,
-                         "' inventoryType=", (int)item.inventoryType,
+                         "' inventoryType=", static_cast<int>(item.inventoryType),
                          " bagIndex=", bagIndex, " slotIndex=", bagSlotIndex,
                          " startQuestId=", item.startQuestId);
                 if (item.startQuestId != 0) {

@@ -578,7 +578,7 @@ bool WMOLoader::loadGroup(const std::vector<uint8_t>& groupData,
                         if (batchLogCount < 15) {
                             core::Logger::getInstance().debug("  Batch[", i, "]: start=", batch.startIndex,
                                 " count=", batch.indexCount, " verts=[", batch.startVertex, "-",
-                                batch.lastVertex, "] mat=", (int)batch.materialId, " flags=", (int)batch.flags);
+                                batch.lastVertex, "] mat=", static_cast<int>(batch.materialId), " flags=", static_cast<int>(batch.flags));
                             batchLogCount++;
                         }
                     }

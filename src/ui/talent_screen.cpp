@@ -227,8 +227,8 @@ void TalentScreen::renderTalentTree(game::GameHandler& gameHandler, uint32_t tab
     // Find grid dimensions — use int to avoid uint8_t wrap-around infinite loops
     int maxRow = 0, maxCol = 0;
     for (const auto* talent : talents) {
-        maxRow = std::max(maxRow, (int)talent->row);
-        maxCol = std::max(maxCol, (int)talent->column);
+        maxRow = std::max(maxRow, static_cast<int>(talent->row));
+        maxCol = std::max(maxCol, static_cast<int>(talent->column));
     }
     // Sanity-cap to prevent runaway loops from corrupt/unexpected DBC data
     maxRow = std::min(maxRow, 15);
@@ -239,8 +239,8 @@ void TalentScreen::renderTalentTree(game::GameHandler& gameHandler, uint32_t tab
     const float iconSize = 40.0f;
     const float spacing = 8.0f;
     const float cellSize = iconSize + spacing;
-    const float gridWidth = (float)(maxCol + 1) * cellSize + spacing;
-    const float gridHeight = (float)(maxRow + 1) * cellSize + spacing;
+    const float gridWidth = static_cast<float>(maxCol + 1) * cellSize + spacing;
+    const float gridHeight = static_cast<float>(maxRow + 1) * cellSize + spacing;
 
     // Points in this tree
     uint32_t pointsInTree = 0;

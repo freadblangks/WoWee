@@ -1002,7 +1002,7 @@ void WaterRenderer::loadFromWMO([[maybe_unused]] const pipeline::WMOLiquid& liqu
         }
     }
     LOG_DEBUG("WMO water: origin=(", surface.origin.x, ",", surface.origin.y, ",", surface.origin.z,
-             ") tiles=", (int)surface.width, "x", (int)surface.height,
+             ") tiles=", static_cast<int>(surface.width), "x", static_cast<int>(surface.height),
              " active=", activeTiles, "/", tileCount,
              " wmoId=", wmoId, " indexCount=", surface.indexCount,
              " bounds x=[", minWX, "..", maxWX, "] y=[", minWY, "..", maxWY, "]");

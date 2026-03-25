@@ -179,7 +179,7 @@ void TransportManager::loadPathFromNodes(uint32_t pathId, const std::vector<glm:
     // Helper: compute segment duration from distance and speed
     auto segMsFromDist = [&](float dist) -> uint32_t {
         if (speed <= 0.0f) return 1000;
-        return (uint32_t)((dist / speed) * 1000.0f);
+        return static_cast<uint32_t>((dist / speed) * 1000.0f);
     };
 
     // Single point = stationary (durationMs = 0)
@@ -259,7 +259,7 @@ void TransportManager::updateTransportMovement(ActiveTransport& transport, float
     }
 
     // Evaluate path time
-    uint32_t nowMs = (uint32_t)(elapsedTime_ * 1000.0f);
+    uint32_t nowMs = static_cast<uint32_t>(elapsedTime_ * 1000.0f);
     uint32_t pathTimeMs = 0;
 
     if (transport.hasServerClock) {
@@ -403,7 +403,7 @@ glm::vec3 TransportManager::evalTimedCatmullRom(const TransportPath& path, uint3
     uint32_t t1Ms = path.points[p1Idx].tMs;
     uint32_t t2Ms = path.points[p2Idx].tMs;
     uint32_t segmentDurationMs = (t2Ms > t1Ms) ? (t2Ms - t1Ms) : 1;
-    float t = (float)(pathTimeMs - t1Ms) / static_cast<float>(segmentDurationMs);
+    float t = static_cast<float>(pathTimeMs - t1Ms) / static_cast<float>(segmentDurationMs);
     t = glm::clamp(t, 0.0f, 1.0f);
 
     // Catmull-Rom spline formula
@@ -480,7 +480,7 @@ glm::quat TransportManager::orientationFromTangent(const TransportPath& path, ui
     uint32_t t1Ms = path.points[p1Idx].tMs;
     uint32_t t2Ms = path.points[p2Idx].tMs;
     uint32_t segmentDurationMs = (t2Ms > t1Ms) ? (t2Ms - t1Ms) : 1;
-    float t = (float)(pathTimeMs - t1Ms) / static_cast<float>(segmentDurationMs);
+    float t = static_cast<float>(pathTimeMs - t1Ms) / static_cast<float>(segmentDurationMs);
     t = glm::clamp(t, 0.0f, 1.0f);
 
     // Tangent of Catmull-Rom spline (derivative)

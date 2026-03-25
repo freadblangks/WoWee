@@ -119,7 +119,7 @@ void AssetManager::shutdown() {
     if (fileCacheHits + fileCacheMisses > 0) {
         float hitRate = static_cast<float>(fileCacheHits) / (fileCacheHits + fileCacheMisses) * 100.0f;
         LOG_INFO("File cache stats: ", fileCacheHits, " hits, ", fileCacheMisses, " misses (",
-                 (int)hitRate, "% hit rate), ", fileCacheTotalBytes / 1024 / 1024, " MB cached");
+                 static_cast<int>(hitRate), "% hit rate), ", fileCacheTotalBytes / 1024 / 1024, " MB cached");
     }
 
     clearCache();

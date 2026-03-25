@@ -928,6 +928,34 @@ void GameHandler::updateNetworking(float deltaTime) {
     }
 }
 
+void GameHandler::updateEntityInterpolation(float deltaTime) {
+// Update entity movement interpolation (keeps targeting in sync with visuals)
+// Only update entities within reasonable distance for performance
+const float updateRadiusSq = 150.0f * 150.0f;  // 150 unit radius
+auto playerEntity = entityManager.getEntity(playerGuid);
+glm::vec3 playerPos = playerEntity ? glm::vec3(playerEntity->getX(), playerEntity->getY(), playerEntity->getZ()) : glm::vec3(0.0f);
+
+for (auto& [guid, entity] : entityManager.getEntities()) {
+    // Always update player
+    if (guid == playerGuid) {
+        entity->updateMovement(deltaTime);
+        continue;
+    }
+    // Keep selected/engaged target interpolation exact for UI targeting circle.
+    if (guid == targetGuid || guid == autoAttackTarget) {
+        entity->updateMovement(deltaTime);
+        continue;
+    }
+
+    // Distance cull other entities (use latest position to avoid culling by stale origin)
+    glm::vec3 entityPos(entity->getLatestX(), entity->getLatestY(), entity->getLatestZ());
+    float distSq = glm::dot(entityPos - playerPos, entityPos - playerPos);
+    if (distSq < updateRadiusSq) {
+        entity->updateMovement(deltaTime);
+    }
+}
+}
+
 void GameHandler::updateTimers(float deltaTime) {
     if (auctionSearchDelayTimer_ > 0.0f) {
         auctionSearchDelayTimer_ -= deltaTime;
@@ -1496,31 +1524,7 @@ void GameHandler::update(float deltaTime) {
         closeIfTooFar(taxiWindowOpen_, taxiNpcGuid_, [this]{ closeTaxi(); }, "Taxi window");
         closeIfTooFar(trainerWindowOpen_, currentTrainerList_.trainerGuid, [this]{ closeTrainer(); }, "Trainer");
 
-        // Update entity movement interpolation (keeps targeting in sync with visuals)
-        // Only update entities within reasonable distance for performance
-        const float updateRadiusSq = 150.0f * 150.0f;  // 150 unit radius
-        auto playerEntity = entityManager.getEntity(playerGuid);
-        glm::vec3 playerPos = playerEntity ? glm::vec3(playerEntity->getX(), playerEntity->getY(), playerEntity->getZ()) : glm::vec3(0.0f);
-
-        for (auto& [guid, entity] : entityManager.getEntities()) {
-            // Always update player
-            if (guid == playerGuid) {
-                entity->updateMovement(deltaTime);
-                continue;
-            }
-            // Keep selected/engaged target interpolation exact for UI targeting circle.
-            if (guid == targetGuid || guid == autoAttackTarget) {
-                entity->updateMovement(deltaTime);
-                continue;
-            }
-
-            // Distance cull other entities (use latest position to avoid culling by stale origin)
-            glm::vec3 entityPos(entity->getLatestX(), entity->getLatestY(), entity->getLatestZ());
-            float distSq = glm::dot(entityPos - playerPos, entityPos - playerPos);
-            if (distSq < updateRadiusSq) {
-                entity->updateMovement(deltaTime);
-            }
-        }
+        updateEntityInterpolation(deltaTime);
 
     }
 }

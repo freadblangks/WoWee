@@ -615,6 +615,12 @@ static QuestQueryRewards tryParseQuestRewards(const std::vector<uint8_t>& data,
 
 } // namespace
 
+template<typename ManagerGetter, typename Callback>
+void GameHandler::withSoundManager(ManagerGetter getter, Callback cb) {
+    if (auto* renderer = core::Application::getInstance().getRenderer()) {
+        if (auto* mgr = (renderer->*getter)()) cb(mgr);
+    }
+}
 
 GameHandler::GameHandler() {
     LOG_DEBUG("GameHandler created");
@@ -1687,9 +1693,7 @@ void GameHandler::registerOpcodeHandlers() {
                     std::string msg = "Received: " + link;
                     if (count > 1) msg += " x" + std::to_string(count);
                     addSystemChatMessage(msg);
-                    if (auto* renderer = core::Application::getInstance().getRenderer()) {
-                        if (auto* sfx = renderer->getUiSoundManager()) sfx->playLootItem();
-                    }
+                                            withSoundManager(&rendering::Renderer::getUiSoundManager, [](auto* sfx) { sfx->playLootItem(); });
                     if (itemLootCallback_) itemLootCallback_(itemId, count, quality, itemName);
                                             fireAddonEvent("CHAT_MSG_LOOT", {msg, "", std::to_string(itemId), std::to_string(count)});
                 } else {
@@ -2879,9 +2883,7 @@ void GameHandler::registerOpcodeHandlers() {
             addSystemChatMessage("You have learned " + name + ".");
         else
             addSystemChatMessage("Spell learned.");
-        if (auto* renderer = core::Application::getInstance().getRenderer()) {
-            if (auto* sfx = renderer->getUiSoundManager()) sfx->playQuestActivate();
-        }
+                    withSoundManager(&rendering::Renderer::getUiSoundManager, [](auto* sfx) { sfx->playQuestActivate(); });
             fireAddonEvent("TRAINER_UPDATE", {});
             fireAddonEvent("SPELLS_CHANGED", {});
     };
@@ -2901,9 +2903,7 @@ void GameHandler::registerOpcodeHandlers() {
         else if (errorCode != 0) msg += " (error " + std::to_string(errorCode) + ")";
         addUIError(msg);
         addSystemChatMessage(msg);
-        if (auto* renderer = core::Application::getInstance().getRenderer()) {
-            if (auto* sfx = renderer->getUiSoundManager()) sfx->playError();
-        }
+                    withSoundManager(&rendering::Renderer::getUiSoundManager, [](auto* sfx) { sfx->playError(); });
     };
 
     // Minimap ping
@@ -2922,9 +2922,7 @@ void GameHandler::registerOpcodeHandlers() {
         ping.age  = 0.0f;
         minimapPings_.push_back(ping);
         if (senderGuid != playerGuid) {
-            if (auto* renderer = core::Application::getInstance().getRenderer()) {
-                if (auto* sfx = renderer->getUiSoundManager()) sfx->playMinimapPing();
-            }
+                            withSoundManager(&rendering::Renderer::getUiSoundManager, [](auto* sfx) { sfx->playMinimapPing(); });
         }
     };
     dispatchTable_[Opcode::SMSG_ZONE_UNDER_ATTACK] = [this](network::Packet& packet) {
@@ -3791,11 +3789,7 @@ void GameHandler::registerOpcodeHandlers() {
             craftQueueRemaining_ = 0;
             queuedSpellId_ = 0;
             queuedSpellTarget_ = 0;
-            if (auto* renderer = core::Application::getInstance().getRenderer()) {
-                if (auto* ssm = renderer->getSpellSoundManager()) {
-                    ssm->stopPrecast();
-                }
-            }
+            withSoundManager(&rendering::Renderer::getSpellSoundManager, [](auto* ssm) { ssm->stopPrecast(); });
             if (spellCastAnimCallback_) {
                 spellCastAnimCallback_(playerGuid, false, false);
             }
@@ -18437,11 +18431,7 @@ void GameHandler::handleCastFailed(network::Packet& packet) {
     queuedSpellTarget_ = 0;
 
     // Stop precast sound — spell failed before completing
-    if (auto* renderer = core::Application::getInstance().getRenderer()) {
-        if (auto* ssm = renderer->getSpellSoundManager()) {
-            ssm->stopPrecast();
-        }
-    }
+    withSoundManager(&rendering::Renderer::getSpellSoundManager, [](auto* ssm) { ssm->stopPrecast(); });
 
     // Show failure reason in the UIError overlay and in chat
     int powerType = -1;

@@ -2000,6 +2000,9 @@ public:
     void fireAddonEvent(const std::string& event, const std::vector<std::string>& args = {}) {
         if (addonEventCallback_) addonEventCallback_(event, args);
     }
+    // Convenience: invoke a callback with a sound manager obtained from the renderer.
+    template<typename ManagerGetter, typename Callback>
+    void withSoundManager(ManagerGetter getter, Callback cb);
 
     // Reputation change toast: factionName, delta, new standing
     using RepChangeCallback = std::function<void(const std::string& factionName, int32_t delta, int32_t standing)>;

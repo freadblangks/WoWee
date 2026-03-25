@@ -2517,6 +2517,7 @@ private:
     void triggerQuestAcceptResync(uint32_t questId, uint64_t npcGuid, const char* reason);
     bool hasQuestInLog(uint32_t questId) const;
     std::string guidToUnitId(uint64_t guid) const;
+    Unit* getUnitByGuid(uint64_t guid);
     std::string getQuestTitle(uint32_t questId) const;
     const QuestLogEntry* findQuestLogEntry(uint32_t questId) const;
     int findQuestLogSlotIndexFromServer(uint32_t questId) const;

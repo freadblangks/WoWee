@@ -1797,8 +1797,7 @@ void GameHandler::registerOpcodeHandlers() {
         uint64_t guid = huTbc ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
         if (packet.getRemainingSize() < 4) return;
         uint32_t hp = packet.readUInt32();
-        auto entity = entityManager.getEntity(guid);
-        if (auto* unit = dynamic_cast<Unit*>(entity.get())) unit->setHealth(hp);
+        if (auto* unit = getUnitByGuid(guid)) unit->setHealth(hp);
         if (guid != 0) {
             auto unitId = guidToUnitId(guid);
             if (!unitId.empty()) fireAddonEvent("UNIT_HEALTH", {unitId});
@@ -1811,8 +1810,7 @@ void GameHandler::registerOpcodeHandlers() {
         if (packet.getRemainingSize() < 5) return;
         uint8_t  powerType = packet.readUInt8();
         uint32_t value     = packet.readUInt32();
-        auto entity = entityManager.getEntity(guid);
-        if (auto* unit = dynamic_cast<Unit*>(entity.get())) unit->setPowerByType(powerType, value);
+        if (auto* unit = getUnitByGuid(guid)) unit->setPowerByType(powerType, value);
         if (guid != 0) {
             auto unitId = guidToUnitId(guid);
             if (!unitId.empty()) {
@@ -2686,8 +2684,7 @@ void GameHandler::registerOpcodeHandlers() {
         readyCheckResults_.clear();
         if (packet.getRemainingSize() >= 8) {
             uint64_t initiatorGuid = packet.readUInt64();
-            auto entity = entityManager.getEntity(initiatorGuid);
-            if (auto* unit = dynamic_cast<Unit*>(entity.get()))
+            if (auto* unit = getUnitByGuid(initiatorGuid))
                 readyCheckInitiator_ = unit->getName();
         }
         if (readyCheckInitiator_.empty() && partyData.leaderGuid != 0) {
@@ -13573,8 +13570,7 @@ void GameHandler::handleDuelRequested(network::Packet& packet) {
 
     // Resolve challenger name from entity list
     duelChallengerName_.clear();
-    auto entity = entityManager.getEntity(duelChallengerGuid_);
-    if (auto* unit = dynamic_cast<Unit*>(entity.get())) {
+    if (auto* unit = getUnitByGuid(duelChallengerGuid_)) {
         duelChallengerName_ = unit->getName();
     }
     if (duelChallengerName_.empty()) {
@@ -20574,6 +20570,11 @@ bool GameHandler::hasQuestInLog(uint32_t questId) const {
     return false;
 }
 
+Unit* GameHandler::getUnitByGuid(uint64_t guid) {
+    auto entity = entityManager.getEntity(guid);
+    return entity ? dynamic_cast<Unit*>(entity.get()) : nullptr;
+}
+
 std::string GameHandler::guidToUnitId(uint64_t guid) const {
     if (guid == playerGuid)      return "player";
     if (guid == targetGuid)      return "target";
@@ -25129,8 +25130,7 @@ void GameHandler::handleQuestConfirmAccept(network::Packet& packet) {
     }
 
     sharedQuestSharerName_.clear();
-    auto entity = entityManager.getEntity(sharedQuestSharerGuid_);
-    if (auto* unit = dynamic_cast<Unit*>(entity.get())) {
+    if (auto* unit = getUnitByGuid(sharedQuestSharerGuid_)) {
         sharedQuestSharerName_ = unit->getName();
     }
     if (sharedQuestSharerName_.empty()) {
@@ -25181,8 +25181,7 @@ void GameHandler::handleSummonRequest(network::Packet& packet) {
     pendingSummonRequest_= true;
 
     summonerName_.clear();
-    auto entity = entityManager.getEntity(summonerGuid_);
-    if (auto* unit = dynamic_cast<Unit*>(entity.get())) {
+    if (auto* unit = getUnitByGuid(summonerGuid_)) {
         summonerName_ = unit->getName();
     }
     if (summonerName_.empty()) {
@@ -25247,8 +25246,7 @@ void GameHandler::handleTradeStatus(network::Packet& packet) {
             }
             // Resolve name from entity list
             tradePeerName_.clear();
-            auto entity = entityManager.getEntity(tradePeerGuid_);
-            if (auto* unit = dynamic_cast<Unit*>(entity.get())) {
+            if (auto* unit = getUnitByGuid(tradePeerGuid_)) {
                 tradePeerName_ = unit->getName();
             }
             if (tradePeerName_.empty()) {
@@ -25487,8 +25485,7 @@ void GameHandler::handleLootRoll(network::Packet& packet) {
     const char* rollName = (rollType < 4) ? rollNames[rollType] : "Pass";
 
     std::string rollerName;
-    auto entity = entityManager.getEntity(rollerGuid);
-    if (auto* unit = dynamic_cast<Unit*>(entity.get())) {
+    if (auto* unit = getUnitByGuid(rollerGuid)) {
         rollerName = unit->getName();
     }
     if (rollerName.empty()) rollerName = "Someone";
@@ -25553,8 +25550,7 @@ void GameHandler::handleLootRollWon(network::Packet& packet) {
     const char* rollName = (rollType < 3) ? rollNames[rollType] : "Roll";
 
     std::string winnerName;
-    auto entity = entityManager.getEntity(winnerGuid);
-    if (auto* unit = dynamic_cast<Unit*>(entity.get())) {
+    if (auto* unit = getUnitByGuid(winnerGuid)) {
         winnerName = unit->getName();
     }
     if (winnerName.empty()) {
@@ -25723,8 +25719,7 @@ void GameHandler::handleAchievementEarned(network::Packet& packet) {
     } else {
         // Another player in the zone earned an achievement
         std::string senderName;
-        auto entity = entityManager.getEntity(guid);
-        if (auto* unit = dynamic_cast<Unit*>(entity.get())) {
+        if (auto* unit = getUnitByGuid(guid)) {
             senderName = unit->getName();
         }
         if (senderName.empty()) {

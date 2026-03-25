@@ -2363,32 +2363,6 @@ void GameHandler::registerOpcodeHandlers() {
             if (list.empty()) threatLists_.erase(it);
         }
     };
-    for (auto op : { Opcode::SMSG_HIGHEST_THREAT_UPDATE, Opcode::SMSG_THREAT_UPDATE }) {
-        dispatchTable_[op] = [this](network::Packet& packet) {
-            if (packet.getSize() - packet.getReadPos() < 1) return;
-            uint64_t unitGuid = UpdateObjectParser::readPackedGuid(packet);
-            if (packet.getSize() - packet.getReadPos() < 1) return;
-            (void)UpdateObjectParser::readPackedGuid(packet);
-            if (packet.getSize() - packet.getReadPos() < 4) return;
-            uint32_t cnt = packet.readUInt32();
-            if (cnt > 100) { packet.setReadPos(packet.getSize()); return; }
-            std::vector<ThreatEntry> list;
-            list.reserve(cnt);
-            for (uint32_t i = 0; i < cnt; ++i) {
-                if (packet.getSize() - packet.getReadPos() < 1) break;
-                ThreatEntry entry;
-                entry.victimGuid = UpdateObjectParser::readPackedGuid(packet);
-                if (packet.getSize() - packet.getReadPos() < 4) break;
-                entry.threat = packet.readUInt32();
-                list.push_back(entry);
-            }
-            std::sort(list.begin(), list.end(),
-                [](const ThreatEntry& a, const ThreatEntry& b){ return a.threat > b.threat; });
-            threatLists_[unitGuid] = std::move(list);
-            if (addonEventCallback_)
-                addonEventCallback_("UNIT_THREAT_LIST_UPDATE", {});
-        };
-    }
     dispatchTable_[Opcode::SMSG_CANCEL_COMBAT] = [this](network::Packet& /*packet*/) {
         autoAttacking = false;
         autoAttackTarget = 0;
@@ -2721,17 +2695,6 @@ void GameHandler::registerOpcodeHandlers() {
             }
         }
     };
-    dispatchTable_[Opcode::SMSG_ACHIEVEMENT_EARNED] = [this](network::Packet& packet) { handleAchievementEarned(packet); };
-    dispatchTable_[Opcode::SMSG_ALL_ACHIEVEMENT_DATA] = [this](network::Packet& packet) { handleAllAchievementData(packet); };
-    dispatchTable_[Opcode::SMSG_CANCEL_AUTO_REPEAT] = [this](network::Packet& /*packet*/) {};
-    dispatchTable_[Opcode::SMSG_AURA_UPDATE] = [this](network::Packet& packet) { handleAuraUpdate(packet, false); };
-    dispatchTable_[Opcode::SMSG_AURA_UPDATE_ALL] = [this](network::Packet& packet) { handleAuraUpdate(packet, true); };
-    dispatchTable_[Opcode::SMSG_FISH_NOT_HOOKED] = [this](network::Packet& /*packet*/) {
-        addSystemChatMessage("Your fish got away.");
-    };
-    dispatchTable_[Opcode::SMSG_FISH_ESCAPED] = [this](network::Packet& /*packet*/) {
-        addSystemChatMessage("Your fish escaped!");
-    };
     dispatchTable_[Opcode::SMSG_LEARNED_SPELL] = [this](network::Packet& packet) { handleLearnedSpell(packet); };
     dispatchTable_[Opcode::SMSG_SUPERCEDED_SPELL] = [this](network::Packet& packet) { handleSupercededSpell(packet); };
     dispatchTable_[Opcode::SMSG_REMOVED_SPELL] = [this](network::Packet& packet) { handleRemovedSpell(packet); };
@@ -3016,40 +2979,6 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
 
-    // Item cooldown
-    dispatchTable_[Opcode::SMSG_ITEM_COOLDOWN] = [this](network::Packet& packet) {
-        if (packet.getSize() - packet.getReadPos() < 16) return;
-        uint64_t itemGuid = packet.readUInt64();
-        uint32_t spellId  = packet.readUInt32();
-        uint32_t cdMs     = packet.readUInt32();
-        float cdSec = cdMs / 1000.0f;
-        if (cdSec > 0.0f) {
-            if (spellId != 0) {
-                auto it = spellCooldowns.find(spellId);
-                if (it == spellCooldowns.end())
-                    spellCooldowns[spellId] = cdSec;
-                else
-                    it->second = mergeCooldownSeconds(it->second, cdSec);
-            }
-            uint32_t itemId = 0;
-            auto iit = onlineItems_.find(itemGuid);
-            if (iit != onlineItems_.end()) itemId = iit->second.entry;
-            for (auto& slot : actionBar) {
-                bool match = (spellId != 0 && slot.type == ActionBarSlot::SPELL && slot.id == spellId)
-                          || (itemId  != 0 && slot.type == ActionBarSlot::ITEM  && slot.id == itemId);
-                if (match) {
-                    float prevRemaining = slot.cooldownRemaining;
-                    float merged = mergeCooldownSeconds(slot.cooldownRemaining, cdSec);
-                    slot.cooldownRemaining = merged;
-                    if (slot.cooldownTotal <= 0.0f || prevRemaining <= 0.0f)
-                        slot.cooldownTotal = cdSec;
-                    else
-                        slot.cooldownTotal = std::max(slot.cooldownTotal, merged);
-                }
-            }
-        }
-    };
-
     // Minimap ping
     dispatchTable_[Opcode::MSG_MINIMAP_PING] = [this](network::Packet& packet) {
         const bool mmTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
@@ -3083,49 +3012,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
 
-    // Dispel / totem / spirit healer time / durability
-    dispatchTable_[Opcode::SMSG_DISPEL_FAILED] = [this](network::Packet& packet) {
-        const bool dispelUsesFullGuid = isActiveExpansion("tbc");
-        uint32_t dispelSpellId = 0;
-        uint64_t dispelCasterGuid = 0;
-        if (dispelUsesFullGuid) {
-            if (packet.getSize() - packet.getReadPos() < 20) return;
-            dispelCasterGuid = packet.readUInt64();
-            /*uint64_t victim =*/ packet.readUInt64();
-            dispelSpellId = packet.readUInt32();
-        } else {
-            if (packet.getSize() - packet.getReadPos() < 4) return;
-            dispelSpellId = packet.readUInt32();
-            if (!hasFullPackedGuid(packet)) { packet.setReadPos(packet.getSize()); return; }
-            dispelCasterGuid = UpdateObjectParser::readPackedGuid(packet);
-            if (!hasFullPackedGuid(packet)) { packet.setReadPos(packet.getSize()); return; }
-            /*uint64_t victim =*/ UpdateObjectParser::readPackedGuid(packet);
-        }
-        if (dispelCasterGuid == playerGuid) {
-            loadSpellNameCache();
-            auto it = spellNameCache_.find(dispelSpellId);
-            char buf[128];
-            if (it != spellNameCache_.end() && !it->second.name.empty())
-                std::snprintf(buf, sizeof(buf), "%s failed to dispel.", it->second.name.c_str());
-            else
-                std::snprintf(buf, sizeof(buf), "Dispel failed! (spell %u)", dispelSpellId);
-            addSystemChatMessage(buf);
-        }
-    };
-    dispatchTable_[Opcode::SMSG_TOTEM_CREATED] = [this](network::Packet& packet) {
-        const bool totemTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
-        if (packet.getSize() - packet.getReadPos() < (totemTbcLike ? 17u : 9u)) return;
-        uint8_t slot = packet.readUInt8();
-        if (totemTbcLike) packet.readUInt64(); else UpdateObjectParser::readPackedGuid(packet);
-        if (packet.getSize() - packet.getReadPos() < 8) return;
-        uint32_t duration = packet.readUInt32();
-        uint32_t spellId  = packet.readUInt32();
-        if (slot < NUM_TOTEM_SLOTS) {
-            activeTotemSlots_[slot].spellId    = spellId;
-            activeTotemSlots_[slot].durationMs = duration;
-            activeTotemSlots_[slot].placedAt   = std::chrono::steady_clock::now();
-        }
-    };
+    // Spirit healer time / durability
     dispatchTable_[Opcode::SMSG_AREA_SPIRIT_HEALER_TIME] = [this](network::Packet& packet) {
         if (packet.getSize() - packet.getReadPos() >= 12) {
             /*uint64_t guid =*/ packet.readUInt64();
@@ -5213,9 +5100,10 @@ void GameHandler::registerOpcodeHandlers() {
                 }
             }
         }
-        if (addonEventCallback_)
+        if (addonEventCallback_) {
             addonEventCallback_("QUEST_LOG_UPDATE", {});
-                addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
+            addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
+        }
         // Re-query all nearby quest giver NPCs so markers refresh
         if (socket) {
             for (const auto& [guid, entity] : entityManager.getEntities()) {
@@ -5287,7 +5175,7 @@ void GameHandler::registerOpcodeHandlers() {
                     if (addonEventCallback_) {
                         addonEventCallback_("QUEST_WATCH_UPDATE", {std::to_string(questId)});
                         addonEventCallback_("QUEST_LOG_UPDATE", {});
-                addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
+                        addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
                     }
 
                     LOG_INFO("Updated kill count for quest ", questId, ": ",
@@ -20920,7 +20808,7 @@ void GameHandler::addQuestToLocalLogIfMissing(uint32_t questId, const std::strin
     if (addonEventCallback_) {
         addonEventCallback_("QUEST_ACCEPTED", {std::to_string(questId)});
         addonEventCallback_("QUEST_LOG_UPDATE", {});
-                    addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
+        addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
     }
 }
 
@@ -21221,7 +21109,7 @@ void GameHandler::abandonQuest(uint32_t questId) {
         questLog_.erase(questLog_.begin() + static_cast<ptrdiff_t>(localIndex));
         if (addonEventCallback_) {
             addonEventCallback_("QUEST_LOG_UPDATE", {});
-                    addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
+            addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
             addonEventCallback_("QUEST_REMOVED", {std::to_string(questId)});
         }
     }

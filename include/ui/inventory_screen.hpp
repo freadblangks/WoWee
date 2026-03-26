@@ -163,6 +163,7 @@ private:
                         game::EquipSlot equipSlot,
                         int bagIndex = -1, int bagSlotIndex = -1);
     void renderItemTooltip(const game::ItemDef& item, const game::Inventory* inventory = nullptr, uint64_t itemGuid = 0);
+    const std::unordered_map<uint32_t, std::string>& getEnchantmentNames();
 
     // Held item helpers
     void pickupFromBackpack(game::Inventory& inv, int index);

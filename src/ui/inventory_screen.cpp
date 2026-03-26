@@ -2510,12 +2510,11 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
     }
 }
 
-void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::Inventory* inventory, uint64_t itemGuid) {
-    // Shared SpellItemEnchantment name lookup — used for socket gems, permanent and temp enchants.
-    static std::unordered_map<uint32_t, std::string> s_enchLookupB;
-    static bool s_enchLookupLoadedB = false;
-    if (!s_enchLookupLoadedB && assetManager_) {
-        s_enchLookupLoadedB = true;
+const std::unordered_map<uint32_t, std::string>& InventoryScreen::getEnchantmentNames() {
+    static std::unordered_map<uint32_t, std::string> s_cache;
+    static bool s_loaded = false;
+    if (!s_loaded && assetManager_) {
+        s_loaded = true;
         auto dbc = assetManager_->loadDBC("SpellItemEnchantment.dbc");
         if (dbc && dbc->isLoaded()) {
             const auto* lay = pipeline::getActiveDBCLayout()
@@ -2527,10 +2526,15 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
                 uint32_t eid = dbc->getUInt32(r, 0);
                 if (eid == 0 || nf >= fc) continue;
                 std::string en = dbc->getString(r, nf);
-                if (!en.empty()) s_enchLookupB[eid] = std::move(en);
+                if (!en.empty()) s_cache[eid] = std::move(en);
             }
         }
     }
+    return s_cache;
+}
+
+void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::Inventory* inventory, uint64_t itemGuid) {
+    const auto& s_enchLookupB = getEnchantmentNames();
 
     ImGui::BeginTooltip();
 
@@ -3213,26 +3217,7 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
 // Tooltip overload for ItemQueryResponseData (used by loot window, etc.)
 // ---------------------------------------------------------------------------
 void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info, const game::Inventory* inventory, uint64_t itemGuid) {
-    // Shared SpellItemEnchantment name lookup — used for socket gems, socket bonus, and enchants.
-    static std::unordered_map<uint32_t, std::string> s_enchLookup;
-    static bool s_enchLookupLoaded = false;
-    if (!s_enchLookupLoaded && assetManager_) {
-        s_enchLookupLoaded = true;
-        auto dbc = assetManager_->loadDBC("SpellItemEnchantment.dbc");
-        if (dbc && dbc->isLoaded()) {
-            const auto* lay = pipeline::getActiveDBCLayout()
-                ? pipeline::getActiveDBCLayout()->getLayout("SpellItemEnchantment") : nullptr;
-            uint32_t nf = lay ? lay->field("Name") : 8u;
-            if (nf == 0xFFFFFFFF) nf = 8;
-            uint32_t fc = dbc->getFieldCount();
-            for (uint32_t r = 0; r < dbc->getRecordCount(); ++r) {
-                uint32_t eid = dbc->getUInt32(r, 0);
-                if (eid == 0 || nf >= fc) continue;
-                std::string en = dbc->getString(r, nf);
-                if (!en.empty()) s_enchLookup[eid] = std::move(en);
-            }
-        }
-    }
+    const auto& s_enchLookup = getEnchantmentNames();
 
     ImGui::BeginTooltip();
 

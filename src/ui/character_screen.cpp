@@ -522,7 +522,7 @@ ImVec4 CharacterScreen::getFactionColor(game::Race race) const {
         return ui::colors::kRed;
     }
 
-    return ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+    return ui::colors::kWhite;
 }
 
 std::string CharacterScreen::getConfigDir() {

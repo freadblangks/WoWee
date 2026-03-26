@@ -2512,7 +2512,7 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
         case 8: inputColor = ImVec4(1.0f, 0.3f, 0.0f, 1.0f); break;  // RAID WARNING - red-orange
         case 9:  inputColor = ImVec4(0.4f, 0.6f, 1.0f, 1.0f); break;  // INSTANCE - blue
         case 10: inputColor = ImVec4(0.3f, 0.9f, 0.9f, 1.0f); break; // CHANNEL - cyan
-        default: inputColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f); break; // SAY - white
+        default: inputColor = ui::colors::kWhite; break; // SAY - white
     }
     ImGui::PushStyleColor(ImGuiCol_Text, inputColor);
 
@@ -3952,7 +3952,7 @@ void GameScreen::renderPetFrame(game::GameHandler& gameHandler) {
                 // Dim when on cooldown; tint green when autocast is on
                 ImVec4 tint = petOnCd
                     ? ImVec4(0.35f, 0.35f, 0.35f, 0.7f)
-                    : (autocastOn ? ImVec4(0.6f, 1.0f, 0.6f, 1.0f) : ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                    : (autocastOn ? ImVec4(0.6f, 1.0f, 0.6f, 1.0f) : ui::colors::kWhite);
                 bool clicked = false;
                 if (iconTex) {
                     clicked = ImGui::ImageButton("##pa",
@@ -8247,7 +8247,7 @@ const char* GameScreen::getChatTypeName(game::ChatType type) const {
 ImVec4 GameScreen::getChatTypeColor(game::ChatType type) const {
     switch (type) {
         case game::ChatType::SAY:
-            return ImVec4(1.0f, 1.0f, 1.0f, 1.0f);  // White
+            return ui::colors::kWhite;  // White
         case game::ChatType::YELL:
             return kColorRed;  // Red
         case game::ChatType::EMOTE:
@@ -8277,7 +8277,7 @@ ImVec4 GameScreen::getChatTypeColor(game::ChatType type) const {
         case game::ChatType::SYSTEM:
             return kColorYellow;  // Yellow
         case game::ChatType::MONSTER_SAY:
-            return ImVec4(1.0f, 1.0f, 1.0f, 1.0f);  // White (same as SAY)
+            return ui::colors::kWhite;  // White (same as SAY)
         case game::ChatType::MONSTER_YELL:
             return kColorRed;  // Red (same as YELL)
         case game::ChatType::MONSTER_EMOTE:
@@ -14556,7 +14556,7 @@ void GameScreen::renderGuildRoster(game::GameHandler& gameHandler) {
 
                         for (const auto& m : sortedMembers) {
                             ImGui::TableNextRow();
-                            ImVec4 textColor = m.online ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f)
+                            ImVec4 textColor = m.online ? ui::colors::kWhite
                                                         : kColorDarkGray;
                             ImVec4 nameColor = m.online ? classColorVec4(m.classId) : textColor;
 
@@ -14874,7 +14874,7 @@ void GameScreen::renderGuildRoster(game::GameHandler& gameHandler) {
                     // Name as Selectable for right-click context menu
                     const char* displayName = c.name.empty() ? "(unknown)" : c.name.c_str();
                     ImVec4 nameCol = c.isOnline()
-                        ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f)
+                        ? ui::colors::kWhite
                         : ImVec4(0.55f, 0.55f, 0.55f, 1.0f);
                     ImGui::PushStyleColor(ImGuiCol_Text, nameCol);
                     ImGui::Selectable(displayName, false, ImGuiSelectableFlags_AllowOverlap, ImVec2(130.0f, 0.0f));
@@ -16119,7 +16119,7 @@ void GameScreen::renderQuestDetailsWindow(game::GameHandler& gameHandler) {
             if (dispId != 0) iconTex = inventoryScreen.getItemIcon(dispId);
 
             std::string label;
-            ImVec4 nameCol = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+            ImVec4 nameCol = ui::colors::kWhite;
             if (info && info->valid && !info->name.empty()) {
                 label = info->name;
                 nameCol = InventoryScreen::getQualityColor(static_cast<game::ItemQuality>(info->quality));
@@ -16362,7 +16362,7 @@ void GameScreen::renderQuestOfferRewardWindow(game::GameHandler& gameHandler) {
             VkDescriptorSet iconTex = dispId ? inventoryScreen.getItemIcon(dispId) : VK_NULL_HANDLE;
             ImVec4 col = (info && info->valid)
                 ? InventoryScreen::getQualityColor(static_cast<game::ItemQuality>(info->quality))
-                : ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+                : ui::colors::kWhite;
             return {iconTex, col};
         };
 
@@ -17030,7 +17030,7 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
                         color = ImVec4(0.3f, 0.9f, 0.3f, 1.0f);
                         statusLabel = "Known";
                     } else if (effectiveState == 0) {
-                        color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+                        color = ui::colors::kWhite;
                         statusLabel = "Available";
                     } else {
                         color = ImVec4(0.6f, 0.3f, 0.3f, 1.0f);
@@ -24932,7 +24932,7 @@ void GameScreen::renderThreatWindow(game::GameHandler& gameHandler) {
                     static_cast<unsigned long long>(entry.victimGuid)); return std::string(buf); }();
 
         // Colour: gold for #1 (tank), red if player is highest, white otherwise
-        ImVec4 col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+        ImVec4 col = ui::colors::kWhite;
         if (rank == 1) col = ui::colors::kTooltipGold;      // gold
         if (isPlayer && rank == 1) col = kColorRed; // red — you have aggro
 

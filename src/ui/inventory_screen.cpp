@@ -1838,7 +1838,7 @@ void InventoryScreen::renderStatsPanel(game::Inventory& inventory, uint32_t play
     ImVec4 gold(1.0f, 0.84f, 0.0f, 1.0f);
     ImVec4 gray(0.6f, 0.6f, 0.6f, 1.0f);
 
-    static const char* kStatTooltips[5] = {
+    static constexpr const char* kStatTooltips[5] = {
         "Increases your melee attack power by 2.\nIncreases your block value.",
         "Increases your Armor.\nIncreases ranged attack power by 2.\nIncreases your chance to dodge attacks and score critical strikes.",
         "Increases Health by 10 per point.",
@@ -2942,15 +2942,9 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
                             return layout ? (*layout)[k] : def;
                         };
                         uint32_t idF = lf("ID", 0), nameF = lf("Name", 1);
-                        static const char* itemKeys[10] = {
-                            "Item0","Item1","Item2","Item3","Item4",
-                            "Item5","Item6","Item7","Item8","Item9" };
-                        static const char* spellKeys[10] = {
-                            "Spell0","Spell1","Spell2","Spell3","Spell4",
-                            "Spell5","Spell6","Spell7","Spell8","Spell9" };
-                        static const char* thrKeys[10] = {
-                            "Threshold0","Threshold1","Threshold2","Threshold3","Threshold4",
-                            "Threshold5","Threshold6","Threshold7","Threshold8","Threshold9" };
+                        const auto& itemKeys = ui::kItemSetItemKeys;
+                        const auto& spellKeys = ui::kItemSetSpellKeys;
+                        const auto& thrKeys = ui::kItemSetThresholdKeys;
                         uint32_t itemFB[10], spellFB[10], thrFB[10];
                         for (int i = 0; i < 10; ++i) {
                             itemFB[i] = 18+i; spellFB[i] = 28+i; thrFB[i] = 38+i;
@@ -3519,18 +3513,9 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
                     return layout ? (*layout)[k] : def;
                 };
                 uint32_t idF = lf("ID", 0), nameF = lf("Name", 1);
-                static const char* itemKeys[10] = {
-                    "Item0","Item1","Item2","Item3","Item4",
-                    "Item5","Item6","Item7","Item8","Item9"
-                };
-                static const char* spellKeys[10] = {
-                    "Spell0","Spell1","Spell2","Spell3","Spell4",
-                    "Spell5","Spell6","Spell7","Spell8","Spell9"
-                };
-                static const char* thrKeys[10] = {
-                    "Threshold0","Threshold1","Threshold2","Threshold3","Threshold4",
-                    "Threshold5","Threshold6","Threshold7","Threshold8","Threshold9"
-                };
+                const auto& itemKeys = ui::kItemSetItemKeys;
+                const auto& spellKeys = ui::kItemSetSpellKeys;
+                const auto& thrKeys = ui::kItemSetThresholdKeys;
                 uint32_t itemFallback[10], spellFallback[10], thrFallback[10];
                 for (int i = 0; i < 10; ++i) {
                     itemFallback[i]  = 18 + i;

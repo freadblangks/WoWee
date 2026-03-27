@@ -1562,9 +1562,9 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
                         return layout ? (*layout)[k] : def;
                     };
                     uint32_t idF = lf("ID", 0), nameF = lf("Name", 1);
-                    static const char* itemKeys[10]  = {"Item0","Item1","Item2","Item3","Item4","Item5","Item6","Item7","Item8","Item9"};
-                    static const char* spellKeys[10] = {"Spell0","Spell1","Spell2","Spell3","Spell4","Spell5","Spell6","Spell7","Spell8","Spell9"};
-                    static const char* thrKeys[10]   = {"Threshold0","Threshold1","Threshold2","Threshold3","Threshold4","Threshold5","Threshold6","Threshold7","Threshold8","Threshold9"};
+                    const auto& itemKeys = ui::kItemSetItemKeys;
+                    const auto& spellKeys = ui::kItemSetSpellKeys;
+                    const auto& thrKeys = ui::kItemSetThresholdKeys;
                     for (uint32_t r = 0; r < dbc->getRecordCount(); ++r) {
                         uint32_t id = dbc->getUInt32(r, idF);
                         if (!id) continue;
@@ -3577,7 +3577,7 @@ void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
                     tdl->AddRectFilled(ImVec2(x0, y0), ImVec2(fillX, y1),
                                       ImGui::ColorConvertFloat4ToU32(kTotemColors[i]), 2.0f);
                     // Remaining seconds label
-                    char secBuf[8];
+                    char secBuf[16];
                     snprintf(secBuf, sizeof(secBuf), "%.0f", rem / 1000.0f);
                     ImVec2 tsz = ImGui::CalcTextSize(secBuf);
                     float lx = x0 + (slotW - tsz.x) * 0.5f;

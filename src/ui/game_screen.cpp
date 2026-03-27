@@ -56,6 +56,9 @@ namespace {
     constexpr auto& kColorGray       = kGray;
     constexpr auto& kColorDarkGray   = kDarkGray;
 
+    // Aura dispel-type names (indexed by dispelType 0-4)
+    constexpr const char* kDispelNames[] = { "", "Magic", "Curse", "Disease", "Poison" };
+
     // Common ImGui window flags for popup dialogs
     const ImGuiWindowFlags kDialogFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize;
 
@@ -3549,7 +3552,7 @@ void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
 
         // Shaman totem bar (class 7) — 4 slots: Earth, Fire, Water, Air
         if (gameHandler.getPlayerClass() == 7) {
-            static const ImVec4 kTotemColors[] = {
+            static constexpr ImVec4 kTotemColors[] = {
                 ImVec4(0.80f, 0.55f, 0.25f, 1.0f), // Earth — brown
                 ImVec4(1.00f, 0.35f, 0.10f, 1.0f), // Fire  — orange-red
                 ImVec4(0.20f, 0.55f, 0.90f, 1.0f), // Water — blue
@@ -3607,7 +3610,8 @@ void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
 
                 // Tooltip on hover
                 ImGui::SetCursorScreenPos(ImVec2(x0, y0));
-                ImGui::InvisibleButton(("##totem" + std::to_string(i)).c_str(), ImVec2(slotW, slotH));
+                char totemBtnId[16]; snprintf(totemBtnId, sizeof(totemBtnId), "##totem%d", i);
+                ImGui::InvisibleButton(totemBtnId, ImVec2(slotW, slotH));
                 if (ImGui::IsItemHovered()) {
                     ImGui::BeginTooltip();
                     if (ts.active()) {
@@ -3840,7 +3844,7 @@ void GameScreen::renderPetFrame(game::GameHandler& gameHandler) {
                 ImVec4(0.3f, 0.85f, 0.3f, 1.0f), // defensive — green
                 colors::kHostileRed,// aggressive — red
             };
-            static const ImVec4 kReactDimColors[] = {
+            static constexpr ImVec4 kReactDimColors[] = {
                 ImVec4(0.15f, 0.2f, 0.4f, 0.8f),
                 ImVec4(0.1f, 0.3f, 0.1f, 0.8f),
                 ImVec4(0.4f, 0.1f, 0.1f, 0.8f),
@@ -12342,7 +12346,6 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
 
                                 float mdx = mouse.x - dotX, mdy = mouse.y - dotY;
                                 if (mdx * mdx + mdy * mdy < (DOT_R + 4.0f) * (DOT_R + 4.0f)) {
-                                    static const char* kDispelNames[] = { "", "Magic", "Curse", "Disease", "Poison" };
                                     ImGui::BeginTooltip();
                                     ImGui::TextColored(dc, "%s", kDispelNames[dt]);
                                     for (const auto& da : *unitAuras) {
@@ -12667,7 +12670,6 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                             ImGui::Button("##d", ImVec2(8.0f, 8.0f));
                             ImGui::PopStyleColor(2);
                             if (ImGui::IsItemHovered()) {
-                                static const char* kDispelNames[] = { "", "Magic", "Curse", "Disease", "Poison" };
                                 // Find spell name(s) of this dispel type
                                 ImGui::BeginTooltip();
                                 ImGui::TextColored(dotCol, "%s", kDispelNames[dt]);
@@ -13797,14 +13799,16 @@ void GameScreen::renderTradeWindow(game::GameHandler& gameHandler) {
                     ImGui::TextDisabled("  %d. (empty)", i + 1);
 
                     // Allow dragging inventory items into trade slots via right-click context menu
+                    char addItemId[16]; snprintf(addItemId, sizeof(addItemId), "##additem%d", i);
                     if (isMine && ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
-                        ImGui::OpenPopup(("##additem" + std::to_string(i)).c_str());
+                        ImGui::OpenPopup(addItemId);
                     }
                 }
 
                 if (isMine) {
+                    char addItemId[16]; snprintf(addItemId, sizeof(addItemId), "##additem%d", i);
                     // Drag-from-inventory: show small popup listing bag items
-                    if (ImGui::BeginPopup(("##additem" + std::to_string(i)).c_str())) {
+                    if (ImGui::BeginPopup(addItemId)) {
                         ImGui::TextDisabled("Add from inventory:");
                         const auto& inv = gameHandler.getInventory();
                         // Backpack slots 0-15 (bag=255)

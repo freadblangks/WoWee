@@ -825,7 +825,7 @@ void InventoryScreen::render(game::Inventory& inventory, uint64_t moneyCopper) {
         destroyConfirmOpen_ = false;
     }
     if (ImGui::BeginPopup("##DestroyItem", ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar)) {
-        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Destroy");
+        ImGui::TextColored(ui::colors::kSoftRed, "Destroy");
         ImGui::TextUnformatted(destroyItemName_.c_str());
         ImGui::Spacing();
         if (ImGui::Button("Yes, Destroy", ImVec2(110, 0))) {

@@ -15,6 +15,7 @@
 #include "rendering/wmo_renderer.hpp"
 #include "rendering/m2_renderer.hpp"
 #include "rendering/camera.hpp"
+#include "ui/ui_colors.hpp"
 #include <imgui.h>
 #include <algorithm>
 #include <sstream>
@@ -24,9 +25,10 @@ namespace wowee {
 namespace rendering {
 
 namespace {
-    constexpr ImVec4 kHelpText      = {0.6f, 0.6f, 0.6f, 1.0f};
+    using namespace wowee::ui;
     constexpr ImVec4 kSectionHeader = {0.8f, 0.8f, 0.5f, 1.0f};
-    constexpr ImVec4 kTitle         = {0.7f, 0.7f, 0.7f, 1.0f};
+    const auto& kHelpText = colors::kGray;
+    const auto& kTitle    = colors::kLightGray;
 } // namespace
 
 PerformanceHUD::PerformanceHUD() {
@@ -197,7 +199,7 @@ void PerformanceHUD::render(const Renderer* renderer, const Camera* camera) {
 
         // FSR info
         if (renderer->isFSREnabled()) {
-            ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "FSR 1.0: ON");
+            ImGui::TextColored(colors::kGreen, "FSR 1.0: ON");
             auto* ctx = renderer->getVkContext();
             if (ctx) {
                 auto ext = ctx->getSwapchainExtent();

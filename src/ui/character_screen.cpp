@@ -94,7 +94,7 @@ void CharacterScreen::render(game::GameHandler& gameHandler) {
     if (characters.empty() &&
         (gameHandler.getState() == game::WorldState::DISCONNECTED ||
          gameHandler.getState() == game::WorldState::FAILED)) {
-        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Disconnected from server.");
+        ImGui::TextColored(ui::colors::kSoftRed, "Disconnected from server.");
         ImGui::TextWrapped("The server closed the connection before sending the character list.");
         ImGui::Spacing();
         if (ImGui::Button("Back", ImVec2(120, 36))) { if (onBack) onBack(); }

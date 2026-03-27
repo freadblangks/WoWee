@@ -3372,7 +3372,7 @@ void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
         ImGui::TextDisabled("Lv %u", playerLevel);
         if (isDead) {
             ImGui::SameLine();
-            ImGui::TextColored(ImVec4(0.9f, 0.2f, 0.2f, 1.0f), "DEAD");
+            ImGui::TextColored(colors::kDarkRed, "DEAD");
         }
         // Group leader crown on self frame when you lead the party/raid
         if (gameHandler.isInGroup() &&
@@ -3472,7 +3472,7 @@ void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
                         }
                         break;
                     }
-                    case 1: powerColor = ImVec4(0.9f, 0.2f, 0.2f, 1.0f); break; // Rage (red)
+                    case 1: powerColor = colors::kDarkRed; break; // Rage (red)
                     case 2: powerColor = ImVec4(0.9f, 0.6f, 0.1f, 1.0f); break; // Focus (orange)
                     case 3: powerColor = ImVec4(0.9f, 0.9f, 0.2f, 1.0f); break; // Energy (yellow)
                     case 4: powerColor = ImVec4(0.5f, 0.9f, 0.3f, 1.0f); break; // Happiness (green)
@@ -3808,7 +3808,7 @@ void GameScreen::renderPetFrame(game::GameHandler& gameHandler) {
             ImVec4 powerColor;
             switch (powerType) {
                 case 0: powerColor = colors::kManaBlue; break; // Mana
-                case 1: powerColor = ImVec4(0.9f, 0.2f, 0.2f, 1.0f); break; // Rage
+                case 1: powerColor = colors::kDarkRed; break; // Rage
                 case 2: powerColor = ImVec4(0.9f, 0.6f, 0.1f, 1.0f); break; // Focus (hunter pets)
                 case 3: powerColor = ImVec4(0.9f, 0.9f, 0.2f, 1.0f); break; // Energy
                 default: powerColor = colors::kManaBlue; break;
@@ -3860,7 +3860,7 @@ void GameScreen::renderPetFrame(game::GameHandler& gameHandler) {
             static const ImVec4 kReactColors[]    = {
                 colors::kLightBlue,  // passive  — blue
                 ImVec4(0.3f, 0.85f, 0.3f, 1.0f), // defensive — green
-                ImVec4(1.0f, 0.35f, 0.35f, 1.0f),// aggressive — red
+                colors::kHostileRed,// aggressive — red
             };
             static const ImVec4 kReactDimColors[] = {
                 ImVec4(0.15f, 0.2f, 0.4f, 0.8f),
@@ -4490,7 +4490,7 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                     ImVec4 targetPowerColor;
                     switch (targetPowerType) {
                         case 0: targetPowerColor = colors::kManaBlue; break; // Mana (blue)
-                        case 1: targetPowerColor = ImVec4(0.9f, 0.2f, 0.2f, 1.0f); break; // Rage (red)
+                        case 1: targetPowerColor = colors::kDarkRed; break; // Rage (red)
                         case 2: targetPowerColor = ImVec4(0.9f, 0.6f, 0.1f, 1.0f); break; // Focus (orange)
                         case 3: targetPowerColor = ImVec4(0.9f, 0.9f, 0.2f, 1.0f); break; // Energy (yellow)
                         case 4: targetPowerColor = ImVec4(0.5f, 0.9f, 0.3f, 1.0f); break; // Happiness (green)
@@ -5364,7 +5364,7 @@ void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
                     ImVec4 pwrColor;
                     switch (pType) {
                         case 0: pwrColor = colors::kManaBlue; break;
-                        case 1: pwrColor = ImVec4(0.9f, 0.2f, 0.2f, 1.0f); break;
+                        case 1: pwrColor = colors::kDarkRed; break;
                         case 3: pwrColor = ImVec4(0.9f, 0.9f, 0.2f, 1.0f); break;
                         case 6: pwrColor = ImVec4(0.8f, 0.1f, 0.2f, 1.0f); break;
                         default: pwrColor = colors::kManaBlue; break;
@@ -9332,7 +9332,7 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
                     }
                 }
                 if (outOfRange) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "Out of range");
+                    ImGui::TextColored(colors::kHostileRed, "Out of range");
                 }
                 if (insufficientPower) {
                     ImGui::TextColored(ImVec4(0.75f, 0.55f, 1.0f, 1.0f), "Not enough power");
@@ -12632,7 +12632,7 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                 ImVec4 powerColor;
                 switch (member.powerType) {
                     case 0: powerColor = colors::kManaBlue; break; // Mana (blue)
-                    case 1: powerColor = ImVec4(0.9f, 0.2f, 0.2f, 1.0f); break; // Rage (red)
+                    case 1: powerColor = colors::kDarkRed; break; // Rage (red)
                     case 2: powerColor = ImVec4(0.9f, 0.6f, 0.1f, 1.0f); break; // Focus (orange)
                     case 3: powerColor = ImVec4(0.9f, 0.9f, 0.2f, 1.0f); break; // Energy (yellow)
                     case 4: powerColor = ImVec4(0.5f, 0.9f, 0.3f, 1.0f); break; // Happiness (green)
@@ -13319,7 +13319,7 @@ void GameScreen::renderBossFrames(game::GameHandler& gameHandler) {
                 ImVec4 bpColor;
                 switch (bossPowerType) {
                     case 0: bpColor = ImVec4(0.2f, 0.3f, 0.9f, 1.0f); break; // Mana: blue
-                    case 1: bpColor = ImVec4(0.9f, 0.2f, 0.2f, 1.0f); break; // Rage: red
+                    case 1: bpColor = colors::kDarkRed; break; // Rage: red
                     case 2: bpColor = ImVec4(0.9f, 0.6f, 0.1f, 1.0f); break; // Focus: orange
                     case 3: bpColor = ImVec4(0.9f, 0.9f, 0.1f, 1.0f); break; // Energy: yellow
                     default: bpColor = ImVec4(0.4f, 0.8f, 0.4f, 1.0f); break;
@@ -14180,7 +14180,7 @@ void GameScreen::renderBgInvitePopup(game::GameHandler& gameHandler) {
         frac = std::clamp(frac, 0.0f, 1.0f);
         ImVec4 barColor = frac > 0.5f ? ImVec4(0.2f, 0.8f, 0.2f, 1.0f)
                         : frac > 0.25f ? ImVec4(0.9f, 0.7f, 0.1f, 1.0f)
-                                       : ImVec4(0.9f, 0.2f, 0.2f, 1.0f);
+                                       : colors::kDarkRed;
         ImGui::PushStyleColor(ImGuiCol_PlotHistogram, barColor);
         char countdownLabel[32];
         snprintf(countdownLabel, sizeof(countdownLabel), "%ds", static_cast<int>(remaining));
@@ -16033,7 +16033,7 @@ void GameScreen::renderGossipWindow(game::GameHandler& gameHandler) {
                 switch (quest.questIcon) {
                     case 5:  // INCOMPLETE — in progress but not done
                         statusIcon = "?";
-                        statusColor = ImVec4(0.65f, 0.65f, 0.65f, 1.0f); // gray
+                        statusColor = colors::kMediumGray; // gray
                         break;
                     case 6:  // REWARD_REP — repeatable, ready to turn in
                     case 10: // REWARD — ready to turn in
@@ -16042,7 +16042,7 @@ void GameScreen::renderGossipWindow(game::GameHandler& gameHandler) {
                         break;
                     case 7:  // AVAILABLE_LOW — available but gray (low-level)
                         statusIcon = "!";
-                        statusColor = ImVec4(0.65f, 0.65f, 0.65f, 1.0f); // gray
+                        statusColor = colors::kMediumGray; // gray
                         break;
                     default: // AVAILABLE (8) and any others
                         statusIcon = "!";
@@ -17877,7 +17877,7 @@ void GameScreen::renderDeathScreen(game::GameHandler& gameHandler) {
             snprintf(timerBuf, sizeof(timerBuf), "Auto-release in %d:%02d", mins, secs);
             float tw = ImGui::CalcTextSize(timerBuf).x;
             ImGui::SetCursorPosX((dlgW - tw) / 2);
-            ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.65f, 1.0f), "%s", timerBuf);
+            ImGui::TextColored(colors::kMediumGray, "%s", timerBuf);
         }
 
         ImGui::Spacing();
@@ -20302,7 +20302,7 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
             glm::vec3 hoverRender(playerRender.x + hoverDx, playerRender.y + hoverDy, playerRender.z);
             glm::vec3 hoverCanon = core::coords::renderToCanonical(hoverRender);
             ImGui::TextColored(ImVec4(0.9f, 0.85f, 0.5f, 1.0f), "%.1f, %.1f", hoverCanon.x, hoverCanon.y);
-            ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.65f, 1.0f), "Ctrl+click to ping");
+            ImGui::TextColored(colors::kMediumGray, "Ctrl+click to ping");
             ImGui::EndTooltip();
 
             if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
@@ -23879,7 +23879,7 @@ void GameScreen::renderDungeonFinderWindow(game::GameHandler& gameHandler) {
         }
         if (!rolesOk) {
             ImGui::EndDisabled();
-            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Select at least one role.");
+            ImGui::TextColored(colors::kSoftRed, "Select at least one role.");
         }
     }
 
@@ -23978,7 +23978,7 @@ void GameScreen::renderInstanceLockouts(game::GameHandler& gameHandler) {
                 if (lo.extended) {
                     ImGui::TextColored(ImVec4(0.3f, 0.7f, 1.0f, 1.0f), "Ext");
                 } else if (lo.locked) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Locked");
+                    ImGui::TextColored(colors::kSoftRed, "Locked");
                 } else {
                     ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.0f), "Open");
                 }
@@ -24103,7 +24103,7 @@ void GameScreen::renderBattlegroundScore(game::GameHandler& gameHandler) {
                 snprintf(hBuf, sizeof(hBuf), "\xF0\x9F\x94\xB4 %u / %u", hordeScore, maxScore);
             else
                 snprintf(hBuf, sizeof(hBuf), "\xF0\x9F\x94\xB4 %u", hordeScore);
-            ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s", hBuf);
+            ImGui::TextColored(colors::kHostileRed, "%s", hBuf);
         }
         ImGui::EndGroup();
     }
@@ -24312,7 +24312,7 @@ void GameScreen::renderCombatLog(game::GameHandler& gameHandler) {
             switch (e.type) {
                 case T::MELEE_DAMAGE:
                     snprintf(desc, sizeof(desc), "%s hits %s for %d", src, tgt, e.amount);
-                    color = e.isPlayerSource ? ImVec4(1.0f, 0.9f, 0.3f, 1.0f) : ImVec4(1.0f, 0.4f, 0.4f, 1.0f);
+                    color = e.isPlayerSource ? ImVec4(1.0f, 0.9f, 0.3f, 1.0f) : colors::kSoftRed;
                     break;
                 case T::CRIT_DAMAGE:
                     snprintf(desc, sizeof(desc), "%s crits %s for %d!", src, tgt, e.amount);
@@ -24323,7 +24323,7 @@ void GameScreen::renderCombatLog(game::GameHandler& gameHandler) {
                         snprintf(desc, sizeof(desc), "%s's %s hits %s for %d", src, spell, tgt, e.amount);
                     else
                         snprintf(desc, sizeof(desc), "%s's spell hits %s for %d", src, tgt, e.amount);
-                    color = e.isPlayerSource ? ImVec4(1.0f, 0.9f, 0.3f, 1.0f) : ImVec4(1.0f, 0.4f, 0.4f, 1.0f);
+                    color = e.isPlayerSource ? ImVec4(1.0f, 0.9f, 0.3f, 1.0f) : colors::kSoftRed;
                     break;
                 case T::PERIODIC_DAMAGE:
                     if (spell)
@@ -24358,21 +24358,21 @@ void GameScreen::renderCombatLog(game::GameHandler& gameHandler) {
                         snprintf(desc, sizeof(desc), "%s's %s misses %s", src, spell, tgt);
                     else
                         snprintf(desc, sizeof(desc), "%s misses %s", src, tgt);
-                    color = ImVec4(0.65f, 0.65f, 0.65f, 1.0f);
+                    color = colors::kMediumGray;
                     break;
                 case T::DODGE:
                     if (spell)
                         snprintf(desc, sizeof(desc), "%s dodges %s's %s", tgt, src, spell);
                     else
                         snprintf(desc, sizeof(desc), "%s dodges %s's attack", tgt, src);
-                    color = ImVec4(0.65f, 0.65f, 0.65f, 1.0f);
+                    color = colors::kMediumGray;
                     break;
                 case T::PARRY:
                     if (spell)
                         snprintf(desc, sizeof(desc), "%s parries %s's %s", tgt, src, spell);
                     else
                         snprintf(desc, sizeof(desc), "%s parries %s's attack", tgt, src);
-                    color = ImVec4(0.65f, 0.65f, 0.65f, 1.0f);
+                    color = colors::kMediumGray;
                     break;
                 case T::BLOCK:
                     if (spell)
@@ -24386,7 +24386,7 @@ void GameScreen::renderCombatLog(game::GameHandler& gameHandler) {
                         snprintf(desc, sizeof(desc), "%s evades %s's %s", tgt, src, spell);
                     else
                         snprintf(desc, sizeof(desc), "%s evades %s's attack", tgt, src);
-                    color = ImVec4(0.65f, 0.65f, 0.65f, 1.0f);
+                    color = colors::kMediumGray;
                     break;
                 case T::IMMUNE:
                     if (spell)
@@ -24799,7 +24799,7 @@ void GameScreen::renderGmTicketWindow(game::GameHandler& gameHandler) {
 
     // Show GM support availability
     if (!gameHandler.isGmSupportAvailable()) {
-        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "GM support is currently unavailable.");
+        ImGui::TextColored(colors::kSoftRed, "GM support is currently unavailable.");
         ImGui::Spacing();
     }
 
@@ -24980,7 +24980,7 @@ void GameScreen::renderBgScoreboard(game::GameHandler& gameHandler) {
             const auto& at = data->arenaTeams[t];
             if (at.teamName.empty()) continue;
             int32_t ratingDelta = static_cast<int32_t>(at.ratingChange);
-            ImVec4 teamCol = (t == 0) ? ImVec4(1.0f, 0.35f, 0.35f, 1.0f)   // team 0: red
+            ImVec4 teamCol = (t == 0) ? colors::kHostileRed   // team 0: red
                                       : colors::kLightBlue;    // team 1: blue
             ImGui::TextColored(teamCol, "%s", at.teamName.c_str());
             ImGui::SameLine();
@@ -25002,12 +25002,12 @@ void GameScreen::renderBgScoreboard(game::GameHandler& gameHandler) {
             // For arenas, winner byte 0/1 refers to team index in arenaTeams[]
             const auto& winTeam = data->arenaTeams[data->winner & 1];
             winnerStr  = winTeam.teamName.empty() ? "Team 1" : winTeam.teamName.c_str();
-            winnerColor = (data->winner == 0) ? ImVec4(1.0f, 0.35f, 0.35f, 1.0f)
+            winnerColor = (data->winner == 0) ? colors::kHostileRed
                                               : colors::kLightBlue;
         } else {
             winnerStr  = (data->winner == 1) ? "Alliance" : "Horde";
             winnerColor = (data->winner == 1) ? colors::kLightBlue
-                                              : ImVec4(1.0f, 0.35f, 0.35f, 1.0f);
+                                              : colors::kHostileRed;
         }
         float textW = ImGui::CalcTextSize(winnerStr).x + ImGui::CalcTextSize("  Victory!").x;
         ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - textW) * 0.5f);
@@ -25081,7 +25081,7 @@ void GameScreen::renderBgScoreboard(game::GameHandler& gameHandler) {
             if (ps->team == 1)
                 ImGui::TextColored(colors::kLightBlue, "Alliance");
             else
-                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "Horde");
+                ImGui::TextColored(colors::kHostileRed, "Horde");
 
             // Name (highlight player's own row)
             ImGui::TableNextColumn();
@@ -25262,7 +25262,7 @@ void GameScreen::renderInspectWindow(game::GameHandler& gameHandler) {
     ImGui::TextDisabled("  %u talent pts", result->totalTalents);
     if (result->unspentTalents > 0) {
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "(%u unspent)", result->unspentTalents);
+        ImGui::TextColored(colors::kSoftRed, "(%u unspent)", result->unspentTalents);
     }
     if (result->talentGroups > 1) {
         ImGui::SameLine();

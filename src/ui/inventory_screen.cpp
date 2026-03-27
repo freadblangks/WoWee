@@ -3666,8 +3666,8 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
                 float diff = nv - ev;
                 char buf[96];
                 if (diff > 0.0f) { std::snprintf(buf, sizeof(buf), "%s: %.0f (▲%.0f)", label, nv, diff);  ImGui::TextColored(ImVec4(0.0f,1.0f,0.0f,1.0f), "%s", buf); }
-                else if (diff < 0.0f) { std::snprintf(buf, sizeof(buf), "%s: %.0f (▼%.0f)", label, nv, -diff); ImGui::TextColored(ImVec4(1.0f,0.3f,0.3f,1.0f), "%s", buf); }
-                else { std::snprintf(buf, sizeof(buf), "%s: %.0f (=)", label, nv); ImGui::TextColored(ImVec4(0.7f,0.7f,0.7f,1.0f), "%s", buf); }
+                else if (diff < 0.0f) { std::snprintf(buf, sizeof(buf), "%s: %.0f (▼%.0f)", label, nv, -diff); ImGui::TextColored(ui::colors::kRed, "%s", buf); }
+                else { std::snprintf(buf, sizeof(buf), "%s: %.0f (=)", label, nv); ImGui::TextColored(ui::colors::kLightGray, "%s", buf); }
             };
 
             float ilvlDiff = static_cast<float>(info.itemLevel) - static_cast<float>(eq->item.itemLevel);

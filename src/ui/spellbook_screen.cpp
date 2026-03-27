@@ -485,12 +485,12 @@ void SpellbookScreen::renderSpellTooltip(const SpellInfo* info, game::GameHandle
     ImGui::PushTextWrapPos(320.0f);
 
     // Spell name in yellow
-    ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "%s", info->name.c_str());
+    ImGui::TextColored(ui::colors::kYellow, "%s", info->name.c_str());
 
     // Rank in gray
     if (!info->rank.empty()) {
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "(%s)", info->rank.c_str());
+        ImGui::TextColored(ui::colors::kGray, "(%s)", info->rank.c_str());
     }
 
     // Passive indicator

@@ -185,7 +185,7 @@ void TalentScreen::renderTalentTrees(game::GameHandler& gameHandler) {
     }
     if (ImGui::BeginPopupModal("Learn Talent?##talent_confirm", nullptr,
                                ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
-        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "%s", pendingTalentName_.c_str());
+        ImGui::TextColored(ui::colors::kYellow, "%s", pendingTalentName_.c_str());
         ImGui::Text("Rank %u", pendingTalentRank_ + 1);
         ImGui::Spacing();
         ImGui::TextWrapped("Spend a talent point?");
@@ -524,9 +524,9 @@ void TalentScreen::renderTalent(game::GameHandler& gameHandler,
         // Spell name
         const std::string& spellName = gameHandler.getSpellName(spellId);
         if (!spellName.empty()) {
-            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "%s", spellName.c_str());
+            ImGui::TextColored(ui::colors::kYellow, "%s", spellName.c_str());
         } else {
-            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "Talent #%u", talent.talentId);
+            ImGui::TextColored(ui::colors::kYellow, "Talent #%u", talent.talentId);
         }
 
         // Rank display

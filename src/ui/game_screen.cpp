@@ -5254,7 +5254,7 @@ void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
             int fRank = gameHandler.getCreatureRank(focusUnit->getEntry());
             if (fRank == 1)      { ImGui::SameLine(0,4); ImGui::TextColored(ImVec4(1.0f,0.8f,0.2f,1.0f), "[Elite]"); }
             else if (fRank == 2) { ImGui::SameLine(0,4); ImGui::TextColored(ImVec4(0.8f,0.4f,1.0f,1.0f), "[Rare Elite]"); }
-            else if (fRank == 3) { ImGui::SameLine(0,4); ImGui::TextColored(ImVec4(1.0f,0.3f,0.3f,1.0f), "[Boss]"); }
+            else if (fRank == 3) { ImGui::SameLine(0,4); ImGui::TextColored(colors::kRed, "[Boss]"); }
             else if (fRank == 4) { ImGui::SameLine(0,4); ImGui::TextColored(ImVec4(0.5f,0.9f,1.0f,1.0f), "[Rare]"); }
 
             // Creature type

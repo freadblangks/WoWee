@@ -59,6 +59,12 @@ namespace {
     // Aura dispel-type names (indexed by dispelType 0-4)
     constexpr const char* kDispelNames[] = { "", "Magic", "Curse", "Disease", "Poison" };
 
+    // Raid mark names with symbol prefixes (indexed 0-7: Star..Skull)
+    constexpr const char* kRaidMarkNames[] = {
+        "{*} Star", "{O} Circle", "{<>} Diamond", "{^} Triangle",
+        "{)} Moon", "{ } Square", "{x} Cross", "{8} Skull"
+    };
+
     // Common ImGui window flags for popup dialogs
     const ImGuiWindowFlags kDialogFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize;
 
@@ -3839,7 +3845,7 @@ void GameScreen::renderPetFrame(game::GameHandler& gameHandler) {
         {
             static const char* kReactLabels[]     = { "Psv", "Def", "Agg" };
             static const char* kReactTooltips[]   = { "Passive", "Defensive", "Aggressive" };
-            static const ImVec4 kReactColors[]    = {
+            static constexpr ImVec4 kReactColors[]    = {
                 colors::kLightBlue,  // passive  — blue
                 ImVec4(0.3f, 0.85f, 0.3f, 1.0f), // defensive — green
                 colors::kHostileRed,// aggressive — red
@@ -4367,10 +4373,6 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
             }
             ImGui::Separator();
             if (ImGui::BeginMenu("Set Raid Mark")) {
-                static const char* kRaidMarkNames[] = {
-                    "{*} Star", "{O} Circle", "{<>} Diamond", "{^} Triangle",
-                    "{)} Moon", "{ } Square", "{x} Cross", "{8} Skull"
-                };
                 for (int mi = 0; mi < 8; ++mi) {
                     if (ImGui::MenuItem(kRaidMarkNames[mi]))
                         gameHandler.setRaidMark(tGuid, static_cast<uint8_t>(mi));
@@ -12399,10 +12401,6 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                         }
                         ImGui::Separator();
                         if (ImGui::BeginMenu("Set Raid Mark")) {
-                            static const char* kRaidMarkNames[] = {
-                                "{*} Star", "{O} Circle", "{<>} Diamond", "{^} Triangle",
-                                "{)} Moon", "{ } Square", "{x} Cross", "{8} Skull"
-                            };
                             for (int mi = 0; mi < 8; ++mi) {
                                 if (ImGui::MenuItem(kRaidMarkNames[mi]))
                                     gameHandler.setRaidMark(m.guid, static_cast<uint8_t>(mi));
@@ -12765,10 +12763,6 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                 }
                 ImGui::Separator();
                 if (ImGui::BeginMenu("Set Raid Mark")) {
-                    static const char* kRaidMarkNames[] = {
-                        "{*} Star", "{O} Circle", "{<>} Diamond", "{^} Triangle",
-                        "{)} Moon", "{ } Square", "{x} Cross", "{8} Skull"
-                    };
                     for (int mi = 0; mi < 8; ++mi) {
                         if (ImGui::MenuItem(kRaidMarkNames[mi]))
                             gameHandler.setRaidMark(member.guid, static_cast<uint8_t>(mi));
@@ -13993,7 +13987,7 @@ void GameScreen::renderLootRollPopup(game::GameHandler& gameHandler) {
             ImGui::TextDisabled("Rolls so far:");
             // Roll-type label + color
             static const char* kRollLabels[] = {"Need", "Greed", "Disenchant", "Pass"};
-            static const ImVec4 kRollColors[] = {
+            static constexpr ImVec4 kRollColors[] = {
                 ImVec4(0.2f, 0.9f, 0.2f, 1.0f),  // Need  — green
                 ImVec4(0.3f, 0.6f, 1.0f, 1.0f),  // Greed — blue
                 ImVec4(0.7f, 0.3f, 0.9f, 1.0f),  // Disenchant — purple
@@ -15632,7 +15626,7 @@ void GameScreen::renderBuffBar(game::GameHandler& gameHandler) {
             if (!timers.empty()) {
                 ImGui::Spacing();
                 ImGui::Separator();
-                static const ImVec4 kEnchantSlotColors[] = {
+                static constexpr ImVec4 kEnchantSlotColors[] = {
                     colors::kOrange,  // main-hand: gold
                     ImVec4(0.5f, 0.8f, 0.9f, 1.0f),  // off-hand:  teal
                     ImVec4(0.7f, 0.5f, 0.9f, 1.0f),  // ranged:    purple

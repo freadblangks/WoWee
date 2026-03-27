@@ -137,6 +137,30 @@ inline void renderBindingType(uint32_t bindType) {
     }
 }
 
+// ---- Socket type display (gem sockets) ----
+struct SocketTypeDef { uint32_t mask; const char* label; ImVec4 col; };
+inline constexpr SocketTypeDef kSocketTypes[] = {
+    { 1, "Meta Socket",   { 0.7f, 0.7f, 0.9f, 1.0f } },
+    { 2, "Red Socket",    { 1.0f, 0.3f, 0.3f, 1.0f } },
+    { 4, "Yellow Socket", { 1.0f, 0.9f, 0.3f, 1.0f } },
+    { 8, "Blue Socket",   { 0.3f, 0.6f, 1.0f, 1.0f } },
+};
+
+// ---- Class/race bitmask lookup (for allowableClass/allowableRace display) ----
+struct ClassMaskEntry { uint32_t mask; const char* name; };
+inline constexpr ClassMaskEntry kClassMasks[] = {
+    {1,"Warrior"}, {2,"Paladin"}, {4,"Hunter"}, {8,"Rogue"},
+    {16,"Priest"}, {32,"Death Knight"}, {64,"Shaman"},
+    {128,"Mage"}, {256,"Warlock"}, {1024,"Druid"},
+};
+
+struct RaceMaskEntry { uint32_t mask; const char* name; };
+inline constexpr RaceMaskEntry kRaceMasks[] = {
+    {1,"Human"}, {2,"Orc"}, {4,"Dwarf"}, {8,"Night Elf"},
+    {16,"Undead"}, {32,"Tauren"}, {64,"Gnome"}, {128,"Troll"},
+    {512,"Blood Elf"}, {1024,"Draenei"},
+};
+
 // ---- WoW class colors (Blizzard canonical) ----
 inline ImVec4 getClassColor(uint8_t classId) {
     switch (classId) {

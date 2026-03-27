@@ -1502,12 +1502,7 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
         // Gem sockets (WotLK only — socketColor != 0 means socket present)
         // socketColor bitmask: 1=Meta, 2=Red, 4=Yellow, 8=Blue
         {
-            static const struct { uint32_t mask; const char* label; ImVec4 col; } kSocketTypes[] = {
-                { 1, "Meta Socket",   { 0.7f, 0.7f, 0.9f, 1.0f } },
-                { 2, "Red Socket",    { 1.0f, 0.3f, 0.3f, 1.0f } },
-                { 4, "Yellow Socket", { 1.0f, 0.9f, 0.3f, 1.0f } },
-                { 8, "Blue Socket",   { 0.3f, 0.6f, 1.0f, 1.0f } },
-            };
+            const auto& kSocketTypes = ui::kSocketTypes;
             bool hasSocket = false;
             for (int s = 0; s < 3; ++s) {
                 if (info->socketColor[s] == 0) continue;
@@ -1707,18 +1702,7 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
         }
         // Class restriction (e.g. "Classes: Paladin, Warrior")
         if (info->allowableClass != 0) {
-            static const struct { uint32_t mask; const char* name; } kClasses[] = {
-                { 1,    "Warrior" },
-                { 2,    "Paladin" },
-                { 4,    "Hunter" },
-                { 8,    "Rogue" },
-                { 16,   "Priest" },
-                { 32,   "Death Knight" },
-                { 64,   "Shaman" },
-                { 128,  "Mage" },
-                { 256,  "Warlock" },
-                { 1024, "Druid" },
-            };
+            const auto& kClasses = ui::kClassMasks;
             int matchCount = 0;
             for (const auto& kc : kClasses)
                 if (info->allowableClass & kc.mask) ++matchCount;
@@ -1740,18 +1724,7 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
         }
         // Race restriction (e.g. "Races: Night Elf, Human")
         if (info->allowableRace != 0) {
-            static const struct { uint32_t mask; const char* name; } kRaces[] = {
-                { 1,    "Human"      },
-                { 2,    "Orc"        },
-                { 4,    "Dwarf"      },
-                { 8,    "Night Elf"  },
-                { 16,   "Undead"     },
-                { 32,   "Tauren"     },
-                { 64,   "Gnome"      },
-                { 128,  "Troll"      },
-                { 512,  "Blood Elf"  },
-                { 1024, "Draenei"    },
-            };
+            const auto& kRaces = ui::kRaceMasks;
             constexpr uint32_t kAllPlayable = 1|2|4|8|16|32|64|128|512|1024;
             if ((info->allowableRace & kAllPlayable) != kAllPlayable) {
                 int matchCount = 0;

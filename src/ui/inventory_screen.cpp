@@ -38,14 +38,7 @@ constexpr const char* kResistNames[6] = {
     "Frost Resistance", "Shadow Resistance", "Arcane Resistance"
 };
 
-// Socket type definitions (shared across tooltip renderers)
-struct SocketTypeDef { uint32_t mask; const char* label; ImVec4 col; };
-constexpr SocketTypeDef kSocketTypes[] = {
-    { 1, "Meta Socket",   { 0.7f, 0.7f, 0.9f, 1.0f } },
-    { 2, "Red Socket",    { 1.0f, 0.3f, 0.3f, 1.0f } },
-    { 4, "Yellow Socket", { 1.0f, 0.9f, 0.3f, 1.0f } },
-    { 8, "Blue Socket",   { 0.3f, 0.6f, 1.0f, 1.0f } },
-};
+// Socket types from shared ui_colors.hpp (ui::kSocketTypes)
 
 const game::ItemSlot* findComparableEquipped(const game::Inventory& inventory, uint8_t inventoryType) {
     using ES = game::EquipSlot;
@@ -2849,11 +2842,7 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
             }
             // Class restriction
             if (qInfo->allowableClass != 0) {
-                static const struct { uint32_t mask; const char* name; } kClassesB[] = {
-                    { 1,"Warrior" },{ 2,"Paladin" },{ 4,"Hunter" },{ 8,"Rogue" },
-                    { 16,"Priest" },{ 32,"Death Knight" },{ 64,"Shaman" },
-                    { 128,"Mage" },{ 256,"Warlock" },{ 1024,"Druid" },
-                };
+                const auto& kClassesB = ui::kClassMasks;
                 int mc = 0;
                 for (const auto& kc : kClassesB) if (qInfo->allowableClass & kc.mask) ++mc;
                 if (mc > 0 && mc < 10) {
@@ -2872,11 +2861,7 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
             }
             // Race restriction
             if (qInfo->allowableRace != 0) {
-                static const struct { uint32_t mask; const char* name; } kRacesB[] = {
-                    { 1,"Human" },{ 2,"Orc" },{ 4,"Dwarf" },{ 8,"Night Elf" },
-                    { 16,"Undead" },{ 32,"Tauren" },{ 64,"Gnome" },{ 128,"Troll" },
-                    { 512,"Blood Elf" },{ 1024,"Draenei" },
-                };
+                const auto& kRacesB = ui::kRaceMasks;
                 constexpr uint32_t kAll = 1|2|4|8|16|32|64|128|512|1024;
                 if ((qInfo->allowableRace & kAll) != kAll) {
                     int mc = 0;
@@ -3377,18 +3362,7 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
 
     // Class restriction (e.g. "Classes: Paladin, Warrior")
     if (info.allowableClass != 0) {
-        static const struct { uint32_t mask; const char* name; } kClasses[] = {
-            { 1,    "Warrior" },
-            { 2,    "Paladin" },
-            { 4,    "Hunter" },
-            { 8,    "Rogue" },
-            { 16,   "Priest" },
-            { 32,   "Death Knight" },
-            { 64,   "Shaman" },
-            { 128,  "Mage" },
-            { 256,  "Warlock" },
-            { 1024, "Druid" },
-        };
+        const auto& kClasses = ui::kClassMasks;
         // Count matching classes
         int matchCount = 0;
         for (const auto& kc : kClasses)
@@ -3417,18 +3391,7 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
 
     // Race restriction (e.g. "Races: Night Elf, Human")
     if (info.allowableRace != 0) {
-        static const struct { uint32_t mask; const char* name; } kRaces[] = {
-            { 1,    "Human"      },
-            { 2,    "Orc"        },
-            { 4,    "Dwarf"      },
-            { 8,    "Night Elf"  },
-            { 16,   "Undead"     },
-            { 32,   "Tauren"     },
-            { 64,   "Gnome"      },
-            { 128,  "Troll"      },
-            { 512,  "Blood Elf"  },
-            { 1024, "Draenei"    },
-        };
+        const auto& kRaces = ui::kRaceMasks;
         constexpr uint32_t kAllPlayable = 1|2|4|8|16|32|64|128|512|1024;
         // Only show if not all playable races are allowed
         if ((info.allowableRace & kAllPlayable) != kAllPlayable) {

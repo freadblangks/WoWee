@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <mutex>
 #include <unordered_set>
 
 #include "stb_image.h"
@@ -182,10 +183,12 @@ BLPImage AssetManager::loadTexture(const std::string& path) {
 
     std::vector<uint8_t> blpData = readFile(normalizedPath);
     if (blpData.empty()) {
+        static std::mutex logMtx;
         static std::unordered_set<std::string> loggedMissingTextures;
         static bool missingTextureLogSuppressed = false;
         static const size_t kMaxMissingTextureLogKeys =
             parseEnvCount("WOWEE_TEXTURE_MISS_LOG_KEYS", 400);
+        std::lock_guard<std::mutex> lock(logMtx);
         if (loggedMissingTextures.size() < kMaxMissingTextureLogKeys &&
             loggedMissingTextures.insert(normalizedPath).second) {
             LOG_WARNING("Texture not found: ", normalizedPath);
@@ -199,10 +202,12 @@ BLPImage AssetManager::loadTexture(const std::string& path) {
 
     BLPImage image = BLPLoader::load(blpData);
     if (!image.isValid()) {
+        static std::mutex logMtx;
         static std::unordered_set<std::string> loggedDecodeFails;
         static bool decodeFailLogSuppressed = false;
         static const size_t kMaxDecodeFailLogKeys =
             parseEnvCount("WOWEE_TEXTURE_DECODE_LOG_KEYS", 200);
+        std::lock_guard<std::mutex> lock(logMtx);
         if (loggedDecodeFails.size() < kMaxDecodeFailLogKeys &&
             loggedDecodeFails.insert(normalizedPath).second) {
             LOG_ERROR("Failed to load texture: ", normalizedPath);

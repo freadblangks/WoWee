@@ -38,6 +38,7 @@ namespace colors {
     constexpr ImVec4 kInactiveGray   = {0.55f, 0.55f, 0.55f, 1.0f};
     constexpr ImVec4 kVeryLightGray  = {0.85f, 0.85f, 0.85f, 1.0f};
     constexpr ImVec4 kSymbolGold     = {1.0f, 0.85f, 0.1f, 1.0f};
+    constexpr ImVec4 kDarkYellow     = {0.8f, 0.8f, 0.0f, 1.0f};
     constexpr ImVec4 kLowHealthRed   = {0.8f, 0.2f, 0.2f, 1.0f};
     constexpr ImVec4 kDangerRed      = {0.7f, 0.2f, 0.2f, 1.0f};
 

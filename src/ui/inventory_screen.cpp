@@ -25,6 +25,28 @@ namespace wowee {
 namespace ui {
 
 namespace {
+
+// Reputation rank names (indexed 0-7: Hated..Exalted)
+constexpr const char* kRepRankNames[8] = {
+    "Hated", "Hostile", "Unfriendly", "Neutral",
+    "Friendly", "Honored", "Revered", "Exalted"
+};
+
+// Resistance stat names (indexed 0-5: Holy..Arcane)
+constexpr const char* kResistNames[6] = {
+    "Holy Resistance", "Fire Resistance", "Nature Resistance",
+    "Frost Resistance", "Shadow Resistance", "Arcane Resistance"
+};
+
+// Socket type definitions (shared across tooltip renderers)
+struct SocketTypeDef { uint32_t mask; const char* label; ImVec4 col; };
+constexpr SocketTypeDef kSocketTypes[] = {
+    { 1, "Meta Socket",   { 0.7f, 0.7f, 0.9f, 1.0f } },
+    { 2, "Red Socket",    { 1.0f, 0.3f, 0.3f, 1.0f } },
+    { 4, "Yellow Socket", { 1.0f, 0.9f, 0.3f, 1.0f } },
+    { 8, "Blue Socket",   { 0.3f, 0.6f, 1.0f, 1.0f } },
+};
+
 const game::ItemSlot* findComparableEquipped(const game::Inventory& inventory, uint8_t inventoryType) {
     using ES = game::EquipSlot;
     auto slotPtr = [&](ES slot) -> const game::ItemSlot* {
@@ -1096,7 +1118,7 @@ void InventoryScreen::renderBagWindow(const char* title, bool& isOpen,
         if (visibleSlots > 0) {
             ImGui::Spacing();
             ImGui::Separator();
-            ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.0f, 1.0f), "Keyring");
+            ImGui::TextColored(ui::colors::kDarkYellow, "Keyring");
             for (int i = 0; i < visibleSlots; ++i) {
                 if (i % keyCols != 0) ImGui::SameLine();
                 const auto& slot = inventory.getKeyringSlot(i);
@@ -1935,10 +1957,6 @@ void InventoryScreen::renderStatsPanel(game::Inventory& inventory, uint32_t play
 
     // Elemental resistances from server update fields
     if (serverResists) {
-        static const char* kResistNames[6] = {
-            "Holy Resistance", "Fire Resistance", "Nature Resistance",
-            "Frost Resistance", "Shadow Resistance", "Arcane Resistance"
-        };
         bool hasResist = false;
         for (int i = 0; i < 6; ++i) {
             if (serverResists[i] > 0) { hasResist = true; break; }
@@ -2156,7 +2174,7 @@ void InventoryScreen::renderBackpackPanel(game::Inventory& inventory, bool colla
         std::string bagLabel = (!bagItem.empty() && !bagItem.item.name.empty())
             ? bagItem.item.name
             : ("Bag Slot " + std::to_string(bag + 1));
-        ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.0f, 1.0f), "%s", bagLabel.c_str());
+        ImGui::TextColored(ui::colors::kDarkYellow, "%s", bagLabel.c_str());
 
         for (int s = 0; s < bagSize; s++) {
             if (s % columns != 0) ImGui::SameLine();
@@ -2182,7 +2200,7 @@ void InventoryScreen::renderBackpackPanel(game::Inventory& inventory, bool colla
         if (visibleSlots > 0) {
             ImGui::Spacing();
             ImGui::Separator();
-            ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.0f, 1.0f), "Keyring");
+            ImGui::TextColored(ui::colors::kDarkYellow, "Keyring");
             for (int i = 0; i < visibleSlots; ++i) {
                 if (i % keyCols != 0) ImGui::SameLine();
                 const auto& slot = inventory.getKeyringSlot(i);
@@ -2655,12 +2673,8 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
         if (qi && qi->valid) {
             const int32_t resValsI[6] = { qi->holyRes, qi->fireRes, qi->natureRes,
                                           qi->frostRes, qi->shadowRes, qi->arcaneRes };
-            static const char* resLabelsI[6] = {
-                "Holy Resistance", "Fire Resistance", "Nature Resistance",
-                "Frost Resistance", "Shadow Resistance", "Arcane Resistance"
-            };
             for (int i = 0; i < 6; ++i)
-                if (resValsI[i] > 0) ImGui::Text("+%d %s", resValsI[i], resLabelsI[i]);
+                if (resValsI[i] > 0) ImGui::Text("+%d %s", resValsI[i], kResistNames[i]);
         }
     }
 
@@ -2826,11 +2840,8 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
                         }
                     }
                 }
-                static const char* kRepRankNamesB[] = {
-                    "Hated","Hostile","Unfriendly","Neutral","Friendly","Honored","Revered","Exalted"
-                };
                 const char* rankName = (qInfo->requiredReputationRank < 8)
-                    ? kRepRankNamesB[qInfo->requiredReputationRank] : "Unknown";
+                    ? kRepRankNames[qInfo->requiredReputationRank] : "Unknown";
                 auto fIt = s_factionNamesB.find(qInfo->requiredReputationFaction);
                 ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 0.75f), "Requires %s with %s",
                     rankName,
@@ -2894,12 +2905,6 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
         if (qi2 && qi2->valid) {
             // Gem sockets
             {
-                static const struct { uint32_t mask; const char* label; ImVec4 col; } kSocketTypes[] = {
-                    { 1, "Meta Socket",   { 0.7f, 0.7f, 0.9f, 1.0f } },
-                    { 2, "Red Socket",    { 1.0f, 0.3f, 0.3f, 1.0f } },
-                    { 4, "Yellow Socket", { 1.0f, 0.9f, 0.3f, 1.0f } },
-                    { 8, "Blue Socket",   { 0.3f, 0.6f, 1.0f, 1.0f } },
-                };
                 // Get socket gem enchant IDs for this item (filled from item update fields)
                 std::array<uint32_t, 3> sockGems{};
                 if (itemGuid != 0 && gameHandler_)
@@ -3250,12 +3255,8 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
     {
         const int32_t resVals[6]  = { info.holyRes, info.fireRes, info.natureRes,
                                       info.frostRes, info.shadowRes, info.arcaneRes };
-        static const char* resLabels[6] = {
-            "Holy Resistance", "Fire Resistance", "Nature Resistance",
-            "Frost Resistance", "Shadow Resistance", "Arcane Resistance"
-        };
         for (int i = 0; i < 6; ++i)
-            if (resVals[i] > 0) ImGui::Text("+%d %s", resVals[i], resLabels[i]);
+            if (resVals[i] > 0) ImGui::Text("+%d %s", resVals[i], kResistNames[i]);
     }
 
     auto appendBonus = [](std::string& out, int32_t val, const char* name) {
@@ -3366,10 +3367,6 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
                 }
             }
         }
-        static const char* kRepRankNames[] = {
-            "Hated", "Hostile", "Unfriendly", "Neutral",
-            "Friendly", "Honored", "Revered", "Exalted"
-        };
         const char* rankName = (info.requiredReputationRank < 8)
             ? kRepRankNames[info.requiredReputationRank] : "Unknown";
         auto fIt = s_factionNames.find(info.requiredReputationFaction);
@@ -3490,12 +3487,6 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
 
     // Gem socket slots
     {
-        static const struct { uint32_t mask; const char* label; ImVec4 col; } kSocketTypes[] = {
-            { 1, "Meta Socket",   { 0.7f, 0.7f, 0.9f, 1.0f } },
-            { 2, "Red Socket",    { 1.0f, 0.3f, 0.3f, 1.0f } },
-            { 4, "Yellow Socket", { 1.0f, 0.9f, 0.3f, 1.0f } },
-            { 8, "Blue Socket",   { 0.3f, 0.6f, 1.0f, 1.0f } },
-        };
         // Get socket gem enchant IDs for this item (filled from item update fields)
         std::array<uint32_t, 3> sockGems{};
         if (itemGuid != 0 && gameHandler_)

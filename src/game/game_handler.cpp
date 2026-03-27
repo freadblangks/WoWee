@@ -116,7 +116,7 @@ bool isClassicLikeExpansion() {
 }
 
 bool isPreWotlk() {
-    return isPreWotlk();
+    return isClassicLikeExpansion() || isActiveExpansion("tbc");
 }
 
 bool envFlagEnabled(const char* key, bool defaultValue = false) {
@@ -3508,8 +3508,8 @@ void GameHandler::registerOpcodeHandlers() {
         }
         if (!leaderName.empty())
             addSystemChatMessage(leaderName + " is now the group leader.");
-            fireAddonEvent("PARTY_LEADER_CHANGED", {});
-            fireAddonEvent("GROUP_ROSTER_UPDATE", {});
+        fireAddonEvent("PARTY_LEADER_CHANGED", {});
+        fireAddonEvent("GROUP_ROSTER_UPDATE", {});
     };
 
     // Gameobject / page text
@@ -3846,15 +3846,15 @@ void GameHandler::registerOpcodeHandlers() {
             }
         }
     };
-    dispatchTable_[Opcode::SMSG_FISH_NOT_HOOKED] = [this](network::Packet& packet) {
+    dispatchTable_[Opcode::SMSG_FISH_NOT_HOOKED] = [this](network::Packet& /*packet*/) {
         addSystemChatMessage("Your fish got away.");
     };
-    dispatchTable_[Opcode::SMSG_FISH_ESCAPED] = [this](network::Packet& packet) {
+    dispatchTable_[Opcode::SMSG_FISH_ESCAPED] = [this](network::Packet& /*packet*/) {
         addSystemChatMessage("Your fish escaped!");
     };
 
     // ---- Auto-repeat / auras / dispel / totem ----
-    dispatchTable_[Opcode::SMSG_CANCEL_AUTO_REPEAT] = [this](network::Packet& packet) {
+    dispatchTable_[Opcode::SMSG_CANCEL_AUTO_REPEAT] = [this](network::Packet& /*packet*/) {
         // Server signals to stop a repeating spell (wand/shoot); no client action needed
     };
     dispatchTable_[Opcode::SMSG_AURA_UPDATE] = [this](network::Packet& packet) {
@@ -18132,7 +18132,7 @@ void GameHandler::handlePetSpells(network::Packet& packet) {
     petCommand_ = packet.readUInt8();  // 0=stay, 1=follow, 2=attack, 3=dismiss
 
     // 10 × uint32 action bar slots
-    if (!packet.hasRemaining(PET_ACTION_BAR_SLOTS) * 4u) goto done;
+    if (!packet.hasRemaining(PET_ACTION_BAR_SLOTS * 4u)) goto done;
     for (int i = 0; i < PET_ACTION_BAR_SLOTS; ++i) {
         petActionSlots_[i] = packet.readUInt32();
     }
@@ -20387,7 +20387,7 @@ void GameHandler::handleQuestPoiQueryResponse(network::Packet& packet) {
             packet.readUInt32();  // unk2
             const uint32_t pointCount = packet.readUInt32();
             if (pointCount == 0) continue;
-            if (!packet.hasRemaining(pointCount) * 8) return;
+            if (!packet.hasRemaining(pointCount * 8)) return;
             // Compute centroid of the poi region to place a minimap marker.
             float sumX = 0.0f, sumY = 0.0f;
             for (uint32_t pt = 0; pt < pointCount; ++pt) {

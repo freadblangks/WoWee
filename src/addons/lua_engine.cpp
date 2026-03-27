@@ -26,9 +26,9 @@ static void toLowerInPlace(std::string& s) {
 }
 
 // Lua return helpers — used 200+ times as guard/fallback returns
-static int luaReturnNil(lua_State* L)  { return luaReturnNil(L); }
-static int luaReturnZero(lua_State* L) { return luaReturnZero(L); }
-static int luaReturnFalse(lua_State* L){ return luaReturnFalse(L); }
+static int luaReturnNil(lua_State* L)  { lua_pushnil(L); return 1; }
+static int luaReturnZero(lua_State* L) { lua_pushnumber(L, 0); return 1; }
+static int luaReturnFalse(lua_State* L){ lua_pushboolean(L, 0); return 1; }
 
 // Shared GetTime() epoch — all time-returning functions must use this same origin
 // so that addon calculations like (start + duration - GetTime()) are consistent.

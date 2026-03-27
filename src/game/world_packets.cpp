@@ -20,22 +20,6 @@ namespace {
         return static_cast<uint16_t>(((v & 0xFF00u) >> 8) | ((v & 0x00FFu) << 8));
     }
 
-    bool hasFullPackedGuid(const wowee::network::Packet& packet) {
-        if (!packet.hasData()) {
-            return false;
-        }
-
-        const auto& rawData = packet.getData();
-        const uint8_t mask = rawData[packet.getReadPos()];
-        size_t guidBytes = 1;
-        for (int bit = 0; bit < 8; ++bit) {
-            if ((mask & (1u << bit)) != 0) {
-                ++guidBytes;
-            }
-        }
-        return packet.hasRemaining(guidBytes);
-    }
-
     const char* updateTypeName(wowee::game::UpdateType type) {
         using wowee::game::UpdateType;
         switch (type) {

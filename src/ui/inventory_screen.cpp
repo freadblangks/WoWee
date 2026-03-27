@@ -1303,7 +1303,7 @@ void InventoryScreen::renderCharacterScreen(game::GameHandler& gameHandler) {
                     const char* label;
                     uint32_t categoryId;
                 };
-                static const CategoryGroup groups[] = {
+                static constexpr CategoryGroup groups[] = {
                     { "Weapon Skills", 6 },
                     { "Armor Skills", 8 },
                     { "Secondary Skills", 10 },
@@ -1537,7 +1537,7 @@ void InventoryScreen::renderReputationPanel(game::GameHandler& gameHandler) {
         int32_t     ceiling; // raw value where the next tier begins
         ImVec4      color;
     };
-    static const RepTier tiers[] = {
+    static constexpr RepTier tiers[] = {
         { "Hated",       -42000, -6001, ImVec4(0.6f, 0.1f, 0.1f, 1.0f) },
         { "Hostile",      -6000, -3001, ImVec4(0.8f, 0.2f, 0.1f, 1.0f) },
         { "Unfriendly",   -3000,    -1, ImVec4(0.9f, 0.5f, 0.1f, 1.0f) },
@@ -1644,13 +1644,13 @@ void InventoryScreen::renderEquipmentPanel(game::Inventory& inventory) {
     ImGui::TextColored(ui::colors::kWarmGold, "Equipment");
     ImGui::Separator();
 
-    static const game::EquipSlot leftSlots[] = {
+    static constexpr game::EquipSlot leftSlots[] = {
         game::EquipSlot::HEAD, game::EquipSlot::NECK,
         game::EquipSlot::SHOULDERS, game::EquipSlot::BACK,
         game::EquipSlot::CHEST, game::EquipSlot::SHIRT,
         game::EquipSlot::TABARD, game::EquipSlot::WRISTS,
     };
-    static const game::EquipSlot rightSlots[] = {
+    static constexpr game::EquipSlot rightSlots[] = {
         game::EquipSlot::HANDS, game::EquipSlot::WAIST,
         game::EquipSlot::LEGS, game::EquipSlot::FEET,
         game::EquipSlot::RING1, game::EquipSlot::RING2,
@@ -1735,7 +1735,7 @@ void InventoryScreen::renderEquipmentPanel(game::Inventory& inventory) {
     ImGui::Spacing();
     ImGui::Separator();
 
-    static const game::EquipSlot weaponSlots[] = {
+    static constexpr game::EquipSlot weaponSlots[] = {
         game::EquipSlot::MAIN_HAND,
         game::EquipSlot::OFF_HAND,
         game::EquipSlot::RANGED,

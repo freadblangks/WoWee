@@ -14,7 +14,7 @@ namespace wowee {
 namespace ui {
 
 // Full WotLK race/class lists (used as defaults when no expansion constraints set)
-static const game::Race kAllRaces[] = {
+static constexpr game::Race kAllRaces[] = {
     // Alliance
     game::Race::HUMAN, game::Race::DWARF, game::Race::NIGHT_ELF,
     game::Race::GNOME, game::Race::DRAENEI,
@@ -25,7 +25,7 @@ static const game::Race kAllRaces[] = {
 static constexpr int kAllRaceCount = 10;
 static constexpr int kAllianceCount = 5;
 
-static const game::Class kAllClasses[] = {
+static constexpr game::Class kAllClasses[] = {
     game::Class::WARRIOR, game::Class::PALADIN, game::Class::HUNTER,
     game::Class::ROGUE, game::Class::PRIEST, game::Class::DEATH_KNIGHT,
     game::Class::SHAMAN, game::Class::MAGE, game::Class::WARLOCK,

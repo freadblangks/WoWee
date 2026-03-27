@@ -240,7 +240,7 @@ void KeybindingManager::saveToConfigFile(const std::string& filePath) const {
     // Append new Keybindings section
     content += "[Keybindings]\n";
 
-    static const struct {
+    static constexpr struct {
         Action action;
         const char* name;
     } actionMap[] = {

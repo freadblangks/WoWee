@@ -560,7 +560,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     if (!fsrSettingsApplied_) {
         auto* renderer = core::Application::getInstance().getRenderer();
         if (renderer) {
-            static const float fsrScales[] = { 0.77f, 0.67f, 0.59f, 1.00f };
+            static constexpr float fsrScales[] = { 0.77f, 0.67f, 0.59f, 1.00f };
             pendingFSRQuality = std::clamp(pendingFSRQuality, 0, 3);
             renderer->setFSRQuality(fsrScales[pendingFSRQuality]);
             renderer->setFSRSharpness(pendingFSRSharpness);
@@ -4048,7 +4048,7 @@ void GameScreen::renderTotemFrame(game::GameHandler& gameHandler) {
     }
     if (!anyActive) return;
 
-    static const struct { const char* name; ImU32 color; } kTotemInfo[4] = {
+    static constexpr struct { const char* name; ImU32 color; } kTotemInfo[4] = {
         { "Earth", IM_COL32(139, 90,  43, 255) },   // brown
         { "Fire",  IM_COL32(220, 80,  30, 255) },   // red-orange
         { "Water", IM_COL32( 30,120, 220, 255) },   // blue
@@ -4195,7 +4195,7 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
 
     if (ImGui::Begin("##TargetFrame", nullptr, flags)) {
         // Raid mark icon (Star/Circle/Diamond/Triangle/Moon/Square/Cross/Skull)
-        static const struct { const char* sym; ImU32 col; } kRaidMarks[] = {
+        static constexpr struct { const char* sym; ImU32 col; } kRaidMarks[] = {
             { "\xe2\x98\x85", IM_COL32(255, 220,  50, 255) },  // 0 Star     (yellow)
             { "\xe2\x97\x8f", IM_COL32(255, 140,   0, 255) },  // 1 Circle   (orange)
             { "\xe2\x97\x86", IM_COL32(160,  32, 240, 255) },  // 2 Diamond  (purple)
@@ -10534,7 +10534,7 @@ void GameScreen::renderMirrorTimers(game::GameHandler& gameHandler) {
     float screenW = displaySize.x > 0.0f ? displaySize.x : 1280.0f;
     float screenH = displaySize.y > 0.0f ? displaySize.y : 720.0f;
 
-    static const struct { const char* label; ImVec4 color; } kTimerInfo[3] = {
+    static constexpr struct { const char* label; ImVec4 color; } kTimerInfo[3] = {
         { "Fatigue", ImVec4(0.8f, 0.4f, 0.1f, 1.0f) },
         { "Breath",  ImVec4(0.2f, 0.5f, 1.0f, 1.0f) },
         { "Feign",   kColorGray },
@@ -11946,7 +11946,7 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
 
         // Raid mark (if any) to the left of the name
         {
-            static const struct { const char* sym; ImU32 col; } kNPMarks[] = {
+            static constexpr struct { const char* sym; ImU32 col; } kNPMarks[] = {
                 { "\xe2\x98\x85", IM_COL32(255,220, 50,230) },  // Star
                 { "\xe2\x97\x8f", IM_COL32(255,140,  0,230) },  // Circle
                 { "\xe2\x97\x86", IM_COL32(160, 32,240,230) },  // Diamond
@@ -12192,7 +12192,7 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
 
                     // Raid mark symbol — small, just to the left of the leader crown
                     {
-                        static const struct { const char* sym; ImU32 col; } kCellMarks[] = {
+                        static constexpr struct { const char* sym; ImU32 col; } kCellMarks[] = {
                             { "\xe2\x98\x85", IM_COL32(255, 220,  50, 255) },
                             { "\xe2\x97\x8f", IM_COL32(255, 140,   0, 255) },
                             { "\xe2\x97\x86", IM_COL32(160,  32, 240, 255) },
@@ -12481,7 +12481,7 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
 
             // Raid mark symbol — shown on same line as name when this party member has a mark
             {
-                static const struct { const char* sym; ImU32 col; } kPartyMarks[] = {
+                static constexpr struct { const char* sym; ImU32 col; } kPartyMarks[] = {
                     { "\xe2\x98\x85", IM_COL32(255, 220,  50, 255) },  // 0 Star
                     { "\xe2\x97\x8f", IM_COL32(255, 140,   0, 255) },  // 1 Circle
                     { "\xe2\x97\x86", IM_COL32(160,  32, 240, 255) },  // 2 Diamond
@@ -18913,7 +18913,7 @@ void GameScreen::renderSettingsWindow() {
                             }
                         }
                         const char* fsrQualityLabels[] = { "Native (100%)", "Ultra Quality (77%)", "Quality (67%)", "Balanced (59%)" };
-                        static const float fsrScaleFactors[] = { 0.77f, 0.67f, 0.59f, 1.00f };
+                        static constexpr float fsrScaleFactors[] = { 0.77f, 0.67f, 0.59f, 1.00f };
                         static constexpr int displayToInternal[] = { 3, 0, 1, 2 };
                         pendingFSRQuality = std::clamp(pendingFSRQuality, 0, 3);
                         int fsrQualityDisplay = 0;
@@ -19877,7 +19877,7 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
 
             // Raid mark: tiny symbol drawn above the dot
             {
-                static const struct { const char* sym; ImU32 col; } kMMMarks[] = {
+                static constexpr struct { const char* sym; ImU32 col; } kMMMarks[] = {
                     { "\xe2\x98\x85", IM_COL32(255, 220,  50, 255) },
                     { "\xe2\x97\x8f", IM_COL32(255, 140,   0, 255) },
                     { "\xe2\x97\x86", IM_COL32(160,  32, 240, 255) },
@@ -25483,7 +25483,7 @@ void GameScreen::renderSkillsWindow(game::GameHandler& gameHandler) {
         byCategory[cat].push_back({id, &sk});
     }
 
-    static const struct { uint32_t cat; const char* label; } kCatOrder[] = {
+    static constexpr struct { uint32_t cat; const char* label; } kCatOrder[] = {
         {11, "Professions"},
         { 9, "Secondary Skills"},
         { 7, "Class Skills"},

@@ -86,6 +86,23 @@ namespace {
         return s.substr(first, last - first + 1);
     }
 
+    // Format a duration in seconds as compact text: "2h", "3:05", "42"
+    void fmtDurationCompact(char* buf, size_t sz, int secs) {
+        if (secs >= 3600) snprintf(buf, sz, "%dh", secs / 3600);
+        else if (secs >= 60) snprintf(buf, sz, "%d:%02d", secs / 60, secs % 60);
+        else snprintf(buf, sz, "%d", secs);
+    }
+
+    // Render "Remaining: Xs" or "Remaining: Xm Ys" in a tooltip (light gray)
+    void renderAuraRemaining(int remainMs) {
+        if (remainMs <= 0) return;
+        int s = remainMs / 1000;
+        char buf[32];
+        if (s < 60) snprintf(buf, sizeof(buf), "Remaining: %ds", s);
+        else snprintf(buf, sizeof(buf), "Remaining: %dm %ds", s / 60, s % 60);
+        ImGui::TextColored(kLightGray, "%s", buf);
+    }
+
     std::string toLower(std::string s) {
         std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
             return static_cast<char>(std::tolower(c));
@@ -4810,13 +4827,7 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                         if (name.empty()) name = "Spell #" + std::to_string(aura.spellId);
                         ImGui::Text("%s", name.c_str());
                     }
-                    if (tRemainMs > 0) {
-                        int seconds = tRemainMs / 1000;
-                        char durBuf[32];
-                        if (seconds < 60) snprintf(durBuf, sizeof(durBuf), "Remaining: %ds", seconds);
-                        else snprintf(durBuf, sizeof(durBuf), "Remaining: %dm %ds", seconds / 60, seconds % 60);
-                        ImGui::TextColored(ui::colors::kLightGray, "%s", durBuf);
-                    }
+                    renderAuraRemaining(tRemainMs);
                     ImGui::EndTooltip();
                 }
 
@@ -5021,10 +5032,7 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                                             ImVec2 imin = ImGui::GetItemRectMin();
                                             ImVec2 imax = ImGui::GetItemRectMax();
                                             char ts[12];
-                                            int s = (taRemain + 999) / 1000;
-                                            if (s >= 3600) snprintf(ts, sizeof(ts), "%dh", s / 3600);
-                                            else if (s >= 60) snprintf(ts, sizeof(ts), "%d:%02d", s / 60, s % 60);
-                                            else snprintf(ts, sizeof(ts), "%d", s);
+                                            fmtDurationCompact(ts, sizeof(ts), (taRemain + 999) / 1000);
                                             ImVec2 tsz = ImGui::CalcTextSize(ts);
                                             float cx = imin.x + (imax.x - imin.x - tsz.x) * 0.5f;
                                             float cy = imax.y - tsz.y;
@@ -5042,13 +5050,7 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                                                 if (nm.empty()) nm = "Spell #" + std::to_string(aura.spellId);
                                                 ImGui::Text("%s", nm.c_str());
                                             }
-                                            if (taRemain > 0) {
-                                                int s = taRemain / 1000;
-                                                char db[32];
-                                                if (s < 60) snprintf(db, sizeof(db), "Remaining: %ds", s);
-                                                else snprintf(db, sizeof(db), "Remaining: %dm %ds", s / 60, s % 60);
-                                                ImGui::TextColored(ui::colors::kLightGray, "%s", db);
-                                            }
+                                            renderAuraRemaining(taRemain);
                                             ImGui::EndTooltip();
                                         }
 
@@ -5481,10 +5483,7 @@ void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
                             ImVec2 imin = ImGui::GetItemRectMin();
                             ImVec2 imax = ImGui::GetItemRectMax();
                             char ts[12];
-                            int s = (faRemain + 999) / 1000;
-                            if (s >= 3600) snprintf(ts, sizeof(ts), "%dh", s / 3600);
-                            else if (s >= 60) snprintf(ts, sizeof(ts), "%d:%02d", s / 60, s % 60);
-                            else snprintf(ts, sizeof(ts), "%d", s);
+                            fmtDurationCompact(ts, sizeof(ts), (faRemain + 999) / 1000);
                             ImVec2 tsz = ImGui::CalcTextSize(ts);
                             float cx = imin.x + (imax.x - imin.x - tsz.x) * 0.5f;
                             float cy = imax.y - tsz.y - 1.0f;
@@ -5513,13 +5512,7 @@ void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
                                 if (nm.empty()) nm = "Spell #" + std::to_string(aura.spellId);
                                 ImGui::Text("%s", nm.c_str());
                             }
-                            if (faRemain > 0) {
-                                int s = faRemain / 1000;
-                                char db[32];
-                                if (s < 60) snprintf(db, sizeof(db), "Remaining: %ds", s);
-                                else snprintf(db, sizeof(db), "Remaining: %dm %ds", s / 60, s % 60);
-                                ImGui::TextColored(ui::colors::kLightGray, "%s", db);
-                            }
+                            renderAuraRemaining(faRemain);
                             ImGui::EndTooltip();
                         }
 
@@ -13439,10 +13432,7 @@ void GameScreen::renderBossFrames(game::GameHandler& gameHandler) {
                                 ImVec2 imin = ImGui::GetItemRectMin();
                                 ImVec2 imax = ImGui::GetItemRectMax();
                                 char ts[12];
-                                int s = (baRemain + 999) / 1000;
-                                if (s >= 3600) snprintf(ts, sizeof(ts), "%dh", s / 3600);
-                                else if (s >= 60) snprintf(ts, sizeof(ts), "%d:%02d", s / 60, s % 60);
-                                else snprintf(ts, sizeof(ts), "%d", s);
+                                fmtDurationCompact(ts, sizeof(ts), (baRemain + 999) / 1000);
                                 ImVec2 tsz = ImGui::CalcTextSize(ts);
                                 float cx = imin.x + (imax.x - imin.x - tsz.x) * 0.5f;
                                 float cy = imax.y - tsz.y;
@@ -13473,13 +13463,7 @@ void GameScreen::renderBossFrames(game::GameHandler& gameHandler) {
                                 }
                                 if (isPlayerCast && !isBuff)
                                     ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.3f, 1.0f), "Your DoT");
-                                if (baRemain > 0) {
-                                    int s = baRemain / 1000;
-                                    char db[32];
-                                    if (s < 60) snprintf(db, sizeof(db), "Remaining: %ds", s);
-                                    else snprintf(db, sizeof(db), "Remaining: %dm %ds", s / 60, s % 60);
-                                    ImGui::TextColored(ui::colors::kLightGray, "%s", db);
-                                }
+                                renderAuraRemaining(baRemain);
                                 ImGui::EndTooltip();
                             }
 
@@ -15592,13 +15576,7 @@ void GameScreen::renderBuffBar(game::GameHandler& gameHandler) {
                     if (name.empty()) name = "Spell #" + std::to_string(aura.spellId);
                     ImGui::Text("%s", name.c_str());
                 }
-                if (remainMs > 0) {
-                    int seconds = remainMs / 1000;
-                    char durBuf[32];
-                    if (seconds < 60) snprintf(durBuf, sizeof(durBuf), "Remaining: %ds", seconds);
-                    else snprintf(durBuf, sizeof(durBuf), "Remaining: %dm %ds", seconds / 60, seconds % 60);
-                    ImGui::TextColored(ui::colors::kLightGray, "%s", durBuf);
-                }
+                renderAuraRemaining(remainMs);
                 ImGui::EndTooltip();
             }
 

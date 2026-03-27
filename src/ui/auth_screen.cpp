@@ -44,8 +44,12 @@ static std::string hexEncode(const std::vector<uint8_t>& data) {
 static std::vector<uint8_t> hexDecode(const std::string& hex) {
     std::vector<uint8_t> bytes;
     for (size_t i = 0; i + 1 < hex.size(); i += 2) {
-        uint8_t b = static_cast<uint8_t>(std::stoul(hex.substr(i, 2), nullptr, 16));
-        bytes.push_back(b);
+        try {
+            uint8_t b = static_cast<uint8_t>(std::stoul(hex.substr(i, 2), nullptr, 16));
+            bytes.push_back(b);
+        } catch (...) {
+            return {};
+        }
     }
     return bytes;
 }

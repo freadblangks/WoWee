@@ -4234,11 +4234,17 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
 
         // Right-click context menu on target frame
         if (ImGui::BeginPopupContextItem("##TargetFrameCtx")) {
+            const bool isPlayer = (target->getType() == game::ObjectType::PLAYER);
+            const uint64_t tGuid = target->getGuid();
+
             ImGui::TextDisabled("%s", name.c_str());
             ImGui::Separator();
+
             if (ImGui::MenuItem("Set Focus"))
-                gameHandler.setFocus(target->getGuid());
-            if (target->getType() == game::ObjectType::PLAYER) {
+                gameHandler.setFocus(tGuid);
+            if (ImGui::MenuItem("Clear Target"))
+                gameHandler.clearTarget();
+            if (isPlayer) {
                 ImGui::Separator();
                 if (ImGui::MenuItem("Whisper")) {
                     selectedChatType = 4;
@@ -4246,12 +4252,14 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                     whisperTargetBuffer[sizeof(whisperTargetBuffer) - 1] = '\0';
                     refocusChatInput = true;
                 }
+                if (ImGui::MenuItem("Follow"))
+                    gameHandler.followTarget();
                 if (ImGui::MenuItem("Invite to Group"))
                     gameHandler.inviteToGroup(name);
                 if (ImGui::MenuItem("Trade"))
-                    gameHandler.initiateTrade(target->getGuid());
+                    gameHandler.initiateTrade(tGuid);
                 if (ImGui::MenuItem("Duel"))
-                    gameHandler.proposeDuel(target->getGuid());
+                    gameHandler.proposeDuel(tGuid);
                 if (ImGui::MenuItem("Inspect")) {
                     gameHandler.inspectTarget();
                     showInspectWindow_ = true;
@@ -4261,6 +4269,17 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                     gameHandler.addFriend(name);
                 if (ImGui::MenuItem("Ignore"))
                     gameHandler.addIgnore(name);
+            }
+            ImGui::Separator();
+            if (ImGui::BeginMenu("Set Raid Mark")) {
+                for (int mi = 0; mi < 8; ++mi) {
+                    if (ImGui::MenuItem(kRaidMarkNames[mi]))
+                        gameHandler.setRaidMark(tGuid, static_cast<uint8_t>(mi));
+                }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Clear Mark"))
+                    gameHandler.setRaidMark(tGuid, 0xFF);
+                ImGui::EndMenu();
             }
             ImGui::EndPopup();
         }

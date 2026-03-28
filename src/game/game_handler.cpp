@@ -15185,6 +15185,16 @@ void GameHandler::updateOtherPlayerVisibleItems(uint64_t guid, const std::map<ui
         if (it != fields.end()) newEntries[s] = it->second;
     }
 
+    int nonZero = 0;
+    for (uint32_t e : newEntries) { if (e != 0) nonZero++; }
+    if (nonZero > 0) {
+        LOG_INFO("updateOtherPlayerVisibleItems: guid=0x", std::hex, guid, std::dec,
+                 " nonZero=", nonZero,
+                 " head=", newEntries[0], " shoulders=", newEntries[2],
+                 " chest=", newEntries[4], " legs=", newEntries[6],
+                 " mainhand=", newEntries[15], " offhand=", newEntries[16]);
+    }
+
     bool changed = false;
     auto& old = otherPlayerVisibleItemEntries_[guid];
     if (old != newEntries) {
@@ -15221,16 +15231,25 @@ void GameHandler::emitOtherPlayerEquipment(uint64_t guid) {
     std::array<uint32_t, 19> displayIds{};
     std::array<uint8_t, 19> invTypes{};
     bool anyEntry = false;
+    int resolved = 0, unresolved = 0;
 
     for (int s = 0; s < 19; s++) {
         uint32_t entry = it->second[s];
         if (entry == 0) continue;
         anyEntry = true;
         auto infoIt = itemInfoCache_.find(entry);
-        if (infoIt == itemInfoCache_.end()) continue;
+        if (infoIt == itemInfoCache_.end()) { unresolved++; continue; }
         displayIds[s] = infoIt->second.displayInfoId;
         invTypes[s] = static_cast<uint8_t>(infoIt->second.inventoryType);
+        resolved++;
     }
+
+    LOG_INFO("emitOtherPlayerEquipment: guid=0x", std::hex, guid, std::dec,
+             " entries=", (anyEntry ? "yes" : "none"),
+             " resolved=", resolved, " unresolved=", unresolved,
+             " head=", displayIds[0], " shoulders=", displayIds[2],
+             " chest=", displayIds[4], " legs=", displayIds[6],
+             " mainhand=", displayIds[15], " offhand=", displayIds[16]);
 
     playerEquipmentCallback_(guid, displayIds, invTypes);
     otherPlayerVisibleDirty_.erase(guid);

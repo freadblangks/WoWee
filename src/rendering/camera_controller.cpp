@@ -302,37 +302,39 @@ void CameraController::update(float deltaTime) {
         doCancelAutoFollow();
     }
 
-    // Auto-follow: face target and walk forward when within range
-    bool autoFollowWalk = false;
+    // Auto-follow: face target and run toward them when within range
+    bool autoFollowMove = false;
     if (autoFollowTarget_ && followTarget && !movementRooted_) {
         glm::vec3 myPos = *followTarget;
         glm::vec3 tgtPos = *autoFollowTarget_;
         float dx = tgtPos.x - myPos.x;
         float dy = tgtPos.y - myPos.y;
-        float dist2D = std::sqrt(dx * dx + dy * dy);
+        float distSq2D = dx * dx + dy * dy;
 
-        if (dist2D > FOLLOW_MAX_DIST) {
+        if (distSq2D > FOLLOW_MAX_DIST * FOLLOW_MAX_DIST) {
             doCancelAutoFollow();
-        } else if (dist2D > FOLLOW_STOP_DIST) {
+        } else if (distSq2D > FOLLOW_STOP_DIST * FOLLOW_STOP_DIST) {
             // Face target (render-space yaw: atan2(-dx, -dy) -> degrees)
             float targetYawRad = std::atan2(-dx, -dy);
             float targetYawDeg = targetYawRad * 180.0f / 3.14159265f;
             facingYaw = targetYawDeg;
             yaw = targetYawDeg;
-            autoFollowWalk = true;
+            autoFollowMove = true;
         }
         // else: within stop distance, stay put
 
         // Cancel on strafe/turn keys
         if (keyA || keyD || keyQ || keyE) {
             doCancelAutoFollow();
-            autoFollowWalk = false;
+            autoFollowMove = false;
         }
     }
 
     // When the server has rooted the player, suppress all horizontal movement input.
     const bool movBlocked = movementRooted_;
-    bool nowForward = !movBlocked && (keyW || mouseAutorun || autoRunning || autoFollowWalk);
+    // Auto-follow uses run speed (same as auto-run), not walk speed
+    if (autoFollowMove) autoRunning = true;
+    bool nowForward = !movBlocked && (keyW || mouseAutorun || autoRunning);
     bool nowBackward = !movBlocked && keyS;
     bool nowStrafeLeft = false;
     bool nowStrafeRight = false;

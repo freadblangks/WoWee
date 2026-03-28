@@ -2525,8 +2525,8 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
                     "/cancelaura", "/cancelform", "/cancellogout", "/cancelshapeshift",
                     "/cast", "/castsequence", "/chathelp", "/clear", "/clearfocus",
                     "/clearmainassist", "/clearmaintank", "/cleartarget", "/cloak",
-                    "/combatlog", "/dance", "/dismount", "/dnd", "/do", "/duel", "/dump",
-                    "/e", "/emote", "/equip", "/equipset",
+                    "/combatlog", "/dance", "/difficulty", "/dismount", "/dnd", "/do", "/duel", "/dump",
+                    "/e", "/emote", "/equip", "/equipset", "/exit",
                     "/focus", "/follow", "/forfeit", "/friend",
                     "/g", "/gdemote", "/ginvite", "/gkick", "/gleader", "/gmotd",
                     "/gmticket", "/gpromote", "/gquit", "/grouploot", "/groster",
@@ -2541,6 +2541,7 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
                     "/p", "/party", "/petaggressive", "/petattack", "/petdefensive",
                     "/petdismiss", "/petfollow", "/pethalt", "/petpassive", "/petstay",
                     "/played", "/pvp",
+                    "/quit",
                     "/r", "/raid", "/raidconvert", "/raidinfo", "/raidwarning", "/random", "/ready",
                     "/readycheck", "/reload", "/reloadui", "/removefriend",
                     "/reply", "/rl", "/roll", "/run",
@@ -6318,7 +6319,8 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                     "Target: /target  /cleartarget  /focus  /clearfocus  /inspect",
                     "Movement: /sit  /stand  /kneel  /dismount",
                     "Misc: /played  /time  /zone  /loc  /afk  /dnd  /helm  /cloak",
-                    "      /trade  /score  /unstuck  /logout  /ticket  /screenshot",
+                    "      /trade  /score  /unstuck  /logout  /quit  /exit  /ticket",
+                    "      /screenshot  /difficulty",
                     "      /macrohelp  /chathelp  /help",
                 };
                 for (const char* line : kHelpLines) {
@@ -6625,8 +6627,8 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                 return;
             }
 
-            // /logout command (already exists but using /logout instead of going to login)
-            if (cmdLower == "logout" || cmdLower == "camp") {
+            // /logout command (also /camp, /quit, /exit)
+            if (cmdLower == "logout" || cmdLower == "camp" || cmdLower == "quit" || cmdLower == "exit") {
                 gameHandler.requestLogout();
                 chatInputBuffer[0] = '\0';
                 return;
@@ -6635,6 +6637,52 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
             // /cancellogout command
             if (cmdLower == "cancellogout") {
                 gameHandler.cancelLogout();
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            // /difficulty command — set dungeon/raid difficulty (WotLK)
+            if (cmdLower == "difficulty") {
+                std::string arg;
+                if (spacePos != std::string::npos) {
+                    arg = command.substr(spacePos + 1);
+                    // Trim whitespace
+                    size_t first = arg.find_first_not_of(" \t");
+                    size_t last  = arg.find_last_not_of(" \t");
+                    if (first != std::string::npos)
+                        arg = arg.substr(first, last - first + 1);
+                    else
+                        arg.clear();
+                    for (auto& ch : arg) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+                }
+
+                uint32_t diff = 0;
+                bool valid = true;
+                if (arg == "normal" || arg == "0")         diff = 0;
+                else if (arg == "heroic" || arg == "1")    diff = 1;
+                else if (arg == "25" || arg == "25normal" || arg == "25man" || arg == "2")
+                    diff = 2;
+                else if (arg == "25heroic" || arg == "25manheroic" || arg == "3")
+                    diff = 3;
+                else valid = false;
+
+                if (!valid || arg.empty()) {
+                    game::MessageChatData msg;
+                    msg.type = game::ChatType::SYSTEM;
+                    msg.language = game::ChatLanguage::UNIVERSAL;
+                    msg.message = "Usage: /difficulty normal|heroic|25|25heroic  (0-3)";
+                    gameHandler.addLocalChatMessage(msg);
+                } else {
+                    static constexpr const char* kDiffNames[] = {
+                        "Normal (5-man)", "Heroic (5-man)", "Normal (25-man)", "Heroic (25-man)"
+                    };
+                    game::MessageChatData msg;
+                    msg.type = game::ChatType::SYSTEM;
+                    msg.language = game::ChatLanguage::UNIVERSAL;
+                    msg.message = std::string("Setting difficulty to: ") + kDiffNames[diff];
+                    gameHandler.addLocalChatMessage(msg);
+                    gameHandler.sendSetDifficulty(diff);
+                }
                 chatInputBuffer[0] = '\0';
                 return;
             }

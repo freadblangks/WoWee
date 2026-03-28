@@ -560,6 +560,9 @@ public:
     // Logout commands
     void requestLogout();
     void cancelLogout();
+
+    // Instance difficulty
+    void sendSetDifficulty(uint32_t difficulty);
     bool  isLoggingOut()        const { return loggingOut_; }
     float getLogoutCountdown()  const { return logoutCountdown_; }
 

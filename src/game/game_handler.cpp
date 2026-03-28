@@ -13167,6 +13167,18 @@ void GameHandler::cancelLogout() {
     LOG_INFO("Cancelled logout");
 }
 
+void GameHandler::sendSetDifficulty(uint32_t difficulty) {
+    if (!isInWorld()) {
+        LOG_WARNING("Cannot change difficulty: not in world");
+        return;
+    }
+
+    network::Packet packet(wireOpcode(Opcode::CMSG_CHANGEPLAYER_DIFFICULTY));
+    packet.writeUInt32(difficulty);
+    socket->send(packet);
+    LOG_INFO("CMSG_CHANGEPLAYER_DIFFICULTY sent: difficulty=", difficulty);
+}
+
 void GameHandler::setStandState(uint8_t standState) {
     if (!isInWorld()) {
         LOG_WARNING("Cannot change stand state: not in world or not connected");
@@ -15190,18 +15202,17 @@ void GameHandler::maybeDetectVisibleItemLayout() {
 
 void GameHandler::updateOtherPlayerVisibleItems(uint64_t guid, const std::map<uint16_t, uint32_t>& fields) {
     if (guid == 0 || guid == playerGuid) return;
-    if (visibleItemEntryBase_ < 0 || visibleItemStride_ <= 0) {
-        // Layout not detected yet — queue this player for inspect as fallback.
-        if (socket && state == WorldState::IN_WORLD) {
-            pendingAutoInspect_.insert(guid);
-            LOG_DEBUG("Queued player 0x", std::hex, guid, std::dec, " for auto-inspect (layout not detected)");
-        }
-        return;
-    }
+
+    // Use the current base/stride (defaults are correct for WotLK 3.3.5a: base=284, stride=2).
+    // The heuristic may refine these later, but we proceed immediately with whatever values
+    // are set rather than waiting for verification.
+    const int base = visibleItemEntryBase_;
+    const int stride = visibleItemStride_;
+    if (base < 0 || stride <= 0) return; // Defensive: should never happen with defaults.
 
     std::array<uint32_t, 19> newEntries{};
     for (int s = 0; s < 19; s++) {
-        uint16_t idx = static_cast<uint16_t>(visibleItemEntryBase_ + s * visibleItemStride_);
+        uint16_t idx = static_cast<uint16_t>(base + s * stride);
         auto it = fields.find(idx);
         if (it != fields.end()) newEntries[s] = it->second;
     }
@@ -15210,7 +15221,7 @@ void GameHandler::updateOtherPlayerVisibleItems(uint64_t guid, const std::map<ui
     for (uint32_t e : newEntries) { if (e != 0) nonZero++; }
     if (nonZero > 0) {
         LOG_INFO("updateOtherPlayerVisibleItems: guid=0x", std::hex, guid, std::dec,
-                 " nonZero=", nonZero,
+                 " nonZero=", nonZero, " base=", base, " stride=", stride,
                  " head=", newEntries[0], " shoulders=", newEntries[2],
                  " chest=", newEntries[4], " legs=", newEntries[6],
                  " mainhand=", newEntries[15], " offhand=", newEntries[16]);
@@ -15231,11 +15242,16 @@ void GameHandler::updateOtherPlayerVisibleItems(uint64_t guid, const std::map<ui
         }
     }
 
-    // If the server isn't sending visible item fields (all zeros), fall back to inspect.
-    bool any = false;
-    for (uint32_t e : newEntries) { if (e != 0) { any = true; break; } }
-    if (!any && socket && state == WorldState::IN_WORLD) {
-        pendingAutoInspect_.insert(guid);
+    // Only fall back to auto-inspect if ALL extracted entries are zero (server didn't
+    // send visible item fields at all). If we got at least one non-zero entry, the
+    // update-field approach is working and inspect is unnecessary.
+    if (nonZero == 0) {
+        LOG_DEBUG("updateOtherPlayerVisibleItems: guid=0x", std::hex, guid, std::dec,
+                  " all entries zero (base=", base, " stride=", stride,
+                  " fieldCount=", fields.size(), ") — queuing auto-inspect");
+        if (socket && state == WorldState::IN_WORLD) {
+            pendingAutoInspect_.insert(guid);
+        }
     }
 
     if (changed) {

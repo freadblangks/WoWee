@@ -11,6 +11,7 @@
 #include "core/coordinates.hpp"
 #include "core/logger.hpp"
 #include <glm/gtc/matrix_transform.hpp>
+#include <array>
 #include <sstream>
 #include <cmath>
 
@@ -380,7 +381,10 @@ VkTexture* Minimap::getOrLoadTileTexture(int tileX, int tileY) {
 // --------------------------------------------------------
 
 void Minimap::updateTileDescriptors(uint32_t frameIdx, int centerTileX, int centerTileY) {
+    constexpr int kTileCount = 9; // 3x3 grid
     VkDevice device = vkCtx->getDevice();
+    std::array<VkDescriptorImageInfo, kTileCount> imgInfos{};
+    std::array<VkWriteDescriptorSet, kTileCount> writes{};
     int slot = 0;
 
     for (int dr = -1; dr <= 1; dr++) {
@@ -392,20 +396,20 @@ void Minimap::updateTileDescriptors(uint32_t frameIdx, int centerTileX, int cent
             if (!tileTex || !tileTex->isValid())
                 tileTex = noDataTexture.get();
 
-            VkDescriptorImageInfo imgInfo = tileTex->descriptorInfo();
+            imgInfos[slot] = tileTex->descriptorInfo();
 
-            VkWriteDescriptorSet write{};
-            write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            write.dstSet = tileDescSets[frameIdx][slot];
-            write.dstBinding = 0;
-            write.descriptorCount = 1;
-            write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            write.pImageInfo = &imgInfo;
-
-            vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+            writes[slot] = {};
+            writes[slot].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[slot].dstSet = tileDescSets[frameIdx][slot];
+            writes[slot].dstBinding = 0;
+            writes[slot].descriptorCount = 1;
+            writes[slot].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[slot].pImageInfo = &imgInfos[slot];
             slot++;
         }
     }
+
+    vkUpdateDescriptorSets(device, kTileCount, writes.data(), 0, nullptr);
 }
 
 // --------------------------------------------------------

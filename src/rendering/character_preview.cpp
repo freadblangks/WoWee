@@ -623,11 +623,27 @@ bool CharacterPreview::applyEquipment(const std::vector<game::EquipmentItem>& eq
         uint32_t gg = getGeosetGroup(did, 0);
         if (gg > 0) geosetGloves = static_cast<uint16_t>(401 + gg);
     }
+    // Wrists/Bracers → group 8 (sleeves, only if chest/shirt didn't set it)
+    {
+        uint32_t did = findDisplayId({9});
+        if (did != 0 && geosetSleeves == 801) {
+            uint32_t gg = getGeosetGroup(did, 0);
+            if (gg > 0) geosetSleeves = static_cast<uint16_t>(801 + gg);
+        }
+    }
+    // Belt → group 18 (buckle)
+    uint16_t geosetBelt = 0;
+    {
+        uint32_t did = findDisplayId({6});
+        uint32_t gg = getGeosetGroup(did, 0);
+        if (gg > 0) geosetBelt = static_cast<uint16_t>(1801 + gg);
+    }
 
     geosets.insert(geosetGloves);
     geosets.insert(geosetBoots);
     geosets.insert(geosetSleeves);
     geosets.insert(geosetPants);
+    if (geosetBelt != 0) geosets.insert(geosetBelt);
     geosets.insert(hasInvType({16}) ? 1502 : 1501); // Cloak mesh toggle (visual may still be limited)
     if (hasInvType({19})) geosets.insert(1201);     // Tabard mesh toggle
 

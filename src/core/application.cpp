@@ -6483,6 +6483,7 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
             uint16_t geosetPants = pickGeoset(1301, 13);  // Bare legs (group 13)
             uint16_t geosetCape = 0;       // Group 15 disabled unless cape is equipped
             uint16_t geosetTabard = pickGeoset(1201, 12);  // Group 12 (tabard), default variant 1201
+            uint16_t geosetBelt = 0;       // Group 18 disabled unless belt is equipped
             rendering::VkTexture* npcCapeTextureId = nullptr;
 
             // Load equipment geosets from ItemDisplayInfo.dbc
@@ -6528,6 +6529,19 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                 {
                     uint32_t gg = readGeosetGroup(8, "hands");
                     if (gg > 0) geosetGloves = pickGeoset(static_cast<uint16_t>(401 + gg), 4);
+                }
+
+                // Wrists (slot 7) → group 8 (sleeves, only if chest didn't set it)
+                {
+                    uint32_t gg = readGeosetGroup(7, "wrist");
+                    if (gg > 0 && geosetSleeves == pickGeoset(801, 8))
+                        geosetSleeves = pickGeoset(static_cast<uint16_t>(801 + gg), 8);
+                }
+
+                // Belt (slot 4) → group 18 (buckle)
+                {
+                    uint32_t gg = readGeosetGroup(4, "belt");
+                    if (gg > 0) geosetBelt = static_cast<uint16_t>(1801 + gg);
                 }
 
                 // Tabard (slot 9) → group 12 (tabard/robe mesh)
@@ -6611,6 +6625,9 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
             }
             if (geosetTabard != 0) {
                 activeGeosets.insert(geosetTabard);
+            }
+            if (geosetBelt != 0) {
+                activeGeosets.insert(geosetBelt);
             }
             activeGeosets.insert(pickGeoset(702, 7));   // Ears: default
             activeGeosets.insert(pickGeoset(902, 9));   // Kneepads: default
@@ -7436,16 +7453,115 @@ void Application::setOnlinePlayerEquipment(uint64_t guid,
         if (gg1 > 0) geosetGloves = static_cast<uint16_t>(401 + gg1);
     }
 
+    // Wrists/Bracers (invType 9) → sleeve group 8 (only if chest/shirt didn't set it)
+    {
+        uint32_t did = findDisplayIdByInvType({9});
+        if (did != 0 && geosetSleeves == 801) {
+            uint32_t gg1 = getGeosetGroup(did, geosetGroup1Field);
+            if (gg1 > 0) geosetSleeves = static_cast<uint16_t>(801 + gg1);
+        }
+    }
+
+    // Waist/Belt (invType 6) → buckle group 18
+    uint16_t geosetBelt = 0;
+    {
+        uint32_t did = findDisplayIdByInvType({6});
+        uint32_t gg1 = getGeosetGroup(did, geosetGroup1Field);
+        if (gg1 > 0) geosetBelt = static_cast<uint16_t>(1801 + gg1);
+    }
+
     geosets.insert(geosetGloves);
     geosets.insert(geosetBoots);
     geosets.insert(geosetSleeves);
     geosets.insert(geosetPants);
+    if (geosetBelt != 0) geosets.insert(geosetBelt);
     // Back/Cloak (invType 16)
     geosets.insert(hasInvType({16}) ? 1502 : 1501);
     // Tabard (invType 19)
     if (hasInvType({19})) geosets.insert(1201);
 
+    // Hide hair under helmets: replace style-specific scalp with bald scalp
+    // HEAD slot is index 0 in the 19-element equipment array
+    if (displayInfoIds[0] != 0 && hairStyleId > 0) {
+        uint16_t hairGeoset = static_cast<uint16_t>(hairStyleId + 1);
+        geosets.erase(static_cast<uint16_t>(100 + hairGeoset)); // Remove style group 1
+        geosets.insert(101);  // Default group 1 connector
+    }
+
     charRenderer->setActiveGeosets(st.instanceId, geosets);
+
+    // --- Helmet model attachment ---
+    // HEAD slot is index 0 in the 19-element equipment array.
+    // Helmet M2s are race/gender-specific (e.g. Helm_Plate_B_01_HuM.m2 for Human Male).
+    if (displayInfoIds[0] != 0) {
+        // Detach any previously attached helmet before attaching a new one
+        charRenderer->detachWeapon(st.instanceId, 0);
+        charRenderer->detachWeapon(st.instanceId, 11);
+
+        int32_t helmIdx = displayInfoDbc->findRecordById(displayInfoIds[0]);
+        if (helmIdx >= 0) {
+            const uint32_t leftModelField = idiL ? (*idiL)["LeftModel"] : 1u;
+            std::string helmModelName = displayInfoDbc->getString(static_cast<uint32_t>(helmIdx), leftModelField);
+            if (!helmModelName.empty()) {
+                // Strip .mdx/.m2 extension
+                size_t dotPos = helmModelName.rfind('.');
+                if (dotPos != std::string::npos) helmModelName = helmModelName.substr(0, dotPos);
+
+                // Race/gender suffix for helmet variants
+                static const std::unordered_map<uint8_t, std::string> racePrefix = {
+                    {1, "Hu"}, {2, "Or"}, {3, "Dw"}, {4, "Ni"}, {5, "Sc"},
+                    {6, "Ta"}, {7, "Gn"}, {8, "Tr"}, {10, "Be"}, {11, "Dr"}
+                };
+                std::string genderSuffix = (st.genderId == 0) ? "M" : "F";
+                std::string raceSuffix;
+                auto itRace = racePrefix.find(st.raceId);
+                if (itRace != racePrefix.end()) {
+                    raceSuffix = "_" + itRace->second + genderSuffix;
+                }
+
+                // Try race/gender-specific variant first, then base name
+                std::string helmPath;
+                pipeline::M2Model helmModel;
+                if (!raceSuffix.empty()) {
+                    helmPath = "Item\\ObjectComponents\\Head\\" + helmModelName + raceSuffix + ".m2";
+                    if (!loadWeaponM2(helmPath, helmModel)) helmModel = {};
+                }
+                if (!helmModel.isValid()) {
+                    helmPath = "Item\\ObjectComponents\\Head\\" + helmModelName + ".m2";
+                    loadWeaponM2(helmPath, helmModel);
+                }
+
+                if (helmModel.isValid()) {
+                    uint32_t helmModelId = nextWeaponModelId_++;
+                    // Get texture from ItemDisplayInfo (LeftModelTexture)
+                    const uint32_t leftTexField = idiL ? (*idiL)["LeftModelTexture"] : 3u;
+                    std::string helmTexName = displayInfoDbc->getString(static_cast<uint32_t>(helmIdx), leftTexField);
+                    std::string helmTexPath;
+                    if (!helmTexName.empty()) {
+                        if (!raceSuffix.empty()) {
+                            std::string suffixedTex = "Item\\ObjectComponents\\Head\\" + helmTexName + raceSuffix + ".blp";
+                            if (assetManager->fileExists(suffixedTex)) helmTexPath = suffixedTex;
+                        }
+                        if (helmTexPath.empty()) {
+                            helmTexPath = "Item\\ObjectComponents\\Head\\" + helmTexName + ".blp";
+                        }
+                    }
+                    // Attachment point 0 (head bone), fallback to 11 (explicit head attachment)
+                    bool attached = charRenderer->attachWeapon(st.instanceId, 0, helmModel, helmModelId, helmTexPath);
+                    if (!attached) {
+                        attached = charRenderer->attachWeapon(st.instanceId, 11, helmModel, helmModelId, helmTexPath);
+                    }
+                    if (attached) {
+                        LOG_DEBUG("Attached player helmet: ", helmPath, " tex: ", helmTexPath);
+                    }
+                }
+            }
+        }
+    } else {
+        // No helmet equipped — detach any existing helmet model
+        charRenderer->detachWeapon(st.instanceId, 0);
+        charRenderer->detachWeapon(st.instanceId, 11);
+    }
 
     // --- Cape texture (group 15 / texture type 2) ---
     // The geoset above enables the cape mesh, but without a texture it renders blank.
@@ -7584,6 +7700,83 @@ void Application::setOnlinePlayerEquipment(uint64_t guid,
     rendering::VkTexture* newTex = charRenderer->compositeWithRegions(st.bodySkinPath, st.underwearPaths, regionLayers);
     if (newTex) {
         charRenderer->setTextureSlotOverride(st.instanceId, static_cast<uint16_t>(slots.skin), newTex);
+    }
+
+    // --- Weapon model attachment ---
+    // Slot indices in the 19-element EquipSlot array:
+    //   15 = MAIN_HAND → attachment 1 (right hand)
+    //   16 = OFF_HAND  → attachment 2 (left hand)
+    struct OnlineWeaponSlot {
+        int slotIndex;
+        uint32_t attachmentId;
+    };
+    static constexpr OnlineWeaponSlot weaponSlots[] = {
+        { 15, 1 },  // MAIN_HAND → right hand
+        { 16, 2 },  // OFF_HAND  → left hand
+    };
+
+    const uint32_t modelFieldL = idiL ? (*idiL)["LeftModel"] : 1u;
+    const uint32_t modelFieldR = idiL ? (*idiL)["RightModel"] : 2u;
+    const uint32_t texFieldL   = idiL ? (*idiL)["LeftModelTexture"] : 3u;
+    const uint32_t texFieldR   = idiL ? (*idiL)["RightModelTexture"] : 4u;
+
+    for (const auto& ws : weaponSlots) {
+        uint32_t weapDisplayId = displayInfoIds[ws.slotIndex];
+        if (weapDisplayId == 0) {
+            charRenderer->detachWeapon(st.instanceId, ws.attachmentId);
+            continue;
+        }
+
+        int32_t recIdx = displayInfoDbc->findRecordById(weapDisplayId);
+        if (recIdx < 0) {
+            charRenderer->detachWeapon(st.instanceId, ws.attachmentId);
+            continue;
+        }
+
+        // Prefer LeftModel (full weapon), fall back to RightModel (hilt variants)
+        std::string modelName = displayInfoDbc->getString(static_cast<uint32_t>(recIdx), modelFieldL);
+        std::string textureName = displayInfoDbc->getString(static_cast<uint32_t>(recIdx), texFieldL);
+        if (modelName.empty()) {
+            modelName = displayInfoDbc->getString(static_cast<uint32_t>(recIdx), modelFieldR);
+            textureName = displayInfoDbc->getString(static_cast<uint32_t>(recIdx), texFieldR);
+        }
+        if (modelName.empty()) {
+            charRenderer->detachWeapon(st.instanceId, ws.attachmentId);
+            continue;
+        }
+
+        // Convert .mdx → .m2
+        std::string modelFile = modelName;
+        {
+            size_t dotPos = modelFile.rfind('.');
+            if (dotPos != std::string::npos) modelFile = modelFile.substr(0, dotPos);
+            modelFile += ".m2";
+        }
+
+        // Try Weapon directory first, then Shield
+        std::string m2Path = "Item\\ObjectComponents\\Weapon\\" + modelFile;
+        pipeline::M2Model weaponModel;
+        if (!loadWeaponM2(m2Path, weaponModel)) {
+            m2Path = "Item\\ObjectComponents\\Shield\\" + modelFile;
+            if (!loadWeaponM2(m2Path, weaponModel)) {
+                charRenderer->detachWeapon(st.instanceId, ws.attachmentId);
+                continue;
+            }
+        }
+
+        // Build texture path
+        std::string texturePath;
+        if (!textureName.empty()) {
+            texturePath = "Item\\ObjectComponents\\Weapon\\" + textureName + ".blp";
+            if (!assetManager->fileExists(texturePath)) {
+                texturePath = "Item\\ObjectComponents\\Shield\\" + textureName + ".blp";
+                if (!assetManager->fileExists(texturePath)) texturePath.clear();
+            }
+        }
+
+        uint32_t weaponModelId = nextWeaponModelId_++;
+        charRenderer->attachWeapon(st.instanceId, ws.attachmentId,
+                                   weaponModel, weaponModelId, texturePath);
     }
 }
 

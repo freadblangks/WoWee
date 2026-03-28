@@ -1106,7 +1106,7 @@ public:
     uint32_t getOverrideLightTransMs() const { return overrideLightTransMs_; }
 
     // Player skills
-    const std::map<uint32_t, PlayerSkill>& getPlayerSkills() const { return playerSkills_; }
+    const std::unordered_map<uint32_t, PlayerSkill>& getPlayerSkills() const { return playerSkills_; }
     const std::string& getSkillName(uint32_t skillId) const;
     uint32_t getSkillCategory(uint32_t skillId) const;
     bool isProfessionSpell(uint32_t spellId) const;
@@ -3502,7 +3502,7 @@ private:
     uint32_t overrideLightTransMs_ = 0;
 
     // ---- Player skills ----
-    std::map<uint32_t, PlayerSkill> playerSkills_;
+    std::unordered_map<uint32_t, PlayerSkill> playerSkills_;
     std::unordered_map<uint32_t, std::string> skillLineNames_;
     std::unordered_map<uint32_t, uint32_t> skillLineCategories_;
     std::unordered_map<uint32_t, uint32_t> spellToSkillLine_;      // spellID -> skillLineID

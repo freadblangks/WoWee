@@ -1,7 +1,7 @@
 #pragma once
 
 #include <vector>
-#include <map>
+#include <unordered_map>
 #include <string>
 #include <string_view>
 #include <cstdint>
@@ -137,7 +137,7 @@ private:
     std::vector<uint8_t> stringBlock;   // String block
 
     // Cache for record ID -> index lookup
-    mutable std::map<uint32_t, uint32_t> idToIndexCache;
+    mutable std::unordered_map<uint32_t, uint32_t> idToIndexCache;
     mutable bool idCacheBuilt = false;
 
     void buildIdCache() const;

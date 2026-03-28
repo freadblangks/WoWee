@@ -23802,16 +23802,16 @@ void GameHandler::handleFriendStatus(network::Packet& packet) {
         return;
     }
 
+    // Single lookup — reuse iterator for name resolution and update/erase below
+    auto cit = std::find_if(contacts_.begin(), contacts_.end(),
+        [&](const ContactEntry& e){ return e.guid == data.guid; });
+
     // Look up player name: contacts_ (populated by SMSG_FRIEND_LIST) > playerNameCache
     std::string playerName;
-    {
-        auto cit2 = std::find_if(contacts_.begin(), contacts_.end(),
-            [&](const ContactEntry& e){ return e.guid == data.guid; });
-        if (cit2 != contacts_.end() && !cit2->name.empty()) {
-            playerName = cit2->name;
-        } else {
-            playerName = lookupName(data.guid);
-        }
+    if (cit != contacts_.end() && !cit->name.empty()) {
+        playerName = cit->name;
+    } else {
+        playerName = lookupName(data.guid);
     }
 
     // Update friends cache
@@ -23823,11 +23823,9 @@ void GameHandler::handleFriendStatus(network::Packet& packet) {
 
     // Mirror into contacts_: update existing entry or add/remove as needed
     if (data.status == 0) {  // Removed from friends list
-        contacts_.erase(std::remove_if(contacts_.begin(), contacts_.end(),
-            [&](const ContactEntry& e){ return e.guid == data.guid; }), contacts_.end());
+        if (cit != contacts_.end())
+            contacts_.erase(cit);
     } else {
-        auto cit = std::find_if(contacts_.begin(), contacts_.end(),
-            [&](const ContactEntry& e){ return e.guid == data.guid; });
         if (cit != contacts_.end()) {
             if (!playerName.empty() && playerName != "Unknown") cit->name = playerName;
             // status: 2=online→1, 3=offline→0, 1=added→1 (online on add)
@@ -24028,7 +24026,7 @@ void GameHandler::extractSkillFields(const std::map<uint16_t, uint32_t>& fields)
     const uint16_t PLAYER_SKILL_INFO_START = fieldIndex(UF::PLAYER_SKILL_INFO_START);
     static constexpr int MAX_SKILL_SLOTS = 128;
 
-    std::map<uint32_t, PlayerSkill> newSkills;
+    std::unordered_map<uint32_t, PlayerSkill> newSkills;
 
     for (int slot = 0; slot < MAX_SKILL_SLOTS; slot++) {
         uint16_t baseField = PLAYER_SKILL_INFO_START + slot * 3;

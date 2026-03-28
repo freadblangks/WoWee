@@ -156,12 +156,12 @@ private:
         int argCount;
         std::function<uint32_t(WardenEmulator&, const std::vector<uint32_t>&)> handler;
     };
-    std::map<uint32_t, ApiHookEntry> apiHandlers_;
+    std::unordered_map<uint32_t, ApiHookEntry> apiHandlers_;
     uint32_t nextApiStubAddr_;   // tracks next free stub slot (replaces static local)
     bool apiCodeHookRegistered_; // true once UC_HOOK_CODE for stub range is added
 
     // Memory allocation tracking
-    std::map<uint32_t, size_t> allocations_;
+    std::unordered_map<uint32_t, size_t> allocations_;
     std::map<uint32_t, size_t> freeBlocks_;  // free-list keyed by base address
     uint32_t nextHeapAddr_;
 

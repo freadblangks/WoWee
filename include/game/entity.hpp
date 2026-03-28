@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <map>
+#include <unordered_map>
 #include <memory>
 
 namespace wowee {
@@ -338,7 +339,7 @@ public:
     bool hasEntity(uint64_t guid) const;
 
     // Get all entities
-    const std::map<uint64_t, std::shared_ptr<Entity>>& getEntities() const {
+    const std::unordered_map<uint64_t, std::shared_ptr<Entity>>& getEntities() const {
         return entities;
     }
 
@@ -353,7 +354,7 @@ public:
     }
 
 private:
-    std::map<uint64_t, std::shared_ptr<Entity>> entities;
+    std::unordered_map<uint64_t, std::shared_ptr<Entity>> entities;
 };
 
 } // namespace game
